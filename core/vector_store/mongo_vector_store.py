@@ -1,12 +1,10 @@
-import json
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import PyMongoError
 
 from .base_vector_store import BaseVectorStore
 from core.models.documents import DocumentChunk
-from core.models.auth import AuthContext, EntityType
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +31,10 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
             # Create basic indexes
             await self.collection.create_index("document_id")
             await self.collection.create_index("chunk_number")
-            
+
             # Note: Vector search index must be created via Atlas UI or API
             # as it requires specific configuration
-            
+
             logger.info("MongoDB vector store indexes initialized")
             return True
         except PyMongoError as e:
@@ -55,13 +53,18 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
                 doc = chunk.model_dump()
                 # Ensure we have required fields
                 if not doc.get('embedding'):
-                    logger.error(f"Missing embedding for chunk {chunk.document_id}-{chunk.chunk_number}")
+                    logger.error(
+                        f"Missing embedding for chunk "
+                        f"{chunk.document_id}-{chunk.chunk_number}"
+                    )
                     continue
                 documents.append(doc)
 
             if documents:
                 # Use ordered=False to continue even if some inserts fail
-                result = await self.collection.insert_many(documents, ordered=False)
+                result = await self.collection.insert_many(
+                    documents, ordered=False
+                )
                 return len(result.inserted_ids) > 0, result
             return False, None
 
@@ -77,7 +80,10 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
     ) -> List[DocumentChunk]:
         """Find similar chunks using MongoDB Atlas Vector Search."""
         try:
-            logger.debug(f"Searching in database {self.db.name} collection {self.collection.name}")
+            logger.debug(
+                f"Searching in database {self.db.name} "
+                f"collection {self.collection.name}"
+            )
             logger.debug(f"Query vector looks like: {query_embedding}")
             logger.debug(f"Doc IDs: {doc_ids}")
             logger.debug(f"K is: {k}")
@@ -90,7 +96,7 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
                         "index": self.index_name,
                         "path": "embedding",
                         "queryVector": query_embedding,
-                        "numCandidates": k*40,  # Get more candidates for better results
+                        "numCandidates": k*40,  # Get more candidates
                         "limit": k,
                         "filter": {"document_id": {"$in": doc_ids}} if doc_ids else {}
                     }
@@ -110,7 +116,7 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
             # Execute search
             cursor = self.collection.aggregate(pipeline)
             chunks = []
-            
+
             async for result in cursor:
                 chunk = DocumentChunk(
                     document_id=result["document_id"],
@@ -128,58 +134,3 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
             logger.error(f"MongoDB error: {e._message}")
             logger.error(f"Error querying similar chunks: {str(e)}")
             raise e
-
-    def _build_access_filter(self, auth: AuthContext) -> Dict[str, Any]:
-        """Build MongoDB filter for access control."""
-        base_filter = {
-            "$or": [
-                {"owner.id": auth.entity_id},
-                {"access_control.readers": auth.entity_id},
-                {"access_control.writers": auth.entity_id},
-                {"access_control.admins": auth.entity_id}
-            ]
-        }
-
-        if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
-            # Add app-specific access for developers
-            base_filter["$or"].append(
-                {"access_control.app_access": auth.app_id}
-            )
-            
-        return base_filter
-
-    def _build_metadata_filter(self, filters: Dict[str, Any]) -> Dict[str, Any]:
-        """Build MongoDB filter for metadata fields."""
-        if not filters:
-            return {}
-        return filters
-            
-        metadata_filter = {}
-        
-        for key, value in filters.items():
-            metadata_key = f"metadata.{key}"
-            
-            if isinstance(value, (str, int, float, bool)):
-                metadata_filter[metadata_key] = value
-            elif isinstance(value, list):
-                metadata_filter[metadata_key] = {"$in": value}
-            elif isinstance(value, dict):
-                valid_ops = {
-                    "gt": "$gt",
-                    "gte": "$gte", 
-                    "lt": "$lt",
-                    "lte": "$lte",
-                    "ne": "$ne"
-                }
-                mongo_ops = {}
-                for op, val in value.items():
-                    if op not in valid_ops:
-                        logger.warning(f"Skipping invalid operator: {op}")
-                        continue
-                    mongo_ops[valid_ops[op]] = val
-                if mongo_ops:
-                    metadata_filter[metadata_key] = mongo_ops
-            else:
-                logger.warning(f"Skipping unsupported filter value type for key {key}")
-                
-        return metadata_filter

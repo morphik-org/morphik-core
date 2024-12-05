@@ -1,6 +1,6 @@
-from typing import List, Optional, Dict, Any
-import logging
 from datetime import UTC, datetime
+import logging
+from typing import Dict, List, Optional, Any
 
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ReturnDocument
@@ -37,7 +37,7 @@ class MongoDatabase(BaseDatabase):
             await self.collection.create_index("access_control.writers")
             await self.collection.create_index("access_control.admins")
             await self.collection.create_index("system_metadata.created_at")
-            
+
             logger.info("MongoDB indexes created successfully")
             return True
         except PyMongoError as e:
@@ -48,14 +48,14 @@ class MongoDatabase(BaseDatabase):
         """Store document metadata."""
         try:
             doc_dict = document.model_dump()
-            
+
             # Ensure system metadata
             doc_dict["system_metadata"]["created_at"] = datetime.now(UTC)
             doc_dict["system_metadata"]["updated_at"] = datetime.now(UTC)
 
             result = await self.collection.insert_one(doc_dict)
             return bool(result.inserted_id)
-            
+
         except PyMongoError as e:
             logger.error(f"Error storing document metadata: {str(e)}")
             return False
@@ -65,7 +65,7 @@ class MongoDatabase(BaseDatabase):
         try:
             # Build access filter
             access_filter = self._build_access_filter(auth)
-            
+
             # Query document
             query = {
                 "$and": [
@@ -78,11 +78,10 @@ class MongoDatabase(BaseDatabase):
             doc_dict = await self.collection.find_one(query)
             logger.debug(f"Found document: {doc_dict}")
             return Document(**doc_dict) if doc_dict else None
-            
+
         except PyMongoError as e:
             logger.error(f"Error retrieving document metadata: {str(e)}")
             raise e
-            # return None
 
     async def get_documents(
         self,
@@ -100,13 +99,13 @@ class MongoDatabase(BaseDatabase):
 
             # Execute paginated query
             cursor = self.collection.find(query).skip(skip).limit(limit)
-            
+
             documents = []
             async for doc_dict in cursor:
                 documents.append(Document(**doc_dict))
-            
+
             return documents
-            
+
         except PyMongoError as e:
             logger.error(f"Error listing documents: {str(e)}")
             return []
@@ -132,9 +131,9 @@ class MongoDatabase(BaseDatabase):
                 {"$set": updates},
                 return_document=ReturnDocument.AFTER
             )
-            
+
             return bool(result)
-            
+
         except PyMongoError as e:
             logger.error(f"Error updating document metadata: {str(e)}")
             return False
@@ -148,7 +147,7 @@ class MongoDatabase(BaseDatabase):
 
             result = await self.collection.delete_one({"external_id": document_id})
             return bool(result.deleted_count)
-            
+
         except PyMongoError as e:
             logger.error(f"Error deleting document: {str(e)}")
             return False
@@ -167,13 +166,13 @@ class MongoDatabase(BaseDatabase):
 
             # Get matching document IDs
             cursor = self.collection.find(query, {"external_id": 1})
-            
+
             document_ids = []
             async for doc in cursor:
                 document_ids.append(doc["external_id"])
-                
+
             return document_ids
-            
+
         except PyMongoError as e:
             logger.error(f"Error finding documents: {str(e)}")
             return []
@@ -191,10 +190,11 @@ class MongoDatabase(BaseDatabase):
                 return False
 
             access_control = doc.get("access_control", {})
-            
+
             # Check owner access
             owner = doc.get("owner", {})
-            if (owner.get("type") == auth.entity_type and owner.get("id") == auth.entity_id):
+            if (owner.get("type") == auth.entity_type and
+                    owner.get("id") == auth.entity_id):
                 return True
 
             # Check permission-specific access
@@ -203,13 +203,13 @@ class MongoDatabase(BaseDatabase):
                 "write": "writers",
                 "admin": "admins"
             }
-            
+
             permission_set = permission_map.get(required_permission)
             if not permission_set:
                 return False
-                
+
             return auth.entity_id in access_control.get(permission_set, set())
-            
+
         except PyMongoError as e:
             logger.error(f"Error checking document access: {str(e)}")
             return False
@@ -232,7 +232,7 @@ class MongoDatabase(BaseDatabase):
             )
 
         return base_filter
-    
+
     def _build_metadata_filter(self, filters: Dict[str, Any]) -> Dict[str, Any]:
         """Build MongoDB filter for metadata."""
         if not filters:

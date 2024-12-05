@@ -1,8 +1,7 @@
-import base64
-from collections import defaultdict
-from typing import Any, Dict, List, Union, Optional
+from typing import Any, Dict, List, Union
 import logging
 from fastapi import UploadFile
+import base64
 
 from core.database.base_database import BaseDatabase
 from core.embedding_model.base_embedding_model import BaseEmbeddingModel

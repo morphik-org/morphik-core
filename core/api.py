@@ -1,13 +1,12 @@
 import json
 from datetime import datetime, UTC
-from typing import List, Optional, Union, Dict, Set
+from typing import List, Union
 from fastapi import (
     FastAPI,
     Form,
     HTTPException,
     Depends,
     Header,
-    APIRouter,
     UploadFile
 )
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,7 +27,6 @@ from core.vector_store.mongo_vector_store import MongoDBAtlasVectorStore
 from core.storage.s3_storage import S3Storage
 from core.parser.unstructured_parser import UnstructuredAPIParser
 from core.embedding_model.openai_embedding_model import OpenAIEmbeddingModel
-from core.services.uri_service import get_uri_service
 
 
 # Initialize FastAPI app
@@ -98,14 +96,14 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:
                 status_code=401,
                 detail="Invalid authorization header"
             )
-        
+
         token = authorization[7:]  # Remove "Bearer "
         payload = jwt.decode(
             token,
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM]
         )
-        
+
         if datetime.fromtimestamp(payload["exp"], UTC) < datetime.now(UTC):
             raise HTTPException(status_code=401, detail="Token expired")
 
@@ -143,7 +141,7 @@ async def ingest_file(
     try:
         metadata_dict = json.loads(metadata)
         doc = await document_service.ingest_file(file, metadata_dict, auth)
-        return doc # Should just send a success response, not sure why we're sending a document #TODO: discuss with bhau
+        return doc  # Should just send a success response, not sure why we're sending a document #TODO: discuss with bhau
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except json.JSONDecodeError:
@@ -160,8 +158,6 @@ async def query_documents(
     """Query documents with specified return type."""
     try:
         return await document_service.query(request, auth)
-    # except AttributeError as e:
-    #     raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Query failed: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -193,64 +189,6 @@ async def get_document(
             raise HTTPException(status_code=404, detail="Document not found")
         return doc
     except HTTPException as e:
-        raise e # Return the HTTPException as is 
+        raise e  # Return the HTTPException as is
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-
-auth_router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-@auth_router.post("/developer-token")
-async def create_developer_token(
-    dev_id: str,
-    app_id: Optional[str] = None,
-    expiry_days: int = 30,
-    permissions: Optional[Set[str]] = None,
-    auth: AuthContext = Depends(verify_token)
-) -> Dict[str, str]:
-    """Create a developer access URI."""
-    # Verify requesting user has admin permissions
-    if "admin" not in auth.permissions:
-        raise HTTPException(
-            status_code=403,
-            detail="Admin permissions required"
-        )
-
-    uri_service = get_uri_service()
-    uri = uri_service.create_developer_uri(
-        dev_id=dev_id,
-        app_id=app_id,
-        expiry_days=expiry_days,
-        permissions=permissions
-    )
-
-    return {"uri": uri}
-
-
-@auth_router.post("/user-token")
-async def create_user_token(
-    user_id: str,
-    expiry_days: int = 30,
-    permissions: Optional[Set[str]] = None,
-    auth: AuthContext = Depends(verify_token)
-) -> Dict[str, str]:
-    """Create a user access URI."""
-    # Verify requesting user has admin permissions
-    if "admin" not in auth.permissions:
-        raise HTTPException(
-            status_code=403,
-            detail="Admin permissions required"
-        )
-
-    uri_service = get_uri_service()
-    uri = uri_service.create_user_uri(
-        user_id=user_id,
-        expiry_days=expiry_days,
-        permissions=permissions
-    )
-
-    return {"uri": uri}
-
-# Add to your main FastAPI app
-app.include_router(auth_router)

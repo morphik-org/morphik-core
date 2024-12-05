@@ -35,23 +35,16 @@ def setup_test_environment(event_loop):
     """Setup test environment and create test files"""
     # Create test data directory if it doesn't exist
     TEST_DATA_DIR.mkdir(exist_ok=True)
-    
+
     # Create a test text file
     text_file = TEST_DATA_DIR / "test.txt"
     if not text_file.exists():
         text_file.write_text("This is a test document for DataBridge testing.")
-    
+
     # Create a small test PDF if it doesn't exist
     pdf_file = TEST_DATA_DIR / "test.pdf"
     if not pdf_file.exists():
-        # Create a minimal PDF for testing
-        try:
-            from reportlab.pdfgen import canvas
-            c = canvas.Canvas(str(pdf_file))
-            c.drawString(100, 750, "Test PDF Document")
-            c.save()
-        except ImportError:
-            pytest.skip("reportlab not installed, skipping PDF tests")
+        pytest.skip("PDF file not available, skipping PDF tests")
 
 
 def create_test_token(
@@ -64,7 +57,7 @@ def create_test_token(
     """Create a test JWT token"""
     if not permissions:
         permissions = ["read", "write", "admin"]
-        
+
     payload = {
         "type": entity_type,
         "entity_id": entity_id,
@@ -98,14 +91,20 @@ async def test_app(event_loop: asyncio.AbstractEventLoop) -> FastAPI:
 
 
 @pytest.fixture
-async def client(test_app: FastAPI, event_loop: asyncio.AbstractEventLoop) -> AsyncGenerator[AsyncClient, None]:
+async def client(
+    test_app: FastAPI,
+    event_loop: asyncio.AbstractEventLoop
+) -> AsyncGenerator[AsyncClient, None]:
     """Create async test client"""
     async with AsyncClient(app=test_app, base_url="http://test") as client:
         yield client
 
 
 @pytest.mark.asyncio
-async def test_ingest_text_document(client: AsyncClient, content: str = "Test content for document ingestion"):
+async def test_ingest_text_document(
+    client: AsyncClient,
+    content: str = "Test content for document ingestion"
+):
     """Test ingesting a text document"""
     headers = create_auth_header()
 
@@ -132,14 +131,14 @@ async def test_ingest_pdf(client: AsyncClient):
     """Test ingesting a pdf"""
     headers = create_auth_header()
     pdf_path = TEST_DATA_DIR / "test.pdf"
-    
+
     if not pdf_path.exists():
         pytest.skip("Test PDF file not available")
 
     content_type, _ = mimetypes.guess_type(pdf_path)
     if not content_type:
         content_type = "application/octet-stream"
-    
+
     with open(pdf_path, "rb") as f:
         response = await client.post(
             "/ingest/file",
@@ -147,13 +146,13 @@ async def test_ingest_pdf(client: AsyncClient):
             data={"metadata": json.dumps({"test": True, "type": "pdf"})},
             headers=headers
         )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert "external_id" in data
     assert data["content_type"] == "application/pdf"
     assert "storage_info" in data
-    
+
     return data["external_id"]
 
 
@@ -161,7 +160,7 @@ async def test_ingest_pdf(client: AsyncClient):
 async def test_ingest_invalid_text_request(client: AsyncClient):
     """Test ingestion with invalid text request missing required content field"""
     headers = create_auth_header()
-    
+
     response = await client.post(
         "/ingest/text",
         json={
@@ -172,11 +171,11 @@ async def test_ingest_invalid_text_request(client: AsyncClient):
     assert response.status_code == 422  # Validation error
 
 
-@pytest.mark.asyncio 
+@pytest.mark.asyncio
 async def test_ingest_invalid_file_request(client: AsyncClient):
     """Test ingestion with invalid file request missing file"""
     headers = create_auth_header()
-    
+
     response = await client.post(
         "/ingest/file",
         files={},  # Missing file
@@ -190,14 +189,14 @@ async def test_ingest_invalid_file_request(client: AsyncClient):
 async def test_ingest_invalid_metadata(client: AsyncClient):
     """Test ingestion with invalid metadata JSON"""
     headers = create_auth_header()
-    
+
     pdf_path = TEST_DATA_DIR / "test.pdf"
     if pdf_path.exists():
         files = {
             "file": ("test.pdf", open(pdf_path, "rb"), "application/pdf")
         }
         response = await client.post(
-            "/ingest/file", 
+            "/ingest/file",
             files=files,
             data={"metadata": "invalid json"},
             headers=headers
@@ -209,7 +208,7 @@ async def test_ingest_invalid_metadata(client: AsyncClient):
 async def test_ingest_oversized_content(client: AsyncClient):
     """Test ingestion with oversized content"""
     headers = create_auth_header()
-    
+
     large_content = "x" * (10 * 1024 * 1024)  # 10MB
     response = await client.post(
         "/ingest/text",
@@ -229,7 +228,7 @@ async def test_auth_missing_header(client: AsyncClient):
     assert response.status_code == 401
 
 
-@pytest.mark.asyncio 
+@pytest.mark.asyncio
 async def test_auth_invalid_token(client: AsyncClient):
     """Test authentication with invalid token"""
     headers = {"Authorization": "Bearer invalid_token"}
@@ -264,12 +263,15 @@ async def test_auth_insufficient_permissions(client: AsyncClient):
 async def test_query_chunks(client: AsyncClient):
     """Test querying document chunks"""
     # First ingest a document to query
-    doc_id = await test_ingest_text_document(client, content="The quick brown fox jumps over the lazy dog")
-    
+    doc_id = await test_ingest_text_document(
+        client,
+        content="The quick brown fox jumps over the lazy dog"
+    )
+
     headers = create_auth_header()
     # Sleep to allow time for document to be indexed
     await asyncio.sleep(1)
-    
+
     response = await client.post(
         "/query",
         json={
@@ -280,7 +282,7 @@ async def test_query_chunks(client: AsyncClient):
         headers=headers
     )
     logger.info(f"Query response: {response.json()}")
-    
+
     assert response.status_code == 200
     results = list(response.json())
     logger.info(f"Query results: {results}")
@@ -293,8 +295,16 @@ async def test_query_chunks(client: AsyncClient):
 async def test_query_documents(client: AsyncClient):
     """Test querying for full documents"""
     # First ingest a document to query
-    doc_id = await test_ingest_text_document(client, content="Headaches can significantly impact daily life and wellbeing. Common triggers include stress, dehydration, and poor sleep habits. While over-the-counter pain relievers may provide temporary relief, it's important to identify and address the root causes. Maintaining good health through proper nutrition, regular exercise, and stress management can help prevent chronic headaches.")
-    
+    content = (
+        "Headaches can significantly impact daily life and wellbeing. "
+        "Common triggers include stress, dehydration, and poor sleep habits. "
+        "While over-the-counter pain relievers may provide temporary relief, "
+        "it's important to identify and address the root causes. "
+        "Maintaining good health through proper nutrition, regular exercise, "
+        "and stress management can help prevent chronic headaches."
+    )
+    doc_id = await test_ingest_text_document(client, content=content)
+
     headers = create_auth_header()
     response = await client.post(
         "/query",
@@ -305,7 +315,7 @@ async def test_query_documents(client: AsyncClient):
         },
         headers=headers
     )
-    
+
     assert response.status_code == 200
     results = list(response.json())
     assert len(results) > 0
@@ -320,10 +330,10 @@ async def test_list_documents(client: AsyncClient):
     # First ingest some documents
     doc_id1 = await test_ingest_text_document(client)
     doc_id2 = await test_ingest_text_document(client)
-    
+
     headers = create_auth_header()
     response = await client.get("/documents", headers=headers)
-    
+
     assert response.status_code == 200
     docs = response.json()
     assert len(docs) >= 2
@@ -337,10 +347,10 @@ async def test_get_document(client: AsyncClient):
     """Test getting a specific document"""
     # First ingest a document
     doc_id = await test_ingest_text_document(client)
-    
+
     headers = create_auth_header()
     response = await client.get(f"/documents/{doc_id}", headers=headers)
-    
+
     assert response.status_code == 200
     doc = response.json()
     assert doc["external_id"] == doc_id
