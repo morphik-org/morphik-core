@@ -30,4 +30,4 @@ EXPOSE 8000 443 80 20
 
 # Run the server
 # CMD ["python", "start_server.py"]
-CMD ["uvicorn", "core.api:app", "--host", "0.0.0.0", "--port", "443"]
+CMD ["uvicorn", "core.api:app", "--host", "127.0.0.1", "--port", "443"]

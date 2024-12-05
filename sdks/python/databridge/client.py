@@ -1,219 +1,321 @@
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Union, BinaryIO
 import httpx
 from urllib.parse import urlparse
 import jwt
-from datetime import datetime, UTC
-import asyncio
-from dataclasses import dataclass
-from .exceptions import AuthenticationError
-from pydantic import BaseModel, Field
-import logging
-
-logger = logging.getLogger(__name__)
+from pydantic import BaseModel
+import json
+from pathlib import Path
 
 
-@dataclass
-class QueryResult:
-    """Structured query result"""
+class IngestTextRequest(BaseModel):
+    """Request model for text ingestion"""
     content: str
-    doc_id: str
-    score: Optional[float]
-    metadata: Dict[str, Any]
+    metadata: Dict[str, Any] = {}
 
-# Request/Response Models
+
 class Document(BaseModel):
-    id: str
-    name: str
-    type: str
-    source: str
-    uploaded_at: str
-    size: str
-    redaction_level: str
-    stats: Dict[str, Union[int, str]] = Field(
-        default_factory=lambda: {
-            "ai_queries": 0,
-            "time_saved": "0h",
-            "last_accessed": ""
-        }
-    )
-    accessed_by: List[Dict[str, str]] = Field(default_factory=list)
-    sensitive_content: Optional[List[str]] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    s3_bucket: Optional[str] = None
-    s3_key: Optional[str] = None
-    presigned_url: Optional[str] = None
+    """Document metadata model"""
+    external_id: str
+    content_type: str
+    filename: Optional[str] = None
+    metadata: Dict[str, Any] = {}
+    storage_info: Dict[str, str] = {}
+    system_metadata: Dict[str, Any] = {}
+    access_control: Dict[str, Any] = {}
+    chunk_ids: List[str] = []
+
+
+class ChunkResult(BaseModel):
+    """Query result at chunk level"""
+    content: str
+    score: float
+    document_id: str
+    chunk_number: int
+    metadata: Dict[str, Any]
+    content_type: str
+    filename: Optional[str] = None
+    download_url: Optional[str] = None
+
+
+class DocumentResult(BaseModel):
+    """Query result at document level"""
+    score: float
+    document_id: str
+    metadata: Dict[str, Any]
+    content: Dict[str, str]
 
 
 class DataBridge:
     """
-    DataBridge client for document ingestion and querying.
-
-    Usage:
-        db = DataBridge("databridge://owner123:token@databridge.local")
-        doc_id = await db.ingest_document("content", {"title": "My Doc"})
-        results = await db.query("What is...")
+    DataBridge client for document operations.
+    
+    Args:
+        uri (str): DataBridge URI in the format "databridge://<owner_id>:<token>@<host>"
+        timeout (int, optional): Request timeout in seconds. Defaults to 30.
+    
+    Examples:
+        ```python
+        async with DataBridge("databridge://owner_id:token@api.databridge.ai") as db:
+            # Ingest text
+            doc = await db.ingest_text(
+                "Sample content",
+                metadata={"category": "sample"}
+            )
+            
+            # Query documents
+            results = await db.query("search query")
+        ```
     """
-    def __init__(
-        self,
-        uri: str,
-        timeout: int = 30,
-        max_retries: int = 3
-    ):
+
+    def __init__(self, uri: str, timeout: int = 30):
         self._timeout = timeout
-        self._max_retries = max_retries
         self._client = httpx.AsyncClient(timeout=timeout)
         self._setup_auth(uri)
 
     def _setup_auth(self, uri: str) -> None:
         """Setup authentication from URI"""
-        try:
-            parsed = urlparse(uri)
-            if not parsed.netloc:
-                raise ValueError("Invalid URI format")
+        parsed = urlparse(uri)
+        if not parsed.netloc:
+            raise ValueError("Invalid URI format")
+
+        # Split host and auth parts
+        auth, host = parsed.netloc.split('@')
+        self._owner_id, self._auth_token = auth.split(':')
             
-            split_uri = parsed.netloc.split('@')
-            self._base_url = f"{"http" if "localhost" in split_uri[1] else "https"}://{split_uri[1]}"
-            auth_parts = split_uri[0].split(':')
-            if len(auth_parts) != 2:
-                raise ValueError("URI must include owner_id and auth_token")
+        # Set base URL
+        self._base_url = f"{'http' if 'localhost' in host else 'https'}://{host}"
 
-            if '.' in auth_parts[0]:
-                self._owner_id = auth_parts[0]  # dev_id.app_id format
-                self._auth_token = auth_parts[1]
-            else:
-                self._owner_id = auth_parts[0]  # eu_id format
-                self._auth_token = auth_parts[1]
+        # Basic token validation
+        jwt.decode(self._auth_token, options={"verify_signature": False})
 
-            # Validate token structure (not signature)
-            try:
-                decoded = jwt.decode(self._auth_token, options={"verify_signature": False})
-                self._token_expiry = datetime.fromtimestamp(decoded['exp'], UTC)
-            except jwt.InvalidTokenError as e:
-                raise ValueError(f"Invalid auth token format: {str(e)}")
-
-        except Exception as e:
-            raise AuthenticationError(f"Failed to setup authentication: {str(e)}")
-
-    async def _make_request(
+    async def _request(
         self,
         method: str,
         endpoint: str,
-        data: Dict[str, Any] = None,
-        retry_count: int = 0
+        data: Optional[Dict[str, Any]] = None,
+        files: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Make authenticated HTTP request with retries"""
-        # if datetime.now(UTC) > self._token_expiry:
-        #     raise AuthenticationError("Authentication token has expired")
-        headers = {
-            "X-Owner-ID": self._owner_id,
-            "X-Auth-Token": self._auth_token,
-            "Content-Type": "application/json"
-        }
+        """Make authenticated HTTP request"""
+        headers = {"Authorization": f"Bearer {self._auth_token}"}
+        
+        if not files:
+            headers["Content-Type"] = "application/json"
 
-        try:
-            response = await self._client.request(
-                method,
-                f"{self._base_url}/{endpoint.lstrip('/')}",
-                json=data,
-                headers=headers
-            )
+        response = await self._client.request(
+            method,
+            f"{self._base_url}/{endpoint.lstrip('/')}",
+            json=data if not files else None,
+            files=files,
+            data=data if files else None,
+            headers=headers
+        )
+        response.raise_for_status()
+        return response.json()
 
-            response.raise_for_status()
-            return response.json()
-
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401:
-                raise AuthenticationError("Authentication failed: " + str(e))
-            elif e.response.status_code >= 500 and retry_count < self._max_retries:
-                await asyncio.sleep(2 ** retry_count)  # Exponential backoff
-                return await self._make_request(method, endpoint, data, retry_count + 1)
-            else:
-                raise ConnectionError(f"Request failed: {e.response.text}")
-        except Exception as e:
-            raise ConnectionError(f"Request failed: {str(e)}")
-
-    async def ingest_document(
+    async def ingest_text(
         self,
-        content: Union[str, bytes],
-        metadata: Optional[Dict[str, Any]] = None,
-        filename: Optional[str] = None
-    ) -> str:
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Document:
         """
-        Ingest a document into DataBridge.
+        Ingest a text document into DataBridge.
         
         Args:
-            content: Document content (string or bytes)
-            metadata: Optional document metadata
-            filename: Optional filename - defaults to doc_id if not provided
+            content: Text content to ingest
+            metadata: Optional metadata dictionary
+        
         Returns:
-            Document ID of the ingested document
+            Document: Metadata of the ingested document
+        
+        Example:
+            ```python
+            doc = await db.ingest_text(
+                "Machine learning is fascinating...",
+                metadata={
+                    "title": "ML Introduction",
+                    "category": "tech"
+                }
+            )
+            ```
         """
-        metadata = metadata or {}
-        if filename:
-            metadata["filename"] = filename
-
-        if isinstance(content, bytes):
-            import base64
-            content = base64.b64encode(content).decode()
-            metadata = metadata
-            metadata["is_base64"] = True
-
-        response = await self._make_request(
-            "POST",
-            "ingest",
-            {
-                "content": content,
-                "metadata": metadata
-            }
+        request = IngestTextRequest(
+            content=content,
+            metadata=metadata or {}
         )
 
-        return response["document_id"]
+        response = await self._request(
+            "POST",
+            "ingest/text",
+            request.model_dump()
+        )
+        return Document(**response)
+
+    async def ingest_file(
+        self,
+        file: Union[str, bytes, BinaryIO, Path],
+        filename: str,
+        content_type: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Document:
+        """
+        Ingest a file document into DataBridge.
+        
+        Args:
+            file: File to ingest (path string, bytes, file object, or Path)
+            filename: Name of the file
+            content_type: MIME type (optional, will be guessed if not provided)
+            metadata: Optional metadata dictionary
+        
+        Returns:
+            Document: Metadata of the ingested document
+        
+        Example:
+            ```python
+            # From file path
+            doc = await db.ingest_file(
+                "document.pdf",
+                filename="document.pdf",
+                content_type="application/pdf",
+                metadata={"department": "research"}
+            )
+            
+            # From file object
+            with open("document.pdf", "rb") as f:
+                doc = await db.ingest_file(f, "document.pdf")
+            ```
+        """
+        # Handle different file input types
+        if isinstance(file, (str, Path)):
+            file_path = Path(file)
+            if not file_path.exists():
+                raise ValueError(f"File not found: {file}")
+            file_obj = open(file_path, "rb")
+        elif isinstance(file, bytes):
+            from io import BytesIO
+            file_obj = BytesIO(file)
+        else:
+            file_obj = file
+
+        try:
+            # Prepare multipart form data
+            files = {
+                "file": (filename, file_obj, content_type or "application/octet-stream")
+            }
+            
+            # Add metadata
+            data = {"metadata": json.dumps(metadata or {})}
+
+            response = await self._request(
+                "POST",
+                "ingest/file",
+                data=data,
+                files=files
+            )
+            return Document(**response)
+        finally:
+            # Close file if we opened it
+            if isinstance(file, (str, Path)):
+                file_obj.close()
 
     async def query(
         self,
         query: str,
+        return_type: str = "chunks",
+        filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
-        filters: Optional[Dict[str, Any]] = None
-    ) -> List[QueryResult]:
+        min_score: float = 0.0
+    ) -> Union[List[ChunkResult], List[DocumentResult]]:
         """
         Query documents in DataBridge.
         
         Args:
-            query: Query string
-            k: Number of results to return
+            query: Search query text
+            return_type: Type of results ("chunks" or "documents")
             filters: Optional metadata filters
-
+            k: Number of results (default: 4)
+            min_score: Minimum similarity threshold (default: 0.0)
+        
         Returns:
-            List of QueryResult objects
-        """
-        response = await self._make_request(
-            "POST",
-            "query",
-            {
-                "query": query,
-                "k": k,
-                "filters": filters
-            }
-        )
-
-        return [
-            QueryResult(
-                content=result["content"],
-                doc_id=result["doc_id"],
-                score=result.get("score"),
-                metadata=result.get("metadata", {})
+            List[ChunkResult] or List[DocumentResult] depending on return_type
+        
+        Example:
+            ```python
+            # Query for chunks
+            chunks = await db.query(
+                "What are the key findings?",
+                return_type="chunks",
+                filters={"department": "research"}
             )
-            for result in response["results"]
-        ]
+            
+            # Query for documents
+            docs = await db.query(
+                "machine learning",
+                return_type="documents",
+                k=5
+            )
+            ```
+        """
+        request = {
+            "query": query,
+            "return_type": return_type,
+            "filters": filters,
+            "k": k,
+            "min_score": min_score
+        }
 
-    async def get_documents(self) -> List[Document]:
-        """Get all documents"""
-        response = await self._make_request("GET", "documents")
+        response = await self._request("POST", "query", request)
+        
+        if return_type == "chunks":
+            return [ChunkResult(**r) for r in response]
+        return [DocumentResult(**r) for r in response]
+
+    async def list_documents(
+        self,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Document]:
+        """
+        List accessible documents with pagination.
+        
+        Args:
+            skip: Number of documents to skip
+            limit: Maximum number of documents to return
+        
+        Returns:
+            List[Document]: List of accessible documents
+        
+        Example:
+            ```python
+            # Get first page
+            docs = await db.list_documents(limit=10)
+            
+            # Get next page
+            next_page = await db.list_documents(skip=10, limit=10)
+            ```
+        """
+        response = await self._request(
+            "GET",
+            f"documents?skip={skip}&limit={limit}"
+        )
         return [Document(**doc) for doc in response]
 
-    async def get_document_by_id(self, id: str) -> List[Document]:
-        """Get all documents"""
-        response = await self._make_request("GET", f'document/{id}')
+    async def get_document(self, document_id: str) -> Document:
+        """
+        Get document metadata by ID.
+        
+        Args:
+            document_id: ID of the document
+        
+        Returns:
+            Document: Document metadata
+        
+        Example:
+            ```python
+            doc = await db.get_document("doc_123")
+            print(f"Title: {doc.metadata.get('title')}")
+            ```
+        """
+        response = await self._request("GET", f"documents/{document_id}")
         return Document(**response)
 
     async def close(self):
@@ -221,13 +323,7 @@ class DataBridge:
         await self._client.aclose()
 
     async def __aenter__(self):
-        """Async context manager entry"""
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit"""
         await self.close()
-
-    def __repr__(self) -> str:
-        """Safe string representation"""
-        return f"DataBridge(owner_id='{self._owner_id}')"
