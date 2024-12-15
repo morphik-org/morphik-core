@@ -16,10 +16,9 @@ from core.models.request import IngestTextRequest, QueryRequest
 from core.models.documents import (
     Document,
     DocumentResult,
-    ChunkResult,
-    EntityType
+    ChunkResult
 )
-from core.models.auth import AuthContext
+from core.models.auth import AuthContext, EntityType
 from core.services.document_service import DocumentService
 from core.config import get_settings
 from core.database.mongo_database import MongoDatabase
