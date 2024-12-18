@@ -2,65 +2,103 @@
 
 DataBridge is an extensible, open-source document processing and retrieval system designed for building document-based applications. It provides a modular architecture for integrating document parsing, embedding generation, and vector search capabilities.
 
+## Table of Contents
+- [Features](#features)
+- [Starting the Server](#starting-the-server)
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+  - [Current Integrations](#current-integrations)
+  - [Adding New Components](#adding-new-components)
+- [API Documentation](#api-documentation)
+  - [Key Endpoints](#key-endpoints)
+- [License](#license)
+- [Contributing](#contributing)
+
 ## Features
 
-- 🔌 **Extensible Architecture**: Built with modularity in mind - easily extend or replace any component:
-  - Document Parsing: Currently integrated with Unstructured API
-  - Vector Store: Currently using MongoDB Atlas
-  - Embedding Model: Currently using OpenAI
-  - Storage: Currently using AWS S3
+- 🔌 **Extensible Architecture**: Modular design for easy component extension or replacement
 - 🔍 **Vector Search**: Semantic search capabilities
 - 🔐 **Authentication**: JWT-based auth with developer and end-user access modes
-- 📊 **Metadata**: Rich metadata filtering and organization
+- 📊 **Components**: Document Parsing (Unstructured API), Vector Store (MongoDB Atlas), Embedding Model (OpenAI), Storage (AWS S3)
 - 🚀 **Python SDK**: Simple client SDK for quick integration
 
+## Starting the Server
+
+1. Clone the repository:
+```bash
+git clone https://github.com/databridge-org/databridge-core.git
+```
+
+2. Setup your python environment (Python 3.12 supported, but other versions may work):
+```bash
+cd databridge-core
+python -m venv .venv
+source .venv/bin/activate
+```
+
+3. Install the required dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+4. Set up your environment variables, using the `.env.example` file as a reference, and creating a `.env` file in the project directory:
+
+```bash
+cp .env.example .env
+```
+
+<!-- TODO: Add instructions for setting up the environment variables, like setting up monogo account, openai account, etc. -->
+
+5. Generate a local URI:
+```bash
+python generate_local_uri.py
+```
+Copy the output and save it for use with the client SDK.
+
+6. Start the server:
+```bash
+python start_server.py
+```
+*Tip*: Visit `http://localhost:8000/docs` for the complete OpenAPI documentation.
+
 ## Quick Start
+
+Ensure the server is running, then use the SDK to ingest and query documents.
 
 1. Install the SDK:
 ```bash
 pip install databridge-client
 ```
-
-2. Set up your environment variables:
-```env
-MONGODB_URI=your_mongodb_connection_string
-OPENAI_API_KEY=your_openai_api_key
-UNSTRUCTURED_API_KEY=your_unstructured_api_key
-JWT_SECRET_KEY=your_jwt_secret
-AWS_ACCESS_KEY=your_aws_access_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-```
-
-3. Start the server:
-```bash
-python start_server.py
-```
-
-4. Use the SDK:
+2. Use the SDK:
 ```python
 import asyncio
 from databridge import DataBridge
 
 async def main():
     # Initialize client
-    db = DataBridge("databridge://owner_id:auth_token@your-domain.com")
+    db = DataBridge("your_databridge_uri_here", is_local=True)
+    files = ["annual_report_2022.pdf", "marketing_strategy.docx" ,"product_launch_presentation.pptx", "company_logo.png"]
     
-    # Ingest a document
-    doc_id = await db.ingest_document(
-        content="Your document content",
-        metadata={"title": "My Document"}
-    )
+    for file in files:
+      await db.ingest_file(
+          file=file,
+          file_name=file,
+          metadata={"category": "Company Related"} # Optionally add any metadata
+      )
     
     # Query documents
     results = await db.query(
-        query="What is...",
-        k=4  # Number of results
+        query="What did our target market say about our product?",
+        return_type="chunks",
+        filters={"category": "Company Related"}
     )
-    
-    await db.close()
+
+    print(results)
 
 asyncio.run(main())
 ```
+
+For other examples <!-- -like how to make xyz in 10 lines of code- --> checkout our [documentation](https://databridge.gitbook.io/databridge-docs)!
 
 ## Architecture
 

@@ -46,18 +46,23 @@ settings = get_settings()
 
 # Initialize components
 database = MongoDatabase(
-    **settings.get_mongodb_settings()
+    uri=settings.MONGODB_URI,
+    db_name=settings.DATABRIDGE_DB,
+    collection_name=settings.DOCUMENTS_COLLECTION
 )
 
 vector_store = MongoDBAtlasVectorStore(
-    settings.MONGODB_URI,
-    settings.DATABRIDGE_DB,
-    settings.CHUNKS_COLLECTION,
-    settings.VECTOR_INDEX_NAME
+    uri=settings.MONGODB_URI,
+    database_name=settings.DATABRIDGE_DB,
+    collection_name=settings.CHUNKS_COLLECTION,
+    index_name=settings.VECTOR_INDEX_NAME
 )
 
 storage = S3Storage(
-    **settings.get_storage_settings()
+    aws_access_key=settings.AWS_ACCESS_KEY,
+    aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
+    region_name=settings.AWS_REGION,
+    default_bucket=settings.S3_BUCKET
 )
 
 parser = UnstructuredAPIParser(

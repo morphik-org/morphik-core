@@ -225,6 +225,7 @@ class DocumentService:
             raise Exception("Failed to store chunk embeddings")
         logger.debug("Stored chunk embeddings in vector store")
 
+        doc.chunk_ids = result
         # Store document metadata
         if not await self.db.store_document(doc):
             raise Exception("Failed to store document metadata")

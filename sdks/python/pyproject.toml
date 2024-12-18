@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "databridge-client"
-version = "0.1.2"
+version = "0.1.4"
 authors = [
     { name = "DataBridge", email = "databridgesuperuser@gmail.com" },
 ]
@@ -14,6 +14,7 @@ requires-python = ">=3.8"
 dependencies = [
     "httpx>=0.24.0",
     "pyjwt>=2.0.0",
+    "pydantic==2.10.3",
 ]
 
 [tool.hatch.build.targets.wheel]

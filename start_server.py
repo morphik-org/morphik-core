@@ -15,6 +15,7 @@ def main():
         "core.api:app",
         host=settings.HOST,
         port=settings.PORT,
+        loop="asyncio",
         # reload=settings.RELOAD
     )
 

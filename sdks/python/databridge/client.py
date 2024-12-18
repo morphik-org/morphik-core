@@ -1,9 +1,9 @@
 import json
-from typing import Dict, Any, List, Optional, Union, BinaryIO
+from typing import Dict, Any, List, Literal, Optional, Union, BinaryIO
 import httpx
 from urllib.parse import urlparse
 import jwt
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from pathlib import Path
 from io import BytesIO
 
@@ -38,12 +38,27 @@ class ChunkResult(BaseModel):
     download_url: Optional[str] = None
 
 
+class DocumentContent(BaseModel):
+    """Represents either a URL or content string"""
+    type: Literal["url", "string"]
+    value: str
+    filename: Optional[str] = Field(None, description="Filename when type is url")
+
+    @field_validator('filename')
+    def filename_only_for_url(cls, v, values):
+        if values.data.get('type') == 'string' and v is not None:
+            raise ValueError('filename can only be set when type is url')
+        if values.data.get('type') == 'url' and v is None:
+            raise ValueError('filename is required when type is url')
+        return v
+
+
 class DocumentResult(BaseModel):
     """Query result at document level"""
     score: float
     document_id: str
     metadata: Dict[str, Any]
-    content: Dict[str, str]
+    content: DocumentContent
 
 
 class DataBridge:
@@ -68,9 +83,14 @@ class DataBridge:
         ```
     """
 
-    def __init__(self, uri: str, timeout: int = 30):
+    def __init__(self, uri: str, timeout: int = 30, is_local: bool = False):
         self._timeout = timeout
-        self._client = httpx.AsyncClient(timeout=timeout)
+        self._client = httpx.AsyncClient(timeout=timeout) if not is_local else httpx.AsyncClient(
+            timeout=timeout,
+            verify=False,  # Disable SSL for localhost
+            http2=False    # Force HTTP/1.1
+        )
+        self._is_local = is_local
         self._setup_auth(uri)
 
     def _setup_auth(self, uri: str) -> None:
@@ -84,7 +104,7 @@ class DataBridge:
         self._owner_id, self._auth_token = auth.split(':')
             
         # Set base URL
-        self._base_url = f"{'http' if 'localhost' in host else 'https'}://{host}"
+        self._base_url = f"{'http' if self._is_local else 'https'}://{host}"
 
         # Basic token validation
         jwt.decode(self._auth_token, options={"verify_signature": False})

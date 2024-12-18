@@ -53,62 +53,6 @@ class Settings(BaseSettings):
     PORT: int = Field(8000, env="PORT")
     RELOAD: bool = Field(False, env="RELOAD")
 
-    def get_mongodb_settings(self) -> Dict[str, Any]:
-        """Get MongoDB related settings."""
-        return {
-            "uri": self.MONGODB_URI,
-            "db_name": self.DATABRIDGE_DB,
-            "collection_name": self.DOCUMENTS_COLLECTION
-        }
-
-    def get_vector_store_settings(self) -> Dict[str, Any]:
-        """Get vector store related settings."""
-        return {
-            "uri": self.MONGODB_URI,
-            "database_name": self.DATABRIDGE_DB,
-            "collection_name": self.CHUNKS_COLLECTION,
-            "index_name": self.VECTOR_INDEX_NAME
-        }
-
-    def get_storage_settings(self) -> Dict[str, Any]:
-        """Get storage related settings."""
-        return {
-            "aws_access_key": self.AWS_ACCESS_KEY,
-            "aws_secret_key": self.AWS_SECRET_ACCESS_KEY,
-            "region_name": self.AWS_REGION,
-            "default_bucket": self.S3_BUCKET
-        }
-
-    def get_parser_settings(self) -> Dict[str, Any]:
-        """Get document parser settings."""
-        return {
-            "api_key": self.UNSTRUCTURED_API_KEY,
-            "chunk_size": self.CHUNK_SIZE,
-            "chunk_overlap": self.CHUNK_OVERLAP
-        }
-
-    def get_embedding_settings(self) -> Dict[str, Any]:
-        """Get embedding model settings."""
-        return {
-            "api_key": self.OPENAI_API_KEY,
-            "model_name": self.EMBEDDING_MODEL
-        }
-
-    def get_server_settings(self) -> Dict[str, Any]:
-        """Get server related settings."""
-        return {
-            "host": self.HOST,
-            "port": self.PORT,
-            "reload": self.RELOAD,
-        }
-
-    def get_auth_settings(self) -> Dict[str, Any]:
-        """Get authentication related settings."""
-        return {
-            "secret_key": self.JWT_SECRET_KEY,
-            "algorithm": self.JWT_ALGORITHM
-        }
-
     class Config:
         env_file = ".env"
         case_sensitive = True

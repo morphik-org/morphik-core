@@ -33,7 +33,6 @@ class UnstructuredAPIParser(BaseParser):
         # Parse with unstructured
         loader = UnstructuredLoader(
             file=io.BytesIO(file),
-            content_type=content_type,
             partition_via_api=True,
             api_key=self.api_key,
             chunking_strategy="by_title"
