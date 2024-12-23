@@ -66,7 +66,9 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
                     documents, ordered=False
                 )
                 return len(result.inserted_ids) > 0, [str(id) for id in result.inserted_ids]
-            return False, []
+            else:
+                logger.error(f"No documents to store - here is the input: {chunks}")
+                return False, []
 
         except PyMongoError as e:
             logger.error(f"Error storing embeddings: {str(e)}")

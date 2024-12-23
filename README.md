@@ -47,15 +47,18 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-<!-- TODO: Add instructions for setting up the environment variables, like setting up monogo account, openai account, etc. -->
+5. Run the quick setup script to create the database, s3 bucket, and vector index:
+```bash
+python quick_setup.py
+```
 
-5. Generate a local URI:
+6. Generate a local URI:
 ```bash
 python generate_local_uri.py
 ```
 Copy the output and save it for use with the client SDK.
 
-6. Start the server:
+7. Start the server:
 ```bash
 python start_server.py
 ```

@@ -158,24 +158,20 @@ class MongoDatabase(BaseDatabase):
         filters: Optional[Dict[str, Any]] = None
     ) -> List[str]:
         """Find document IDs matching filters and access permissions."""
-        try:
-            # Build query
-            auth_filter = self._build_access_filter(auth)
-            metadata_filter = self._build_metadata_filter(filters)
-            query = {"$and": [auth_filter, metadata_filter]} if metadata_filter else auth_filter
+        # Build query
+        auth_filter = self._build_access_filter(auth)
+        metadata_filter = self._build_metadata_filter(filters)
+        query = {"$and": [auth_filter, metadata_filter]} if metadata_filter else auth_filter
 
-            # Get matching document IDs
-            cursor = self.collection.find(query, {"external_id": 1})
+        # Get matching document IDs
+        cursor = self.collection.find(query, {"external_id": 1})
 
-            document_ids = []
-            async for doc in cursor:
-                document_ids.append(doc["external_id"])
+        document_ids = []
+        async for doc in cursor:
+            document_ids.append(doc["external_id"])
 
-            return document_ids
+        return document_ids
 
-        except PyMongoError as e:
-            logger.error(f"Error finding documents: {str(e)}")
-            return []
 
     async def check_access(
         self,
