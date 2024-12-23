@@ -1,77 +1,27 @@
-import json
-from typing import Dict, Any, List, Literal, Optional, Union, BinaryIO
-import httpx
-from urllib.parse import urlparse
-import jwt
-from pydantic import BaseModel, Field, field_validator
-from pathlib import Path
 from io import BytesIO
+import json
+from pathlib import Path
+from typing import Dict, Any, List, Optional, Union, BinaryIO
+from urllib.parse import urlparse
+
+import httpx
+import jwt
+
+from .models import Document, IngestTextRequest, ChunkResult, DocumentResult
 
 
-class IngestTextRequest(BaseModel):
-    """Request model for text ingestion"""
-    content: str
-    metadata: Dict[str, Any] = {}
-
-
-class Document(BaseModel):
-    """Document metadata model"""
-    external_id: str
-    content_type: str
-    filename: Optional[str] = None
-    metadata: Dict[str, Any] = {}
-    storage_info: Dict[str, str] = {}
-    system_metadata: Dict[str, Any] = {}
-    access_control: Dict[str, Any] = {}
-    chunk_ids: List[str] = []
-
-
-class ChunkResult(BaseModel):
-    """Query result at chunk level"""
-    content: str
-    score: float
-    document_id: str
-    chunk_number: int
-    metadata: Dict[str, Any]
-    content_type: str
-    filename: Optional[str] = None
-    download_url: Optional[str] = None
-
-
-class DocumentContent(BaseModel):
-    """Represents either a URL or content string"""
-    type: Literal["url", "string"]
-    value: str
-    filename: Optional[str] = Field(None, description="Filename when type is url")
-
-    @field_validator('filename')
-    def filename_only_for_url(cls, v, values):
-        if values.data.get('type') == 'string' and v is not None:
-            raise ValueError('filename can only be set when type is url')
-        if values.data.get('type') == 'url' and v is None:
-            raise ValueError('filename is required when type is url')
-        return v
-
-
-class DocumentResult(BaseModel):
-    """Query result at document level"""
-    score: float
-    document_id: str
-    metadata: Dict[str, Any]
-    content: DocumentContent
-
-
-class DataBridge:
+class AsyncDataBridge:
     """
     DataBridge client for document operations.
     
     Args:
         uri (str): DataBridge URI in the format "databridge://<owner_id>:<token>@<host>"
         timeout (int, optional): Request timeout in seconds. Defaults to 30.
+        is_local (bool, optional): Whether to connect to a local server. Defaults to False.
     
     Examples:
         ```python
-        async with DataBridge("databridge://owner_id:token@api.databridge.ai") as db:
+        async with AsyncDataBridge("databridge://owner_id:token@api.databridge.ai") as db:
             # Ingest text
             doc = await db.ingest_text(
                 "Sample content",

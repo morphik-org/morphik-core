@@ -1,10 +1,15 @@
-from .client import DataBridge
-from .exceptions import DataBridgeError, AuthenticationError
+"""
+DataBridge Python SDK for document ingestion and querying.
+"""
 
-__version__ = "0.1.4"
-
+from .sync import DataBridge
+from .async_ import AsyncDataBridge
+from .models import Document, IngestTextRequest
 __all__ = [
     "DataBridge",
-    "DataBridgeError",
-    "AuthenticationError",
+    "AsyncDataBridge",
+    "Document",
+    "IngestTextRequest",
 ]
+
+__version__ = "0.1.5"
