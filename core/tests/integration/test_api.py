@@ -260,71 +260,6 @@ async def test_auth_insufficient_permissions(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_query_chunks(client: AsyncClient):
-    """Test querying document chunks"""
-    # First ingest a document to query
-    doc_id = await test_ingest_text_document(
-        client,
-        content="The quick brown fox jumps over the lazy dog"
-    )
-
-    headers = create_auth_header()
-    # Sleep to allow time for document to be indexed
-    await asyncio.sleep(1)
-
-    response = await client.post(
-        "/query",
-        json={
-            "query": "jumping fox",
-            "return_type": "chunks",
-            "k": 1
-        },
-        headers=headers
-    )
-    logger.info(f"Query response: {response.json()}")
-
-    assert response.status_code == 200
-    results = list(response.json())
-    logger.info(f"Query results: {results}")
-    assert len(results) == 1
-    assert results[0]["score"] > 0.5
-    assert results[0]["document_id"] == doc_id
-
-
-@pytest.mark.asyncio
-async def test_query_documents(client: AsyncClient):
-    """Test querying for full documents"""
-    # First ingest a document to query
-    content = (
-        "Headaches can significantly impact daily life and wellbeing. "
-        "Common triggers include stress, dehydration, and poor sleep habits. "
-        "While over-the-counter pain relievers may provide temporary relief, "
-        "it's important to identify and address the root causes. "
-        "Maintaining good health through proper nutrition, regular exercise, "
-        "and stress management can help prevent chronic headaches."
-    )
-    doc_id = await test_ingest_text_document(client, content=content)
-
-    headers = create_auth_header()
-    response = await client.post(
-        "/query",
-        json={
-            "query": "Headaches, dehydration",
-            "return_type": "documents",
-            "filters": {"test": True}
-        },
-        headers=headers
-    )
-
-    assert response.status_code == 200
-    results = list(response.json())
-    assert len(results) > 0
-    assert results[0]["document_id"] == doc_id
-    assert "score" in results[0]
-    assert "metadata" in results[0]
-
-
-@pytest.mark.asyncio
 async def test_list_documents(client: AsyncClient):
     """Test listing documents"""
     # First ingest some documents
@@ -367,14 +302,138 @@ async def test_invalid_document_id(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_invalid_query_params(client: AsyncClient):
-    """Test error handling for invalid query parameters"""
+async def test_search_chunks(client: AsyncClient):
+    """Test searching document chunks"""
+    # First ingest a document to search
+    doc_id = await test_ingest_text_document(
+        client,
+        content="The quick brown fox jumps over the lazy dog"
+    )
+
+    headers = create_auth_header()
+    # Sleep to allow time for document to be indexed
+    await asyncio.sleep(1)
+
+    response = await client.post(
+        "/search/chunks",
+        json={
+            "query": "jumping fox",
+            "k": 1,
+            "min_score": 0.0
+        },
+        headers=headers
+    )
+
+    assert response.status_code == 200
+    results = list(response.json())
+    assert len(results) == 1
+    assert results[0]["score"] > 0.5
+    assert results[0]["document_id"] == doc_id
+
+
+@pytest.mark.asyncio
+async def test_search_docs(client: AsyncClient):
+    """Test searching for full documents"""
+    # First ingest a document to search
+    content = (
+        "Headaches can significantly impact daily life and wellbeing. "
+        "Common triggers include stress, dehydration, and poor sleep habits. "
+        "While over-the-counter pain relievers may provide temporary relief, "
+        "it's important to identify and address the root causes. "
+        "Maintaining good health through proper nutrition, regular exercise, "
+        "and stress management can help prevent chronic headaches."
+    )
+    doc_id = await test_ingest_text_document(client, content=content)
+
+    headers = create_auth_header()
+    response = await client.post(
+        "/search/docs",
+        json={
+            "query": "Headaches, dehydration",
+            "filters": {"test": True}
+        },
+        headers=headers
+    )
+
+    assert response.status_code == 200
+    results = list(response.json())
+    assert len(results) > 0
+    assert results[0]["document_id"] == doc_id
+    assert "score" in results[0]
+    assert "metadata" in results[0]
+
+
+@pytest.mark.asyncio
+async def test_query_completion(client: AsyncClient):
+    """Test generating completions from context"""
+    # First ingest a document to use as context
+    content = (
+        "The benefits of exercise are numerous. Regular physical activity "
+        "can improve cardiovascular health, strengthen muscles, enhance mental "
+        "wellbeing, and help maintain a healthy weight. Studies show that "
+        "even moderate exercise like walking can significantly reduce the risk "
+        "of various health conditions."
+    )
+    await test_ingest_text_document(client, content=content)
+
     headers = create_auth_header()
     response = await client.post(
         "/query",
         json={
+            "query": "What are the main benefits of exercise?",
+            "k": 2,
+            "temperature": 0.7,
+            "max_tokens": 100
+        },
+        headers=headers
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert "completion" in result
+    assert "usage" in result
+    assert len(result["completion"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_invalid_search_params(client: AsyncClient):
+    """Test error handling for invalid search parameters"""
+    headers = create_auth_header()
+
+    # Test empty query
+    response = await client.post(
+        "/search/chunks",
+        json={
             "query": "",  # Empty query
+            "k": 1
+        },
+        headers=headers
+    )
+    assert response.status_code == 422
+
+    # Test invalid k
+    response = await client.post(
+        "/search/docs",
+        json={
+            "query": "test",
             "k": -1  # Invalid k
+        },
+        headers=headers
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_invalid_completion_params(client: AsyncClient):
+    """Test error handling for invalid completion parameters"""
+    headers = create_auth_header()
+
+    # Test empty query
+    response = await client.post(
+        "/query",
+        json={
+            "query": "",  # Empty query
+            "temperature": 2.0  # Invalid temperature
         },
         headers=headers
     )

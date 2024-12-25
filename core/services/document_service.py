@@ -1,24 +1,18 @@
-from typing import Any, Dict, List, Union
-import logging
-from fastapi import UploadFile
 import base64
+from typing import Dict, Any, List, Optional
+from fastapi import UploadFile
 
+from core.models.request import IngestTextRequest
+from ..models.documents import Document, DocumentChunk, ChunkResult, DocumentContent, DocumentResult
+from ..models.auth import AuthContext
 from core.database.base_database import BaseDatabase
-from core.embedding_model.base_embedding_model import BaseEmbeddingModel
-from core.models.request import IngestTextRequest, QueryRequest
-from core.parser.base_parser import BaseParser
 from core.storage.base_storage import BaseStorage
 from core.vector_store.base_vector_store import BaseVectorStore
-from ..models.documents import (
-    Document,
-    DocumentChunk,
-    ChunkResult,
-    DocumentContent,
-    DocumentResult,
-    QueryReturnType
-)
-from ..models.auth import AuthContext
-
+from core.embedding_model.base_embedding_model import BaseEmbeddingModel
+from core.parser.base_parser import BaseParser
+from core.completion.base_completion import BaseCompletionModel
+from core.completion.base_completion import CompletionRequest, CompletionResponse
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +24,91 @@ class DocumentService:
         vector_store: BaseVectorStore,
         storage: BaseStorage,
         parser: BaseParser,
-        embedding_model: BaseEmbeddingModel
+        embedding_model: BaseEmbeddingModel,
+        completion_model: BaseCompletionModel
     ):
         self.db = database
         self.vector_store = vector_store
         self.storage = storage
         self.parser = parser
         self.embedding_model = embedding_model
+        self.completion_model = completion_model
+
+    async def search_chunks(
+        self,
+        query: str,
+        auth: AuthContext,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 4,
+        min_score: float = 0.0
+    ) -> List[ChunkResult]:
+        """Search for relevant chunks."""
+        # Get embedding for query
+        query_embedding = await self.embedding_model.embed_for_query(query)
+        logger.info("Generated query embedding")
+
+        # Find authorized documents
+        doc_ids = await self.db.find_authorized_and_filtered_documents(auth, filters)
+        if not doc_ids:
+            logger.info("No authorized documents found")
+            return []
+        logger.info(f"Found {len(doc_ids)} authorized documents")
+
+        # Search chunks with vector similarity
+        chunks = await self.vector_store.query_similar(
+            query_embedding,
+            k=k,
+            doc_ids=doc_ids,
+        )
+        logger.info(f"Found {len(chunks)} similar chunks")
+
+        # Create and return chunk results
+        results = await self._create_chunk_results(auth, chunks)
+        logger.info(f"Returning {len(results)} chunk results")
+        return results
+
+    async def search_docs(
+        self,
+        query: str,
+        auth: AuthContext,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 4,
+        min_score: float = 0.0
+    ) -> List[DocumentResult]:
+        """Search for relevant documents."""
+        # Get chunks first
+        chunks = await self.search_chunks(query, auth, filters, k, min_score)
+
+        # Convert to document results
+        results = await self._create_document_results(auth, chunks)
+        logger.info(f"Returning {len(results)} document results")
+        return results
+
+    async def query(
+        self,
+        query: str,
+        auth: AuthContext,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 4,
+        min_score: float = 0.0,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None
+    ) -> CompletionResponse:
+        """Generate completion using relevant chunks as context."""
+        # Get relevant chunks
+        chunks = await self.search_chunks(query, auth, filters, k, min_score)
+        chunk_contents = [chunk.content for chunk in chunks]
+
+        # Generate completion
+        request = CompletionRequest(
+            query=query,
+            context_chunks=chunk_contents,
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
+
+        response = await self.completion_model.complete(request)
+        return response
 
     async def ingest_text(
         self,
@@ -155,44 +227,6 @@ class DocumentService:
         logger.info(f"Successfully stored file document {doc.external_id}")
 
         return doc
-
-    async def query(
-        self,
-        request: QueryRequest,
-        auth: AuthContext
-    ) -> Union[List[ChunkResult], List[DocumentResult]]:
-        """Query documents with specified return type."""
-        # TODO: k does not make sense for Documents, it's about chunks. 
-        # We should also look into document ordering. Figure these out.
-        
-        # 1. Get embedding for query
-        query_embedding = await self.embedding_model.embed_for_query(request.query)
-        logger.info("Generated query embedding")
-
-        # 2. Find authorized documents
-        doc_ids = await self.db.find_authorized_and_filtered_documents(auth, request.filters)
-        if not doc_ids:
-            logger.info("No authorized documents found")
-            return []
-        logger.info(f"Found {len(doc_ids)} authorized documents")
-
-        # 3. Search chunks with vector similarity
-        chunks = await self.vector_store.query_similar(
-            query_embedding,
-            k=request.k,
-            doc_ids=doc_ids,
-        )
-        logger.info(f"Found {len(chunks)} similar chunks")
-
-        # 4. Return results in requested format
-        if request.return_type == QueryReturnType.CHUNKS:
-            results = await self._create_chunk_results(auth, chunks)
-            logger.info(f"Returning {len(results)} chunk results")
-            return results
-        else:
-            results = await self._create_document_results(auth, chunks)
-            logger.info(f"Returning {len(results)} document results")
-            return results
 
     def _create_chunk_objects(
         self,

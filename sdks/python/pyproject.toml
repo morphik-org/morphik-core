@@ -15,6 +15,7 @@ dependencies = [
     "httpx>=0.24.0",
     "pyjwt>=2.0.0",
     "pydantic==2.10.3",
+    "requests>=2.32.3",
 ]
 
 [tool.hatch.build.targets.wheel]
