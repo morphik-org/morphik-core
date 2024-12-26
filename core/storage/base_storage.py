@@ -6,10 +6,12 @@ class BaseStorage(ABC):
     """Base interface for storage providers."""
 
     @abstractmethod
-    async def upload_file(self,
-                          file: Union[str, bytes, BinaryIO],
-                          key: str,
-                          content_type: Optional[str] = None) -> Tuple[str, str]:
+    async def upload_file(
+        self,
+        file: Union[str, bytes, BinaryIO],
+        key: str,
+        content_type: Optional[str] = None,
+    ) -> Tuple[str, str]:
         """
         Upload a file to storage.
 
@@ -24,10 +26,9 @@ class BaseStorage(ABC):
         pass
 
     @abstractmethod
-    async def upload_from_base64(self,
-                                 content: str,
-                                 key: str,
-                                 content_type: Optional[str] = None) -> Tuple[str, str]:
+    async def upload_from_base64(
+        self, content: str, key: str, content_type: Optional[str] = None
+    ) -> Tuple[str, str]:
         """
         Upload base64 encoded content.
 
@@ -56,7 +57,9 @@ class BaseStorage(ABC):
         pass
 
     @abstractmethod
-    async def get_download_url(self, bucket: str, key: str, expires_in: int = 3600) -> str:
+    async def get_download_url(
+        self, bucket: str, key: str, expires_in: int = 3600
+    ) -> str:
         """
         Get temporary download URL.
 

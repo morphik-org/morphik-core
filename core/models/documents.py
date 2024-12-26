@@ -15,6 +15,7 @@ class QueryReturnType(str, Enum):
 
 class Document(BaseModel):
     """Represents a document stored in MongoDB documents collection"""
+
     external_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     owner: Dict[str, str]
     content_type: str
@@ -25,23 +26,20 @@ class Document(BaseModel):
         default_factory=lambda: {
             "created_at": datetime.now(UTC),
             "updated_at": datetime.now(UTC),
-            "version": 1
+            "version": 1,
         }
     )
     access_control: Dict[str, List[str]] = Field(
-        default_factory=lambda: {
-            "readers": [],
-            "writers": [],
-            "admins": []
-        }
+        default_factory=lambda: {"readers": [], "writers": [], "admins": []}
     )
     chunk_ids: List[str] = Field(default_factory=list)
 
 
 class DocumentChunk(BaseModel):
     """Represents a chunk stored in VectorStore"""
+
     document_id: str  # external_id of parent document
-    # TODO: This might be suboptimal due to storage size. consider moving to separate store. 
+    # TODO: This might be suboptimal due to storage size. consider moving to separate store.
     content: str
     embedding: List[float]
     chunk_number: int
@@ -52,6 +50,7 @@ class DocumentChunk(BaseModel):
 
 class ChunkResult(BaseModel):
     """Query result at chunk level"""
+
     content: str
     score: float
     document_id: str  # external_id
@@ -64,23 +63,25 @@ class ChunkResult(BaseModel):
 
 class DocumentContent(BaseModel):
     """Represents either a URL or content string"""
+
     type: Literal["url", "string"]
     value: str
     filename: Optional[str] = Field(None, description="Filename when type is url")
 
-    @field_validator('filename')
+    @field_validator("filename")
     def filename_only_for_url(cls, v, values):
         logger.debug(f"Value looks like: {values}")
-        if values.data.get('type') == 'string' and v is not None:
-            raise ValueError('filename can only be set when type is url')
-        if values.data.get('type') == 'url' and v is None:
-            raise ValueError('filename is required when type is url')
+        if values.data.get("type") == "string" and v is not None:
+            raise ValueError("filename can only be set when type is url")
+        if values.data.get("type") == "url" and v is None:
+            raise ValueError("filename is required when type is url")
         return v
 
 
 class DocumentResult(BaseModel):
     """Query result at document level"""
-    score: float        # Highest chunk score
-    document_id: str    # external_id
+
+    score: float  # Highest chunk score
+    document_id: str  # external_id
     metadata: Dict[str, Any]
     content: DocumentContent

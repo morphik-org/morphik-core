@@ -20,6 +20,9 @@ chunk_size = 1000
 chunk_overlap = 200
 default_k = 4
 
+[video_processing]
+frame_sample_rate = 120
+
 [server]
 host = "localhost"
 port = 8000

@@ -8,6 +8,7 @@ class OpenAICompletionModel(BaseCompletionModel):
         self.model_name = model_name
         # Import here to avoid dependency if not using OpenAI
         from openai import AsyncOpenAI
+
         self.client = AsyncOpenAI()
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
@@ -15,8 +16,14 @@ class OpenAICompletionModel(BaseCompletionModel):
         # Construct prompt with context
         context = "\n\n".join(request.context_chunks)
         messages = [
-            {"role": "system", "content": "You are a helpful assistant. Use the provided context to answer questions accurately."},
-            {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {request.query}"}
+            {
+                "role": "system",
+                "content": "You are a helpful assistant. Use the provided context to answer questions accurately.",
+            },
+            {
+                "role": "user",
+                "content": f"Context:\n{context}\n\nQuestion: {request.query}",
+            },
         ]
 
         # Call OpenAI API
@@ -32,6 +39,6 @@ class OpenAICompletionModel(BaseCompletionModel):
             usage={
                 "prompt_tokens": response.usage.prompt_tokens,
                 "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens
-            }
+                "total_tokens": response.usage.total_tokens,
+            },
         )

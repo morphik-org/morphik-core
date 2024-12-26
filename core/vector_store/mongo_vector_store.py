@@ -17,7 +17,7 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
         uri: str,
         database_name: str,
         collection_name: str = "document_chunks",
-        index_name: str = "vector_index"
+        index_name: str = "vector_index",
     ):
         """Initialize MongoDB connection for vector storage."""
         self.client = AsyncIOMotorClient(uri)
@@ -41,7 +41,9 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
             logger.error(f"Error initializing vector store indexes: {str(e)}")
             return False
 
-    async def store_embeddings(self, chunks: List[DocumentChunk]) -> Tuple[bool, List[str]]:
+    async def store_embeddings(
+        self, chunks: List[DocumentChunk]
+    ) -> Tuple[bool, List[str]]:
         """Store document chunks with their embeddings."""
         try:
             if not chunks:
@@ -52,7 +54,7 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
             for chunk in chunks:
                 doc = chunk.model_dump()
                 # Ensure we have required fields
-                if not doc.get('embedding'):
+                if not doc.get("embedding"):
                     logger.error(
                         f"Missing embedding for chunk "
                         f"{chunk.document_id}-{chunk.chunk_number}"
@@ -62,10 +64,10 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
 
             if documents:
                 # Use ordered=False to continue even if some inserts fail
-                result = await self.collection.insert_many(
-                    documents, ordered=False
-                )
-                return len(result.inserted_ids) > 0, [str(id) for id in result.inserted_ids]
+                result = await self.collection.insert_many(documents, ordered=False)
+                return len(result.inserted_ids) > 0, [
+                    str(id) for id in result.inserted_ids
+                ]
             else:
                 logger.error(f"No documents to store - here is the input: {chunks}")
                 return False, []
@@ -98,9 +100,9 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
                         "index": self.index_name,
                         "path": "embedding",
                         "queryVector": query_embedding,
-                        "numCandidates": k*40,  # Get more candidates
+                        "numCandidates": k * 40,  # Get more candidates
                         "limit": k,
-                        "filter": {"document_id": {"$in": doc_ids}} if doc_ids else {}
+                        "filter": {"document_id": {"$in": doc_ids}} if doc_ids else {},
                     }
                 },
                 {
@@ -110,9 +112,9 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
                         "chunk_number": 1,
                         "content": 1,
                         "metadata": 1,
-                        "_id": 0
+                        "_id": 0,
                     }
-                }
+                },
             ]
 
             # Execute search
@@ -126,7 +128,7 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
                     content=result["content"],
                     embedding=[],  # Don't send embeddings back
                     metadata=result.get("metadata", {}),
-                    score=result.get("score", 0.0)
+                    score=result.get("score", 0.0),
                 )
                 chunks.append(chunk)
 

@@ -12,6 +12,8 @@ class BaseParser(ABC):
         pass
 
     @abstractmethod
-    async def parse_file(self, file: Union[UploadFile, bytes], content_type: str) -> List[str]:
+    async def parse_file(
+        self, file: Union[UploadFile, bytes], content_type: str
+    ) -> List[str]:
         """Parse file content into text chunks"""
         pass

@@ -3,7 +3,13 @@ from typing import Dict, Any, List, Optional
 from fastapi import UploadFile
 
 from core.models.request import IngestTextRequest
-from ..models.documents import Document, DocumentChunk, ChunkResult, DocumentContent, DocumentResult
+from ..models.documents import (
+    Document,
+    DocumentChunk,
+    ChunkResult,
+    DocumentContent,
+    DocumentResult,
+)
 from ..models.auth import AuthContext
 from core.database.base_database import BaseDatabase
 from core.storage.base_storage import BaseStorage
@@ -25,7 +31,7 @@ class DocumentService:
         storage: BaseStorage,
         parser: BaseParser,
         embedding_model: BaseEmbeddingModel,
-        completion_model: BaseCompletionModel
+        completion_model: BaseCompletionModel,
     ):
         self.db = database
         self.vector_store = vector_store
@@ -40,7 +46,7 @@ class DocumentService:
         auth: AuthContext,
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
-        min_score: float = 0.0
+        min_score: float = 0.0,
     ) -> List[ChunkResult]:
         """Retrieve relevant chunks."""
         # Get embedding for query
@@ -73,7 +79,7 @@ class DocumentService:
         auth: AuthContext,
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
-        min_score: float = 0.0
+        min_score: float = 0.0,
     ) -> List[DocumentResult]:
         """Retrieve relevant documents."""
         # Get chunks first
@@ -92,7 +98,7 @@ class DocumentService:
         k: int = 4,
         min_score: float = 0.0,
         max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None
+        temperature: Optional[float] = None,
     ) -> CompletionResponse:
         """Generate completion using relevant chunks as context."""
         # Get relevant chunks
@@ -104,16 +110,14 @@ class DocumentService:
             query=query,
             context_chunks=chunk_contents,
             max_tokens=max_tokens,
-            temperature=temperature
+            temperature=temperature,
         )
 
         response = await self.completion_model.complete(request)
         return response
 
     async def ingest_text(
-        self,
-        request: IngestTextRequest,
-        auth: AuthContext
+        self, request: IngestTextRequest, auth: AuthContext
     ) -> Document:
         """Ingest a text document."""
         if "write" not in auth.permissions:
@@ -124,15 +128,12 @@ class DocumentService:
         doc = Document(
             content_type="text/plain",
             metadata=request.metadata,
-            owner={
-                "type": auth.entity_type,
-                "id": auth.entity_id
-            },
+            owner={"type": auth.entity_type, "id": auth.entity_id},
             access_control={
                 "readers": [auth.entity_id],
                 "writers": [auth.entity_id],
-                "admins": [auth.entity_id]
-            }
+                "admins": [auth.entity_id],
+            },
         )
         logger.info(f"Created text document record with ID {doc.external_id}")
 
@@ -148,10 +149,7 @@ class DocumentService:
 
         # 4. Create and store chunk objects
         chunk_objects = self._create_chunk_objects(
-            doc.external_id,
-            chunks,
-            embeddings,
-            doc.metadata
+            doc.external_id, chunks, embeddings, doc.metadata
         )
         logger.info(f"Created {len(chunk_objects)} chunk objects")
 
@@ -162,10 +160,7 @@ class DocumentService:
         return doc
 
     async def ingest_file(
-        self,
-        file: UploadFile,
-        metadata: Dict[str, Any],
-        auth: AuthContext
+        self, file: UploadFile, metadata: Dict[str, Any], auth: AuthContext
     ) -> Document:
         """Ingest a file document."""
         if "write" not in auth.permissions:
@@ -176,29 +171,21 @@ class DocumentService:
             content_type=file.content_type,
             filename=file.filename,
             metadata=metadata,
-            owner={
-                "type": auth.entity_type,
-                "id": auth.entity_id
-            },
+            owner={"type": auth.entity_type, "id": auth.entity_id},
             access_control={
                 "readers": [auth.entity_id],
                 "writers": [auth.entity_id],
-                "admins": [auth.entity_id]
-            }
+                "admins": [auth.entity_id],
+            },
         )
         logger.info(f"Created file document record with ID {doc.external_id}")
 
         # 2. Read and store file
         file_content = await file.read()
         storage_info = await self.storage.upload_from_base64(
-            base64.b64encode(file_content).decode(),
-            doc.external_id,
-            file.content_type
+            base64.b64encode(file_content).decode(), doc.external_id, file.content_type
         )
-        doc.storage_info = {
-            "bucket": storage_info[0],
-            "key": storage_info[1]
-        }
+        doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
         logger.info(
             f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`"
         )
@@ -215,10 +202,7 @@ class DocumentService:
 
         # 5. Create and store chunk objects
         chunk_objects = self._create_chunk_objects(
-            doc.external_id,
-            chunks,
-            embeddings,
-            doc.metadata
+            doc.external_id, chunks, embeddings, doc.metadata
         )
         logger.info(f"Created {len(chunk_objects)} chunk objects")
 
@@ -233,7 +217,7 @@ class DocumentService:
         doc_id: str,
         chunks: List[str],
         embeddings: List[List[float]],
-        metadata: Dict[str, Any]
+        metadata: Dict[str, Any],
     ) -> List[DocumentChunk]:
         """Helper to create chunk objects"""
         return [
@@ -242,15 +226,13 @@ class DocumentService:
                 content=content,
                 embedding=embedding,
                 chunk_number=i,
-                metadata=metadata
+                metadata=metadata,
             )
             for i, (content, embedding) in enumerate(zip(chunks, embeddings))
         ]
 
     async def _store_chunks_and_doc(
-        self,
-        chunk_objects: List[DocumentChunk],
-        doc: Document
+        self, chunk_objects: List[DocumentChunk], doc: Document
     ) -> List[str]:
         """Helper to store chunks and document"""
         # Store chunks in vector store
@@ -268,9 +250,7 @@ class DocumentService:
         return result
 
     async def _create_chunk_results(
-        self,
-        auth: AuthContext,
-        chunks: List[DocumentChunk]
+        self, auth: AuthContext, chunks: List[DocumentChunk]
     ) -> List[ChunkResult]:
         """Create ChunkResult objects with document metadata."""
         results = []
@@ -286,38 +266,37 @@ class DocumentService:
             download_url = None
             if doc.storage_info:
                 download_url = await self.storage.get_download_url(
-                    doc.storage_info["bucket"],
-                    doc.storage_info["key"]
+                    doc.storage_info["bucket"], doc.storage_info["key"]
                 )
-                logger.debug(
-                    f"Generated download URL for document {chunk.document_id}"
-                )
+                logger.debug(f"Generated download URL for document {chunk.document_id}")
 
-            results.append(ChunkResult(
-                content=chunk.content,
-                score=chunk.score,
-                document_id=chunk.document_id,
-                chunk_number=chunk.chunk_number,
-                metadata=doc.metadata,
-                content_type=doc.content_type,
-                filename=doc.filename,
-                download_url=download_url
-            ))
+            results.append(
+                ChunkResult(
+                    content=chunk.content,
+                    score=chunk.score,
+                    document_id=chunk.document_id,
+                    chunk_number=chunk.chunk_number,
+                    metadata=doc.metadata,
+                    content_type=doc.content_type,
+                    filename=doc.filename,
+                    download_url=download_url,
+                )
+            )
 
         logger.info(f"Created {len(results)} chunk results")
         return results
 
     async def _create_document_results(
-        self,
-        auth: AuthContext,
-        chunks: List[DocumentChunk]
+        self, auth: AuthContext, chunks: List[DocumentChunk]
     ) -> List[DocumentResult]:
         """Group chunks by document and create DocumentResult objects."""
         # Group chunks by document and get highest scoring chunk per doc
         doc_chunks: Dict[str, DocumentChunk] = {}
         for chunk in chunks:
-            if (chunk.document_id not in doc_chunks or
-                    chunk.score > doc_chunks[chunk.document_id].score):
+            if (
+                chunk.document_id not in doc_chunks
+                or chunk.score > doc_chunks[chunk.document_id].score
+            ):
                 doc_chunks[chunk.document_id] = chunk
         logger.info(f"Grouped chunks into {len(doc_chunks)} documents")
         logger.info(f"Document chunks: {doc_chunks}")
@@ -333,30 +312,27 @@ class DocumentService:
             # Create DocumentContent based on content type
             if doc.content_type == "text/plain":
                 content = DocumentContent(
-                    type="string",
-                    value=chunk.content,
-                    filename=None
+                    type="string", value=chunk.content, filename=None
                 )
                 logger.debug(f"Created text content for document {doc_id}")
             else:
                 # Generate download URL for file types
                 download_url = await self.storage.get_download_url(
-                    doc.storage_info["bucket"],
-                    doc.storage_info["key"]
+                    doc.storage_info["bucket"], doc.storage_info["key"]
                 )
                 content = DocumentContent(
-                    type="url",
-                    value=download_url,
-                    filename=doc.filename
+                    type="url", value=download_url, filename=doc.filename
                 )
                 logger.debug(f"Created URL content for document {doc_id}")
 
-            results.append(DocumentResult(
-                score=chunk.score,
-                document_id=doc_id,
-                metadata=doc.metadata,
-                content=content
-            ))
+            results.append(
+                DocumentResult(
+                    score=chunk.score,
+                    document_id=doc_id,
+                    metadata=doc.metadata,
+                    content=content,
+                )
+            )
 
         logger.info(f"Created {len(results)} document results")
         return results

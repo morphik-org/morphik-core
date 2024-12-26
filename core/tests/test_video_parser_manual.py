@@ -6,11 +6,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 async def main():
     # Configure logging
     logging.basicConfig(
         level=logging.DEBUG,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     # Get the current directory where test_parser.py is located
@@ -38,27 +39,27 @@ async def main():
     # Save metadata
     metadata_path = os.path.join(output_dir, f"metadata_{timestamp}.json")
     logger.info(f"Saving metadata to {metadata_path}")
-    with open(metadata_path, 'w') as f:
-        json.dump(results['metadata'], f, indent=4)
+    with open(metadata_path, "w") as f:
+        json.dump(results["metadata"], f, indent=4)
 
     # Save transcript data
     transcript_data = {
-        'timestamps': results['transcript'].timestamps,
-        'contents': results['transcript'].contents
+        "timestamps": results["transcript"].timestamps,
+        "contents": results["transcript"].contents,
     }
     transcript_path = os.path.join(output_dir, f"transcript_{timestamp}.json")
     logger.info(f"Saving transcript to {transcript_path}")
-    with open(transcript_path, 'w') as f:
+    with open(transcript_path, "w") as f:
         json.dump(transcript_data, f, indent=4)
 
     # Save frame descriptions
     frame_data = {
-        'timestamps': results['frame_descriptions'].timestamps,
-        'contents': results['frame_descriptions'].contents
+        "timestamps": results["frame_descriptions"].timestamps,
+        "contents": results["frame_descriptions"].contents,
     }
     frames_path = os.path.join(output_dir, f"frame_descriptions_{timestamp}.json")
     logger.info(f"Saving frame descriptions to {frames_path}")
-    with open(frames_path, 'w') as f:
+    with open(frames_path, "w") as f:
         json.dump(frame_data, f, indent=4)
 
     # Print metadata
@@ -70,18 +71,20 @@ async def main():
 
     # Print sample of transcript
     logger.info("Transcript Sample (first 3 segments):")
-    transcript_data = results['transcript'].at_time(0, padding=10)
+    transcript_data = results["transcript"].at_time(0, padding=10)
     for time, text in transcript_data[:3]:
         logger.info(f"{time:.2f}s: {text}")
 
     # Print sample of frame descriptions
     logger.info("Frame Descriptions Sample (first 3 frames):")
-    frame_data = results['frame_descriptions'].at_time(0, padding=10)
+    frame_data = results["frame_descriptions"].at_time(0, padding=10)
     for time, desc in frame_data[:3]:
         logger.info(f"{time:.2f}s: {desc}")
 
     logger.info(f"Output files saved in: {output_dir}")
 
+
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())

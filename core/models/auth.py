@@ -10,6 +10,7 @@ class EntityType(str, Enum):
 
 class AuthContext(BaseModel):
     """JWT decoded context"""
+
     entity_type: EntityType
     entity_id: str  # uuid
     app_id: Optional[str] = None  # uuid, only for developers

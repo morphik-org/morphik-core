@@ -60,19 +60,16 @@ class MongoDatabase(BaseDatabase):
             logger.error(f"Error storing document metadata: {str(e)}")
             return False
 
-    async def get_document(self, document_id: str, auth: AuthContext) -> Optional[Document]:
+    async def get_document(
+        self, document_id: str, auth: AuthContext
+    ) -> Optional[Document]:
         """Retrieve document metadata by ID if user has access."""
         try:
             # Build access filter
             access_filter = self._build_access_filter(auth)
 
             # Query document
-            query = {
-                "$and": [
-                    {"external_id": document_id},
-                    access_filter
-                ]
-            }
+            query = {"$and": [{"external_id": document_id}, access_filter]}
             logger.debug(f"Querying document with query: {query}")
 
             doc_dict = await self.collection.find_one(query)
@@ -88,14 +85,18 @@ class MongoDatabase(BaseDatabase):
         auth: AuthContext,
         skip: int = 0,
         limit: int = 100,
-        filters: Optional[Dict[str, Any]] = None
+        filters: Optional[Dict[str, Any]] = None,
     ) -> List[Document]:
         """List accessible documents with pagination and filtering."""
         try:
             # Build query
             auth_filter = self._build_access_filter(auth)
             metadata_filter = self._build_metadata_filter(filters)
-            query = {"$and": [auth_filter, metadata_filter]} if metadata_filter else auth_filter
+            query = (
+                {"$and": [auth_filter, metadata_filter]}
+                if metadata_filter
+                else auth_filter
+            )
 
             # Execute paginated query
             cursor = self.collection.find(query).skip(skip).limit(limit)
@@ -111,10 +112,7 @@ class MongoDatabase(BaseDatabase):
             return []
 
     async def update_document(
-        self,
-        document_id: str,
-        updates: Dict[str, Any],
-        auth: AuthContext
+        self, document_id: str, updates: Dict[str, Any], auth: AuthContext
     ) -> bool:
         """Update document metadata if user has write access."""
         try:
@@ -129,7 +127,7 @@ class MongoDatabase(BaseDatabase):
             result = await self.collection.find_one_and_update(
                 {"external_id": document_id},
                 {"$set": updates},
-                return_document=ReturnDocument.AFTER
+                return_document=ReturnDocument.AFTER,
             )
 
             return bool(result)
@@ -153,15 +151,15 @@ class MongoDatabase(BaseDatabase):
             return False
 
     async def find_authorized_and_filtered_documents(
-        self,
-        auth: AuthContext,
-        filters: Optional[Dict[str, Any]] = None
+        self, auth: AuthContext, filters: Optional[Dict[str, Any]] = None
     ) -> List[str]:
         """Find document IDs matching filters and access permissions."""
         # Build query
         auth_filter = self._build_access_filter(auth)
         metadata_filter = self._build_metadata_filter(filters)
-        query = {"$and": [auth_filter, metadata_filter]} if metadata_filter else auth_filter
+        query = (
+            {"$and": [auth_filter, metadata_filter]} if metadata_filter else auth_filter
+        )
 
         # Get matching document IDs
         cursor = self.collection.find(query, {"external_id": 1})
@@ -172,12 +170,8 @@ class MongoDatabase(BaseDatabase):
 
         return document_ids
 
-
     async def check_access(
-        self,
-        document_id: str,
-        auth: AuthContext,
-        required_permission: str = "read"
+        self, document_id: str, auth: AuthContext, required_permission: str = "read"
     ) -> bool:
         """Check if user has required permission for document."""
         try:
@@ -189,16 +183,14 @@ class MongoDatabase(BaseDatabase):
 
             # Check owner access
             owner = doc.get("owner", {})
-            if (owner.get("type") == auth.entity_type and
-                    owner.get("id") == auth.entity_id):
+            if (
+                owner.get("type") == auth.entity_type
+                and owner.get("id") == auth.entity_id
+            ):
                 return True
 
             # Check permission-specific access
-            permission_map = {
-                "read": "readers",
-                "write": "writers",
-                "admin": "admins"
-            }
+            permission_map = {"read": "readers", "write": "writers", "admin": "admins"}
 
             permission_set = permission_map.get(required_permission)
             if not permission_set:
@@ -217,15 +209,13 @@ class MongoDatabase(BaseDatabase):
                 {"owner.id": auth.entity_id},
                 {"access_control.readers": auth.entity_id},
                 {"access_control.writers": auth.entity_id},
-                {"access_control.admins": auth.entity_id}
+                {"access_control.admins": auth.entity_id},
             ]
         }
 
         if auth.entity_type == EntityType.DEVELOPER:
             # Add app-specific access for developers
-            base_filter["$or"].append(
-                {"access_control.app_access": auth.app_id}
-            )
+            base_filter["$or"].append({"access_control.app_access": auth.app_id})
 
         return base_filter
 

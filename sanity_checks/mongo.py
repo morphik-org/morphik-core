@@ -18,7 +18,7 @@ def test_mongo_operations():
         client = MongoClient(mongo_uri)
 
         # Test connection
-        client.admin.command('ping')
+        client.admin.command("ping")
         print("✅ Connected successfully to MongoDB")
 
         # Get database and collection
@@ -29,7 +29,7 @@ def test_mongo_operations():
         test_doc = {
             "name": "Test Document",
             "timestamp": datetime.datetime.now(),
-            "value": 42
+            "value": 42,
         }
 
         result = collection.insert_one(test_doc)
@@ -39,7 +39,7 @@ def test_mongo_operations():
         test_docs = [
             {"name": "Doc 1", "value": 1},
             {"name": "Doc 2", "value": 2},
-            {"name": "Doc 3", "value": 3}
+            {"name": "Doc 3", "value": 3},
         ]
 
         result = collection.insert_many(test_docs)

@@ -30,11 +30,7 @@ class DirectoryTree:
         """Get the tree structure as a string"""
         output = ["Directory Structure:", "=" * 50]
         output.extend(self.tree)
-        output.extend([
-            "=" * 50,
-            f"Total files found: {self.files_found}",
-            ""
-        ])
+        output.extend(["=" * 50, f"Total files found: {self.files_found}", ""])
         return "\n".join(output)
 
     def display(self):
@@ -45,18 +41,18 @@ class DirectoryTree:
 def should_ignore_directory(dirname: str) -> bool:
     """Check if directory should be ignored."""
     ignore_dirs = {
-        'venv',
-        'env',
-        '.venv',
-        'virtualenv',
-        '__pycache__',
-        '.pytest_cache',
-        '.mypy_cache',
-        '.tox',
-        '.git',
-        'build',
-        'dist',
-        'node_modules'
+        "venv",
+        "env",
+        ".venv",
+        "virtualenv",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".tox",
+        ".git",
+        "build",
+        "dist",
+        "node_modules",
     }
     return dirname in ignore_dirs
 
@@ -69,17 +65,14 @@ def get_target_directories(mode: str, root_dir: str) -> Set[str]:
     mode_dirs = {
         "core": ["core"],
         "sdk": ["sdks"],
-        "test": ["core/tests", "sdks/python/tests"]
+        "test": ["core/tests", "sdks/python/tests"],
     }
 
     return {os.path.join(root_dir, d) for d in mode_dirs.get(mode, [])}
 
 
 def aggregate_python_files(
-    root_dir: str,
-    output_file: str,
-    script_name: str,
-    mode: str = "all"
+    root_dir: str, output_file: str, script_name: str, mode: str = "all"
 ) -> None:
     """
     Recursively search through directories and aggregate Python files.
@@ -97,7 +90,7 @@ def aggregate_python_files(
     print(f"\nProcessing Python files in {mode} mode...")
     print(f"Target directories: {', '.join(target_dirs)}")
 
-    with open(output_file, 'w', encoding='utf-8') as outfile:
+    with open(output_file, "w", encoding="utf-8") as outfile:
         # Write header information
         header = f"""DataBridge Code Aggregation
 {'=' * 80}
@@ -117,22 +110,19 @@ Root Directory: {root_dir}
 
             for dirpath, dirnames, filenames in os.walk(target_dir, topdown=True):
                 # Skip ignored directories
-                dirnames[:] = [
-                    d for d in dirnames if not should_ignore_directory(d)
-                ]
+                dirnames[:] = [d for d in dirnames if not should_ignore_directory(d)]
 
                 # Add directories to tree
                 for d in dirnames:
-                    rel_path = os.path.relpath(
-                        os.path.join(dirpath, d), root_dir
-                    )
+                    rel_path = os.path.relpath(os.path.join(dirpath, d), root_dir)
                     tree.add_path(rel_path, is_file=False)
 
                 # Process Python files
                 python_files = [
-                    f for f in filenames
-                    if f.endswith('.py')
-                    and f != '__init__.py'
+                    f
+                    for f in filenames
+                    if f.endswith(".py")
+                    and f != "__init__.py"
                     and f != script_name
                     and f != output_file
                 ]
@@ -156,14 +146,13 @@ Root Directory: {root_dir}
                 continue
 
             for dirpath, dirnames, filenames in os.walk(target_dir, topdown=True):
-                dirnames[:] = [
-                    d for d in dirnames if not should_ignore_directory(d)
-                ]
+                dirnames[:] = [d for d in dirnames if not should_ignore_directory(d)]
 
                 python_files = [
-                    f for f in filenames
-                    if f.endswith('.py')
-                    and f != '__init__.py'
+                    f
+                    for f in filenames
+                    if f.endswith(".py")
+                    and f != "__init__.py"
                     and f != script_name
                     and f != output_file
                 ]
@@ -173,7 +162,7 @@ Root Directory: {root_dir}
                     rel_path = os.path.relpath(file_path, root_dir)
 
                     try:
-                        with open(file_path, 'r', encoding='utf-8') as infile:
+                        with open(file_path, "r", encoding="utf-8") as infile:
                             content = infile.read()
 
                         # Write file content with header
@@ -183,9 +172,7 @@ Root Directory: {root_dir}
                         outfile.write("\n\n" + "=" * 80 + "\n")
 
                     except Exception as e:
-                        outfile.write(
-                            f"Error reading {rel_path}: {str(e)}\n\n"
-                        )
+                        outfile.write(f"Error reading {rel_path}: {str(e)}\n\n")
 
     # Display tree structure in console
     tree.display()
@@ -196,15 +183,13 @@ def main():
         description="Aggregate Python files with directory structure"
     )
     parser.add_argument(
-        '--mode',
-        choices=['all', 'core', 'sdk', 'test'],
-        default='all',
-        help='Which directories to process'
+        "--mode",
+        choices=["all", "core", "sdk", "test"],
+        default="all",
+        help="Which directories to process",
     )
     parser.add_argument(
-        '--output',
-        default='aggregated_code.txt',
-        help='Output file name'
+        "--output", default="aggregated_code.txt", help="Output file name"
     )
     args = parser.parse_args()
 
@@ -220,7 +205,7 @@ def main():
         root_dir=current_dir,
         output_file=args.output,
         script_name=script_name,
-        mode=args.mode
+        mode=args.mode,
     )
 
     print(f"\nFinished! Results written to: {args.output}")

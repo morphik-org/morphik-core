@@ -8,14 +8,18 @@ from core.models.time_series import TimeSeriesData
 
 logger = logging.getLogger(__name__)
 
+
 def debug_object(title, obj):
     logger.debug("\n".join(["-" * 100, title, "-" * 100, f"{obj}", "-" * 100]))
 
+
 class VideoParser:
-    def __init__(self, video_path: str, assemblyai_api_key: str, frame_sample_rate: int = 120):
+    def __init__(
+        self, video_path: str, assemblyai_api_key: str, frame_sample_rate: int = 120
+    ):
         """
         Initialize the video parser
-        
+
         Args:
             video_path: Path to the video file
             assemblyai_api_key: API key for AssemblyAI
@@ -25,30 +29,32 @@ class VideoParser:
         self.video_path = video_path
         self.frame_sample_rate = frame_sample_rate
         self.cap = cv2.VideoCapture(video_path)
-        
+
         if not self.cap.isOpened():
             logger.error(f"Failed to open video file: {video_path}")
             raise ValueError(f"Could not open video file: {video_path}")
-            
+
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.duration = self.total_frames / self.fps
         aai.settings.api_key = assemblyai_api_key
-        aai_config = aai.TranscriptionConfig(speaker_labels=True) # speech_model=aai.SpeechModel.nano
+        aai_config = aai.TranscriptionConfig(
+            speaker_labels=True
+        )  # speech_model=aai.SpeechModel.nano
         self.transcriber = aai.Transcriber(config=aai_config)
         self.transcript = None
         self.gpt = OpenAI()
-        
+
         logger.info(f"Video loaded: {self.duration:.2f}s duration, {self.fps:.2f} FPS")
-    
+
     def frame_to_base64(self, frame) -> str:
         """Convert a frame to base64 string"""
-        success, buffer = cv2.imencode('.jpg', frame)
+        success, buffer = cv2.imencode(".jpg", frame)
         if not success:
             logger.error("Failed to encode frame to JPEG")
             raise ValueError("Failed to encode frame")
-        return base64.b64encode(buffer).decode('utf-8')
-    
+        return base64.b64encode(buffer).decode("utf-8")
+
     def get_transcript_object(self) -> aai.Transcript:
         """
         Get the transcript object from AssemblyAI
@@ -64,7 +70,6 @@ class VideoParser:
 
         return transcript
 
-    
     def get_transcript(self) -> TimeSeriesData:
         """
         Get timestamped transcript of the video using AssemblyAI
@@ -74,15 +79,16 @@ class VideoParser:
         """
         logger.info("Starting video transcription")
         transcript = self.get_transcript_object()
-        time_to_text = {u.start/1000: u.text for u in transcript.utterances}
+        # divide by 1000 because assemblyai timestamps are in milliseconds
+        time_to_text = {u.start / 1000: u.text for u in transcript.utterances}
         debug_object("Time to text", time_to_text)
         self.transcript = TimeSeriesData(time_to_text)
         return self.transcript
-    
+
     def get_frame_descriptions(self) -> TimeSeriesData:
         """
         Get descriptions for sampled frames using GPT-4
-        
+
         Returns:
             TimeSeriesData object containing frame descriptions
         """
@@ -92,7 +98,8 @@ class VideoParser:
         last_description = None
         while True:
             ret, frame = self.cap.read()
-            if not ret: break
+            if not ret:
+                break
 
             if frame_count % self.frame_sample_rate == 0:
                 timestamp = frame_count / self.fps
@@ -102,12 +109,13 @@ class VideoParser:
 
                 response = self.gpt.chat.completions.create(
                     model="gpt-4o-mini",
-                    messages=[{
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": f"""Describe this frame from a video. Focus on the main elements, actions, and any notable details. Here is the transcript around the time of the frame:
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"""Describe this frame from a video. Focus on the main elements, actions, and any notable details. Here is the transcript around the time of the frame:
                                 ---
                                 {self.transcript.at_time(timestamp, padding=10)}
                                 ---
@@ -118,30 +126,31 @@ class VideoParser:
                                 ---
 
                                 In your response, only provide the description of the current frame, using the above information as context. 
-                                """
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{img_base64}"
-                                }
-                            }
-                        ]
-                    }],
-                    max_tokens=300
+                                """,
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{img_base64}"
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                    max_tokens=300,
                 )
                 last_description = response.choices[0].message.content
                 time_to_description[timestamp] = last_description
 
             frame_count += 1
-            
+
         logger.info(f"Generated descriptions for {len(time_to_description)} frames")
         return TimeSeriesData(time_to_description)
-    
+
     def process_video(self) -> Dict:
         """
         Process the video to get both transcript and frame descriptions
-        
+
         Returns:
             Dictionary containing transcript and frame descriptions as TimeSeriesData objects
         """
@@ -151,16 +160,16 @@ class VideoParser:
                 "duration": self.duration,
                 "fps": self.fps,
                 "total_frames": self.total_frames,
-                "frame_sample_rate": self.frame_sample_rate
+                "frame_sample_rate": self.frame_sample_rate,
             },
             "transcript": self.get_transcript(),
-            "frame_descriptions": self.get_frame_descriptions()
+            "frame_descriptions": self.get_frame_descriptions(),
         }
         logger.info("Video processing completed successfully")
         return result
-    
+
     def __del__(self):
         """Clean up video capture object"""
-        if hasattr(self, 'cap'):
+        if hasattr(self, "cap"):
             logger.debug("Releasing video capture resources")
             self.cap.release()
