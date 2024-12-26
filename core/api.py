@@ -68,7 +68,8 @@ storage = S3Storage(
 parser = UnstructuredAPIParser(
     api_key=settings.UNSTRUCTURED_API_KEY,
     chunk_size=settings.CHUNK_SIZE,
-    chunk_overlap=settings.CHUNK_OVERLAP
+    chunk_overlap=settings.CHUNK_OVERLAP,
+    # TODO: Pass in the assemblyai api key here, once the parser is updated.
 )
 
 embedding_model = OpenAIEmbeddingModel(

@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # API Keys
     OPENAI_API_KEY: str = Field(..., env="OPENAI_API_KEY")
     UNSTRUCTURED_API_KEY: str = Field(..., env="UNSTRUCTURED_API_KEY")
+    ASSEMBLYAI_API_KEY: str = Field(..., env="ASSEMBLYAI_API_KEY")
 
     # Optional API keys for alternative models
     ANTHROPIC_API_KEY: str | None = Field(None, env="ANTHROPIC_API_KEY")
