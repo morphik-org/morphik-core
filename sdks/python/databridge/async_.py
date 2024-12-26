@@ -7,18 +7,18 @@ from urllib.parse import urlparse
 import httpx
 import jwt
 
-from .models import Document, IngestTextRequest, ChunkResult, DocumentResult
+from .models import Document, IngestTextRequest, ChunkResult, DocumentResult, CompletionResponse
 
 
 class AsyncDataBridge:
     """
     DataBridge client for document operations.
-    
+
     Args:
         uri (str): DataBridge URI in the format "databridge://<owner_id>:<token>@<host>"
         timeout (int, optional): Request timeout in seconds. Defaults to 30.
         is_local (bool, optional): Whether to connect to a local server. Defaults to False.
-    
+
     Examples:
         ```python
         async with AsyncDataBridge("databridge://owner_id:token@api.databridge.ai") as db:
@@ -27,7 +27,7 @@ class AsyncDataBridge:
                 "Sample content",
                 metadata={"category": "sample"}
             )
-            
+
             # Query documents
             results = await db.query("search query")
         ```
@@ -52,7 +52,7 @@ class AsyncDataBridge:
         # Split host and auth parts
         auth, host = parsed.netloc.split('@')
         self._owner_id, self._auth_token = auth.split(':')
-            
+
         # Set base URL
         self._base_url = f"{'http' if self._is_local else 'https'}://{host}"
 
@@ -68,7 +68,7 @@ class AsyncDataBridge:
     ) -> Dict[str, Any]:
         """Make authenticated HTTP request"""
         headers = {"Authorization": f"Bearer {self._auth_token}"}
-        
+
         if not files:
             headers["Content-Type"] = "application/json"
 
@@ -90,14 +90,14 @@ class AsyncDataBridge:
     ) -> Document:
         """
         Ingest a text document into DataBridge.
-        
+
         Args:
             content: Text content to ingest
             metadata: Optional metadata dictionary
-        
+
         Returns:
             Document: Metadata of the ingested document
-        
+
         Example:
             ```python
             doc = await db.ingest_text(
@@ -130,16 +130,16 @@ class AsyncDataBridge:
     ) -> Document:
         """
         Ingest a file document into DataBridge.
-        
+
         Args:
             file: File to ingest (path string, bytes, file object, or Path)
             filename: Name of the file
             content_type: MIME type (optional, will be guessed if not provided)
             metadata: Optional metadata dictionary
-        
+
         Returns:
             Document: Metadata of the ingested document
-        
+
         Example:
             ```python
             # From file path
@@ -149,7 +149,7 @@ class AsyncDataBridge:
                 content_type="application/pdf",
                 metadata={"department": "research"}
             )
-            
+
             # From file object
             with open("document.pdf", "rb") as f:
                 doc = await db.ingest_file(f, "document.pdf")
@@ -189,57 +189,124 @@ class AsyncDataBridge:
             if isinstance(file, (str, Path)):
                 file_obj.close()
 
-    async def query(
+    async def retrieve_chunks(
         self,
         query: str,
-        return_type: str = "chunks",
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0
-    ) -> Union[List[ChunkResult], List[DocumentResult]]:
+    ) -> List[ChunkResult]:
         """
-        Query documents in DataBridge.
+        Search for relevant chunks.
 
         Args:
             query: Search query text
-            return_type: Type of results ("chunks" or "documents")
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
 
         Returns:
-            List[ChunkResult] or List[DocumentResult] depending on return_type
+            List[ChunkResult]
 
         Example:
             ```python
-            # Query for chunks
-            chunks = await db.query(
+            chunks = await db.retrieve_chunks(
                 "What are the key findings?",
-                return_type="chunks",
                 filters={"department": "research"}
             )
+            ```
+        """
+        request = {
+            "query": query,
+            "filters": filters,
+            "k": k,
+            "min_score": min_score
+        }
 
-            # Query for documents
-            docs = await db.query(
+        response = await self._request("POST", "retrieve/chunks", request)
+        return [ChunkResult(**r) for r in response]
+
+    async def retrieve_docs(
+        self,
+        query: str,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 4,
+        min_score: float = 0.0
+    ) -> List[DocumentResult]:
+        """
+        Retrieve relevant documents.
+
+        Args:
+            query: Search query text
+            filters: Optional metadata filters
+            k: Number of results (default: 4)
+            min_score: Minimum similarity threshold (default: 0.0)
+
+        Returns:
+            List[DocumentResult]
+
+        Example:
+            ```python
+            docs = await db.retrieve_docs(
                 "machine learning",
-                return_type="documents",
                 k=5
             )
             ```
         """
         request = {
             "query": query,
-            "return_type": return_type,
             "filters": filters,
             "k": k,
             "min_score": min_score
         }
 
-        response = await self._request("POST", "query", request)
-
-        if return_type == "chunks":
-            return [ChunkResult(**r) for r in response]
+        response = await self._request("POST", "retrieve/docs", request)
         return [DocumentResult(**r) for r in response]
+
+    async def query(
+        self,
+        query: str,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 4,
+        min_score: float = 0.0,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+    ) -> CompletionResponse:
+        """
+        Generate completion using relevant chunks as context.
+
+        Args:
+            query: Query text
+            filters: Optional metadata filters
+            k: Number of chunks to use as context (default: 4)
+            min_score: Minimum similarity threshold (default: 0.0)
+            max_tokens: Maximum tokens in completion
+            temperature: Model temperature
+
+        Returns:
+            CompletionResponse
+
+        Example:
+            ```python
+            response = await db.query(
+                "What are the key findings about customer satisfaction?",
+                filters={"department": "research"},
+                temperature=0.7
+            )
+            print(response.completion)
+            ```
+        """
+        request = {
+            "query": query,
+            "filters": filters,
+            "k": k,
+            "min_score": min_score,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+
+        response = await self._request("POST", "query", request)
+        return CompletionResponse(**response)
 
     async def list_documents(
         self,
@@ -249,7 +316,7 @@ class AsyncDataBridge:
     ) -> List[Document]:
         """
         List accessible documents.
-        
+
         Args:
             skip: Number of documents to skip
             limit: Maximum number of documents to return
@@ -257,12 +324,12 @@ class AsyncDataBridge:
 
         Returns:
             List[Document]: List of accessible documents
-        
+
         Example:
             ```python
             # Get first page
             docs = await db.list_documents(limit=10)
-            
+
             # Get next page
             next_page = await db.list_documents(skip=10, limit=10, filters={"department": "research"})
             ```
@@ -276,13 +343,13 @@ class AsyncDataBridge:
     async def get_document(self, document_id: str) -> Document:
         """
         Get document metadata by ID.
-        
+
         Args:
             document_id: ID of the document
-        
+
         Returns:
             Document: Document metadata
-        
+
         Example:
             ```python
             doc = await db.get_document("doc_123")

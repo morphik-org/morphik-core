@@ -53,3 +53,9 @@ class DocumentResult(BaseModel):
     document_id: str = Field(..., description="Document ID")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Document metadata")
     content: DocumentContent = Field(..., description="Document content or URL")
+
+
+class CompletionResponse(BaseModel):
+    """Completion response model"""
+    completion: str
+    usage: Dict[str, int]
