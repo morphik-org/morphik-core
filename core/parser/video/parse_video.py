@@ -4,7 +4,6 @@ import base64
 from openai import OpenAI
 import assemblyai as aai
 import logging
-from core.config import get_settings
 from core.models.time_series import TimeSeriesData
 
 logger = logging.getLogger(__name__)
@@ -12,16 +11,16 @@ logger = logging.getLogger(__name__)
 def debug_object(title, obj):
     logger.debug("\n".join(["-" * 100, title, "-" * 100, f"{obj}", "-" * 100]))
 
-class VideoParser():
-    def __init__(self, video_path: str, frame_sample_rate: int = 120):
+class VideoParser:
+    def __init__(self, video_path: str, assemblyai_api_key: str, frame_sample_rate: int = 120):
         """
         Initialize the video parser
         
         Args:
             video_path: Path to the video file
+            assemblyai_api_key: API key for AssemblyAI
             frame_sample_rate: Sample every nth frame for description
         """
-        settings = get_settings()
         logger.info(f"Initializing VideoParser for {video_path}")
         self.video_path = video_path
         self.frame_sample_rate = frame_sample_rate
@@ -34,7 +33,7 @@ class VideoParser():
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.duration = self.total_frames / self.fps
-        aai.settings.api_key = settings.ASSEMBLYAI_API_KEY
+        aai.settings.api_key = assemblyai_api_key
         aai_config = aai.TranscriptionConfig(speaker_labels=True) # speech_model=aai.SpeechModel.nano
         self.transcriber = aai.Transcriber(config=aai_config)
         self.transcript = None

@@ -19,6 +19,7 @@ from core.models.documents import (
     ChunkResult
 )
 from core.models.auth import AuthContext, EntityType
+from core.parser.combined_parser import CombinedParser
 from core.services.document_service import DocumentService
 from core.config import get_settings
 from core.database.mongo_database import MongoDatabase
@@ -65,11 +66,11 @@ storage = S3Storage(
     default_bucket=settings.S3_BUCKET
 )
 
-parser = UnstructuredAPIParser(
-    api_key=settings.UNSTRUCTURED_API_KEY,
+parser = CombinedParser(
+    unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
+    assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
     chunk_size=settings.CHUNK_SIZE,
     chunk_overlap=settings.CHUNK_OVERLAP,
-    # TODO: Pass in the assemblyai api key here, once the parser is updated.
 )
 
 embedding_model = OpenAIEmbeddingModel(

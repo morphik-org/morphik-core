@@ -17,6 +17,7 @@ class CombinedParser(BaseParser):
     def __init__(
         self,
         unstructured_api_key: str,
+        assemblyai_api_key: str,
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
         frame_sample_rate: int = 120,
@@ -26,6 +27,7 @@ class CombinedParser(BaseParser):
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
         )
+        self.assemblyai_api_key = assemblyai_api_key
         self.frame_sample_rate = frame_sample_rate
         self.magic = magic.Magic(mime=True)
 
@@ -94,7 +96,7 @@ class CombinedParser(BaseParser):
 
         try:
             # Process video
-            parser = VideoParser(video_path, frame_sample_rate=self.frame_sample_rate)
+            parser = VideoParser(video_path, assemblyai_api_key=self.assemblyai_api_key, frame_sample_rate=self.frame_sample_rate)
             results = parser.process_video()
             # Get all frame descriptions
             frame_descriptions : TimeSeriesData = results["frame_descriptions"]
