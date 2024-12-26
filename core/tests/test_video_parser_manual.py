@@ -15,7 +15,7 @@ async def main():
 
     # Get the current directory where test_parser.py is located
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    video_path = os.path.join(current_dir, "trial.mp4")
+    video_path = os.path.join(current_dir, "assets/trial.mp4")
     logger.info(f"Video path: {video_path}")
 
     # Initialize parser with video path

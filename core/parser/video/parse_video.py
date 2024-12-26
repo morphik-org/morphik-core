@@ -37,6 +37,7 @@ class VideoParser():
         aai.settings.api_key = settings.ASSEMBLYAI_API_KEY
         aai_config = aai.TranscriptionConfig(speaker_labels=True) # speech_model=aai.SpeechModel.nano
         self.transcriber = aai.Transcriber(config=aai_config)
+        self.transcript = None
         self.gpt = OpenAI()
         
         logger.info(f"Video loaded: {self.duration:.2f}s duration, {self.fps:.2f} FPS")
@@ -76,7 +77,8 @@ class VideoParser():
         transcript = self.get_transcript_object()
         time_to_text = {u.start/1000: u.text for u in transcript.utterances}
         debug_object("Time to text", time_to_text)
-        return TimeSeriesData(time_to_text)
+        self.transcript = TimeSeriesData(time_to_text)
+        return self.transcript
     
     def get_frame_descriptions(self) -> TimeSeriesData:
         """
@@ -88,49 +90,56 @@ class VideoParser():
         logger.info("Starting frame description generation")
         frame_count = 0
         time_to_description = {}
-        
+        last_description = None
         while True:
             ret, frame = self.cap.read()
-            if not ret:
-                break
-                
+            if not ret: break
+
             if frame_count % self.frame_sample_rate == 0:
                 timestamp = frame_count / self.fps
                 logger.debug(f"Processing frame at {timestamp:.2f}s")
-                
-                try:
-                    img_base64 = self.frame_to_base64(frame)
-                    
-                    response = self.gpt.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[{
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": "Describe this frame from the video in a detailed manner. Focus on the main elements, actions, and any notable details."
-                                },
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/jpeg;base64,{img_base64}"
-                                    }
+
+                img_base64 = self.frame_to_base64(frame)
+
+                response = self.gpt.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"""Describe this frame from a video. Focus on the main elements, actions, and any notable details. Here is the transcript around the time of the frame:
+                                ---
+                                {self.transcript.at_time(timestamp, padding=10)}
+                                ---
+
+                                Here is a description of the previous frame:
+                                ---
+                                {last_description if last_description else 'No previous frame description available, this is the first frame'}
+                                ---
+
+                                In your response, only provide the description of the current frame, using the above information as context. 
+                                """
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{img_base64}"
                                 }
-                            ]
-                        }],
-                        max_tokens=300
-                    )
-                    
-                    time_to_description[timestamp] = response.choices[0].message.content
-                except Exception as e:
-                    logger.error(f"Failed to process frame at {timestamp:.2f}s: {str(e)}")
-                
+                            }
+                        ]
+                    }],
+                    max_tokens=300
+                )
+                last_description = response.choices[0].message.content
+                time_to_description[timestamp] = last_description
+
             frame_count += 1
             
         logger.info(f"Generated descriptions for {len(time_to_description)} frames")
         return TimeSeriesData(time_to_description)
     
-    async def process_video(self) -> Dict:
+    def process_video(self) -> Dict:
         """
         Process the video to get both transcript and frame descriptions
         
