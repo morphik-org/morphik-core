@@ -3,7 +3,7 @@ default_region = "us-east-2"
 default_bucket_name = "databridge-s3-storage"
 
 [mongodb]
-database_name = "databridge"
+database_name = "DataBridgeTest"
 documents_collection = "documents"
 chunks_collection = "document_chunks"
 
