@@ -12,7 +12,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 import jwt
 import logging
-from core.models.request import IngestTextRequest, QueryRequest
+from core.models.request import IngestTextRequest, RetrieveRequest, CompletionQueryRequest
 from core.models.documents import (
     Document,
     DocumentResult,
@@ -20,6 +20,7 @@ from core.models.documents import (
 )
 from core.models.auth import AuthContext, EntityType
 from core.parser.combined_parser import CombinedParser
+from core.completion.base_completion import CompletionResponse
 from core.services.document_service import DocumentService
 from core.config import get_settings
 from core.database.mongo_database import MongoDatabase
@@ -27,7 +28,7 @@ from core.vector_store.mongo_vector_store import MongoDBAtlasVectorStore
 from core.storage.s3_storage import S3Storage
 from core.parser.unstructured_parser import UnstructuredAPIParser
 from core.embedding_model.openai_embedding_model import OpenAIEmbeddingModel
-
+from core.completion.openai_completion import OpenAICompletionModel
 
 # Initialize FastAPI app
 app = FastAPI(title="DataBridge API")
@@ -78,13 +79,18 @@ embedding_model = OpenAIEmbeddingModel(
     model_name=settings.EMBEDDING_MODEL
 )
 
+completion_model = OpenAICompletionModel(
+    model_name=settings.COMPLETION_MODEL
+)
+
 # Initialize document service
 document_service = DocumentService(
     database=database,
     vector_store=vector_store,
     storage=storage,
     parser=parser,
-    embedding_model=embedding_model
+    embedding_model=embedding_model,
+    completion_model=completion_model
 )
 
 
@@ -152,13 +158,51 @@ async def ingest_file(
         raise HTTPException(400, "Invalid metadata JSON")
 
 
-@app.post("/query", response_model=Union[List[ChunkResult], List[DocumentResult]])
-async def query_documents(
-    request: QueryRequest,
+@app.post("/retrieve/chunks", response_model=List[ChunkResult])
+async def retrieve_chunks(
+    request: RetrieveRequest,
     auth: AuthContext = Depends(verify_token)
 ):
-    """Query documents with specified return type."""
-    return await document_service.query(request, auth)
+    """Retrieve relevant chunks."""
+    return await document_service.retrieve_chunks(
+        request.query,
+        auth,
+        request.filters,
+        request.k,
+        request.min_score
+    )
+
+
+@app.post("/retrieve/docs", response_model=List[DocumentResult])
+async def retrieve_documents(
+    request: RetrieveRequest,
+    auth: AuthContext = Depends(verify_token)
+):
+    """Retrieve relevant documents."""
+    return await document_service.retrieve_docs(
+        request.query,
+        auth,
+        request.filters,
+        request.k,
+        request.min_score
+    )
+
+
+@app.post("/query", response_model=CompletionResponse)
+async def query_completion(
+    request: CompletionQueryRequest,
+    auth: AuthContext = Depends(verify_token)
+):
+    """Generate completion using relevant chunks as context."""
+    return await document_service.query(
+        request.query,
+        auth,
+        request.filters,
+        request.k,
+        request.min_score,
+        request.max_tokens,
+        request.temperature
+    )
 
 
 @app.get("/documents", response_model=List[Document])
