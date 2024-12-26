@@ -34,7 +34,7 @@ class DocumentService:
         self.embedding_model = embedding_model
         self.completion_model = completion_model
 
-    async def search_chunks(
+    async def retrieve_chunks(
         self,
         query: str,
         auth: AuthContext,
@@ -42,7 +42,7 @@ class DocumentService:
         k: int = 4,
         min_score: float = 0.0
     ) -> List[ChunkResult]:
-        """Search for relevant chunks."""
+        """Retrieve relevant chunks."""
         # Get embedding for query
         query_embedding = await self.embedding_model.embed_for_query(query)
         logger.info("Generated query embedding")
@@ -67,7 +67,7 @@ class DocumentService:
         logger.info(f"Returning {len(results)} chunk results")
         return results
 
-    async def search_docs(
+    async def retrieve_docs(
         self,
         query: str,
         auth: AuthContext,
@@ -75,9 +75,9 @@ class DocumentService:
         k: int = 4,
         min_score: float = 0.0
     ) -> List[DocumentResult]:
-        """Search for relevant documents."""
+        """Retrieve relevant documents."""
         # Get chunks first
-        chunks = await self.search_chunks(query, auth, filters, k, min_score)
+        chunks = await self.retrieve_chunks(query, auth, filters, k, min_score)
 
         # Convert to document results
         results = await self._create_document_results(auth, chunks)
@@ -96,7 +96,7 @@ class DocumentService:
     ) -> CompletionResponse:
         """Generate completion using relevant chunks as context."""
         # Get relevant chunks
-        chunks = await self.search_chunks(query, auth, filters, k, min_score)
+        chunks = await self.retrieve_chunks(query, auth, filters, k, min_score)
         chunk_contents = [chunk.content for chunk in chunks]
 
         # Generate completion

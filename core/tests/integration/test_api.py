@@ -302,8 +302,8 @@ async def test_invalid_document_id(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_search_chunks(client: AsyncClient):
-    """Test searching document chunks"""
+async def test_retrieve_chunks(client: AsyncClient):
+    """Test retrieving document chunks"""
     # First ingest a document to search
     doc_id = await test_ingest_text_document(
         client,
@@ -315,7 +315,7 @@ async def test_search_chunks(client: AsyncClient):
     await asyncio.sleep(1)
 
     response = await client.post(
-        "/search/chunks",
+        "/retrieve/chunks",
         json={
             "query": "jumping fox",
             "k": 1,
@@ -332,8 +332,8 @@ async def test_search_chunks(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_search_docs(client: AsyncClient):
-    """Test searching for full documents"""
+async def test_retrieve_docs(client: AsyncClient):
+    """Test retrieving full documents"""
     # First ingest a document to search
     content = (
         "Headaches can significantly impact daily life and wellbeing. "
@@ -347,7 +347,7 @@ async def test_search_docs(client: AsyncClient):
 
     headers = create_auth_header()
     response = await client.post(
-        "/search/docs",
+        "/retrieve/docs",
         json={
             "query": "Headaches, dehydration",
             "filters": {"test": True}
@@ -396,13 +396,13 @@ async def test_query_completion(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_invalid_search_params(client: AsyncClient):
-    """Test error handling for invalid search parameters"""
+async def test_invalid_retrieve_params(client: AsyncClient):
+    """Test error handling for invalid retrieve parameters"""
     headers = create_auth_header()
 
     # Test empty query
     response = await client.post(
-        "/search/chunks",
+        "/retrieve/chunks",
         json={
             "query": "",  # Empty query
             "k": 1
@@ -413,7 +413,7 @@ async def test_invalid_search_params(client: AsyncClient):
 
     # Test invalid k
     response = await client.post(
-        "/search/docs",
+        "/retrieve/docs",
         json={
             "query": "test",
             "k": -1  # Invalid k

@@ -12,7 +12,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 import jwt
 import logging
-from core.models.request import IngestTextRequest, SearchRequest, CompletionQueryRequest
+from core.models.request import IngestTextRequest, RetrieveRequest, CompletionQueryRequest
 from core.models.documents import (
     Document,
     DocumentResult,
@@ -156,13 +156,13 @@ async def ingest_file(
         raise HTTPException(400, "Invalid metadata JSON")
 
 
-@app.post("/search/chunks", response_model=List[ChunkResult])
-async def search_chunks(
-    request: SearchRequest,
+@app.post("/retrieve/chunks", response_model=List[ChunkResult])
+async def retrieve_chunks(
+    request: RetrieveRequest,
     auth: AuthContext = Depends(verify_token)
 ):
-    """Search for relevant chunks."""
-    return await document_service.search_chunks(
+    """Retrieve relevant chunks."""
+    return await document_service.retrieve_chunks(
         request.query,
         auth,
         request.filters,
@@ -171,13 +171,13 @@ async def search_chunks(
     )
 
 
-@app.post("/search/docs", response_model=List[DocumentResult])
-async def search_documents(
-    request: SearchRequest,
+@app.post("/retrieve/docs", response_model=List[DocumentResult])
+async def retrieve_documents(
+    request: RetrieveRequest,
     auth: AuthContext = Depends(verify_token)
 ):
-    """Search for relevant documents."""
-    return await document_service.search_docs(
+    """Retrieve relevant documents."""
+    return await document_service.retrieve_docs(
         request.query,
         auth,
         request.filters,

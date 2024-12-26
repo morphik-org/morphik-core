@@ -188,7 +188,7 @@ class DataBridge:
             if isinstance(file, (str, Path)):
                 file_obj.close()
 
-    def search_chunks(
+    def retrieve_chunks(
         self,
         query: str,
         filters: Optional[Dict[str, Any]] = None,
@@ -196,7 +196,7 @@ class DataBridge:
         min_score: float = 0.0
     ) -> List[ChunkResult]:
         """
-        Search for relevant chunks.
+        Retrieve relevant chunks.
 
         Args:
             query: Search query text
@@ -209,7 +209,7 @@ class DataBridge:
 
         Example:
             ```python
-            chunks = db.search_chunks(
+            chunks = db.retrieve_chunks(
                 "What are the key findings?",
                 filters={"department": "research"}
             )
@@ -225,7 +225,7 @@ class DataBridge:
         response = self._request("POST", "search/chunks", request)
         return [ChunkResult(**r) for r in response]
 
-    def search_docs(
+    def retrieve_docs(
         self,
         query: str,
         filters: Optional[Dict[str, Any]] = None,
@@ -233,7 +233,7 @@ class DataBridge:
         min_score: float = 0.0
     ) -> List[DocumentResult]:
         """
-        Search for relevant documents.
+        Retrieve relevant documents.
 
         Args:
             query: Search query text
@@ -246,7 +246,7 @@ class DataBridge:
 
         Example:
             ```python
-            docs = db.search_docs(
+            docs = db.retrieve_docs(
                 "machine learning",
                 k=5
             )
@@ -259,7 +259,7 @@ class DataBridge:
             "min_score": min_score
         }
 
-        response = self._request("POST", "search/docs", request)
+        response = self._request("POST", "retrieve/docs", request)
         return [DocumentResult(**r) for r in response]
 
     def query(

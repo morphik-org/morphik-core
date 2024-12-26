@@ -130,16 +130,16 @@ class AsyncDataBridge:
     ) -> Document:
         """
         Ingest a file document into DataBridge.
-        
+
         Args:
             file: File to ingest (path string, bytes, file object, or Path)
             filename: Name of the file
             content_type: MIME type (optional, will be guessed if not provided)
             metadata: Optional metadata dictionary
-        
+
         Returns:
             Document: Metadata of the ingested document
-        
+
         Example:
             ```python
             # From file path
@@ -149,7 +149,7 @@ class AsyncDataBridge:
                 content_type="application/pdf",
                 metadata={"department": "research"}
             )
-            
+
             # From file object
             with open("document.pdf", "rb") as f:
                 doc = await db.ingest_file(f, "document.pdf")
@@ -189,7 +189,7 @@ class AsyncDataBridge:
             if isinstance(file, (str, Path)):
                 file_obj.close()
 
-    async def search_chunks(
+    async def retrieve_chunks(
         self,
         query: str,
         filters: Optional[Dict[str, Any]] = None,
@@ -210,7 +210,7 @@ class AsyncDataBridge:
 
         Example:
             ```python
-            chunks = await db.search_chunks(
+            chunks = await db.retrieve_chunks(
                 "What are the key findings?",
                 filters={"department": "research"}
             )
@@ -223,10 +223,10 @@ class AsyncDataBridge:
             "min_score": min_score
         }
 
-        response = await self._request("POST", "search/chunks", request)
+        response = await self._request("POST", "retrieve/chunks", request)
         return [ChunkResult(**r) for r in response]
 
-    async def search_docs(
+    async def retrieve_docs(
         self,
         query: str,
         filters: Optional[Dict[str, Any]] = None,
@@ -234,7 +234,7 @@ class AsyncDataBridge:
         min_score: float = 0.0
     ) -> List[DocumentResult]:
         """
-        Search for relevant documents.
+        Retrieve relevant documents.
 
         Args:
             query: Search query text
@@ -247,7 +247,7 @@ class AsyncDataBridge:
 
         Example:
             ```python
-            docs = await db.search_docs(
+            docs = await db.retrieve_docs(
                 "machine learning",
                 k=5
             )
@@ -260,7 +260,7 @@ class AsyncDataBridge:
             "min_score": min_score
         }
 
-        response = await self._request("POST", "search/docs", request)
+        response = await self._request("POST", "retrieve/docs", request)
         return [DocumentResult(**r) for r in response]
 
     async def query(
@@ -316,7 +316,7 @@ class AsyncDataBridge:
     ) -> List[Document]:
         """
         List accessible documents.
-        
+
         Args:
             skip: Number of documents to skip
             limit: Maximum number of documents to return
@@ -324,12 +324,12 @@ class AsyncDataBridge:
 
         Returns:
             List[Document]: List of accessible documents
-        
+
         Example:
             ```python
             # Get first page
             docs = await db.list_documents(limit=10)
-            
+
             # Get next page
             next_page = await db.list_documents(skip=10, limit=10, filters={"department": "research"})
             ```
@@ -343,13 +343,13 @@ class AsyncDataBridge:
     async def get_document(self, document_id: str) -> Document:
         """
         Get document metadata by ID.
-        
+
         Args:
             document_id: ID of the document
-        
+
         Returns:
             Document: Document metadata
-        
+
         Example:
             ```python
             doc = await db.get_document("doc_123")
