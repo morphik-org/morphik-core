@@ -16,28 +16,28 @@ logger = logging.getLogger(__name__)
 
 class S3Storage(BaseStorage):
     """AWS S3 storage implementation."""
-    
+
     # TODO: Remove hardcoded values.
     def __init__(
         self,
         aws_access_key: str,
         aws_secret_key: str,
         region_name: str = "us-east-2",
-        default_bucket: str = "databridge-storage"
+        default_bucket: str = "databridge-storage",
     ):
         self.default_bucket = default_bucket
         self.s3_client = boto3.client(
             "s3",
             aws_access_key_id=aws_access_key,
             aws_secret_access_key=aws_secret_key,
-            region_name=region_name
+            region_name=region_name,
         )
 
     async def upload_file(
         self,
         file: Union[str, bytes, BinaryIO],
         key: str,
-        content_type: Optional[str] = None
+        content_type: Optional[str] = None,
     ) -> Tuple[str, str]:
         """Upload a file to S3."""
         try:
@@ -56,20 +56,14 @@ class S3Storage(BaseStorage):
 
                 try:
                     self.s3_client.upload_file(
-                        temp_file_path,
-                        self.default_bucket,
-                        key,
-                        ExtraArgs=extra_args
+                        temp_file_path, self.default_bucket, key, ExtraArgs=extra_args
                     )
                 finally:
                     Path(temp_file_path).unlink()
             else:
                 # File object
                 self.s3_client.upload_fileobj(
-                    file,
-                    self.default_bucket,
-                    key,
-                    ExtraArgs=extra_args
+                    file, self.default_bucket, key, ExtraArgs=extra_args
                 )
 
             return self.default_bucket, key
@@ -79,21 +73,16 @@ class S3Storage(BaseStorage):
             raise
 
     async def upload_from_base64(
-        self,
-        content: str,
-        key: str,
-        content_type: Optional[str] = None
+        self, content: str, key: str, content_type: Optional[str] = None
     ) -> Tuple[str, str]:
         """Upload base64 encoded content to S3."""
         try:
             decoded_content = base64.b64decode(content)
             extension = detect_file_type(content)
             key = f"{key}{extension}"
-            
+
             return await self.upload_file(
-                file=decoded_content,
-                key=key,
-                content_type=content_type
+                file=decoded_content, key=key, content_type=content_type
             )
 
         except Exception as e:
@@ -109,16 +98,18 @@ class S3Storage(BaseStorage):
             logger.error(f"Error downloading from S3: {e}")
             raise
 
-    async def get_download_url(self, bucket: str, key: str, expires_in: int = 3600) -> str:
+    async def get_download_url(
+        self, bucket: str, key: str, expires_in: int = 3600
+    ) -> str:
         """Generate presigned download URL."""
         if not key or not bucket:
             return ""
-            
+
         try:
             return self.s3_client.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": bucket, "Key": key},
-                ExpiresIn=expires_in
+                ExpiresIn=expires_in,
             )
         except ClientError as e:
             logger.error(f"Error generating presigned URL: {e}")

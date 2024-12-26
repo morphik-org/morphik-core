@@ -13,15 +13,15 @@ class UnstructuredAPIParser(BaseParser):
     def __init__(
         self,
         api_key: str,
-        chunk_size: int = 1000,
-        chunk_overlap: int = 200,
+        chunk_size: int,
+        chunk_overlap: int,
     ):
         self.api_key = api_key
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             length_function=len,
-            separators=["\n\n", "\n", ". ", " ", ""]
+            separators=["\n\n", "\n", ". ", " ", ""],
         )
 
     async def split_text(self, text: str) -> List[str]:
@@ -35,7 +35,7 @@ class UnstructuredAPIParser(BaseParser):
             file=io.BytesIO(file),
             partition_via_api=True,
             api_key=self.api_key,
-            chunking_strategy="by_title"
+            chunking_strategy="by_title",
         )
         elements = loader.load()
         return [element.page_content for element in elements]

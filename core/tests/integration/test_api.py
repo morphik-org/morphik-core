@@ -52,7 +52,7 @@ def create_test_token(
     entity_id: str = TEST_USER_ID,
     permissions: list = None,
     app_id: str = None,
-    expired: bool = False
+    expired: bool = False,
 ) -> str:
     """Create a test JWT token"""
     if not permissions:
@@ -62,7 +62,7 @@ def create_test_token(
         "type": entity_type,
         "entity_id": entity_id,
         "permissions": permissions,
-        "exp": datetime.now(UTC) + timedelta(days=-1 if expired else 1)
+        "exp": datetime.now(UTC) + timedelta(days=-1 if expired else 1),
     }
 
     if app_id:
@@ -72,9 +72,7 @@ def create_test_token(
 
 
 def create_auth_header(
-    entity_type: str = "developer",
-    permissions: list = None,
-    expired: bool = False
+    entity_type: str = "developer", permissions: list = None, expired: bool = False
 ) -> Dict[str, str]:
     """Create authorization header with test token"""
     token = create_test_token(entity_type, permissions=permissions, expired=expired)
@@ -92,8 +90,7 @@ async def test_app(event_loop: asyncio.AbstractEventLoop) -> FastAPI:
 
 @pytest.fixture
 async def client(
-    test_app: FastAPI,
-    event_loop: asyncio.AbstractEventLoop
+    test_app: FastAPI, event_loop: asyncio.AbstractEventLoop
 ) -> AsyncGenerator[AsyncClient, None]:
     """Create async test client"""
     async with AsyncClient(app=test_app, base_url="http://test") as client:
@@ -102,19 +99,15 @@ async def client(
 
 @pytest.mark.asyncio
 async def test_ingest_text_document(
-    client: AsyncClient,
-    content: str = "Test content for document ingestion"
+    client: AsyncClient, content: str = "Test content for document ingestion"
 ):
     """Test ingesting a text document"""
     headers = create_auth_header()
 
     response = await client.post(
         "/ingest/text",
-        json={
-            "content": content,
-            "metadata": {"test": True, "type": "text"}
-        },
-        headers=headers
+        json={"content": content, "metadata": {"test": True, "type": "text"}},
+        headers=headers,
     )
 
     assert response.status_code == 200
@@ -144,7 +137,7 @@ async def test_ingest_pdf(client: AsyncClient):
             "/ingest/file",
             files={"file": (pdf_path.name, f, content_type)},
             data={"metadata": json.dumps({"test": True, "type": "pdf"})},
-            headers=headers
+            headers=headers,
         )
 
     assert response.status_code == 200
@@ -163,10 +156,8 @@ async def test_ingest_invalid_text_request(client: AsyncClient):
 
     response = await client.post(
         "/ingest/text",
-        json={
-            "wrong_field": "Test content"  # Missing required content field
-        },
-        headers=headers
+        json={"wrong_field": "Test content"},  # Missing required content field
+        headers=headers,
     )
     assert response.status_code == 422  # Validation error
 
@@ -180,7 +171,7 @@ async def test_ingest_invalid_file_request(client: AsyncClient):
         "/ingest/file",
         files={},  # Missing file
         data={"metadata": "{}"},
-        headers=headers
+        headers=headers,
     )
     assert response.status_code == 422  # Validation error
 
@@ -192,14 +183,12 @@ async def test_ingest_invalid_metadata(client: AsyncClient):
 
     pdf_path = TEST_DATA_DIR / "test.pdf"
     if pdf_path.exists():
-        files = {
-            "file": ("test.pdf", open(pdf_path, "rb"), "application/pdf")
-        }
+        files = {"file": ("test.pdf", open(pdf_path, "rb"), "application/pdf")}
         response = await client.post(
             "/ingest/file",
             files=files,
             data={"metadata": "invalid json"},
-            headers=headers
+            headers=headers,
         )
         assert response.status_code == 400  # Bad request
 
@@ -211,12 +200,7 @@ async def test_ingest_oversized_content(client: AsyncClient):
 
     large_content = "x" * (10 * 1024 * 1024)  # 10MB
     response = await client.post(
-        "/ingest/text",
-        json={
-            "content": large_content,
-            "metadata": {}
-        },
-        headers=headers
+        "/ingest/text", json={"content": large_content, "metadata": {}}, headers=headers
     )
     assert response.status_code == 400  # Bad request
 
@@ -250,11 +234,8 @@ async def test_auth_insufficient_permissions(client: AsyncClient):
     headers = create_auth_header(permissions=["read"])
     response = await client.post(
         "/ingest/text",
-        json={
-            "content": "Test content",
-            "metadata": {}
-        },
-        headers=headers
+        json={"content": "Test content", "metadata": {}},
+        headers=headers,
     )
     assert response.status_code == 403
 
@@ -306,8 +287,7 @@ async def test_retrieve_chunks(client: AsyncClient):
     """Test retrieving document chunks"""
     # First ingest a document to search
     doc_id = await test_ingest_text_document(
-        client,
-        content="The quick brown fox jumps over the lazy dog"
+        client, content="The quick brown fox jumps over the lazy dog"
     )
 
     headers = create_auth_header()
@@ -316,12 +296,8 @@ async def test_retrieve_chunks(client: AsyncClient):
 
     response = await client.post(
         "/retrieve/chunks",
-        json={
-            "query": "jumping fox",
-            "k": 1,
-            "min_score": 0.0
-        },
-        headers=headers
+        json={"query": "jumping fox", "k": 1, "min_score": 0.0},
+        headers=headers,
     )
 
     assert response.status_code == 200
@@ -348,11 +324,8 @@ async def test_retrieve_docs(client: AsyncClient):
     headers = create_auth_header()
     response = await client.post(
         "/retrieve/docs",
-        json={
-            "query": "Headaches, dehydration",
-            "filters": {"test": True}
-        },
-        headers=headers
+        json={"query": "Headaches, dehydration", "filters": {"test": True}},
+        headers=headers,
     )
 
     assert response.status_code == 200
@@ -383,9 +356,9 @@ async def test_query_completion(client: AsyncClient):
             "query": "What are the main benefits of exercise?",
             "k": 2,
             "temperature": 0.7,
-            "max_tokens": 100
+            "max_tokens": 100,
         },
-        headers=headers
+        headers=headers,
     )
 
     assert response.status_code == 200
@@ -402,23 +375,13 @@ async def test_invalid_retrieve_params(client: AsyncClient):
 
     # Test empty query
     response = await client.post(
-        "/retrieve/chunks",
-        json={
-            "query": "",  # Empty query
-            "k": 1
-        },
-        headers=headers
+        "/retrieve/chunks", json={"query": "", "k": 1}, headers=headers  # Empty query
     )
     assert response.status_code == 422
 
     # Test invalid k
     response = await client.post(
-        "/retrieve/docs",
-        json={
-            "query": "test",
-            "k": -1  # Invalid k
-        },
-        headers=headers
+        "/retrieve/docs", json={"query": "test", "k": -1}, headers=headers  # Invalid k
     )
     assert response.status_code == 422
 
@@ -431,10 +394,7 @@ async def test_invalid_completion_params(client: AsyncClient):
     # Test empty query
     response = await client.post(
         "/query",
-        json={
-            "query": "",  # Empty query
-            "temperature": 2.0  # Invalid temperature
-        },
-        headers=headers
+        json={"query": "", "temperature": 2.0},  # Empty query  # Invalid temperature
+        headers=headers,
     )
     assert response.status_code == 422

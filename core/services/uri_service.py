@@ -21,7 +21,7 @@ class URIService:
         dev_id: str,
         app_id: Optional[str] = None,
         expiry_days: int = 30,
-        permissions: Optional[Set[str]] = None
+        permissions: Optional[Set[str]] = None,
     ) -> str:
         """
         Create URI for developer access.
@@ -36,17 +36,13 @@ class URIService:
             "type": EntityType.DEVELOPER,
             "entity_id": dev_id,
             "permissions": list(permissions or {"read"}),
-            "exp": datetime.now(UTC) + timedelta(days=expiry_days)
+            "exp": datetime.now(UTC) + timedelta(days=expiry_days),
         }
 
         if app_id:
             payload["app_id"] = app_id
 
-        token = jwt.encode(
-            payload,
-            self.secret_key,
-            algorithm=self.algorithm
-        )
+        token = jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
 
         # Construct the URI
         owner_id = f"{dev_id}.{app_id}" if app_id else dev_id
@@ -57,7 +53,7 @@ class URIService:
         self,
         user_id: str,
         expiry_days: int = 30,
-        permissions: Optional[Set[str]] = None
+        permissions: Optional[Set[str]] = None,
     ) -> str:
         """
         Create URI for end-user access.
@@ -72,10 +68,10 @@ class URIService:
                 "type": EntityType.USER,
                 "entity_id": user_id,
                 "permissions": list(permissions or {"read"}),
-                "exp": datetime.now(UTC) + timedelta(days=expiry_days)
+                "exp": datetime.now(UTC) + timedelta(days=expiry_days),
             },
             self.secret_key,
-            algorithm=self.algorithm
+            algorithm=self.algorithm,
         )
 
         host_port = f"{self.host}:{self.port}" if self.port != 80 else self.host
@@ -96,17 +92,13 @@ class URIService:
             token = uri.split("://")[1].split("@")[0].split(":")[1]
 
             # Decode and validate token
-            payload = jwt.decode(
-                token,
-                self.secret_key,
-                algorithms=[self.algorithm]
-            )
+            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
 
             return AuthContext(
                 entity_type=EntityType(payload["type"]),
                 entity_id=payload["entity_id"],
                 app_id=payload.get("app_id"),
-                permissions=set(payload.get("permissions", ["read"]))
+                permissions=set(payload.get("permissions", ["read"])),
             )
 
         except (jwt.InvalidTokenError, IndexError, ValueError):

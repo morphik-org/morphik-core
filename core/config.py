@@ -7,10 +7,12 @@ from dotenv import load_dotenv
 
 class Settings(BaseSettings):
     """DataBridge configuration settings."""
+
     # Required environment variables
     MONGODB_URI: str = Field(..., env="MONGODB_URI")
     OPENAI_API_KEY: str = Field(..., env="OPENAI_API_KEY")
     UNSTRUCTURED_API_KEY: str = Field(..., env="UNSTRUCTURED_API_KEY")
+    ASSEMBLYAI_API_KEY: str = Field(..., env="ASSEMBLYAI_API_KEY")
     AWS_ACCESS_KEY: str = Field(..., env="AWS_ACCESS_KEY")
     AWS_SECRET_ACCESS_KEY: str = Field(..., env="AWS_SECRET_ACCESS_KEY")
     JWT_SECRET_KEY: str = Field(..., env="JWT_SECRET_KEY")
@@ -32,6 +34,7 @@ class Settings(BaseSettings):
     PORT: int = 8000
     RELOAD: bool = False
     JWT_ALGORITHM: str = "HS256"
+    FRAME_SAMPLE_RATE: int = 120
 
 
 @lru_cache()
@@ -61,6 +64,7 @@ def get_settings() -> Settings:
         "PORT": config["server"]["port"],
         "RELOAD": config["server"]["reload"],
         "JWT_ALGORITHM": config["auth"]["jwt_algorithm"],
+        "FRAME_SAMPLE_RATE": config["video_processing"]["frame_sample_rate"],
     }
 
     return Settings(**settings_dict)

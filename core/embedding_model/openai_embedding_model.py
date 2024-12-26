@@ -8,18 +8,14 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
         self.client = OpenAI(api_key=api_key)
         self.model_name = model_name
 
-    async def embed_for_ingestion(self, text: Union[str, List[str]]) -> List[List[float]]:
-        response = self.client.embeddings.create(
-            model=self.model_name,
-            input=text
-        )
+    async def embed_for_ingestion(
+        self, text: Union[str, List[str]]
+    ) -> List[List[float]]:
+        response = self.client.embeddings.create(model=self.model_name, input=text)
 
         return [item.embedding for item in response.data]
 
     async def embed_for_query(self, text: str) -> List[float]:
-        response = self.client.embeddings.create(
-            model=self.model_name,
-            input=text
-        )
+        response = self.client.embeddings.create(model=self.model_name, input=text)
 
         return response.data[0].embedding

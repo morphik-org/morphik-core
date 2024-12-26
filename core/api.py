@@ -1,24 +1,18 @@
 import json
 from datetime import datetime, UTC
 from typing import Any, Dict, List, Optional, Union
-from fastapi import (
-    FastAPI,
-    Form,
-    HTTPException,
-    Depends,
-    Header,
-    UploadFile
-)
+from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import jwt
 import logging
-from core.models.request import IngestTextRequest, RetrieveRequest, CompletionQueryRequest
-from core.models.documents import (
-    Document,
-    DocumentResult,
-    ChunkResult
+from core.models.request import (
+    IngestTextRequest,
+    RetrieveRequest,
+    CompletionQueryRequest,
 )
+from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.auth import AuthContext, EntityType
+from core.parser.combined_parser import CombinedParser
 from core.completion.base_completion import CompletionResponse
 from core.services.document_service import DocumentService
 from core.config import get_settings
@@ -39,7 +33,7 @@ app.add_middleware(
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
 # Initialize service
@@ -49,37 +43,36 @@ settings = get_settings()
 database = MongoDatabase(
     uri=settings.MONGODB_URI,
     db_name=settings.DATABRIDGE_DB,
-    collection_name=settings.DOCUMENTS_COLLECTION
+    collection_name=settings.DOCUMENTS_COLLECTION,
 )
 
 vector_store = MongoDBAtlasVectorStore(
     uri=settings.MONGODB_URI,
     database_name=settings.DATABRIDGE_DB,
     collection_name=settings.CHUNKS_COLLECTION,
-    index_name=settings.VECTOR_INDEX_NAME
+    index_name=settings.VECTOR_INDEX_NAME,
 )
 
 storage = S3Storage(
     aws_access_key=settings.AWS_ACCESS_KEY,
     aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
     region_name=settings.AWS_REGION,
-    default_bucket=settings.S3_BUCKET
+    default_bucket=settings.S3_BUCKET,
 )
 
-parser = UnstructuredAPIParser(
-    api_key=settings.UNSTRUCTURED_API_KEY,
+parser = CombinedParser(
+    unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
+    assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
     chunk_size=settings.CHUNK_SIZE,
-    chunk_overlap=settings.CHUNK_OVERLAP
+    chunk_overlap=settings.CHUNK_OVERLAP,
+    frame_sample_rate=settings.FRAME_SAMPLE_RATE,
 )
 
 embedding_model = OpenAIEmbeddingModel(
-    api_key=settings.OPENAI_API_KEY,
-    model_name=settings.EMBEDDING_MODEL
+    api_key=settings.OPENAI_API_KEY, model_name=settings.EMBEDDING_MODEL
 )
 
-completion_model = OpenAICompletionModel(
-    model_name=settings.COMPLETION_MODEL
-)
+completion_model = OpenAICompletionModel(model_name=settings.COMPLETION_MODEL)
 
 # Initialize document service
 document_service = DocumentService(
@@ -88,7 +81,7 @@ document_service = DocumentService(
     storage=storage,
     parser=parser,
     embedding_model=embedding_model,
-    completion_model=completion_model
+    completion_model=completion_model,
 )
 
 
@@ -98,20 +91,15 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:
         raise HTTPException(
             status_code=401,
             detail="Missing authorization header",
-            headers={"WWW-Authenticate": "Bearer"}
+            headers={"WWW-Authenticate": "Bearer"},
         )
     try:
         if not authorization.startswith("Bearer "):
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid authorization header"
-            )
+            raise HTTPException(status_code=401, detail="Invalid authorization header")
 
         token = authorization[7:]  # Remove "Bearer "
         payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM]
+            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
         )
 
         if datetime.fromtimestamp(payload["exp"], UTC) < datetime.now(UTC):
@@ -121,7 +109,7 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:
             entity_type=EntityType(payload["type"]),
             entity_id=payload["entity_id"],
             app_id=payload.get("app_id"),
-            permissions=set(payload.get("permissions", ["read"]))
+            permissions=set(payload.get("permissions", ["read"])),
         )
     except jwt.InvalidTokenError as e:
         raise HTTPException(status_code=401, detail=str(e))
@@ -129,8 +117,7 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:
 
 @app.post("/ingest/text", response_model=Document)
 async def ingest_text(
-    request: IngestTextRequest,
-    auth: AuthContext = Depends(verify_token)
+    request: IngestTextRequest, auth: AuthContext = Depends(verify_token)
 ) -> Document:
     """Ingest a text document."""
     try:
@@ -143,7 +130,7 @@ async def ingest_text(
 async def ingest_file(
     file: UploadFile,
     metadata: str = Form("{}"),  # JSON string of metadata
-    auth: AuthContext = Depends(verify_token)
+    auth: AuthContext = Depends(verify_token),
 ) -> Document:
     """Ingest a file document."""
     try:
@@ -158,38 +145,27 @@ async def ingest_file(
 
 @app.post("/retrieve/chunks", response_model=List[ChunkResult])
 async def retrieve_chunks(
-    request: RetrieveRequest,
-    auth: AuthContext = Depends(verify_token)
+    request: RetrieveRequest, auth: AuthContext = Depends(verify_token)
 ):
     """Retrieve relevant chunks."""
     return await document_service.retrieve_chunks(
-        request.query,
-        auth,
-        request.filters,
-        request.k,
-        request.min_score
+        request.query, auth, request.filters, request.k, request.min_score
     )
 
 
 @app.post("/retrieve/docs", response_model=List[DocumentResult])
 async def retrieve_documents(
-    request: RetrieveRequest,
-    auth: AuthContext = Depends(verify_token)
+    request: RetrieveRequest, auth: AuthContext = Depends(verify_token)
 ):
     """Retrieve relevant documents."""
     return await document_service.retrieve_docs(
-        request.query,
-        auth,
-        request.filters,
-        request.k,
-        request.min_score
+        request.query, auth, request.filters, request.k, request.min_score
     )
 
 
 @app.post("/query", response_model=CompletionResponse)
 async def query_completion(
-    request: CompletionQueryRequest,
-    auth: AuthContext = Depends(verify_token)
+    request: CompletionQueryRequest, auth: AuthContext = Depends(verify_token)
 ):
     """Generate completion using relevant chunks as context."""
     return await document_service.query(
@@ -199,7 +175,7 @@ async def query_completion(
         request.k,
         request.min_score,
         request.max_tokens,
-        request.temperature
+        request.temperature,
     )
 
 
@@ -208,17 +184,14 @@ async def list_documents(
     auth: AuthContext = Depends(verify_token),
     skip: int = 0,
     limit: int = 100,
-    filters: Optional[Dict[str, Any]] = None
+    filters: Optional[Dict[str, Any]] = None,
 ):
     """List accessible documents."""
     return await document_service.db.get_documents(auth, skip, limit, filters)
 
 
 @app.get("/documents/{document_id}", response_model=Document)
-async def get_document(
-    document_id: str,
-    auth: AuthContext = Depends(verify_token)
-):
+async def get_document(document_id: str, auth: AuthContext = Depends(verify_token)):
     """Get document by ID."""
     try:
         doc = await document_service.db.get_document(document_id, auth)

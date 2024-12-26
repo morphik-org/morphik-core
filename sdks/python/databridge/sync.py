@@ -7,7 +7,13 @@ from urllib.parse import urlparse
 import jwt
 import requests
 
-from .models import Document, IngestTextRequest, ChunkResult, DocumentResult, CompletionResponse
+from .models import (
+    Document,
+    IngestTextRequest,
+    ChunkResult,
+    DocumentResult,
+    CompletionResponse,
+)
 
 
 class DataBridge:
@@ -48,8 +54,8 @@ class DataBridge:
             raise ValueError("Invalid URI format")
 
         # Split host and auth parts
-        auth, host = parsed.netloc.split('@')
-        self._owner_id, self._auth_token = auth.split(':')
+        auth, host = parsed.netloc.split("@")
+        self._owner_id, self._auth_token = auth.split(":")
 
         # Set base URL
         self._base_url = f"{'http' if self._is_local else 'https'}://{host}"
@@ -62,7 +68,7 @@ class DataBridge:
         method: str,
         endpoint: str,
         data: Optional[Dict[str, Any]] = None,
-        files: Optional[Dict[str, Any]] = None
+        files: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Make authenticated HTTP request"""
         headers = {"Authorization": f"Bearer {self._auth_token}"}
@@ -77,15 +83,13 @@ class DataBridge:
             files=files,
             data=data if files else None,
             headers=headers,
-            timeout=self._timeout
+            timeout=self._timeout,
         )
         response.raise_for_status()
         return response.json()
 
     def ingest_text(
-        self,
-        content: str,
-        metadata: Optional[Dict[str, Any]] = None
+        self, content: str, metadata: Optional[Dict[str, Any]] = None
     ) -> Document:
         """
         Ingest a text document into DataBridge.
@@ -108,16 +112,9 @@ class DataBridge:
             )
             ```
         """
-        request = IngestTextRequest(
-            content=content,
-            metadata=metadata or {}
-        )
+        request = IngestTextRequest(content=content, metadata=metadata or {})
 
-        response = self._request(
-            "POST",
-            "ingest/text",
-            request.model_dump()
-        )
+        response = self._request("POST", "ingest/text", request.model_dump())
         return Document(**response)
 
     def ingest_file(
@@ -125,7 +122,7 @@ class DataBridge:
         file: Union[str, bytes, BinaryIO, Path],
         filename: str,
         content_type: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Document:
         """
         Ingest a file document into DataBridge.
@@ -176,12 +173,7 @@ class DataBridge:
             # Add metadata
             data = {"metadata": json.dumps(metadata or {})}
 
-            response = self._request(
-                "POST",
-                "ingest/file",
-                data=data,
-                files=files
-            )
+            response = self._request("POST", "ingest/file", data=data, files=files)
             return Document(**response)
         finally:
             # Close file if we opened it
@@ -193,7 +185,7 @@ class DataBridge:
         query: str,
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
-        min_score: float = 0.0
+        min_score: float = 0.0,
     ) -> List[ChunkResult]:
         """
         Retrieve relevant chunks.
@@ -215,12 +207,7 @@ class DataBridge:
             )
             ```
         """
-        request = {
-            "query": query,
-            "filters": filters,
-            "k": k,
-            "min_score": min_score
-        }
+        request = {"query": query, "filters": filters, "k": k, "min_score": min_score}
 
         response = self._request("POST", "search/chunks", request)
         return [ChunkResult(**r) for r in response]
@@ -230,7 +217,7 @@ class DataBridge:
         query: str,
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
-        min_score: float = 0.0
+        min_score: float = 0.0,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents.
@@ -252,12 +239,7 @@ class DataBridge:
             )
             ```
         """
-        request = {
-            "query": query,
-            "filters": filters,
-            "k": k,
-            "min_score": min_score
-        }
+        request = {"query": query, "filters": filters, "k": k, "min_score": min_score}
 
         response = self._request("POST", "retrieve/docs", request)
         return [DocumentResult(**r) for r in response]
@@ -308,10 +290,7 @@ class DataBridge:
         return CompletionResponse(**response)
 
     def list_documents(
-        self,
-        skip: int = 0,
-        limit: int = 100,
-        filters: Optional[Dict[str, Any]] = None
+        self, skip: int = 0, limit: int = 100, filters: Optional[Dict[str, Any]] = None
     ) -> List[Document]:
         """
         List accessible documents.
@@ -334,8 +313,7 @@ class DataBridge:
             ```
         """
         response = self._request(
-            "GET",
-            f"documents?skip={skip}&limit={limit}&filters={filters}"
+            "GET", f"documents?skip={skip}&limit={limit}&filters={filters}"
         )
         return [Document(**doc) for doc in response]
 

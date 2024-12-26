@@ -3,6 +3,7 @@ import jwt
 from dotenv import load_dotenv
 import os
 import random
+
 load_dotenv()
 
 # Get JWT secret from env
@@ -15,7 +16,7 @@ payload = {
     "type": "developer",
     "entity_id": f"test_dev_{random.randint(0, 1000000)}",
     "permissions": ["read", "write", "admin"],
-    "exp": datetime.now(UTC) + timedelta(days=30)
+    "exp": datetime.now(UTC) + timedelta(days=30),
 }
 
 # Generate token using secret from .env

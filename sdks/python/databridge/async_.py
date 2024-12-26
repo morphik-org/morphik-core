@@ -7,7 +7,13 @@ from urllib.parse import urlparse
 import httpx
 import jwt
 
-from .models import Document, IngestTextRequest, ChunkResult, DocumentResult, CompletionResponse
+from .models import (
+    Document,
+    IngestTextRequest,
+    ChunkResult,
+    DocumentResult,
+    CompletionResponse,
+)
 
 
 class AsyncDataBridge:
@@ -35,10 +41,14 @@ class AsyncDataBridge:
 
     def __init__(self, uri: str, timeout: int = 30, is_local: bool = False):
         self._timeout = timeout
-        self._client = httpx.AsyncClient(timeout=timeout) if not is_local else httpx.AsyncClient(
-            timeout=timeout,
-            verify=False,  # Disable SSL for localhost
-            http2=False    # Force HTTP/1.1
+        self._client = (
+            httpx.AsyncClient(timeout=timeout)
+            if not is_local
+            else httpx.AsyncClient(
+                timeout=timeout,
+                verify=False,  # Disable SSL for localhost
+                http2=False,  # Force HTTP/1.1
+            )
         )
         self._is_local = is_local
         self._setup_auth(uri)
@@ -50,8 +60,8 @@ class AsyncDataBridge:
             raise ValueError("Invalid URI format")
 
         # Split host and auth parts
-        auth, host = parsed.netloc.split('@')
-        self._owner_id, self._auth_token = auth.split(':')
+        auth, host = parsed.netloc.split("@")
+        self._owner_id, self._auth_token = auth.split(":")
 
         # Set base URL
         self._base_url = f"{'http' if self._is_local else 'https'}://{host}"
@@ -64,7 +74,7 @@ class AsyncDataBridge:
         method: str,
         endpoint: str,
         data: Optional[Dict[str, Any]] = None,
-        files: Optional[Dict[str, Any]] = None
+        files: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Make authenticated HTTP request"""
         headers = {"Authorization": f"Bearer {self._auth_token}"}
@@ -78,15 +88,13 @@ class AsyncDataBridge:
             json=data if not files else None,
             files=files,
             data=data if files else None,
-            headers=headers
+            headers=headers,
         )
         response.raise_for_status()
         return response.json()
 
     async def ingest_text(
-        self,
-        content: str,
-        metadata: Optional[Dict[str, Any]] = None
+        self, content: str, metadata: Optional[Dict[str, Any]] = None
     ) -> Document:
         """
         Ingest a text document into DataBridge.
@@ -109,16 +117,9 @@ class AsyncDataBridge:
             )
             ```
         """
-        request = IngestTextRequest(
-            content=content,
-            metadata=metadata or {}
-        )
+        request = IngestTextRequest(content=content, metadata=metadata or {})
 
-        response = await self._request(
-            "POST",
-            "ingest/text",
-            request.model_dump()
-        )
+        response = await self._request("POST", "ingest/text", request.model_dump())
         return Document(**response)
 
     async def ingest_file(
@@ -126,7 +127,7 @@ class AsyncDataBridge:
         file: Union[str, bytes, BinaryIO, Path],
         filename: str,
         content_type: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Document:
         """
         Ingest a file document into DataBridge.
@@ -178,10 +179,7 @@ class AsyncDataBridge:
             data = {"metadata": json.dumps(metadata or {})}
 
             response = await self._request(
-                "POST",
-                "ingest/file",
-                data=data,
-                files=files
+                "POST", "ingest/file", data=data, files=files
             )
             return Document(**response)
         finally:
@@ -194,7 +192,7 @@ class AsyncDataBridge:
         query: str,
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
-        min_score: float = 0.0
+        min_score: float = 0.0,
     ) -> List[ChunkResult]:
         """
         Search for relevant chunks.
@@ -216,12 +214,7 @@ class AsyncDataBridge:
             )
             ```
         """
-        request = {
-            "query": query,
-            "filters": filters,
-            "k": k,
-            "min_score": min_score
-        }
+        request = {"query": query, "filters": filters, "k": k, "min_score": min_score}
 
         response = await self._request("POST", "retrieve/chunks", request)
         return [ChunkResult(**r) for r in response]
@@ -231,7 +224,7 @@ class AsyncDataBridge:
         query: str,
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
-        min_score: float = 0.0
+        min_score: float = 0.0,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents.
@@ -253,12 +246,7 @@ class AsyncDataBridge:
             )
             ```
         """
-        request = {
-            "query": query,
-            "filters": filters,
-            "k": k,
-            "min_score": min_score
-        }
+        request = {"query": query, "filters": filters, "k": k, "min_score": min_score}
 
         response = await self._request("POST", "retrieve/docs", request)
         return [DocumentResult(**r) for r in response]
@@ -309,10 +297,7 @@ class AsyncDataBridge:
         return CompletionResponse(**response)
 
     async def list_documents(
-        self,
-        skip: int = 0,
-        limit: int = 100,
-        filters: Optional[Dict[str, Any]] = None
+        self, skip: int = 0, limit: int = 100, filters: Optional[Dict[str, Any]] = None
     ) -> List[Document]:
         """
         List accessible documents.
@@ -335,8 +320,7 @@ class AsyncDataBridge:
             ```
         """
         response = await self._request(
-            "GET",
-            f"documents?skip={skip}&limit={limit}&filters={filters}"
+            "GET", f"documents?skip={skip}&limit={limit}&filters={filters}"
         )
         return [Document(**doc) for doc in response]
 
