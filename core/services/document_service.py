@@ -14,7 +14,7 @@ from ..models.auth import AuthContext
 from core.database.base_database import BaseDatabase
 from core.storage.base_storage import BaseStorage
 from core.vector_store.base_vector_store import BaseVectorStore
-from core.embedding_model.base_embedding_model import BaseEmbeddingModel
+from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.parser.base_parser import BaseParser
 from core.completion.base_completion import BaseCompletionModel
 from core.completion.base_completion import CompletionRequest, CompletionResponse

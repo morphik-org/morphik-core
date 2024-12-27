@@ -1,32 +1,53 @@
-[aws]
-default_region = "us-east-2"
-default_bucket_name = "databridge-s3-storage"
-
-[mongodb]
-database_name = "DataBridgeTest"
-documents_collection = "documents"
-chunks_collection = "document_chunks"
-
-[mongodb.vector]
-dimensions = 1536
-index_name = "vector_index"
-
-[model]
-embedding_model = "text-embedding-3-small"
-completion_model = "gpt-3.5-turbo"
-
-[document_processing]
-chunk_size = 1000
-chunk_overlap = 200
-default_k = 4
-
-[video_processing]
-frame_sample_rate = 120
-
-[server]
+# Core Service Components
+[service]
 host = "localhost"
 port = 8000
 reload = false
 
+[service.components]
+storage = "aws-s3"
+database = "mongodb"
+vector_store = "mongodb"
+embedding = "openai"
+completion = "openai"
+parser = "combined"
+
+# Storage Configuration
+[storage.aws]
+region = "us-east-2"
+bucket_name = "databridge-s3-storage"
+
+# Database Configuration
+[database.mongodb]
+database_name = "DataBridgeTest"
+documents_collection = "documents"
+chunks_collection = "document_chunks"
+
+# Vector Store Configuration
+[vector_store.mongodb]
+dimensions = 1536
+index_name = "vector_index"
+
+# Model Configurations
+[models]
+[models.embedding]
+model_name = "text-embedding-3-small"
+
+[models.completion]
+model_name = "gpt-4o-mini"
+default_max_tokens = 1000
+default_temperature = 0.7
+
+# Document Processing
+[processing]
+[processing.text]
+chunk_size = 1000
+chunk_overlap = 200
+default_k = 4
+
+[processing.video]
+frame_sample_rate = 120
+
+# Authentication
 [auth]
 jwt_algorithm = "HS256"

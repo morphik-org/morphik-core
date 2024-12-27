@@ -5,6 +5,7 @@ from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import jwt
 import logging
+from core.completion.openai_completion import OpenAICompletionModel
 from core.models.request import (
     IngestTextRequest,
     RetrieveRequest,
@@ -14,14 +15,14 @@ from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.auth import AuthContext, EntityType
 from core.parser.combined_parser import CombinedParser
 from core.completion.base_completion import CompletionResponse
+from core.parser.unstructured_parser import UnstructuredAPIParser
 from core.services.document_service import DocumentService
 from core.config import get_settings
 from core.database.mongo_database import MongoDatabase
 from core.vector_store.mongo_vector_store import MongoDBAtlasVectorStore
 from core.storage.s3_storage import S3Storage
-from core.parser.unstructured_parser import UnstructuredAPIParser
-from core.embedding_model.openai_embedding_model import OpenAIEmbeddingModel
-from core.completion.openai_completion import OpenAICompletionModel
+from core.embedding.openai_embedding_model import OpenAIEmbeddingModel
+from core.completion.ollama_completion import OllamaCompletionModel
 
 # Initialize FastAPI app
 app = FastAPI(title="DataBridge API")
@@ -39,42 +40,90 @@ app.add_middleware(
 # Initialize service
 settings = get_settings()
 
-# Initialize components
-database = MongoDatabase(
-    uri=settings.MONGODB_URI,
-    db_name=settings.DATABRIDGE_DB,
-    collection_name=settings.DOCUMENTS_COLLECTION,
-)
+# Initialize database
+match settings.DATABASE_PROVIDER:
+    case "mongodb":
+        database = MongoDatabase(
+            uri=settings.MONGODB_URI,
+            db_name=settings.DATABRIDGE_DB,
+            collection_name=settings.DOCUMENTS_COLLECTION,
+        )
+    case _:
+        raise ValueError(f"Unsupported database provider: {settings.DATABASE_PROVIDER}")
 
-vector_store = MongoDBAtlasVectorStore(
-    uri=settings.MONGODB_URI,
-    database_name=settings.DATABRIDGE_DB,
-    collection_name=settings.CHUNKS_COLLECTION,
-    index_name=settings.VECTOR_INDEX_NAME,
-)
+# Initialize vector store
+match settings.VECTOR_STORE_PROVIDER:
+    case "mongodb":
+        vector_store = MongoDBAtlasVectorStore(
+            uri=settings.MONGODB_URI,
+            database_name=settings.DATABRIDGE_DB,
+            collection_name=settings.CHUNKS_COLLECTION,
+            index_name=settings.VECTOR_INDEX_NAME,
+        )
+    case _:
+        raise ValueError(
+            f"Unsupported vector store provider: {settings.VECTOR_STORE_PROVIDER}"
+        )
 
-storage = S3Storage(
-    aws_access_key=settings.AWS_ACCESS_KEY,
-    aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
-    region_name=settings.AWS_REGION,
-    default_bucket=settings.S3_BUCKET,
-)
+# Initialize storage
+match settings.STORAGE_PROVIDER:
+    case "aws-s3":
+        storage = S3Storage(
+            aws_access_key=settings.AWS_ACCESS_KEY,
+            aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
+            region_name=settings.AWS_REGION,
+            default_bucket=settings.S3_BUCKET,
+        )
+    case _:
+        raise ValueError(f"Unsupported storage provider: {settings.STORAGE_PROVIDER}")
 
-parser = CombinedParser(
-    unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
-    assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
-    chunk_size=settings.CHUNK_SIZE,
-    chunk_overlap=settings.CHUNK_OVERLAP,
-    frame_sample_rate=settings.FRAME_SAMPLE_RATE,
-)
+# Initialize parser
+match settings.PARSER_PROVIDER:
+    case "combined":
+        parser = CombinedParser(
+            unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
+            assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
+            chunk_size=settings.CHUNK_SIZE,
+            chunk_overlap=settings.CHUNK_OVERLAP,
+            frame_sample_rate=settings.FRAME_SAMPLE_RATE,
+        )
+    case "unstructured":
+        parser = UnstructuredAPIParser(
+            unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
+            chunk_size=settings.CHUNK_SIZE,
+            chunk_overlap=settings.CHUNK_OVERLAP,
+        )
+    case _:
+        raise ValueError(f"Unsupported parser provider: {settings.PARSER_PROVIDER}")
 
-embedding_model = OpenAIEmbeddingModel(
-    api_key=settings.OPENAI_API_KEY, model_name=settings.EMBEDDING_MODEL
-)
+# Initialize embedding model
+match settings.EMBEDDING_PROVIDER:
+    case "openai":
+        embedding_model = OpenAIEmbeddingModel(
+            api_key=settings.OPENAI_API_KEY,
+            model_name=settings.EMBEDDING_MODEL,
+        )
+    case _:
+        raise ValueError(
+            f"Unsupported embedding provider: {settings.EMBEDDING_PROVIDER}"
+        )
 
-completion_model = OpenAICompletionModel(model_name=settings.COMPLETION_MODEL)
+# Initialize completion model
+match settings.COMPLETION_PROVIDER:
+    case "ollama":
+        completion_model = OllamaCompletionModel(
+            model_name=settings.COMPLETION_MODEL,
+        )
+    case "openai":
+        completion_model = OpenAICompletionModel(
+            model_name=settings.COMPLETION_MODEL,
+        )
+    case _:
+        raise ValueError(
+            f"Unsupported completion provider: {settings.COMPLETION_PROVIDER}"
+        )
 
-# Initialize document service
+# Initialize document service with configured components
 document_service = DocumentService(
     database=database,
     vector_store=vector_store,
