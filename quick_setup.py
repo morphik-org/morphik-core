@@ -43,13 +43,14 @@ with open(config_path, "rb") as f:
     LOGGER.info("Loaded configuration from config.toml")
 
 # Extract configuration values
-DEFAULT_REGION = CONFIG["aws"]["default_region"]
-DEFAULT_BUCKET_NAME = CONFIG["aws"]["default_bucket_name"]
-DATABASE_NAME = CONFIG["mongodb"]["database_name"]
-DOCUMENTS_COLLECTION = CONFIG["mongodb"]["documents_collection"]
-CHUNKS_COLLECTION = CONFIG["mongodb"]["chunks_collection"]
-VECTOR_DIMENSIONS = CONFIG["mongodb"]["vector"]["dimensions"]
-VECTOR_INDEX_NAME = CONFIG["mongodb"]["vector"]["index_name"]
+DEFAULT_REGION = CONFIG["storage"]["aws"]["region"]
+DEFAULT_BUCKET_NAME = CONFIG["storage"]["aws"]["bucket_name"]
+DATABASE_NAME = CONFIG["database"]["mongodb"]["database_name"]
+DOCUMENTS_COLLECTION = CONFIG["database"]["mongodb"]["documents_collection"]
+CHUNKS_COLLECTION = CONFIG["database"]["mongodb"]["chunks_collection"]
+VECTOR_DIMENSIONS = CONFIG["vector_store"]["mongodb"]["dimensions"]
+VECTOR_INDEX_NAME = CONFIG["vector_store"]["mongodb"]["index_name"]
+SIMILARITY_METRIC = CONFIG["vector_store"]["mongodb"]["similarity_metric"]
 
 
 def create_s3_bucket(bucket_name, region=DEFAULT_REGION):
@@ -142,7 +143,7 @@ def setup_mongodb():
                 {
                     "numDimensions": VECTOR_DIMENSIONS,
                     "path": "embedding",
-                    "similarity": "dotProduct",
+                    "similarity": SIMILARITY_METRIC,
                     "type": "vector",
                 },
                 {"path": "document_id", "type": "filter"},

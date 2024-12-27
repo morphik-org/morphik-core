@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import jwt
 import logging
 from core.completion.openai_completion import OpenAICompletionModel
+from core.embedding.ollama_embedding_model import OllamaEmbeddingModel
 from core.models.request import (
     IngestTextRequest,
     RetrieveRequest,
@@ -103,6 +104,11 @@ match settings.EMBEDDING_PROVIDER:
             api_key=settings.OPENAI_API_KEY,
             model_name=settings.EMBEDDING_MODEL,
         )
+    case "ollama":
+        embedding_model = OllamaEmbeddingModel(
+            model_name=settings.EMBEDDING_MODEL,
+            base_url=settings.OLLAMA_BASE_URL,
+        )
     case _:
         raise ValueError(
             f"Unsupported embedding provider: {settings.EMBEDDING_PROVIDER}"
@@ -113,6 +119,7 @@ match settings.COMPLETION_PROVIDER:
     case "ollama":
         completion_model = OllamaCompletionModel(
             model_name=settings.COMPLETION_MODEL,
+            base_url=settings.OLLAMA_BASE_URL,
         )
     case "openai":
         completion_model = OpenAICompletionModel(

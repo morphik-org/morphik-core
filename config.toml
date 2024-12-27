@@ -25,8 +25,9 @@ chunks_collection = "document_chunks"
 
 # Vector Store Configuration
 [vector_store.mongodb]
-dimensions = 1536
+dimensions = 1536 # 768 for nomic-embed-text
 index_name = "vector_index"
+similarity_metric = "dotProduct"
 
 # Model Configurations
 [models]
@@ -37,6 +38,9 @@ model_name = "text-embedding-3-small"
 model_name = "gpt-4o-mini"
 default_max_tokens = 1000
 default_temperature = 0.7
+
+[models.ollama]
+base_url = "http://localhost:11434"
 
 # Document Processing
 [processing]

@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     COMPLETION_MODEL: str = "llama3.1"
     COMPLETION_MAX_TOKENS: int = 1000
     COMPLETION_TEMPERATURE: float = 0.7
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
 
     # Processing settings
     CHUNK_SIZE: int = 1000
@@ -96,6 +97,7 @@ def get_settings() -> Settings:
         "COMPLETION_MODEL": config["models"]["completion"]["model_name"],
         "COMPLETION_MAX_TOKENS": config["models"]["completion"]["default_max_tokens"],
         "COMPLETION_TEMPERATURE": config["models"]["completion"]["default_temperature"],
+        "OLLAMA_BASE_URL": config["models"]["ollama"]["base_url"],
         # Processing settings
         "CHUNK_SIZE": config["processing"]["text"]["chunk_size"],
         "CHUNK_OVERLAP": config["processing"]["text"]["chunk_overlap"],
