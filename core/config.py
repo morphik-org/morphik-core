@@ -63,7 +63,7 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     """Get cached settings instance."""
-    load_dotenv()
+    load_dotenv(override=True)
 
     # Load config.toml
     with open("config.toml", "rb") as f:

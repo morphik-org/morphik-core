@@ -8,9 +8,9 @@ reload = false
 storage = "aws-s3"
 database = "mongodb"
 vector_store = "mongodb"
-embedding = "openai"
-completion = "openai"
-parser = "combined"
+embedding = "openai" # "ollama"
+completion = "openai" # "ollama"
+parser = "combined" # "unstructured"
 
 # Storage Configuration
 [storage.aws]
@@ -32,10 +32,10 @@ similarity_metric = "dotProduct"
 # Model Configurations
 [models]
 [models.embedding]
-model_name = "text-embedding-3-small"
+model_name = "text-embedding-3-small" # "nomic-embed-text"
 
 [models.completion]
-model_name = "gpt-4o-mini"
+model_name = "gpt-4o-mini" # "llama3.1"
 default_max_tokens = 1000
 default_temperature = 0.7
 
