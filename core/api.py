@@ -1,6 +1,6 @@
 import json
 from datetime import datetime, UTC
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import jwt

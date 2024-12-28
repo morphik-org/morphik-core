@@ -1,4 +1,5 @@
 import base64
+import binascii
 import magic
 
 
@@ -12,7 +13,7 @@ def detect_file_type(content: str) -> str:
     # Decode base64 content
     try:
         decoded_content = base64.b64decode(content)
-    except:
+    except binascii.Error:
         # If not base64, treat as plain text
         decoded_content = content.encode("utf-8")
 

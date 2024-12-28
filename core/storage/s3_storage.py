@@ -6,7 +6,6 @@ from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
-from mypy_boto3_s3 import S3Client
 
 from .base_storage import BaseStorage
 from .utils_file_extensions import detect_file_type
