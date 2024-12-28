@@ -3,7 +3,8 @@ from typing import Dict, Any, List, Optional
 from fastapi import UploadFile
 
 from core.models.request import IngestTextRequest
-from ..models.documents import (
+from core.models.documents import (
+    Chunk,
     Document,
     DocumentChunk,
     ChunkResult,
@@ -62,9 +63,7 @@ class DocumentService:
 
         # Search chunks with vector similarity
         chunks = await self.vector_store.query_similar(
-            query_embedding,
-            k=k,
-            doc_ids=doc_ids,
+            query_embedding, k=k, doc_ids=doc_ids
         )
         logger.info(f"Found {len(chunks)} similar chunks")
 
@@ -148,9 +147,7 @@ class DocumentService:
         logger.info(f"Generated {len(embeddings)} embeddings")
 
         # 4. Create and store chunk objects
-        chunk_objects = self._create_chunk_objects(
-            doc.external_id, chunks, embeddings, doc.metadata
-        )
+        chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
         logger.info(f"Created {len(chunk_objects)} chunk objects")
 
         # 5. Store everything
@@ -168,7 +165,7 @@ class DocumentService:
 
         # 1. Create document record
         doc = Document(
-            content_type=file.content_type,
+            content_type=file.content_type or "",
             filename=file.filename,
             metadata=metadata,
             owner={"type": auth.entity_type, "id": auth.entity_id},
@@ -191,7 +188,7 @@ class DocumentService:
         )
 
         # 3. Parse content into chunks
-        chunks = await self.parser.parse_file(file_content, file.content_type)
+        chunks = await self.parser.parse_file(file_content, file.content_type or "")
         if not chunks:
             raise ValueError("No content chunks extracted from file")
         logger.info(f"Parsed file into {len(chunks)} chunks")
@@ -201,9 +198,7 @@ class DocumentService:
         logger.info(f"Generated {len(embeddings)} embeddings")
 
         # 5. Create and store chunk objects
-        chunk_objects = self._create_chunk_objects(
-            doc.external_id, chunks, embeddings, doc.metadata
-        )
+        chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
         logger.info(f"Created {len(chunk_objects)} chunk objects")
 
         # 6. Store everything
@@ -215,20 +210,13 @@ class DocumentService:
     def _create_chunk_objects(
         self,
         doc_id: str,
-        chunks: List[str],
+        chunks: List[Chunk],
         embeddings: List[List[float]],
-        metadata: Dict[str, Any],
     ) -> List[DocumentChunk]:
         """Helper to create chunk objects"""
         return [
-            DocumentChunk(
-                document_id=doc_id,
-                content=content,
-                embedding=embedding,
-                chunk_number=i,
-                metadata=metadata,
-            )
-            for i, (content, embedding) in enumerate(zip(chunks, embeddings))
+            c.to_document_chunk(chunk_number=i, embedding=embedding, document_id=doc_id)
+            for i, (embedding, c) in enumerate(zip(embeddings, chunks))
         ]
 
     async def _store_chunks_and_doc(
@@ -287,11 +275,11 @@ class DocumentService:
         return results
 
     async def _create_document_results(
-        self, auth: AuthContext, chunks: List[DocumentChunk]
+        self, auth: AuthContext, chunks: List[ChunkResult]
     ) -> List[DocumentResult]:
         """Group chunks by document and create DocumentResult objects."""
         # Group chunks by document and get highest scoring chunk per doc
-        doc_chunks: Dict[str, DocumentChunk] = {}
+        doc_chunks: Dict[str, ChunkResult] = {}
         for chunk in chunks:
             if (
                 chunk.document_id not in doc_chunks

@@ -1,10 +1,14 @@
 from abc import ABC, abstractmethod
 from typing import List, Union
 
+from core.models.documents import Chunk
+
 
 class BaseEmbeddingModel(ABC):
     @abstractmethod
-    async def embed_for_ingestion(self, text: Union[str, List[str]]) -> List[float]:
+    async def embed_for_ingestion(
+        self, chunks: Union[Chunk, List[Chunk]]
+    ) -> List[List[float]]:
         """Generate embeddings for input text"""
         pass
 

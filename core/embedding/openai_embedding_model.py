@@ -1,6 +1,8 @@
 from typing import List, Union
 from openai import OpenAI
-from .base_embedding_model import BaseEmbeddingModel
+
+from core.models.documents import Chunk
+from core.embedding.base_embedding_model import BaseEmbeddingModel
 
 
 class OpenAIEmbeddingModel(BaseEmbeddingModel):
@@ -9,8 +11,10 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
         self.model_name = model_name
 
     async def embed_for_ingestion(
-        self, text: Union[str, List[str]]
+        self, chunks: Union[Chunk, List[Chunk]]
     ) -> List[List[float]]:
+        chunks = [chunks] if isinstance(chunks, Chunk) else chunks
+        text = [c.content for c in chunks]
         response = self.client.embeddings.create(model=self.model_name, input=text)
 
         return [item.embedding for item in response.data]

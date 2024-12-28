@@ -1,17 +1,13 @@
-from typing import List, Union
+from typing import List, Optional
 import logging
 import os
-from fastapi import UploadFile
 import tempfile
 import magic
+from core.models.documents import Chunk
 
-from core.models.time_series import (
-    TimeSeriesData,
-)  # python-magic library for file type detection
-
-from .base_parser import BaseParser
-from .unstructured_parser import UnstructuredAPIParser
-from .video.parse_video import VideoParser
+from core.parser.base_parser import BaseParser
+from core.parser.unstructured_parser import UnstructuredAPIParser
+from core.parser.video.parse_video import VideoParser
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +31,10 @@ class CombinedParser(BaseParser):
         self.magic = magic.Magic(mime=True)
 
     def _is_video_file(
-        self, file_path: str = None, file_bytes: bytes = None, filename: str = None
+        self,
+        file_path: Optional[str] = None,
+        file_bytes: Optional[bytes] = None,
+        filename: Optional[str] = None,
     ) -> bool:
         """
         Detect if a file is a video using multiple methods:
@@ -73,44 +72,26 @@ class CombinedParser(BaseParser):
 
         return False
 
-    async def split_text(self, text: str) -> List[str]:
+    async def split_text(self, text: str) -> List[Chunk]:
         """Split plain text into chunks using unstructured parser"""
         return await self.unstructured_parser.split_text(text)
 
-    async def parse_file(
-        self, file: Union[UploadFile, bytes], content_type: str
-    ) -> List[str]:
+    async def parse_file(self, file: bytes, content_type: str) -> List[Chunk]:
         """Parse file content into text chunks"""
-        # For UploadFile, check both filename and content
-        if isinstance(file, UploadFile):
-            content = await file.read()
-            is_video = self._is_video_file(file_bytes=content, filename=file.filename)
-            # Reset file position for later use
-            await file.seek(0)
-        else:
-            # For bytes, we can only check content
-            is_video = self._is_video_file(file_bytes=file)
+        is_video = self._is_video_file(file_bytes=file)
 
         if is_video:
             return await self._parse_video(file)
         else:
             return await self.unstructured_parser.parse_file(file, content_type)
 
-    async def _parse_video(self, file: Union[UploadFile, bytes]) -> List[str]:
+    async def _parse_video(self, file: bytes) -> List[Chunk]:
         """Parse video file and combine transcript and frame descriptions into chunks"""
         # Save video to temporary file if needed
-        if isinstance(file, bytes):
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-            temp_file.write(file)
-            temp_file.close()
-            video_path = temp_file.name
-        else:
-            # For UploadFile, save to temp file
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-            content = await file.read()
-            temp_file.write(content)
-            temp_file.close()
-            video_path = temp_file.name
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        temp_file.write(file)
+        temp_file.close()
+        video_path = temp_file.name
 
         try:
             # Process video
@@ -121,10 +102,10 @@ class CombinedParser(BaseParser):
             )
             results = parser.process_video()
             # Get all frame descriptions
-            frame_descriptions: TimeSeriesData = results["frame_descriptions"]
+            frame_chunks = results["frame_descriptions"].to_chunks()
             # Get all transcript text
-            transcript: TimeSeriesData = results["transcript"]
-            return frame_descriptions.contents + transcript.contents
+            transcript_chunks = results["transcript"].to_chunks()
+            return frame_chunks + transcript_chunks
 
         finally:
             # Clean up temporary file

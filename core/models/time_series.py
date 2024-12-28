@@ -3,6 +3,8 @@ from typing import List, Tuple, Optional, Union, Dict
 from bisect import bisect_left
 import logging
 
+from core.models.documents import Chunk
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,3 +84,9 @@ class TimeSeriesData:
     def times_for_content(self, content: str) -> List[float]:
         """Get all timestamps where this content appears"""
         return self.content_to_times[content]
+
+    def to_chunks(self) -> List[Chunk]:
+        return [
+            Chunk(content=content, metadata={"timestamp": timestamp})
+            for content, timestamp in zip(self.contents, self.timestamps)
+        ]

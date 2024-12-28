@@ -1,6 +1,7 @@
 from typing import List, Union
 from ollama import AsyncClient
 from core.embedding.base_embedding_model import BaseEmbeddingModel
+from core.models.documents import Chunk
 
 
 class OllamaEmbeddingModel(BaseEmbeddingModel):
@@ -9,14 +10,16 @@ class OllamaEmbeddingModel(BaseEmbeddingModel):
         self.client = AsyncClient(host=base_url)
 
     async def embed_for_ingestion(
-        self, text: Union[str, List[str]]
+        self, chunks: Union[Chunk, List[Chunk]]
     ) -> List[List[float]]:
-        if isinstance(text, str):
-            text = [text]
+        if isinstance(chunks, Chunk):
+            chunks = [chunks]
 
         embeddings: List[List[float]] = []
-        for t in text:
-            response = await self.client.embeddings(model=self.model_name, prompt=t)
+        for c in chunks:
+            response = await self.client.embeddings(
+                model=self.model_name, prompt=c.content
+            )
             embedding = list(response["embedding"])
             embeddings.append(embedding)
 
@@ -24,4 +27,4 @@ class OllamaEmbeddingModel(BaseEmbeddingModel):
 
     async def embed_for_query(self, text: str) -> List[float]:
         response = await self.client.embeddings(model=self.model_name, prompt=text)
-        return response["embedding"]
+        return list(response["embedding"])
