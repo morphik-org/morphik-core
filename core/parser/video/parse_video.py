@@ -1,10 +1,11 @@
+from numbers import Number
 import cv2
-from typing import Dict
+from typing import Dict, Union
 import base64
 from openai import OpenAI
 import assemblyai as aai
 import logging
-from core.models.time_series import TimeSeriesData
+from core.models.video import TimeSeriesData, ParseVideoResult
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,9 @@ class VideoParser:
             speaker_labels=True
         )  # speech_model=aai.SpeechModel.nano
         self.transcriber = aai.Transcriber(config=aai_config)
-        self.transcript = None
+        self.transcript = TimeSeriesData(
+            time_to_content={}
+        )  # empty transcript initially - TODO: have this be a lateinit somehow
         self.gpt = OpenAI()
 
         logger.info(f"Video loaded: {self.duration:.2f}s duration, {self.fps:.2f} FPS")
@@ -80,7 +83,11 @@ class VideoParser:
         logger.info("Starting video transcription")
         transcript = self.get_transcript_object()
         # divide by 1000 because assemblyai timestamps are in milliseconds
-        time_to_text = {u.start / 1000: u.text for u in transcript.utterances}
+        time_to_text = (
+            {u.start / 1000: u.text for u in transcript.utterances}
+            if transcript.utterances
+            else {}
+        )
         debug_object("Time to text", time_to_text)
         self.transcript = TimeSeriesData(time_to_text)
         return self.transcript
@@ -125,7 +132,7 @@ class VideoParser:
                                 {last_description if last_description else 'No previous frame description available, this is the first frame'}
                                 ---
 
-                                In your response, only provide the description of the current frame, using the above information as context. 
+                                In your response, only provide the description of the current frame, using the above information as context.
                                 """,
                                 },
                                 {
@@ -147,7 +154,7 @@ class VideoParser:
         logger.info(f"Generated descriptions for {len(time_to_description)} frames")
         return TimeSeriesData(time_to_description)
 
-    def process_video(self) -> Dict:
+    def process_video(self) -> ParseVideoResult:
         """
         Process the video to get both transcript and frame descriptions
 
@@ -155,16 +162,17 @@ class VideoParser:
             Dictionary containing transcript and frame descriptions as TimeSeriesData objects
         """
         logger.info("Starting full video processing")
-        result = {
-            "metadata": {
-                "duration": self.duration,
-                "fps": self.fps,
-                "total_frames": self.total_frames,
-                "frame_sample_rate": self.frame_sample_rate,
-            },
-            "transcript": self.get_transcript(),
-            "frame_descriptions": self.get_frame_descriptions(),
+        metadata = {
+            "duration": self.duration,
+            "fps": self.fps,
+            "total_frames": self.total_frames,
+            "frame_sample_rate": self.frame_sample_rate,
         }
+        result = ParseVideoResult(
+            metadata=metadata,
+            transcript=self.get_transcript(),
+            frame_descriptions=self.get_frame_descriptions(),
+        )
         logger.info("Video processing completed successfully")
         return result
 

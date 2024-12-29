@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
-from core.models.auth import AuthContext
 from core.models.documents import DocumentChunk
 
 

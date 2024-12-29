@@ -21,6 +21,7 @@ class Document(BaseModel):
     content_type: str
     filename: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    """user-defined metadata"""
     storage_info: Dict[str, str] = Field(default_factory=dict)
     system_metadata: Dict[str, Any] = Field(
         default_factory=lambda: {
@@ -29,6 +30,9 @@ class Document(BaseModel):
             "version": 1,
         }
     )
+    """metadata such as creation date etc."""
+    additional_metadata: Dict[str, Any] = Field(default_factory=dict)
+    """metadata to help with querying eg. frame descriptions and time-stamped transcript for videos"""
     access_control: Dict[str, List[str]] = Field(
         default_factory=lambda: {"readers": [], "writers": [], "admins": []}
     )

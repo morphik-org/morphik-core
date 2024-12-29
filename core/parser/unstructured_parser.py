@@ -1,4 +1,4 @@
-from typing import List
+from typing import Any, Dict, List, Tuple
 import io
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_unstructured import UnstructuredLoader
@@ -32,7 +32,9 @@ class UnstructuredAPIParser(BaseParser):
             for chunk in self.text_splitter.split_text(text)
         ]
 
-    async def parse_file(self, file: bytes, content_type: str) -> List[Chunk]:
+    async def parse_file(
+        self, file: bytes, content_type: str
+    ) -> Tuple[Dict[str, Any], List[Chunk]]:
         """Parse file content using unstructured"""
         # Parse with unstructured
         loader = UnstructuredLoader(
@@ -42,6 +44,6 @@ class UnstructuredAPIParser(BaseParser):
             chunking_strategy="by_title",
         )
         elements = loader.load()
-        return [
+        return {}, [
             Chunk(content=element.page_content, metadata={}) for element in elements
         ]

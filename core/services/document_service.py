@@ -163,7 +163,11 @@ class DocumentService:
         if "write" not in auth.permissions:
             raise PermissionError("User does not have write permission")
 
-        # 1. Create document record
+        file_content = await file.read()
+        additional_metadata, chunks = await self.parser.parse_file(
+            file_content, file.content_type or ""
+        )
+
         doc = Document(
             content_type=file.content_type or "",
             filename=file.filename,
@@ -174,11 +178,10 @@ class DocumentService:
                 "writers": [auth.entity_id],
                 "admins": [auth.entity_id],
             },
+            additional_metadata=additional_metadata,
         )
         logger.info(f"Created file document record with ID {doc.external_id}")
 
-        # 2. Read and store file
-        file_content = await file.read()
         storage_info = await self.storage.upload_from_base64(
             base64.b64encode(file_content).decode(), doc.external_id, file.content_type
         )
@@ -187,8 +190,6 @@ class DocumentService:
             f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`"
         )
 
-        # 3. Parse content into chunks
-        chunks = await self.parser.parse_file(file_content, file.content_type or "")
         if not chunks:
             raise ValueError("No content chunks extracted from file")
         logger.info(f"Parsed file into {len(chunks)} chunks")

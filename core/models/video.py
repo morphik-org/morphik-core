@@ -1,7 +1,10 @@
 from collections import defaultdict
+from numbers import Number
 from typing import List, Tuple, Optional, Union, Dict
 from bisect import bisect_left
 import logging
+
+from pydantic import BaseModel
 
 from core.models.documents import Chunk
 
@@ -18,6 +21,7 @@ class TimeSeriesData:
         """
         # Sort timestamps and content for binary search
         sorted_items = sorted(time_to_content.items(), key=lambda x: x[0])
+        self.time_to_content = time_to_content
         self.timestamps = [t for t, _ in sorted_items]
         self.contents = [c for _, c in sorted_items]
 
@@ -90,3 +94,9 @@ class TimeSeriesData:
             Chunk(content=content, metadata={"timestamp": timestamp})
             for content, timestamp in zip(self.contents, self.timestamps)
         ]
+
+
+class ParseVideoResult(BaseModel):
+    metadata: Dict[str, Number]
+    frame_descriptions: TimeSeriesData
+    transcript: TimeSeriesData

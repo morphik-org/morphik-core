@@ -1,10 +1,11 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import logging
 import os
 import tempfile
 import magic
 from core.models.documents import Chunk
 
+from core.models.video import TimeSeriesData
 from core.parser.base_parser import BaseParser
 from core.parser.unstructured_parser import UnstructuredAPIParser
 from core.parser.video.parse_video import VideoParser
@@ -76,7 +77,9 @@ class CombinedParser(BaseParser):
         """Split plain text into chunks using unstructured parser"""
         return await self.unstructured_parser.split_text(text)
 
-    async def parse_file(self, file: bytes, content_type: str) -> List[Chunk]:
+    async def parse_file(
+        self, file: bytes, content_type: str
+    ) -> Tuple[Dict[str, Any], List[Chunk]]:
         """Parse file content into text chunks"""
         is_video = self._is_video_file(file_bytes=file)
 
@@ -85,7 +88,7 @@ class CombinedParser(BaseParser):
         else:
             return await self.unstructured_parser.parse_file(file, content_type)
 
-    async def _parse_video(self, file: bytes) -> List[Chunk]:
+    async def _parse_video(self, file: bytes) -> Tuple[Dict[str, Any], List[Chunk]]:
         """Parse video file and combine transcript and frame descriptions into chunks"""
         # Save video to temporary file if needed
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
@@ -102,10 +105,16 @@ class CombinedParser(BaseParser):
             )
             results = parser.process_video()
             # Get all frame descriptions
-            frame_chunks = results["frame_descriptions"].to_chunks()
+            frame_descriptions = results.frame_descriptions
             # Get all transcript text
-            transcript_chunks = results["transcript"].to_chunks()
-            return frame_chunks + transcript_chunks
+            transcript_text = results.transcript
+            additional_metadata = {
+                "frame_descriptions": frame_descriptions.time_to_content,
+                "transcript": transcript_text.time_to_content,
+                "video_metadata": results.metadata,
+            }
+            chunks = frame_descriptions.to_chunks() + transcript_text.to_chunks()
+            return additional_metadata, chunks
 
         finally:
             # Clean up temporary file

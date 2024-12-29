@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Union
-from fastapi import UploadFile
+from typing import Any, Dict, List, Tuple
 from core.models.documents import Chunk
 
 
@@ -13,6 +12,8 @@ class BaseParser(ABC):
         pass
 
     @abstractmethod
-    async def parse_file(self, file: bytes, content_type: str) -> List[Chunk]:
+    async def parse_file(
+        self, file: bytes, content_type: str
+    ) -> Tuple[Dict[str, Any], List[Chunk]]:
         """Parse file content into text chunks"""
         pass
