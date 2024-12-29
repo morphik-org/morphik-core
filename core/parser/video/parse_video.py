@@ -1,6 +1,4 @@
-from numbers import Number
 import cv2
-from typing import Dict, Union
 import base64
 from openai import OpenAI
 import assemblyai as aai

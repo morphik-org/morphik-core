@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field, field_validator
 import uuid
 import logging
 
+from core.models.video import TimeSeriesData
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,19 +71,6 @@ class Chunk(BaseModel):
         )
 
 
-class ChunkResult(BaseModel):
-    """Query result at chunk level"""
-
-    content: str
-    score: float
-    document_id: str  # external_id
-    chunk_number: int
-    metadata: Dict[str, Any]
-    content_type: str
-    filename: Optional[str] = None
-    download_url: Optional[str] = None
-
-
 class DocumentContent(BaseModel):
     """Represents either a URL or content string"""
 
@@ -106,3 +95,46 @@ class DocumentResult(BaseModel):
     document_id: str  # external_id
     metadata: Dict[str, Any]
     content: DocumentContent
+    additional_metadata: Dict[str, Any]
+
+
+class ChunkResult(BaseModel):
+    """Query result at chunk level"""
+
+    content: str
+    score: float
+    document_id: str  # external_id
+    chunk_number: int
+    metadata: Dict[str, Any]
+    content_type: str
+    filename: Optional[str] = None
+    download_url: Optional[str] = None
+
+    def augmented_content(self, doc: DocumentResult) -> str:
+        match self.metadata:
+            case m if "timestamp" in m:
+                # if timestamp present, then must be a video. In that case,
+                # obtain the original document and augment the content with
+                # frame/transcript information as well.
+                frame_description = doc.additional_metadata.get("frame_description")
+                transcript = doc.additional_metadata.get("transcript")
+                if not isinstance(frame_description, dict) or not isinstance(
+                    transcript, dict
+                ):
+                    logger.warning(
+                        "Invalid frame description or transcript - not a dictionary"
+                    )
+                    return self.content
+                ts_frame = TimeSeriesData(frame_description)
+                ts_transcript = TimeSeriesData(transcript)
+                timestamps = (
+                    ts_frame.content_to_times[self.content]
+                    + ts_transcript.content_to_times[self.content]
+                )
+                augmented_contents = [
+                    f"Frame description: {ts_frame.at_time(t)} \n \n Transcript: {ts_transcript.at_time(t)}"
+                    for t in timestamps
+                ]
+                return "\n\n".join(augmented_contents)
+            case _:
+                return self.content

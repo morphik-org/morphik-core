@@ -83,11 +83,11 @@ class DocumentService:
         """Retrieve relevant documents."""
         # Get chunks first
         chunks = await self.retrieve_chunks(query, auth, filters, k, min_score)
-
         # Convert to document results
         results = await self._create_document_results(auth, chunks)
-        logger.info(f"Returning {len(results)} document results")
-        return results
+        documents = list(results.values())
+        logger.info(f"Returning {len(documents)} document results")
+        return documents
 
     async def query(
         self,
@@ -102,7 +102,11 @@ class DocumentService:
         """Generate completion using relevant chunks as context."""
         # Get relevant chunks
         chunks = await self.retrieve_chunks(query, auth, filters, k, min_score)
-        chunk_contents = [chunk.content for chunk in chunks]
+        documents = await self._create_document_results(auth, chunks)
+
+        chunk_contents = [
+            chunk.augmented_content(documents[chunk.document_id]) for chunk in chunks
+        ]
 
         # Generate completion
         request = CompletionRequest(
@@ -277,7 +281,7 @@ class DocumentService:
 
     async def _create_document_results(
         self, auth: AuthContext, chunks: List[ChunkResult]
-    ) -> List[DocumentResult]:
+    ) -> Dict[str, DocumentResult]:
         """Group chunks by document and create DocumentResult objects."""
         # Group chunks by document and get highest scoring chunk per doc
         doc_chunks: Dict[str, ChunkResult] = {}
@@ -289,7 +293,7 @@ class DocumentService:
                 doc_chunks[chunk.document_id] = chunk
         logger.info(f"Grouped chunks into {len(doc_chunks)} documents")
         logger.info(f"Document chunks: {doc_chunks}")
-        results = []
+        results = {}
         for doc_id, chunk in doc_chunks.items():
             # Get document metadata
             doc = await self.db.get_document(doc_id, auth)
@@ -313,14 +317,12 @@ class DocumentService:
                     type="url", value=download_url, filename=doc.filename
                 )
                 logger.debug(f"Created URL content for document {doc_id}")
-
-            results.append(
-                DocumentResult(
-                    score=chunk.score,
-                    document_id=doc_id,
-                    metadata=doc.metadata,
-                    content=content,
-                )
+            results[doc_id] = DocumentResult(
+                score=chunk.score,
+                document_id=doc_id,
+                metadata=doc.metadata,
+                content=content,
+                additional_metadata=doc.additional_metadata,
             )
 
         logger.info(f"Created {len(results)} document results")
