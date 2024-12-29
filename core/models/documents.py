@@ -118,12 +118,8 @@ class ChunkResult(BaseModel):
                 # frame/transcript information as well.
                 frame_description = doc.additional_metadata.get("frame_description")
                 transcript = doc.additional_metadata.get("transcript")
-                if not isinstance(frame_description, dict) or not isinstance(
-                    transcript, dict
-                ):
-                    logger.warning(
-                        "Invalid frame description or transcript - not a dictionary"
-                    )
+                if not isinstance(frame_description, dict) or not isinstance(transcript, dict):
+                    logger.warning("Invalid frame description or transcript - not a dictionary")
                     return self.content
                 ts_frame = TimeSeriesData(frame_description)
                 ts_transcript = TimeSeriesData(transcript)

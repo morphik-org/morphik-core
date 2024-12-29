@@ -62,9 +62,7 @@ class DocumentService:
         logger.info(f"Found {len(doc_ids)} authorized documents")
 
         # Search chunks with vector similarity
-        chunks = await self.vector_store.query_similar(
-            query_embedding, k=k, doc_ids=doc_ids
-        )
+        chunks = await self.vector_store.query_similar(query_embedding, k=k, doc_ids=doc_ids)
         logger.info(f"Found {len(chunks)} similar chunks")
 
         # Create and return chunk results
@@ -104,9 +102,7 @@ class DocumentService:
         chunks = await self.retrieve_chunks(query, auth, filters, k, min_score)
         documents = await self._create_document_results(auth, chunks)
 
-        chunk_contents = [
-            chunk.augmented_content(documents[chunk.document_id]) for chunk in chunks
-        ]
+        chunk_contents = [chunk.augmented_content(documents[chunk.document_id]) for chunk in chunks]
 
         # Generate completion
         request = CompletionRequest(
@@ -119,9 +115,7 @@ class DocumentService:
         response = await self.completion_model.complete(request)
         return response
 
-    async def ingest_text(
-        self, request: IngestTextRequest, auth: AuthContext
-    ) -> Document:
+    async def ingest_text(self, request: IngestTextRequest, auth: AuthContext) -> Document:
         """Ingest a text document."""
         if "write" not in auth.permissions:
             logger.error(f"User {auth.entity_id} does not have write permission")
@@ -190,9 +184,7 @@ class DocumentService:
             base64.b64encode(file_content).decode(), doc.external_id, file.content_type
         )
         doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
-        logger.info(
-            f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`"
-        )
+        logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
 
         if not chunks:
             raise ValueError("No content chunks extracted from file")
@@ -304,18 +296,14 @@ class DocumentService:
 
             # Create DocumentContent based on content type
             if doc.content_type == "text/plain":
-                content = DocumentContent(
-                    type="string", value=chunk.content, filename=None
-                )
+                content = DocumentContent(type="string", value=chunk.content, filename=None)
                 logger.debug(f"Created text content for document {doc_id}")
             else:
                 # Generate download URL for file types
                 download_url = await self.storage.get_download_url(
                     doc.storage_info["bucket"], doc.storage_info["key"]
                 )
-                content = DocumentContent(
-                    type="url", value=download_url, filename=doc.filename
-                )
+                content = DocumentContent(type="url", value=download_url, filename=doc.filename)
                 logger.debug(f"Created URL content for document {doc_id}")
             results[doc_id] = DocumentResult(
                 score=chunk.score,

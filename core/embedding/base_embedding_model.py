@@ -6,9 +6,7 @@ from core.models.documents import Chunk
 
 class BaseEmbeddingModel(ABC):
     @abstractmethod
-    async def embed_for_ingestion(
-        self, chunks: Union[Chunk, List[Chunk]]
-    ) -> List[List[float]]:
+    async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> List[List[float]]:
         """Generate embeddings for input text"""
         pass
 

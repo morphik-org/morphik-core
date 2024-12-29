@@ -57,9 +57,7 @@ class BaseStorage(ABC):
         pass
 
     @abstractmethod
-    async def get_download_url(
-        self, bucket: str, key: str, expires_in: int = 3600
-    ) -> str:
+    async def get_download_url(self, bucket: str, key: str, expires_in: int = 3600) -> str:
         """
         Get temporary download URL.
 

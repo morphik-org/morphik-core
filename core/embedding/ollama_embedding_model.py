@@ -9,17 +9,13 @@ class OllamaEmbeddingModel(BaseEmbeddingModel):
         self.model_name = model_name
         self.client = AsyncClient(host=base_url)
 
-    async def embed_for_ingestion(
-        self, chunks: Union[Chunk, List[Chunk]]
-    ) -> List[List[float]]:
+    async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> List[List[float]]:
         if isinstance(chunks, Chunk):
             chunks = [chunks]
 
         embeddings: List[List[float]] = []
         for c in chunks:
-            response = await self.client.embeddings(
-                model=self.model_name, prompt=c.content
-            )
+            response = await self.client.embeddings(model=self.model_name, prompt=c.content)
             embedding = list(response["embedding"])
             embeddings.append(embedding)
 

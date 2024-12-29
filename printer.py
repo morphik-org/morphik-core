@@ -179,18 +179,14 @@ Root Directory: {root_dir}
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Aggregate Python files with directory structure"
-    )
+    parser = argparse.ArgumentParser(description="Aggregate Python files with directory structure")
     parser.add_argument(
         "--mode",
         choices=["all", "core", "sdk", "test"],
         default="all",
         help="Which directories to process",
     )
-    parser.add_argument(
-        "--output", default="aggregated_code.txt", help="Output file name"
-    )
+    parser.add_argument("--output", default="aggregated_code.txt", help="Output file name")
     args = parser.parse_args()
 
     script_name = os.path.basename(__file__)

@@ -5,9 +5,7 @@ from core.models.documents import DocumentChunk
 
 class BaseVectorStore(ABC):
     @abstractmethod
-    async def store_embeddings(
-        self, chunks: List[DocumentChunk]
-    ) -> Tuple[bool, List[str]]:
+    async def store_embeddings(self, chunks: List[DocumentChunk]) -> Tuple[bool, List[str]]:
         """Store document chunks and their embeddings"""
         pass
 

@@ -10,9 +10,7 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
         self.client = OpenAI(api_key=api_key)
         self.model_name = model_name
 
-    async def embed_for_ingestion(
-        self, chunks: Union[Chunk, List[Chunk]]
-    ) -> List[List[float]]:
+    async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> List[List[float]]:
         chunks = [chunks] if isinstance(chunks, Chunk) else chunks
         text = [c.content for c in chunks]
         response = self.client.embeddings.create(model=self.model_name, input=text)

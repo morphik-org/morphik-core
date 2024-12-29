@@ -88,9 +88,7 @@ class DataBridge:
         response.raise_for_status()
         return response.json()
 
-    def ingest_text(
-        self, content: str, metadata: Optional[Dict[str, Any]] = None
-    ) -> Document:
+    def ingest_text(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> Document:
         """
         Ingest a text document into DataBridge.
 
@@ -166,9 +164,7 @@ class DataBridge:
 
         try:
             # Prepare multipart form data
-            files = {
-                "file": (filename, file_obj, content_type or "application/octet-stream")
-            }
+            files = {"file": (filename, file_obj, content_type or "application/octet-stream")}
 
             # Add metadata
             data = {"metadata": json.dumps(metadata or {})}
@@ -312,9 +308,7 @@ class DataBridge:
             next_page = db.list_documents(skip=10, limit=10, filters={"department": "research"})
             ```
         """
-        response = self._request(
-            "GET", f"documents?skip={skip}&limit={limit}&filters={filters}"
-        )
+        response = self._request("GET", f"documents?skip={skip}&limit={limit}&filters={filters}")
         return [Document(**doc) for doc in response]
 
     def get_document(self, document_id: str) -> Document:

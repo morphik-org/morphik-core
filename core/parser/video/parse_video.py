@@ -13,9 +13,7 @@ def debug_object(title, obj):
 
 
 class VideoParser:
-    def __init__(
-        self, video_path: str, assemblyai_api_key: str, frame_sample_rate: int = 120
-    ):
+    def __init__(self, video_path: str, assemblyai_api_key: str, frame_sample_rate: int = 120):
         """
         Initialize the video parser
 
@@ -82,9 +80,7 @@ class VideoParser:
         transcript = self.get_transcript_object()
         # divide by 1000 because assemblyai timestamps are in milliseconds
         time_to_text = (
-            {u.start / 1000: u.text for u in transcript.utterances}
-            if transcript.utterances
-            else {}
+            {u.start / 1000: u.text for u in transcript.utterances} if transcript.utterances else {}
         )
         debug_object("Time to text", time_to_text)
         self.transcript = TimeSeriesData(time_to_text)
@@ -135,9 +131,7 @@ class VideoParser:
                                 },
                                 {
                                     "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/jpeg;base64,{img_base64}"
-                                    },
+                                    "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"},
                                 },
                             ],
                         }

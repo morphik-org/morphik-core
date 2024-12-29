@@ -62,9 +62,7 @@ match settings.VECTOR_STORE_PROVIDER:
             index_name=settings.VECTOR_INDEX_NAME,
         )
     case _:
-        raise ValueError(
-            f"Unsupported vector store provider: {settings.VECTOR_STORE_PROVIDER}"
-        )
+        raise ValueError(f"Unsupported vector store provider: {settings.VECTOR_STORE_PROVIDER}")
 
 # Initialize storage
 match settings.STORAGE_PROVIDER:
@@ -110,9 +108,7 @@ match settings.EMBEDDING_PROVIDER:
             base_url=settings.OLLAMA_BASE_URL,
         )
     case _:
-        raise ValueError(
-            f"Unsupported embedding provider: {settings.EMBEDDING_PROVIDER}"
-        )
+        raise ValueError(f"Unsupported embedding provider: {settings.EMBEDDING_PROVIDER}")
 
 # Initialize completion model
 match settings.COMPLETION_PROVIDER:
@@ -126,9 +122,7 @@ match settings.COMPLETION_PROVIDER:
             model_name=settings.COMPLETION_MODEL,
         )
     case _:
-        raise ValueError(
-            f"Unsupported completion provider: {settings.COMPLETION_PROVIDER}"
-        )
+        raise ValueError(f"Unsupported completion provider: {settings.COMPLETION_PROVIDER}")
 
 # Initialize document service with configured components
 document_service = DocumentService(
@@ -154,9 +148,7 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:
             raise HTTPException(status_code=401, detail="Invalid authorization header")
 
         token = authorization[7:]  # Remove "Bearer "
-        payload = jwt.decode(
-            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
-        )
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
 
         if datetime.fromtimestamp(payload["exp"], UTC) < datetime.now(UTC):
             raise HTTPException(status_code=401, detail="Token expired")
@@ -200,9 +192,7 @@ async def ingest_file(
 
 
 @app.post("/retrieve/chunks", response_model=List[ChunkResult])
-async def retrieve_chunks(
-    request: RetrieveRequest, auth: AuthContext = Depends(verify_token)
-):
+async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(verify_token)):
     """Retrieve relevant chunks."""
     return await document_service.retrieve_chunks(
         request.query, auth, request.filters, request.k, request.min_score
@@ -210,9 +200,7 @@ async def retrieve_chunks(
 
 
 @app.post("/retrieve/docs", response_model=List[DocumentResult])
-async def retrieve_documents(
-    request: RetrieveRequest, auth: AuthContext = Depends(verify_token)
-):
+async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depends(verify_token)):
     """Retrieve relevant documents."""
     return await document_service.retrieve_docs(
         request.query, auth, request.filters, request.k, request.min_score

@@ -41,9 +41,7 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
             logger.error(f"Error initializing vector store indexes: {str(e)}")
             return False
 
-    async def store_embeddings(
-        self, chunks: List[DocumentChunk]
-    ) -> Tuple[bool, List[str]]:
+    async def store_embeddings(self, chunks: List[DocumentChunk]) -> Tuple[bool, List[str]]:
         """Store document chunks with their embeddings."""
         try:
             if not chunks:
@@ -56,8 +54,7 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
                 # Ensure we have required fields
                 if not doc.get("embedding"):
                     logger.error(
-                        f"Missing embedding for chunk "
-                        f"{chunk.document_id}-{chunk.chunk_number}"
+                        f"Missing embedding for chunk " f"{chunk.document_id}-{chunk.chunk_number}"
                     )
                     continue
                 documents.append(doc)
@@ -65,9 +62,7 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
             if documents:
                 # Use ordered=False to continue even if some inserts fail
                 result = await self.collection.insert_many(documents, ordered=False)
-                return len(result.inserted_ids) > 0, [
-                    str(id) for id in result.inserted_ids
-                ]
+                return len(result.inserted_ids) > 0, [str(id) for id in result.inserted_ids]
             else:
                 logger.error(f"No documents to store - here is the input: {chunks}")
                 return False, []
@@ -85,8 +80,7 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
         """Find similar chunks using MongoDB Atlas Vector Search."""
         try:
             logger.debug(
-                f"Searching in database {self.db.name} "
-                f"collection {self.collection.name}"
+                f"Searching in database {self.db.name} " f"collection {self.collection.name}"
             )
             logger.debug(f"Query vector looks like: {query_embedding}")
             logger.debug(f"Doc IDs: {doc_ids}")

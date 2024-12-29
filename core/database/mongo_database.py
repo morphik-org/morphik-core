@@ -60,9 +60,7 @@ class MongoDatabase(BaseDatabase):
             logger.error(f"Error storing document metadata: {str(e)}")
             return False
 
-    async def get_document(
-        self, document_id: str, auth: AuthContext
-    ) -> Optional[Document]:
+    async def get_document(self, document_id: str, auth: AuthContext) -> Optional[Document]:
         """Retrieve document metadata by ID if user has access."""
         try:
             # Build access filter
@@ -92,11 +90,7 @@ class MongoDatabase(BaseDatabase):
             # Build query
             auth_filter = self._build_access_filter(auth)
             metadata_filter = self._build_metadata_filter(filters)
-            query = (
-                {"$and": [auth_filter, metadata_filter]}
-                if metadata_filter
-                else auth_filter
-            )
+            query = {"$and": [auth_filter, metadata_filter]} if metadata_filter else auth_filter
 
             # Execute paginated query
             cursor = self.collection.find(query).skip(skip).limit(limit)
@@ -157,9 +151,7 @@ class MongoDatabase(BaseDatabase):
         # Build query
         auth_filter = self._build_access_filter(auth)
         metadata_filter = self._build_metadata_filter(filters)
-        query = (
-            {"$and": [auth_filter, metadata_filter]} if metadata_filter else auth_filter
-        )
+        query = {"$and": [auth_filter, metadata_filter]} if metadata_filter else auth_filter
 
         # Get matching document IDs
         cursor = self.collection.find(query, {"external_id": 1})
@@ -183,10 +175,7 @@ class MongoDatabase(BaseDatabase):
 
             # Check owner access
             owner = doc.get("owner", {})
-            if (
-                owner.get("type") == auth.entity_type
-                and owner.get("id") == auth.entity_id
-            ):
+            if owner.get("type") == auth.entity_type and owner.get("id") == auth.entity_id:
                 return True
 
             # Check permission-specific access

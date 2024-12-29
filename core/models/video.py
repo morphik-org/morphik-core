@@ -77,13 +77,8 @@ class TimeSeriesData:
         start_idx = max(0, start_idx)
         end_idx = min(len(self.timestamps) - 1, end_idx)
 
-        logger.debug(
-            f"Retrieving content between {start_time:.2f}s and {end_time:.2f}s"
-        )
-        return [
-            (self.timestamps[i], self.contents[i])
-            for i in range(start_idx, end_idx + 1)
-        ]
+        logger.debug(f"Retrieving content between {start_time:.2f}s and {end_time:.2f}s")
+        return [(self.timestamps[i], self.contents[i]) for i in range(start_idx, end_idx + 1)]
 
     def times_for_content(self, content: str) -> List[float]:
         """Get all timestamps where this content appears"""

@@ -16,9 +16,7 @@ load_dotenv(find_dotenv(), override=True)
 # Set up argument parser
 parser = argparse.ArgumentParser(description="Setup S3 bucket and MongoDB collections")
 parser.add_argument("--debug", action="store_true", help="Enable debug logging")
-parser.add_argument(
-    "--quiet", action="store_true", help="Only show warning and error logs"
-)
+parser.add_argument("--quiet", action="store_true", help="Only show warning and error logs")
 args = parser.parse_args()
 
 # Configure logging based on command line arguments
@@ -155,14 +153,10 @@ def setup_mongodb():
             type="vectorSearch",
         )
         db[CHUNKS_COLLECTION].create_search_index(model=vector_index)
-        LOGGER.info(
-            "Vector index 'vector_index' created on 'documents_chunk' collection."
-        )
+        LOGGER.info("Vector index 'vector_index' created on 'documents_chunk' collection.")
 
     except ConnectionFailure:
-        LOGGER.error(
-            "Failed to connect to MongoDB. Check your MongoDB URI and network connection."
-        )
+        LOGGER.error("Failed to connect to MongoDB. Check your MongoDB URI and network connection.")
     except OperationFailure as e:
         LOGGER.error(f"MongoDB operation failed: {e}")
     except Exception as e:

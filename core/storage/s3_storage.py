@@ -61,9 +61,7 @@ class S3Storage(BaseStorage):
                     Path(temp_file_path).unlink()
             else:
                 # File object
-                self.s3_client.upload_fileobj(
-                    file, self.default_bucket, key, ExtraArgs=extra_args
-                )
+                self.s3_client.upload_fileobj(file, self.default_bucket, key, ExtraArgs=extra_args)
 
             return self.default_bucket, key
 
@@ -80,9 +78,7 @@ class S3Storage(BaseStorage):
             extension = detect_file_type(content)
             key = f"{key}{extension}"
 
-            return await self.upload_file(
-                file=decoded_content, key=key, content_type=content_type
-            )
+            return await self.upload_file(file=decoded_content, key=key, content_type=content_type)
 
         except Exception as e:
             logger.error(f"Error uploading base64 content to S3: {e}")
@@ -97,9 +93,7 @@ class S3Storage(BaseStorage):
             logger.error(f"Error downloading from S3: {e}")
             raise
 
-    async def get_download_url(
-        self, bucket: str, key: str, expires_in: int = 3600
-    ) -> str:
+    async def get_download_url(self, bucket: str, key: str, expires_in: int = 3600) -> str:
         """Generate presigned download URL."""
         if not key or not bucket:
             return ""

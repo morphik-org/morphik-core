@@ -171,16 +171,12 @@ class AsyncDataBridge:
 
         try:
             # Prepare multipart form data
-            files = {
-                "file": (filename, file_obj, content_type or "application/octet-stream")
-            }
+            files = {"file": (filename, file_obj, content_type or "application/octet-stream")}
 
             # Add metadata
             data = {"metadata": json.dumps(metadata or {})}
 
-            response = await self._request(
-                "POST", "ingest/file", data=data, files=files
-            )
+            response = await self._request("POST", "ingest/file", data=data, files=files)
             return Document(**response)
         finally:
             # Close file if we opened it

@@ -17,9 +17,7 @@ class BaseDatabase(ABC):
         pass
 
     @abstractmethod
-    async def get_document(
-        self, document_id: str, auth: AuthContext
-    ) -> Optional[Document]:
+    async def get_document(self, document_id: str, auth: AuthContext) -> Optional[Document]:
         """
         Retrieve document metadata by ID if user has access.
         Returns: Document if found and accessible, None otherwise

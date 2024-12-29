@@ -27,10 +27,7 @@ class UnstructuredAPIParser(BaseParser):
 
     async def split_text(self, text: str) -> List[Chunk]:
         """Split plain text into chunks"""
-        return [
-            Chunk(content=chunk, metadata={})
-            for chunk in self.text_splitter.split_text(text)
-        ]
+        return [Chunk(content=chunk, metadata={}) for chunk in self.text_splitter.split_text(text)]
 
     async def parse_file(
         self, file: bytes, content_type: str
@@ -44,6 +41,4 @@ class UnstructuredAPIParser(BaseParser):
             chunking_strategy="by_title",
         )
         elements = loader.load()
-        return {}, [
-            Chunk(content=element.page_content, metadata={}) for element in elements
-        ]
+        return {}, [Chunk(content=element.page_content, metadata={}) for element in elements]
