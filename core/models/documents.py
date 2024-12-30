@@ -6,7 +6,6 @@ import uuid
 import logging
 
 from core.models.video import TimeSeriesData
-from core.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
 
@@ -40,30 +39,6 @@ class Document(BaseModel):
         default_factory=lambda: {"readers": [], "writers": [], "admins": []}
     )
     chunk_ids: List[str] = Field(default_factory=list)
-
-
-class DocumentChunk(BaseModel):
-    """Represents a chunk stored in VectorStore"""
-
-    document_id: str  # external_id of parent document
-    content: str
-    embedding: List[float]
-    chunk_number: int
-    # chunk-specific metadata
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    score: float = 0.0
-
-
-def to_document_chunk(
-    chunk: Chunk, document_id: str, chunk_number: int, embedding: List[float]
-) -> DocumentChunk:
-    return DocumentChunk(
-        document_id=document_id,
-        content=chunk.content,
-        embedding=embedding,
-        chunk_number=chunk_number,
-        metadata=chunk.metadata,
-    )
 
 
 class DocumentContent(BaseModel):
@@ -116,8 +91,8 @@ class ChunkResult(BaseModel):
                 if not isinstance(frame_description, dict) or not isinstance(transcript, dict):
                     logger.warning("Invalid frame description or transcript - not a dictionary")
                     return self.content
-                ts_frame = TimeSeriesData(frame_description)
-                ts_transcript = TimeSeriesData(transcript)
+                ts_frame = TimeSeriesData(time_to_content=frame_description)
+                ts_transcript = TimeSeriesData(time_to_content=transcript)
                 timestamps = (
                     ts_frame.content_to_times[self.content]
                     + ts_transcript.content_to_times[self.content]

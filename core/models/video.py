@@ -1,10 +1,9 @@
 from collections import defaultdict
-from numbers import Number
 from typing import List, Tuple, Optional, Union, Dict
 from bisect import bisect_left
 import logging
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, computed_field
 
 from core.models.chunk import Chunk
 
