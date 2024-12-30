@@ -4,33 +4,40 @@ from typing import List, Tuple, Optional, Union, Dict
 from bisect import bisect_left
 import logging
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, computed_field
 
-from core.models.documents import Chunk
+from core.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
 
 
-class TimeSeriesData:
-    def __init__(self, time_to_content: Dict[float, str]):
-        """
-        Initialize time series data structure for efficient time-based queries
+class TimeSeriesData(BaseModel):
+    """Time series data structure for efficient time-based queries"""
 
-        Args:
-            time_to_content: Dictionary mapping timestamps to content
-        """
-        # Sort timestamps and content for binary search
-        sorted_items = sorted(time_to_content.items(), key=lambda x: x[0])
-        self.time_to_content = time_to_content
-        self.timestamps = [t for t, _ in sorted_items]
-        self.contents = [c for _, c in sorted_items]
+    time_to_content: Dict[float, str]
 
-        # Create reverse mapping
-        self.content_to_times = defaultdict(list)
-        for t, c in time_to_content.items():
-            self.content_to_times[c].append(t)
+    @computed_field
+    @property
+    def _sorted_items(self) -> List[Tuple[float, str]]:
+        return sorted(self.time_to_content.items(), key=lambda x: x[0])
 
-        logger.debug(f"Initialized TimeSeriesData with {len(sorted_items)} entries")
+    @computed_field
+    @property
+    def timestamps(self) -> List[float]:
+        return [t for t, _ in self._sorted_items]
+
+    @computed_field
+    @property
+    def contents(self) -> List[str]:
+        return [c for _, c in self._sorted_items]
+
+    @computed_field
+    @property
+    def content_to_times(self) -> Dict[str, List[float]]:
+        result = defaultdict(list)
+        for t, c in self.time_to_content.items():
+            result[c].append(t)
+        return dict(result)
 
     def _find_nearest_index(self, time: float) -> int:
         """Find index of nearest timestamp using binary search"""
@@ -82,7 +89,7 @@ class TimeSeriesData:
 
     def times_for_content(self, content: str) -> List[float]:
         """Get all timestamps where this content appears"""
-        return self.content_to_times[content]
+        return self.content_to_times.get(content, [])
 
     def to_chunks(self) -> List[Chunk]:
         return [
@@ -92,6 +99,6 @@ class TimeSeriesData:
 
 
 class ParseVideoResult(BaseModel):
-    metadata: Dict[str, Number]
+    metadata: Dict[str, Union[float, int]]
     frame_descriptions: TimeSeriesData
     transcript: TimeSeriesData

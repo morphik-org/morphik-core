@@ -6,6 +6,7 @@ import uuid
 import logging
 
 from core.models.video import TimeSeriesData
+from core.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
 
@@ -53,22 +54,16 @@ class DocumentChunk(BaseModel):
     score: float = 0.0
 
 
-class Chunk(BaseModel):
-    """Represents a chunk containing content and metadata"""
-
-    content: str
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-    def to_document_chunk(
-        self, document_id: str, chunk_number: int, embedding: List[float]
-    ) -> DocumentChunk:
-        return DocumentChunk(
-            document_id=document_id,
-            content=self.content,
-            embedding=embedding,
-            chunk_number=chunk_number,
-            metadata=self.metadata,
-        )
+def to_document_chunk(
+    chunk: Chunk, document_id: str, chunk_number: int, embedding: List[float]
+) -> DocumentChunk:
+    return DocumentChunk(
+        document_id=document_id,
+        content=chunk.content,
+        embedding=embedding,
+        chunk_number=chunk_number,
+        metadata=chunk.metadata,
+    )
 
 
 class DocumentContent(BaseModel):
