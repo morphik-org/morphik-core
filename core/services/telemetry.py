@@ -46,7 +46,7 @@ class TelemetryService:
 
         # Initialize OpenTelemetry
         resource = Resource.create({"service.name": "databridge-core"})
-        
+
         # Initialize tracing
         trace_provider = TracerProvider(resource=resource)
         otlp_span_exporter = OTLPSpanExporter()
@@ -56,9 +56,7 @@ class TelemetryService:
         self.tracer = trace.get_tracer(__name__)
 
         # Initialize metrics
-        metric_reader = PeriodicExportingMetricReader(
-            OTLPMetricExporter()
-        )
+        metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
         metric_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
         metrics.set_meter_provider(metric_provider)
         self.meter = metrics.get_meter(__name__)
@@ -91,7 +89,7 @@ class TelemetryService:
         start_time = time.time()
         status = "success"
         current_span = trace.get_current_span()
-        
+
         try:
             # Add operation attributes to the current span
             current_span.set_attribute("operation.type", operation_type)
@@ -101,14 +99,10 @@ class TelemetryService:
                     current_span.set_attribute(f"metadata.{key}", str(value))
 
             # Record metrics
-            self.operation_counter.add(
-                1,
-                {"operation": operation_type, "user_id": user_id}
-            )
+            self.operation_counter.add(1, {"operation": operation_type, "user_id": user_id})
             if tokens_used > 0:
                 self.token_counter.add(
-                    tokens_used,
-                    {"operation": operation_type, "user_id": user_id}
+                    tokens_used, {"operation": operation_type, "user_id": user_id}
                 )
 
             yield current_span
@@ -118,12 +112,11 @@ class TelemetryService:
             current_span.set_status(Status(StatusCode.ERROR))
             current_span.record_exception(e)
             raise
-        
+
         finally:
             duration_ms = (time.time() - start_time) * 1000
             self.operation_duration.record(
-                duration_ms,
-                {"operation": operation_type, "user_id": user_id, "status": status}
+                duration_ms, {"operation": operation_type, "user_id": user_id, "status": status}
             )
 
             # Record usage
@@ -134,13 +127,13 @@ class TelemetryService:
                 user_id=user_id,
                 duration_ms=duration_ms,
                 status=status,
-                metadata=metadata
+                metadata=metadata,
             )
-            
+
             with self._lock:
                 self._usage_records.append(record)
                 self._user_totals[user_id][operation_type] += tokens_used
-                self._user_totals[user_id]['total'] += tokens_used
+                self._user_totals[user_id]["total"] += tokens_used
 
     def get_user_usage(self, user_id: str) -> Dict[str, int]:
         """

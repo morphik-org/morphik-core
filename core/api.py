@@ -181,7 +181,7 @@ async def ingest_text(
             operation_type="ingest_text",
             user_id=auth.entity_id,
             tokens_used=len(request.text.split()),  # Approximate token count
-            metadata={"metadata": request.metadata}
+            metadata=request.metadata.model_dump() if request.metadata else None,
         ):
             return await document_service.ingest_text(request, auth)
     except PermissionError as e:
@@ -203,8 +203,8 @@ async def ingest_file(
             metadata={
                 "filename": file.filename,
                 "content_type": file.content_type,
-                "metadata": metadata_dict
-            }
+                "metadata": metadata_dict,
+            },
         ):
             doc = await document_service.ingest_file(file, metadata_dict, auth)
             return doc
@@ -215,18 +215,12 @@ async def ingest_file(
 
 
 @app.post("/retrieve/chunks", response_model=List[ChunkResult])
-async def retrieve_chunks(
-    request: RetrieveRequest, auth: AuthContext = Depends(verify_token)
-):
+async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(verify_token)):
     """Retrieve relevant chunks."""
     async with telemetry.track_operation(
         operation_type="retrieve_chunks",
         user_id=auth.entity_id,
-        metadata={
-            "query": request.query,
-            "k": request.k,
-            "filters": request.filters
-        }
+        metadata=request.model_dump(),
     ):
         return await document_service.retrieve_chunks(
             request.query, auth, request.filters, request.k, request.min_score
@@ -234,18 +228,12 @@ async def retrieve_chunks(
 
 
 @app.post("/retrieve/docs", response_model=List[DocumentResult])
-async def retrieve_documents(
-    request: RetrieveRequest, auth: AuthContext = Depends(verify_token)
-):
+async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depends(verify_token)):
     """Retrieve relevant documents."""
     async with telemetry.track_operation(
         operation_type="retrieve_docs",
         user_id=auth.entity_id,
-        metadata={
-            "query": request.query,
-            "k": request.k,
-            "filters": request.filters
-        }
+        metadata=request.model_dump(),
     ):
         return await document_service.retrieve_docs(
             request.query, auth, request.filters, request.k, request.min_score
@@ -260,13 +248,7 @@ async def query_completion(
     async with telemetry.track_operation(
         operation_type="query",
         user_id=auth.entity_id,
-        metadata={
-            "query": request.query,
-            "k": request.k,
-            "filters": request.filters,
-            "max_tokens": request.max_tokens,
-            "temperature": request.temperature
-        }
+        metadata=request.model_dump(),
     ) as span:
         response = await document_service.query(
             request.query,
@@ -277,7 +259,7 @@ async def query_completion(
             request.max_tokens,
             request.temperature,
         )
-        if hasattr(response, 'usage'):
+        if hasattr(response, "usage"):
             span.set_attribute("tokens.completion", response.usage.completion_tokens)
             span.set_attribute("tokens.prompt", response.usage.prompt_tokens)
             span.set_attribute("tokens.total", response.usage.total_tokens)
@@ -311,14 +293,9 @@ async def get_document(document_id: str, auth: AuthContext = Depends(verify_toke
 
 # Usage tracking endpoints
 @app.get("/usage/stats")
-async def get_usage_stats(
-    auth: AuthContext = Depends(verify_token)
-) -> Dict[str, int]:
+async def get_usage_stats(auth: AuthContext = Depends(verify_token)) -> Dict[str, int]:
     """Get usage statistics for the authenticated user."""
-    async with telemetry.track_operation(
-        operation_type="get_usage_stats",
-        user_id=auth.entity_id
-    ):
+    async with telemetry.track_operation(operation_type="get_usage_stats", user_id=auth.entity_id):
         if not auth.permissions or "admin" not in auth.permissions:
             return telemetry.get_user_usage(auth.entity_id)
         return telemetry.get_user_usage(auth.entity_id)
@@ -329,7 +306,7 @@ async def get_recent_usage(
     auth: AuthContext = Depends(verify_token),
     operation_type: Optional[str] = None,
     since: Optional[datetime] = None,
-    status: Optional[str] = None
+    status: Optional[str] = None,
 ) -> List[Dict]:
     """Get recent usage records."""
     async with telemetry.track_operation(
@@ -338,23 +315,18 @@ async def get_recent_usage(
         metadata={
             "operation_type": operation_type,
             "since": since.isoformat() if since else None,
-            "status": status
-        }
+            "status": status,
+        },
     ):
         if not auth.permissions or "admin" not in auth.permissions:
             records = telemetry.get_recent_usage(
-                user_id=auth.entity_id,
-                operation_type=operation_type,
-                since=since,
-                status=status
+                user_id=auth.entity_id, operation_type=operation_type, since=since, status=status
             )
         else:
             records = telemetry.get_recent_usage(
-                operation_type=operation_type,
-                since=since,
-                status=status
+                operation_type=operation_type, since=since, status=status
             )
-        
+
         return [
             {
                 "timestamp": record.timestamp,
@@ -363,7 +335,7 @@ async def get_recent_usage(
                 "user_id": record.user_id,
                 "duration_ms": record.duration_ms,
                 "status": record.status,
-                "metadata": record.metadata
+                "metadata": record.metadata,
             }
             for record in records
         ]
