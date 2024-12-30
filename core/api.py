@@ -96,7 +96,7 @@ match settings.PARSER_PROVIDER:
         )
     case "unstructured":
         parser = UnstructuredAPIParser(
-            unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
+            api_key=settings.UNSTRUCTURED_API_KEY,
             chunk_size=settings.CHUNK_SIZE,
             chunk_overlap=settings.CHUNK_OVERLAP,
         )
@@ -180,7 +180,7 @@ async def ingest_text(
         async with telemetry.track_operation(
             operation_type="ingest_text",
             user_id=auth.entity_id,
-            tokens_used=len(request.text.split()),  # Approximate token count
+            tokens_used=len(request.content.split()),  # Approximate token count
             metadata=request.metadata.model_dump() if request.metadata else None,
         ):
             return await document_service.ingest_text(request, auth)
@@ -259,10 +259,12 @@ async def query_completion(
             request.max_tokens,
             request.temperature,
         )
-        if hasattr(response, "usage"):
-            span.set_attribute("tokens.completion", response.usage.completion_tokens)
-            span.set_attribute("tokens.prompt", response.usage.prompt_tokens)
-            span.set_attribute("tokens.total", response.usage.total_tokens)
+        if isinstance(response, dict) and "usage" in response:
+            usage = response["usage"]
+            if isinstance(usage, dict):
+                span.set_attribute("tokens.completion", usage.get("completion_tokens", 0))
+                span.set_attribute("tokens.prompt", usage.get("prompt_tokens", 0))
+                span.set_attribute("tokens.total", usage.get("total_tokens", 0))
         return response
 
 

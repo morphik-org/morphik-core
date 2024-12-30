@@ -4,14 +4,16 @@ from dataclasses import dataclass
 import threading
 from collections import defaultdict
 import time
+from contextlib import asynccontextmanager
+import os
 
 from opentelemetry import trace, metrics
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.trace import Status, StatusCode
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader, ConsoleMetricExporter
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 
@@ -48,17 +50,26 @@ class TelemetryService:
         resource = Resource.create({"service.name": "databridge-core"})
 
         # Initialize tracing
-        trace_provider = TracerProvider(resource=resource)
-        otlp_span_exporter = OTLPSpanExporter()
-        span_processor = BatchSpanProcessor(otlp_span_exporter)
-        trace_provider.add_span_processor(span_processor)
-        trace.set_tracer_provider(trace_provider)
+        tracer_provider = TracerProvider(resource=resource)
+        
+        # Use console exporter for local development
+        if os.getenv("ENVIRONMENT", "development") == "development":
+            span_processor = BatchSpanProcessor(ConsoleSpanExporter())
+        else:
+            span_processor = BatchSpanProcessor(OTLPSpanExporter())
+            
+        tracer_provider.add_span_processor(span_processor)
+        trace.set_tracer_provider(tracer_provider)
         self.tracer = trace.get_tracer(__name__)
 
         # Initialize metrics
-        metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
-        metric_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
-        metrics.set_meter_provider(metric_provider)
+        if os.getenv("ENVIRONMENT", "development") == "development":
+            metric_reader = PeriodicExportingMetricReader(ConsoleMetricExporter())
+        else:
+            metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
+            
+        meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+        metrics.set_meter_provider(meter_provider)
         self.meter = metrics.get_meter(__name__)
 
         # Create metrics
@@ -76,13 +87,14 @@ class TelemetryService:
             unit="ms",
         )
 
+    @asynccontextmanager
     async def track_operation(
         self,
         operation_type: str,
         user_id: str,
         tokens_used: int = 0,
         metadata: Optional[Dict[str, Any]] = None,
-    ) -> Any:
+    ):
         """
         Context manager for tracking operations with both usage metrics and OpenTelemetry
         """
@@ -98,13 +110,6 @@ class TelemetryService:
                 for key, value in metadata.items():
                     current_span.set_attribute(f"metadata.{key}", str(value))
 
-            # Record metrics
-            self.operation_counter.add(1, {"operation": operation_type, "user_id": user_id})
-            if tokens_used > 0:
-                self.token_counter.add(
-                    tokens_used, {"operation": operation_type, "user_id": user_id}
-                )
-
             yield current_span
 
         except Exception as e:
@@ -112,20 +117,22 @@ class TelemetryService:
             current_span.set_status(Status(StatusCode.ERROR))
             current_span.record_exception(e)
             raise
-
         finally:
-            duration_ms = (time.time() - start_time) * 1000
-            self.operation_duration.record(
-                duration_ms, {"operation": operation_type, "user_id": user_id, "status": status}
-            )
+            duration = (time.time() - start_time) * 1000  # Convert to milliseconds
+
+            # Record metrics
+            self.operation_counter.add(1, {"operation": operation_type, "status": status})
+            if tokens_used > 0:
+                self.token_counter.add(tokens_used, {"operation": operation_type})
+            self.operation_duration.record(duration, {"operation": operation_type})
 
             # Record usage
             record = UsageRecord(
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(),
                 operation_type=operation_type,
                 tokens_used=tokens_used,
                 user_id=user_id,
-                duration_ms=duration_ms,
+                duration_ms=duration,
                 status=status,
                 metadata=metadata,
             )
@@ -133,12 +140,9 @@ class TelemetryService:
             with self._lock:
                 self._usage_records.append(record)
                 self._user_totals[user_id][operation_type] += tokens_used
-                self._user_totals[user_id]["total"] += tokens_used
 
     def get_user_usage(self, user_id: str) -> Dict[str, int]:
-        """
-        Get usage statistics for a specific user
-        """
+        """Get usage statistics for a user."""
         with self._lock:
             return dict(self._user_totals[user_id])
 
@@ -149,17 +153,18 @@ class TelemetryService:
         since: Optional[datetime] = None,
         status: Optional[str] = None,
     ) -> List[UsageRecord]:
-        """
-        Get recent usage records with filtering options
-        """
+        """Get recent usage records with optional filtering."""
         with self._lock:
-            records = self._usage_records
-            if user_id:
-                records = [r for r in records if r.user_id == user_id]
-            if operation_type:
-                records = [r for r in records if r.operation_type == operation_type]
-            if since:
-                records = [r for r in records if r.timestamp >= since]
-            if status:
-                records = [r for r in records if r.status == status]
-            return records
+            records = self._usage_records.copy()
+
+        # Apply filters
+        if user_id:
+            records = [r for r in records if r.user_id == user_id]
+        if operation_type:
+            records = [r for r in records if r.operation_type == operation_type]
+        if since:
+            records = [r for r in records if r.timestamp >= since]
+        if status:
+            records = [r for r in records if r.status == status]
+
+        return records
