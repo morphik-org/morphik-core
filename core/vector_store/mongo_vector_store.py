@@ -4,7 +4,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import PyMongoError
 
 from .base_vector_store import BaseVectorStore
-from core.models.documents import DocumentChunk
+from core.models.chunk import DocumentChunk
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Union
 
-from core.models.documents import Chunk
+from core.models.chunk import Chunk
 
 
 class BaseEmbeddingModel(ABC):

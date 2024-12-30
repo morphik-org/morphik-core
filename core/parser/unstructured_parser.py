@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Tuple
 import io
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_unstructured import UnstructuredLoader
-from core.models.documents import Chunk
+from core.models.chunk import Chunk
 import logging
 
 from .base_parser import BaseParser

@@ -3,7 +3,7 @@ import logging
 import os
 import tempfile
 import magic
-from core.models.documents import Chunk
+from core.models.chunk import Chunk
 
 from core.parser.base_parser import BaseParser
 from core.parser.unstructured_parser import UnstructuredAPIParser

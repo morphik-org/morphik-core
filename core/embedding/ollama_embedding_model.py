@@ -1,7 +1,7 @@
 from typing import List, Union
 from ollama import AsyncClient
 from core.embedding.base_embedding_model import BaseEmbeddingModel
-from core.models.documents import Chunk
+from core.models.chunk import Chunk
 
 
 class OllamaEmbeddingModel(BaseEmbeddingModel):

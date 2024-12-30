@@ -3,10 +3,9 @@ from typing import Dict, Any, List, Optional
 from fastapi import UploadFile
 
 from core.models.request import IngestTextRequest
+from core.models.chunk import Chunk, DocumentChunk
 from core.models.documents import (
-    Chunk,
     Document,
-    DocumentChunk,
     ChunkResult,
     DocumentContent,
     DocumentResult,

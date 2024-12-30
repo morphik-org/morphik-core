@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Tuple
-from core.models.documents import Chunk
+from core.models.chunk import Chunk
 
 
 class BaseParser(ABC):
