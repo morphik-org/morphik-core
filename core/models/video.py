@@ -6,7 +6,7 @@ import logging
 
 from pydantic import BaseModel, Field, computed_field
 
-from core.models.shared import Chunk
+from core.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
 

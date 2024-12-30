@@ -6,7 +6,7 @@ import uuid
 import logging
 
 from core.models.video import TimeSeriesData
-from core.models.shared import Chunk
+from core.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
 
