@@ -1,7 +1,7 @@
 from typing import List, Union
 from openai import OpenAI
 
-from core.models.documents import Chunk
+from core.models.chunk import Chunk
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 
 

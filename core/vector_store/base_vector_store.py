@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
-from core.models.documents import DocumentChunk
+from core.models.chunk import DocumentChunk
 
 
 class BaseVectorStore(ABC):
