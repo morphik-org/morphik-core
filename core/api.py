@@ -27,6 +27,7 @@ from core.storage.s3_storage import S3Storage
 from core.storage.local_storage import LocalStorage
 from core.embedding.openai_embedding_model import OpenAIEmbeddingModel
 from core.completion.ollama_completion import OllamaCompletionModel
+from core.parser.contextual_parser import ContextualParser
 
 # Initialize FastAPI app
 app = FastAPI(title="DataBridge API")
@@ -78,6 +79,8 @@ match settings.STORAGE_PROVIDER:
     case "local":
         storage = LocalStorage(storage_path=settings.STORAGE_PATH)
     case "aws-s3":
+        if not settings.AWS_ACCESS_KEY or not settings.AWS_SECRET_ACCESS_KEY:
+            raise ValueError("AWS credentials are required for S3 storage")
         storage = S3Storage(
             aws_access_key=settings.AWS_ACCESS_KEY,
             aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
@@ -90,6 +93,8 @@ match settings.STORAGE_PROVIDER:
 # Initialize parser
 match settings.PARSER_PROVIDER:
     case "combined":
+        if not settings.ASSEMBLYAI_API_KEY:
+            raise ValueError("AssemblyAI API key is required for combined parser")
         parser = CombinedParser(
             unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
             assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
@@ -103,20 +108,33 @@ match settings.PARSER_PROVIDER:
             chunk_size=settings.CHUNK_SIZE,
             chunk_overlap=settings.CHUNK_OVERLAP,
         )
+    case "contextual":
+        if not settings.ANTHROPIC_API_KEY:
+            raise ValueError("Anthropic API key is required for contextual parser")
+        parser = ContextualParser(
+            unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
+            assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
+            chunk_size=settings.CHUNK_SIZE,
+            chunk_overlap=settings.CHUNK_OVERLAP,
+            frame_sample_rate=settings.FRAME_SAMPLE_RATE,
+            anthropic_api_key=settings.ANTHROPIC_API_KEY,
+        )
     case _:
         raise ValueError(f"Unsupported parser provider: {settings.PARSER_PROVIDER}")
 
 # Initialize embedding model
 match settings.EMBEDDING_PROVIDER:
+    case "ollama":
+        embedding_model = OllamaEmbeddingModel(
+            base_url=settings.OLLAMA_BASE_URL,
+            model_name=settings.EMBEDDING_MODEL,
+        )
     case "openai":
+        if not settings.OPENAI_API_KEY:
+            raise ValueError("OpenAI API key is required for OpenAI embedding model")
         embedding_model = OpenAIEmbeddingModel(
             api_key=settings.OPENAI_API_KEY,
             model_name=settings.EMBEDDING_MODEL,
-        )
-    case "ollama":
-        embedding_model = OllamaEmbeddingModel(
-            model_name=settings.EMBEDDING_MODEL,
-            base_url=settings.OLLAMA_BASE_URL,
         )
     case _:
         raise ValueError(f"Unsupported embedding provider: {settings.EMBEDDING_PROVIDER}")
@@ -129,6 +147,8 @@ match settings.COMPLETION_PROVIDER:
             base_url=settings.OLLAMA_BASE_URL,
         )
     case "openai":
+        if not settings.OPENAI_API_KEY:
+            raise ValueError("OpenAI API key is required for OpenAI completion model")
         completion_model = OpenAICompletionModel(
             model_name=settings.COMPLETION_MODEL,
         )
@@ -184,7 +204,7 @@ async def ingest_text(
             operation_type="ingest_text",
             user_id=auth.entity_id,
             tokens_used=len(request.content.split()),  # Approximate token count
-            metadata=request.metadata.model_dump() if request.metadata else None,
+            metadata=request.metadata if request.metadata else None,
         ):
             return await document_service.ingest_text(request, auth)
     except PermissionError as e:

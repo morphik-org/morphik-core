@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings
 from functools import lru_cache
@@ -9,13 +10,15 @@ class Settings(BaseSettings):
     """DataBridge configuration settings."""
 
     # Required environment variables (referenced in config.toml)
-    MONGODB_URI: str = Field(..., env="MONGODB_URI")
-    OPENAI_API_KEY: str = Field(..., env="OPENAI_API_KEY")
-    UNSTRUCTURED_API_KEY: str = Field(..., env="UNSTRUCTURED_API_KEY")
-    ASSEMBLYAI_API_KEY: str = Field(..., env="ASSEMBLYAI_API_KEY")
-    AWS_ACCESS_KEY: str = Field(None, env="AWS_ACCESS_KEY")
-    AWS_SECRET_ACCESS_KEY: str = Field(None, env="AWS_SECRET_ACCESS_KEY")
     JWT_SECRET_KEY: str = Field(..., env="JWT_SECRET_KEY")
+    MONGODB_URI: str = Field(..., env="MONGODB_URI")
+    UNSTRUCTURED_API_KEY: str = Field(..., env="UNSTRUCTURED_API_KEY")
+
+    AWS_ACCESS_KEY: Optional[str] = Field(None, env="AWS_ACCESS_KEY")
+    AWS_SECRET_ACCESS_KEY: Optional[str] = Field(None, env="AWS_SECRET_ACCESS_KEY")
+    ASSEMBLYAI_API_KEY: Optional[str] = Field(None, env="ASSEMBLYAI_API_KEY")
+    OPENAI_API_KEY: Optional[str] = Field(None, env="OPENAI_API_KEY")
+    ANTHROPIC_API_KEY: Optional[str] = Field(None, env="ANTHROPIC_API_KEY")
 
     # Service settings
     HOST: str = "localhost"
