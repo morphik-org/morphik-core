@@ -50,12 +50,13 @@ VECTOR_INDEX_NAME = CONFIG["vector_store"]["mongodb"]["index_name"]
 SIMILARITY_METRIC = CONFIG["vector_store"]["mongodb"]["similarity_metric"]
 
 # Extract storage-specific configuration
-if STORAGE_PROVIDER == "aws-s3":
-    DEFAULT_REGION = CONFIG["storage"]["aws"]["region"]
-    DEFAULT_BUCKET_NAME = CONFIG["storage"]["aws"]["bucket_name"]
+DEFAULT_REGION = CONFIG["storage"]["aws"]["region"] if STORAGE_PROVIDER == "aws-s3" else None
+DEFAULT_BUCKET_NAME = (
+    CONFIG["storage"]["aws"]["bucket_name"] if STORAGE_PROVIDER == "aws-s3" else None
+)
 
 
-def create_s3_bucket(bucket_name, region=None):
+def create_s3_bucket(bucket_name, region=DEFAULT_REGION):
     """Set up S3 bucket."""
     # Clear any existing AWS credentials from environment
     boto3.Session().resource("s3").meta.client.close()
