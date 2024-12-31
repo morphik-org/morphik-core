@@ -43,10 +43,7 @@ class DB:
         """Ingest a file into DataBridge"""
         file_path = Path(file_path)
         doc = self._client.ingest_file(
-            file_path,
-            filename=file_path.name,
-            content_type=content_type,
-            metadata=metadata or {}
+            file_path, filename=file_path.name, content_type=content_type, metadata=metadata or {}
         )
         return doc.model_dump()
 
@@ -55,10 +52,7 @@ class DB:
     ) -> list:
         """Search for relevant chunks"""
         results = self._client.retrieve_chunks(
-            query,
-            filters=filters or {},
-            k=k,
-            min_score=min_score
+            query, filters=filters or {}, k=k, min_score=min_score
         )
         return [r.model_dump() for r in results]
 
@@ -66,17 +60,17 @@ class DB:
         self, query: str, filters: dict = None, k: int = 4, min_score: float = 0.0
     ) -> list:
         """Retrieve relevant documents"""
-        results = self._client.retrieve_docs(
-            query,
-            filters=filters or {},
-            k=k,
-            min_score=min_score
-        )
+        results = self._client.retrieve_docs(query, filters=filters or {}, k=k, min_score=min_score)
         return [r.model_dump() for r in results]
 
     def query(
-        self, query: str, filters: dict = None, k: int = 4, min_score: float = 0.0,
-        max_tokens: int = None, temperature: float = None
+        self,
+        query: str,
+        filters: dict = None,
+        k: int = 4,
+        min_score: float = 0.0,
+        max_tokens: int = None,
+        temperature: float = None,
     ) -> dict:
         """Generate completion using relevant chunks as context"""
         response = self._client.query(
@@ -85,7 +79,7 @@ class DB:
             k=k,
             min_score=min_score,
             max_tokens=max_tokens,
-            temperature=temperature
+            temperature=temperature,
         )
         return response.model_dump()
 
@@ -104,7 +98,7 @@ class DB:
         self._client.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Error: URI argument required")
         print(__doc__)
@@ -117,6 +111,7 @@ if __name__ == '__main__':
     import code
     import readline  # Enable arrow key history
     import rlcompleter  # noqa: F401 # Enable tab completion
+
     readline.parse_and_bind("tab: complete")
 
     # Create the interactive shell

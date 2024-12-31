@@ -6,16 +6,137 @@ from collections import defaultdict
 import time
 from contextlib import asynccontextmanager
 import os
+import json
+from pathlib import Path
 
 from opentelemetry import trace, metrics
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.trace import Status, StatusCode
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader, ConsoleMetricExporter
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.metrics.export import (
+    PeriodicExportingMetricReader,
+    MetricExporter,
+    AggregationTemporality,
+    MetricsData,
+)
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+
+
+class FileSpanExporter:
+    def __init__(self, log_dir: str):
+        self.log_dir = Path(log_dir)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.trace_file = self.log_dir / "traces.log"
+
+    def export(self, spans):
+        with open(self.trace_file, "a") as f:
+            for span in spans:
+                f.write(json.dumps(self._format_span(span)) + "\n")
+        return True
+
+    def shutdown(self):
+        pass
+
+    def _format_span(self, span):
+        return {
+            "name": span.name,
+            "trace_id": format(span.context.trace_id, "x"),
+            "span_id": format(span.context.span_id, "x"),
+            "parent_id": format(span.parent.span_id, "x") if span.parent else None,
+            "start_time": span.start_time,
+            "end_time": span.end_time,
+            "attributes": dict(span.attributes),
+            "status": span.status.status_code.name,
+        }
+
+
+class FileMetricExporter(MetricExporter):
+    """File metric exporter for OpenTelemetry."""
+
+    def __init__(self, log_dir: str):
+        self.log_dir = Path(log_dir)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.metrics_file = self.log_dir / "metrics.log"
+        super().__init__()
+
+    def export(self, metrics_data: MetricsData, **kwargs) -> bool:
+        """Export metrics data to a file.
+
+        Args:
+            metrics_data: The metrics data to export.
+
+        Returns:
+            True if the export was successful, False otherwise.
+        """
+        try:
+            with open(self.metrics_file, "a") as f:
+                for resource_metrics in metrics_data.resource_metrics:
+                    for scope_metrics in resource_metrics.scope_metrics:
+                        for metric in scope_metrics.metrics:
+                            f.write(json.dumps(self._format_metric(metric)) + "\n")
+            return True
+        except Exception:
+            return False
+
+    def shutdown(self, timeout_millis: float = 30_000, **kwargs) -> bool:
+        """Shuts down the exporter.
+
+        Args:
+            timeout_millis: Time to wait for the export to complete in milliseconds.
+
+        Returns:
+            True if the shutdown succeeded, False otherwise.
+        """
+        return True
+
+    def force_flush(self, timeout_millis: float = 10_000) -> bool:
+        """Force flush the exporter.
+
+        Args:
+            timeout_millis: Time to wait for the flush to complete in milliseconds.
+
+        Returns:
+            True if the flush succeeded, False otherwise.
+        """
+        return True
+
+    def _preferred_temporality(self) -> Dict:
+        """Returns the preferred temporality for each instrument kind."""
+        return {
+            "counter": AggregationTemporality.CUMULATIVE,
+            "up_down_counter": AggregationTemporality.CUMULATIVE,
+            "observable_counter": AggregationTemporality.CUMULATIVE,
+            "observable_up_down_counter": AggregationTemporality.CUMULATIVE,
+            "histogram": AggregationTemporality.CUMULATIVE,
+            "observable_gauge": AggregationTemporality.CUMULATIVE,
+        }
+
+    def _format_metric(self, metric):
+        return {
+            "name": metric.name,
+            "description": metric.description,
+            "unit": metric.unit,
+            "data": self._format_data(metric.data),
+        }
+
+    def _format_data(self, data):
+        if hasattr(data, "data_points"):
+            return {
+                "data_points": [
+                    {
+                        "attributes": dict(point.attributes),
+                        "value": point.value if hasattr(point, "value") else None,
+                        "count": point.count if hasattr(point, "count") else None,
+                        "sum": point.sum if hasattr(point, "sum") else None,
+                        "timestamp": point.time_unix_nano,
+                    }
+                    for point in data.data_points
+                ]
+            }
+        return {}
 
 
 @dataclass
@@ -49,25 +170,32 @@ class TelemetryService:
         # Initialize OpenTelemetry
         resource = Resource.create({"service.name": "databridge-core"})
 
+        # Create logs directory
+        log_dir = Path("logs/telemetry")
+        log_dir.mkdir(parents=True, exist_ok=True)
+
         # Initialize tracing
         tracer_provider = TracerProvider(resource=resource)
-        
-        # Use console exporter for local development
+
+        # Use file exporter for local development
         if os.getenv("ENVIRONMENT", "development") == "development":
-            span_processor = BatchSpanProcessor(ConsoleSpanExporter())
+            span_processor = BatchSpanProcessor(FileSpanExporter(str(log_dir)))
         else:
             span_processor = BatchSpanProcessor(OTLPSpanExporter())
-            
+
         tracer_provider.add_span_processor(span_processor)
         trace.set_tracer_provider(tracer_provider)
         self.tracer = trace.get_tracer(__name__)
 
         # Initialize metrics
         if os.getenv("ENVIRONMENT", "development") == "development":
-            metric_reader = PeriodicExportingMetricReader(ConsoleMetricExporter())
+            metric_reader = PeriodicExportingMetricReader(
+                FileMetricExporter(str(log_dir)),
+                export_interval_millis=60000,  # Export every minute
+            )
         else:
             metric_reader = PeriodicExportingMetricReader(OTLPMetricExporter())
-            
+
         meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
         metrics.set_meter_provider(meter_provider)
         self.meter = metrics.get_meter(__name__)
