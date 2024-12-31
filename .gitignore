@@ -24,4 +24,5 @@ core/tests/assets
 
 *.DS_Store
 
-logs/
+storage/*
+logs/*

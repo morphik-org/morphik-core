@@ -24,6 +24,7 @@ from core.config import get_settings
 from core.database.mongo_database import MongoDatabase
 from core.vector_store.mongo_vector_store import MongoDBAtlasVectorStore
 from core.storage.s3_storage import S3Storage
+from core.storage.local_storage import LocalStorage
 from core.embedding.openai_embedding_model import OpenAIEmbeddingModel
 from core.completion.ollama_completion import OllamaCompletionModel
 from core.parser.contextual_parser import ContextualParser
@@ -75,6 +76,8 @@ match settings.VECTOR_STORE_PROVIDER:
 
 # Initialize storage
 match settings.STORAGE_PROVIDER:
+    case "local":
+        storage = LocalStorage(storage_path=settings.STORAGE_PATH)
     case "aws-s3":
         storage = S3Storage(
             aws_access_key=settings.AWS_ACCESS_KEY,

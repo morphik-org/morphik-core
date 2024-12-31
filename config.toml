@@ -5,7 +5,7 @@ port = 8000
 reload = false
 
 [service.components]
-storage = "aws-s3"
+storage = "local" # "aws-s3"
 database = "mongodb"
 vector_store = "mongodb"
 embedding = "openai" # "ollama"
@@ -13,6 +13,9 @@ completion = "openai" # "ollama"
 parser = "combined" # "unstructured", "contextual"
 
 # Storage Configuration
+[storage.local]
+path = "./storage"
+
 [storage.aws]
 region = "us-east-2"
 bucket_name = "databridge-s3-storage"
