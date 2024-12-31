@@ -91,7 +91,7 @@ class ContextualParser(BaseParser):
             new_chunk = Chunk(content=content, metadata=chunk.metadata)
             new_chunks.append(new_chunk)
             logger.info(f"Situating the {chunks_situated}th chunk:\n {new_chunk.content[:100]}")
-            logger.info(f"Sleeping to avoid rate limiting...")
+            logger.info("Sleeping to avoid rate limiting...")
             time.sleep(1.25)
             chunks_situated += 1
         return new_chunks

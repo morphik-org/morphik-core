@@ -102,6 +102,8 @@ match settings.PARSER_PROVIDER:
             chunk_overlap=settings.CHUNK_OVERLAP,
         )
     case "contextual":
+        if not settings.ANTHROPIC_API_KEY:
+            raise ValueError("Anthropic API key is required for contextual parser")
         parser = ContextualParser(
             unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
             assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
@@ -191,7 +193,7 @@ async def ingest_text(
             operation_type="ingest_text",
             user_id=auth.entity_id,
             tokens_used=len(request.content.split()),  # Approximate token count
-            metadata=request.model_dump() if request else None,
+            metadata=request.metadata if request.metadata else None,
         ):
             return await document_service.ingest_text(request, auth)
     except PermissionError as e:
