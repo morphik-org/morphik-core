@@ -79,7 +79,7 @@ class CombinedParser(BaseParser):
     async def parse_file(
         self, file: bytes, content_type: str
     ) -> Tuple[Dict[str, Any], List[Chunk]]:
-        """Parse file content into text chunks"""
+        """Parse file content into text chunks. Returns document metadata and a list of chunks"""
         is_video = self._is_video_file(file_bytes=file)
 
         if is_video:
