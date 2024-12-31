@@ -41,8 +41,7 @@ with open(config_path, "rb") as f:
     LOGGER.info("Loaded configuration from config.toml")
 
 # Extract configuration values
-DEFAULT_REGION = CONFIG["storage"]["aws"]["region"]
-DEFAULT_BUCKET_NAME = CONFIG["storage"]["aws"]["bucket_name"]
+STORAGE_PROVIDER = CONFIG["service"]["components"]["storage"]
 DATABASE_NAME = CONFIG["database"]["mongodb"]["database_name"]
 DOCUMENTS_COLLECTION = CONFIG["database"]["mongodb"]["documents_collection"]
 CHUNKS_COLLECTION = CONFIG["database"]["mongodb"]["chunks_collection"]
@@ -50,8 +49,14 @@ VECTOR_DIMENSIONS = CONFIG["vector_store"]["mongodb"]["dimensions"]
 VECTOR_INDEX_NAME = CONFIG["vector_store"]["mongodb"]["index_name"]
 SIMILARITY_METRIC = CONFIG["vector_store"]["mongodb"]["similarity_metric"]
 
+# Extract storage-specific configuration
+if STORAGE_PROVIDER == "aws-s3":
+    DEFAULT_REGION = CONFIG["storage"]["aws"]["region"]
+    DEFAULT_BUCKET_NAME = CONFIG["storage"]["aws"]["bucket_name"]
 
-def create_s3_bucket(bucket_name, region=DEFAULT_REGION):
+
+def create_s3_bucket(bucket_name, region=None):
+    """Set up S3 bucket."""
     # Clear any existing AWS credentials from environment
     boto3.Session().resource("s3").meta.client.close()
 
@@ -74,11 +79,10 @@ def create_s3_bucket(bucket_name, region=DEFAULT_REGION):
     s3_client = session.client("s3")
     LOGGER.debug("Successfully created S3 client.")
 
-    # create_bucket = not
     if bucket_exists(s3_client, bucket_name):
         LOGGER.info(f"Bucket with name {bucket_name} already exists")
         return
-    # Create bucket with location constraint if region is not us-east-1
+
     if region == "us-east-1":
         s3_client.create_bucket(Bucket=bucket_name)
     else:
@@ -90,9 +94,7 @@ def create_s3_bucket(bucket_name, region=DEFAULT_REGION):
 
 
 def bucket_exists(s3_client, bucket_name):
-    """
-    Check if an S3 bucket exists.
-    """
+    """Check if an S3 bucket exists."""
     try:
         s3_client.head_bucket(Bucket=bucket_name)
         return True
@@ -167,9 +169,11 @@ def setup_mongodb():
 
 
 def setup():
-    LOGGER.info("Creating S3 bucket...")
-    create_s3_bucket(DEFAULT_BUCKET_NAME)
-    LOGGER.info("S3 bucket created successfully.")
+    # Setup S3 if configured
+    if STORAGE_PROVIDER == "aws-s3":
+        LOGGER.info("Setting up S3 bucket...")
+        create_s3_bucket(DEFAULT_BUCKET_NAME, DEFAULT_REGION)
+        LOGGER.info("S3 bucket setup completed.")
 
     LOGGER.info("Setting up MongoDB...")
     setup_mongodb()

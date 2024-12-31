@@ -11,16 +11,9 @@ class LocalStorage(BaseStorage):
         # Create storage directory if it doesn't exist
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
-    def _get_file_path(self, key: str, filename: Optional[str] = None) -> Path:
-        """Get the full file path. Uses original filename if provided, otherwise uses the key."""
-        if filename:
-            # Store as: key_filename.ext
-            return self.storage_path / f"{key}_{filename}"
-        return self.storage_path / key
-
     async def download_file(self, bucket: str, key: str) -> BinaryIO:
         """Download a file from local storage."""
-        file_path = self._get_file_path(key)
+        file_path = self.storage_path / key
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
         return open(file_path, "rb")
@@ -33,7 +26,7 @@ class LocalStorage(BaseStorage):
         file_content = base64.b64decode(base64_content)
 
         # Create file path
-        file_path = self._get_file_path(key)
+        file_path = self.storage_path / key
 
         # Write content to file
         with open(file_path, "wb") as f:
@@ -43,14 +36,14 @@ class LocalStorage(BaseStorage):
 
     async def get_download_url(self, bucket: str, key: str) -> str:
         """Get local file path as URL."""
-        file_path = self._get_file_path(key)
+        file_path = self.storage_path / key
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
         return f"file://{file_path.absolute()}"
 
     async def delete_file(self, bucket: str, key: str) -> bool:
         """Delete a file from local storage."""
-        file_path = self._get_file_path(key)
+        file_path = self.storage_path / key
         if file_path.exists():
             file_path.unlink()
         return True
