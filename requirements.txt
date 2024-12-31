@@ -243,3 +243,7 @@ xlrd==2.0.1
 XlsxWriter==3.2.0
 xxhash==3.4.1
 yarl==1.9.4
+opentelemetry-api>=1.21.0
+opentelemetry-sdk>=1.21.0
+opentelemetry-instrumentation-fastapi>=0.42b0
+opentelemetry-exporter-otlp>=1.21.0
