@@ -23,3 +23,6 @@ core/tests/assets
 .vscode/
 
 *.DS_Store
+
+storage/*
+logs/*

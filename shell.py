@@ -39,11 +39,13 @@ class DB:
         doc = self._client.ingest_text(content, metadata=metadata or {})
         return doc.model_dump()
 
-    def ingest_file(self, file_path: str, metadata: dict = None, content_type: str = None) -> dict:
+    def ingest_file(
+        self, file: str, filename: str, metadata: dict = None, content_type: str = None
+    ) -> dict:
         """Ingest a file into DataBridge"""
-        file_path = Path(file_path)
+        file_path = Path(file)
         doc = self._client.ingest_file(
-            file_path, filename=file_path.name, content_type=content_type, metadata=metadata or {}
+            file=file_path, filename=filename, content_type=content_type, metadata=metadata or {}
         )
         return doc.model_dump()
 

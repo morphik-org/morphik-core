@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = Field(..., env="OPENAI_API_KEY")
     UNSTRUCTURED_API_KEY: str = Field(..., env="UNSTRUCTURED_API_KEY")
     ASSEMBLYAI_API_KEY: str = Field(..., env="ASSEMBLYAI_API_KEY")
-    AWS_ACCESS_KEY: str = Field(..., env="AWS_ACCESS_KEY")
-    AWS_SECRET_ACCESS_KEY: str = Field(..., env="AWS_SECRET_ACCESS_KEY")
+    AWS_ACCESS_KEY: str = Field(None, env="AWS_ACCESS_KEY")
+    AWS_SECRET_ACCESS_KEY: str = Field(None, env="AWS_SECRET_ACCESS_KEY")
     JWT_SECRET_KEY: str = Field(..., env="JWT_SECRET_KEY")
 
     # Service settings
@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     RELOAD: bool = False
 
     # Component selection
-    STORAGE_PROVIDER: str = "aws-s3"
+    STORAGE_PROVIDER: str = "local"
     DATABASE_PROVIDER: str = "mongodb"
     VECTOR_STORE_PROVIDER: str = "mongodb"
     EMBEDDING_PROVIDER: str = "openai"
@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     PARSER_PROVIDER: str = "combined"
 
     # Storage settings
+    STORAGE_PATH: str = "./storage"
     AWS_REGION: str = "us-east-2"
     S3_BUCKET: str = "databridge-s3-storage"
 
@@ -83,6 +84,7 @@ def get_settings() -> Settings:
         "COMPLETION_PROVIDER": config["service"]["components"]["completion"],
         "PARSER_PROVIDER": config["service"]["components"]["parser"],
         # Storage settings
+        "STORAGE_PATH": config["storage"]["local"]["path"],
         "AWS_REGION": config["storage"]["aws"]["region"],
         "S3_BUCKET": config["storage"]["aws"]["bucket_name"],
         # Database settings
