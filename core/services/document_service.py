@@ -91,7 +91,7 @@ class DocumentService:
         query: str,
         auth: AuthContext,
         filters: Optional[Dict[str, Any]] = None,
-        k: int = 4,
+        k: int = 20,  # from contextual embedding paper
         min_score: float = 0.0,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,

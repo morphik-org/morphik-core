@@ -26,6 +26,7 @@ from core.vector_store.mongo_vector_store import MongoDBAtlasVectorStore
 from core.storage.s3_storage import S3Storage
 from core.embedding.openai_embedding_model import OpenAIEmbeddingModel
 from core.completion.ollama_completion import OllamaCompletionModel
+from core.parser.contextual_parser import ContextualParser
 
 # Initialize FastAPI app
 app = FastAPI(title="DataBridge API")
@@ -99,6 +100,15 @@ match settings.PARSER_PROVIDER:
             api_key=settings.UNSTRUCTURED_API_KEY,
             chunk_size=settings.CHUNK_SIZE,
             chunk_overlap=settings.CHUNK_OVERLAP,
+        )
+    case "contextual":
+        parser = ContextualParser(
+            unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
+            assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
+            chunk_size=settings.CHUNK_SIZE,
+            chunk_overlap=settings.CHUNK_OVERLAP,
+            frame_sample_rate=settings.FRAME_SAMPLE_RATE,
+            anthropic_api_key=settings.ANTHROPIC_API_KEY,
         )
     case _:
         raise ValueError(f"Unsupported parser provider: {settings.PARSER_PROVIDER}")
@@ -181,7 +191,7 @@ async def ingest_text(
             operation_type="ingest_text",
             user_id=auth.entity_id,
             tokens_used=len(request.content.split()),  # Approximate token count
-            metadata=request.metadata.model_dump() if request.metadata else None,
+            metadata=request.model_dump() if request else None,
         ):
             return await document_service.ingest_text(request, auth)
     except PermissionError as e:

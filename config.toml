@@ -10,7 +10,7 @@ database = "mongodb"
 vector_store = "mongodb"
 embedding = "openai" # "ollama"
 completion = "openai" # "ollama"
-parser = "combined" # "unstructured"
+parser = "contextual" # "unstructured", "combined"
 
 # Storage Configuration
 [storage.aws]

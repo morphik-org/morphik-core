@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     AWS_ACCESS_KEY: str = Field(..., env="AWS_ACCESS_KEY")
     AWS_SECRET_ACCESS_KEY: str = Field(..., env="AWS_SECRET_ACCESS_KEY")
     JWT_SECRET_KEY: str = Field(..., env="JWT_SECRET_KEY")
+    ANTHROPIC_API_KEY: str = Field(..., env="ANTHROPIC_API_KEY")
 
     # Service settings
     HOST: str = "localhost"

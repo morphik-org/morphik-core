@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Any, Dict, List, Tuple
 import anthropic
 
@@ -83,10 +84,16 @@ class ContextualParser(BaseParser):
 
     def situate_all_chunks(self, text: str, chunks: List[Chunk]) -> List[Chunk]:
         new_chunks = []
+        chunks_situated = 0
         for chunk in chunks:
             context = self.situate_context(text, chunk.content)
             content = f"{context}; {chunk.content}"
-            new_chunks.append(Chunk(content=content, metadata=chunk.metadata))
+            new_chunk = Chunk(content=content, metadata=chunk.metadata)
+            new_chunks.append(new_chunk)
+            logger.info(f"Situating the {chunks_situated}th chunk:\n {new_chunk.content[:100]}")
+            logger.info(f"Sleeping to avoid rate limiting...")
+            time.sleep(1.25)
+            chunks_situated += 1
         return new_chunks
 
     async def parse_file(
