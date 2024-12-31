@@ -97,7 +97,7 @@ class ContextualParser(BaseParser):
         return new_chunks
 
     async def parse_file(
-        self, file: bytes, content_type: str
+        self, file: bytes, content_type: str, filename: str
     ) -> Tuple[Dict[str, Any], List[Chunk]]:
         document_metadata, chunks = await self.combined_parser.parse_file(file, content_type)
         document_text = "\n".join([chunk.content for chunk in chunks])

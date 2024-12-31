@@ -12,8 +12,8 @@ class Settings(BaseSettings):
     # Required environment variables (referenced in config.toml)
     JWT_SECRET_KEY: str = Field(..., env="JWT_SECRET_KEY")
     MONGODB_URI: str = Field(..., env="MONGODB_URI")
-    UNSTRUCTURED_API_KEY: str = Field(..., env="UNSTRUCTURED_API_KEY")
 
+    UNSTRUCTURED_API_KEY: Optional[str] = Field(None, env="UNSTRUCTURED_API_KEY")
     AWS_ACCESS_KEY: Optional[str] = Field(None, env="AWS_ACCESS_KEY")
     AWS_SECRET_ACCESS_KEY: Optional[str] = Field(None, env="AWS_SECRET_ACCESS_KEY")
     ASSEMBLYAI_API_KEY: Optional[str] = Field(None, env="ASSEMBLYAI_API_KEY")
