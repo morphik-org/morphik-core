@@ -28,6 +28,7 @@ from core.storage.local_storage import LocalStorage
 from core.embedding.openai_embedding_model import OpenAIEmbeddingModel
 from core.completion.ollama_completion import OllamaCompletionModel
 from core.parser.contextual_parser import ContextualParser
+from core.reranker.bge_reranker import BGEReranker
 
 # Initialize FastAPI app
 app = FastAPI(title="DataBridge API")
@@ -158,14 +159,28 @@ match settings.COMPLETION_PROVIDER:
     case _:
         raise ValueError(f"Unsupported completion provider: {settings.COMPLETION_PROVIDER}")
 
+# Initialize reranker
+match settings.RERANKER_PROVIDER:
+    case "bge":
+        reranker = BGEReranker(
+            model_name=settings.RERANKER_MODEL,
+            device=settings.RERANKER_DEVICE,
+            use_fp16=settings.RERANKER_USE_FP16,
+            query_max_length=settings.RERANKER_QUERY_MAX_LENGTH,
+            passage_max_length=settings.RERANKER_PASSAGE_MAX_LENGTH,
+        )
+    case _:
+        raise ValueError(f"Unsupported reranker provider: {settings.RERANKER_PROVIDER}")
+
 # Initialize document service with configured components
 document_service = DocumentService(
-    database=database,
-    vector_store=vector_store,
     storage=storage,
-    parser=parser,
+    db=database,
+    vector_store=vector_store,
     embedding_model=embedding_model,
     completion_model=completion_model,
+    parser=parser,
+    reranker=reranker,
 )
 
 

@@ -19,6 +19,7 @@ from core.parser.base_parser import BaseParser
 from core.completion.base_completion import BaseCompletionModel
 from core.completion.base_completion import CompletionRequest, CompletionResponse
 import logging
+from core.reranker.base_reranker import BaseReranker
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ class DocumentService:
         parser: BaseParser,
         embedding_model: BaseEmbeddingModel,
         completion_model: BaseCompletionModel,
+        reranker: BaseReranker,
     ):
         self.db = database
         self.vector_store = vector_store
@@ -39,6 +41,7 @@ class DocumentService:
         self.parser = parser
         self.embedding_model = embedding_model
         self.completion_model = completion_model
+        self.reranker = reranker
 
     async def retrieve_chunks(
         self,
@@ -63,6 +66,15 @@ class DocumentService:
         # Search chunks with vector similarity
         chunks = await self.vector_store.query_similar(query_embedding, k=k, doc_ids=doc_ids)
         logger.info(f"Found {len(chunks)} similar chunks")
+
+        # Rerank chunks using the reranker
+        if chunks:
+            chunks = await self.reranker.rerank(query, chunks)
+            logger.info("Reranked chunks using reranker")
+
+        # Filter by minimum score
+        chunks = [c for c in chunks if c.score >= min_score]
+        logger.info(f"Filtered to {len(chunks)} chunks above minimum score")
 
         # Create and return chunk results
         results = await self._create_chunk_results(auth, chunks)

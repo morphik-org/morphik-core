@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     EMBEDDING_PROVIDER: str = "openai"
     COMPLETION_PROVIDER: str = "ollama"
     PARSER_PROVIDER: str = "combined"
+    RERANKER_PROVIDER: str = "bge"
 
     # Storage settings
     STORAGE_PATH: str = "./storage"
@@ -53,6 +54,11 @@ class Settings(BaseSettings):
     COMPLETION_MAX_TOKENS: int = 1000
     COMPLETION_TEMPERATURE: float = 0.7
     OLLAMA_BASE_URL: str = "http://localhost:11434"
+    RERANKER_MODEL: str = "BAAI/bge-reranker-v2-gemma"
+    RERANKER_DEVICE: Optional[str] = None
+    RERANKER_USE_FP16: bool = True
+    RERANKER_QUERY_MAX_LENGTH: int = 256
+    RERANKER_PASSAGE_MAX_LENGTH: int = 512
 
     # Processing settings
     CHUNK_SIZE: int = 1000
@@ -87,6 +93,7 @@ def get_settings() -> Settings:
         "EMBEDDING_PROVIDER": config["service"]["components"]["embedding"],
         "COMPLETION_PROVIDER": config["service"]["components"]["completion"],
         "PARSER_PROVIDER": config["service"]["components"]["parser"],
+        "RERANKER_PROVIDER": config["service"]["components"]["reranker"],
         # Storage settings
         "STORAGE_PATH": config["storage"]["local"]["path"],
         "AWS_REGION": config["storage"]["aws"]["region"],
@@ -104,6 +111,11 @@ def get_settings() -> Settings:
         "COMPLETION_MAX_TOKENS": config["models"]["completion"]["default_max_tokens"],
         "COMPLETION_TEMPERATURE": config["models"]["completion"]["default_temperature"],
         "OLLAMA_BASE_URL": config["models"]["ollama"]["base_url"],
+        "RERANKER_MODEL": config["models"]["reranker"]["model_name"],
+        "RERANKER_DEVICE": config["models"]["reranker"].get("device"),
+        "RERANKER_USE_FP16": config["models"]["reranker"].get("use_fp16", True),
+        "RERANKER_QUERY_MAX_LENGTH": config["models"]["reranker"].get("query_max_length", 256),
+        "RERANKER_PASSAGE_MAX_LENGTH": config["models"]["reranker"].get("passage_max_length", 512),
         # Processing settings
         "CHUNK_SIZE": config["processing"]["text"]["chunk_size"],
         "CHUNK_OVERLAP": config["processing"]["text"]["chunk_overlap"],
