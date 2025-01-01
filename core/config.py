@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 200
     DEFAULT_K: int = 4
     FRAME_SAMPLE_RATE: int = 120
+    USE_UNSTRUCTURED_API: bool = False
 
     # Auth settings
     JWT_ALGORITHM: str = "HS256"
@@ -108,6 +109,7 @@ def get_settings() -> Settings:
         "CHUNK_OVERLAP": config["processing"]["text"]["chunk_overlap"],
         "DEFAULT_K": config["processing"]["text"]["default_k"],
         "FRAME_SAMPLE_RATE": config["processing"]["video"]["frame_sample_rate"],
+        "USE_UNSTRUCTURED_API": config["processing"]["unstructured"]["use_api"],
         # Auth settings
         "JWT_ALGORITHM": config["auth"]["jwt_algorithm"],
     }

@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 class CombinedParser(BaseParser):
     def __init__(
         self,
+        use_unstructured_api: bool,
         unstructured_api_key: str,
         assemblyai_api_key: str,
         chunk_size: int,
@@ -22,6 +23,7 @@ class CombinedParser(BaseParser):
         frame_sample_rate: int,
     ):
         self.unstructured_parser = UnstructuredParser(
+            use_api=use_unstructured_api,
             api_key=unstructured_api_key,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,

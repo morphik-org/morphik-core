@@ -43,7 +43,7 @@ class UnstructuredParser(BaseParser):
             file=io.BytesIO(file),
             partition_via_api=self.use_api,
             api_key=self.api_key if self.use_api else None,
-            metadata_filename=filename if self.use_api else None,
+            metadata_filename=None if self.use_api else filename,
             chunking_strategy="by_title",
         )
         elements = loader.load()

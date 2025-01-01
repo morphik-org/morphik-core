@@ -96,6 +96,7 @@ match settings.PARSER_PROVIDER:
         if not settings.ASSEMBLYAI_API_KEY:
             raise ValueError("AssemblyAI API key is required for combined parser")
         parser = CombinedParser(
+            use_unstructured_api=settings.USE_UNSTRUCTURED_API,
             unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
             assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
             chunk_size=settings.CHUNK_SIZE,
@@ -104,7 +105,7 @@ match settings.PARSER_PROVIDER:
         )
     case "unstructured":
         parser = UnstructuredParser(
-            use_api=settings.UNSTRUCTURED_API_KEY is not None,
+            use_api=settings.USE_UNSTRUCTURED_API,
             api_key=settings.UNSTRUCTURED_API_KEY,
             chunk_size=settings.CHUNK_SIZE,
             chunk_overlap=settings.CHUNK_OVERLAP,
@@ -113,6 +114,7 @@ match settings.PARSER_PROVIDER:
         if not settings.ANTHROPIC_API_KEY:
             raise ValueError("Anthropic API key is required for contextual parser")
         parser = ContextualParser(
+            use_unstructured_api=settings.USE_UNSTRUCTURED_API,
             unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
             assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
             chunk_size=settings.CHUNK_SIZE,
