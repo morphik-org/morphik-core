@@ -12,8 +12,8 @@ class Settings(BaseSettings):
     # Required environment variables (referenced in config.toml)
     JWT_SECRET_KEY: str = Field(..., env="JWT_SECRET_KEY")
     MONGODB_URI: str = Field(..., env="MONGODB_URI")
-    UNSTRUCTURED_API_KEY: str = Field(..., env="UNSTRUCTURED_API_KEY")
 
+    UNSTRUCTURED_API_KEY: Optional[str] = Field(None, env="UNSTRUCTURED_API_KEY")
     AWS_ACCESS_KEY: Optional[str] = Field(None, env="AWS_ACCESS_KEY")
     AWS_SECRET_ACCESS_KEY: Optional[str] = Field(None, env="AWS_SECRET_ACCESS_KEY")
     ASSEMBLYAI_API_KEY: Optional[str] = Field(None, env="ASSEMBLYAI_API_KEY")
@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 200
     DEFAULT_K: int = 4
     FRAME_SAMPLE_RATE: int = 120
+    USE_UNSTRUCTURED_API: bool = False
 
     # Auth settings
     JWT_ALGORITHM: str = "HS256"
@@ -108,6 +109,7 @@ def get_settings() -> Settings:
         "CHUNK_OVERLAP": config["processing"]["text"]["chunk_overlap"],
         "DEFAULT_K": config["processing"]["text"]["default_k"],
         "FRAME_SAMPLE_RATE": config["processing"]["video"]["frame_sample_rate"],
+        "USE_UNSTRUCTURED_API": config["processing"]["unstructured"]["use_api"],
         # Auth settings
         "JWT_ALGORITHM": config["auth"]["jwt_algorithm"],
     }

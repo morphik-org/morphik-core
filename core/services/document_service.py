@@ -162,7 +162,7 @@ class DocumentService:
 
         file_content = await file.read()
         additional_metadata, chunks = await self.parser.parse_file(
-            file_content, file.content_type or ""
+            file_content, file.content_type or "", file.filename
         )
 
         doc = Document(

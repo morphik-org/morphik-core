@@ -32,7 +32,8 @@ class DB:
         if "localhost" in uri or "127.0.0.1" in uri:
             uri = uri.replace("databridge://", "http://")
         self.uri = uri
-        self._client = DataBridge(self.uri, is_local="localhost" in uri or "127.0.0.1" in uri)
+        is_local = "localhost" in uri or "127.0.0.1" in uri
+        self._client = DataBridge(self.uri, is_local=is_local, timeout=1000)
 
     def ingest_text(self, content: str, metadata: dict = None) -> dict:
         """Ingest text content into DataBridge"""

@@ -6,7 +6,7 @@ import magic
 from core.models.chunk import Chunk
 
 from core.parser.base_parser import BaseParser
-from core.parser.unstructured_parser import UnstructuredAPIParser
+from core.parser.unstructured_parser import UnstructuredParser
 from core.parser.video.parse_video import VideoParser
 
 logger = logging.getLogger(__name__)
@@ -15,13 +15,15 @@ logger = logging.getLogger(__name__)
 class CombinedParser(BaseParser):
     def __init__(
         self,
+        use_unstructured_api: bool,
         unstructured_api_key: str,
         assemblyai_api_key: str,
         chunk_size: int,
         chunk_overlap: int,
         frame_sample_rate: int,
     ):
-        self.unstructured_parser = UnstructuredAPIParser(
+        self.unstructured_parser = UnstructuredParser(
+            use_api=use_unstructured_api,
             api_key=unstructured_api_key,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
@@ -77,7 +79,7 @@ class CombinedParser(BaseParser):
         return await self.unstructured_parser.split_text(text)
 
     async def parse_file(
-        self, file: bytes, content_type: str
+        self, file: bytes, content_type: str, filename: str
     ) -> Tuple[Dict[str, Any], List[Chunk]]:
         """Parse file content into text chunks. Returns document metadata and a list of chunks"""
         is_video = self._is_video_file(file_bytes=file)
@@ -85,7 +87,7 @@ class CombinedParser(BaseParser):
         if is_video:
             return await self._parse_video(file)
         else:
-            return await self.unstructured_parser.parse_file(file, content_type)
+            return await self.unstructured_parser.parse_file(file, content_type, filename)
 
     async def _parse_video(self, file: bytes) -> Tuple[Dict[str, Any], List[Chunk]]:
         """Parse video file and combine transcript and frame descriptions into chunks"""

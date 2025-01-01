@@ -17,7 +17,7 @@ from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.auth import AuthContext, EntityType
 from core.parser.combined_parser import CombinedParser
 from core.completion.base_completion import CompletionResponse
-from core.parser.unstructured_parser import UnstructuredAPIParser
+from core.parser.unstructured_parser import UnstructuredParser
 from core.services.document_service import DocumentService
 from core.services.telemetry import TelemetryService
 from core.config import get_settings
@@ -96,6 +96,7 @@ match settings.PARSER_PROVIDER:
         if not settings.ASSEMBLYAI_API_KEY:
             raise ValueError("AssemblyAI API key is required for combined parser")
         parser = CombinedParser(
+            use_unstructured_api=settings.USE_UNSTRUCTURED_API,
             unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
             assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
             chunk_size=settings.CHUNK_SIZE,
@@ -103,7 +104,8 @@ match settings.PARSER_PROVIDER:
             frame_sample_rate=settings.FRAME_SAMPLE_RATE,
         )
     case "unstructured":
-        parser = UnstructuredAPIParser(
+        parser = UnstructuredParser(
+            use_api=settings.USE_UNSTRUCTURED_API,
             api_key=settings.UNSTRUCTURED_API_KEY,
             chunk_size=settings.CHUNK_SIZE,
             chunk_overlap=settings.CHUNK_OVERLAP,
@@ -112,6 +114,7 @@ match settings.PARSER_PROVIDER:
         if not settings.ANTHROPIC_API_KEY:
             raise ValueError("Anthropic API key is required for contextual parser")
         parser = ContextualParser(
+            use_unstructured_api=settings.USE_UNSTRUCTURED_API,
             unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
             assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
             chunk_size=settings.CHUNK_SIZE,

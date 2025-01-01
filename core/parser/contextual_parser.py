@@ -29,6 +29,7 @@ Answer only with the succinct context and nothing else.
 class ContextualParser(BaseParser):
     def __init__(
         self,
+        use_unstructured_api: bool,
         unstructured_api_key: str,
         assemblyai_api_key: str,
         chunk_size: int,
@@ -37,6 +38,7 @@ class ContextualParser(BaseParser):
         anthropic_api_key: str,
     ):
         self.combined_parser = CombinedParser(
+            use_unstructured_api=use_unstructured_api,
             unstructured_api_key=unstructured_api_key,
             assemblyai_api_key=assemblyai_api_key,
             chunk_size=chunk_size,
@@ -97,7 +99,7 @@ class ContextualParser(BaseParser):
         return new_chunks
 
     async def parse_file(
-        self, file: bytes, content_type: str
+        self, file: bytes, content_type: str, filename: str
     ) -> Tuple[Dict[str, Any], List[Chunk]]:
         document_metadata, chunks = await self.combined_parser.parse_file(file, content_type)
         document_text = "\n".join([chunk.content for chunk in chunks])

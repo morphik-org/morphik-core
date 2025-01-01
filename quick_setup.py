@@ -21,12 +21,13 @@ args = parser.parse_args()
 
 # Configure logging based on command line arguments
 LOGGER = logging.getLogger(__name__)
-if args.debug:
-    LOGGER.setLevel(logging.DEBUG)
-elif args.quiet:
-    LOGGER.setLevel(logging.WARNING)
-else:
-    LOGGER.setLevel(logging.INFO)
+match (args.debug, args.quiet):
+    case (True, _):
+        LOGGER.setLevel(logging.DEBUG)
+    case (_, True):
+        LOGGER.setLevel(logging.WARNING)
+    case _:
+        LOGGER.setLevel(logging.INFO)
 
 # Add console handler with formatting
 console_handler = logging.StreamHandler()
