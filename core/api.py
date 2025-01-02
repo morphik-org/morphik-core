@@ -28,6 +28,7 @@ from core.storage.local_storage import LocalStorage
 from core.embedding.openai_embedding_model import OpenAIEmbeddingModel
 from core.completion.ollama_completion import OllamaCompletionModel
 from core.parser.contextual_parser import ContextualParser
+from core.reranker.bge_reranker import BGEReranker
 
 # Initialize FastAPI app
 app = FastAPI(title="DataBridge API")
@@ -158,14 +159,28 @@ match settings.COMPLETION_PROVIDER:
     case _:
         raise ValueError(f"Unsupported completion provider: {settings.COMPLETION_PROVIDER}")
 
+# Initialize reranker
+match settings.RERANKER_PROVIDER:
+    case "bge":
+        reranker = BGEReranker(
+            model_name=settings.RERANKER_MODEL,
+            device=settings.RERANKER_DEVICE,
+            use_fp16=settings.RERANKER_USE_FP16,
+            query_max_length=settings.RERANKER_QUERY_MAX_LENGTH,
+            passage_max_length=settings.RERANKER_PASSAGE_MAX_LENGTH,
+        )
+    case _:
+        raise ValueError(f"Unsupported reranker provider: {settings.RERANKER_PROVIDER}")
+
 # Initialize document service with configured components
 document_service = DocumentService(
+    storage=storage,
     database=database,
     vector_store=vector_store,
-    storage=storage,
-    parser=parser,
     embedding_model=embedding_model,
     completion_model=completion_model,
+    parser=parser,
+    reranker=reranker,
 )
 
 
@@ -243,27 +258,51 @@ async def ingest_file(
 @app.post("/retrieve/chunks", response_model=List[ChunkResult])
 async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(verify_token)):
     """Retrieve relevant chunks."""
-    async with telemetry.track_operation(
-        operation_type="retrieve_chunks",
-        user_id=auth.entity_id,
-        metadata=request.model_dump(),
-    ):
-        return await document_service.retrieve_chunks(
-            request.query, auth, request.filters, request.k, request.min_score
-        )
+    try:
+        async with telemetry.track_operation(
+            operation_type="retrieve_chunks",
+            user_id=auth.entity_id,
+            metadata={
+                "k": request.k,
+                "min_score": request.min_score,
+                "use_reranking": request.use_reranking,
+            },
+        ):
+            return await document_service.retrieve_chunks(
+                request.query,
+                auth,
+                request.filters,
+                request.k,
+                request.min_score,
+                request.use_reranking,
+            )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
 @app.post("/retrieve/docs", response_model=List[DocumentResult])
 async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depends(verify_token)):
     """Retrieve relevant documents."""
-    async with telemetry.track_operation(
-        operation_type="retrieve_docs",
-        user_id=auth.entity_id,
-        metadata=request.model_dump(),
-    ):
-        return await document_service.retrieve_docs(
-            request.query, auth, request.filters, request.k, request.min_score
-        )
+    try:
+        async with telemetry.track_operation(
+            operation_type="retrieve_docs",
+            user_id=auth.entity_id,
+            metadata={
+                "k": request.k,
+                "min_score": request.min_score,
+                "use_reranking": request.use_reranking,
+            },
+        ):
+            return await document_service.retrieve_docs(
+                request.query,
+                auth,
+                request.filters,
+                request.k,
+                request.min_score,
+                request.use_reranking,
+            )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
 @app.post("/query", response_model=CompletionResponse)
@@ -271,27 +310,30 @@ async def query_completion(
     request: CompletionQueryRequest, auth: AuthContext = Depends(verify_token)
 ):
     """Generate completion using relevant chunks as context."""
-    async with telemetry.track_operation(
-        operation_type="query",
-        user_id=auth.entity_id,
-        metadata=request.model_dump(),
-    ) as span:
-        response = await document_service.query(
-            request.query,
-            auth,
-            request.filters,
-            request.k,
-            request.min_score,
-            request.max_tokens,
-            request.temperature,
-        )
-        if isinstance(response, dict) and "usage" in response:
-            usage = response["usage"]
-            if isinstance(usage, dict):
-                span.set_attribute("tokens.completion", usage.get("completion_tokens", 0))
-                span.set_attribute("tokens.prompt", usage.get("prompt_tokens", 0))
-                span.set_attribute("tokens.total", usage.get("total_tokens", 0))
-        return response
+    try:
+        async with telemetry.track_operation(
+            operation_type="query",
+            user_id=auth.entity_id,
+            metadata={
+                "k": request.k,
+                "min_score": request.min_score,
+                "max_tokens": request.max_tokens,
+                "temperature": request.temperature,
+                "use_reranking": request.use_reranking,
+            },
+        ):
+            return await document_service.query(
+                request.query,
+                auth,
+                request.filters,
+                request.k,
+                request.min_score,
+                request.max_tokens,
+                request.temperature,
+                request.use_reranking,
+            )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
 @app.get("/documents", response_model=List[Document])

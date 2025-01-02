@@ -11,6 +11,7 @@ vector_store = "mongodb"
 embedding = "ollama" # "openai", "ollama"
 completion = "ollama" # "openai", "ollama"
 parser = "combined" # "combined", "unstructured", "contextual"
+reranker = "bge" # "bge"
 
 # Storage Configuration
 [storage.local]
@@ -45,12 +46,20 @@ default_temperature = 0.7
 [models.ollama]
 base_url = "http://localhost:11434"
 
+[models.reranker]
+model_name = "BAAI/bge-reranker-large" # "BAAI/bge-reranker-v2-gemma", "BAAI/bge-reranker-large"
+device = "mps" # "cuda:0" # Optional: Set to null or remove for CPU
+use_fp16 = true
+query_max_length = 256
+passage_max_length = 512
+
 # Document Processing
 [processing]
 [processing.text]
 chunk_size = 1000
 chunk_overlap = 200
 default_k = 4
+use_reranking = true  # Whether to use reranking by default
 
 [processing.video]
 frame_sample_rate = 120

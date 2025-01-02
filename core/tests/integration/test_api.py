@@ -194,6 +194,10 @@ async def test_ingest_invalid_metadata(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    get_settings().EMBEDDING_PROVIDER == "ollama",
+    reason="local embedding models do not have size limits",
+)
 async def test_ingest_oversized_content(client: AsyncClient):
     """Test ingestion with oversized content"""
     headers = create_auth_header()
@@ -285,26 +289,28 @@ async def test_invalid_document_id(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_retrieve_chunks(client: AsyncClient):
     """Test retrieving document chunks"""
+    upload_string = "The quick brown fox jumps over the lazy dog"
     # First ingest a document to search
-    doc_id = await test_ingest_text_document(
-        client, content="The quick brown fox jumps over the lazy dog"
-    )
+    doc_id = await test_ingest_text_document(client, content=upload_string)
 
     headers = create_auth_header()
-    # Sleep to allow time for document to be indexed
-    await asyncio.sleep(1)
 
     response = await client.post(
         "/retrieve/chunks",
-        json={"query": "jumping fox", "k": 1, "min_score": 0.0},
+        json={
+            "query": "jumping fox",
+            "k": 1,
+            "min_score": 0.0,
+            "filters": {"external_id": doc_id},  # Add filter for specific document
+        },
         headers=headers,
     )
 
     assert response.status_code == 200
     results = list(response.json())
-    assert len(results) == 1
+    assert len(results) > 0
     assert results[0]["score"] > 0.5
-    assert results[0]["document_id"] == doc_id
+    assert results[0]["content"] == upload_string
 
 
 @pytest.mark.asyncio
@@ -324,7 +330,10 @@ async def test_retrieve_docs(client: AsyncClient):
     headers = create_auth_header()
     response = await client.post(
         "/retrieve/docs",
-        json={"query": "Headaches, dehydration", "filters": {"test": True}},
+        json={
+            "query": "Headaches, dehydration",
+            "filters": {"test": True, "external_id": doc_id},  # Add filter for specific document
+        },
         headers=headers,
     )
 
@@ -398,3 +407,287 @@ async def test_invalid_completion_params(client: AsyncClient):
         headers=headers,
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_retrieve_chunks_default_reranking(client: AsyncClient):
+    """Test retrieving chunks with default reranking behavior"""
+    # First ingest some test documents
+    _ = await test_ingest_text_document(
+        client, "The quick brown fox jumps over the lazy dog. This is a test document."
+    )
+    _ = await test_ingest_text_document(
+        client, "The lazy dog sleeps while the quick brown fox runs. Another test document."
+    )
+
+    headers = create_auth_header()
+    response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "What does the fox do?",
+            "k": 2,
+            "min_score": 0.0,
+            # Not specifying use_reranking - should use default from config
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    chunks = response.json()
+    assert len(chunks) > 0
+    # Verify chunks are ordered by score
+    scores = [chunk["score"] for chunk in chunks]
+    assert all(scores[i] >= scores[i + 1] for i in range(len(scores) - 1))
+
+
+@pytest.mark.asyncio
+async def test_retrieve_chunks_explicit_reranking(client: AsyncClient):
+    """Test retrieving chunks with explicitly enabled reranking"""
+    # First ingest some test documents
+    _ = await test_ingest_text_document(
+        client, "The quick brown fox jumps over the lazy dog. This is a test document."
+    )
+    _ = await test_ingest_text_document(
+        client, "The lazy dog sleeps while the quick brown fox runs. Another test document."
+    )
+
+    headers = create_auth_header()
+    response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "What does the fox do?",
+            "k": 2,
+            "min_score": 0.0,
+            "use_reranking": True,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    chunks = response.json()
+    assert len(chunks) > 0
+    # Verify chunks are ordered by score
+    scores = [chunk["score"] for chunk in chunks]
+    assert all(scores[i] >= scores[i + 1] for i in range(len(scores) - 1))
+
+
+@pytest.mark.asyncio
+async def test_retrieve_chunks_disabled_reranking(client: AsyncClient):
+    """Test retrieving chunks with explicitly disabled reranking"""
+    # First ingest some test documents
+    await test_ingest_text_document(
+        client, "The quick brown fox jumps over the lazy dog. This is a test document."
+    )
+    await test_ingest_text_document(
+        client, "The lazy dog sleeps while the quick brown fox runs. Another test document."
+    )
+
+    headers = create_auth_header()
+    response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "What does the fox do?",
+            "k": 2,
+            "min_score": 0.0,
+            "use_reranking": False,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    chunks = response.json()
+    assert len(chunks) > 0
+
+
+@pytest.mark.asyncio
+async def test_reranking_affects_results(client: AsyncClient):
+    """Test that reranking actually changes the order of results"""
+    # First ingest documents with clearly different semantic relevance
+    await test_ingest_text_document(
+        client, "The capital of France is Paris. The city is known for the Eiffel Tower."
+    )
+    await test_ingest_text_document(
+        client, "Paris is a city in France. It has many famous landmarks and museums."
+    )
+    await test_ingest_text_document(
+        client, "Paris Hilton is a celebrity and businesswoman. She has nothing to do with France."
+    )
+
+    headers = create_auth_header()
+
+    # Get results without reranking
+    response_no_rerank = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "Tell me about the capital city of France",
+            "k": 3,
+            "min_score": 0.0,
+            "use_reranking": False,
+        },
+        headers=headers,
+    )
+
+    # Get results with reranking
+    response_with_rerank = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "Tell me about the capital city of France",
+            "k": 3,
+            "min_score": 0.0,
+            "use_reranking": True,
+        },
+        headers=headers,
+    )
+
+    assert response_no_rerank.status_code == 200
+    assert response_with_rerank.status_code == 200
+
+    chunks_no_rerank = response_no_rerank.json()
+    chunks_with_rerank = response_with_rerank.json()
+
+    # Verify we got results in both cases
+    assert len(chunks_no_rerank) > 0
+    assert len(chunks_with_rerank) > 0
+
+    # The order or scores should be different between reranked and non-reranked results
+    # This test might be a bit flaky depending on the exact scoring, but it should work most of the time
+    # given our carefully crafted test data
+    scores_no_rerank = [c["score"] for c in chunks_no_rerank]
+    scores_with_rerank = [c["score"] for c in chunks_with_rerank]
+    assert scores_no_rerank != scores_with_rerank, "Reranking should affect the scores"
+
+
+@pytest.mark.asyncio
+async def test_retrieve_docs_with_reranking(client: AsyncClient):
+    """Test document retrieval with reranking options"""
+    # First ingest documents with clearly different semantic relevance
+    await test_ingest_text_document(
+        client, "The capital of France is Paris. The city is known for the Eiffel Tower."
+    )
+    await test_ingest_text_document(
+        client, "Paris is a city in France. It has many famous landmarks and museums."
+    )
+    await test_ingest_text_document(
+        client, "Paris Hilton is a celebrity and businesswoman. She has nothing to do with France."
+    )
+
+    headers = create_auth_header()
+
+    # Test with default reranking (from config)
+    response_default = await client.post(
+        "/retrieve/docs",
+        json={
+            "query": "Tell me about the capital city of France",
+            "k": 3,
+            "min_score": 0.0,
+        },
+        headers=headers,
+    )
+    assert response_default.status_code == 200
+    docs_default = response_default.json()
+    assert len(docs_default) > 0
+
+    # Test with explicit reranking enabled
+    response_rerank = await client.post(
+        "/retrieve/docs",
+        json={
+            "query": "Tell me about the capital city of France",
+            "k": 3,
+            "min_score": 0.0,
+            "use_reranking": True,
+        },
+        headers=headers,
+    )
+    assert response_rerank.status_code == 200
+    docs_rerank = response_rerank.json()
+    assert len(docs_rerank) > 0
+
+    # Test with reranking disabled
+    response_no_rerank = await client.post(
+        "/retrieve/docs",
+        json={
+            "query": "Tell me about the capital city of France",
+            "k": 3,
+            "min_score": 0.0,
+            "use_reranking": False,
+        },
+        headers=headers,
+    )
+    assert response_no_rerank.status_code == 200
+    docs_no_rerank = response_no_rerank.json()
+    assert len(docs_no_rerank) > 0
+
+    # Verify that reranking affects the order
+    scores_rerank = [doc["score"] for doc in docs_rerank]
+    scores_no_rerank = [doc["score"] for doc in docs_no_rerank]
+    assert scores_rerank != scores_no_rerank, "Reranking should affect document scores"
+
+
+@pytest.mark.asyncio
+async def test_query_with_reranking(client: AsyncClient):
+    """Test query completion with reranking options"""
+    # First ingest documents with clearly different semantic relevance
+    await test_ingest_text_document(
+        client, "The capital of France is Paris. The city is known for the Eiffel Tower."
+    )
+    await test_ingest_text_document(
+        client, "Paris is a city in France. It has many famous landmarks and museums."
+    )
+    await test_ingest_text_document(
+        client, "Paris Hilton is a celebrity and businesswoman. She has nothing to do with France."
+    )
+
+    headers = create_auth_header()
+
+    # Test with default reranking (from config)
+    response_default = await client.post(
+        "/query",
+        json={
+            "query": "What is the capital of France?",
+            "k": 3,
+            "min_score": 0.0,
+            "max_tokens": 50,
+        },
+        headers=headers,
+    )
+    assert response_default.status_code == 200
+    completion_default = response_default.json()
+    assert "completion" in completion_default
+
+    # Test with explicit reranking enabled
+    response_rerank = await client.post(
+        "/query",
+        json={
+            "query": "What is the capital of France?",
+            "k": 3,
+            "min_score": 0.0,
+            "max_tokens": 50,
+            "use_reranking": True,
+        },
+        headers=headers,
+    )
+    assert response_rerank.status_code == 200
+    completion_rerank = response_rerank.json()
+    assert "completion" in completion_rerank
+
+    # Test with reranking disabled
+    response_no_rerank = await client.post(
+        "/query",
+        json={
+            "query": "What is the capital of France?",
+            "k": 3,
+            "min_score": 0.0,
+            "max_tokens": 50,
+            "use_reranking": False,
+        },
+        headers=headers,
+    )
+    assert response_no_rerank.status_code == 200
+    completion_no_rerank = response_no_rerank.json()
+    assert "completion" in completion_no_rerank
+
+    # The actual responses might be different due to different chunk ordering,
+    # but all should mention Paris as the capital
+    assert "Paris" in completion_default["completion"]
+    assert "Paris" in completion_rerank["completion"]
+    assert "Paris" in completion_no_rerank["completion"]
