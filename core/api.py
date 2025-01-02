@@ -258,27 +258,51 @@ async def ingest_file(
 @app.post("/retrieve/chunks", response_model=List[ChunkResult])
 async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(verify_token)):
     """Retrieve relevant chunks."""
-    async with telemetry.track_operation(
-        operation_type="retrieve_chunks",
-        user_id=auth.entity_id,
-        metadata=request.model_dump(),
-    ):
-        return await document_service.retrieve_chunks(
-            request.query, auth, request.filters, request.k, request.min_score
-        )
+    try:
+        async with telemetry.track_operation(
+            operation_type="retrieve_chunks",
+            user_id=auth.entity_id,
+            metadata={
+                "k": request.k,
+                "min_score": request.min_score,
+                "use_reranking": request.use_reranking,
+            },
+        ):
+            return await document_service.retrieve_chunks(
+                request.query,
+                auth,
+                request.filters,
+                request.k,
+                request.min_score,
+                request.use_reranking,
+            )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
 @app.post("/retrieve/docs", response_model=List[DocumentResult])
 async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depends(verify_token)):
     """Retrieve relevant documents."""
-    async with telemetry.track_operation(
-        operation_type="retrieve_docs",
-        user_id=auth.entity_id,
-        metadata=request.model_dump(),
-    ):
-        return await document_service.retrieve_docs(
-            request.query, auth, request.filters, request.k, request.min_score
-        )
+    try:
+        async with telemetry.track_operation(
+            operation_type="retrieve_docs",
+            user_id=auth.entity_id,
+            metadata={
+                "k": request.k,
+                "min_score": request.min_score,
+                "use_reranking": request.use_reranking,
+            },
+        ):
+            return await document_service.retrieve_docs(
+                request.query,
+                auth,
+                request.filters,
+                request.k,
+                request.min_score,
+                request.use_reranking,
+            )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
 @app.post("/query", response_model=CompletionResponse)
@@ -286,27 +310,30 @@ async def query_completion(
     request: CompletionQueryRequest, auth: AuthContext = Depends(verify_token)
 ):
     """Generate completion using relevant chunks as context."""
-    async with telemetry.track_operation(
-        operation_type="query",
-        user_id=auth.entity_id,
-        metadata=request.model_dump(),
-    ) as span:
-        response = await document_service.query(
-            request.query,
-            auth,
-            request.filters,
-            request.k,
-            request.min_score,
-            request.max_tokens,
-            request.temperature,
-        )
-        if isinstance(response, dict) and "usage" in response:
-            usage = response["usage"]
-            if isinstance(usage, dict):
-                span.set_attribute("tokens.completion", usage.get("completion_tokens", 0))
-                span.set_attribute("tokens.prompt", usage.get("prompt_tokens", 0))
-                span.set_attribute("tokens.total", usage.get("total_tokens", 0))
-        return response
+    try:
+        async with telemetry.track_operation(
+            operation_type="query",
+            user_id=auth.entity_id,
+            metadata={
+                "k": request.k,
+                "min_score": request.min_score,
+                "max_tokens": request.max_tokens,
+                "temperature": request.temperature,
+                "use_reranking": request.use_reranking,
+            },
+        ):
+            return await document_service.query(
+                request.query,
+                auth,
+                request.filters,
+                request.k,
+                request.min_score,
+                request.max_tokens,
+                request.temperature,
+                request.use_reranking,
+            )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
 @app.get("/documents", response_model=List[Document])

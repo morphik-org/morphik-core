@@ -59,6 +59,7 @@ passage_max_length = 512
 chunk_size = 1000
 chunk_overlap = 200
 default_k = 4
+use_reranking = true  # Whether to use reranking by default
 
 [processing.video]
 frame_sample_rate = 120

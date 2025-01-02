@@ -16,6 +16,7 @@ class RetrieveRequest(BaseModel):
     filters: Optional[Dict[str, Any]] = None
     k: int = Field(default=4, gt=0)
     min_score: float = Field(default=0.0)
+    use_reranking: Optional[bool] = None  # If None, use default from config
 
 
 class CompletionQueryRequest(RetrieveRequest):
