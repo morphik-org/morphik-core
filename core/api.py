@@ -175,7 +175,7 @@ match settings.RERANKER_PROVIDER:
 # Initialize document service with configured components
 document_service = DocumentService(
     storage=storage,
-    db=database,
+    database=database,
     vector_store=vector_store,
     embedding_model=embedding_model,
     completion_model=completion_model,

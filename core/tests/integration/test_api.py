@@ -194,6 +194,10 @@ async def test_ingest_invalid_metadata(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    get_settings().EMBEDDING_PROVIDER == "ollama",
+    reason="local embedding models do not have size limits",
+)
 async def test_ingest_oversized_content(client: AsyncClient):
     """Test ingestion with oversized content"""
     headers = create_auth_header()
