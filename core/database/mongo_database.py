@@ -52,6 +52,7 @@ class MongoDatabase(BaseDatabase):
             # Ensure system metadata
             doc_dict["system_metadata"]["created_at"] = datetime.now(UTC)
             doc_dict["system_metadata"]["updated_at"] = datetime.now(UTC)
+            doc_dict["metadata"]["external_id"] = doc_dict["external_id"]
 
             result = await self.collection.insert_one(doc_dict)
             return bool(result.inserted_id)
