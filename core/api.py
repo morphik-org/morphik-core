@@ -355,7 +355,7 @@ async def query_completion(
 async def list_documents(
     auth: AuthContext = Depends(verify_token),
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 10000,
     filters: Optional[Dict[str, Any]] = None,
 ):
     """List accessible documents."""
