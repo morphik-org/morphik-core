@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # Vector store settings
     VECTOR_INDEX_NAME: str = "vector_index"
     VECTOR_DIMENSIONS: int = 1536
+    PGVECTOR_TABLE_NAME: str = "vector_embeddings"
+    PGVECTOR_INDEX_METHOD: str = "ivfflat"
+    PGVECTOR_INDEX_LISTS: int = 100
+    PGVECTOR_PROBES: int = 10
 
     # Model settings
     EMBEDDING_MODEL: str = "text-embedding-3-small"
@@ -120,7 +124,17 @@ def get_settings() -> Settings:
         .get("chunks_collection", "document_chunks"),
         # Vector store settings
         "VECTOR_INDEX_NAME": config["vector_store"]["mongodb"]["index_name"],
-        "VECTOR_DIMENSIONS": config["vector_store"]["mongodb"]["dimensions"],
+        "VECTOR_DIMENSIONS": config["vector_store"][
+            config["service"]["components"]["vector_store"]
+        ]["dimensions"],
+        "PGVECTOR_TABLE_NAME": config["vector_store"]
+        .get("pgvector", {})
+        .get("table_name", "vector_embeddings"),
+        "PGVECTOR_INDEX_METHOD": config["vector_store"]
+        .get("pgvector", {})
+        .get("index_method", "ivfflat"),
+        "PGVECTOR_INDEX_LISTS": config["vector_store"].get("pgvector", {}).get("index_lists", 100),
+        "PGVECTOR_PROBES": config["vector_store"].get("pgvector", {}).get("probes", 10),
         # Model settings
         "EMBEDDING_MODEL": config["models"]["embedding"]["model_name"],
         "COMPLETION_MODEL": config["models"]["completion"]["model_name"],

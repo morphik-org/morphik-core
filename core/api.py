@@ -79,6 +79,14 @@ match settings.VECTOR_STORE_PROVIDER:
             collection_name=settings.CHUNKS_COLLECTION,
             index_name=settings.VECTOR_INDEX_NAME,
         )
+    case "pgvector":
+        if not settings.POSTGRES_URI:
+            raise ValueError("PostgreSQL URI is required for pgvector store")
+        from core.vector_store.pgvector_store import PGVectorStore
+
+        vector_store = PGVectorStore(
+            uri=settings.POSTGRES_URI,
+        )
     case _:
         raise ValueError(f"Unsupported vector store provider: {settings.VECTOR_STORE_PROVIDER}")
 
@@ -347,7 +355,7 @@ async def query_completion(
 async def list_documents(
     auth: AuthContext = Depends(verify_token),
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 10000,
     filters: Optional[Dict[str, Any]] = None,
 ):
     """List accessible documents."""
