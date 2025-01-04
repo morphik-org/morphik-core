@@ -290,3 +290,6 @@ psycopg2-binary==2.9.9
 alembic==1.13.1
 zipp==3.21.0
 zlib-state==0.1.9
+pgvector==0.2.5
+psycopg[binary]==3.1.18
+psycopg-binary==3.1.18

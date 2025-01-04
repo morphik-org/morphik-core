@@ -7,7 +7,7 @@ reload = false
 [service.components]
 storage = "local" # "aws-s3"
 database = "postgres" # "postgres", "mongodb"
-vector_store = "mongodb"
+vector_store = "pgvector" # "mongodb"
 embedding = "ollama" # "openai", "ollama"
 completion = "ollama" # "openai", "ollama"
 parser = "combined" # "combined", "unstructured", "contextual"
@@ -37,6 +37,13 @@ chunks_collection = "document_chunks"
 dimensions = 768 # 768 for nomic-embed-text, 1536 for text-embedding-3-small
 index_name = "vector_index"
 similarity_metric = "cosine"
+
+[vector_store.pgvector]
+dimensions = 768 # 768 for nomic-embed-text, 1536 for text-embedding-3-small
+table_name = "vector_embeddings"
+index_method = "ivfflat" # "ivfflat" or "hnsw"
+index_lists = 100 # Number of lists for ivfflat index
+probes = 10 # Number of probes for ivfflat search
 
 # Model Configurations
 [models]

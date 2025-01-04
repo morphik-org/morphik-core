@@ -79,7 +79,7 @@ class PostgresDatabase(BaseDatabase):
             # Rename metadata to doc_metadata
             if "metadata" in doc_dict:
                 doc_dict["doc_metadata"] = doc_dict.pop("metadata")
-
+            doc_dict["doc_metadata"]["external_id"] = doc_dict["external_id"]
             # Ensure system metadata
             if "system_metadata" not in doc_dict:
                 doc_dict["system_metadata"] = {}
@@ -141,7 +141,7 @@ class PostgresDatabase(BaseDatabase):
         self,
         auth: AuthContext,
         skip: int = 0,
-        limit: int = 100,
+        limit: int = 10000,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[Document]:
         """List documents the user has access to."""
@@ -244,12 +244,20 @@ class PostgresDatabase(BaseDatabase):
                 access_filter = self._build_access_filter(auth)
                 metadata_filter = self._build_metadata_filter(filters)
 
+                logger.debug(f"Access filter: {access_filter}")
+                logger.debug(f"Metadata filter: {metadata_filter}")
+                logger.debug(f"Original filters: {filters}")
+
                 query = select(DocumentModel.external_id).where(text(f"({access_filter})"))
                 if metadata_filter:
                     query = query.where(text(metadata_filter))
 
+                logger.debug(f"Final query: {query}")
+
                 result = await session.execute(query)
-                return [row[0] for row in result.all()]
+                doc_ids = [row[0] for row in result.all()]
+                logger.debug(f"Found document IDs: {doc_ids}")
+                return doc_ids
 
         except Exception as e:
             logger.error(f"Error finding authorized documents: {str(e)}")
@@ -310,6 +318,9 @@ class PostgresDatabase(BaseDatabase):
 
         filter_conditions = []
         for key, value in filters.items():
+            # Convert boolean values to string 'true' or 'false'
+            if isinstance(value, bool):
+                value = str(value).lower()
             filter_conditions.append(f"doc_metadata->>'{key}' = '{value}'")
 
         return " AND ".join(filter_conditions)

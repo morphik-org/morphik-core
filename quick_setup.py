@@ -9,6 +9,8 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure
 from pymongo.operations import SearchIndexModel
 import argparse
+import platform
+import subprocess
 
 # Force reload of environment variables
 load_dotenv(find_dotenv(), override=True)
@@ -183,11 +185,39 @@ def setup_postgres():
     """
     import asyncio
     from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy import text
 
     # Load PostgreSQL URI from .env file
     postgres_uri = os.getenv("POSTGRES_URI")
     if not postgres_uri:
         raise ValueError("POSTGRES_URI not found in .env file.")
+
+    # Check if pgvector is installed when on macOS
+    if platform.system() == "Darwin":
+        try:
+            # Check if postgresql is installed via homebrew
+            result = subprocess.run(
+                ["brew", "list", "postgresql@14"], capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                LOGGER.error(
+                    "PostgreSQL not found. Please install it with: brew install postgresql@14"
+                )
+                raise RuntimeError("PostgreSQL not installed")
+
+            # Check if pgvector is installed
+            result = subprocess.run(["brew", "list", "pgvector"], capture_output=True, text=True)
+            if result.returncode != 0:
+                LOGGER.error(
+                    "\nError: pgvector extension not found. Please install it with:\n"
+                    "brew install pgvector\n"
+                    "brew services stop postgresql@14\n"
+                    "brew services start postgresql@14\n"
+                )
+                raise RuntimeError("pgvector not installed")
+        except FileNotFoundError:
+            LOGGER.error("Homebrew not found. Please install it from https://brew.sh")
+            raise
 
     async def _setup_postgres():
         try:
@@ -195,14 +225,55 @@ def setup_postgres():
             engine = create_async_engine(postgres_uri)
 
             async with engine.begin() as conn:
+                try:
+                    # Enable pgvector extension
+                    await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                    LOGGER.info("Enabled pgvector extension")
+                except Exception as e:
+                    if "could not open extension control file" in str(e):
+                        LOGGER.error(
+                            "\nError: pgvector extension not found. Please install it:\n"
+                            "- On macOS: brew install pgvector\n"
+                            "- On Ubuntu: sudo apt install postgresql-14-pgvector\n"
+                            "- On other systems: check https://github.com/pgvector/pgvector#installation\n"
+                        )
+                    raise
+
                 # Import and create all tables
                 from core.database.postgres_database import Base
+                from core.vector_store.pgvector_store import Base as VectorBase
 
                 await conn.run_sync(Base.metadata.create_all)
-                LOGGER.info("Created all PostgreSQL tables and indexes.")
+                await conn.run_sync(VectorBase.metadata.create_all)
+                LOGGER.info("Created all PostgreSQL tables and indexes")
+
+                # Create vector index with configuration from settings
+                table_name = CONFIG["vector_store"]["pgvector"]["table_name"]
+                index_method = CONFIG["vector_store"]["pgvector"]["index_method"]
+                index_lists = CONFIG["vector_store"]["pgvector"]["index_lists"]
+                dimensions = CONFIG["vector_store"]["pgvector"]["dimensions"]
+
+                # First, alter the embedding column to be a vector
+                alter_sql = f"""
+                ALTER TABLE {table_name}
+                ALTER COLUMN embedding TYPE vector({dimensions})
+                USING embedding::vector({dimensions});
+                """
+                await conn.execute(text(alter_sql))
+                LOGGER.info(f"Altered embedding column to be vector({dimensions})")
+
+                # Then create the vector index
+                if index_method == "ivfflat":
+                    index_sql = f"""
+                    CREATE INDEX IF NOT EXISTS vector_idx
+                    ON {table_name} USING ivfflat (embedding vector_l2_ops)
+                    WITH (lists = {index_lists});
+                    """
+                    await conn.execute(text(index_sql))
+                    LOGGER.info(f"Created IVFFlat index on {table_name} with {index_lists} lists")
 
             await engine.dispose()
-            LOGGER.info("PostgreSQL setup completed successfully.")
+            LOGGER.info("PostgreSQL setup completed successfully")
 
         except Exception as e:
             LOGGER.error(f"Failed to setup PostgreSQL: {e}")

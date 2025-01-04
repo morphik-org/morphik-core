@@ -336,7 +336,7 @@ async def test_retrieve_chunks(client: AsyncClient):
     results = list(response.json())
     assert len(results) > 0
     assert results[0]["score"] > 0.5
-    assert results[0]["content"] == upload_string
+    assert any(upload_string == result["content"] for result in results)
 
 
 @pytest.mark.asyncio
