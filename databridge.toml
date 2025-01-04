@@ -1,0 +1,63 @@
+[api]
+host = "localhost"
+port = 8000
+reload = false
+
+
+[auth]
+jwt_algorithm = "HS256"
+
+
+[completion]
+provider = "ollama" # ollama, openai
+model_name = "llama3.2"
+default_max_tokens = 1000
+default_temperature = 0.7
+base_url = "http://localhost:11434"
+
+
+[database]
+provider = "postgres"
+database_name = "databridge"
+documents_table = "documents"
+chunks_table = "document_chunks"
+# documents_collection = "documents"
+# chunks_collection = "document_chunks"
+
+
+[embedding]
+provider = "ollama" # "ollama", "openai"
+model_name = "nomic-embed-text"
+dimensions = 768
+similarity_metric = "cosine" # "cosine", "dotProduct", "euclidean"
+base_url = "http://localhost:11434"
+
+
+[parser]
+provider = "combined" # options: "combined", "unstructured", "contextual"
+chunk_size = 1000
+chunk_overlap = 200
+use_unstructured_api = false
+video_frame_sample_rate = 120 # not needed for unstructured
+
+
+[reranker]
+provider = "bge"
+model_name = "BAAI/bge-reranker-large" # could also be "BAAI/bge-reranker-v2-gemma"
+use_fp16 = true
+query_max_length = 256
+passage_max_length = 512
+device = "mps" # "cuda:0" # Optional: Set to null or remove for CPU
+
+
+[storage]
+provider = "local"
+path = "./storage"
+# region = "us-east-2"
+# bucket_name = "databridge-s3-storage"
+
+
+[vector_store]
+provider = "mongodb"
+num_chunks_to_retrieve = 20
+index_name = "vector_index"
