@@ -41,36 +41,6 @@ class Document(BaseModel):
     chunk_ids: List[str] = Field(default_factory=list)
 
 
-class DocumentChunk(BaseModel):
-    """Represents a chunk stored in VectorStore"""
-
-    document_id: str  # external_id of parent document
-    content: str
-    embedding: List[float]
-    chunk_number: int
-    # chunk-specific metadata
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    score: float = 0.0
-
-
-class Chunk(BaseModel):
-    """Represents a chunk containing content and metadata"""
-
-    content: str
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-    def to_document_chunk(
-        self, document_id: str, chunk_number: int, embedding: List[float]
-    ) -> DocumentChunk:
-        return DocumentChunk(
-            document_id=document_id,
-            content=self.content,
-            embedding=embedding,
-            chunk_number=chunk_number,
-            metadata=self.metadata,
-        )
-
-
 class DocumentContent(BaseModel):
     """Represents either a URL or content string"""
 
@@ -121,8 +91,8 @@ class ChunkResult(BaseModel):
                 if not isinstance(frame_description, dict) or not isinstance(transcript, dict):
                     logger.warning("Invalid frame description or transcript - not a dictionary")
                     return self.content
-                ts_frame = TimeSeriesData(frame_description)
-                ts_transcript = TimeSeriesData(transcript)
+                ts_frame = TimeSeriesData(time_to_content=frame_description)
+                ts_transcript = TimeSeriesData(time_to_content=transcript)
                 timestamps = (
                     ts_frame.content_to_times[self.content]
                     + ts_transcript.content_to_times[self.content]

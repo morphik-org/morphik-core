@@ -9,6 +9,8 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure
 from pymongo.operations import SearchIndexModel
 import argparse
+import platform
+import subprocess
 
 # Force reload of environment variables
 load_dotenv(find_dotenv(), override=True)
@@ -21,12 +23,13 @@ args = parser.parse_args()
 
 # Configure logging based on command line arguments
 LOGGER = logging.getLogger(__name__)
-if args.debug:
-    LOGGER.setLevel(logging.DEBUG)
-elif args.quiet:
-    LOGGER.setLevel(logging.WARNING)
-else:
-    LOGGER.setLevel(logging.INFO)
+match (args.debug, args.quiet):
+    case (True, _):
+        LOGGER.setLevel(logging.DEBUG)
+    case (_, True):
+        LOGGER.setLevel(logging.WARNING)
+    case _:
+        LOGGER.setLevel(logging.INFO)
 
 # Add console handler with formatting
 console_handler = logging.StreamHandler()
@@ -41,17 +44,30 @@ with open(config_path, "rb") as f:
     LOGGER.info("Loaded configuration from config.toml")
 
 # Extract configuration values
-DEFAULT_REGION = CONFIG["storage"]["aws"]["region"]
-DEFAULT_BUCKET_NAME = CONFIG["storage"]["aws"]["bucket_name"]
-DATABASE_NAME = CONFIG["database"]["mongodb"]["database_name"]
+STORAGE_PROVIDER = CONFIG["service"]["components"]["storage"]
+DATABASE_PROVIDER = CONFIG["service"]["components"]["database"]
+DATABASE_NAME = CONFIG["database"][DATABASE_PROVIDER]["database_name"]
+
+# MongoDB specific config
 DOCUMENTS_COLLECTION = CONFIG["database"]["mongodb"]["documents_collection"]
 CHUNKS_COLLECTION = CONFIG["database"]["mongodb"]["chunks_collection"]
 VECTOR_DIMENSIONS = CONFIG["vector_store"]["mongodb"]["dimensions"]
 VECTOR_INDEX_NAME = CONFIG["vector_store"]["mongodb"]["index_name"]
 SIMILARITY_METRIC = CONFIG["vector_store"]["mongodb"]["similarity_metric"]
 
+# PostgreSQL specific config
+DOCUMENTS_TABLE = CONFIG["database"]["postgres"]["documents_table"]
+CHUNKS_TABLE = CONFIG["database"]["postgres"]["chunks_table"]
+
+# Extract storage-specific configuration
+DEFAULT_REGION = CONFIG["storage"]["aws"]["region"] if STORAGE_PROVIDER == "aws-s3" else None
+DEFAULT_BUCKET_NAME = (
+    CONFIG["storage"]["aws"]["bucket_name"] if STORAGE_PROVIDER == "aws-s3" else None
+)
+
 
 def create_s3_bucket(bucket_name, region=DEFAULT_REGION):
+    """Set up S3 bucket."""
     # Clear any existing AWS credentials from environment
     boto3.Session().resource("s3").meta.client.close()
 
@@ -74,11 +90,10 @@ def create_s3_bucket(bucket_name, region=DEFAULT_REGION):
     s3_client = session.client("s3")
     LOGGER.debug("Successfully created S3 client.")
 
-    # create_bucket = not
     if bucket_exists(s3_client, bucket_name):
         LOGGER.info(f"Bucket with name {bucket_name} already exists")
         return
-    # Create bucket with location constraint if region is not us-east-1
+
     if region == "us-east-1":
         s3_client.create_bucket(Bucket=bucket_name)
     else:
@@ -90,9 +105,7 @@ def create_s3_bucket(bucket_name, region=DEFAULT_REGION):
 
 
 def bucket_exists(s3_client, bucket_name):
-    """
-    Check if an S3 bucket exists.
-    """
+    """Check if an S3 bucket exists."""
     try:
         s3_client.head_bucket(Bucket=bucket_name)
         return True
@@ -166,14 +179,129 @@ def setup_mongodb():
         LOGGER.info("MongoDB connection closed.")
 
 
-def setup():
-    LOGGER.info("Creating S3 bucket...")
-    create_s3_bucket(DEFAULT_BUCKET_NAME)
-    LOGGER.info("S3 bucket created successfully.")
+def setup_postgres():
+    """
+    Set up PostgreSQL database and tables with proper indexes.
+    """
+    import asyncio
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy import text
 
-    LOGGER.info("Setting up MongoDB...")
-    setup_mongodb()
-    LOGGER.info("MongoDB setup completed.")
+    # Load PostgreSQL URI from .env file
+    postgres_uri = os.getenv("POSTGRES_URI")
+    if not postgres_uri:
+        raise ValueError("POSTGRES_URI not found in .env file.")
+
+    # Check if pgvector is installed when on macOS
+    if platform.system() == "Darwin":
+        try:
+            # Check if postgresql is installed via homebrew
+            result = subprocess.run(
+                ["brew", "list", "postgresql@14"], capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                LOGGER.error(
+                    "PostgreSQL not found. Please install it with: brew install postgresql@14"
+                )
+                raise RuntimeError("PostgreSQL not installed")
+
+            # Check if pgvector is installed
+            result = subprocess.run(["brew", "list", "pgvector"], capture_output=True, text=True)
+            if result.returncode != 0:
+                LOGGER.error(
+                    "\nError: pgvector extension not found. Please install it with:\n"
+                    "brew install pgvector\n"
+                    "brew services stop postgresql@14\n"
+                    "brew services start postgresql@14\n"
+                )
+                raise RuntimeError("pgvector not installed")
+        except FileNotFoundError:
+            LOGGER.error("Homebrew not found. Please install it from https://brew.sh")
+            raise
+
+    async def _setup_postgres():
+        try:
+            # Create async engine
+            engine = create_async_engine(postgres_uri)
+
+            async with engine.begin() as conn:
+                try:
+                    # Enable pgvector extension
+                    await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                    LOGGER.info("Enabled pgvector extension")
+                except Exception as e:
+                    if "could not open extension control file" in str(e):
+                        LOGGER.error(
+                            "\nError: pgvector extension not found. Please install it:\n"
+                            "- On macOS: brew install pgvector\n"
+                            "- On Ubuntu: sudo apt install postgresql-14-pgvector\n"
+                            "- On other systems: check https://github.com/pgvector/pgvector#installation\n"
+                        )
+                    raise
+
+                # Import and create all tables
+                from core.database.postgres_database import Base
+                from core.vector_store.pgvector_store import Base as VectorBase
+
+                await conn.run_sync(Base.metadata.create_all)
+                await conn.run_sync(VectorBase.metadata.create_all)
+                LOGGER.info("Created all PostgreSQL tables and indexes")
+
+                # Create vector index with configuration from settings
+                table_name = CONFIG["vector_store"]["pgvector"]["table_name"]
+                index_method = CONFIG["vector_store"]["pgvector"]["index_method"]
+                index_lists = CONFIG["vector_store"]["pgvector"]["index_lists"]
+                dimensions = CONFIG["vector_store"]["pgvector"]["dimensions"]
+
+                # First, alter the embedding column to be a vector
+                alter_sql = f"""
+                ALTER TABLE {table_name}
+                ALTER COLUMN embedding TYPE vector({dimensions})
+                USING embedding::vector({dimensions});
+                """
+                await conn.execute(text(alter_sql))
+                LOGGER.info(f"Altered embedding column to be vector({dimensions})")
+
+                # Then create the vector index
+                if index_method == "ivfflat":
+                    index_sql = f"""
+                    CREATE INDEX IF NOT EXISTS vector_idx
+                    ON {table_name} USING ivfflat (embedding vector_l2_ops)
+                    WITH (lists = {index_lists});
+                    """
+                    await conn.execute(text(index_sql))
+                    LOGGER.info(f"Created IVFFlat index on {table_name} with {index_lists} lists")
+
+            await engine.dispose()
+            LOGGER.info("PostgreSQL setup completed successfully")
+
+        except Exception as e:
+            LOGGER.error(f"Failed to setup PostgreSQL: {e}")
+            raise
+
+    asyncio.run(_setup_postgres())
+
+
+def setup():
+    # Setup S3 if configured
+    if STORAGE_PROVIDER == "aws-s3":
+        LOGGER.info("Setting up S3 bucket...")
+        create_s3_bucket(DEFAULT_BUCKET_NAME, DEFAULT_REGION)
+        LOGGER.info("S3 bucket setup completed.")
+
+    # Setup database based on provider
+    match DATABASE_PROVIDER:
+        case "mongodb":
+            LOGGER.info("Setting up MongoDB...")
+            setup_mongodb()
+            LOGGER.info("MongoDB setup completed.")
+        case "postgres":
+            LOGGER.info("Setting up PostgreSQL...")
+            setup_postgres()
+            LOGGER.info("PostgreSQL setup completed.")
+        case _:
+            LOGGER.error(f"Unsupported database provider: {DATABASE_PROVIDER}")
+            raise ValueError(f"Unsupported database provider: {DATABASE_PROVIDER}")
 
     LOGGER.info("Setup completed successfully. Feel free to start the server now!")
 

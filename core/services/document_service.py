@@ -3,10 +3,9 @@ from typing import Dict, Any, List, Optional
 from fastapi import UploadFile
 
 from core.models.request import IngestTextRequest
+from core.models.chunk import Chunk, DocumentChunk
 from core.models.documents import (
-    Chunk,
     Document,
-    DocumentChunk,
     ChunkResult,
     DocumentContent,
     DocumentResult,
@@ -20,6 +19,8 @@ from core.parser.base_parser import BaseParser
 from core.completion.base_completion import BaseCompletionModel
 from core.completion.base_completion import CompletionRequest, CompletionResponse
 import logging
+from core.reranker.base_reranker import BaseReranker
+from core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class DocumentService:
         parser: BaseParser,
         embedding_model: BaseEmbeddingModel,
         completion_model: BaseCompletionModel,
+        reranker: BaseReranker,
     ):
         self.db = database
         self.vector_store = vector_store
@@ -40,16 +42,21 @@ class DocumentService:
         self.parser = parser
         self.embedding_model = embedding_model
         self.completion_model = completion_model
+        self.reranker = reranker
 
     async def retrieve_chunks(
         self,
         query: str,
         auth: AuthContext,
         filters: Optional[Dict[str, Any]] = None,
-        k: int = 4,
+        k: int = 5,
         min_score: float = 0.0,
+        use_reranking: Optional[bool] = None,
     ) -> List[ChunkResult]:
         """Retrieve relevant chunks."""
+        settings = get_settings()
+        should_rerank = use_reranking if use_reranking is not None else settings.USE_RERANKING
+
         # Get embedding for query
         query_embedding = await self.embedding_model.embed_for_query(query)
         logger.info("Generated query embedding")
@@ -62,8 +69,17 @@ class DocumentService:
         logger.info(f"Found {len(doc_ids)} authorized documents")
 
         # Search chunks with vector similarity
-        chunks = await self.vector_store.query_similar(query_embedding, k=k, doc_ids=doc_ids)
+        chunks = await self.vector_store.query_similar(
+            query_embedding, k=10 * k if should_rerank else k, doc_ids=doc_ids
+        )
         logger.info(f"Found {len(chunks)} similar chunks")
+
+        # Rerank chunks using the reranker if enabled
+        if chunks and should_rerank:
+            chunks = await self.reranker.rerank(query, chunks)
+            chunks.sort(key=lambda x: x.score, reverse=True)
+            chunks = chunks[:k]
+            logger.info(f"Reranked {k*10} chunks and selected the top {k}")
 
         # Create and return chunk results
         results = await self._create_chunk_results(auth, chunks)
@@ -75,12 +91,13 @@ class DocumentService:
         query: str,
         auth: AuthContext,
         filters: Optional[Dict[str, Any]] = None,
-        k: int = 4,
+        k: int = 5,
         min_score: float = 0.0,
+        use_reranking: Optional[bool] = None,
     ) -> List[DocumentResult]:
         """Retrieve relevant documents."""
         # Get chunks first
-        chunks = await self.retrieve_chunks(query, auth, filters, k, min_score)
+        chunks = await self.retrieve_chunks(query, auth, filters, k, min_score, use_reranking)
         # Convert to document results
         results = await self._create_document_results(auth, chunks)
         documents = list(results.values())
@@ -92,14 +109,15 @@ class DocumentService:
         query: str,
         auth: AuthContext,
         filters: Optional[Dict[str, Any]] = None,
-        k: int = 4,
+        k: int = 20,  # from contextual embedding paper
         min_score: float = 0.0,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        use_reranking: Optional[bool] = None,
     ) -> CompletionResponse:
         """Generate completion using relevant chunks as context."""
         # Get relevant chunks
-        chunks = await self.retrieve_chunks(query, auth, filters, k, min_score)
+        chunks = await self.retrieve_chunks(query, auth, filters, k, min_score, use_reranking)
         documents = await self._create_document_results(auth, chunks)
 
         chunk_contents = [chunk.augmented_content(documents[chunk.document_id]) for chunk in chunks]
@@ -163,7 +181,7 @@ class DocumentService:
 
         file_content = await file.read()
         additional_metadata, chunks = await self.parser.parse_file(
-            file_content, file.content_type or ""
+            file_content, file.content_type or "", file.filename
         )
 
         doc = Document(

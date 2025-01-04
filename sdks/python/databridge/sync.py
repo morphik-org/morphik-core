@@ -205,7 +205,7 @@ class DataBridge:
         """
         request = {"query": query, "filters": filters, "k": k, "min_score": min_score}
 
-        response = self._request("POST", "search/chunks", request)
+        response = self._request("POST", "retrieve/chunks", request)
         return [ChunkResult(**r) for r in response]
 
     def retrieve_docs(
