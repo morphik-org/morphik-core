@@ -1,139 +1,69 @@
-# DataBridge
+# DataBridge Core
 
-DataBridge is an extensible, open-source document processing and retrieval system designed for building document-based applications. It provides a modular architecture for integrating document parsing, embedding generation, and vector search capabilities.
+DataBridge is a powerful document processing and retrieval system designed for building intelligent document-based applications. It provides a robust foundation for semantic search, document processing, and AI-powered document interactions.
 
-## Table of Contents
-- [Features](#features)
-- [Starting the Server](#starting-the-server)
-- [Quick Start](#quick-start)
-- [Architecture](#architecture)
-  - [Current Integrations](#current-integrations)
-  - [Adding New Components](#adding-new-components)
-- [API Documentation](#api-documentation)
-  - [Key Endpoints](#key-endpoints)
-- [License](#license)
-- [Contributing](#contributing)
+## Core Features
 
-## Features
+- 🔍 **Semantic Search & Retrieval**
+  - Intelligent chunk-based document splitting
+  - Two-stage ranking with vector similarity and neural reranking
+  - Advanced filtering and metadata support
+  - Configurable similarity thresholds and result limits
 
-- 🔌 **Extensible Architecture**: Modular design for easy component extension or replacement
-- 🔍 **Vector Search**: Semantic search capabilities
-- 🔐 **Authentication**: JWT-based auth with developer and end-user access modes
-- 📊 **Components**: Document Parsing (Unstructured API), Vector Store (MongoDB Atlas), Embedding Model (OpenAI), Storage (AWS S3)
-- 🚀 **Python SDK**: Simple client SDK for quick integration
+- 📄 **Document Processing**
+  - Support for PDFs, Word documents, text files, and more
+  - Intelligent text extraction with structure preservation
+  - Video content parsing with transcription and metadata extraction
+  - Automatic chunk generation and embedding
+  - Metadata and access control management
 
-## Starting the Server
+- 🔌 **Extensible Architecture**
+  - Modular design with swappable components
+  - Support for custom parsers and embedding models
+  - Flexible storage backends (S3, local, etc.)
+  - Vector store integrations (PostgreSQL with pgvector)
 
-1. Clone the repository:
-```bash
-git clone https://github.com/databridge-org/databridge-core.git
-```
+- 🔐 **Security & Access Control**
+  - Fine-grained document access control
+  - Reader/Writer/Admin permission levels
+  - JWT-based authentication
+  - API key management
 
-2. Setup your python environment (Python 3.12 supported, but other versions may work):
-```bash
-cd databridge-core
-python -m venv .venv
-source .venv/bin/activate
-```
+- 💻 **Deployment Options**
+  - Full local deployment support with Ollama for embeddings
+  - Cloud deployment with managed services
+  - Hybrid deployment options
+  - Docker container support
 
-3. Install the required dependencies:
-```bash
-pip install -r requirements.txt
-```
+## Key Endpoints
 
-4. Set up your environment variables, using the `.env.example` file as a reference, and creating a `.env` file in the project directory:
+- **Document Operations**
+  - `POST /ingest/text`: Ingest text content
+  - `POST /ingest/file`: Ingest file (PDF, DOCX, video, etc.)
+  - `GET /documents`: List all documents
+  - `GET /documents/{doc_id}`: Get document details
+  - `DELETE /documents/{doc_id}`: Delete a document
 
-```bash
-cp .env.example .env
-```
+- **Search & Retrieval**
+  - `POST /retrieve/chunks`: Search document chunks
+  - `POST /retrieve/docs`: Search complete documents
+  - `POST /query`: Generate completions using context
+  - `GET /documents/{doc_id}/chunks`: Get document chunks
 
-5. Run the quick setup script to create the database, s3 bucket, and vector index:
-```bash
-python quick_setup.py
-```
+- **System Operations**
+  - `GET /health`: System health check
+  - `GET /usage/stats`: Get usage statistics
+  - `GET /usage/recent`: Get recent operations
+  - `POST /api-keys`: Generate API keys
 
-6. Generate a local URI:
-```bash
-python generate_local_uri.py
-```
-Copy the output and save it for use with the client SDK.
+## Documentation
 
-7. Start the server:
-```bash
-python start_server.py
-```
-*Tip*: Visit `http://localhost:8000/docs` for the complete OpenAPI documentation.
+For detailed information about installation, usage, and development:
 
-## Quick Start
-
-Ensure the server is running, then use the SDK to ingest and query documents.
-
-1. Install the SDK:
-```bash
-pip install databridge-client
-```
-2. Use the SDK:
-```python
-import asyncio
-from databridge import DataBridge
-
-async def main():
-    # Initialize client
-    db = DataBridge("your_databridge_uri_here", is_local=True)
-    files = ["annual_report_2022.pdf", "marketing_strategy.docx" ,"product_launch_presentation.pptx", "company_logo.png"]
-    
-    for file in files:
-      await db.ingest_file(
-          file=file,
-          file_name=file,
-          metadata={"category": "Company Related"} # Optionally add any metadata
-      )
-    
-    # Query documents
-    results = await db.query(
-        query="What did our target market say about our product?",
-        return_type="chunks",
-        filters={"category": "Company Related"}
-    )
-
-    print(results)
-
-asyncio.run(main())
-```
-
-For other examples <!-- -like how to make xyz in 10 lines of code- --> checkout our [documentation](https://databridge.gitbook.io/databridge-docs)!
-
-## Architecture
-
-DataBridge uses a modular architecture with the following base components that can be extended or replaced:
-
-### Current Integrations
-
-- **Document Parser**: Unstructured API integration for intelligent document processing
-  - Extend `BaseParser` to add new parsing capabilities
-- **Vector Store**: MongoDB Atlas Vector Search integration
-  - Extend `BaseVectorStore` to add new vector stores
-- **Embedding Model**: OpenAI embeddings integration
-  - Extend `BaseEmbeddingModel` to add new embedding models
-- **Storage**: AWS S3 integration
-  - Storage utilities can be modified in `utils/`
-
-### Adding New Components
-
-1. Implement the relevant base class from `core/`
-2. Register your implementation in the service configuration
-3. Update environment variables if needed
-
-## API Documentation
-
-Once the server is running, visit `http://localhost:8000/docs` for the complete OpenAPI documentation.
-
-### Key Endpoints
-
-- `POST /ingest`: Ingest new documents
-- `POST /query`: Query documents using semantic search
-- `GET /documents`: List all documents
-- `GET /document/{doc_id}`: Get specific document details
+- [Installation Guide](https://databridge.gitbook.io/databridge-docs/getting-started/installation)
+- [Quick Start Guide](https://databridge.gitbook.io/databridge-docs/getting-started/quickstart)
+- [API Reference](https://databridge.gitbook.io/databridge-docs/api-reference/overview)
+- [Architecture Overview](https://databridge.gitbook.io/databridge-docs/architecture/overview)
 
 ## License
 
@@ -145,4 +75,4 @@ We welcome contributions! Please open an issue or submit a pull request.
 
 ---
 
-Built with ❤️ by DataBridge.
+Built with ❤️ by DataBridge
