@@ -2,7 +2,7 @@ import pytest
 from typing import List
 
 from core.models.chunk import DocumentChunk
-from core.reranker.bge_reranker import BGEReranker
+from core.reranker.flag_reranker import FlagReranker
 from core.config import get_settings
 
 
@@ -35,9 +35,9 @@ def sample_chunks() -> List[DocumentChunk]:
 
 @pytest.fixture
 def reranker():
-    """Fixture to create and reuse a BGE reranker instance"""
+    """Fixture to create and reuse a flag reranker instance"""
     settings = get_settings()
-    return BGEReranker(
+    return FlagReranker(
         model_name=settings.RERANKER_MODEL,
         device=settings.RERANKER_DEVICE,
         use_fp16=settings.RERANKER_USE_FP16,

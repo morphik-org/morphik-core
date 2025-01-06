@@ -5,8 +5,8 @@ from core.models.chunk import DocumentChunk
 from core.reranker.base_reranker import BaseReranker
 
 
-class BGEReranker(BaseReranker):
-    """BGE reranker implementation using FlagEmbedding"""
+class FlagReranker(BaseReranker):
+    """Reranker implementation using FlagEmbedding"""
 
     def __init__(
         self,
@@ -16,7 +16,7 @@ class BGEReranker(BaseReranker):
         use_fp16: bool = True,
         device: Optional[str] = None,
     ):
-        """Initialize BGE reranker"""
+        """Initialize flag reranker"""
         devices = [device] if device else None
         self.reranker = FlagAutoReranker.from_finetuned(
             model_name_or_path=model_name,
