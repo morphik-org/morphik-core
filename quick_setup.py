@@ -37,33 +37,33 @@ formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(messag
 console_handler.setFormatter(formatter)
 LOGGER.addHandler(console_handler)
 
-# Load configuration from config.toml
-config_path = Path("config.toml")
+# Load configuration from databridge.toml
+config_path = Path("databridge.toml")
 with open(config_path, "rb") as f:
     CONFIG = tomli.load(f)
-    LOGGER.info("Loaded configuration from config.toml")
+    LOGGER.info("Loaded configuration from databridge.toml")
 
 # Extract configuration values
-STORAGE_PROVIDER = CONFIG["service"]["components"]["storage"]
-DATABASE_PROVIDER = CONFIG["service"]["components"]["database"]
-DATABASE_NAME = CONFIG["database"][DATABASE_PROVIDER]["database_name"]
+STORAGE_PROVIDER = CONFIG["storage"]["provider"]
+DATABASE_PROVIDER = CONFIG["database"]["provider"]
 
 # MongoDB specific config
-DOCUMENTS_COLLECTION = CONFIG["database"]["mongodb"]["documents_collection"]
-CHUNKS_COLLECTION = CONFIG["database"]["mongodb"]["chunks_collection"]
-VECTOR_DIMENSIONS = CONFIG["vector_store"]["mongodb"]["dimensions"]
-VECTOR_INDEX_NAME = CONFIG["vector_store"]["mongodb"]["index_name"]
-SIMILARITY_METRIC = CONFIG["vector_store"]["mongodb"]["similarity_metric"]
-
-# PostgreSQL specific config
-DOCUMENTS_TABLE = CONFIG["database"]["postgres"]["documents_table"]
-CHUNKS_TABLE = CONFIG["database"]["postgres"]["chunks_table"]
+if "mongodb" in CONFIG["database"]:
+    DATABASE_NAME = CONFIG["database"]["mongodb"]["database_name"]
+    DOCUMENTS_COLLECTION = "documents"
+    CHUNKS_COLLECTION = "document_chunks"
+    if "mongodb" in CONFIG["vector_store"]:
+        VECTOR_DIMENSIONS = CONFIG["embedding"]["dimensions"]
+        VECTOR_INDEX_NAME = "vector_index"
+        SIMILARITY_METRIC = CONFIG["embedding"]["similarity_metric"]
 
 # Extract storage-specific configuration
-DEFAULT_REGION = CONFIG["storage"]["aws"]["region"] if STORAGE_PROVIDER == "aws-s3" else None
-DEFAULT_BUCKET_NAME = (
-    CONFIG["storage"]["aws"]["bucket_name"] if STORAGE_PROVIDER == "aws-s3" else None
-)
+if STORAGE_PROVIDER == "aws-s3":
+    DEFAULT_REGION = CONFIG["storage"]["region"]
+    DEFAULT_BUCKET_NAME = CONFIG["storage"]["bucket_name"]
+else:
+    DEFAULT_REGION = None
+    DEFAULT_BUCKET_NAME = None
 
 
 def create_s3_bucket(bucket_name, region=DEFAULT_REGION):
@@ -248,10 +248,8 @@ def setup_postgres():
                 LOGGER.info("Created all PostgreSQL tables and indexes")
 
                 # Create vector index with configuration from settings
-                table_name = CONFIG["vector_store"]["pgvector"]["table_name"]
-                index_method = CONFIG["vector_store"]["pgvector"]["index_method"]
-                index_lists = CONFIG["vector_store"]["pgvector"]["index_lists"]
-                dimensions = CONFIG["vector_store"]["pgvector"]["dimensions"]
+                table_name = "document_chunks"  # Default table name for pgvector
+                dimensions = CONFIG["embedding"]["dimensions"]
 
                 # First, alter the embedding column to be a vector
                 alter_sql = f"""
@@ -262,15 +260,14 @@ def setup_postgres():
                 await conn.execute(text(alter_sql))
                 LOGGER.info(f"Altered embedding column to be vector({dimensions})")
 
-                # Then create the vector index
-                if index_method == "ivfflat":
-                    index_sql = f"""
-                    CREATE INDEX IF NOT EXISTS vector_idx
-                    ON {table_name} USING ivfflat (embedding vector_l2_ops)
-                    WITH (lists = {index_lists});
-                    """
-                    await conn.execute(text(index_sql))
-                    LOGGER.info(f"Created IVFFlat index on {table_name} with {index_lists} lists")
+                # Create the vector index
+                index_sql = f"""
+                CREATE INDEX IF NOT EXISTS vector_idx
+                ON {table_name} USING ivfflat (embedding vector_l2_ops)
+                WITH (lists = 100);
+                """
+                await conn.execute(text(index_sql))
+                LOGGER.info(f"Created IVFFlat index on {table_name}")
 
             await engine.dispose()
             LOGGER.info("PostgreSQL setup completed successfully")
