@@ -2,6 +2,15 @@
 
 DataBridge is a powerful document processing and retrieval system designed for building intelligent document-based applications. It provides a robust foundation for semantic search, document processing, and AI-powered document interactions.
 
+## Documentation
+
+For detailed information about installation, usage, and development:
+
+- [Installation Guide](https://databridge.gitbook.io/databridge-docs/getting-started/installation)
+- [Quick Start Guide](https://databridge.gitbook.io/databridge-docs/getting-started/quickstart)
+- [API Reference](https://databridge.gitbook.io/databridge-docs/api-reference/overview)
+- [Architecture Overview](https://databridge.gitbook.io/databridge-docs/architecture/overview)
+
 ## Core Features
 
 - 🔍 **Semantic Search & Retrieval**
@@ -55,15 +64,6 @@ DataBridge is a powerful document processing and retrieval system designed for b
   - `GET /usage/stats`: Get usage statistics
   - `GET /usage/recent`: Get recent operations
   - `POST /api-keys`: Generate API keys
-
-## Documentation
-
-For detailed information about installation, usage, and development:
-
-- [Installation Guide](https://databridge.gitbook.io/databridge-docs/getting-started/installation)
-- [Quick Start Guide](https://databridge.gitbook.io/databridge-docs/getting-started/quickstart)
-- [API Reference](https://databridge.gitbook.io/databridge-docs/api-reference/overview)
-- [Architecture Overview](https://databridge.gitbook.io/databridge-docs/architecture/overview)
 
 ## License
 
