@@ -1,5 +1,5 @@
-from typing import Optional
-from pydantic import Field
+import os
+from typing import Literal, Optional
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 import tomli
@@ -9,74 +9,70 @@ from dotenv import load_dotenv
 class Settings(BaseSettings):
     """DataBridge configuration settings."""
 
-    # Required environment variables (referenced in config.toml)
-    JWT_SECRET_KEY: str = Field(..., env="JWT_SECRET_KEY")
-    MONGODB_URI: Optional[str] = Field(None, env="MONGODB_URI")
-    POSTGRES_URI: Optional[str] = Field(None, env="POSTGRES_URI")
+    # environment variables:
+    JWT_SECRET_KEY: str
+    POSTGRES_URI: Optional[str] = None
+    MONGODB_URI: Optional[str] = None
+    UNSTRUCTURED_API_KEY: Optional[str] = None
+    AWS_ACCESS_KEY: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = None
+    ANTHROPIC_API_KEY: Optional[str] = None
 
-    UNSTRUCTURED_API_KEY: Optional[str] = Field(None, env="UNSTRUCTURED_API_KEY")
-    AWS_ACCESS_KEY: Optional[str] = Field(None, env="AWS_ACCESS_KEY")
-    AWS_SECRET_ACCESS_KEY: Optional[str] = Field(None, env="AWS_SECRET_ACCESS_KEY")
-    ASSEMBLYAI_API_KEY: Optional[str] = Field(None, env="ASSEMBLYAI_API_KEY")
-    OPENAI_API_KEY: Optional[str] = Field(None, env="OPENAI_API_KEY")
-    ANTHROPIC_API_KEY: Optional[str] = Field(None, env="ANTHROPIC_API_KEY")
+    # configuration variables:
+    ## api:
+    HOST: str
+    PORT: int
+    RELOAD: bool
 
-    # Service settings
-    HOST: str = "localhost"
-    PORT: int = 8000
-    RELOAD: bool = False
+    ## auth:
+    JWT_ALGORITHM: str
 
-    # Component selection
-    STORAGE_PROVIDER: str = "local"
-    DATABASE_PROVIDER: str = "mongodb"
-    VECTOR_STORE_PROVIDER: str = "mongodb"
-    EMBEDDING_PROVIDER: str = "openai"
-    COMPLETION_PROVIDER: str = "ollama"
-    PARSER_PROVIDER: str = "combined"
-    RERANKER_PROVIDER: str = "bge"
+    ## completion:
+    COMPLETION_PROVIDER: Literal["ollama", "openai"]
+    COMPLETION_MODEL: str
+    COMPLETION_MAX_TOKENS: Optional[str] = None
+    COMPLETION_TEMPERATURE: Optional[float] = None
+    COMPLETION_OLLAMA_BASE_URL: Optional[str] = None
 
-    # Storage settings
-    STORAGE_PATH: str = "./storage"
-    AWS_REGION: str = "us-east-2"
-    S3_BUCKET: str = "databridge-s3-storage"
+    ## database
+    DATABASE_PROVIDER: Literal["postgres", "mongodb"]
+    DATABASE_NAME: Optional[str] = None
+    DOCUMENTS_COLLECTION: Optional[str] = None
 
-    # Database settings
-    DATABRIDGE_DB: str = "DataBridgeTest"
-    DOCUMENTS_TABLE: str = "documents"
-    CHUNKS_TABLE: str = "document_chunks"
-    DOCUMENTS_COLLECTION: str = "documents"
-    CHUNKS_COLLECTION: str = "document_chunks"
+    ## embedding
+    EMBEDDING_PROVIDER: Literal["ollama", "openai"]
+    EMBEDDING_MODEL: str
+    VECTOR_DIMENSIONS: int
+    EMBEDDING_SIMILARITY_METRIC: Literal["cosine", "dotProduct"]
+    EMBEDDING_OLLAMA_BASE_URL: Optional[str] = None
 
-    # Vector store settings
-    VECTOR_INDEX_NAME: str = "vector_index"
-    VECTOR_DIMENSIONS: int = 1536
-    PGVECTOR_TABLE_NAME: str = "vector_embeddings"
-    PGVECTOR_INDEX_METHOD: str = "ivfflat"
-    PGVECTOR_INDEX_LISTS: int = 100
-    PGVECTOR_PROBES: int = 10
+    ## parser
+    PARSER_PROVIDER: Literal["unstructured", "combined", "contextual"]
+    CHUNK_SIZE: int
+    CHUNK_OVERLAP: int
+    USE_UNSTRUCTURED_API: bool
+    FRAME_SAMPLE_RATE: Optional[int] = None
 
-    # Model settings
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
-    COMPLETION_MODEL: str = "llama3.1"
-    COMPLETION_MAX_TOKENS: int = 1000
-    COMPLETION_TEMPERATURE: float = 0.7
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
-    RERANKER_MODEL: str = "BAAI/bge-reranker-v2-gemma"
+    ## reranker
+    USE_RERANKING: bool
+    RERANKER_PROVIDER: Optional[Literal["flag"]] = None
+    RERANKER_MODEL: Optional[str] = None
+    RERANKER_QUERY_MAX_LENGTH: Optional[int] = None
+    RERANKER_PASSAGE_MAX_LENGTH: Optional[int] = None
+    RERANKER_USE_FP16: Optional[bool] = None
     RERANKER_DEVICE: Optional[str] = None
-    RERANKER_USE_FP16: bool = True
-    RERANKER_QUERY_MAX_LENGTH: int = 256
-    RERANKER_PASSAGE_MAX_LENGTH: int = 512
 
-    # Processing settings
-    CHUNK_SIZE: int = 1000
-    CHUNK_OVERLAP: int = 200
-    DEFAULT_K: int = 4
-    FRAME_SAMPLE_RATE: int = 120
-    USE_UNSTRUCTURED_API: bool = False
-    USE_RERANKING: bool = True
+    ## storage
+    STORAGE_PROVIDER: Literal["local", "aws-s3"]
+    STORAGE_PATH: Optional[str] = None
+    AWS_REGION: Optional[str] = None
+    S3_BUCKET: Optional[str] = None
 
-    # Auth settings
-    JWT_ALGORITHM: str = "HS256"
+    ## vector store
+    VECTOR_STORE_PROVIDER: Literal["pgvector", "mongodb"]
+    VECTOR_STORE_DATABASE_NAME: Optional[str] = None
+    VECTOR_STORE_COLLECTION_NAME: Optional[str] = None
 
 
 @lru_cache()
@@ -85,76 +81,176 @@ def get_settings() -> Settings:
     load_dotenv(override=True)
 
     # Load config.toml
-    with open("config.toml", "rb") as f:
+    with open("databridge.toml", "rb") as f:
         config = tomli.load(f)
 
-    # Map config.toml values to settings
-    settings_dict = {
-        # Service settings
-        "HOST": config["service"]["host"],
-        "PORT": config["service"]["port"],
-        "RELOAD": config["service"]["reload"],
-        # Component selection
-        "STORAGE_PROVIDER": config["service"]["components"]["storage"],
-        "DATABASE_PROVIDER": config["service"]["components"]["database"],
-        "VECTOR_STORE_PROVIDER": config["service"]["components"]["vector_store"],
-        "EMBEDDING_PROVIDER": config["service"]["components"]["embedding"],
-        "COMPLETION_PROVIDER": config["service"]["components"]["completion"],
-        "PARSER_PROVIDER": config["service"]["components"]["parser"],
-        "RERANKER_PROVIDER": config["service"]["components"]["reranker"],
-        # Storage settings
-        "STORAGE_PATH": config["storage"]["local"]["path"],
-        "AWS_REGION": config["storage"]["aws"]["region"],
-        "S3_BUCKET": config["storage"]["aws"]["bucket_name"],
-        # Database settings
-        "DATABRIDGE_DB": config["database"][config["service"]["components"]["database"]][
-            "database_name"
-        ],
-        "DOCUMENTS_TABLE": config["database"]
-        .get("postgres", {})
-        .get("documents_table", "documents"),
-        "CHUNKS_TABLE": config["database"]
-        .get("postgres", {})
-        .get("chunks_table", "document_chunks"),
-        "DOCUMENTS_COLLECTION": config["database"]
-        .get("mongodb", {})
-        .get("documents_collection", "documents"),
-        "CHUNKS_COLLECTION": config["database"]
-        .get("mongodb", {})
-        .get("chunks_collection", "document_chunks"),
-        # Vector store settings
-        "VECTOR_INDEX_NAME": config["vector_store"]["mongodb"]["index_name"],
-        "VECTOR_DIMENSIONS": config["vector_store"][
-            config["service"]["components"]["vector_store"]
-        ]["dimensions"],
-        "PGVECTOR_TABLE_NAME": config["vector_store"]
-        .get("pgvector", {})
-        .get("table_name", "vector_embeddings"),
-        "PGVECTOR_INDEX_METHOD": config["vector_store"]
-        .get("pgvector", {})
-        .get("index_method", "ivfflat"),
-        "PGVECTOR_INDEX_LISTS": config["vector_store"].get("pgvector", {}).get("index_lists", 100),
-        "PGVECTOR_PROBES": config["vector_store"].get("pgvector", {}).get("probes", 10),
-        # Model settings
-        "EMBEDDING_MODEL": config["models"]["embedding"]["model_name"],
-        "COMPLETION_MODEL": config["models"]["completion"]["model_name"],
-        "COMPLETION_MAX_TOKENS": config["models"]["completion"]["default_max_tokens"],
-        "COMPLETION_TEMPERATURE": config["models"]["completion"]["default_temperature"],
-        "OLLAMA_BASE_URL": config["models"]["ollama"]["base_url"],
-        "RERANKER_MODEL": config["models"]["reranker"]["model_name"],
-        "RERANKER_DEVICE": config["models"]["reranker"].get("device"),
-        "RERANKER_USE_FP16": config["models"]["reranker"].get("use_fp16", True),
-        "RERANKER_QUERY_MAX_LENGTH": config["models"]["reranker"].get("query_max_length", 256),
-        "RERANKER_PASSAGE_MAX_LENGTH": config["models"]["reranker"].get("passage_max_length", 512),
-        # Processing settings
-        "CHUNK_SIZE": config["processing"]["text"]["chunk_size"],
-        "CHUNK_OVERLAP": config["processing"]["text"]["chunk_overlap"],
-        "DEFAULT_K": config["processing"]["text"]["default_k"],
-        "USE_RERANKING": config["processing"]["text"]["use_reranking"],
-        "FRAME_SAMPLE_RATE": config["processing"]["video"]["frame_sample_rate"],
-        "USE_UNSTRUCTURED_API": config["processing"]["unstructured"]["use_api"],
-        # Auth settings
-        "JWT_ALGORITHM": config["auth"]["jwt_algorithm"],
+    em = "'{missing_value}' needed if '{field}' is set to '{value}'"
+    # load api config
+    api_config = {
+        "HOST": config["api"]["host"],
+        "PORT": int(config["api"]["port"]),
+        "RELOAD": bool(config["api"]["reload"]),
     }
 
+    # load auth config
+    auth_config = {
+        "JWT_ALGORITHM": config["auth"]["jwt_algorithm"],
+        "JWT_SECRET_KEY": os.environ["JWT_SECRET_KEY"],
+    }
+
+    # load completion config
+    completion_config = {
+        "COMPLETION_PROVIDER": config["completion"]["provider"],
+        "COMPLETION_MODEL": config["completion"]["model_name"],
+    }
+    match completion_config["COMPLETION_PROVIDER"]:
+        case "openai" if "OPENAI_API_KEY" in os.environ:
+            completion_config.update({"OPENAI_API_KEY": os.environ["OPENAI_API_KEY"]})
+        case "openai":
+            msg = em.format(
+                missing_value="OPENAI_API_KEY", field="completion.provider", value="openai"
+            )
+            raise ValueError(msg)
+        case "ollama" if "base_url" in config["completion"]:
+            completion_config.update(
+                {"COMPLETION_OLLAMA_BASE_URL": config["completion"]["base_url"]}
+            )
+        case "ollama":
+            msg = em.format(missing_value="base_url", field="completion.provider", value="ollama")
+            raise ValueError(msg)
+        case _:
+            prov = completion_config["COMPLETION_PROVIDER"]
+            raise ValueError(f"Unknown completion provider selected: '{prov}'")
+
+    # load database config
+    database_config = {"DATABASE_PROVIDER": config["database"]["provider"]}
+    match database_config["DATABASE_PROVIDER"]:
+        case "mongodb":
+            database_config.update(
+                {
+                    "DATABASE_NAME": config["database"]["database_name"],
+                    "COLLECTION_NAME": config["database"]["collection_name"],
+                }
+            )
+        case "postgres" if "POSTGRES_URI" in os.environ:
+            database_config.update({"POSTGRES_URI": os.environ["POSTGRES_URI"]})
+        case "postgres":
+            msg = em.format(
+                missing_value="POSTGRES_URI", field="database.provider", value="postgres"
+            )
+            raise ValueError(msg)
+        case _:
+            prov = database_config["DATABASE_PROVIDER"]
+            raise ValueError(f"Unknown database provider selected: '{prov}'")
+
+    # load embedding config
+    embedding_config = {
+        "EMBEDDING_PROVIDER": config["embedding"]["provider"],
+        "EMBEDDING_MODEL": config["embedding"]["model_name"],
+        "VECTOR_DIMENSIONS": config["embedding"]["dimensions"],
+        "EMBEDDING_SIMILARITY_METRIC": config["embedding"]["similarity_metric"],
+    }
+    match embedding_config["EMBEDDING_PROVIDER"]:
+        case "openai" if "OPENAI_API_KEY" in os.environ:
+            embedding_config.update({"OPENAI_API_KEY": os.environ["OPENAI_API_KEY"]})
+        case "openai":
+            msg = em.format(
+                missing_value="OPENAI_API_KEY", field="embedding.provider", value="openai"
+            )
+            raise ValueError(msg)
+        case "ollama" if "base_url" in config["embedding"]:
+            embedding_config.update({"EMBEDDING_OLLAMA_BASE_URL": config["embedding"]["base_url"]})
+        case "ollama":
+            msg = em.format(missing_value="base_url", field="embedding.provider", value="ollama")
+            raise ValueError(msg)
+        case _:
+            prov = embedding_config["EMBEDDING_PROVIDER"]
+            raise ValueError(f"Unknown embedding provider selected: '{prov}'")
+
+    # load parser config
+    parser_config = {
+        "PARSER_PROVIDER": config["parser"]["provider"],
+        "CHUNK_SIZE": config["parser"]["chunk_size"],
+        "CHUNK_OVERLAP": config["parser"]["chunk_overlap"],
+        "USE_UNSTRUCTURED_API": config["parser"]["use_unstructured_api"],
+    }
+    if parser_config["USE_UNSTRUCTURED_API"] and "UNSTRUCTURED_API_KEY" not in os.environ:
+        msg = em.format(
+            missing_value="UNSTRUCTURED_API_KEY", field="parser.use_unstructured_api", value="true"
+        )
+        raise ValueError(msg)
+    elif parser_config["USE_UNSTRUCTURED_API"]:
+        parser_config.update({"UNSTRUCTURED_API_KEY": os.environ["UNSTRUCTURED_API_KEY"]})
+
+    # load reranker config
+    reranker_config = {"USE_RERANKING": config["reranker"]["use_reranker"]}
+    if reranker_config["USE_RERANKING"]:
+        reranker_config.update(
+            {
+                "RERANKER_PROVIDER": config["reranker"]["provider"],
+                "RERANKER_MODEL": config["reranker"]["model_name"],
+                "RERANKER_QUERY_MAX_LENGTH": config["reranker"]["query_max_length"],
+                "RERANKER_PASSAGE_MAX_LENGTH": config["reranker"]["passage_max_length"],
+                "RERANKER_USE_FP16": config["reranker"]["use_fp16"],
+                "RERANKER_DEVICE": config["reranker"]["device"],
+            }
+        )
+
+    # load storage config
+    storage_config = {"STORAGE_PROVIDER": config["storage"]["provider"]}
+    match storage_config["STORAGE_PROVIDER"]:
+        case "local":
+            storage_config.update({"STORAGE_PATH": config["storage"]["storage_path"]})
+        case "aws-s3" if all(
+            key in os.environ for key in ["AWS_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY"]
+        ):
+            storage_config.update(
+                {
+                    "AWS_REGION": config["storage"]["region"],
+                    "S3_BUCKET": config["storage"]["bucket_name"],
+                    "AWS_ACCESS_KEY": os.environ["AWS_ACCESS_KEY"],
+                    "AWS_SECRET_ACCESS_KEY": os.environ["AWS_SECRET_ACCESS_KEY"],
+                }
+            )
+        case "aws-s3":
+            msg = em.format(
+                missing_value="AWS credentials", field="storage.provider", value="aws-s3"
+            )
+            raise ValueError(msg)
+        case _:
+            prov = storage_config["STORAGE_PROVIDER"]
+            raise ValueError(f"Unknown storage provider selected: '{prov}'")
+
+    # load vector store config
+    vector_store_config = {"VECTOR_STORE_PROVIDER": config["vector_store"]["provider"]}
+    match vector_store_config["VECTOR_STORE_PROVIDER"]:
+        case "mongodb":
+            vector_store_config.update(
+                {
+                    "VECTOR_STORE_DATABASE_NAME": config["vector_store"]["database_name"],
+                    "VECTOR_STORE_COLLECTION_NAME": config["vector_store"]["collection_name"],
+                }
+            )
+        case "pgvector":
+            if "POSTGRES_URI" not in os.environ:
+                msg = em.format(
+                    missing_value="POSTGRES_URI", field="vector_store.provider", value="pgvector"
+                )
+                raise ValueError(msg)
+        case _:
+            prov = vector_store_config["VECTOR_STORE_PROVIDER"]
+            raise ValueError(f"Unknown vector store provider selected: '{prov}'")
+
+    settings_dict = {}
+    settings_dict.update(
+        **api_config,
+        **auth_config,
+        **completion_config,
+        **database_config,
+        **embedding_config,
+        **parser_config,
+        **reranker_config,
+        **storage_config,
+        **vector_store_config,
+    )
     return Settings(**settings_dict)

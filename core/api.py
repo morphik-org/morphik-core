@@ -29,7 +29,7 @@ from core.storage.local_storage import LocalStorage
 from core.embedding.openai_embedding_model import OpenAIEmbeddingModel
 from core.completion.ollama_completion import OllamaCompletionModel
 from core.parser.contextual_parser import ContextualParser
-from core.reranker.bge_reranker import BGEReranker
+from core.reranker.flag_reranker import FlagReranker
 
 # Initialize FastAPI app
 app = FastAPI(title="DataBridge API")
@@ -145,7 +145,7 @@ match settings.PARSER_PROVIDER:
 match settings.EMBEDDING_PROVIDER:
     case "ollama":
         embedding_model = OllamaEmbeddingModel(
-            base_url=settings.OLLAMA_BASE_URL,
+            base_url=settings.EMBEDDING_OLLAMA_BASE_URL,
             model_name=settings.EMBEDDING_MODEL,
         )
     case "openai":
@@ -163,7 +163,7 @@ match settings.COMPLETION_PROVIDER:
     case "ollama":
         completion_model = OllamaCompletionModel(
             model_name=settings.COMPLETION_MODEL,
-            base_url=settings.OLLAMA_BASE_URL,
+            base_url=settings.COMPLETION_OLLAMA_BASE_URL,
         )
     case "openai":
         if not settings.OPENAI_API_KEY:
@@ -176,8 +176,8 @@ match settings.COMPLETION_PROVIDER:
 
 # Initialize reranker
 match settings.RERANKER_PROVIDER:
-    case "bge":
-        reranker = BGEReranker(
+    case "flag":
+        reranker = FlagReranker(
             model_name=settings.RERANKER_MODEL,
             device=settings.RERANKER_DEVICE,
             use_fp16=settings.RERANKER_USE_FP16,
