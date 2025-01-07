@@ -33,11 +33,9 @@ payload = {
 token = jwt.encode(payload, jwt_secret, algorithm="HS256")
 
 
-with open("config.toml", "rb") as f:
+with open("databridge.toml", "rb") as f:
     config = tomli.load(f)
-base_url = f"{config['service']['host']}:{config['service']['port']}".replace(
-    "localhost", "127.0.0.1"
-)
+base_url = f"{config['api']['host']}:{config['api']['port']}".replace("localhost", "127.0.0.1")
 entity_id = args.name
 uri = f"databridge://{entity_id}:{token}@{base_url}"
 
