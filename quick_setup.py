@@ -243,31 +243,48 @@ def setup_postgres():
                 from core.database.postgres_database import Base
                 from core.vector_store.pgvector_store import Base as VectorBase
 
+                # Create regular tables first
                 await conn.run_sync(Base.metadata.create_all)
-                await conn.run_sync(VectorBase.metadata.create_all)
-                LOGGER.info("Created all PostgreSQL tables and indexes")
+                LOGGER.info("Created base PostgreSQL tables")
 
-                # Create vector index with configuration from settings
-                table_name = "document_chunks"  # Default table name for pgvector
+                # Get vector dimensions from config
                 dimensions = CONFIG["embedding"]["dimensions"]
 
-                # First, alter the embedding column to be a vector
-                alter_sql = f"""
-                ALTER TABLE {table_name}
-                ALTER COLUMN embedding TYPE vector({dimensions})
-                USING embedding::vector({dimensions});
+                # Drop existing vector index if it exists
+                drop_index_sql = """
+                DROP INDEX IF EXISTS vector_idx;
                 """
-                await conn.execute(text(alter_sql))
-                LOGGER.info(f"Altered embedding column to be vector({dimensions})")
+                await conn.execute(text(drop_index_sql))
+
+                # Drop existing vector embeddings table if it exists
+                drop_table_sql = """
+                DROP TABLE IF EXISTS vector_embeddings;
+                """
+                await conn.execute(text(drop_table_sql))
+
+                # Create vector embeddings table with proper vector column
+                create_table_sql = f"""
+                CREATE TABLE vector_embeddings (
+                    id SERIAL PRIMARY KEY,
+                    document_id VARCHAR(255),
+                    chunk_number INTEGER,
+                    content TEXT,
+                    chunk_metadata TEXT,
+                    embedding vector({dimensions}),
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+                await conn.execute(text(create_table_sql))
+                LOGGER.info("Created vector_embeddings table with vector column")
 
                 # Create the vector index
                 index_sql = f"""
-                CREATE INDEX IF NOT EXISTS vector_idx
-                ON {table_name} USING ivfflat (embedding vector_l2_ops)
+                CREATE INDEX vector_idx 
+                ON vector_embeddings USING ivfflat (embedding vector_l2_ops)
                 WITH (lists = 100);
                 """
                 await conn.execute(text(index_sql))
-                LOGGER.info(f"Created IVFFlat index on {table_name}")
+                LOGGER.info("Created IVFFlat index on vector_embeddings")
 
             await engine.dispose()
             LOGGER.info("PostgreSQL setup completed successfully")
