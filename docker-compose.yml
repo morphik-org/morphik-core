@@ -53,8 +53,10 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+      - ./ollama-entrypoint.sh:/ollama-entrypoint.sh
     networks:
       - databridge-network
+    entrypoint: ["/ollama-entrypoint.sh"]
 
 networks:
   databridge-network:

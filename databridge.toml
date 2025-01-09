@@ -11,7 +11,8 @@ provider = "ollama"
 model_name = "llama3.2"
 default_max_tokens = "1000"
 default_temperature = 0.7
-base_url = "http://localhost:11434"
+base_url = "http://ollama:11434"  # Just use the service name
+# base_url = "http://localhost:11434" # Local configuration
 
 # [completion]
 # provider = "openai"
@@ -32,7 +33,8 @@ provider = "ollama"
 model_name = "nomic-embed-text"
 dimensions = 768
 similarity_metric = "cosine"
-base_url = "http://localhost:11434"
+base_url = "http://ollama:11434"  # Just use the service name
+# base_url = "http://localhost:11434" # Local configuration
 
 # [embedding]
 # provider = "openai"
@@ -55,7 +57,7 @@ use_unstructured_api = false
 # frame_sample_rate = 120
 
 [reranker]
-use_reranker = true
+use_reranker = false
 provider = "flag"
 model_name = "BAAI/bge-reranker-large"
 query_max_length = 256

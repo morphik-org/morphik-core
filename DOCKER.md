@@ -1,129 +1,174 @@
 # Docker Setup Guide for DataBridge Core
 
-DataBridge Core is designed to run with Docker Compose, making it easy to set up all required services locally.
+DataBridge Core provides a streamlined Docker-based setup that includes all necessary components: the core API, PostgreSQL with pgvector, and Ollama for AI models.
 
-## Quick Start with Docker Compose
+## Prerequisites
 
-1. Start the services:
+- Docker and Docker Compose installed on your system
+- At least 10GB of free disk space (for models and data)
+- 8GB+ RAM recommended
+
+## Quick Start
+
+1. Clone the repository and navigate to the project directory:
 ```bash
-docker compose up -d
+git clone https://github.com/databridge-org/databridge-core.git
+cd databridge-core
 ```
 
-This will start:
-- DataBridge Core API
-- PostgreSQL with pgvector for vector storage
-- Ollama for embeddings and completions
-
-The container includes a startup script that:
-- Creates a default `databridge.toml` if none exists
-- Waits for PostgreSQL to be ready before starting
-- Starts the API server with the configured settings
-
-All necessary environment variables have default values in the docker-compose.yml file. You can optionally override them by creating a `.env` file:
-
+2. First-time setup:
 ```bash
-# Optional .env file
-JWT_SECRET_KEY=your-custom-secret-key  # Defaults to "your-secret-key-here" if not set
-OPENAI_API_KEY=sk-...                  # Only needed if using OpenAI
+docker compose up --build
 ```
 
-## Docker Hub Images
+This command will:
+- Build all required containers
+- Download necessary AI models (nomic-embed-text and llama3.2)
+- Initialize the PostgreSQL database with pgvector
+- Start all services
 
-DataBridge Core is available on Docker Hub at `adityava369/databridge-core`. For simplicity, we currently use continuous deployment:
+The initial setup may take 5-10 minutes depending on your internet speed, as it needs to download the AI models.
 
-- Every commit to the main branch automatically updates the `latest` tag
-- Pull the latest version: `docker pull adityava369/databridge-core:latest`
-
-### Publishing to Docker Hub
-
-The repository automatically publishes to Docker Hub on every commit to the main branch. For manual publishing:
-
+3. For subsequent runs:
 ```bash
-# Build the image
-docker build -t adityava369/databridge-core:latest .
+docker compose up    # Start all services
+docker compose down  # Stop all services
+```
 
-# Push to Docker Hub (requires login)
-docker push adityava369/databridge-core:latest
+4. To completely reset (will delete all data and models):
+```bash
+docker compose down -v
 ```
 
 ## Configuration
 
-### Environment Variables
+### 1. Default Setup
 
-Most environment variables have sensible defaults in docker-compose.yml. You only need to set variables if you want to override the defaults:
-
-- `JWT_SECRET_KEY` - Secret key for JWT token generation (default: "your-secret-key-here")
-- `POSTGRES_URI` - PostgreSQL connection string (default: postgresql+asyncpg://databridge:databridge@postgres:5432/databridge)
-- `OPENAI_API_KEY` - OpenAI API key (only if using OpenAI)
-- `MONGODB_URI` - MongoDB connection string (only if using MongoDB)
-- `AWS_ACCESS_KEY` - AWS access key (only if using S3)
-- `AWS_SECRET_ACCESS_KEY` - AWS secret key (only if using S3)
-- `HOST` - API host (default: 0.0.0.0)
-- `PORT` - API port (default: 8000)
-
-### Default Configuration
-
-The container comes with a default `databridge.toml` that configures:
-- Ollama for embeddings (nomic-embed-text) and completions (llama2)
-- PostgreSQL with pgvector for vector storage
+The default configuration works out of the box and includes:
+- PostgreSQL with pgvector for document storage
+- Ollama for AI models (embeddings and completions)
 - Local file storage
-- Unstructured parser without API
+- Basic authentication
 
-You can override this by mounting your own `databridge.toml`:
+### 2. Configuration File (databridge.toml)
 
+The default `databridge.toml` is configured for Docker and includes:
+
+```toml
+[api]
+host = "0.0.0.0"  # Important: Use 0.0.0.0 for Docker
+port = 8000
+
+[completion]
+provider = "ollama"
+model_name = "llama3.2"
+base_url = "http://ollama:11434"  # Use Docker service name
+
+[embedding]
+provider = "ollama"
+model_name = "nomic-embed-text"
+base_url = "http://ollama:11434"  # Use Docker service name
+
+[database]
+provider = "postgres"
+
+[vector_store]
+provider = "pgvector"
+
+[storage]
+provider = "local"
+storage_path = "/app/storage"
+```
+
+### 3. Environment Variables
+
+Create a `.env` file to customize these settings:
+
+```bash
+JWT_SECRET_KEY=your-secure-key-here  # Important: Change in production
+OPENAI_API_KEY=sk-...                # Only if using OpenAI
+HOST=0.0.0.0                         # Leave as is for Docker
+PORT=8000                            # Change if needed
+```
+
+### 4. Custom Configuration
+
+To use your own configuration:
+1. Create a custom `databridge.toml`
+2. Mount it in `docker-compose.yml`:
 ```yaml
-# In docker-compose.yml
 services:
   databridge:
     volumes:
-      - ./databridge.toml:/app/databridge.toml
+      - ./my-custom-databridge.toml:/app/databridge.toml
 ```
 
-## Health Checks
+## Accessing Services
 
-The API exposes health check endpoints:
-- `GET /health` - Basic health check
-- `GET /health/ready` - Readiness check with component status
+- DataBridge API: http://localhost:8000
+- API Documentation: http://localhost:8000/docs
+- Health Check: http://localhost:8000/health
 
-## Production Deployment Tips
+## Storage and Data
 
-1. **Security**:
-   - Use a strong `JWT_SECRET_KEY`
-   - Store sensitive environment variables in a secure environment
-   - Enable HTTPS in production
-   - Use proper network isolation
-
-2. **Performance**:
-   - Use volume mounts for persistent storage
-   - Configure appropriate resource limits
-   - Monitor container health and logs
-
-3. **Backups**:
-   - Regularly backup PostgreSQL data
-   - Backup any file storage
-   - Test restore procedures
+- Database data: Stored in the `postgres_data` Docker volume
+- AI Models: Stored in the `ollama_data` Docker volume
+- Documents: Stored in `./storage` directory (mounted to container)
+- Logs: Available in `./logs` directory
 
 ## Troubleshooting
 
-1. **Services won't start**:
+1. **Service Won't Start**
    ```bash
-   # Check logs
+   # View all logs
    docker compose logs
    
-   # Check specific service
+   # View specific service logs
    docker compose logs databridge
+   docker compose logs postgres
+   docker compose logs ollama
    ```
 
-2. **Database Connection Issues**:
-   - Verify PostgreSQL is running: `docker compose ps`
-   - Check database logs: `docker compose logs postgres`
-   - Ensure database migrations are applied
+2. **Database Issues**
+   - Check PostgreSQL is healthy: `docker compose ps`
+   - Verify database connection: `docker compose exec postgres psql -U databridge -d databridge`
 
-3. **Performance Issues**:
-   - Monitor resource usage: `docker stats`
-   - Check container limits in docker-compose.yml
-   - Review logging levels in databridge.toml
+3. **Model Download Issues**
+   - Check Ollama logs: `docker compose logs ollama`
+   - Ensure enough disk space for models
+   - Try restarting Ollama: `docker compose restart ollama`
+
+4. **Performance Issues**
+   - Monitor resources: `docker stats`
+   - Ensure sufficient RAM (8GB+ recommended)
+   - Check disk space: `df -h`
+
+## Production Deployment
+
+For production environments:
+
+1. **Security**:
+   - Change the default `JWT_SECRET_KEY`
+   - Use proper network security groups
+   - Enable HTTPS (recommended: use a reverse proxy)
+   - Regularly update containers and dependencies
+
+2. **Persistence**:
+   - Use named volumes for all data
+   - Set up regular backups of PostgreSQL
+   - Back up the storage directory
+
+3. **Monitoring**:
+   - Set up container monitoring
+   - Configure proper logging
+   - Use health checks
 
 ## Support
 
-For issues and feature requests, please visit our GitHub repository. 
+For issues and feature requests:
+- GitHub Issues: [https://github.com/databridge-org/databridge-core/issues](https://github.com/databridge-org/databridge-core/issues)
+- Documentation: [https://databridge.gitbook.io/databridge-docs](https://databridge.gitbook.io/databridge-docs)
+
+## Repository Information
+
+- License: MIT

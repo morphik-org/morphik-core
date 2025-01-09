@@ -200,17 +200,19 @@ match settings.COMPLETION_PROVIDER:
         raise ValueError(f"Unsupported completion provider: {settings.COMPLETION_PROVIDER}")
 
 # Initialize reranker
-match settings.RERANKER_PROVIDER:
-    case "flag":
-        reranker = FlagReranker(
-            model_name=settings.RERANKER_MODEL,
-            device=settings.RERANKER_DEVICE,
-            use_fp16=settings.RERANKER_USE_FP16,
-            query_max_length=settings.RERANKER_QUERY_MAX_LENGTH,
-            passage_max_length=settings.RERANKER_PASSAGE_MAX_LENGTH,
-        )
-    case _:
-        raise ValueError(f"Unsupported reranker provider: {settings.RERANKER_PROVIDER}")
+reranker = None
+if settings.USE_RERANKING:
+    match settings.RERANKER_PROVIDER:
+        case "flag":
+            reranker = FlagReranker(
+                model_name=settings.RERANKER_MODEL,
+                device=settings.RERANKER_DEVICE,
+                use_fp16=settings.RERANKER_USE_FP16,
+                query_max_length=settings.RERANKER_QUERY_MAX_LENGTH,
+                passage_max_length=settings.RERANKER_PASSAGE_MAX_LENGTH,
+            )
+        case _:
+            raise ValueError(f"Unsupported reranker provider: {settings.RERANKER_PROVIDER}")
 
 # Initialize document service with configured components
 document_service = DocumentService(
