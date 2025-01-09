@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  databridge:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
+      - POSTGRES_URI=postgresql+asyncpg://databridge:databridge@postgres:5432/databridge
+      - PGPASSWORD=databridge
+      - HOST=0.0.0.0
+      - PORT=8000
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+      - ./databridge.toml:/app/databridge.toml
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    networks:
+      - databridge-network
+
+  postgres:
+    build:
+      context: .
+      dockerfile: postgres.dockerfile
+    shm_size: 128mb
+    environment:
+      - POSTGRES_USER=databridge
+      - POSTGRES_PASSWORD=databridge
+      - POSTGRES_DB=databridge
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U databridge -d databridge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - databridge-network
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - databridge-network
+
+networks:
+  databridge-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  ollama_data: 
