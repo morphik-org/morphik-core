@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,10 +30,35 @@ from core.embedding.openai_embedding_model import OpenAIEmbeddingModel
 from core.completion.ollama_completion import OllamaCompletionModel
 from core.parser.contextual_parser import ContextualParser
 from core.reranker.flag_reranker import FlagReranker
+import tomli
 
 # Initialize FastAPI app
 app = FastAPI(title="DataBridge API")
 logger = logging.getLogger(__name__)
+
+
+# Add health check endpoints
+@app.get("/health")
+async def health_check():
+    """Basic health check endpoint."""
+    return {"status": "healthy"}
+
+
+@app.get("/health/ready")
+async def readiness_check():
+    """Readiness check that verifies the application is initialized."""
+    return {
+        "status": "ready",
+        "components": {
+            "database": settings.DATABASE_PROVIDER,
+            "vector_store": settings.VECTOR_STORE_PROVIDER,
+            "embedding": settings.EMBEDDING_PROVIDER,
+            "completion": settings.COMPLETION_PROVIDER,
+            "storage": settings.STORAGE_PROVIDER,
+            "parser": settings.PARSER_PROVIDER,
+        },
+    }
+
 
 # Initialize telemetry
 telemetry = TelemetryService()
@@ -175,17 +200,19 @@ match settings.COMPLETION_PROVIDER:
         raise ValueError(f"Unsupported completion provider: {settings.COMPLETION_PROVIDER}")
 
 # Initialize reranker
-match settings.RERANKER_PROVIDER:
-    case "flag":
-        reranker = FlagReranker(
-            model_name=settings.RERANKER_MODEL,
-            device=settings.RERANKER_DEVICE,
-            use_fp16=settings.RERANKER_USE_FP16,
-            query_max_length=settings.RERANKER_QUERY_MAX_LENGTH,
-            passage_max_length=settings.RERANKER_PASSAGE_MAX_LENGTH,
-        )
-    case _:
-        raise ValueError(f"Unsupported reranker provider: {settings.RERANKER_PROVIDER}")
+reranker = None
+if settings.USE_RERANKING:
+    match settings.RERANKER_PROVIDER:
+        case "flag":
+            reranker = FlagReranker(
+                model_name=settings.RERANKER_MODEL,
+                device=settings.RERANKER_DEVICE,
+                use_fp16=settings.RERANKER_USE_FP16,
+                query_max_length=settings.RERANKER_QUERY_MAX_LENGTH,
+                passage_max_length=settings.RERANKER_PASSAGE_MAX_LENGTH,
+            )
+        case _:
+            raise ValueError(f"Unsupported reranker provider: {settings.RERANKER_PROVIDER}")
 
 # Initialize document service with configured components
 document_service = DocumentService(
@@ -424,3 +451,39 @@ async def get_recent_usage(
             }
             for record in records
         ]
+
+
+@app.post("/local/generate_uri", include_in_schema=True)
+async def generate_local_uri(
+    name: str = Form("admin"),
+    expiry_days: int = Form(30),
+) -> Dict[str, str]:
+    """Generate a local URI for development. This endpoint is unprotected."""
+    try:
+        # Clean name
+        name = name.replace(" ", "_").lower()
+
+        # Create payload
+        payload = {
+            "type": "developer",
+            "entity_id": name,
+            "permissions": ["read", "write", "admin"],
+            "exp": datetime.now(UTC) + timedelta(days=expiry_days),
+        }
+
+        # Generate token
+        token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+        # Read config for host/port
+        with open("databridge.toml", "rb") as f:
+            config = tomli.load(f)
+        base_url = f"{config['api']['host']}:{config['api']['port']}".replace(
+            "localhost", "127.0.0.1"
+        )
+
+        # Generate URI
+        uri = f"databridge://{name}:{token}@{base_url}"
+        return {"uri": uri}
+    except Exception as e:
+        logger.error(f"Error generating local URI: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

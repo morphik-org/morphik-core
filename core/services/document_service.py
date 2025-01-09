@@ -34,7 +34,7 @@ class DocumentService:
         parser: BaseParser,
         embedding_model: BaseEmbeddingModel,
         completion_model: BaseCompletionModel,
-        reranker: BaseReranker,
+        reranker: Optional[BaseReranker] = None,
     ):
         self.db = database
         self.vector_store = vector_store
@@ -74,8 +74,8 @@ class DocumentService:
         )
         logger.info(f"Found {len(chunks)} similar chunks")
 
-        # Rerank chunks using the reranker if enabled
-        if chunks and should_rerank:
+        # Rerank chunks using the reranker if enabled and available
+        if chunks and should_rerank and self.reranker is not None:
             chunks = await self.reranker.rerank(query, chunks)
             chunks.sort(key=lambda x: x.score, reverse=True)
             chunks = chunks[:k]

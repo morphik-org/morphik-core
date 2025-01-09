@@ -16,6 +16,9 @@ This provides the exact same interface as the Python SDK:
 
 import sys
 from pathlib import Path
+import time
+import requests
+from urllib.parse import urlparse
 
 # Add local SDK to path before other imports
 _SDK_PATH = str(Path(__file__).parent / "sdks" / "python")
@@ -32,8 +35,34 @@ class DB:
         if "localhost" in uri or "127.0.0.1" in uri:
             uri = uri.replace("databridge://", "http://")
         self.uri = uri
+        self.base_url = self._get_base_url(uri)
         is_local = "localhost" in uri or "127.0.0.1" in uri
         self._client = DataBridge(self.uri, is_local=is_local, timeout=1000)
+
+    def _get_base_url(self, uri: str) -> str:
+        """Extract base URL from URI (removing auth if present)"""
+        parsed = urlparse(uri)
+        return f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
+
+    def check_health(self, max_retries=30, retry_interval=1) -> bool:
+        """Check if DataBridge server is healthy with retries"""
+        health_url = f"{self.base_url}/health"
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(health_url, timeout=5)
+                if response.status_code == 200:
+                    return True
+            except requests.exceptions.RequestException:
+                pass
+
+            if attempt < max_retries - 1:
+                print(
+                    f"Waiting for DataBridge server to be ready... (attempt {attempt + 1}/{max_retries})"
+                )
+                time.sleep(retry_interval)
+
+        return False
 
     def ingest_text(self, content: str, metadata: dict = None) -> dict:
         """Ingest text content into DataBridge"""
@@ -109,6 +138,13 @@ if __name__ == "__main__":
 
     # Create DB instance with provided URI
     db = DB(sys.argv[1])
+
+    # Wait for server to be healthy
+    if not db.check_health():
+        print("Error: Could not connect to DataBridge server after multiple attempts")
+        sys.exit(1)
+
+    print("\nSuccessfully connected to DataBridge server!")
 
     # Start an interactive Python shell with 'db' already imported
     import code
