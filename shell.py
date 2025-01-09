@@ -47,7 +47,7 @@ class DB:
     def check_health(self, max_retries=30, retry_interval=1) -> bool:
         """Check if DataBridge server is healthy with retries"""
         health_url = f"{self.base_url}/health"
-        
+
         for attempt in range(max_retries):
             try:
                 response = requests.get(health_url, timeout=5)
@@ -55,11 +55,13 @@ class DB:
                     return True
             except requests.exceptions.RequestException:
                 pass
-            
+
             if attempt < max_retries - 1:
-                print(f"Waiting for DataBridge server to be ready... (attempt {attempt + 1}/{max_retries})")
+                print(
+                    f"Waiting for DataBridge server to be ready... (attempt {attempt + 1}/{max_retries})"
+                )
                 time.sleep(retry_interval)
-        
+
         return False
 
     def ingest_text(self, content: str, metadata: dict = None) -> dict:

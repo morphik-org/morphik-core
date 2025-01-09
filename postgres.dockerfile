@@ -19,4 +19,4 @@ RUN apk del git build-base clang llvm postgresql-dev \
     && rm -rf /pgvector 
 
 # Copy initialization scripts
-COPY init.sql /docker-entrypoint-initdb.d/ 
+COPY init.sql /docker-entrypoint-initdb.d/
