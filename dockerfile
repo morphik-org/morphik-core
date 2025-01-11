@@ -124,8 +124,8 @@ check_postgres() {\n\
 # Check PostgreSQL\n\
 check_postgres\n\
 \n\
-# Start the application\n\
-exec uvicorn core.api:app --host $HOST --port $PORT\n\
+# Start the application with standard asyncio event loop\n\
+exec uvicorn core.api:app --host $HOST --port $PORT --loop asyncio --http auto --ws auto --lifespan auto\n\
 ' > /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
 
 # Copy application code
