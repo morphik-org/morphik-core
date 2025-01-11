@@ -5,6 +5,10 @@ reload = true
 
 [auth]
 jwt_algorithm = "HS256"
+dev_mode = true  # Enabled by default for easier local development
+dev_entity_id = "dev_user"  # Default dev user ID
+dev_entity_type = "developer"  # Default dev entity type
+dev_permissions = ["read", "write", "admin"]  # Default dev permissions
 
 [completion]
 provider = "ollama"

@@ -227,7 +227,16 @@ document_service = DocumentService(
 
 
 async def verify_token(authorization: str = Header(None)) -> AuthContext:
-    """Verify JWT Bearer token."""
+    """Verify JWT Bearer token or return dev context if dev_mode is enabled."""
+    # Check if dev mode is enabled
+    if settings.dev_mode:
+        return AuthContext(
+            entity_type=EntityType(settings.dev_entity_type),
+            entity_id=settings.dev_entity_id,
+            permissions=set(settings.dev_permissions),
+        )
+
+    # Normal token verification flow
     if not authorization:
         raise HTTPException(
             status_code=401,
