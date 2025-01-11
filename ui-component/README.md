@@ -1,36 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# DataBridge UI Component
 
-## Getting Started
+A modern React-based UI for DataBridge, built with Next.js and Tailwind CSS. This component provides a user-friendly interface for:
+- Document management and uploads
+- Interactive chat with your knowledge base
+- Real-time document processing feedback
+- Query testing and prototyping
 
-First, run the development server:
+## Prerequisites
 
+- Node.js 18 or later
+- npm or yarn package manager
+- A running DataBridge server
+
+## Quick Start
+
+1. Install dependencies:
+```bash
+npm install
+# or
+yarn install
+```
+
+2. Start the development server:
 ```bash
 npm run dev
 # or
 yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+3. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+4. Connect to your DataBridge server using a URI from the `/local/generate_uri` endpoint
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Features
 
-## Learn More
+- **Document Management**
+  - Upload various file types (PDF, TXT, MD, MP3)
+  - View and manage uploaded documents
+  - Real-time processing status
+  - Collapsible document panel
 
-To learn more about Next.js, take a look at the following resources:
+- **Chat Interface**
+  - Real-time chat with your knowledge base
+  - Support for long messages
+  - Message history
+  - Markdown rendering
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Connection Management**
+  - Easy server connection
+  - Connection status indicator
+  - Automatic reconnection
+  - Error handling
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Development
 
-## Deploy on Vercel
+The UI is built with:
+- [Next.js 14](https://nextjs.org)
+- [Tailwind CSS](https://tailwindcss.com)
+- [shadcn/ui](https://ui.shadcn.com)
+- [React](https://reactjs.org)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Project Structure
+```
+ui-component/
+├── app/              # Next.js app directory
+├── components/       # Reusable UI components
+├── lib/             # Utility functions and hooks
+└── public/          # Static assets
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Building for Production
+
+```bash
+npm run build
+npm start
+```
+
+## Contributing
+
+We welcome contributions! Please feel free to submit a Pull Request.
+
+## License
+
+This project is part of DataBridge and is licensed under the MIT License.

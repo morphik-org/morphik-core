@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Card } from '@/components/ui/card';
-import { ChevronLeft, ChevronRight, HomeIcon, Plus, Send, Upload, X, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Send, Upload, X, CheckCircle2 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface Source {
@@ -345,11 +345,6 @@ export default function HomePage() {
       {/* Top Navigation Bar */}
       <div className="flex items-center justify-between px-4 h-14 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" asChild>
-            <a href="/" className="flex items-center justify-center">
-              <HomeIcon className="h-5 w-5" />
-            </a>
-          </Button>
           {isEditingTitle ? (
             <Input
               value={title}
@@ -426,22 +421,37 @@ export default function HomePage() {
                       onDrop={handleDrop}
                     >
                       <div
-                        className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}
                         onClick={() => document.getElementById('file-upload')?.click()}
                       >
-                        <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                        <p className="text-sm text-muted-foreground mb-1">
-                          Drag and drop your files here or click to browse
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Supported formats: PDF, TXT, MD, MP3
-                        </p>
+                        {isLoading ? (
+                          <>
+                            <div className="h-8 w-8 mx-auto mb-2 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                            <p className="text-sm text-muted-foreground mb-1">
+                              Uploading and processing your file...
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              This may take a few moments
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                            <p className="text-sm text-muted-foreground mb-1">
+                              Drag and drop your files here or click to browse
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Supported formats: PDF, TXT, MD, MP3
+                            </p>
+                          </>
+                        )}
                         <input
                           id="file-upload"
                           type="file"
                           className="hidden"
                           accept=".pdf,.txt,.md,.mp3"
                           onChange={(e) => handleFileUpload(e.target.files)}
+                          disabled={isLoading}
                         />
                       </div>
                     </div>
@@ -500,7 +510,7 @@ export default function HomePage() {
 
         {/* Main Chat Area */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex-1 p-4">
+          <div className="flex-1 overflow-hidden">
             {sources.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center">
                 <Upload className="h-12 w-12 text-muted-foreground mb-4" />
@@ -524,22 +534,37 @@ export default function HomePage() {
                       onDrop={handleDrop}
                     >
                       <div
-                        className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}
                         onClick={() => document.getElementById('file-upload')?.click()}
                       >
-                        <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                        <p className="text-sm text-muted-foreground mb-1">
-                          Drag and drop your files here or click to browse
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Supported formats: PDF, TXT, MD, MP3
-                        </p>
+                        {isLoading ? (
+                          <>
+                            <div className="h-8 w-8 mx-auto mb-2 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                            <p className="text-sm text-muted-foreground mb-1">
+                              Uploading and processing your file...
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              This may take a few moments
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                            <p className="text-sm text-muted-foreground mb-1">
+                              Drag and drop your files here or click to browse
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Supported formats: PDF, TXT, MD, MP3
+                            </p>
+                          </>
+                        )}
                         <input
                           id="file-upload"
                           type="file"
                           className="hidden"
                           accept=".pdf,.txt,.md,.mp3"
                           onChange={(e) => handleFileUpload(e.target.files)}
+                          disabled={isLoading}
                         />
                       </div>
                     </div>
@@ -547,39 +572,37 @@ export default function HomePage() {
                 </Dialog>
               </div>
             ) : (
-              <div className="h-full overflow-y-auto">
-                <ScrollArea className="h-full pr-4">
-                  <div className="space-y-4">
-                    {messages.map((msg) => (
+              <ScrollArea className="h-full">
+                <div className="flex flex-col space-y-4 p-4">
+                  {messages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`flex ${
+                        msg.role === 'user' ? 'justify-end' : 'justify-start'
+                      }`}
+                    >
                       <div
-                        key={msg.id}
-                        className={`flex ${
-                          msg.role === 'user' ? 'justify-end' : 'justify-start'
+                        className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                          msg.role === 'user'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted'
                         }`}
                       >
-                        <div
-                          className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                            msg.role === 'user'
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-muted'
-                          }`}
-                        >
-                          <p className="text-sm">{msg.content}</p>
-                          <p className="text-xs opacity-70 mt-1">
-                            {msg.timestamp.toLocaleTimeString()}
-                          </p>
-                        </div>
+                        <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                        <p className="text-xs opacity-70 mt-1">
+                          {msg.timestamp.toLocaleTimeString()}
+                        </p>
                       </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
             )}
           </div>
           
-          {/* Chat Input */}
-          <div className="p-4 border-t">
-            <div className="flex gap-2">
+          {/* Chat Input - Fixed at bottom */}
+          <div className="flex-none p-4 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <div className="flex gap-2 max-w-5xl mx-auto">
               <Input
                 placeholder={
                   !connectionStatus.isConnected
