@@ -21,25 +21,24 @@ class AsyncDataBridge:
     DataBridge client for document operations.
 
     Args:
-        uri (str): DataBridge URI in the format "databridge://<owner_id>:<token>@<host>"
+        uri (str, optional): DataBridge URI in format "databridge://<owner_id>:<token>@<host>".
+            If not provided, connects to http://localhost:8000 without authentication.
         timeout (int, optional): Request timeout in seconds. Defaults to 30.
         is_local (bool, optional): Whether to connect to a local server. Defaults to False.
 
     Examples:
         ```python
-        async with AsyncDataBridge("databridge://owner_id:token@api.databridge.ai") as db:
-            # Ingest text
-            doc = await db.ingest_text(
-                "Sample content",
-                metadata={"category": "sample"}
-            )
+        # Without authentication
+        async with AsyncDataBridge() as db:
+            doc = await db.ingest_text("Sample content")
 
-            # Query documents
-            results = await db.query("search query")
+        # With authentication
+        async with AsyncDataBridge("databridge://owner_id:token@api.databridge.ai") as db:
+            doc = await db.ingest_text("Sample content")
         ```
     """
 
-    def __init__(self, uri: str, timeout: int = 30, is_local: bool = False):
+    def __init__(self, uri: Optional[str] = None, timeout: int = 30, is_local: bool = False):
         self._timeout = timeout
         self._client = (
             httpx.AsyncClient(timeout=timeout)
@@ -51,7 +50,12 @@ class AsyncDataBridge:
             )
         )
         self._is_local = is_local
-        self._setup_auth(uri)
+
+        if uri:
+            self._setup_auth(uri)
+        else:
+            self._base_url = "http://localhost:8000"
+            self._auth_token = None
 
     def _setup_auth(self, uri: str) -> None:
         """Setup authentication from URI"""
@@ -61,7 +65,7 @@ class AsyncDataBridge:
 
         # Split host and auth parts
         auth, host = parsed.netloc.split("@")
-        self._owner_id, self._auth_token = auth.split(":")
+        _, self._auth_token = auth.split(":")
 
         # Set base URL
         self._base_url = f"{'http' if self._is_local else 'https'}://{host}"
@@ -76,8 +80,10 @@ class AsyncDataBridge:
         data: Optional[Dict[str, Any]] = None,
         files: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Make authenticated HTTP request"""
-        headers = {"Authorization": f"Bearer {self._auth_token}"}
+        """Make HTTP request"""
+        headers = {}
+        if self._auth_token:  # Only add auth header if we have a token
+            headers["Authorization"] = f"Bearer {self._auth_token}"
 
         if not files:
             headers["Content-Type"] = "application/json"

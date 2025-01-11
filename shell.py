@@ -4,8 +4,12 @@ DataBridge interactive CLI.
 Assumes a DataBridge server is running.
 
 Usage:
-    python shell.py <uri>
-    Example: python shell.py "http://test_user:token@localhost:8000"
+    Without authentication (connects to localhost):
+        python shell.py
+    
+    With authentication:
+        python shell.py <uri>
+        Example: python shell.py "databridge://user:token@localhost:8000"
 
 This provides the exact same interface as the Python SDK:
     db.ingest_text("content", metadata={...})
@@ -18,7 +22,6 @@ import sys
 from pathlib import Path
 import time
 import requests
-from urllib.parse import urlparse
 
 # Add local SDK to path before other imports
 _SDK_PATH = str(Path(__file__).parent / "sdks" / "python")
@@ -29,20 +32,10 @@ from databridge import DataBridge  # noqa: E402
 
 
 class DB:
-    def __init__(self, uri: str):
-        """Initialize DataBridge with URI"""
-        # Convert databridge:// to http:// for localhost
-        if "localhost" in uri or "127.0.0.1" in uri:
-            uri = uri.replace("databridge://", "http://")
-        self.uri = uri
-        self.base_url = self._get_base_url(uri)
-        is_local = "localhost" in uri or "127.0.0.1" in uri
-        self._client = DataBridge(self.uri, is_local=is_local, timeout=1000)
-
-    def _get_base_url(self, uri: str) -> str:
-        """Extract base URL from URI (removing auth if present)"""
-        parsed = urlparse(uri)
-        return f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
+    def __init__(self, uri: str = None):
+        """Initialize DataBridge with optional URI"""
+        self._client = DataBridge(uri, is_local=True, timeout=1000)
+        self.base_url = "http://localhost:8000"  # For health check only
 
     def check_health(self, max_retries=30, retry_interval=1) -> bool:
         """Check if DataBridge server is healthy with retries"""
@@ -131,20 +124,15 @@ class DB:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Error: URI argument required")
-        print(__doc__)
-        sys.exit(1)
+    uri = sys.argv[1] if len(sys.argv) > 1 else None
+    db = DB(uri)
 
-    # Create DB instance with provided URI
-    db = DB(sys.argv[1])
-
-    # Wait for server to be healthy
+    # Check server health
     if not db.check_health():
-        print("Error: Could not connect to DataBridge server after multiple attempts")
+        print("Error: Could not connect to DataBridge server")
         sys.exit(1)
 
-    print("\nSuccessfully connected to DataBridge server!")
+    print("\nConnected to DataBridge")
 
     # Start an interactive Python shell with 'db' already imported
     import code

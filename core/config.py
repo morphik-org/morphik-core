@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 class Settings(BaseSettings):
     """DataBridge configuration settings."""
 
-    # environment variables:
+    # Environment variables
     JWT_SECRET_KEY: str
     POSTGRES_URI: Optional[str] = None
     MONGODB_URI: Optional[str] = None
@@ -19,42 +19,45 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
 
-    # configuration variables:
-    ## api:
+    # API configuration
     HOST: str
     PORT: int
     RELOAD: bool
 
-    ## auth:
+    # Auth configuration
     JWT_ALGORITHM: str
+    dev_mode: bool = False
+    dev_entity_type: str = "developer"
+    dev_entity_id: str = "dev_user"
+    dev_permissions: list = ["read", "write", "admin"]
 
-    ## completion:
+    # Completion configuration
     COMPLETION_PROVIDER: Literal["ollama", "openai"]
     COMPLETION_MODEL: str
     COMPLETION_MAX_TOKENS: Optional[str] = None
     COMPLETION_TEMPERATURE: Optional[float] = None
     COMPLETION_OLLAMA_BASE_URL: Optional[str] = None
 
-    ## database
+    # Database configuration
     DATABASE_PROVIDER: Literal["postgres", "mongodb"]
     DATABASE_NAME: Optional[str] = None
     DOCUMENTS_COLLECTION: Optional[str] = None
 
-    ## embedding
+    # Embedding configuration
     EMBEDDING_PROVIDER: Literal["ollama", "openai"]
     EMBEDDING_MODEL: str
     VECTOR_DIMENSIONS: int
     EMBEDDING_SIMILARITY_METRIC: Literal["cosine", "dotProduct"]
     EMBEDDING_OLLAMA_BASE_URL: Optional[str] = None
 
-    ## parser
+    # Parser configuration
     PARSER_PROVIDER: Literal["unstructured", "combined", "contextual"]
     CHUNK_SIZE: int
     CHUNK_OVERLAP: int
     USE_UNSTRUCTURED_API: bool
     FRAME_SAMPLE_RATE: Optional[int] = None
 
-    ## reranker
+    # Reranker configuration
     USE_RERANKING: bool
     RERANKER_PROVIDER: Optional[Literal["flag"]] = None
     RERANKER_MODEL: Optional[str] = None
@@ -63,13 +66,13 @@ class Settings(BaseSettings):
     RERANKER_USE_FP16: Optional[bool] = None
     RERANKER_DEVICE: Optional[str] = None
 
-    ## storage
+    # Storage configuration
     STORAGE_PROVIDER: Literal["local", "aws-s3"]
     STORAGE_PATH: Optional[str] = None
     AWS_REGION: Optional[str] = None
     S3_BUCKET: Optional[str] = None
 
-    ## vector store
+    # Vector store configuration
     VECTOR_STORE_PROVIDER: Literal["pgvector", "mongodb"]
     VECTOR_STORE_DATABASE_NAME: Optional[str] = None
     VECTOR_STORE_COLLECTION_NAME: Optional[str] = None
@@ -95,8 +98,18 @@ def get_settings() -> Settings:
     # load auth config
     auth_config = {
         "JWT_ALGORITHM": config["auth"]["jwt_algorithm"],
-        "JWT_SECRET_KEY": os.environ["JWT_SECRET_KEY"],
+        "JWT_SECRET_KEY": os.environ.get(
+            "JWT_SECRET_KEY", "dev-secret-key"
+        ),  # Default for dev mode
+        "dev_mode": config["auth"].get("dev_mode", False),
+        "dev_entity_type": config["auth"].get("dev_entity_type", "developer"),
+        "dev_entity_id": config["auth"].get("dev_entity_id", "dev_user"),
+        "dev_permissions": config["auth"].get("dev_permissions", ["read", "write", "admin"]),
     }
+
+    # Only require JWT_SECRET_KEY in non-dev mode
+    if not auth_config["dev_mode"] and "JWT_SECRET_KEY" not in os.environ:
+        raise ValueError("JWT_SECRET_KEY is required when dev_mode is disabled")
 
     # load completion config
     completion_config = {
