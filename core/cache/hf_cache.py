@@ -14,28 +14,45 @@ class HuggingFaceCache(BaseCache):
 
     def __init__(
         self,
-        cache_path: Union[str, Path],
-        model_name: str,
-        device: str,
-        default_max_new_tokens: int,
-        use_fp16: bool = True,
+        cache_path: Path,
+        model_name: str = "distilgpt2",
+        device: str = "cpu",
+        default_max_new_tokens: int = 100,
+        use_fp16: bool = False,
     ):
-        self.cache_path = Path(cache_path)
+        """Initialize the HuggingFace cache.
+
+        Args:
+            cache_path: Path to store cache files
+            model_name: Name of the HuggingFace model to use
+            device: Device to run the model on (e.g. "cpu", "cuda", "mps")
+            default_max_new_tokens: Default maximum number of new tokens to generate
+            use_fp16: Whether to use FP16 precision
+        """
+        super().__init__()
+        self.cache_path = cache_path
         self.model_name = model_name
         self.device = device
-        self.use_fp16 = use_fp16
         self.default_max_new_tokens = default_max_new_tokens
-        # Initialize tokenizer and model
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=torch.float16 if self.use_fp16 else torch.float32,
-            device_map="auto",
-            trust_remote_code=True,
-        )
-        self.model.to(self.device)
+        self.use_fp16 = use_fp16
 
-        # Initialize cache
+        # Initialize tokenizer and model
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        # Configure model loading based on device
+        model_kwargs = {"low_cpu_mem_usage": True}
+
+        if device == "cpu":
+            # For CPU, use standard loading
+            model_kwargs.update({"torch_dtype": torch.float32})
+            self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs).to(device)
+        else:
+            # For GPU/MPS, use automatic device mapping and optional FP16
+            model_kwargs.update(
+                {"device_map": "auto", "torch_dtype": torch.float16 if use_fp16 else torch.float32}
+            )
+            self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+
         self.kv_cache = None
         self.origin_len = None
 
@@ -58,7 +75,7 @@ class HuggingFaceCache(BaseCache):
         self, input_ids: torch.Tensor, past_key_values, max_new_tokens: Optional[int] = None
     ) -> torch.Tensor:
         """Generate text using the model and cache"""
-        device = self.model.model.embed_tokens.weight.device
+        device = next(self.model.parameters()).device
         origin_len = input_ids.shape[-1]
         input_ids = input_ids.to(device)
         output_ids = input_ids.clone()
@@ -97,8 +114,53 @@ Question:
 """.strip()
 
             # Build the cache
-            self.kv_cache = self.get_kv_cache(system_prompt)
-            self.origin_len = self.kv_cache.key_cache[0].shape[-2]
+            input_ids = self.tokenizer(system_prompt, return_tensors="pt").input_ids.to(self.device)
+            self.kv_cache = DynamicCache()
+
+            with torch.no_grad():
+                # First run to get the cache shape
+                outputs = self.model(input_ids=input_ids, use_cache=True)
+                # Initialize cache with empty tensors of the right shape
+                n_layers = len(outputs.past_key_values)
+                batch_size = input_ids.shape[0]
+
+                # Handle different model architectures
+
+                if hasattr(self.model.config, "num_key_value_heads"):
+                    # Models with grouped query attention (GQA) like Llama
+                    n_kv_heads = self.model.config.num_key_value_heads
+                    head_dim = self.model.config.head_dim
+                elif hasattr(self.model.config, "n_head"):
+                    # GPT-style models
+                    n_kv_heads = self.model.config.n_head
+                    head_dim = self.model.config.n_embd // self.model.config.n_head
+                elif hasattr(self.model.config, "num_attention_heads"):
+                    # OPT-style models
+                    n_kv_heads = self.model.config.num_attention_heads
+                    head_dim = (
+                        self.model.config.hidden_size // self.model.config.num_attention_heads
+                    )
+                else:
+                    raise ValueError(
+                        f"Unsupported model architecture: {self.model.config.model_type}"
+                    )
+
+                seq_len = input_ids.shape[1]
+
+                for i in range(n_layers):
+                    key_shape = (batch_size, n_kv_heads, seq_len, head_dim)
+                    value_shape = key_shape
+                    self.kv_cache.key_cache.append(torch.zeros(key_shape, device=self.device))
+                    self.kv_cache.value_cache.append(torch.zeros(value_shape, device=self.device))
+
+                # Now run with the initialized cache
+                outputs = self.model(
+                    input_ids=input_ids, past_key_values=self.kv_cache, use_cache=True
+                )
+                # Update cache with actual values
+                self.kv_cache.key_cache = [layer[0] for layer in outputs.past_key_values]
+                self.kv_cache.value_cache = [layer[1] for layer in outputs.past_key_values]
+                self.origin_len = self.kv_cache.key_cache[0].shape[-2]
             return True
         except Exception as e:
             print(f"Error ingesting documents: {e}")
@@ -117,7 +179,44 @@ Question:
             input_ids = self.tokenizer(new_doc + "\n", return_tensors="pt").input_ids.to(
                 self.device
             )
-            _ = self.model(input_ids=input_ids, past_key_values=self.kv_cache, use_cache=True)
+
+            # First run to get the cache shape
+            outputs = self.model(input_ids=input_ids, use_cache=True)
+            # Initialize cache with empty tensors of the right shape
+            n_layers = len(outputs.past_key_values)
+            batch_size = input_ids.shape[0]
+
+            # Handle different model architectures
+            if hasattr(self.model.config, "num_key_value_heads"):
+                # Models with grouped query attention (GQA) like Llama
+                n_kv_heads = self.model.config.num_key_value_heads
+                head_dim = self.model.config.head_dim
+            elif hasattr(self.model.config, "n_head"):
+                # GPT-style models
+                n_kv_heads = self.model.config.n_head
+                head_dim = self.model.config.n_embd // self.model.config.n_head
+            elif hasattr(self.model.config, "num_attention_heads"):
+                # OPT-style models
+                n_kv_heads = self.model.config.num_attention_heads
+                head_dim = self.model.config.hidden_size // self.model.config.num_attention_heads
+            else:
+                raise ValueError(f"Unsupported model architecture: {self.model.config.model_type}")
+
+            seq_len = input_ids.shape[1]
+
+            # Create a new cache for the update
+            new_cache = DynamicCache()
+            for i in range(n_layers):
+                key_shape = (batch_size, n_kv_heads, seq_len, head_dim)
+                value_shape = key_shape
+                new_cache.key_cache.append(torch.zeros(key_shape, device=self.device))
+                new_cache.value_cache.append(torch.zeros(value_shape, device=self.device))
+
+            # Run with the initialized cache
+            outputs = self.model(input_ids=input_ids, past_key_values=new_cache, use_cache=True)
+            # Update cache with actual values
+            self.kv_cache.key_cache = [layer[0] for layer in outputs.past_key_values]
+            self.kv_cache.value_cache = [layer[1] for layer in outputs.past_key_values]
             return True
         except Exception as e:
             print(f"Error updating cache: {e}")
@@ -133,16 +232,26 @@ Question:
             self.clean_up_cache(self.kv_cache, self.origin_len)
 
             # Generate completion
-            input_ids = self.tokenizer(request.prompt + "\n", return_tensors="pt").input_ids.to(
+            input_ids = self.tokenizer(request.query + "\n", return_tensors="pt").input_ids.to(
                 self.device
             )
-            gen_ids = self.generate(input_ids, self.kv_cache)
-            response = self.tokenizer.decode(gen_ids[0], skip_special_tokens=True)
+            gen_ids = self.generate(input_ids, self.kv_cache, max_new_tokens=request.max_tokens)
+            completion = self.tokenizer.decode(gen_ids[0], skip_special_tokens=True)
 
-            return CompletionResponse(text=response)
+            # Calculate token usage
+            usage = {
+                "prompt_tokens": len(input_ids[0]),
+                "completion_tokens": len(gen_ids[0]),
+                "total_tokens": len(input_ids[0]) + len(gen_ids[0]),
+            }
+
+            return CompletionResponse(completion=completion, usage=usage)
         except Exception as e:
             print(f"Error generating completion: {e}")
-            return CompletionResponse(text=f"Error: {str(e)}")
+            return CompletionResponse(
+                completion=f"Error: {str(e)}",
+                usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            )
 
     def save_cache(self) -> Path:
         """Save the KV cache to disk"""
