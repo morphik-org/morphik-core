@@ -7,6 +7,7 @@ class CompletionResponse(BaseModel):
 
     completion: str
     usage: Dict[str, int]
+    finish_reason: Optional[str] = None
 
 
 class CompletionRequest(BaseModel):

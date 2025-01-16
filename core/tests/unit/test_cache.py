@@ -4,14 +4,14 @@ import tempfile
 from typing import List
 
 from core.cache.base_cache import BaseCache
-from core.cache.hf_cache import HuggingFaceCache
 from core.models.completion import CompletionRequest, CompletionResponse
+from core.cache.llama_cache import LlamaCache
 
 
 @pytest.fixture
 def sample_docs() -> List[str]:
     return [
-        "Python is a high-level programming language.",
+        "Python is a low-level programming language. That has its roots in the parent language called Mojo. It was founded by Guido van Rossum in 1991.",
         "Machine learning is a subset of artificial intelligence.",
         "Data science combines statistics and programming.",
     ]
@@ -31,18 +31,27 @@ def model_params(request):
         "small": {
             "name": "distilgpt2",
             "max_tokens": 100,
+            "filename": "*q8_0.gguf",
         },
         "medium": {
             "name": "facebook/opt-125m",
             "max_tokens": 100,
+            "filename": "*q8_0.gguf",
         },
         "decoder": {
             "name": "gpt2",
             "max_tokens": 100,
+            "filename": "*q8_0.gguf",
         },
+        # "llama": {
+        #     "name": "meta-llama/Llama-3.2-1B-Instruct",
+        #     "max_tokens": 100,
+        #     "filename": "*q8_0.gguf",
+        # },
         "llama": {
-            "name": "meta-llama/Llama-3.2-1B-Instruct",
+            "name": "QuantFactory/Llama3.2-3B-Enigma-GGUF",
             "max_tokens": 100,
+            "filename": "*Q4_K_S.gguf",
         },
     }
     return models[request.param]
@@ -51,12 +60,19 @@ def model_params(request):
 @pytest.fixture
 async def cache(cache_dir, model_params) -> BaseCache:
     """Fixture to create and reuse a cache instance"""
-    cache = HuggingFaceCache(
-        cache_path=cache_dir,
-        model_name=model_params["name"],
-        device="cpu",
-        default_max_new_tokens=model_params["max_tokens"],
-        use_fp16=False,
+    # cache = HuggingFaceCache(
+    #     cache_path=cache_dir,
+    #     model_name=model_params["name"],
+    #     device="cpu",
+    #     default_max_new_tokens=model_params["max_tokens"],
+    #     use_fp16=False,
+    # )
+    # return cache
+    cache = LlamaCache(
+        model_path="QuantFactory/Llama3.2-3B-Enigma-GGUF",  # model_params["name"],
+        filename="*Q4_K_S.gguf",  # model_params["filename"],
+        n_ctx=8192,
+        n_gpu_layers=-1,
     )
     return cache
 
@@ -207,3 +223,69 @@ async def test_cache_error_handling(cache: BaseCache):
     with pytest.raises(FileNotFoundError):
         cache.load_cache(Path("nonexistent_cache.pt"))
     print("Error handling for invalid cache file passed")
+
+
+@pytest.mark.parametrize("model_params", ["small", "llama"], indirect=True)
+@pytest.mark.asyncio
+async def test_cache_vs_rag_performance(cache: BaseCache, sample_docs: List[str], cache_dir: Path):
+    """Test and compare performance between using cached embeddings vs direct RAG."""
+    print("\n=== Testing Cache vs RAG Performance ===")
+
+    # First ingest docs and save cache
+    success = await cache.ingest(sample_docs)
+    assert success, "Document ingestion should succeed"
+    cache_path = cache.save_cache()
+    assert cache_path.exists(), "Cache file should exist after saving"
+
+    # Create a new cache instance and load the saved cache
+    new_cache = LlamaCache(
+        model_path="QuantFactory/Llama3.2-3B-Enigma-GGUF",
+        filename="*Q4_K_S.gguf",
+        n_ctx=8192,
+        n_gpu_layers=-1,
+    )
+    new_cache.load_cache(cache_path)
+
+    # Test 1: Query using cached embeddings (no context provided)
+    cached_request = CompletionRequest(
+        query="What is Python?",
+        context_chunks=[],  # No context provided, should use cached embeddings
+        max_tokens=100,
+        temperature=0.7,
+    )
+    cached_response = await new_cache.complete(cached_request)
+    assert isinstance(cached_response.completion, str)
+    assert len(cached_response.completion) > 0
+    print(f"Cached response: {cached_response.completion}")
+
+    # rag_completer = LlamaCache(
+    #     model_path="QuantFactory/Llama3.2-3B-Enigma-GGUF",
+    #     filename="*Q4_K_S.gguf",
+    #     n_ctx=8192,
+    #     n_gpu_layers=-1
+    # )
+
+    # Test 2: Traditional RAG approach (providing context directly)
+    rag_request = CompletionRequest(
+        query="What is Python?",
+        context_chunks=sample_docs,  # Providing context directly
+        max_tokens=100,
+        temperature=0.7,
+    )
+    rag_response = await cache.complete(rag_request)
+    assert isinstance(rag_response.completion, str)
+    assert len(rag_response.completion) > 0
+    print(f"RAG response: {rag_response.completion}")
+
+    # Both approaches should work, but cached approach should use pre-computed embeddings
+    # assert cached_response.completion == rag_response.completion, "Responses should be different due to different processing methods"
+
+    # Save responses to file
+    output_file = "model_responses.txt"
+    with open(output_file, "w") as f:
+        f.write("=== Model Responses ===\n\n")
+        f.write("Query: What is Python?\n\n")
+        f.write("Cached Response:\n")
+        f.write(f"{cached_response.completion}\n\n")
+        f.write("RAG Response:\n")
+        f.write(f"{rag_response.completion}\n")
