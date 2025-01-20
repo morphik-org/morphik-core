@@ -1,66 +1,58 @@
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import List, Union
-from core.models.completion import CompletionRequest, CompletionResponse
+from typing import List, Dict, Any
+from core.models.completion import CompletionResponse
+from core.models.documents import Document
 
 
 class BaseCache(ABC):
     """Base class for cache implementations.
 
     This class defines the interface for cache implementations that support
-    document ingestion, updates, and cache-augmented text generation.
+    document ingestion and cache-augmented querying.
     """
 
-    @abstractmethod
-    async def ingest(self, docs: List[str]) -> bool:
-        """Ingest documents into the cache.
+    def __init__(
+        self, name: str, model: str, gguf_file: str, filters: Dict[str, Any], docs: List[Document]
+    ):
+        """Initialize the cache with the given parameters.
 
         Args:
-            docs: List of documents to ingest
+            name: Name of the cache instance
+            model: Model identifier
+            gguf_file: Path to the GGUF model file
+            filters: Filters used to create the cache context
+            docs: Initial documents to ingest into the cache
+        """
+        self.name = name
+        self.filters = filters
+        self.docs = []  # List of document IDs that have been ingested
+        self._initialize(model, gguf_file, docs)
+
+    @abstractmethod
+    def _initialize(self, model: str, gguf_file: str, docs: List[Document]) -> None:
+        """Internal initialization method to be implemented by subclasses."""
+        pass
+
+    @abstractmethod
+    async def add_docs(self, docs: List[Document]) -> bool:
+        """Add documents to the cache.
+
+        Args:
+            docs: List of documents to add to the cache
 
         Returns:
-            bool: True if ingestion was successful
+            bool: True if documents were successfully added
         """
         pass
 
     @abstractmethod
-    async def update(self, new_doc: str) -> bool:
-        """Update the cache with a new document.
+    async def query(self, query: str) -> CompletionResponse:
+        """Query the cache for relevant documents and generate a response.
 
         Args:
-            new_doc: Document to add to the cache
+            query: Query string to search for relevant documents
 
         Returns:
-            bool: True if update was successful
-        """
-        pass
-
-    @abstractmethod
-    async def complete(self, request: CompletionRequest) -> CompletionResponse:
-        """Generate a completion using the cached context.
-
-        Args:
-            request: Completion request containing the prompt
-
-        Returns:
-            CompletionResponse: Generated completion
-        """
-        pass
-
-    @abstractmethod
-    def save_cache(self) -> Path:
-        """Save the cache state to disk.
-
-        Returns:
-            Path: Path where the cache was saved
-        """
-        pass
-
-    @abstractmethod
-    def load_cache(self, cache_path: Union[str, Path]) -> None:
-        """Load a previously saved cache state.
-
-        Args:
-            cache_path: Path to the saved cache file
+            CompletionResponse: Generated response based on cached context
         """
         pass

@@ -16,6 +16,30 @@ from .models import (
 )
 
 
+class Cache:
+    def __init__(self, db: "DataBridge", name: str):
+        self._db = db
+        self._name = name
+
+    def update(self) -> bool:
+        response = self._db._request("POST", f"cache/{self._name}/update")
+        return response.get("success", False)
+
+    def add_docs(self, docs: List[str]) -> bool:
+        response = self._db._request("POST", f"cache/{self._name}/add_docs", {"docs": docs})
+        return response.get("success", False)
+
+    def query(
+        self, query: str, max_tokens: Optional[int] = None, temperature: Optional[float] = None
+    ) -> str:
+        response = self._db._request(
+            "POST",
+            f"cache/{self._name}/query",
+            {"query": query, "max_tokens": max_tokens, "temperature": temperature},
+        )
+        return CompletionResponse(**response)
+
+
 class DataBridge:
     """
     DataBridge client for document operations.
@@ -333,6 +357,72 @@ class DataBridge:
         """
         response = self._request("GET", f"documents/{document_id}")
         return Document(**response)
+
+    def create_cache(
+        self,
+        name: str,
+        model: str,
+        gguf_file: str,
+        filters: Optional[Dict[str, Any]] = None,
+        docs: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create a new cache with specified configuration.
+
+        Args:
+            name: Name of the cache to create
+            model: Name of the model to use (e.g. "llama2")
+            gguf_file: Name of the GGUF file to use for the model
+            filters: Optional metadata filters to determine which documents to include. These filters will be applied in addition to any specific docs provided.
+            docs: Optional list of specific document IDs to include. These docs will be included in addition to any documents matching the filters.
+
+        Returns:
+            Dict[str, Any]: Created cache configuration
+
+        Example:
+            ```python
+            # This will include both:
+            # 1. Any documents with category="programming"
+            # 2. The specific documents "doc1" and "doc2" (regardless of their category)
+            cache = db.create_cache(
+                name="programming_cache",
+                model="llama2",
+                gguf_file="llama-2-7b-chat.Q4_K_M.gguf",
+                filters={"category": "programming"},
+                docs=["doc1", "doc2"]
+            )
+            ```
+        """
+        request = {
+            "name": name,
+            "model": model,
+            "gguf_file": gguf_file,
+            "filters": filters,
+            "docs": docs,
+        }
+
+        response = self._request("POST", "cache/create", request)
+        return response
+
+    def get_cache(self, name: str) -> Cache:
+        """
+        Get a cache by name.
+
+        Args:
+            name: Name of the cache to retrieve
+
+        Returns:
+            cache: A cache object that is used to interact with the cache.
+
+        Example:
+            ```python
+            cache = db.get_cache("programming_cache")
+            ```
+        """
+        response = self._request("GET", f"cache/{name}")
+        if response.get("exists", False):
+            return Cache(self, name)
+        raise ValueError(f"Cache '{name}' not found")
 
     def close(self):
         """Close the HTTP session"""
