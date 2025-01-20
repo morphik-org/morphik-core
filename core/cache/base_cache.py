@@ -57,7 +57,12 @@ class BaseCache(ABC):
         """
         pass
 
-    @abstractmethod
     @property
+    @abstractmethod
     def saveable_state(self) -> bytes:
+        """Get the saveable state of the cache as bytes.
+
+        Returns:
+            bytes: Serialized state that can be used to restore the cache
+        """
         pass

@@ -61,7 +61,7 @@ class LlamaCache(BaseCache):
         self.cached_tokens = len(tokens)
 
         # Evaluate prompt to build KV cache
-        self.llama.eval(system_prompt)
+        self.llama.eval(tokens)
         self.state = self.llama.save_state()
 
     def add_docs(self, docs: List[Document]) -> bool:
@@ -73,7 +73,7 @@ class LlamaCache(BaseCache):
         self.cached_tokens += len(new_tokens)
 
         # Evaluate prompt to update KV cache
-        self.llama.eval(system_prompt)
+        self.llama.eval(new_tokens)
         self.state = self.llama.save_state()
 
     def query(self, query: str) -> CompletionResponse:
@@ -81,9 +81,12 @@ class LlamaCache(BaseCache):
         self.llama.reset()
         self.llama.load_state(self.state)
 
+        # Tokenize the query first
+        tokens = self.llama.tokenize(query.encode())
+
         # Generate completion starting from cached state
         completion = self.llama.create_completion(
-            query,
+            tokens,
             max_tokens=None,  # Let model decide when to stop
             echo=False,  # Don't include prompt in output
         )
@@ -91,7 +94,7 @@ class LlamaCache(BaseCache):
         return CompletionResponse(
             text=completion["choices"][0]["text"],
             usage={
-                "prompt_tokens": self.cached_tokens + len(self.llama.tokenize(query.encode())),
+                "prompt_tokens": self.cached_tokens + len(tokens),
                 "completion_tokens": completion["usage"]["completion_tokens"],
                 "total_tokens": completion["usage"]["total_tokens"],
             },
