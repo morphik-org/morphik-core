@@ -56,3 +56,8 @@ class BaseCache(ABC):
             CompletionResponse: Generated response based on cached context
         """
         pass
+
+    @abstractmethod
+    @property
+    def saveable_state(self) -> bytes:
+        pass

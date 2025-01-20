@@ -344,14 +344,14 @@ class DocumentService:
         logger.info(f"Created {len(results)} document results")
         return results
 
-    def create_cache(
+    async def create_cache(
         self,
         name: str,
         model: str,
         gguf_file: str,
         docs: List[Document | None],
         filters: Optional[Dict[str, Any]] = None,
-    ) -> None:
+    ) -> Dict[str, str]:
         """Create a new cache with specified configuration.
 
         Args:
@@ -368,8 +368,8 @@ class DocumentService:
             "filters": filters,
             "docs": docs,
             "storage_info": {
-                "bucket": "caches",  # TODO: Get from settings
-                "key": f"{name}/cache.pkl",
+                "bucket": "caches",
+                "key": f"{name}_state.pkl",
             },
         }
 
@@ -380,7 +380,15 @@ class DocumentService:
         cache = self.cache_factory.create_new_cache(
             name=name, model=model, model_file=gguf_file, filters=filters, docs=docs
         )
-        return cache
+        cache_bytes = cache.saveable_state
+        base64_cache_bytes = base64.b64encode(cache_bytes).decode()
+        bucket, key = await self.storage.upload_from_base64(
+            content=base64_cache_bytes, **metadata["storage_info"]
+        )
+        return {
+            "success": True,
+            "message": f"Cache created successfully, state stored in bucket `{bucket}` with key `{key}`",
+        }
 
     async def load_cache(self, name: str) -> bool:
         """Load a cache into memory.
@@ -399,20 +407,18 @@ class DocumentService:
                 return False
 
             # Get cache bytes from storage
-            storage_info = metadata["storage_info"]
             cache_bytes = await self.storage.download_file(
-                storage_info["bucket"], storage_info["key"]
+                metadata["storage_info"]["bucket"], metadata["storage_info"]["key"]
             )
-
             # Create cache instance
             cache = self.cache_factory.load_cache_from_bytes(
                 name=name, cache_bytes=cache_bytes, metadata=metadata
             )
             self.active_caches[name] = cache
-            return True
+            return {"success": True, "message": "Cache loaded successfully"}
         except Exception as e:
             logger.error(f"Failed to load cache {name}: {e}")
-            return False
+            return {"success": False, "message": f"Failed to load cache {name}: {e}"}
 
     def close(self):
         """Close all resources."""

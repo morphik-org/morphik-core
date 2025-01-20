@@ -491,8 +491,10 @@ async def create_cache(
                 for doc_id in docs
             }
             docs_to_add = list(filter_docs.union(additional_docs))
-            document_service.create_cache(name, model, gguf_file, docs_to_add, filters)
-            return {"success": True}
+            response = await document_service.create_cache(
+                name, model, gguf_file, docs_to_add, filters
+            )
+            return response
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 

@@ -97,7 +97,8 @@ class LlamaCache(BaseCache):
             },
         )
 
-    def save_state(self) -> bytes:
+    @property
+    def saveable_state(self) -> bytes:
         return pickle.dumps(self.state)
 
     @classmethod
