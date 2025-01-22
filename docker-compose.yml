@@ -23,6 +23,8 @@ services:
         condition: service_started
     networks:
       - databridge-network
+    env_file:
+      - .env
 
   postgres:
     build:
