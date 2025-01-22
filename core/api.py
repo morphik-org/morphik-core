@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, UTC, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,6 +31,7 @@ from core.embedding.openai_embedding_model import OpenAIEmbeddingModel
 from core.completion.ollama_completion import OllamaCompletionModel
 from core.parser.contextual_parser import ContextualParser
 from core.reranker.flag_reranker import FlagReranker
+from core.cache.llama_cache_factory import LlamaCacheFactory
 import tomli
 
 # Initialize FastAPI app
@@ -214,6 +216,9 @@ if settings.USE_RERANKING:
         case _:
             raise ValueError(f"Unsupported reranker provider: {settings.RERANKER_PROVIDER}")
 
+# Initialize cache factory
+cache_factory = LlamaCacheFactory(Path(settings.STORAGE_PATH))
+
 # Initialize document service with configured components
 document_service = DocumentService(
     storage=storage,
@@ -223,6 +228,7 @@ document_service = DocumentService(
     completion_model=completion_model,
     parser=parser,
     reranker=reranker,
+    cache_factory=cache_factory,
 )
 
 

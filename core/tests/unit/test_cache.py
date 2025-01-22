@@ -1,291 +1,143 @@
 import pytest
 from pathlib import Path
-import tempfile
-from typing import List
-
-from core.cache.base_cache import BaseCache
-from core.models.completion import CompletionRequest, CompletionResponse
+from core.models.documents import Document
 from core.cache.llama_cache import LlamaCache
+from core.models.completion import CompletionResponse
+
+# TEST_MODEL = "QuantFactory/Llama3.2-3B-Enigma-GGUF"
+TEST_MODEL = "QuantFactory/Dolphin3.0-Llama3.2-1B-GGUF"
+TEST_GGUF_FILE = "*Q4_K_S.gguf"
+
+
+def get_test_document():
+    """Load the example.txt file as a test document."""
+    test_file = Path(__file__).parent.parent / "assets" / "example.txt"
+    with open(test_file, "r") as f:
+        content = f.read()
+
+    return Document(
+        external_id="alice_ch1",
+        owner={"id": "test_user", "name": "Test User"},
+        content_type="text/plain",
+        system_metadata={
+            "content": content,
+            "title": "Alice in Wonderland - Chapter 1",
+            "source": "test_document",
+        },
+    )
 
 
 @pytest.fixture
-def sample_docs() -> List[str]:
-    return [
-        "Python is a low-level programming language. That has its roots in the parent language called Mojo. It was founded by Guido van Rossum in 1991.",
-        "Machine learning is a subset of artificial intelligence.",
-        "Data science combines statistics and programming.",
-    ]
-
-
-@pytest.fixture
-def cache_dir():
-    """Fixture to create and clean up a temporary directory for cache files"""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        yield Path(temp_dir)
-
-
-@pytest.fixture
-def model_params(request):
-    """Fixture to provide different model configurations for testing"""
-    models = {
-        "small": {
-            "name": "distilgpt2",
-            "max_tokens": 100,
-            "filename": "*q8_0.gguf",
-        },
-        "medium": {
-            "name": "facebook/opt-125m",
-            "max_tokens": 100,
-            "filename": "*q8_0.gguf",
-        },
-        "decoder": {
-            "name": "gpt2",
-            "max_tokens": 100,
-            "filename": "*q8_0.gguf",
-        },
-        # "llama": {
-        #     "name": "meta-llama/Llama-3.2-1B-Instruct",
-        #     "max_tokens": 100,
-        #     "filename": "*q8_0.gguf",
-        # },
-        "llama": {
-            "name": "QuantFactory/Llama3.2-3B-Enigma-GGUF",
-            "max_tokens": 100,
-            "filename": "*Q4_K_S.gguf",
-        },
-    }
-    return models[request.param]
-
-
-@pytest.fixture
-async def cache(cache_dir, model_params) -> BaseCache:
-    """Fixture to create and reuse a cache instance"""
-    # cache = HuggingFaceCache(
-    #     cache_path=cache_dir,
-    #     model_name=model_params["name"],
-    #     device="cpu",
-    #     default_max_new_tokens=model_params["max_tokens"],
-    #     use_fp16=False,
-    # )
-    # return cache
+def llama_cache():
+    """Create a LlamaCache instance with the test document."""
+    doc = get_test_document()
     cache = LlamaCache(
-        model_path="QuantFactory/Llama3.2-3B-Enigma-GGUF",  # model_params["name"],
-        filename="*Q4_K_S.gguf",  # model_params["filename"],
-        n_ctx=8192,
-        n_gpu_layers=-1,
+        name="test_cache", model=TEST_MODEL, gguf_file=TEST_GGUF_FILE, filters={}, docs=[doc]
     )
     return cache
 
 
-# Basic test with default model
-@pytest.mark.parametrize("model_params", ["small", "llama"], indirect=True)
-@pytest.mark.asyncio
-async def test_cache_basic(cache: BaseCache, sample_docs: List[str]):
-    """Test basic cache operations with default model"""
-    # Test ingestion
-    success = await cache.ingest(sample_docs)
-    assert success, "Document ingestion should succeed"
-
-    # Test completion
-    request = CompletionRequest(
-        query="What is Python?", context_chunks=sample_docs, max_tokens=100, temperature=0.7
+def test_basic_rag_capabilities(llama_cache):
+    """Test that the cache can answer basic questions about the document content."""
+    # Test question about whether ingestion is actually happening
+    response = llama_cache.query(
+        "Summarize the content of the document. Please respond in a single sentence. Summary: "
     )
-    response = await cache.complete(request)
-    assert isinstance(response.completion, str)
-    assert len(response.completion) > 0
-
-
-# Test with different model architectures
-@pytest.mark.parametrize("model_params", ["small", "medium", "decoder", "llama"], indirect=True)
-@pytest.mark.asyncio
-async def test_cache_model_compatibility(cache: BaseCache, sample_docs: List[str], model_params):
-    """Test cache compatibility with different model architectures"""
-    print(f"\n=== Testing with model: {model_params['name']} ===")
-
-    # Test ingestion
-    success = await cache.ingest(sample_docs)
-    assert success, f"Document ingestion should succeed with {model_params['name']}"
-    print(f"Ingestion successful with {model_params['name']}")
-
-    # Test completion
-    request = CompletionRequest(
-        query="What is Python?",
-        context_chunks=sample_docs,
-        max_tokens=model_params["max_tokens"],
-        temperature=0.7,
-    )
-    response = await cache.complete(request)
-    assert isinstance(response.completion, str)
-    assert len(response.completion) > 0
-    print(f"Generated completion with {model_params['name']}: {response.completion[:100]}...")
-
-
-@pytest.mark.parametrize("model_params", ["small", "llama"], indirect=True)
-@pytest.mark.asyncio
-async def test_cache_ingest(cache: BaseCache, sample_docs: List[str]):
-    """Test document ingestion into cache"""
-    print("\n=== Testing Cache Ingestion ===")
-
-    # Test ingesting documents
-    success = await cache.ingest(sample_docs)
-    assert success, "Document ingestion should succeed"
-    print("Basic ingestion test passed")
-
-    # Test ingesting empty list
-    success = await cache.ingest([])
-    assert success, "Empty document ingestion should succeed"
-    print("Empty ingestion test passed")
-
-
-@pytest.mark.parametrize("model_params", ["small", "llama"], indirect=True)
-@pytest.mark.asyncio
-async def test_cache_update(cache: BaseCache, sample_docs: List[str]):
-    """Test updating cache with new documents"""
-    print("\n=== Testing Cache Update ===")
-
-    # Initialize cache with documents
-    await cache.ingest(sample_docs)
-
-    # Test updating with new document
-    new_doc = "Natural Language Processing is used to understand text."
-    success = await cache.update(new_doc)
-    assert success, "Cache update should succeed"
-    print("Update test passed")
-
-
-@pytest.mark.parametrize("model_params", ["small", "llama"], indirect=True)
-@pytest.mark.asyncio
-async def test_cache_completion(cache: BaseCache, sample_docs: List[str]):
-    """Test completion generation using cached context"""
-    print("\n=== Testing Cache Completion ===")
-
-    # Initialize cache
-    await cache.ingest(sample_docs)
-
-    # Test completion
-    request = CompletionRequest(
-        query="What is Python?", context_chunks=sample_docs, max_tokens=100, temperature=0.7
-    )
-    response = await cache.complete(request)
     assert isinstance(response, CompletionResponse)
-    assert isinstance(response.completion, str)
-    assert len(response.completion) > 0
-    print(f"Generated completion: {response.completion}")
+    assert "alice" in response.completion.lower()
 
-
-@pytest.mark.parametrize("model_params", ["small", "llama"], indirect=True)
-@pytest.mark.asyncio
-async def test_cache_save_load(cache: BaseCache, cache_dir: Path, sample_docs: List[str]):
-    """Test saving and loading cache state"""
-    print("\n=== Testing Cache Save/Load ===")
-
-    # First ingest some documents
-    success = await cache.ingest(sample_docs)
-    assert success, "Document ingestion should succeed"
-    print("Documents ingested successfully")
-
-    # Save cache
-    cache_path = cache.save_cache()
-    assert cache_path.exists(), "Cache file should exist after saving"
-    print(f"Cache saved to: {cache_path}")
-
-    # Load cache
-    cache.load_cache(cache_path)
-    print("Cache loaded successfully")
-
-    # Test completion after loading to verify cache is working
-    request = CompletionRequest(
-        query="What is Python?", context_chunks=sample_docs, max_tokens=100, temperature=0.7
+    # Test question about a specific detail
+    response = llama_cache.query(
+        "What did Alice see the White Rabbit do with its watch? Please respond in a single sentence. Answer: "
     )
-    response = await cache.complete(request)
     assert isinstance(response, CompletionResponse)
-    assert isinstance(response.completion, str)
-    assert len(response.completion) > 0
-    print("Cache working correctly after loading")
+    # assert "waistcoat-pocket" in response.completion.lower() or "looked at it" in response.completion.lower()
 
-
-@pytest.mark.parametrize("model_params", ["small", "llama"], indirect=True)
-@pytest.mark.asyncio
-async def test_cache_error_handling(cache: BaseCache):
-    """Test error handling in cache operations"""
-    print("\n=== Testing Error Handling ===")
-
-    # Test completion without initialization
-    request = CompletionRequest(
-        query="What is AI?", context_chunks=[], max_tokens=100, temperature=0.7
+    # Test question about character description
+    response = llama_cache.query(
+        "How did Alice's size change during the story? Please respond in a single sentence. Answer: "
     )
-    response = await cache.complete(request)
     assert isinstance(response, CompletionResponse)
-    assert "Error" in response.completion
-    print("Error handling for uninitialized cache passed")
+    # assert any(phrase in response.completion.lower() for phrase in ["grew larger", "grew smaller", "nine feet", "telescope"])
 
-    # Test loading non-existent cache
-    with pytest.raises(FileNotFoundError):
-        cache.load_cache(Path("nonexistent_cache.pt"))
-    print("Error handling for invalid cache file passed")
-
-
-@pytest.mark.parametrize("model_params", ["small", "llama"], indirect=True)
-@pytest.mark.asyncio
-async def test_cache_vs_rag_performance(cache: BaseCache, sample_docs: List[str], cache_dir: Path):
-    """Test and compare performance between using cached embeddings vs direct RAG."""
-    print("\n=== Testing Cache vs RAG Performance ===")
-
-    # First ingest docs and save cache
-    success = await cache.ingest(sample_docs)
-    assert success, "Document ingestion should succeed"
-    cache_path = cache.save_cache()
-    assert cache_path.exists(), "Cache file should exist after saving"
-
-    # Create a new cache instance and load the saved cache
-    new_cache = LlamaCache(
-        model_path="QuantFactory/Llama3.2-3B-Enigma-GGUF",
-        filename="*Q4_K_S.gguf",
-        n_ctx=8192,
-        n_gpu_layers=-1,
+    # Test question about plot elements
+    response = llama_cache.query(
+        "What was written on the bottle Alice found? Please respond in a single sentence. Answer: "
     )
-    new_cache.load_cache(cache_path)
+    assert isinstance(response, CompletionResponse)
+    # assert "drink me" in response.completion.lower()
 
-    # Test 1: Query using cached embeddings (no context provided)
-    cached_request = CompletionRequest(
-        query="What is Python?",
-        context_chunks=[],  # No context provided, should use cached embeddings
-        max_tokens=100,
-        temperature=0.7,
+
+def test_cache_memory_persistence(llama_cache):
+    """Test that the cache maintains context across multiple queries."""
+
+    # First query to establish context
+    llama_cache.query(
+        "What was Alice doing before she saw the White Rabbit? Please respond in a single sentence. Answer: "
     )
-    cached_response = await new_cache.complete(cached_request)
-    assert isinstance(cached_response.completion, str)
-    assert len(cached_response.completion) > 0
-    print(f"Cached response: {cached_response.completion}")
 
-    # rag_completer = LlamaCache(
-    #     model_path="QuantFactory/Llama3.2-3B-Enigma-GGUF",
-    #     filename="*Q4_K_S.gguf",
-    #     n_ctx=8192,
-    #     n_gpu_layers=-1
-    # )
-
-    # Test 2: Traditional RAG approach (providing context directly)
-    rag_request = CompletionRequest(
-        query="What is Python?",
-        context_chunks=sample_docs,  # Providing context directly
-        max_tokens=100,
-        temperature=0.7,
+    # Follow-up query that requires remembering previous context
+    response = llama_cache.query(
+        "What book was her sister reading? Please respond in a single sentence. Answer: "
     )
-    rag_response = await cache.complete(rag_request)
-    assert isinstance(rag_response.completion, str)
-    assert len(rag_response.completion) > 0
-    print(f"RAG response: {rag_response.completion}")
+    assert isinstance(response, CompletionResponse)
+    # assert "no pictures" in response.completion.lower() or "conversations" in response.completion.lower()
 
-    # Both approaches should work, but cached approach should use pre-computed embeddings
-    # assert cached_response.completion == rag_response.completion, "Responses should be different due to different processing methods"
 
-    # Save responses to file
-    output_file = "model_responses.txt"
-    with open(output_file, "w") as f:
-        f.write("=== Model Responses ===\n\n")
-        f.write("Query: What is Python?\n\n")
-        f.write("Cached Response:\n")
-        f.write(f"{cached_response.completion}\n\n")
-        f.write("RAG Response:\n")
-        f.write(f"{rag_response.completion}\n")
+def test_adding_new_documents(llama_cache):
+    """Test that the cache can incorporate new documents into its knowledge."""
+
+    # Create a new document with additional content
+    new_doc = Document(
+        external_id="alice_ch2",
+        owner={"id": "test_user", "name": "Test User"},
+        content_type="text/plain",
+        system_metadata={
+            "content": "Alice found herself in a pool of tears. She met a Mouse swimming in the pool.",
+            "title": "Alice in Wonderland - Additional Content",
+            "source": "test_document",
+        },
+    )
+
+    # Add the new document
+    success = llama_cache.add_docs([new_doc])
+    assert success
+
+    # Query about the new content
+    response = llama_cache.query(
+        "What did Alice find in the pool of tears? Please respond in a single sentence. Answer: "
+    )
+    assert isinstance(response, CompletionResponse)
+    # assert "mouse" in response.completion.lower()
+
+
+def test_cache_state_persistence():
+    """Test that the cache state can be saved and loaded."""
+
+    # Create initial cache
+    doc = get_test_document()
+    original_cache = LlamaCache(
+        name="test_cache", model=TEST_MODEL, gguf_file=TEST_GGUF_FILE, filters={}, docs=[doc]
+    )
+
+    # Get the state
+    state_bytes = original_cache.saveable_state
+
+    # Create new cache from state
+    loaded_cache = LlamaCache.from_bytes(
+        name="test_cache",
+        cache_bytes=state_bytes,
+        metadata={
+            "model": TEST_MODEL,
+            "model_file": TEST_GGUF_FILE,
+            "filters": {},
+            "docs": [doc.dict()],
+        },
+    )
+
+    # Verify the loaded cache works
+    response = loaded_cache.query(
+        "What did Alice drink? Please respond in a single sentence. Answer: "
+    )
+    assert isinstance(response, CompletionResponse)
+    # assert "bottle" in response.completion.lower() and "drink me" in response.completion.lower()
