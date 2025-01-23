@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, UTC, timedelta
 from pathlib import Path
+import sys
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,6 +38,7 @@ import tomli
 # Initialize FastAPI app
 app = FastAPI(title="DataBridge API")
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 # Add health check endpoints
@@ -588,7 +590,8 @@ async def query_cache(
             },
         ):
             cache = document_service.active_caches[name]
-            return cache.query(query, max_tokens, temperature)
+            print(f"Cache state: {cache.state.n_tokens}", file=sys.stderr)
+            return cache.query(query)  # , max_tokens, temperature)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 

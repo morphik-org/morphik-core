@@ -31,11 +31,12 @@ class Cache:
 
     def query(
         self, query: str, max_tokens: Optional[int] = None, temperature: Optional[float] = None
-    ) -> str:
+    ) -> CompletionResponse:
         response = self._db._request(
             "POST",
             f"cache/{self._name}/query",
-            {"query": query, "max_tokens": max_tokens, "temperature": temperature},
+            params={"query": query, "max_tokens": max_tokens, "temperature": temperature},
+            data="",
         )
         return CompletionResponse(**response)
 

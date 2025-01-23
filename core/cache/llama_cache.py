@@ -77,7 +77,7 @@ class LlamaCache(BaseCache):
                 filename=gguf_file,
                 n_gpu_layers=self.n_gpu_layers,
                 n_ctx=default_ctx_size,
-                verbose=True,  # Enable verbose mode for better error reporting
+                verbose=False,  # Enable verbose mode for better error reporting
             )
             logger.info("Model loaded successfully")
 
@@ -126,10 +126,13 @@ class LlamaCache(BaseCache):
         # Reset and load cached state
         self.llama.reset()
         self.llama.load_state(self.state)
-
+        logger.info(f"Loaded state with {self.state.n_tokens} tokens")
+        # print(f"Loaded state with {self.state.n_tokens} tokens", file=sys.stderr)
         # Tokenize and process query
         query_tokens = self.llama.tokenize(formatted_query.encode())
         self.llama.eval(query_tokens)
+        logger.info(f"Evaluated query tokens: {query_tokens}")
+        # print(f"Evaluated query tokens: {query_tokens}", file=sys.stderr)
 
         # Generate response
         output_tokens = []
