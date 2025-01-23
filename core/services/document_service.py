@@ -366,7 +366,7 @@ class DocumentService:
             "model": model,
             "model_file": gguf_file,
             "filters": filters,
-            "docs": docs,
+            "docs": [doc.model_dump_json() for doc in docs],
             "storage_info": {
                 "bucket": "caches",
                 "key": f"{name}_state.pkl",
@@ -374,7 +374,10 @@ class DocumentService:
         }
 
         # Store metadata in database
-        self.db.store_cache_metadata(name, metadata)
+        success = await self.db.store_cache_metadata(name, metadata)
+        if not success:
+            logger.error(f"Failed to store cache metadata for cache {name}")
+            return {"success": False, "message": f"Failed to store cache metadata for cache {name}"}
 
         # Create cache instance
         cache = self.cache_factory.create_new_cache(
@@ -383,7 +386,9 @@ class DocumentService:
         cache_bytes = cache.saveable_state
         base64_cache_bytes = base64.b64encode(cache_bytes).decode()
         bucket, key = await self.storage.upload_from_base64(
-            content=base64_cache_bytes, **metadata["storage_info"]
+            base64_cache_bytes,
+            key=metadata["storage_info"]["key"],
+            bucket=metadata["storage_info"]["bucket"],
         )
         return {
             "success": True,
@@ -408,8 +413,11 @@ class DocumentService:
 
             # Get cache bytes from storage
             cache_bytes = await self.storage.download_file(
-                metadata["storage_info"]["bucket"], metadata["storage_info"]["key"]
+                metadata["storage_info"]["bucket"], "caches/" + metadata["storage_info"]["key"]
             )
+            cache_bytes = cache_bytes.read()
+            # Start Generation Here
+            # cache_bytes = cache_bytes.read()
             # Create cache instance
             cache = self.cache_factory.load_cache_from_bytes(
                 name=name, cache_bytes=cache_bytes, metadata=metadata
@@ -418,6 +426,7 @@ class DocumentService:
             return {"success": True, "message": "Cache loaded successfully"}
         except Exception as e:
             logger.error(f"Failed to load cache {name}: {e}")
+            # raise e
             return {"success": False, "message": f"Failed to load cache {name}: {e}"}
 
     def close(self):

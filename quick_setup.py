@@ -246,6 +246,18 @@ def setup_postgres():
                 await conn.run_sync(Base.metadata.create_all)
                 LOGGER.info("Created base PostgreSQL tables")
 
+                # Create caches table
+                create_caches_table = """
+                CREATE TABLE IF NOT EXISTS caches (
+                    name TEXT PRIMARY KEY,
+                    metadata JSON NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+                await conn.execute(text(create_caches_table))
+                LOGGER.info("Created caches table")
+
                 # Get vector dimensions from config
                 dimensions = CONFIG["embedding"]["dimensions"]
 

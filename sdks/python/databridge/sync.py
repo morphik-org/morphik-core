@@ -95,6 +95,7 @@ class DataBridge:
         endpoint: str,
         data: Optional[Dict[str, Any]] = None,
         files: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Make HTTP request"""
         headers = {}
@@ -112,6 +113,7 @@ class DataBridge:
             data=data if files else None,
             headers=headers,
             timeout=self._timeout,
+            params=params,
         )
         response.raise_for_status()
         return response.json()
@@ -393,15 +395,13 @@ class DataBridge:
             )
             ```
         """
-        request = {
-            "name": name,
-            "model": model,
-            "gguf_file": gguf_file,
-            "filters": filters,
-            "docs": docs,
-        }
+        # Build query parameters for name, model and gguf_file
+        params = {"name": name, "model": model, "gguf_file": gguf_file}
 
-        response = self._request("POST", "cache/create", request)
+        # Build request body for filters and docs
+        request = {"filters": filters, "docs": docs}
+
+        response = self._request("POST", "cache/create", request, params=params)
         return response
 
     def get_cache(self, name: str) -> Cache:

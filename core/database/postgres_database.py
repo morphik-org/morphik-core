@@ -1,3 +1,4 @@
+import json
 from typing import List, Optional, Dict, Any
 from datetime import datetime, UTC
 import logging
@@ -362,9 +363,9 @@ class PostgresDatabase(BaseDatabase):
                         DO UPDATE SET
                             metadata = :metadata,
                             updated_at = CURRENT_TIMESTAMP
-                    """
+                        """
                     ),
-                    {"name": name, "metadata": metadata},
+                    {"name": name, "metadata": json.dumps(metadata)},
                 )
                 await session.commit()
                 return True

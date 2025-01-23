@@ -492,10 +492,14 @@ async def create_cache(
             },
         ):
             filter_docs = set(await document_service.db.get_documents(auth, filters=filters))
-            additional_docs = {
-                await document_service.db.get_document(document_id=doc_id, auth=auth)
-                for doc_id in docs
-            }
+            additional_docs = (
+                {
+                    await document_service.db.get_document(document_id=doc_id, auth=auth)
+                    for doc_id in docs
+                }
+                if docs
+                else set()
+            )
             docs_to_add = list(filter_docs.union(additional_docs))
             response = await document_service.create_cache(
                 name, model, gguf_file, docs_to_add, filters
@@ -514,7 +518,7 @@ async def get_cache(name: str, auth: AuthContext = Depends(verify_token)) -> Dic
             user_id=auth.entity_id,
             metadata={"name": name},
         ):
-            exists = document_service.load_cache(name)
+            exists = await document_service.load_cache(name)
             return {"exists": exists}
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -530,7 +534,7 @@ async def update_cache(name: str, auth: AuthContext = Depends(verify_token)) -> 
             metadata={"name": name},
         ):
             if name not in document_service.active_caches:
-                exists = document_service.load_cache(name)
+                exists = await document_service.load_cache(name)
                 if not exists:
                     raise HTTPException(status_code=404, detail=f"Cache '{name}' not found")
             cache = document_service.active_caches[name]

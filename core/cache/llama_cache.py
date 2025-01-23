@@ -1,3 +1,4 @@
+import json
 import pickle
 import logging
 from core.cache.base_cache import BaseCache
@@ -67,29 +68,42 @@ class LlamaCache(BaseCache):
 
     def _initialize(self, model: str, gguf_file: str, docs: List[Document]) -> None:
         logger.info(f"Loading Llama model from {model} with file {gguf_file}")
-        self.llama = Llama.from_pretrained(
-            repo_id=model,
-            filename=gguf_file,
-            n_gpu_layers=self.n_gpu_layers,
-            n_ctx=8192 * 4,
-            verbose=False,
-        )
-        logger.info("Model loaded successfully")
+        try:
+            # Set a reasonable default context size (32K tokens)
+            default_ctx_size = 32768
 
-        # Format and tokenize system prompt
-        documents = "\n".join(doc.system_metadata.get("content", "") for doc in docs)
-        system_prompt = INITIAL_SYSTEM_PROMPT.format(documents=documents)
-        logger.info(f"Built system prompt: {system_prompt[:200]}...")
-        tokens = self.llama.tokenize(system_prompt.encode())
-        logger.info(f"System prompt tokenized to {len(tokens)} tokens")
+            self.llama = Llama.from_pretrained(
+                repo_id=model,
+                filename=gguf_file,
+                n_gpu_layers=self.n_gpu_layers,
+                n_ctx=default_ctx_size,
+                verbose=True,  # Enable verbose mode for better error reporting
+            )
+            logger.info("Model loaded successfully")
 
-        # Process tokens to build KV cache
-        logger.info("Evaluating system prompt")
-        self.llama.eval(tokens)
-        logger.info("Saving initial KV cache state")
-        self.state = self.llama.save_state()
-        self.cached_tokens = len(tokens)
-        logger.info(f"Initial KV cache built with {self.cached_tokens} tokens")
+            # Format and tokenize system prompt
+            documents = "\n".join(doc.system_metadata.get("content", "") for doc in docs)
+            system_prompt = INITIAL_SYSTEM_PROMPT.format(documents=documents)
+            logger.info(f"Built system prompt: {system_prompt[:200]}...")
+
+            try:
+                tokens = self.llama.tokenize(system_prompt.encode())
+                logger.info(f"System prompt tokenized to {len(tokens)} tokens")
+
+                # Process tokens to build KV cache
+                logger.info("Evaluating system prompt")
+                self.llama.eval(tokens)
+                logger.info("Saving initial KV cache state")
+                self.state = self.llama.save_state()
+                self.cached_tokens = len(tokens)
+                logger.info(f"Initial KV cache built with {self.cached_tokens} tokens")
+            except Exception as e:
+                logger.error(f"Error during prompt processing: {str(e)}")
+                raise ValueError(f"Failed to process system prompt: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize Llama model: {str(e)}")
+            raise ValueError(f"Failed to initialize Llama model: {str(e)}")
 
     def add_docs(self, docs: List[Document]) -> bool:
         logger.info(f"Adding {len(docs)} new documents to cache")
@@ -159,12 +173,15 @@ class LlamaCache(BaseCache):
         logger.info(f"Loading cache from bytes with name={name}")
         logger.info(f"Cache metadata: {metadata}")
         # Create new instance with metadata
+        # logger.info(f"Docs: {metadata['docs']}")
+        docs = [json.loads(doc) for doc in metadata["docs"]]
+        # time.sleep(10)
         cache = cls(
             name=name,
             model=metadata["model"],
             gguf_file=metadata["model_file"],
             filters=metadata["filters"],
-            docs=[Document(**doc) for doc in metadata["docs"]],
+            docs=[Document(**doc) for doc in docs],
         )
 
         # Load the saved state

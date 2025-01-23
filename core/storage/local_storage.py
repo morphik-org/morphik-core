@@ -19,8 +19,9 @@ class LocalStorage(BaseStorage):
         return open(file_path, "rb")
 
     async def upload_from_base64(
-        self, base64_content: str, key: str, content_type: Optional[str] = None, bucket: str = ""
+        self, content: str, key: str, content_type: Optional[str] = None, bucket: str = ""
     ) -> Tuple[str, str]:
+        base64_content = content
         """Upload base64 encoded content to local storage."""
         # Decode base64 content
         file_content = base64.b64decode(base64_content)
@@ -30,6 +31,7 @@ class LocalStorage(BaseStorage):
         file_path = self.storage_path / key
 
         # Write content to file
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(file_path, "wb") as f:
             f.write(file_content)
 
