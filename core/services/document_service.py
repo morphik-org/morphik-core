@@ -416,9 +416,6 @@ class DocumentService:
                 metadata["storage_info"]["bucket"], "caches/" + metadata["storage_info"]["key"]
             )
             cache_bytes = cache_bytes.read()
-            # Start Generation Here
-            # cache_bytes = cache_bytes.read()
-            # Create cache instance
             cache = self.cache_factory.load_cache_from_bytes(
                 name=name, cache_bytes=cache_bytes, metadata=metadata
             )

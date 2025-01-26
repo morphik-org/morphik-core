@@ -38,7 +38,6 @@ import tomli
 # Initialize FastAPI app
 app = FastAPI(title="DataBridge API")
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 # Add health check endpoints
@@ -503,6 +502,8 @@ async def create_cache(
                 else set()
             )
             docs_to_add = list(filter_docs.union(additional_docs))
+            if not docs_to_add:
+                raise HTTPException(status_code=400, detail="No documents to add to cache")
             response = await document_service.create_cache(
                 name, model, gguf_file, docs_to_add, filters
             )
