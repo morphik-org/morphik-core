@@ -32,6 +32,7 @@ class LocalStorage(BaseStorage):
 
         # Write content to file
         file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.unlink(missing_ok=True)
         with open(file_path, "wb") as f:
             f.write(file_content)
 
