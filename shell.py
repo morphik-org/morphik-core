@@ -118,9 +118,57 @@ class DB:
         doc = self._client.get_document(document_id)
         return doc.model_dump()
 
+    def create_cache(
+        self,
+        name: str,
+        model: str,
+        gguf_file: str,
+        filters: dict = None,
+        docs: list = None,
+    ) -> dict:
+        """Create a new cache with specified configuration"""
+        response = self._client.create_cache(
+            name=name,
+            model=model,
+            gguf_file=gguf_file,
+            filters=filters or {},
+            docs=docs,
+        )
+        return response
+
+    def get_cache(self, name: str) -> "Cache":
+        """Get a cache by name"""
+        return self._client.get_cache(name)
+
     def close(self):
         """Close the client connection"""
         self._client.close()
+
+
+class Cache:
+    def __init__(self, db: DB, name: str):
+        self._db = db
+        self._name = name
+        self._client_cache = db._client.get_cache(name)
+
+    def update(self) -> bool:
+        """Update the cache"""
+        return self._client_cache.update()
+
+    def add_docs(self, docs: list) -> bool:
+        """Add documents to the cache"""
+        return self._client_cache.add_docs(docs)
+
+    def query(
+        self, query: str, max_tokens: int = None, temperature: float = None
+    ) -> dict:
+        """Query the cache"""
+        response = self._client_cache.query(
+            query=query,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        return response.model_dump()
 
 
 if __name__ == "__main__":
