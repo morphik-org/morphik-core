@@ -293,3 +293,4 @@ zlib-state==0.1.9
 pgvector==0.2.5
 psycopg[binary]==3.1.18
 psycopg-binary==3.1.18
+llama-cpp-python==0.3.5
