@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
+    ASSEMBLYAI_API_KEY: Optional[str] = None
 
     # API configuration
     HOST: str

@@ -159,9 +159,7 @@ class Cache:
         """Add documents to the cache"""
         return self._client_cache.add_docs(docs)
 
-    def query(
-        self, query: str, max_tokens: int = None, temperature: float = None
-    ) -> dict:
+    def query(self, query: str, max_tokens: int = None, temperature: float = None) -> dict:
         """Query the cache"""
         response = self._client_cache.query(
             query=query,

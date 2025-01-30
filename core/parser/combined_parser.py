@@ -104,7 +104,7 @@ class CombinedParser(BaseParser):
                 assemblyai_api_key=self.assemblyai_api_key,
                 frame_sample_rate=self.frame_sample_rate,
             )
-            results = parser.process_video()
+            results = await parser.process_video()
             # Get all frame descriptions
             frame_descriptions = results.frame_descriptions
             # Get all transcript text

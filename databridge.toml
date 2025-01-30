@@ -58,7 +58,18 @@ use_unstructured_api = false
 # chunk_size = 1000
 # chunk_overlap = 200
 # use_unstructured_api = false
-# frame_sample_rate = 120
+
+[parser.vision]
+provider = "ollama"
+model_name = "llama3.2-vision"
+frame_sample_rate = -1  # Set to -1 to disable frame captioning
+# base_url = "http://localhost:11434"  # Only used for ollama
+base_url = "http://ollama:11434"  # Use if using via docker
+
+# [parser.vision]
+# provider = "openai"
+# model_name = "gpt-4o-mini"
+# frame_sample_rate = -1 # Set to -1 to disable frame captioning
 
 [reranker]
 use_reranker = false

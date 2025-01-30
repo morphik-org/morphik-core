@@ -1,9 +1,13 @@
 import uvicorn
 from dotenv import load_dotenv
 from core.config import get_settings
+from core.logging_config import setup_logging
 
 
 def main():
+    # Set up logging first
+    setup_logging()
+
     # Load environment variables from .env file
     load_dotenv()
 
@@ -16,6 +20,7 @@ def main():
         host=settings.HOST,
         port=settings.PORT,
         loop="asyncio",
+        log_level="info",
         # reload=settings.RELOAD
     )
 
