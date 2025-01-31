@@ -7,27 +7,37 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Card } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight, Plus, Send, Upload, X, CheckCircle2 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+
+interface MetadataValue {
+  [key: string]: string | number | boolean | null | undefined | MetadataValue | MetadataValue[];
+}
 
 interface Source {
   id: string;
   name: string;
   type: string;
   uploadedAt: Date;
-  metadata?: {
-    name?: string;
-    type?: string;
-    size?: number;
-    [key: string]: string | number | boolean | undefined;
-  };
+  metadata?: MetadataValue;
+  filename?: string;
 }
 
 interface DocumentResponse {
   id: string;
-  metadata: {
-    name?: string;
-    type?: string;
+  content_type: string;
+  filename: string;
+  metadata: MetadataValue;
+  system_metadata: {
+    created_at: string;
+    updated_at: string;
+    version: number;
+    content: string;
   };
-  created_at?: string;
+  storage_info: {
+    bucket: string;
+    key: string;
+  };
 }
 
 interface Message {
@@ -47,6 +57,11 @@ interface ParsedUri {
   token: string;
 }
 
+interface Filter {
+  key: string;
+  value: string;
+}
+
 export default function HomePage() {
   const [sources, setSources] = useState<Source[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -63,6 +78,12 @@ export default function HomePage() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({ isConnected: false });
   const [parsedUri, setParsedUri] = useState<ParsedUri | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [filters, setFilters] = useState<Filter[]>([]);
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [newFilter, setNewFilter] = useState<Filter>({ key: '', value: '' });
+  const [uploadMetadata, setUploadMetadata] = useState<Filter[]>([]);
+  const [newUploadMetadata, setNewUploadMetadata] = useState<Filter>({ key: '', value: '' });
+  const [textContent, setTextContent] = useState('');
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     isDragging.current = true;
@@ -228,10 +249,11 @@ export default function HomePage() {
       const documents = await response.json();
       setSources(documents.map((doc: DocumentResponse) => ({
         id: doc.id,
-        name: doc.metadata?.name || 'Untitled Document',
-        type: doc.metadata?.type || 'unknown',
-        uploadedAt: new Date(doc.created_at || Date.now()),
-        metadata: doc.metadata
+        name: doc.filename || 'Untitled Document',
+        type: doc.content_type || 'unknown',
+        uploadedAt: new Date(doc.system_metadata.created_at || Date.now()),
+        metadata: doc.metadata,
+        filename: doc.filename
       })));
     } catch (error) {
       setConnectionStatus({ 
@@ -248,6 +270,28 @@ export default function HomePage() {
     }
   }, [connectionStatus.isConnected, fetchDocuments]);
 
+  const handleAddFilter = () => {
+    if (newFilter.key && newFilter.value) {
+      setFilters([...filters, newFilter]);
+      setNewFilter({ key: '', value: '' });
+    }
+  };
+
+  const handleRemoveFilter = (index: number) => {
+    setFilters(filters.filter((_, i) => i !== index));
+  };
+
+  const handleAddUploadMetadata = () => {
+    if (newUploadMetadata.key && newUploadMetadata.value) {
+      setUploadMetadata([...uploadMetadata, newUploadMetadata]);
+      setNewUploadMetadata({ key: '', value: '' });
+    }
+  };
+
+  const handleRemoveUploadMetadata = (index: number) => {
+    setUploadMetadata(uploadMetadata.filter((_, i) => i !== index));
+  };
+
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || !connectionStatus.isConnected || !parsedUri) return;
     
@@ -255,16 +299,22 @@ export default function HomePage() {
       setIsLoading(true);
       const formData = new FormData();
       formData.append('file', files[0]);
-      formData.append('metadata', JSON.stringify({
-        name: files[0].name,
-        type: files[0].type,
-        size: files[0].size,
-      }));
+      
+      // Convert metadata array to object
+      const metadataObject = uploadMetadata.reduce((acc, meta) => {
+        acc[meta.key] = meta.value;
+        return acc;
+      }, {} as Record<string, string>);
+      
+      formData.append('metadata', JSON.stringify(metadataObject));
       
       await makeRequest('/ingest/file', {
         method: 'POST',
         body: formData,
       });
+      
+      // Reset form
+      setUploadMetadata([]);
       
       // Fetch updated document list after successful upload
       await fetchDocuments();
@@ -273,6 +323,46 @@ export default function HomePage() {
       setConnectionStatus({ 
         isConnected: false, 
         error: error instanceof Error ? error.message : 'Failed to upload file' 
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleTextUpload = async () => {
+    if (!textContent.trim() || !connectionStatus.isConnected || !parsedUri) return;
+    
+    try {
+      setIsLoading(true);
+      
+      // Convert metadata array to object
+      const metadataObject = uploadMetadata.reduce((acc, meta) => {
+        acc[meta.key] = meta.value;
+        return acc;
+      }, {} as Record<string, string>);
+      
+      await makeRequest('/ingest/text', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: textContent,
+          metadata: metadataObject
+        }),
+      });
+      
+      // Reset form
+      setTextContent('');
+      setUploadMetadata([]);
+      
+      // Fetch updated document list
+      await fetchDocuments();
+      setIsUploadModalOpen(false);
+    } catch (error) {
+      setConnectionStatus({ 
+        isConnected: false, 
+        error: error instanceof Error ? error.message : 'Failed to upload text' 
       });
     } finally {
       setIsLoading(false);
@@ -294,6 +384,12 @@ export default function HomePage() {
       setMessages(prev => [...prev, userMessage]);
       setMessage(''); // Clear input immediately
       
+      // Convert filters array to object
+      const filterObject = filters.reduce((acc, filter) => {
+        acc[filter.key] = filter.value;
+        return acc;
+      }, {} as Record<string, string>);
+
       const response = await makeRequest('/query', {
         method: 'POST',
         headers: {
@@ -301,6 +397,7 @@ export default function HomePage() {
         },
         body: JSON.stringify({
           query: message,
+          filters: Object.keys(filterObject).length > 0 ? filterObject : undefined,
           max_tokens: 1000,
           temperature: 0.7,
         }),
@@ -411,50 +508,126 @@ export default function HomePage() {
                       <Plus className="h-4 w-4" /> Add Source
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="sm:max-w-md">
+                  <DialogContent className="sm:max-w-3xl">
                     <DialogHeader>
-                      <DialogTitle className="text-foreground">Upload Source</DialogTitle>
+                      <DialogTitle className="text-foreground">Add Source</DialogTitle>
                     </DialogHeader>
-                    <div
-                      className="grid gap-4 py-4"
-                      onDragOver={handleDragOver}
-                      onDrop={handleDrop}
-                    >
-                      <div
-                        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}
-                        onClick={() => document.getElementById('file-upload')?.click()}
-                      >
-                        {isLoading ? (
-                          <>
-                            <div className="h-8 w-8 mx-auto mb-2 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-                            <p className="text-sm text-muted-foreground mb-1">
-                              Uploading and processing your file...
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              This may take a few moments
-                            </p>
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                            <p className="text-sm text-muted-foreground mb-1">
-                              Drag and drop your files here or click to browse
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Supported formats: PDF, TXT, MD, MP3
-                            </p>
-                          </>
-                        )}
-                        <input
-                          id="file-upload"
-                          type="file"
-                          className="hidden"
-                          accept=".pdf,.txt,.md,.mp3"
-                          onChange={(e) => handleFileUpload(e.target.files)}
-                          disabled={isLoading}
-                        />
+                    <Tabs defaultValue="file">
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="file">Upload File</TabsTrigger>
+                        <TabsTrigger value="text">Add Text</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="file">
+                        <div
+                          className="grid gap-4 py-4"
+                          onDragOver={handleDragOver}
+                          onDrop={handleDrop}
+                        >
+                          <div
+                            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}
+                            onClick={() => document.getElementById('file-upload')?.click()}
+                          >
+                            {isLoading ? (
+                              <>
+                                <div className="h-8 w-8 mx-auto mb-2 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                                <p className="text-sm text-muted-foreground mb-1">
+                                  Uploading and processing your file...
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  This may take a few moments
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                                <p className="text-sm text-muted-foreground mb-1">
+                                  Drag and drop your files here or click to browse
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  Supported formats: PDF, TXT, MD, MP3, MP4, AVI, MOV, MKV, FLV, WEBM, M4V, MPEG, MPG
+                                </p>
+                              </>
+                            )}
+                            <input
+                              id="file-upload"
+                              type="file"
+                              className="hidden"
+                              accept=".pdf,.txt,.md,.mp3,.mp4,.avi,.mov,.mkv,.wmv,.flv,.webm,.m4v,.mpeg,.mpg"
+                              onChange={(e) => handleFileUpload(e.target.files)}
+                              disabled={isLoading}
+                            />
+                          </div>
+                        </div>
+                      </TabsContent>
+                      <TabsContent value="text">
+                        <div className="grid gap-4 py-4">
+                          <Textarea
+                            placeholder="Enter your text content here..."
+                            value={textContent}
+                            onChange={(e) => setTextContent(e.target.value)}
+                            className="min-h-[200px]"
+                            disabled={isLoading}
+                          />
+                          <Button 
+                            onClick={handleTextUpload} 
+                            disabled={!textContent.trim() || isLoading}
+                            className="w-full"
+                          >
+                            {isLoading ? (
+                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                            ) : (
+                              <>
+                                <Upload className="h-4 w-4 mr-2" />
+                                Add Text
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </TabsContent>
+                      <div className="border-t mt-4 pt-4">
+                        <h4 className="text-sm font-medium mb-2">Metadata (Optional)</h4>
+                        <div className="space-y-4">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Key"
+                              value={newUploadMetadata.key}
+                              onChange={(e) => setNewUploadMetadata({ ...newUploadMetadata, key: e.target.value })}
+                              disabled={isLoading}
+                            />
+                            <Input
+                              placeholder="Value"
+                              value={newUploadMetadata.value}
+                              onChange={(e) => setNewUploadMetadata({ ...newUploadMetadata, value: e.target.value })}
+                              disabled={isLoading}
+                            />
+                            <Button 
+                              onClick={handleAddUploadMetadata} 
+                              disabled={!newUploadMetadata.key || !newUploadMetadata.value || isLoading}
+                            >
+                              Add
+                            </Button>
+                          </div>
+                          <div className="space-y-2">
+                            {uploadMetadata.map((meta, index) => (
+                              <div key={index} className="flex items-center gap-2 bg-muted p-2 rounded-md">
+                                <span className="flex-1">
+                                  {meta.key}: {meta.value}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleRemoveUploadMetadata(index)}
+                                  className="h-8 w-8 hover:bg-destructive/90 hover:text-destructive-foreground"
+                                  disabled={isLoading}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    </Tabs>
                   </DialogContent>
                 </Dialog>
               )}
@@ -478,7 +651,7 @@ export default function HomePage() {
                 <Card key={source.id} className="p-3 bg-card hover:bg-card/80">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium text-card-foreground">{source.name}</p>
+                      <p className="font-medium text-card-foreground">{source.filename || 'Untitled Document'}</p>
                       <p className="text-xs text-muted-foreground">
                         {source.type} • {source.uploadedAt.toLocaleDateString()}
                       </p>
@@ -524,50 +697,126 @@ export default function HomePage() {
                       <Upload className="h-4 w-4 mr-2" /> Upload Source
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="sm:max-w-md">
+                  <DialogContent className="sm:max-w-3xl">
                     <DialogHeader>
-                      <DialogTitle className="text-foreground">Upload Source</DialogTitle>
+                      <DialogTitle className="text-foreground">Add Source</DialogTitle>
                     </DialogHeader>
-                    <div
-                      className="grid gap-4 py-4"
-                      onDragOver={handleDragOver}
-                      onDrop={handleDrop}
-                    >
-                      <div
-                        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}
-                        onClick={() => document.getElementById('file-upload')?.click()}
-                      >
-                        {isLoading ? (
-                          <>
-                            <div className="h-8 w-8 mx-auto mb-2 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-                            <p className="text-sm text-muted-foreground mb-1">
-                              Uploading and processing your file...
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              This may take a few moments
-                            </p>
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                            <p className="text-sm text-muted-foreground mb-1">
-                              Drag and drop your files here or click to browse
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Supported formats: PDF, TXT, MD, MP3
-                            </p>
-                          </>
-                        )}
-                        <input
-                          id="file-upload"
-                          type="file"
-                          className="hidden"
-                          accept=".pdf,.txt,.md,.mp3"
-                          onChange={(e) => handleFileUpload(e.target.files)}
-                          disabled={isLoading}
-                        />
+                    <Tabs defaultValue="file">
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="file">Upload File</TabsTrigger>
+                        <TabsTrigger value="text">Add Text</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="file">
+                        <div
+                          className="grid gap-4 py-4"
+                          onDragOver={handleDragOver}
+                          onDrop={handleDrop}
+                        >
+                          <div
+                            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}
+                            onClick={() => document.getElementById('file-upload')?.click()}
+                          >
+                            {isLoading ? (
+                              <>
+                                <div className="h-8 w-8 mx-auto mb-2 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                                <p className="text-sm text-muted-foreground mb-1">
+                                  Uploading and processing your file...
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  This may take a few moments
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                                <p className="text-sm text-muted-foreground mb-1">
+                                  Drag and drop your files here or click to browse
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  Supported formats: PDF, TXT, MD, MP3, MP4, AVI, MOV, MKV, FLV, WEBM, M4V, MPEG, MPG
+                                </p>
+                              </>
+                            )}
+                            <input
+                              id="file-upload"
+                              type="file"
+                              className="hidden"
+                              accept=".pdf,.txt,.md,.mp3,.mp4,.avi,.mov,.mkv,.wmv,.flv,.webm,.m4v,.mpeg,.mpg"
+                              onChange={(e) => handleFileUpload(e.target.files)}
+                              disabled={isLoading}
+                            />
+                          </div>
+                        </div>
+                      </TabsContent>
+                      <TabsContent value="text">
+                        <div className="grid gap-4 py-4">
+                          <Textarea
+                            placeholder="Enter your text content here..."
+                            value={textContent}
+                            onChange={(e) => setTextContent(e.target.value)}
+                            className="min-h-[200px]"
+                            disabled={isLoading}
+                          />
+                          <Button 
+                            onClick={handleTextUpload} 
+                            disabled={!textContent.trim() || isLoading}
+                            className="w-full"
+                          >
+                            {isLoading ? (
+                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                            ) : (
+                              <>
+                                <Upload className="h-4 w-4 mr-2" />
+                                Add Text
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </TabsContent>
+                      <div className="border-t mt-4 pt-4">
+                        <h4 className="text-sm font-medium mb-2">Metadata (Optional)</h4>
+                        <div className="space-y-4">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Key"
+                              value={newUploadMetadata.key}
+                              onChange={(e) => setNewUploadMetadata({ ...newUploadMetadata, key: e.target.value })}
+                              disabled={isLoading}
+                            />
+                            <Input
+                              placeholder="Value"
+                              value={newUploadMetadata.value}
+                              onChange={(e) => setNewUploadMetadata({ ...newUploadMetadata, value: e.target.value })}
+                              disabled={isLoading}
+                            />
+                            <Button 
+                              onClick={handleAddUploadMetadata} 
+                              disabled={!newUploadMetadata.key || !newUploadMetadata.value || isLoading}
+                            >
+                              Add
+                            </Button>
+                          </div>
+                          <div className="space-y-2">
+                            {uploadMetadata.map((meta, index) => (
+                              <div key={index} className="flex items-center gap-2 bg-muted p-2 rounded-md">
+                                <span className="flex-1">
+                                  {meta.key}: {meta.value}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleRemoveUploadMetadata(index)}
+                                  className="h-8 w-8 hover:bg-destructive/90 hover:text-destructive-foreground"
+                                  disabled={isLoading}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    </Tabs>
                   </DialogContent>
                 </Dialog>
               </div>
@@ -603,6 +852,70 @@ export default function HomePage() {
           {/* Chat Input - Fixed at bottom */}
           <div className="flex-none p-4 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="flex gap-2 max-w-5xl mx-auto">
+              <Dialog open={isFilterModalOpen} onOpenChange={setIsFilterModalOpen}>
+                <DialogTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    size="icon"
+                    disabled={!connectionStatus.isConnected || sources.length === 0}
+                    className="shrink-0"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="24"
+                      height="24"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4 w-4"
+                    >
+                      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                    </svg>
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle className="text-foreground">Metadata Filters</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Key"
+                        value={newFilter.key}
+                        onChange={(e) => setNewFilter({ ...newFilter, key: e.target.value })}
+                      />
+                      <Input
+                        placeholder="Value"
+                        value={newFilter.value}
+                        onChange={(e) => setNewFilter({ ...newFilter, value: e.target.value })}
+                      />
+                      <Button onClick={handleAddFilter} disabled={!newFilter.key || !newFilter.value}>
+                        Add
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {filters.map((filter, index) => (
+                        <div key={index} className="flex items-center gap-2 bg-muted p-2 rounded-md">
+                          <span className="flex-1">
+                            {filter.key}: {filter.value}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveFilter(index)}
+                            className="h-8 w-8 hover:bg-destructive/90 hover:text-destructive-foreground"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
               <Input
                 placeholder={
                   !connectionStatus.isConnected
@@ -633,6 +946,25 @@ export default function HomePage() {
                 )}
               </Button>
             </div>
+            {filters.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2 max-w-5xl mx-auto">
+                {filters.map((filter, index) => (
+                  <div key={index} className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-xs">
+                    <span>
+                      {filter.key}: {filter.value}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemoveFilter(index)}
+                      className="h-4 w-4 hover:bg-destructive/90 hover:text-destructive-foreground p-0"
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
