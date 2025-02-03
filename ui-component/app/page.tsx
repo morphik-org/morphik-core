@@ -24,7 +24,7 @@ interface Source {
 }
 
 interface DocumentResponse {
-  id: string;
+  external_id: string;
   content_type: string;
   filename: string;
   metadata: MetadataValue;
@@ -248,7 +248,7 @@ export default function HomePage() {
       const response = await makeRequest('/documents');
       const documents = await response.json();
       setSources(documents.map((doc: DocumentResponse) => ({
-        id: doc.id,
+        id: doc.external_id,
         name: doc.filename || 'Untitled Document',
         type: doc.content_type || 'unknown',
         uploadedAt: new Date(doc.system_metadata.created_at || Date.now()),
