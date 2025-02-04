@@ -1,11 +1,10 @@
 """Shared components used across multiple API modules."""
+
 import logging
-import sys
 from pathlib import Path
-from fastapi import HTTPException, Header, Depends
+from fastapi import HTTPException, Header
 import jwt
 from datetime import datetime, UTC
-from typing import Set
 
 from core.models.auth import AuthContext, EntityType
 from core.config import get_settings
@@ -179,6 +178,7 @@ document_service = DocumentService(
     cache_factory=cache_factory,
 )
 
+
 async def verify_token(authorization: str = Header(None)) -> AuthContext:
     """Verify JWT Bearer token or return dev context if dev_mode is enabled."""
     # Check if dev mode is enabled
@@ -213,4 +213,4 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:
             permissions=set(payload.get("permissions", ["read"])),
         )
     except jwt.InvalidTokenError as e:
-        raise HTTPException(status_code=401, detail=str(e)) 
+        raise HTTPException(status_code=401, detail=str(e))

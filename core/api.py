@@ -1,7 +1,8 @@
 import json
 from datetime import datetime, UTC, timedelta
+import sys
 from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Depends, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import jwt
 import logging
@@ -16,7 +17,7 @@ from core.models.request import (
     RetrieveRequest,
     CompletionQueryRequest,
 )
-from core.models.auth import AuthContext, EntityType
+from core.models.auth import AuthContext
 from core.completion.base_completion import CompletionResponse
 
 # Initialize FastAPI app
@@ -41,6 +42,7 @@ app.add_middleware(
 # Include the OpenAI router
 app.include_router(openai_router)
 
+
 # Add health check endpoints
 @app.get("/health")
 async def health_check():
@@ -62,43 +64,6 @@ async def readiness_check():
             "parser": settings.PARSER_PROVIDER,
         },
     }
-
-
-async def verify_token(authorization: str = Header(None)) -> AuthContext:
-    """Verify JWT Bearer token or return dev context if dev_mode is enabled."""
-    # Check if dev mode is enabled
-    if settings.dev_mode:
-        return AuthContext(
-            entity_type=EntityType(settings.dev_entity_type),
-            entity_id=settings.dev_entity_id,
-            permissions=set(settings.dev_permissions),
-        )
-
-    # Normal token verification flow
-    if not authorization:
-        raise HTTPException(
-            status_code=401,
-            detail="Missing authorization header",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    try:
-        if not authorization.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Invalid authorization header")
-
-        token = authorization[7:]  # Remove "Bearer "
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-
-        if datetime.fromtimestamp(payload["exp"], UTC) < datetime.now(UTC):
-            raise HTTPException(status_code=401, detail="Token expired")
-
-        return AuthContext(
-            entity_type=EntityType(payload["type"]),
-            entity_id=payload["entity_id"],
-            app_id=payload.get("app_id"),
-            permissions=set(payload.get("permissions", ["read"])),
-        )
-    except jwt.InvalidTokenError as e:
-        raise HTTPException(status_code=401, detail=str(e))
 
 
 @app.post("/ingest/text", response_model=Document)
