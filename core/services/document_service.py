@@ -168,21 +168,34 @@ class DocumentService:
         logger.info(f"Created text document record with ID {doc.external_id}")
 
         # Parse content into chunks
-        chunks = await self.parser.split_text(content)
-        if not chunks:
+        # TODO: Split the parsing and chunking stages in the parser for better separation of concerns
+        initial_chunks = await self.parser.split_text(content)
+        if not initial_chunks:
             raise ValueError("No content chunks extracted from text")
-        logger.info(f"Split text into {len(chunks)} chunks")
+        logger.info(f"Split text into {len(initial_chunks)} initial chunks")
+
+        # Combine chunks for rules processing (separating parsing and chunking will help here!)
+        full_content = "\n".join(chunk.content for chunk in initial_chunks)
 
         # Apply rules if provided
         if rules:
-            chunks = await self.rules_processor.process_chunks(chunks, rules)
+            rule_metadata, modified_text = await self.rules_processor._apply_rules_to_text(
+                full_content, rules
+            )
             # Update document metadata with extracted metadata from rules
-            if chunks and chunks[0].metadata:
-                doc.metadata.update(chunks[0].metadata)
-                logger.info(f"Updated document metadata: {doc.metadata}")
+            metadata.update(rule_metadata)
 
-        # Store transformed content
-        doc.system_metadata["content"] = "\n".join(chunk.content for chunk in chunks)
+            if modified_text:
+                full_content = modified_text
+                logger.info("Stage 2: Updated content with modified text from rules")
+
+        # Store full content before chunking
+        doc.system_metadata["content"] = full_content
+
+        chunks = await self.parser.split_text(full_content)
+        if not chunks:
+            raise ValueError("No content chunks extracted after rules processing")
+        logger.info(f"Split processed text into {len(chunks)} final chunks")
 
         # Generate embeddings for chunks
         embeddings = await self.embedding_model.embed_for_ingestion(chunks)
@@ -209,21 +222,33 @@ class DocumentService:
         if "write" not in auth.permissions:
             raise PermissionError("User does not have write permission")
 
+        # Stage 1: Parse file content into chunks
+        # TODO: Split the parsing and chunking stages in the parser for better separation of concerns
         file_content = await file.read()
-        additional_metadata, chunks = await self.parser.parse_file(
+        additional_metadata, initial_chunks = await self.parser.parse_file(
             file_content, file.content_type or "", file.filename
         )
+        if not initial_chunks:
+            raise ValueError("No content chunks extracted from file")
+        logger.info(f"Parsed file into {len(initial_chunks)} initial chunks")
 
-        # Apply rules if provided
+        # Combine chunks for rules processing
+        full_content = "\n".join(chunk.content for chunk in initial_chunks)
+
+        # Stage 2: Apply rules if provided
         if rules:
-            chunks = await self.rules_processor.process_chunks(chunks, rules)
+            rule_metadata, modified_text = await self.rules_processor._apply_rules_to_text(
+                full_content, rules
+            )
             # Update document metadata with extracted metadata from rules
-            if chunks and chunks[0].metadata:
-                metadata.update(chunks[0].metadata)
-                logger.info(f"Updated document metadata: {metadata}")
+            if rule_metadata:
+                metadata.update(rule_metadata)
+                logger.info(f"Stage 2: Updated document metadata from rules: {metadata}")
 
-        # Get transformed content
-        transformed_content = "\n".join(chunk.content for chunk in chunks)
+            # Only use modified text if it's not empty (meaning the rule modified the text)
+            if modified_text:
+                full_content = modified_text
+                logger.info("Updated content with modified text from rules")
 
         doc = Document(
             content_type=file.content_type or "",
@@ -237,8 +262,9 @@ class DocumentService:
             },
             additional_metadata=additional_metadata,
         )
-        # Store transformed content
-        doc.system_metadata["content"] = transformed_content
+
+        # Store full content before chunking
+        doc.system_metadata["content"] = full_content
         logger.info(f"Created file document record with ID {doc.external_id}")
 
         storage_info = await self.storage.upload_from_base64(
@@ -247,9 +273,10 @@ class DocumentService:
         doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
         logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
 
+        chunks = await self.parser.split_text(full_content)
         if not chunks:
-            raise ValueError("No content chunks extracted from file")
-        logger.info(f"Parsed file into {len(chunks)} chunks")
+            raise ValueError("No content chunks extracted after rules processing")
+        logger.info(f"Split processed text into {len(chunks)} final chunks")
 
         # Generate embeddings for chunks
         embeddings = await self.embedding_model.embed_for_ingestion(chunks)

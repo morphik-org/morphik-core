@@ -276,10 +276,27 @@ async def ingest_text(
     rules: str = Form("[]"),
     auth: AuthContext = Depends(verify_token),
 ) -> Document:
-    """Ingest a text document."""
+    """
+    Ingest a text document.
+
+    Args:
+        content: Text content to ingest
+        metadata: JSON string of metadata
+        rules: JSON string of rules list. Each rule should be either:
+               - MetadataExtractionRule: {"type": "metadata_extraction", "schema": {...}}
+               - NaturalLanguageRule: {"type": "natural_language", "prompt": "..."}
+        auth: Authentication context
+
+    Returns:
+        Document: Metadata of ingested document
+    """
     try:
         metadata_dict = json.loads(metadata)
         rules_list = json.loads(rules)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+
+    try:
         async with telemetry.track_operation(
             operation_type="ingest_text",
             user_id=auth.entity_id,
@@ -294,8 +311,6 @@ async def ingest_text(
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
-    except json.JSONDecodeError:
-        raise HTTPException(400, "Invalid metadata or rules JSON")
 
 
 @app.post("/ingest/file", response_model=Document)
@@ -305,10 +320,27 @@ async def ingest_file(
     rules: str = Form("[]"),
     auth: AuthContext = Depends(verify_token),
 ) -> Document:
-    """Ingest a file document."""
+    """
+    Ingest a file document.
+
+    Args:
+        file: File to ingest
+        metadata: JSON string of metadata
+        rules: JSON string of rules list. Each rule should be either:
+               - MetadataExtractionRule: {"type": "metadata_extraction", "schema": {...}}
+               - NaturalLanguageRule: {"type": "natural_language", "prompt": "..."}
+        auth: Authentication context
+
+    Returns:
+        Document: Metadata of ingested document
+    """
     try:
         metadata_dict = json.loads(metadata)
         rules_list = json.loads(rules)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+
+    try:
         async with telemetry.track_operation(
             operation_type="ingest_file",
             user_id=auth.entity_id,
@@ -319,12 +351,11 @@ async def ingest_file(
                 "rules": rules_list,
             },
         ):
-            doc = await document_service.ingest_file(file, metadata_dict, auth, rules=rules_list)
-            return doc
+            return await document_service.ingest_file(
+                file=file, metadata=metadata_dict, auth=auth, rules=rules_list
+            )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
-    except json.JSONDecodeError:
-        raise HTTPException(400, "Invalid metadata or rules JSON")
 
 
 @app.post("/retrieve/chunks", response_model=List[ChunkResult])

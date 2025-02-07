@@ -13,6 +13,10 @@ from .models import (
     DocumentResult,
     CompletionResponse,
 )
+from .rules import MetadataExtractionRule, NaturalLanguageRule
+
+# Type alias for rules
+Rule = Union[MetadataExtractionRule, NaturalLanguageRule]
 
 
 class Cache:
@@ -131,7 +135,7 @@ class DataBridge:
         self,
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
-        rules: Optional[List[str]] = None,
+        rules: Optional[List[Rule]] = None,
     ) -> Document:
         """
         Ingest a text document into DataBridge.
@@ -139,22 +143,31 @@ class DataBridge:
         Args:
             content: Text content to ingest
             metadata: Optional metadata dictionary
-            rules: Optional list of rules to apply during ingestion (e.g., ["Extract name and store in metadata.name", "Redact PII"])
+            rules: Optional list of rules to apply during ingestion. Can be:
+                  - MetadataExtractionRule: Extract metadata using a schema
+                  - NaturalLanguageRule: Transform content using natural language
 
         Returns:
             Document: Metadata of the ingested document
 
         Example:
             ```python
+            from databridge.rules import MetadataExtractionRule, NaturalLanguageRule
+            from pydantic import BaseModel
+
+            class DocumentInfo(BaseModel):
+                title: str
+                author: str
+                date: str
+
             doc = db.ingest_text(
                 "Machine learning is fascinating...",
-                metadata={
-                    "title": "ML Introduction",
-                    "category": "tech"
-                },
+                metadata={"category": "tech"},
                 rules=[
-                    "Extract key terms into metadata.terms",
-                    "Redact any email addresses"
+                    # Extract metadata using schema
+                    MetadataExtractionRule(schema=DocumentInfo),
+                    # Transform content
+                    NaturalLanguageRule(prompt="Shorten the content, use keywords")
                 ]
             )
             ```
@@ -162,7 +175,7 @@ class DataBridge:
         form_data = {
             "content": content,
             "metadata": json.dumps(metadata or {}),
-            "rules": json.dumps(rules or []),
+            "rules": json.dumps([r.to_dict() for r in (rules or [])]),
         }
         response = self._request("POST", "ingest/text", data=form_data)
         return Document(**response)
@@ -173,7 +186,7 @@ class DataBridge:
         filename: str,
         content_type: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        rules: Optional[List[str]] = None,
+        rules: Optional[List[Rule]] = None,
     ) -> Document:
         """
         Ingest a file document into DataBridge.
@@ -183,28 +196,32 @@ class DataBridge:
             filename: Name of the file
             content_type: MIME type (optional, will be guessed if not provided)
             metadata: Optional metadata dictionary
-            rules: Optional list of rules to apply during ingestion (e.g., ["Extract dates", "Redact personal info"])
+            rules: Optional list of rules to apply during ingestion. Can be:
+                  - MetadataExtractionRule: Extract metadata using a schema
+                  - NaturalLanguageRule: Transform content using natural language
 
         Returns:
             Document: Metadata of the ingested document
 
         Example:
             ```python
-            # From file path
+            from databridge.rules import MetadataExtractionRule, NaturalLanguageRule
+
+            class DocumentInfo(BaseModel):
+                title: str
+                author: str
+                department: str
+
             doc = db.ingest_file(
                 "document.pdf",
                 filename="document.pdf",
                 content_type="application/pdf",
-                metadata={"department": "research"},
+                metadata={"category": "research"},
                 rules=[
-                    "Extract author names into metadata.authors",
-                    "Extract publication date into metadata.pub_date"
+                    MetadataExtractionRule(schema=DocumentInfo),
+                    NaturalLanguageRule(prompt="Extract key points only")
                 ]
             )
-
-            # From file object
-            with open("document.pdf", "rb") as f:
-                doc = db.ingest_file(f, "document.pdf")
             ```
         """
         # Handle different file input types
@@ -225,7 +242,10 @@ class DataBridge:
             files = {"file": (filename, file_obj, content_type or "application/octet-stream")}
 
             # Add metadata and rules
-            data = {"metadata": json.dumps(metadata or {}), "rules": json.dumps(rules or [])}
+            data = {
+                "metadata": json.dumps(metadata or {}),
+                "rules": json.dumps([r.to_dict() for r in (rules or [])]),
+            }
 
             response = self._request("POST", "ingest/file", data=data, files=files)
             return Document(**response)
