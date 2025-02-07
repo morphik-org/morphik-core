@@ -131,11 +131,17 @@ class DataBridge:
         response.raise_for_status()
         return response.json()
 
+    def _convert_rule(self, rule: Union[Dict[str, Any], "Rule"]) -> Dict[str, Any]:
+        """Convert a rule to a dictionary format"""
+        if hasattr(rule, "to_dict"):
+            return rule.to_dict()
+        return rule
+
     def ingest_text(
         self,
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
-        rules: Optional[List[Rule]] = None,
+        rules: Optional[List[Union[Dict[str, Any], Rule]]] = None,
     ) -> Document:
         """
         Ingest a text document into DataBridge.
@@ -175,7 +181,7 @@ class DataBridge:
         form_data = {
             "content": content,
             "metadata": json.dumps(metadata or {}),
-            "rules": json.dumps([r.to_dict() for r in (rules or [])]),
+            "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
         }
         response = self._request("POST", "ingest/text", data=form_data)
         return Document(**response)
@@ -186,7 +192,7 @@ class DataBridge:
         filename: str,
         content_type: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        rules: Optional[List[Rule]] = None,
+        rules: Optional[List[Union[Dict[str, Any], Rule]]] = None,
     ) -> Document:
         """
         Ingest a file document into DataBridge.
@@ -194,7 +200,7 @@ class DataBridge:
         Args:
             file: File to ingest (path string, bytes, file object, or Path)
             filename: Name of the file
-            content_type: MIME type (optional, will be guessed if not provided)
+            content_type: Optional MIME type
             metadata: Optional metadata dictionary
             rules: Optional list of rules to apply during ingestion. Can be:
                   - MetadataExtractionRule: Extract metadata using a schema
@@ -242,12 +248,12 @@ class DataBridge:
             files = {"file": (filename, file_obj, content_type or "application/octet-stream")}
 
             # Add metadata and rules
-            data = {
+            form_data = {
                 "metadata": json.dumps(metadata or {}),
-                "rules": json.dumps([r.to_dict() for r in (rules or [])]),
+                "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
             }
 
-            response = self._request("POST", "ingest/file", data=data, files=files)
+            response = self._request("POST", "ingest/file", data=form_data, files=files)
             return Document(**response)
         finally:
             # Close file if we opened it

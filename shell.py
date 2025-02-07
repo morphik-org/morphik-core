@@ -62,7 +62,7 @@ class DB:
         self,
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
-        rules: Optional[List[str]] = None,
+        rules: Optional[List[Dict[str, Any]]] = None,
     ) -> dict:
         """
         Ingest text content into DataBridge.
@@ -70,7 +70,9 @@ class DB:
         Args:
             content: Text content to ingest
             metadata: Optional metadata dictionary
-            rules: Optional list of rules to apply during ingestion (e.g., ["Extract name", "Redact PII"])
+            rules: Optional list of rule objects. Examples:
+                  [{"type": "metadata_extraction", "schema": {"name": "string"}},
+                   {"type": "natural_language", "prompt": "Remove PII"}]
         """
         doc = self._client.ingest_text(content, metadata=metadata or {}, rules=rules)
         return doc.model_dump()
@@ -81,7 +83,7 @@ class DB:
         filename: str = None,
         metadata: dict = None,
         content_type: str = None,
-        rules: list = None,
+        rules: Optional[List[Dict[str, Any]]] = None,
     ) -> dict:
         """
         Ingest a file into DataBridge.
@@ -91,7 +93,9 @@ class DB:
             filename: Optional filename (defaults to basename of file path)
             metadata: Optional metadata dictionary
             content_type: Optional MIME type
-            rules: Optional list of rules to apply during ingestion (e.g., ["Extract dates", "Redact personal info"])
+            rules: Optional list of rule objects. Examples:
+                  [{"type": "metadata_extraction", "schema": {"title": "string"}},
+                   {"type": "natural_language", "prompt": "Summarize"}]
         """
         file_path = Path(file)
         filename = filename or file_path.name

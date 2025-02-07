@@ -47,7 +47,7 @@ class DocumentService:
         self.completion_model = completion_model
         self.reranker = reranker
         self.cache_factory = cache_factory
-        self.rules_processor = RulesProcessor(completion_model)
+        self.rules_processor = RulesProcessor()
 
         # Cache-related data structures
         # Maps cache name to active cache object
@@ -154,10 +154,13 @@ class DocumentService:
             logger.error(f"User {auth.entity_id} does not have write permission")
             raise PermissionError("User does not have write permission")
 
+        # Initialize metadata dict
+        metadata = metadata or {}
+
         # Create document record
         doc = Document(
             content_type="text/plain",
-            metadata=metadata or {},
+            metadata=metadata,
             owner={"type": auth.entity_type, "id": auth.entity_id},
             access_control={
                 "readers": [auth.entity_id],
@@ -168,26 +171,26 @@ class DocumentService:
         logger.info(f"Created text document record with ID {doc.external_id}")
 
         # Parse content into chunks
-        # TODO: Split the parsing and chunking stages in the parser for better separation of concerns
         initial_chunks = await self.parser.split_text(content)
         if not initial_chunks:
             raise ValueError("No content chunks extracted from text")
         logger.info(f"Split text into {len(initial_chunks)} initial chunks")
 
-        # Combine chunks for rules processing (separating parsing and chunking will help here!)
+        # Combine chunks for rules processing
         full_content = "\n".join(chunk.content for chunk in initial_chunks)
 
         # Apply rules if provided
         if rules:
-            rule_metadata, modified_text = await self.rules_processor._apply_rules_to_text(
+            rule_metadata, modified_text = await self.rules_processor.process_rules(
                 full_content, rules
             )
             # Update document metadata with extracted metadata from rules
             metadata.update(rule_metadata)
+            doc.metadata = metadata  # Update doc metadata after rules
 
             if modified_text:
                 full_content = modified_text
-                logger.info("Stage 2: Updated content with modified text from rules")
+                logger.info("Updated content with modified text from rules")
 
         # Store full content before chunking
         doc.system_metadata["content"] = full_content
@@ -237,15 +240,12 @@ class DocumentService:
 
         # Stage 2: Apply rules if provided
         if rules:
-            rule_metadata, modified_text = await self.rules_processor._apply_rules_to_text(
+            rule_metadata, modified_text = await self.rules_processor.process_rules(
                 full_content, rules
             )
             # Update document metadata with extracted metadata from rules
-            if rule_metadata:
-                metadata.update(rule_metadata)
-                logger.info(f"Stage 2: Updated document metadata from rules: {metadata}")
+            metadata.update(rule_metadata)
 
-            # Only use modified text if it's not empty (meaning the rule modified the text)
             if modified_text:
                 full_content = modified_text
                 logger.info("Updated content with modified text from rules")

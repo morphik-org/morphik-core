@@ -1,7 +1,20 @@
 from typing import Dict, Any, Literal
 from pydantic import BaseModel
 from abc import ABC, abstractmethod
-from core.completion.base_completion import BaseCompletionModel, CompletionRequest
+from core.config import get_settings
+from openai import AsyncOpenAI
+from ollama import AsyncClient
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
+
+# Initialize the appropriate client based on settings
+if settings.RULES_PROVIDER == "openai":
+    rules_client = AsyncOpenAI()
+else:  # ollama
+    rules_client = AsyncClient(host=settings.COMPLETION_OLLAMA_BASE_URL)
 
 
 class BaseRule(BaseModel, ABC):
@@ -10,15 +23,12 @@ class BaseRule(BaseModel, ABC):
     type: str
 
     @abstractmethod
-    async def apply(
-        self, content: str, completion_model: BaseCompletionModel
-    ) -> tuple[Dict[str, Any], str]:
+    async def apply(self, content: str) -> tuple[Dict[str, Any], str]:
         """
         Apply the rule to the content.
 
         Args:
             content: The content to apply the rule to
-            completion_model: The completion model to use for NL operations
 
         Returns:
             tuple[Dict[str, Any], str]: (metadata, modified_content)
@@ -32,9 +42,7 @@ class MetadataExtractionRule(BaseRule):
     type: Literal["metadata_extraction"]
     schema: Dict[str, Any]
 
-    async def apply(
-        self, content: str, completion_model: BaseCompletionModel
-    ) -> tuple[Dict[str, Any], str]:
+    async def apply(self, content: str) -> tuple[Dict[str, Any], str]:
         """Extract metadata according to schema"""
         prompt = f"""
         Extract metadata from the following text according to this schema:
@@ -46,15 +54,36 @@ class MetadataExtractionRule(BaseRule):
         Return ONLY a JSON object with the extracted metadata.
         """
 
-        response = await completion_model.complete(
-            CompletionRequest(prompt=prompt, json_response=True)
-        )
+        if settings.RULES_PROVIDER == "openai":
+            response = await rules_client.chat.completions.create(
+                model=settings.RULES_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a metadata extraction assistant. Always respond with valid JSON.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+            )
+            metadata = json.loads(response.choices[0].message.content)
+        else:  # ollama
+            response = await rules_client.chat(
+                model=settings.RULES_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a metadata extraction assistant. Always respond with valid JSON.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                format="json",
+            )
+            content_str = response["message"]["content"]
+            logger.debug(f"Ollama raw response: {content_str}")
+            metadata = json.loads(content_str)
 
-        try:
-            metadata = response.content if isinstance(response.content, dict) else {}
-            return metadata, content
-        except Exception as e:
-            return {}, content
+        return metadata, content
 
 
 class NaturalLanguageRule(BaseRule):
@@ -63,9 +92,7 @@ class NaturalLanguageRule(BaseRule):
     type: Literal["natural_language"]
     prompt: str
 
-    async def apply(
-        self, content: str, completion_model: BaseCompletionModel
-    ) -> tuple[Dict[str, Any], str]:
+    async def apply(self, content: str) -> tuple[Dict[str, Any], str]:
         """Transform content according to prompt"""
         prompt = f"""
         Your task is to transform the following text according to this instruction:
@@ -77,6 +104,23 @@ class NaturalLanguageRule(BaseRule):
         Return ONLY the transformed text.
         """
 
-        response = await completion_model.complete(CompletionRequest(prompt=prompt))
+        if settings.RULES_PROVIDER == "openai":
+            response = await rules_client.chat.completions.create(
+                model=settings.RULES_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a text transformation assistant."},
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            transformed_text = response.choices[0].message.content
+        else:  # ollama
+            response = await rules_client.chat(
+                model=settings.RULES_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a text transformation assistant."},
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            transformed_text = response["message"]["content"]
 
-        return {}, response.content or content
+        return {}, transformed_text
