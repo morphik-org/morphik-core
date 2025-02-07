@@ -3,11 +3,6 @@ import logging
 from core.models.rules import BaseRule, MetadataExtractionRule, NaturalLanguageRule
 from core.completion.base_completion import BaseCompletionModel
 from pydantic import BaseModel
-from core.completion.ollama_completion import OllamaCompletionModel
-from core.completion.openai_completion import OpenAICompletionModel
-from core.config import get_settings
-from core.completion.base_completion import CompletionRequest
-import json
 
 logger = logging.getLogger(__name__)
 
@@ -90,54 +85,3 @@ class RulesProcessor:
             return NaturalLanguageRule(**rule_dict)
         else:
             raise ValueError(f"Unknown rule type: {rule_type}")
-
-    async def _apply_natural_language_rule(self, rule: NaturalLanguageRule, content: str) -> str:
-        """Apply a natural language rule to transform content"""
-        prompt = f"""
-        Your task is to transform the following text according to this instruction:
-        {rule.prompt}
-        
-        Text to transform:
-        {content}
-        
-        Transformed text:
-        """
-
-        request = CompletionRequest(
-            query=prompt,
-            context_chunks=[],  # No context needed for transformation
-            max_tokens=None,  # Let model decide
-            temperature=0.0,  # Deterministic
-        )
-
-        response = await self.completion_model.complete(request)
-        return response.completion.strip()
-
-    async def _apply_metadata_extraction_rule(
-        self, rule: MetadataExtractionRule, content: str
-    ) -> Dict[str, Any]:
-        """Apply a metadata extraction rule to extract metadata"""
-        schema_str = json.dumps(rule.schema, indent=2)
-
-        prompt = f"""
-        Your task is to extract metadata from the following text according to this schema:
-        {schema_str}
-        
-        Text to extract from:
-        {content}
-        
-        Return ONLY a valid JSON object matching the schema. Nothing else.
-        """
-
-        request = CompletionRequest(
-            query=prompt,
-            context_chunks=[],  # No context needed for extraction
-            max_tokens=None,  # Let model decide
-            temperature=0.0,  # Deterministic
-        )
-
-        response = await self.completion_model.complete(request)
-        try:
-            return json.loads(response.completion.strip())
-        except json.JSONDecodeError:
-            raise ValueError("Failed to extract valid metadata")
