@@ -1,5 +1,7 @@
 # DataBridge Core
 
+![DataBridge Demo](db_atf_demo_hq.gif)
+
 DataBridge is a powerful document processing and retrieval system designed for building intelligent document-based applications. It provides a robust foundation for semantic search, document processing, and AI-powered document interactions.
 
 ## Documentation
