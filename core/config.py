@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     USE_UNSTRUCTURED_API: bool
     FRAME_SAMPLE_RATE: Optional[int] = None
 
+    # Rules configuration
+    RULES_PROVIDER: Literal["ollama", "openai"]
+    RULES_MODEL: str
+    RULES_BATCH_SIZE: int = 4096
+
     # Reranker configuration
     USE_RERANKING: bool
     RERANKER_PROVIDER: Optional[Literal["flag"]] = None
@@ -255,6 +260,13 @@ def get_settings() -> Settings:
             prov = vector_store_config["VECTOR_STORE_PROVIDER"]
             raise ValueError(f"Unknown vector store provider selected: '{prov}'")
 
+    # load rules config - simplified
+    rules_config = {
+        "RULES_PROVIDER": config["rules"]["provider"],
+        "RULES_MODEL": config["rules"]["model_name"],
+        "RULES_BATCH_SIZE": config["rules"]["batch_size"],
+    }
+
     settings_dict = {}
     settings_dict.update(
         **api_config,
@@ -266,5 +278,6 @@ def get_settings() -> Settings:
         **reranker_config,
         **storage_config,
         **vector_store_config,
+        **rules_config,
     )
     return Settings(**settings_dict)

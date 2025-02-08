@@ -10,11 +10,7 @@ import logging
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.completion.openai_completion import OpenAICompletionModel
 from core.embedding.ollama_embedding_model import OllamaEmbeddingModel
-from core.models.request import (
-    IngestTextRequest,
-    RetrieveRequest,
-    CompletionQueryRequest,
-)
+from core.models.request import RetrieveRequest, CompletionQueryRequest, IngestTextRequest
 from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.auth import AuthContext, EntityType
 from core.parser.combined_parser import CombinedParser
@@ -272,17 +268,40 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:
 
 @app.post("/ingest/text", response_model=Document)
 async def ingest_text(
-    request: IngestTextRequest, auth: AuthContext = Depends(verify_token)
+    request: IngestTextRequest,
+    auth: AuthContext = Depends(verify_token),
 ) -> Document:
-    """Ingest a text document."""
+    """
+    Ingest a text document.
+
+    Args:
+        request: IngestTextRequest containing:
+            - content: Text content to ingest
+            - metadata: Optional metadata dictionary
+            - rules: Optional list of rules. Each rule should be either:
+                   - MetadataExtractionRule: {"type": "metadata_extraction", "schema": {...}}
+                   - NaturalLanguageRule: {"type": "natural_language", "prompt": "..."}
+        auth: Authentication context
+
+    Returns:
+        Document: Metadata of ingested document
+    """
     try:
         async with telemetry.track_operation(
             operation_type="ingest_text",
             user_id=auth.entity_id,
             tokens_used=len(request.content.split()),  # Approximate token count
-            metadata=request.metadata if request.metadata else None,
+            metadata={
+                "metadata": request.metadata,
+                "rules": request.rules,
+            },
         ):
-            return await document_service.ingest_text(request, auth)
+            return await document_service.ingest_text(
+                content=request.content,
+                metadata=request.metadata,
+                rules=request.rules,
+                auth=auth,
+            )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
@@ -291,11 +310,27 @@ async def ingest_text(
 async def ingest_file(
     file: UploadFile,
     metadata: str = Form("{}"),
+    rules: str = Form("[]"),
     auth: AuthContext = Depends(verify_token),
 ) -> Document:
-    """Ingest a file document."""
+    """
+    Ingest a file document.
+
+    Args:
+        file: File to ingest
+        metadata: JSON string of metadata
+        rules: JSON string of rules list. Each rule should be either:
+               - MetadataExtractionRule: {"type": "metadata_extraction", "schema": {...}}
+               - NaturalLanguageRule: {"type": "natural_language", "prompt": "..."}
+        auth: Authentication context
+
+    Returns:
+        Document: Metadata of ingested document
+    """
     try:
         metadata_dict = json.loads(metadata)
+        rules_list = json.loads(rules)
+
         async with telemetry.track_operation(
             operation_type="ingest_file",
             user_id=auth.entity_id,
@@ -303,14 +338,16 @@ async def ingest_file(
                 "filename": file.filename,
                 "content_type": file.content_type,
                 "metadata": metadata_dict,
+                "rules": rules_list,
             },
         ):
-            doc = await document_service.ingest_file(file, metadata_dict, auth)
-            return doc
+            return await document_service.ingest_file(
+                file=file, metadata=metadata_dict, auth=auth, rules=rules_list
+            )
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
-    except json.JSONDecodeError:
-        raise HTTPException(400, "Invalid metadata JSON")
 
 
 @app.post("/retrieve/chunks", response_model=List[ChunkResult])

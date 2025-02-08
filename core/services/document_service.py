@@ -2,7 +2,6 @@ import base64
 from typing import Dict, Any, List, Optional
 from fastapi import UploadFile
 
-from core.models.request import IngestTextRequest
 from core.models.chunk import Chunk, DocumentChunk
 from core.models.documents import (
     Document,
@@ -23,6 +22,7 @@ from core.reranker.base_reranker import BaseReranker
 from core.config import get_settings
 from core.cache.base_cache import BaseCache
 from core.cache.base_cache_factory import BaseCacheFactory
+from core.services.rules_processor import RulesProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,7 @@ class DocumentService:
         self.completion_model = completion_model
         self.reranker = reranker
         self.cache_factory = cache_factory
+        self.rules_processor = RulesProcessor()
 
         # Cache-related data structures
         # Maps cache name to active cache object
@@ -141,16 +142,21 @@ class DocumentService:
         response = await self.completion_model.complete(request)
         return response
 
-    async def ingest_text(self, request: IngestTextRequest, auth: AuthContext) -> Document:
+    async def ingest_text(
+        self,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        auth: AuthContext = None,
+        rules: Optional[List[str]] = None,
+    ) -> Document:
         """Ingest a text document."""
         if "write" not in auth.permissions:
             logger.error(f"User {auth.entity_id} does not have write permission")
             raise PermissionError("User does not have write permission")
 
-        # 1. Create document record
         doc = Document(
             content_type="text/plain",
-            metadata=request.metadata,
+            metadata=metadata or {},
             owner={"type": auth.entity_type, "id": auth.entity_id},
             access_control={
                 "readers": [auth.entity_id],
@@ -159,39 +165,77 @@ class DocumentService:
             },
         )
         logger.info(f"Created text document record with ID {doc.external_id}")
-        doc.system_metadata["content"] = request.content
 
-        # 2. Parse content into chunks
-        chunks = await self.parser.split_text(request.content)
+        # Apply rules if provided
+        if rules:
+            rule_metadata, modified_text = await self.rules_processor.process_rules(content, rules)
+            # Update document metadata with extracted metadata from rules
+            metadata.update(rule_metadata)
+            doc.metadata = metadata  # Update doc metadata after rules
+
+            if modified_text:
+                content = modified_text
+                logger.info("Updated content with modified text from rules")
+
+        # Store full content before chunking
+        doc.system_metadata["content"] = content
+
+        # Split into chunks after all processing is done
+        chunks = await self.parser.split_text(content)
         if not chunks:
-            raise ValueError("No content chunks extracted from text")
-        logger.info(f"Split text into {len(chunks)} chunks")
+            raise ValueError("No content chunks extracted")
+        logger.info(f"Split processed text into {len(chunks)} chunks")
 
-        # 3. Generate embeddings for chunks
+        # Generate embeddings for chunks
         embeddings = await self.embedding_model.embed_for_ingestion(chunks)
         logger.info(f"Generated {len(embeddings)} embeddings")
 
-        # 4. Create and store chunk objects
+        # Create and store chunk objects
         chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
         logger.info(f"Created {len(chunk_objects)} chunk objects")
 
-        # 5. Store everything
+        # Store everything
         await self._store_chunks_and_doc(chunk_objects, doc)
         logger.info(f"Successfully stored text document {doc.external_id}")
 
         return doc
 
     async def ingest_file(
-        self, file: UploadFile, metadata: Dict[str, Any], auth: AuthContext
+        self,
+        file: UploadFile,
+        metadata: Dict[str, Any],
+        auth: AuthContext,
+        rules: Optional[List[str]] = None,
     ) -> Document:
         """Ingest a file document."""
         if "write" not in auth.permissions:
             raise PermissionError("User does not have write permission")
 
+        # Parse file content and extract chunks
         file_content = await file.read()
         additional_metadata, chunks = await self.parser.parse_file(
             file_content, file.content_type or "", file.filename
         )
+        if not chunks:
+            raise ValueError("No content chunks extracted from file")
+        logger.info(f"Parsed file into {len(chunks)} chunks")
+
+        # Get full content from chunks for rules processing
+        content = "\n".join(chunk.content for chunk in chunks)
+
+        # Apply rules if provided
+        if rules:
+            rule_metadata, modified_text = await self.rules_processor.process_rules(content, rules)
+            # Update document metadata with extracted metadata from rules
+            metadata.update(rule_metadata)
+
+            if modified_text:
+                content = modified_text
+                # Re-chunk the modified content
+                chunks = await self.parser.split_text(content)
+                if not chunks:
+                    raise ValueError("No content chunks extracted after rules processing")
+                logger.info(f"Re-chunked modified content into {len(chunks)} chunks")
 
         doc = Document(
             content_type=file.content_type or "",
@@ -205,28 +249,27 @@ class DocumentService:
             },
             additional_metadata=additional_metadata,
         )
-        doc.system_metadata["content"] = "\n".join(chunk.content for chunk in chunks)
+
+        # Store full content
+        doc.system_metadata["content"] = content
         logger.info(f"Created file document record with ID {doc.external_id}")
 
+        # Store the original file
         storage_info = await self.storage.upload_from_base64(
             base64.b64encode(file_content).decode(), doc.external_id, file.content_type
         )
         doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
         logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
 
-        if not chunks:
-            raise ValueError("No content chunks extracted from file")
-        logger.info(f"Parsed file into {len(chunks)} chunks")
-
-        # 4. Generate embeddings for chunks
+        # Generate embeddings for chunks
         embeddings = await self.embedding_model.embed_for_ingestion(chunks)
         logger.info(f"Generated {len(embeddings)} embeddings")
 
-        # 5. Create and store chunk objects
+        # Create and store chunk objects
         chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
         logger.info(f"Created {len(chunk_objects)} chunk objects")
 
-        # 6. Store everything
+        # Store everything
         doc.chunk_ids = await self._store_chunks_and_doc(chunk_objects, doc)
         logger.info(f"Successfully stored file document {doc.external_id}")
 

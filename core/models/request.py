@@ -1,12 +1,5 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field
-
-
-class IngestTextRequest(BaseModel):
-    """Request model for text ingestion"""
-
-    content: str
-    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class RetrieveRequest(BaseModel):
@@ -24,3 +17,11 @@ class CompletionQueryRequest(RetrieveRequest):
 
     max_tokens: Optional[int] = None
     temperature: Optional[float] = None
+
+
+class IngestTextRequest(BaseModel):
+    """Request model for ingesting text content"""
+
+    content: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    rules: List[Dict[str, Any]] = Field(default_factory=list)

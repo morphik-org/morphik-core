@@ -9,11 +9,15 @@ import jwt
 
 from .models import (
     Document,
-    IngestTextRequest,
     ChunkResult,
     DocumentResult,
     CompletionResponse,
+    IngestTextRequest,
 )
+from .rules import Rule
+
+# Type alias for rules
+RuleOrDict = Union[Rule, Dict[str, Any]]
 
 
 class AsyncCache:
@@ -109,22 +113,33 @@ class AsyncDataBridge:
         if self._auth_token:  # Only add auth header if we have a token
             headers["Authorization"] = f"Bearer {self._auth_token}"
 
-        if not files:
+        # Configure request data based on type
+        if files:
+            # Multipart form data for files
+            request_data = {"files": files, "data": data}
+            # Don't set Content-Type, let httpx handle it
+        else:
+            # JSON for everything else
             headers["Content-Type"] = "application/json"
+            request_data = {"json": data}
 
         response = await self._client.request(
-            method,
-            f"{self._base_url}/{endpoint.lstrip('/')}",
-            json=data if not files else None,
-            files=files,
-            data=data if files else None,
-            headers=headers,
+            method, f"{self._base_url}/{endpoint.lstrip('/')}", headers=headers, **request_data
         )
         response.raise_for_status()
         return response.json()
 
+    def _convert_rule(self, rule: RuleOrDict) -> Dict[str, Any]:
+        """Convert a rule to a dictionary format"""
+        if hasattr(rule, "to_dict"):
+            return rule.to_dict()
+        return rule
+
     async def ingest_text(
-        self, content: str, metadata: Optional[Dict[str, Any]] = None
+        self,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List[RuleOrDict]] = None,
     ) -> Document:
         """
         Ingest a text document into DataBridge.
@@ -132,24 +147,41 @@ class AsyncDataBridge:
         Args:
             content: Text content to ingest
             metadata: Optional metadata dictionary
+            rules: Optional list of rules to apply during ingestion. Can be:
+                  - MetadataExtractionRule: Extract metadata using a schema
+                  - NaturalLanguageRule: Transform content using natural language
 
         Returns:
             Document: Metadata of the ingested document
 
         Example:
             ```python
+            from databridge.rules import MetadataExtractionRule, NaturalLanguageRule
+            from pydantic import BaseModel
+
+            class DocumentInfo(BaseModel):
+                title: str
+                author: str
+                date: str
+
             doc = await db.ingest_text(
                 "Machine learning is fascinating...",
-                metadata={
-                    "title": "ML Introduction",
-                    "category": "tech"
-                }
+                metadata={"category": "tech"},
+                rules=[
+                    # Extract metadata using schema
+                    MetadataExtractionRule(schema=DocumentInfo),
+                    # Transform content
+                    NaturalLanguageRule(prompt="Shorten the content, use keywords")
+                ]
             )
             ```
         """
-        request = IngestTextRequest(content=content, metadata=metadata or {})
-
-        response = await self._request("POST", "ingest/text", request.model_dump())
+        request = IngestTextRequest(
+            content=content,
+            metadata=metadata or {},
+            rules=[self._convert_rule(r) for r in (rules or [])],
+        )
+        response = await self._request("POST", "ingest/text", data=request.model_dump())
         return Document(**response)
 
     async def ingest_file(
@@ -158,6 +190,7 @@ class AsyncDataBridge:
         filename: str,
         content_type: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List[RuleOrDict]] = None,
     ) -> Document:
         """
         Ingest a file document into DataBridge.
@@ -167,23 +200,33 @@ class AsyncDataBridge:
             filename: Name of the file
             content_type: MIME type (optional, will be guessed if not provided)
             metadata: Optional metadata dictionary
+            rules: Optional list of rules to apply during ingestion. Can be:
+                  - MetadataExtractionRule: Extract metadata using a schema
+                  - NaturalLanguageRule: Transform content using natural language
 
         Returns:
             Document: Metadata of the ingested document
 
         Example:
             ```python
-            # From file path
+            from databridge.rules import MetadataExtractionRule, NaturalLanguageRule
+            from pydantic import BaseModel
+
+            class DocumentInfo(BaseModel):
+                title: str
+                author: str
+                department: str
+
             doc = await db.ingest_file(
                 "document.pdf",
                 filename="document.pdf",
                 content_type="application/pdf",
-                metadata={"department": "research"}
+                metadata={"category": "research"},
+                rules=[
+                    MetadataExtractionRule(schema=DocumentInfo),
+                    NaturalLanguageRule(prompt="Extract key points only")
+                ]
             )
-
-            # From file object
-            with open("document.pdf", "rb") as f:
-                doc = await db.ingest_file(f, "document.pdf")
             ```
         """
         # Handle different file input types
@@ -203,8 +246,11 @@ class AsyncDataBridge:
             # Prepare multipart form data
             files = {"file": (filename, file_obj, content_type or "application/octet-stream")}
 
-            # Add metadata
-            data = {"metadata": json.dumps(metadata or {})}
+            # Add metadata and rules
+            data = {
+                "metadata": json.dumps(metadata or {}),
+                "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
+            }
 
             response = await self._request("POST", "ingest/file", data=data, files=files)
             return Document(**response)
