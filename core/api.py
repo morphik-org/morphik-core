@@ -10,10 +10,7 @@ import logging
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.completion.openai_completion import OpenAICompletionModel
 from core.embedding.ollama_embedding_model import OllamaEmbeddingModel
-from core.models.request import (
-    RetrieveRequest,
-    CompletionQueryRequest,
-)
+from core.models.request import RetrieveRequest, CompletionQueryRequest, IngestTextRequest
 from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.auth import AuthContext, EntityType
 from core.parser.combined_parser import CombinedParser
@@ -271,43 +268,40 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:
 
 @app.post("/ingest/text", response_model=Document)
 async def ingest_text(
-    content: str = Form(...),
-    metadata: str = Form("{}"),
-    rules: str = Form("[]"),
+    request: IngestTextRequest,
     auth: AuthContext = Depends(verify_token),
 ) -> Document:
     """
     Ingest a text document.
 
     Args:
-        content: Text content to ingest
-        metadata: JSON string of metadata
-        rules: JSON string of rules list. Each rule should be either:
-               - MetadataExtractionRule: {"type": "metadata_extraction", "schema": {...}}
-               - NaturalLanguageRule: {"type": "natural_language", "prompt": "..."}
+        request: IngestTextRequest containing:
+            - content: Text content to ingest
+            - metadata: Optional metadata dictionary
+            - rules: Optional list of rules. Each rule should be either:
+                   - MetadataExtractionRule: {"type": "metadata_extraction", "schema": {...}}
+                   - NaturalLanguageRule: {"type": "natural_language", "prompt": "..."}
         auth: Authentication context
 
     Returns:
         Document: Metadata of ingested document
     """
     try:
-        metadata_dict = json.loads(metadata)
-        rules_list = json.loads(rules)
-
         async with telemetry.track_operation(
             operation_type="ingest_text",
             user_id=auth.entity_id,
-            tokens_used=len(content.split()),  # Approximate token count
+            tokens_used=len(request.content.split()),  # Approximate token count
             metadata={
-                "metadata": metadata_dict,
-                "rules": rules_list,
+                "metadata": request.metadata,
+                "rules": request.rules,
             },
         ):
             return await document_service.ingest_text(
-                content=content, metadata=metadata_dict, auth=auth, rules=rules_list
+                content=request.content,
+                metadata=request.metadata,
+                rules=request.rules,
+                auth=auth,
             )
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 

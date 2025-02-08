@@ -64,3 +64,11 @@ class CompletionResponse(BaseModel):
 
     completion: str
     usage: Dict[str, int]
+
+
+class IngestTextRequest(BaseModel):
+    """Request model for ingesting text content"""
+
+    content: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    rules: List[Dict[str, Any]] = Field(default_factory=list)

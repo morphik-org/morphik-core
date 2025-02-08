@@ -7,12 +7,7 @@ from urllib.parse import urlparse
 import jwt
 import requests
 
-from .models import (
-    Document,
-    ChunkResult,
-    DocumentResult,
-    CompletionResponse,
-)
+from .models import Document, ChunkResult, DocumentResult, CompletionResponse, IngestTextRequest
 from .rules import Rule
 
 # Type alias for rules
@@ -111,10 +106,6 @@ class DataBridge:
             # Multipart form data for files
             request_data = {"files": files, "data": data}
             # Don't set Content-Type, let requests handle it
-        elif data and endpoint == "ingest/text":
-            # x-www-form-urlencoded for ingest_text
-            headers["Content-Type"] = "application/x-www-form-urlencoded"
-            request_data = {"data": data}
         else:
             # JSON for everything else
             headers["Content-Type"] = "application/json"
@@ -178,12 +169,12 @@ class DataBridge:
             )
             ```
         """
-        form_data = {
-            "content": content,
-            "metadata": json.dumps(metadata or {}),
-            "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
-        }
-        response = self._request("POST", "ingest/text", data=form_data)
+        request = IngestTextRequest(
+            content=content,
+            metadata=metadata or {},
+            rules=[self._convert_rule(r) for r in (rules or [])],
+        )
+        response = self._request("POST", "ingest/text", data=request.model_dump())
         return Document(**response)
 
     def ingest_file(

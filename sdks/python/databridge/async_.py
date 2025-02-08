@@ -12,6 +12,7 @@ from .models import (
     ChunkResult,
     DocumentResult,
     CompletionResponse,
+    IngestTextRequest,
 )
 from .rules import Rule
 
@@ -117,10 +118,6 @@ class AsyncDataBridge:
             # Multipart form data for files
             request_data = {"files": files, "data": data}
             # Don't set Content-Type, let httpx handle it
-        elif data and endpoint == "ingest/text":
-            # x-www-form-urlencoded for ingest_text
-            headers["Content-Type"] = "application/x-www-form-urlencoded"
-            request_data = {"data": data}
         else:
             # JSON for everything else
             headers["Content-Type"] = "application/json"
@@ -179,14 +176,12 @@ class AsyncDataBridge:
             )
             ```
         """
-        # Prepare form data
-        data = {
-            "content": content,
-            "metadata": json.dumps(metadata or {}),
-            "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
-        }
-
-        response = await self._request("POST", "ingest/text", data=data)
+        request = IngestTextRequest(
+            content=content,
+            metadata=metadata or {},
+            rules=[self._convert_rule(r) for r in (rules or [])],
+        )
+        response = await self._request("POST", "ingest/text", data=request.model_dump())
         return Document(**response)
 
     async def ingest_file(
