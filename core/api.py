@@ -293,10 +293,7 @@ async def ingest_text(
     try:
         metadata_dict = json.loads(metadata)
         rules_list = json.loads(rules)
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
 
-    try:
         async with telemetry.track_operation(
             operation_type="ingest_text",
             user_id=auth.entity_id,
@@ -309,6 +306,8 @@ async def ingest_text(
             return await document_service.ingest_text(
                 content=content, metadata=metadata_dict, auth=auth, rules=rules_list
             )
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
@@ -337,10 +336,7 @@ async def ingest_file(
     try:
         metadata_dict = json.loads(metadata)
         rules_list = json.loads(rules)
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
 
-    try:
         async with telemetry.track_operation(
             operation_type="ingest_file",
             user_id=auth.entity_id,
@@ -354,6 +350,8 @@ async def ingest_file(
             return await document_service.ingest_file(
                 file=file, metadata=metadata_dict, auth=auth, rules=rules_list
             )
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 

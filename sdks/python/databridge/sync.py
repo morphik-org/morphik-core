@@ -13,10 +13,10 @@ from .models import (
     DocumentResult,
     CompletionResponse,
 )
-from .rules import MetadataExtractionRule, NaturalLanguageRule
+from .rules import Rule
 
 # Type alias for rules
-Rule = Union[MetadataExtractionRule, NaturalLanguageRule]
+RuleOrDict = Union[Rule, Dict[str, Any]]
 
 
 class Cache:
@@ -131,7 +131,7 @@ class DataBridge:
         response.raise_for_status()
         return response.json()
 
-    def _convert_rule(self, rule: Union[Dict[str, Any], "Rule"]) -> Dict[str, Any]:
+    def _convert_rule(self, rule: RuleOrDict) -> Dict[str, Any]:
         """Convert a rule to a dictionary format"""
         if hasattr(rule, "to_dict"):
             return rule.to_dict()
@@ -141,7 +141,7 @@ class DataBridge:
         self,
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
-        rules: Optional[List[Union[Dict[str, Any], Rule]]] = None,
+        rules: Optional[List[RuleOrDict]] = None,
     ) -> Document:
         """
         Ingest a text document into DataBridge.
@@ -192,7 +192,7 @@ class DataBridge:
         filename: str,
         content_type: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        rules: Optional[List[Union[Dict[str, Any], Rule]]] = None,
+        rules: Optional[List[RuleOrDict]] = None,
     ) -> Document:
         """
         Ingest a file document into DataBridge.
@@ -212,6 +212,7 @@ class DataBridge:
         Example:
             ```python
             from databridge.rules import MetadataExtractionRule, NaturalLanguageRule
+            from pydantic import BaseModel
 
             class DocumentInfo(BaseModel):
                 title: str

@@ -1,8 +1,18 @@
 from typing import Dict, Any, Type, Union
+from abc import ABC, abstractmethod
 from pydantic import BaseModel
 
 
-class MetadataExtractionRule:
+class Rule(ABC):
+    """Base class for all rules that can be applied during document ingestion"""
+
+    @abstractmethod
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the rule to a dictionary format for API requests"""
+        pass
+
+
+class MetadataExtractionRule(Rule):
     """Server-side rule for extracting metadata using a schema"""
 
     def __init__(self, schema: Union[Type[BaseModel], Dict[str, Any]]):
@@ -19,7 +29,7 @@ class MetadataExtractionRule:
         return {"type": "metadata_extraction", "schema": schema_dict}
 
 
-class NaturalLanguageRule:
+class NaturalLanguageRule(Rule):
     """Server-side rule for transforming content using natural language"""
 
     def __init__(self, prompt: str):
@@ -34,4 +44,4 @@ class NaturalLanguageRule:
         return {"type": "natural_language", "prompt": self.prompt}
 
 
-__all__ = ["MetadataExtractionRule", "NaturalLanguageRule"]
+__all__ = ["Rule", "MetadataExtractionRule", "NaturalLanguageRule"]

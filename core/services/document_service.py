@@ -154,13 +154,9 @@ class DocumentService:
             logger.error(f"User {auth.entity_id} does not have write permission")
             raise PermissionError("User does not have write permission")
 
-        # Initialize metadata dict
-        metadata = metadata or {}
-
-        # Create document record
         doc = Document(
             content_type="text/plain",
-            metadata=metadata,
+            metadata=metadata or {},
             owner={"type": auth.entity_type, "id": auth.entity_id},
             access_control={
                 "readers": [auth.entity_id],
@@ -170,35 +166,25 @@ class DocumentService:
         )
         logger.info(f"Created text document record with ID {doc.external_id}")
 
-        # Parse content into chunks
-        initial_chunks = await self.parser.split_text(content)
-        if not initial_chunks:
-            raise ValueError("No content chunks extracted from text")
-        logger.info(f"Split text into {len(initial_chunks)} initial chunks")
-
-        # Combine chunks for rules processing
-        full_content = "\n".join(chunk.content for chunk in initial_chunks)
-
         # Apply rules if provided
         if rules:
-            rule_metadata, modified_text = await self.rules_processor.process_rules(
-                full_content, rules
-            )
+            rule_metadata, modified_text = await self.rules_processor.process_rules(content, rules)
             # Update document metadata with extracted metadata from rules
             metadata.update(rule_metadata)
             doc.metadata = metadata  # Update doc metadata after rules
 
             if modified_text:
-                full_content = modified_text
+                content = modified_text
                 logger.info("Updated content with modified text from rules")
 
         # Store full content before chunking
-        doc.system_metadata["content"] = full_content
+        doc.system_metadata["content"] = content
 
-        chunks = await self.parser.split_text(full_content)
+        # Split into chunks after all processing is done
+        chunks = await self.parser.split_text(content)
         if not chunks:
-            raise ValueError("No content chunks extracted after rules processing")
-        logger.info(f"Split processed text into {len(chunks)} final chunks")
+            raise ValueError("No content chunks extracted")
+        logger.info(f"Split processed text into {len(chunks)} chunks")
 
         # Generate embeddings for chunks
         embeddings = await self.embedding_model.embed_for_ingestion(chunks)
@@ -225,30 +211,31 @@ class DocumentService:
         if "write" not in auth.permissions:
             raise PermissionError("User does not have write permission")
 
-        # Stage 1: Parse file content into chunks
-        # TODO: Split the parsing and chunking stages in the parser for better separation of concerns
+        # Parse file content and extract chunks
         file_content = await file.read()
-        additional_metadata, initial_chunks = await self.parser.parse_file(
+        additional_metadata, chunks = await self.parser.parse_file(
             file_content, file.content_type or "", file.filename
         )
-        if not initial_chunks:
+        if not chunks:
             raise ValueError("No content chunks extracted from file")
-        logger.info(f"Parsed file into {len(initial_chunks)} initial chunks")
+        logger.info(f"Parsed file into {len(chunks)} chunks")
 
-        # Combine chunks for rules processing
-        full_content = "\n".join(chunk.content for chunk in initial_chunks)
+        # Get full content from chunks for rules processing
+        content = "\n".join(chunk.content for chunk in chunks)
 
-        # Stage 2: Apply rules if provided
+        # Apply rules if provided
         if rules:
-            rule_metadata, modified_text = await self.rules_processor.process_rules(
-                full_content, rules
-            )
+            rule_metadata, modified_text = await self.rules_processor.process_rules(content, rules)
             # Update document metadata with extracted metadata from rules
             metadata.update(rule_metadata)
 
             if modified_text:
-                full_content = modified_text
-                logger.info("Updated content with modified text from rules")
+                content = modified_text
+                # Re-chunk the modified content
+                chunks = await self.parser.split_text(content)
+                if not chunks:
+                    raise ValueError("No content chunks extracted after rules processing")
+                logger.info(f"Re-chunked modified content into {len(chunks)} chunks")
 
         doc = Document(
             content_type=file.content_type or "",
@@ -263,20 +250,16 @@ class DocumentService:
             additional_metadata=additional_metadata,
         )
 
-        # Store full content before chunking
-        doc.system_metadata["content"] = full_content
+        # Store full content
+        doc.system_metadata["content"] = content
         logger.info(f"Created file document record with ID {doc.external_id}")
 
+        # Store the original file
         storage_info = await self.storage.upload_from_base64(
             base64.b64encode(file_content).decode(), doc.external_id, file.content_type
         )
         doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
         logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
-
-        chunks = await self.parser.split_text(full_content)
-        if not chunks:
-            raise ValueError("No content chunks extracted after rules processing")
-        logger.info(f"Split processed text into {len(chunks)} final chunks")
 
         # Generate embeddings for chunks
         embeddings = await self.embedding_model.embed_for_ingestion(chunks)
@@ -426,7 +409,7 @@ class DocumentService:
             "model": model,
             "model_file": gguf_file,
             "filters": filters,
-            "docs": [doc.model_dump_json() for doc in docs if doc],
+            "docs": [doc.model_dump_json() for doc in docs],
             "storage_info": {
                 "bucket": "caches",
                 "key": f"{name}_state.pkl",

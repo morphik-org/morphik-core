@@ -42,7 +42,5 @@ def setup_logging(log_level: str = "INFO"):
     # Set levels for specific loggers
     logging.getLogger("uvicorn").setLevel(logging.INFO)
     logging.getLogger("fastapi").setLevel(logging.INFO)
-
-    # Always set debug level for our core code if in debug mode
-    if level == logging.DEBUG:
-        logging.getLogger("core").setLevel(logging.DEBUG)
+    # Set debug level for core code to match root logger level
+    logging.getLogger("core").setLevel(level)
