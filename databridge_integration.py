@@ -1,5 +1,4 @@
 from databridge import DataBridge
-import os
 
 
 class DatabridgeIntegrator:
@@ -43,24 +42,25 @@ class DatabridgeIntegrator:
             print(f"Error ingesting document: {str(e)}")
             return None
 
-    def search_documents(self, query: str, filters: dict = None, k: int = 4):
+    def search_documents(self, query: str, filters: dict = None, k: int = 15):
         """
-        Search through ingested documents.
+        Search through ingested documents and get an AI completion.
 
         Args:
             query: Search query string
             filters: Optional metadata filters
-            k: Number of results to return
+            k: Number of relevant chunks to use for context
         """
         try:
-            # Search through document chunks
-            results = self.client.retrieve_chunks(
+            # Get completion using relevant chunks as context
+            response = self.client.query(
                 query=query,
                 filters=filters,
                 k=k,
-                min_score=0.7,  # Only return relatively confident matches
+                max_tokens=500,  # Reasonable length for responses
+                temperature=0.3,  # Some creativity while staying focused
             )
-            return results
+            return response.completion if response else None
         except Exception as e:
             print(f"Error searching documents: {str(e)}")
-            return []
+            return None

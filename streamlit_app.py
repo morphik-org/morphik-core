@@ -17,7 +17,7 @@ db_integrator = DatabridgeIntegrator()
 
 # Model selection and configuration
 MODEL_CONFIGS = {
-    "OpenAI GPT-4V": {"key_name": "OPENAI_API_KEY", "description": "GPT-4 Vision"},
+    "OpenAI GPT-4V": {"key_name": "OPENAI_API_KEY", "description": "gpt-4o-mini"},
     "Local Llama": {"key_name": None, "description": "Local Llama"},
 }
 
@@ -195,14 +195,12 @@ async def main():
         st.write("#### Search Documents")
         search_query = st.text_input("Enter your search query")
         if search_query:
-            results = db_integrator.search_documents(search_query)
-            if results:
-                st.write("Search Results:")
-                for result in results:
-                    with st.expander(f"Score: {result.score:.2f}"):
-                        st.write(result.content)
+            completion = db_integrator.search_documents(search_query)
+            if completion:
+                st.write("Result:")
+                st.markdown(completion)
             else:
-                st.info("No results found")
+                st.info("No relevant information found")
 
     # File uploader
     uploaded_files = st.file_uploader(
