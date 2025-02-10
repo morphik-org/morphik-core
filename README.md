@@ -67,6 +67,10 @@ For detailed information about installation, usage, and development:
   - `GET /usage/recent`: Get recent operations
   - `POST /api-keys`: Generate API keys
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=databridge-org/databridge-core&type=Timeline)](https://star-history.com/#databridge-org/databridge-core&Timeline)
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
