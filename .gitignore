@@ -27,3 +27,4 @@ core/tests/assets
 storage/*
 logs/*
 samples/*
+aggregated_code.txt
