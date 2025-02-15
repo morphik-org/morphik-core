@@ -48,16 +48,10 @@ base_url = "http://ollama:11434"  # Just use the service name
 
 
 [parser]
-provider = "unstructured"
 chunk_size = 1000
 chunk_overlap = 200
 use_unstructured_api = false
-
-# [parser]
-# provider = "combined" | "contextual"
-# chunk_size = 1000
-# chunk_overlap = 200
-# use_unstructured_api = false
+use_contextual_chunking = false
 
 [parser.vision]
 provider = "ollama"

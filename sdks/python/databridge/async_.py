@@ -188,7 +188,6 @@ class AsyncDataBridge:
         self,
         file: Union[str, bytes, BinaryIO, Path],
         filename: str,
-        content_type: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
     ) -> Document:
@@ -198,7 +197,6 @@ class AsyncDataBridge:
         Args:
             file: File to ingest (path string, bytes, file object, or Path)
             filename: Name of the file
-            content_type: MIME type (optional, will be guessed if not provided)
             metadata: Optional metadata dictionary
             rules: Optional list of rules to apply during ingestion. Can be:
                   - MetadataExtractionRule: Extract metadata using a schema
@@ -220,7 +218,6 @@ class AsyncDataBridge:
             doc = await db.ingest_file(
                 "document.pdf",
                 filename="document.pdf",
-                content_type="application/pdf",
                 metadata={"category": "research"},
                 rules=[
                     MetadataExtractionRule(schema=DocumentInfo),
@@ -244,7 +241,7 @@ class AsyncDataBridge:
 
         try:
             # Prepare multipart form data
-            files = {"file": (filename, file_obj, content_type or "application/octet-stream")}
+            files = {"file": (filename, file_obj)}
 
             # Add metadata and rules
             data = {
