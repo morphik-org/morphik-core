@@ -3,6 +3,7 @@ from datetime import datetime, UTC, timedelta
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional
+from core.models.completion import CompletionResponse
 from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import jwt
@@ -13,9 +14,7 @@ from core.embedding.ollama_embedding_model import OllamaEmbeddingModel
 from core.models.request import RetrieveRequest, CompletionQueryRequest, IngestTextRequest
 from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.auth import AuthContext, EntityType
-from core.parser.combined_parser import CombinedParser
-from core.completion.base_completion import CompletionResponse
-from core.parser.unstructured_parser import UnstructuredParser
+from core.parser.databridge_parser import DatabridgeParser
 from core.services.document_service import DocumentService
 from core.services.telemetry import TelemetryService
 from core.config import get_settings
@@ -26,7 +25,6 @@ from core.storage.s3_storage import S3Storage
 from core.storage.local_storage import LocalStorage
 from core.embedding.openai_embedding_model import OpenAIEmbeddingModel
 from core.completion.ollama_completion import OllamaCompletionModel
-from core.parser.contextual_parser import ContextualParser
 from core.reranker.flag_reranker import FlagReranker
 from core.cache.llama_cache_factory import LlamaCacheFactory
 import tomli
@@ -54,7 +52,6 @@ async def readiness_check():
             "embedding": settings.EMBEDDING_PROVIDER,
             "completion": settings.COMPLETION_PROVIDER,
             "storage": settings.STORAGE_PROVIDER,
-            "parser": settings.PARSER_PROVIDER,
         },
     }
 
@@ -131,39 +128,15 @@ match settings.STORAGE_PROVIDER:
         raise ValueError(f"Unsupported storage provider: {settings.STORAGE_PROVIDER}")
 
 # Initialize parser
-match settings.PARSER_PROVIDER:
-    case "combined":
-        if not settings.ASSEMBLYAI_API_KEY:
-            raise ValueError("AssemblyAI API key is required for combined parser")
-        parser = CombinedParser(
-            use_unstructured_api=settings.USE_UNSTRUCTURED_API,
-            unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
-            assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
-            chunk_size=settings.CHUNK_SIZE,
-            chunk_overlap=settings.CHUNK_OVERLAP,
-            frame_sample_rate=settings.FRAME_SAMPLE_RATE,
-        )
-    case "unstructured":
-        parser = UnstructuredParser(
-            use_api=settings.USE_UNSTRUCTURED_API,
-            api_key=settings.UNSTRUCTURED_API_KEY,
-            chunk_size=settings.CHUNK_SIZE,
-            chunk_overlap=settings.CHUNK_OVERLAP,
-        )
-    case "contextual":
-        if not settings.ANTHROPIC_API_KEY:
-            raise ValueError("Anthropic API key is required for contextual parser")
-        parser = ContextualParser(
-            use_unstructured_api=settings.USE_UNSTRUCTURED_API,
-            unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
-            assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
-            chunk_size=settings.CHUNK_SIZE,
-            chunk_overlap=settings.CHUNK_OVERLAP,
-            frame_sample_rate=settings.FRAME_SAMPLE_RATE,
-            anthropic_api_key=settings.ANTHROPIC_API_KEY,
-        )
-    case _:
-        raise ValueError(f"Unsupported parser provider: {settings.PARSER_PROVIDER}")
+parser = DatabridgeParser(
+    chunk_size=settings.CHUNK_SIZE,
+    chunk_overlap=settings.CHUNK_OVERLAP,
+    use_unstructured_api=settings.USE_UNSTRUCTURED_API,
+    unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
+    assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
+    anthropic_api_key=settings.ANTHROPIC_API_KEY,
+    use_contextual_chunking=settings.USE_CONTEXTUAL_CHUNKING,
+)
 
 # Initialize embedding model
 match settings.EMBEDDING_PROVIDER:

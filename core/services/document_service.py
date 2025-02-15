@@ -211,32 +211,25 @@ class DocumentService:
         if "write" not in auth.permissions:
             raise PermissionError("User does not have write permission")
 
-        # Parse file content and extract chunks
+        # Read file content
         file_content = await file.read()
-        additional_metadata, chunks = await self.parser.parse_file(
-            file_content, file.content_type or "", file.filename
-        )
-        if not chunks:
-            raise ValueError("No content chunks extracted from file")
-        logger.info(f"Parsed file into {len(chunks)} chunks")
 
-        # Get full content from chunks for rules processing
-        content = "\n".join(chunk.content for chunk in chunks)
+        # Parse file to text first
+        additional_metadata, text = await self.parser.parse_file_to_text(
+            file_content, file.filename
+        )
+        logger.info(f"Parsed file into text of length {len(text)}")
 
         # Apply rules if provided
         if rules:
-            rule_metadata, modified_text = await self.rules_processor.process_rules(content, rules)
+            rule_metadata, modified_text = await self.rules_processor.process_rules(text, rules)
             # Update document metadata with extracted metadata from rules
             metadata.update(rule_metadata)
-
             if modified_text:
-                content = modified_text
-                # Re-chunk the modified content
-                chunks = await self.parser.split_text(content)
-                if not chunks:
-                    raise ValueError("No content chunks extracted after rules processing")
-                logger.info(f"Re-chunked modified content into {len(chunks)} chunks")
+                text = modified_text
+                logger.info("Updated text with modified content from rules")
 
+        # Create document record
         doc = Document(
             content_type=file.content_type or "",
             filename=file.filename,
@@ -251,7 +244,7 @@ class DocumentService:
         )
 
         # Store full content
-        doc.system_metadata["content"] = content
+        doc.system_metadata["content"] = text
         logger.info(f"Created file document record with ID {doc.external_id}")
 
         # Store the original file
@@ -260,6 +253,12 @@ class DocumentService:
         )
         doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
         logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
+
+        # Split into chunks after all processing is done
+        chunks = await self.parser.split_text(text)
+        if not chunks:
+            raise ValueError("No content chunks extracted")
+        logger.info(f"Split processed text into {len(chunks)} chunks")
 
         # Generate embeddings for chunks
         embeddings = await self.embedding_model.embed_for_ingestion(chunks)

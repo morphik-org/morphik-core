@@ -181,7 +181,6 @@ class DataBridge:
         self,
         file: Union[str, bytes, BinaryIO, Path],
         filename: str,
-        content_type: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
     ) -> Document:
@@ -191,7 +190,6 @@ class DataBridge:
         Args:
             file: File to ingest (path string, bytes, file object, or Path)
             filename: Name of the file
-            content_type: Optional MIME type
             metadata: Optional metadata dictionary
             rules: Optional list of rules to apply during ingestion. Can be:
                   - MetadataExtractionRule: Extract metadata using a schema
@@ -213,7 +211,6 @@ class DataBridge:
             doc = db.ingest_file(
                 "document.pdf",
                 filename="document.pdf",
-                content_type="application/pdf",
                 metadata={"category": "research"},
                 rules=[
                     MetadataExtractionRule(schema=DocumentInfo),
@@ -237,7 +234,7 @@ class DataBridge:
 
         try:
             # Prepare multipart form data
-            files = {"file": (filename, file_obj, content_type or "application/octet-stream")}
+            files = {"file": (filename, file_obj)}
 
             # Add metadata and rules
             form_data = {

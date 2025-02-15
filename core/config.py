@@ -52,11 +52,11 @@ class Settings(BaseSettings):
     EMBEDDING_OLLAMA_BASE_URL: Optional[str] = None
 
     # Parser configuration
-    PARSER_PROVIDER: Literal["unstructured", "combined", "contextual"]
     CHUNK_SIZE: int
     CHUNK_OVERLAP: int
     USE_UNSTRUCTURED_API: bool
     FRAME_SAMPLE_RATE: Optional[int] = None
+    USE_CONTEXTUAL_CHUNKING: bool = False
 
     # Rules configuration
     RULES_PROVIDER: Literal["ollama", "openai"]
@@ -188,10 +188,10 @@ def get_settings() -> Settings:
 
     # load parser config
     parser_config = {
-        "PARSER_PROVIDER": config["parser"]["provider"],
         "CHUNK_SIZE": config["parser"]["chunk_size"],
         "CHUNK_OVERLAP": config["parser"]["chunk_overlap"],
         "USE_UNSTRUCTURED_API": config["parser"]["use_unstructured_api"],
+        "USE_CONTEXTUAL_CHUNKING": config["parser"].get("use_contextual_chunking", False),
     }
     if parser_config["USE_UNSTRUCTURED_API"] and "UNSTRUCTURED_API_KEY" not in os.environ:
         msg = em.format(
