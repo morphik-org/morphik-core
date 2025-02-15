@@ -1,4 +1,12 @@
-from databridge import DataBridge
+import sys
+from pathlib import Path
+
+# Add local SDK to path before other imports
+_SDK_PATH = str(Path(__file__).parent / "sdks" / "python")
+if _SDK_PATH not in sys.path:
+    sys.path.insert(0, _SDK_PATH)
+
+from databridge import DataBridge  # noqa: E402
 
 
 class DatabridgeIntegrator:
