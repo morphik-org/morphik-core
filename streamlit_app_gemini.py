@@ -8,7 +8,13 @@ import asyncio
 from openai import AsyncOpenAI
 from databridge_integration import DatabridgeIntegrator
 from dotenv import load_dotenv
-from gemini_extractor import convert_to_pdf, convert_to_images, extract_image_bounding_boxes, parse_json, extract_diagrams_from_bounding_boxes
+from gemini_extractor import (
+    convert_to_pdf,
+    convert_to_images,
+    extract_image_bounding_boxes,
+    parse_json,
+    extract_diagrams_from_bounding_boxes,
+)
 from pdf_image_extractor import extract_images_with_context
 
 load_dotenv(override=True)
@@ -140,14 +146,14 @@ async def process_file(uploaded_file, output_base_dir, selected_model):
         # Convert PDF to images and extract diagrams using Gemini
         images = convert_to_images(pdf_path)
         diagram_info = []
-        
+
         for page_num, image in enumerate(images, 1):
             while True:
                 try:
                     bounding_boxes = extract_image_bounding_boxes(
                         image,
                         "diagrams and other non-text elements",
-                        "label diagrams with the term 'diagram'"
+                        "label diagrams with the term 'diagram'",
                     )
                     break
                 except:
@@ -160,12 +166,14 @@ async def process_file(uploaded_file, output_base_dir, selected_model):
             for diagram_num, diagram in enumerate(diagrams, 1):
                 output_path = output_dir / f"page_{page_num}_diagram_{diagram_num}.png"
                 diagram.save(output_path)
-                
-                diagram_info.append({
-                    "image_path": str(output_path),
-                    "page_number": page_num,
-                    "context": f"Diagram {diagram_num} from page {page_num}"
-                })
+
+                diagram_info.append(
+                    {
+                        "image_path": str(output_path),
+                        "page_number": page_num,
+                        "context": f"Diagram {diagram_num} from page {page_num}",
+                    }
+                )
 
         # Combine all image info
         image_info = text_image_info + diagram_info
