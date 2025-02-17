@@ -82,7 +82,6 @@ similarity_metric = "cosine"\n\
 base_url = "http://localhost:11434"\n\
 \n\
 [parser]\n\
-provider = "unstructured"\n\
 chunk_size = 1000\n\
 chunk_overlap = 200\n\
 use_unstructured_api = false\n\
