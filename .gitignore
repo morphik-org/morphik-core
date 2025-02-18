@@ -28,3 +28,6 @@ storage/*
 logs/*
 samples/*
 aggregated_code.txt
+
+offload/*
+test.pdf

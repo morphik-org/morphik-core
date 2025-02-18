@@ -6,6 +6,9 @@ import logging
 from colpali_engine.models import ColQwen2, ColQwen2Processor
 from colpali_engine.utils.torch_utils import get_torch_device
 from pdf2image import convert_from_path
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
 
 # Configure logging
 logging.basicConfig(
@@ -16,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 model_name = "vidore/colqwen2-v0.1"
 
-device = get_torch_device("auto")
+device = get_torch_device("auto")  # This will select MPS on Mac
+cpu_device = torch.device("cpu")
 print(f"Using device: {device}")
 
 # Load the model
@@ -25,9 +29,14 @@ model = cast(
     ColQwen2.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16,
-        device_map=device,
+        device_map=None,  # Don't use automatic device mapping
+        low_cpu_mem_usage=True,
     ),
 ).eval()
+
+# Move model to MPS except for visual module
+model.to(device)
+model.visual = model.visual.to('cpu')
 
 # Load the processor
 processor = cast(ColQwen2Processor, ColQwen2Processor.from_pretrained(model_name))
@@ -50,8 +59,9 @@ logger.info(f"Processing {len(queries)} queries")
 
 # Process the inputs
 logger.info("Processing images and queries...")
-batch_images = processor.process_images(images).to(model.device)
-batch_queries = processor.process_queries(queries).to(model.device)
+# Process images on CPU first since visual module is on CPU
+batch_images = processor.process_images(images).to('cpu')
+batch_queries = processor.process_queries(queries).to(device)
 
 # Forward pass
 logger.info("Performing inference...")
