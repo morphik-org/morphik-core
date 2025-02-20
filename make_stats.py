@@ -4,7 +4,7 @@ from collections import Counter
 
 # Get all JSON files in samples/results
 results_dir = "samples/results"
-json_files = [f for f in os.listdir(results_dir) if f.endswith('.json')]
+json_files = [f for f in os.listdir(results_dir) if f.endswith(".json")]
 
 # Count number of contacts in each file
 contact_counts = []
@@ -12,7 +12,7 @@ for json_file in json_files:
     file_path = os.path.join(results_dir, json_file)
     with open(file_path) as f:
         data = json.load(f)
-        num_contacts = len(data['contacts'])
+        num_contacts = len(data["contacts"])
         contact_counts.append(num_contacts)
 
 # Calculate statistics
