@@ -52,7 +52,20 @@ class GeminiExtractor:
 
             # Draw rectangle and label
             draw.rectangle(abs_coords, outline=color, width=4)
+
+            # Create label with content preview
             label = f"{element.element_type} {idx+1}"
+            if element.content:
+                preview = (
+                    str(element.content)[:50] + "..."
+                    if len(str(element.content)) > 50
+                    else str(element.content)
+                )
+                label = f"{label}: {preview}"
+
+            # Draw label with background for better visibility
+            text_bbox = draw.textbbox((abs_coords[0] + 8, abs_coords[1] + 6), label)
+            draw.rectangle(text_bbox, fill="white", outline=color)
             draw.text((abs_coords[0] + 8, abs_coords[1] + 6), label, fill=color)
 
         return image

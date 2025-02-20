@@ -112,25 +112,46 @@ class DocumentProcessor:
 
     def _extract_elements(self, image: Image, page_num: int) -> List[DocumentElement]:
         """Extract elements from a single page image"""
-        prompt = f"""Output JSON list of elements with fields:
-        - "type": one of {list(self._element_mapping.keys())}
-        - "content": text/Latex for formulas/text, null for others
-        - "bounding_box": [ymin, xmin, ymax, xmax] (0-1000 scale)
-        - "confidence": 0.0-1.0
-        - "metadata": type-specific info
-        
-        For text:
-        - "content" should contain text with inline formulas as <latex>equation</latex>
-        - "metadata" should include "contains_formulas": boolean
-        
-        For formulas:
-        - "is_inline": boolean
-        - "content" should be LaTeX
-        
-        For tables:
-        - "structure" should describe table format
-        
-        Be precise with bounding boxes and types."""
+        prompt = f"""Analyze the image and extract all elements. For each element, provide:
+
+        1. For text elements:
+           - Exact text content, preserving all formatting and special characters
+           - Convert any mathematical formulas to LaTeX wrapped in <latex>...</latex>
+           - Include paragraph breaks and line structure
+           - Set type as "text"
+
+        2. For formulas:
+           - Complete LaTeX representation of the formula
+           - Whether it's inline or block-level
+           - Set type as "formula"
+
+        3. For diagrams and figures:
+           - Description of the diagram/figure
+           - Set type as "diagram"
+
+        4. For tables:
+           - Table structure and content
+           - Set type as "table"
+
+        5. For all elements:
+           - Precise bounding box coordinates [ymin, xmin, ymax, xmax] (0-1000 scale)
+           - Confidence score (0.0-1.0)
+           - Type-specific metadata
+
+        Return a JSON list where each element has these fields:
+        {{
+            "type": one of {list(self._element_mapping.keys())},
+            "content": text content or LaTeX for formulas, description for others,
+            "bounding_box": [ymin, xmin, ymax, xmax],
+            "confidence": 0.0-1.0,
+            "metadata": {{
+                "contains_formulas": boolean,  # for text
+                "is_inline": boolean,         # for formulas
+                "structure": object           # for tables
+            }}
+        }}
+
+        Be precise with text extraction and bounding boxes. Include all visible text."""
 
         response = self._call_gemini_api(image, prompt)
         return self._parse_response(response, page_num, image.size)
