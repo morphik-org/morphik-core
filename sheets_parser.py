@@ -1,8 +1,7 @@
 import json
 from pathlib import Path
 import pandas as pd
-
-# from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from browser_use import Agent, Browser, BrowserConfig
 from browser_use.browser.context import BrowserContext
@@ -78,7 +77,7 @@ class CompanyProfile(BaseModel):
     contacts: list[Contact]
 
 
-async def find_company_people(company_name: str):
+async def find_company_people(company_name: str, model: str = "gemini"):
     config = BrowserConfig(
         chrome_instance_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         headless=True,
@@ -86,20 +85,26 @@ async def find_company_people(company_name: str):
     browser = Browser(config=config)
     browser_context = BrowserContext(browser=browser)
 
-    contorller = Controller(output_model=CompanyProfile)
+    controller = Controller(output_model=CompanyProfile)
 
-    LLM = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash-exp", api_key=SecretStr(os.getenv("GEMINI_API_KEY"))
-    )  # ChatOpenAI(api_key=os.getenv('OPENAI_API_KEY'), model="gpt-4o")
+    if model == "gemini":
+        LLM = ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash-exp", 
+            api_key=SecretStr(os.getenv("GEMINI_API_KEY"))
+        )
+    else:  # gpt4
+        LLM = ChatOpenAI(
+            model="gpt-4o",
+            api_key=SecretStr(os.getenv("OPENAI_API_KEY"))
+        )
 
     agent = Agent(
         task=f"Got to linkedin.com. Search for {company_name} and select the first result. Go to this company's linkedin page. Go to the people section and find 3 people - preferably executives - working at the company. Try to avoid names such as 'LinkedIn Member' or non-human names. Return the names of these people. If you can't find people within the first two pages, return an empty list of people - that's fine. There is a chance that the company doesn't have any people working there or that the name of the company is not correctly spelled.",
         llm=LLM,
         browser_context=browser_context,
-        controller=contorller,
+        controller=controller,
     )
     result = await agent.run()
-    # print(result)
     final = result.final_result()
     return final
 
@@ -141,7 +146,7 @@ async def main():
 # second, for each person found, list their profile details through linkedin such as url, name
 # third, craft personal message for each linkedin url (this could be merged into 2, but i'm not completely sure)
 
-# ask about if the're comfortable running it on their own machine - liek if they're ok to run this on their linkedin accounts (we can run it to, but will need their passwrods etc.)
+# ask about if the're comfortable running it on their own machine - like if they're ok to run this on their linkedin accounts (we can run it to, but will need their passwords etc.)
 # ....
 
 if __name__ == "__main__":

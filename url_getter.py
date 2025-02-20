@@ -1,9 +1,10 @@
 import os
 import json
-from typing import List, Dict
+from typing import List, Dict, Optional
 from browser_use import Agent, Browser, BrowserConfig, BrowserContextConfig, Controller
 from browser_use.browser.context import BrowserContext
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, SecretStr
 import asyncio
 from pathlib import Path
@@ -25,8 +26,8 @@ load_dotenv(override=True)
 
 class ContactDetails(BaseModel):
     name: str
-    linkedin_url: str
-    contact_info: dict
+    linkedin_url: Optional[str]
+    contact_info: Optional[dict]
 
 
 class CompanyProfileWithDetails(BaseModel):
@@ -34,7 +35,7 @@ class CompanyProfileWithDetails(BaseModel):
     contacts: list[ContactDetails]
 
 
-async def get_contact_details(person_name: str, company_name: str):
+async def get_contact_details(person_name: str, company_name: str, model: str = "gemini"):
     config = BrowserConfig(
         chrome_instance_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         headless=False,
@@ -48,9 +49,16 @@ async def get_contact_details(person_name: str, company_name: str):
 
     controller = Controller(output_model=ContactDetails)
 
-    LLM = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash", api_key=SecretStr(os.getenv("GEMINI_API_KEY"))
-    )
+    if model == "gemini":
+        LLM = ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash", 
+            api_key=SecretStr(os.getenv("GEMINI_API_KEY"))
+        )
+    else:  # gpt4
+        LLM = ChatOpenAI(
+            model="gpt-4o",
+            api_key=SecretStr(os.getenv("OPENAI_API_KEY"))
+        )
 
     print(f"Getting details for {person_name} at {company_name}")
 
@@ -63,7 +71,6 @@ async def get_contact_details(person_name: str, company_name: str):
         llm=LLM,
         browser_context=browser_context,
         controller=controller,
-        # use_vision=False,
     )
 
     result = await agent.run()
