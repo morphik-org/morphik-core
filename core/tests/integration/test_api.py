@@ -7,8 +7,9 @@ from datetime import datetime, timedelta, UTC
 from typing import AsyncGenerator, Dict
 from httpx import AsyncClient
 from fastapi import FastAPI
+from httpx import ASGITransport
 from core.api import app, get_settings
-import mimetypes
+import filetype
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -120,7 +121,10 @@ async def client(
     test_app: FastAPI, event_loop: asyncio.AbstractEventLoop
 ) -> AsyncGenerator[AsyncClient, None]:
     """Create async test client"""
-    async with AsyncClient(app=test_app, base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app),
+        base_url="http://test"
+    ) as client:
         yield client
 
 
@@ -155,7 +159,7 @@ async def test_ingest_pdf(client: AsyncClient):
     if not pdf_path.exists():
         pytest.skip("Test PDF file not available")
 
-    content_type, _ = mimetypes.guess_type(pdf_path)
+    content_type = filetype.guess(pdf_path).mime
     if not content_type:
         content_type = "application/octet-stream"
 
