@@ -20,8 +20,20 @@ if "current_company" not in st.session_state:
     st.session_state.current_company = None
 if "results" not in st.session_state:
     st.session_state.results = []
+if "selected_model" not in st.session_state:
+    st.session_state.selected_model = "gemini"  # Default to Gemini
 
 st.title("DataBridge LinkedIn Pipeline")
+
+# Model selection
+st.subheader("Select AI Model")
+model = st.radio(
+    "Choose AI Model",
+    ["Gemini (Google)", "GPT-4 (OpenAI)"],
+    help="Select which AI model to use for processing",
+    index=0 if st.session_state.selected_model == "gemini" else 1,
+)
+st.session_state.selected_model = "gemini" if model == "Gemini (Google)" else "gpt4"
 
 # Input method selection
 input_method = st.tabs(["Upload Excel", "Manual Input"])
@@ -132,15 +144,15 @@ if 'companies' in locals() and companies:
                                     st.info(f"Using cached results for {company}")
                                 else:
                                     # If file is empty, process company again
-                                    result = await find_company_people(company)
+                                    result = await find_company_people(company, model=st.session_state.selected_model)
                                     data = json.loads(result)
                         except (json.JSONDecodeError, FileNotFoundError):
                             # If file is corrupted or missing, process company again
-                            result = await find_company_people(company)
+                            result = await find_company_people(company, model=st.session_state.selected_model)
                             data = json.loads(result)
                     else:
                         # Step 1: Find company people
-                        result = await find_company_people(company)
+                        result = await find_company_people(company, model=st.session_state.selected_model)
                         data = json.loads(result)
                         
                         # Save initial results
@@ -153,7 +165,8 @@ if 'companies' in locals() and companies:
                             try:
                                 contact_details = await get_contact_details(
                                     contact["name"], 
-                                    company
+                                    company,
+                                    model=st.session_state.selected_model
                                 )
                                 # Update contact with details
                                 contact.update(contact_details)
