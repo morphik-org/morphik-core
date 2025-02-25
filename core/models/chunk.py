@@ -1,5 +1,8 @@
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
 from pydantic import BaseModel, Field
+import numpy as np
+Embedding = List[float] | List[List[float]] | np.ndarray
 
 
 class DocumentChunk(BaseModel):
@@ -7,11 +10,13 @@ class DocumentChunk(BaseModel):
 
     document_id: str  # external_id of parent document
     content: str
-    embedding: List[float]
+    embedding: Embedding
     chunk_number: int
     # chunk-specific metadata
     metadata: Dict[str, Any] = Field(default_factory=dict)
     score: float = 0.0
+    
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class Chunk(BaseModel):
@@ -19,9 +24,11 @@ class Chunk(BaseModel):
 
     content: str
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    
+    model_config = {"arbitrary_types_allowed": True}
 
     def to_document_chunk(
-        self, document_id: str, chunk_number: int, embedding: List[float]
+        self, document_id: str, chunk_number: int, embedding: Embedding
     ) -> DocumentChunk:
         return DocumentChunk(
             document_id=document_id,
