@@ -13,6 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class ColpaliEmbeddingModel(BaseEmbeddingModel):
     def __init__(self):
         device = (
@@ -40,10 +41,10 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                 try:
                     # Handle data URI format "data:image/png;base64,..."
                     content = chunk.content
-                    if content.startswith('data:'):
+                    if content.startswith("data:"):
                         # Extract the base64 part after the comma
-                        content = content.split(',', 1)[1]
-                    
+                        content = content.split(",", 1)[1]
+
                     # Now decode the base64 string
                     image_bytes = base64.b64decode(content)
                     image = open_image(io.BytesIO(image_bytes))
@@ -54,7 +55,7 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                     contents.append(chunk.content)
             else:
                 contents.append(chunk.content)
-        
+
         return [self.generate_embeddings(content) for content in contents]
 
     async def embed_for_query(self, text: str) -> torch.Tensor:

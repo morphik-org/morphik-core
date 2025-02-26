@@ -139,7 +139,11 @@ class AsyncDataBridge:
             request_data = {"json": data}
 
         response = await self._client.request(
-            method, f"{self._base_url}/{endpoint.lstrip('/')}", headers=headers, params=params, **request_data
+            method,
+            f"{self._base_url}/{endpoint.lstrip('/')}",
+            headers=headers,
+            params=params,
+            **request_data,
         )
         response.raise_for_status()
         return response.json()
@@ -304,8 +308,8 @@ class AsyncDataBridge:
             ```
         """
         params = {
-            "query": query, 
-            "k": k, 
+            "query": query,
+            "k": k,
             "min_score": min_score,
             "use_colpali": use_colpali,
         }
@@ -344,8 +348,8 @@ class AsyncDataBridge:
             ```
         """
         params = {
-            "query": query, 
-            "k": k, 
+            "query": query,
+            "k": k,
             "min_score": min_score,
             "use_colpali": use_colpali,
         }

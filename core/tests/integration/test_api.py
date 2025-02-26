@@ -121,10 +121,7 @@ async def client(
     test_app: FastAPI, event_loop: asyncio.AbstractEventLoop
 ) -> AsyncGenerator[AsyncClient, None]:
     """Create async test client"""
-    async with AsyncClient(
-        transport=ASGITransport(app=test_app),
-        base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
         yield client
 
 

@@ -150,7 +150,7 @@ class DatabridgeParser(BaseParser):
         """Check if the file is a video file."""
         try:
             kind = filetype.guess(file)
-            return kind is not None and kind.mime.startswith('video/')
+            return kind is not None and kind.mime.startswith("video/")
         except Exception as e:
             logging.error(f"Error detecting file type: {str(e)}")
             return False

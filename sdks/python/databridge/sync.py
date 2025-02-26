@@ -53,10 +53,9 @@ class FinalChunkResult(BaseModel):
     content_type: str = Field(..., description="Content type")
     filename: Optional[str] = Field(None, description="Original filename")
     download_url: Optional[str] = Field(None, description="URL to download full document")
-    
+
     class Config:
         arbitrary_types_allowed = True
-
 
 
 class DataBridge:
@@ -234,7 +233,7 @@ class DataBridge:
 
             doc = db.ingest_file(
                 "document.pdf",
-                filename="document.pdf", 
+                filename="document.pdf",
                 metadata={"category": "research"},
                 rules=[
                     MetadataExtractionRule(schema=DocumentInfo),
@@ -272,7 +271,9 @@ class DataBridge:
                 "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
             }
 
-            response = self._request("POST", f"ingest/file?use_colpali={use_colpali}", data=form_data, files=files)
+            response = self._request(
+                "POST", f"ingest/file?use_colpali={use_colpali}", data=form_data, files=files
+            )
             return Document(**response)
         finally:
             # Close file if we opened it
@@ -307,7 +308,13 @@ class DataBridge:
             )
             ```
         """
-        request = {"query": query, "filters": filters, "k": k, "min_score": min_score, "use_colpali": json.dumps(use_colpali)}
+        request = {
+            "query": query,
+            "filters": filters,
+            "k": k,
+            "min_score": min_score,
+            "use_colpali": json.dumps(use_colpali),
+        }
 
         response = self._request("POST", "retrieve/chunks", request)
         chunks = [ChunkResult(**r) for r in response]
@@ -319,10 +326,10 @@ class DataBridge:
                 try:
                     # Handle data URI format "data:image/png;base64,..."
                     content = chunk.content
-                    if content.startswith('data:'):
+                    if content.startswith("data:"):
                         # Extract the base64 part after the comma
-                        content = content.split(',', 1)[1]
-                    
+                        content = content.split(",", 1)[1]
+
                     # Now decode the base64 string
                     image_bytes = base64.b64decode(content)
                     content = Image.open(io.BytesIO(image_bytes))
@@ -332,17 +339,19 @@ class DataBridge:
                     print(chunk.content)
             else:
                 content = chunk.content
-            
-            final_chunks.append(FinalChunkResult(
-                content=content,
-                score=chunk.score,
-                document_id=chunk.document_id,
-                chunk_number=chunk.chunk_number,
-                metadata=chunk.metadata,
-                content_type=chunk.content_type,
-                filename=chunk.filename,
-                download_url=chunk.download_url,
-            ))
+
+            final_chunks.append(
+                FinalChunkResult(
+                    content=content,
+                    score=chunk.score,
+                    document_id=chunk.document_id,
+                    chunk_number=chunk.chunk_number,
+                    metadata=chunk.metadata,
+                    content_type=chunk.content_type,
+                    filename=chunk.filename,
+                    download_url=chunk.download_url,
+                )
+            )
 
         return final_chunks
 
@@ -374,7 +383,13 @@ class DataBridge:
             )
             ```
         """
-        request = {"query": query, "filters": filters, "k": k, "min_score": min_score, "use_colpali": json.dumps(use_colpali)}
+        request = {
+            "query": query,
+            "filters": filters,
+            "k": k,
+            "min_score": min_score,
+            "use_colpali": json.dumps(use_colpali),
+        }
 
         response = self._request("POST", "retrieve/docs", request)
         return [DocumentResult(**r) for r in response]

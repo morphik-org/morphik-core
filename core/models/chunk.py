@@ -2,6 +2,7 @@ from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field
 import numpy as np
+
 Embedding = List[float] | List[List[float]] | np.ndarray
 
 
@@ -15,7 +16,7 @@ class DocumentChunk(BaseModel):
     # chunk-specific metadata
     metadata: Dict[str, Any] = Field(default_factory=dict)
     score: float = 0.0
-    
+
     model_config = {"arbitrary_types_allowed": True}
 
 
@@ -24,7 +25,7 @@ class Chunk(BaseModel):
 
     content: str
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    
+
     model_config = {"arbitrary_types_allowed": True}
 
     def to_document_chunk(

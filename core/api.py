@@ -193,7 +193,9 @@ cache_factory = LlamaCacheFactory(Path(settings.STORAGE_PATH))
 
 # Initialize ColPali embedding model if enabled
 colpali_embedding_model = ColpaliEmbeddingModel() if settings.ENABLE_COLPALI else None
-colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI) if settings.ENABLE_COLPALI else None
+colpali_vector_store = (
+    MultiVectorStore(uri=settings.POSTGRES_URI) if settings.ENABLE_COLPALI else None
+)
 
 # Initialize document service with configured components
 document_service = DocumentService(
@@ -325,12 +327,16 @@ async def ingest_file(
                 "content_type": file.content_type,
                 "metadata": metadata_dict,
                 "rules": rules_list,
-                "use_colpali": use_colpali, 
+                "use_colpali": use_colpali,
             },
         ):
             logger.info(f"API: Ingesting file with use_colpali: {use_colpali}")
             return await document_service.ingest_file(
-                file=file, metadata=metadata_dict, auth=auth, rules=rules_list, use_colpali=use_colpali
+                file=file,
+                metadata=metadata_dict,
+                auth=auth,
+                rules=rules_list,
+                use_colpali=use_colpali,
             )
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")

@@ -12,6 +12,8 @@ from core.models.chunk import DocumentChunk
 TEST_DB_URI = "postgresql://postgres:postgres@localhost:5432/test_db"
 
 logger = logging.getLogger(__name__)
+
+
 # Sample test data
 def get_sample_embeddings(num_vectors=3, dim=128):
     """Generate sample embeddings for testing"""
@@ -21,7 +23,7 @@ def get_sample_embeddings(num_vectors=3, dim=128):
         device = "mps"
     else:
         device = "cpu"
-    
+
     # Create random embeddings with values between -1 and 1
     embeddings = torch.rand(num_vectors, dim, device=device) * 2 - 1
     return embeddings.cpu().numpy()
@@ -37,7 +39,7 @@ def get_sample_document_chunks(num_chunks=3, num_vectors=3, dim=128):
             content=f"Test content {i}",
             embedding=embeddings,
             chunk_number=i,
-            metadata={"test_key": f"test_value_{i}"}
+            metadata={"test_key": f"test_value_{i}"},
         )
         chunks.append(chunk)
     return chunks
@@ -48,15 +50,15 @@ def get_sample_document_chunks(num_chunks=3, num_vectors=3, dim=128):
 async def vector_store():
     """Create a real MultiVectorStore instance connected to the test database"""
     # Create the store
-    store = MultiVectorStore(uri=TEST_DB_URI, bit_dimensions=128)
-    
+    store = MultiVectorStore(uri=TEST_DB_URI)
+
     try:
         # Try to initialize the database
-        await store.initialize()
-        
+        store.initialize()
+
         # Clean up any existing data
         store.conn.execute("TRUNCATE TABLE multi_vector_embeddings RESTART IDENTITY")
-            
+
         # Drop the function if it exists
         try:
             store.conn.execute("DROP FUNCTION IF EXISTS max_sim(bit[], bit[])")
@@ -64,15 +66,15 @@ async def vector_store():
             print(f"Error dropping function: {e}")
     except Exception as e:
         print(f"Error setting up database: {e}")
-    
+
     yield store
-    
+
     # Clean up after tests
     try:
         store.conn.execute("TRUNCATE TABLE multi_vector_embeddings RESTART IDENTITY")
     except Exception as e:
         print(f"Error cleaning up: {e}")
-    
+
     # Close connection
     store.close()
 
@@ -81,44 +83,42 @@ async def vector_store():
 @pytest.mark.asyncio
 async def test_binary_quantize():
     """Test the _binary_quantize method correctly converts embeddings"""
-    store = MultiVectorStore(uri=TEST_DB_URI, bit_dimensions=128)
-    
+    store = MultiVectorStore(uri=TEST_DB_URI)
+
     # Test with torch tensor
-    torch_embeddings = torch.tensor([
-        [0.1, -0.2, 0.3],
-        [-0.1, 0.2, -0.3]
-    ])
+    torch_embeddings = torch.tensor([[0.1, -0.2, 0.3], [-0.1, 0.2, -0.3]])
     binary_result = store._binary_quantize(torch_embeddings)
     assert len(binary_result) == 2
-    
+
     # Check results match expected patterns
-    assert binary_result[0].to_text() == Bit('101').to_text()  # Positive values (>0) become 1, negative/zero become 0
-    assert binary_result[1].to_text() == Bit('010').to_text()  # First row: [0.1 (>0), -0.2 (<0), 0.3 (>0)] → "101"
-                                           # Second row: [-0.1 (<0), 0.2 (>0), -0.3 (<0)] → "010"
-    
+    assert (
+        binary_result[0].to_text() == Bit("101").to_text()
+    )  # Positive values (>0) become 1, negative/zero become 0
+    assert (
+        binary_result[1].to_text() == Bit("010").to_text()
+    )  # First row: [0.1 (>0), -0.2 (<0), 0.3 (>0)] → "101"
+    # Second row: [-0.1 (<0), 0.2 (>0), -0.3 (<0)] → "010"
+
     # Test with numpy array
-    numpy_embeddings = np.array([
-        [0.1, -0.2, 0.3],
-        [-0.1, 0.2, -0.3]
-    ])
+    numpy_embeddings = np.array([[0.1, -0.2, 0.3], [-0.1, 0.2, -0.3]])
     binary_result = store._binary_quantize(numpy_embeddings)
     assert len(binary_result) == 2
-    
-    assert binary_result[0].to_text() == Bit('101').to_text()
-    assert binary_result[1].to_text() == Bit('010').to_text()
+
+    assert binary_result[0].to_text() == Bit("101").to_text()
+    assert binary_result[1].to_text() == Bit("010").to_text()
 
 
 @pytest.mark.asyncio
 async def test_initialize_creates_tables_and_function(vector_store):
     """Test that initialize creates the necessary tables and functions"""
-    await vector_store.initialize()
+    vector_store.initialize()
     # Check if the table exists
     result = vector_store.conn.execute(
         "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'multi_vector_embeddings')"
     ).fetchone()
     table_exists = result[0]
     assert table_exists is True
-    
+
     logger.info("Table exists!")
 
     # Check if the max_sim function exists
@@ -138,10 +138,10 @@ async def test_database_schema(vector_store):
         "SELECT column_name, data_type FROM information_schema.columns "
         "WHERE table_name = 'multi_vector_embeddings'"
     ).fetchall()
-    
+
     # Convert to a dict for easier checking
     column_dict = {col[0]: col[1] for col in result}
-    
+
     # Check required columns
     assert "id" in column_dict
     assert "document_id" in column_dict
@@ -154,31 +154,30 @@ async def test_database_schema(vector_store):
 @pytest.mark.asyncio
 async def test_store_and_query_embeddings(vector_store):
     """End-to-end test of storing and querying embeddings"""
-    await vector_store.initialize()
+    vector_store.initialize()
     # Create test data
     chunks = get_sample_document_chunks(num_chunks=5, num_vectors=3, dim=128)
-    
+
     # Store the embeddings
     result, stored_ids = await vector_store.store_embeddings(chunks)
-    
+
     # Verify storage was successful
     assert result is True
     assert len(stored_ids) == 5
-    
 
     # Create a query embedding (use the first embedding from the first chunk)
     query_embedding = chunks[0].embedding
-    
+
     # Query for similar chunks
     results = await vector_store.query_similar(query_embedding, k=3)
-    
+
     # Verify we got results
     assert len(results) > 0
     assert isinstance(results[0], DocumentChunk)
-    
+
     # The first result should be the chunk we queried with
     assert results[0].document_id == chunks[0].document_id
-    
+
     # Check that scores are in descending order
     for i in range(len(results) - 1):
         assert results[i].score >= results[i + 1].score
@@ -187,20 +186,20 @@ async def test_store_and_query_embeddings(vector_store):
 @pytest.mark.asyncio
 async def test_query_with_doc_ids(vector_store):
     """Test querying with document ID filtering"""
-    await vector_store.initialize()
+    vector_store.initialize()
     # Create test data
     chunks = get_sample_document_chunks(num_chunks=5, num_vectors=3, dim=128)
-    
+
     # Store the embeddings
     await vector_store.store_embeddings(chunks)
-    
+
     # Create a query embedding
     query_embedding = get_sample_embeddings(1, 128)  # Just one vector
-    
+
     # Query with specific doc_ids
     doc_ids = ["doc_1", "doc_3"]
     results = await vector_store.query_similar(query_embedding, k=5, doc_ids=doc_ids)
-    
+
     # Verify results only include the specified doc_ids
     assert all(result.document_id in doc_ids for result in results)
 
@@ -208,7 +207,7 @@ async def test_query_with_doc_ids(vector_store):
 @pytest.mark.asyncio
 async def test_store_embeddings_empty(vector_store):
     """Test storing empty embeddings list"""
-    await vector_store.initialize()
+    vector_store.initialize()
     result, stored_ids = await vector_store.store_embeddings([])
     assert result is True
     assert stored_ids == []
@@ -217,10 +216,10 @@ async def test_store_embeddings_empty(vector_store):
 @pytest.mark.asyncio
 async def test_multi_vector_similarity(vector_store):
     """Test that multi-vector similarity works as expected"""
-    await vector_store.initialize()
+    vector_store.initialize()
     # Create chunks with very specific embeddings to test similarity
     chunks = []
-    
+
     # First chunk: 3 vectors that are all positive in the first half, negative in second half
     embedding1 = np.ones((3, 128))
     embedding1[:, 64:] = -1
@@ -228,10 +227,10 @@ async def test_multi_vector_similarity(vector_store):
         document_id="similarity_test_1",
         content="Similarity test content 1",
         embedding=embedding1,
-        chunk_number=1
+        chunk_number=1,
     )
     chunks.append(chunk1)
-    
+
     # Second chunk: 3 vectors that are all negative in the first half, positive in second half
     embedding2 = -np.ones((3, 128))
     embedding2[:, 64:] = 1
@@ -239,20 +238,20 @@ async def test_multi_vector_similarity(vector_store):
         document_id="similarity_test_2",
         content="Similarity test content 2",
         embedding=embedding2,
-        chunk_number=2
+        chunk_number=2,
     )
     chunks.append(chunk2)
-    
+
     # Store the embeddings
     await vector_store.store_embeddings(chunks)
-    
+
     # Create a query embedding that matches the pattern of the first chunk
     query_embedding = np.ones(128)
     query_embedding[64:] = -1
-    
+
     # Query for similar chunks
     results = await vector_store.query_similar(np.array([query_embedding]), k=2)
-    
+
     # The first result should be chunk1
     assert len(results) == 2
     assert results[0].document_id == "similarity_test_1"
@@ -262,34 +261,31 @@ async def test_multi_vector_similarity(vector_store):
 @pytest.mark.asyncio
 async def test_store_and_retrieve_metadata(vector_store):
     """Test that metadata is correctly stored and retrieved"""
-    await vector_store.initialize()
+    vector_store.initialize()
     # Create a chunk with complex metadata
     complex_metadata = {
         "filename": "test.pdf",
         "page": 5,
         "tags": ["important", "review"],
-        "nested": {
-            "key1": "value1",
-            "key2": 123
-        }
+        "nested": {"key1": "value1", "key2": 123},
     }
-    
+
     embeddings = get_sample_embeddings(3, 128)
     chunk = DocumentChunk(
         document_id="metadata_test",
         content="Metadata test content",
         embedding=embeddings,
         chunk_number=1,
-        metadata=complex_metadata
+        metadata=complex_metadata,
     )
-    
+
     # Store the chunk
     await vector_store.store_embeddings([chunk])
-    
+
     # Query to retrieve the chunk
     query_embedding = get_sample_embeddings(1, 128)
     results = await vector_store.query_similar(query_embedding, k=1, doc_ids=["metadata_test"])
-    
+
     # Verify metadata was preserved
     assert len(results) == 1
     retrieved_metadata = results[0].metadata
@@ -303,25 +299,25 @@ async def test_store_and_retrieve_metadata(vector_store):
 @pytest.mark.asyncio
 async def test_performance(vector_store):
     """Test performance with a larger number of chunks"""
-    await vector_store.initialize()
+    vector_store.initialize()
     # Create a larger set of chunks
     num_chunks = 20
     chunks = get_sample_document_chunks(num_chunks=num_chunks, num_vectors=3, dim=128)
-    
+
     # Measure time to store embeddings
     start_time = asyncio.get_event_loop().time()
     await vector_store.store_embeddings(chunks)
     storage_time = asyncio.get_event_loop().time() - start_time
-    
+
     # Measure time to query
     query_embedding = get_sample_embeddings(1, 128)
     start_time = asyncio.get_event_loop().time()
     results = await vector_store.query_similar(query_embedding, k=5)
     query_time = asyncio.get_event_loop().time() - start_time
-    
+
     # Log performance metrics
     print(f"Storage time for {num_chunks} chunks: {storage_time:.4f} seconds")
     print(f"Query time for top 5 results: {query_time:.4f} seconds")
-    
+
     # Basic assertions to ensure the test ran
     assert len(results) > 0

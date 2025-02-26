@@ -19,11 +19,11 @@ def detect_file_type(content: str) -> str:
     kind = filetype.guess(decoded_content)
     if kind is None:
         return ".txt" if isinstance(content, str) else ".bin"
-    
+
     # Map mime type to extension
     extension_map = {
         "application/pdf": ".pdf",
-        "image/jpeg": ".jpg", 
+        "image/jpeg": ".jpg",
         "image/png": ".png",
         "image/gif": ".gif",
         "image/webp": ".webp",
@@ -31,7 +31,7 @@ def detect_file_type(content: str) -> str:
         "image/bmp": ".bmp",
         "image/svg+xml": ".svg",
         "video/mp4": ".mp4",
-        "video/mpeg": ".mpeg", 
+        "video/mpeg": ".mpeg",
         "video/quicktime": ".mov",
         "video/x-msvideo": ".avi",
         "video/webm": ".webm",

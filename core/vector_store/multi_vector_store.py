@@ -18,7 +18,7 @@ class MultiVectorStore(BaseVectorStore):
         uri: str,
     ):
         """Initialize PostgreSQL connection for multi-vector storage.
-        
+
         Args:
             uri: PostgreSQL connection URI
         """
@@ -35,48 +35,57 @@ class MultiVectorStore(BaseVectorStore):
         try:
             # Connect to database
             self.conn = psycopg.connect(self.uri, autocommit=True)
-            
+
             # Register vector extension
             self.conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
             register_vector(self.conn)
-            
+
             # First check if the table exists and if it has the required columns
-            check_table = self.conn.execute("""
+            check_table = self.conn.execute(
+                """
                 SELECT EXISTS (
                     SELECT FROM information_schema.tables 
                     WHERE table_name = 'multi_vector_embeddings'
                 );
-            """).fetchone()[0]
-            
+            """
+            ).fetchone()[0]
+
             if check_table:
                 # Check if document_id column exists
-                has_document_id = self.conn.execute("""
+                has_document_id = self.conn.execute(
+                    """
                     SELECT EXISTS (
                         SELECT FROM information_schema.columns 
                         WHERE table_name = 'multi_vector_embeddings' AND column_name = 'document_id'
                     );
-                """).fetchone()[0]
-                
+                """
+                ).fetchone()[0]
+
                 # If the table exists but doesn't have document_id, we need to add the required columns
                 if not has_document_id:
                     logger.info("Updating multi_vector_embeddings table with required columns")
-                    self.conn.execute("""
+                    self.conn.execute(
+                        """
                         ALTER TABLE multi_vector_embeddings 
                         ADD COLUMN document_id TEXT,
                         ADD COLUMN chunk_number INTEGER,
                         ADD COLUMN content TEXT,
                         ADD COLUMN chunk_metadata TEXT
-                    """)
-                    self.conn.execute("""
+                    """
+                    )
+                    self.conn.execute(
+                        """
                         ALTER TABLE multi_vector_embeddings 
                         ALTER COLUMN document_id SET NOT NULL
-                    """)
-                    
+                    """
+                    )
+
                     # Add a commit to ensure changes are applied
                     self.conn.commit()
             else:
                 # Create table if it doesn't exist with all required columns
-                self.conn.execute("""
+                self.conn.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS multi_vector_embeddings (
                         id BIGSERIAL PRIMARY KEY,
                         document_id TEXT NOT NULL,
@@ -85,30 +94,36 @@ class MultiVectorStore(BaseVectorStore):
                         chunk_metadata TEXT,
                         embeddings BIT(128)[]
                     )
-                """)
-            
+                """
+                )
+
             # Add a commit to ensure table creation is complete
             self.conn.commit()
-            
+
             try:
                 # Create index on document_id
-                self.conn.execute("""
+                self.conn.execute(
+                    """
                     CREATE INDEX IF NOT EXISTS idx_multi_vector_document_id 
                     ON multi_vector_embeddings (document_id)
-                """)
+                """
+                )
             except Exception as e:
                 # Log index creation failure but continue
                 logger.warning(f"Failed to create index: {str(e)}")
-                
+
             try:
                 # First, try to drop the existing function if it exists
-                self.conn.execute("""
+                self.conn.execute(
+                    """
                     DROP FUNCTION IF EXISTS max_sim(bit[], bit[])
-                """)
+                """
+                )
                 logger.info("Dropped existing max_sim function")
-                
+
                 # Create max_sim function
-                self.conn.execute("""
+                self.conn.execute(
+                    """
                     CREATE OR REPLACE FUNCTION max_sim(document bit[], query bit[]) RETURNS double precision AS $$
                         WITH queries AS (
                             SELECT row_number() OVER () AS query_number, * FROM (SELECT unnest(query) AS query) AS foo
@@ -124,12 +139,13 @@ class MultiVectorStore(BaseVectorStore):
                         )
                         SELECT SUM(max_similarity) FROM max_similarities
                     $$ LANGUAGE SQL
-                """)
+                """
+                )
                 logger.info("Created max_sim function successfully")
             except Exception as e:
                 logger.error(f"Error creating max_sim function: {str(e)}")
                 # Continue even if function creation fails - it might already exist and be usable
-            
+
             logger.info("MultiVectorStore initialized successfully")
             return True
         except Exception as e:
@@ -153,23 +169,23 @@ class MultiVectorStore(BaseVectorStore):
         # try:
         if not chunks:
             return True, []
-        
+
         stored_ids = []
-        
+
         for chunk in chunks:
             # Ensure embeddings exist
-            if not hasattr(chunk, 'embedding') or chunk.embedding is None:
+            if not hasattr(chunk, "embedding") or chunk.embedding is None:
                 logger.error(
                     f"Missing embeddings for chunk {chunk.document_id}-{chunk.chunk_number}"
                 )
                 continue
-            
+
             # For multi-vector embeddings, we expect a list of vectors
             embeddings = chunk.embedding
-            
+
             # Create binary representation for each vector
             binary_embeddings = self._binary_quantize(embeddings)
-            
+
             # Insert into database
             self.conn.execute(
                 """
@@ -185,9 +201,9 @@ class MultiVectorStore(BaseVectorStore):
                     binary_embeddings,
                 ),
             )
-            
+
             stored_ids.append(f"{chunk.document_id}-{chunk.chunk_number}")
-            
+
         logger.info(f"{len(stored_ids)} vector embeddings added successfully!")
         return len(stored_ids) > 0, stored_ids
 
@@ -204,30 +220,30 @@ class MultiVectorStore(BaseVectorStore):
     ) -> List[DocumentChunk]:
         """Find similar chunks using the max_sim function for multi-vectors."""
         # try:
-            # Convert query embeddings to binary format
+        # Convert query embeddings to binary format
         binary_query_embeddings = self._binary_quantize(query_embedding)
-        
+
         # Build query
         query = """
             SELECT id, document_id, chunk_number, content, chunk_metadata, 
                     max_sim(embeddings, %s) AS similarity
             FROM multi_vector_embeddings
         """
-        
+
         params = [binary_query_embeddings]
-        
+
         # Add document filter if needed
         if doc_ids:
             doc_ids_str = "', '".join(doc_ids)
             query += f" WHERE document_id IN ('{doc_ids_str}')"
-        
+
         # Add ordering and limit
         query += " ORDER BY similarity DESC LIMIT %s"
         params.append(k)
-        
+
         # Execute query
         result = self.conn.execute(query, params).fetchall()
-        
+
         # Convert to DocumentChunks
         chunks = []
         for row in result:
@@ -235,7 +251,7 @@ class MultiVectorStore(BaseVectorStore):
                 metadata = eval(row[4]) if row[4] else {}
             except (ValueError, SyntaxError):
                 metadata = {}
-            
+
             chunk = DocumentChunk(
                 document_id=row[1],
                 chunk_number=row[2],
@@ -245,7 +261,7 @@ class MultiVectorStore(BaseVectorStore):
                 score=float(row[5]),  # Use the similarity score from max_sim
             )
             chunks.append(chunk)
-        
+
         return chunks
 
         # except Exception as e:
