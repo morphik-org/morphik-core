@@ -86,7 +86,7 @@ async def process_pdf_pages(pdf_path, embedding_model, vector_store):
             chunk_number=page_number,
             content=f"Page {page_number} of {document_id}",
             embedding=embeddings,
-            metadata={"page": page_number, "filename": document_id}
+            metadata={"page": page_number, "filename": document_id, "is_image": True}
         )
         chunks.append(chunk)
     
@@ -99,6 +99,46 @@ async def process_pdf_pages(pdf_path, embedding_model, vector_store):
         return False, []
     
     logger.info(f"Successfully stored {len(stored_ids)} chunks")
+    return True, chunks
+
+async def process_text_content(embedding_model, vector_store):
+    """Process text content, generate embeddings, and store them in the vector store"""
+    logger.info("Processing text content")
+    
+    # Sample text content related to the PDF topic
+    text_samples = [
+        "Image-reject-ratio is highest at 2.4 GHz frequency.",
+        "After applying time-domain IQ compensation, y(t) becomes a balanced signal with reduced distortion.",
+        "The low-complexity IQ compensator improves signal quality with minimal processing overhead.",
+        "Frequency-dependent IQ imbalance causes signal degradation across the spectrum.",
+        "Digital predistortion techniques can mitigate nonlinear distortion in RF transmitters."
+    ]
+    
+    chunks = []
+    for i, text in enumerate(text_samples):
+        # Generate embeddings for text
+        logger.info(f"Generating embeddings for text sample {i+1}")
+        embeddings = embedding_model.generate_embeddings(text)
+        
+        # Create a document chunk
+        chunk = DocumentChunk(
+            document_id="text_samples",
+            chunk_number=i+1,
+            content=text,
+            embedding=embeddings,
+            metadata={"sample_id": i+1, "content_type": "text", "is_image": False}
+        )
+        chunks.append(chunk)
+    
+    # Store text chunks in the vector store
+    logger.info(f"Storing {len(chunks)} text chunks in the vector store")
+    success, stored_ids = await vector_store.store_embeddings(chunks)
+    
+    if not success:
+        logger.error("Failed to store text embeddings")
+        return False, []
+    
+    logger.info(f"Successfully stored {len(stored_ids)} text chunks")
     return True, chunks
 
 @pytest.mark.asyncio
@@ -118,6 +158,66 @@ async def test_pdf_processing_and_storage(pdf_path, embedding_model, vector_stor
     # Verify we got results
     assert len(results) > 0, "No results returned from query"
     assert all(isinstance(result, DocumentChunk) for result in results), "Results are not DocumentChunks"
+
+@pytest.mark.asyncio
+async def test_text_processing_and_storage(embedding_model, vector_store):
+    """Test that text content can be processed and stored correctly"""
+    # Process text and store embeddings
+    success, chunks = await process_text_content(embedding_model, vector_store)
+    
+    # Verify storage was successful
+    assert success, "Failed to process and store text content"
+    assert len(chunks) > 0, "No chunks were created from text content"
+    
+    # Query to verify we can retrieve the stored chunks
+    query_embedding = embedding_model.generate_embeddings("Signal quality improvement")
+    results = await vector_store.query_similar(query_embedding, k=3)
+    
+    # Verify we got results
+    assert len(results) > 0, "No results returned from query"
+    assert all(isinstance(result, DocumentChunk) for result in results), "Results are not DocumentChunks"
+
+@pytest.mark.asyncio
+async def test_mixed_content_queries(pdf_path, embedding_model, vector_store):
+    """Test queries against both image and text content"""
+    # Process both PDF images and text content
+    pdf_success, pdf_chunks = await process_pdf_pages(pdf_path, embedding_model, vector_store)
+    text_success, text_chunks = await process_text_content(embedding_model, vector_store)
+    
+    assert pdf_success and text_success, "Failed to process and store content"
+    assert len(pdf_chunks) > 0 and len(text_chunks) > 0, "No chunks were created"
+    
+    # Test queries that should match both image and text content
+    test_queries = [
+        "image-reject-ratio frequency",
+        "time-domain IQ compensation",
+        "signal quality improvement"
+    ]
+    
+    for query in test_queries:
+        logger.info(f"Testing mixed content query: {query}")
+        
+        # Generate query embeddings
+        query_embedding = embedding_model.generate_embeddings(query)
+        
+        # Query the vector store
+        results = await vector_store.query_similar(query_embedding, k=5)
+        
+        # Verify we got results
+        assert len(results) > 0, f"No results returned for query: {query}"
+        
+        # Check if we got both image and text results
+        has_image_results = any(result.metadata.get("is_image", False) for result in results)
+        has_text_results = any(not result.metadata.get("is_image", True) for result in results)
+        
+        logger.info(f"Query '{query}' returned image results: {has_image_results}")
+        logger.info(f"Query '{query}' returned text results: {has_text_results}")
+        
+        # Log top results
+        logger.info("Top results:")
+        for i, result in enumerate(results[:3]):
+            content_type = "Image" if result.metadata.get("is_image", False) else "Text"
+            logger.info(f"  {i+1}. {content_type}: {result.content} (Score: {result.score:.4f})")
 
 @pytest.mark.asyncio
 async def test_specific_queries(pdf_path, embedding_model, vector_store):
@@ -174,6 +274,10 @@ async def test_query_performance(pdf_path, embedding_model, vector_store):
     success, chunks = await process_pdf_pages(pdf_path, embedding_model, vector_store)
     assert success, "Failed to process and store PDF pages"
     
+    # Process text content
+    text_success, text_chunks = await process_text_content(embedding_model, vector_store)
+    assert text_success, "Failed to process and store text content"
+    
     # Prepare a list of test queries
     test_queries = [
         "image-reject-ratio frequency",
@@ -209,7 +313,11 @@ async def test_query_performance(pdf_path, embedding_model, vector_store):
         # Log top results
         logger.info("  Top results:")
         for i, result in enumerate(results[:3]):
-            logger.info(f"    {i+1}. Page {result.metadata.get('page')} (Score: {result.score:.4f})")
+            content_type = "Image" if result.metadata.get("is_image", False) else "Text"
+            if content_type == "Image":
+                logger.info(f"    {i+1}. {content_type} - Page {result.metadata.get('page')} (Score: {result.score:.4f})")
+            else:
+                logger.info(f"    {i+1}. {content_type} - {result.content[:50]}... (Score: {result.score:.4f})")
 
 @pytest.mark.asyncio
 async def test_query_variations_and_consistency(pdf_path, embedding_model, vector_store):
@@ -330,7 +438,7 @@ async def test_image_variations_robustness(pdf_path, embedding_model, vector_sto
             chunk_number=page_number,
             content=f"Original Page {page_number}",
             embedding=embeddings,
-            metadata={"page": page_number, "filename": document_id, "variation": "original"}
+            metadata={"page": page_number, "filename": document_id, "variation": "original", "is_image": True}
         )
         original_chunks.append(chunk)
     
@@ -384,13 +492,49 @@ async def test_image_variations_robustness(pdf_path, embedding_model, vector_sto
                     "page": page_number,
                     "filename": document_id,
                     "variation": variation_name,
-                    "original_page": page_number
+                    "original_page": page_number,
+                    "is_image": True
                 }
             )
             variation_chunks.append(chunk)
     
     # Store variation chunks
     await vector_store.store_embeddings(variation_chunks)
+    
+    # Add text descriptions of the same content
+    text_descriptions = [
+        {
+            "page": 4,
+            "text": "Detailed explanation of time-domain IQ compensation and its effect on y(t)"
+        },
+        {
+            "page": 6,
+            "text": "Analysis of frequency response showing highest image-reject-ratio at specific frequency"
+        }
+    ]
+    
+    text_chunks = []
+    for desc in text_descriptions:
+        # Generate embeddings for text
+        embeddings = embedding_model.generate_embeddings(desc["text"])
+        
+        # Create document chunk
+        chunk = DocumentChunk(
+            document_id="text_description",
+            chunk_number=desc["page"],
+            content=desc["text"],
+            embedding=embeddings,
+            metadata={
+                "page": desc["page"],
+                "content_type": "text_description",
+                "related_to_page": desc["page"],
+                "is_image": False
+            }
+        )
+        text_chunks.append(chunk)
+    
+    # Store text chunks
+    await vector_store.store_embeddings(text_chunks)
     
     # Test queries
     test_queries = [
@@ -426,6 +570,7 @@ async def test_image_variations_robustness(pdf_path, embedding_model, vector_sto
                 "page": r.metadata.get("page"),
                 "variation": r.metadata.get("variation"),
                 "original_page": r.metadata.get("original_page"),
+                "is_image": r.metadata.get("is_image", True),
                 "score": r.score
             }
             for r in results
@@ -434,38 +579,44 @@ async def test_image_variations_robustness(pdf_path, embedding_model, vector_sto
         # Log results
         logger.info(f"Results for query '{query}':")
         for i, meta in enumerate(result_metadata[:5]):
-            logger.info(f"  {i+1}. Page: {meta['page']}, "
-                       f"Variation: {meta['variation']}, "
-                       f"Original Page: {meta.get('original_page')}, "
+            content_type = "Image" if meta["is_image"] else "Text"
+            logger.info(f"  {i+1}. {content_type} - Page: {meta['page']}, "
+                       f"Variation: {meta.get('variation', 'N/A')}, "
                        f"Score: {meta['score']:.4f}")
         
         # Check if the original expected page is in top results
         # More flexible: check if it's in top 5 instead of requiring it to be in top 3
         original_in_top = any(
-            r.metadata.get("page") == expected_page and r.metadata.get("variation") == "original"
+            r.metadata.get("page") == expected_page and 
+            r.metadata.get("variation") == "original" and
+            r.metadata.get("is_image", True)
             for r in results[:5]
         )
         
-        # Log whether the original page is in top results
-        if original_in_top:
-            logger.info(f"Original page {expected_page} found in top 5 results")
-        else:
-            logger.warning(f"Original page {expected_page} not found in top 5 results")
-            # Find the rank of the original page if it exists in results
-            original_rank = next(
-                (i+1 for i, r in enumerate(results) 
-                 if r.metadata.get("page") == expected_page and r.metadata.get("variation") == "original"),
-                "not found"
-            )
-            logger.info(f"Original page {expected_page} rank: {original_rank}")
+        # Check if text description of the expected page is in top results
+        text_in_top = any(
+            (r.metadata.get("page") == expected_page or r.metadata.get("related_to_page") == expected_page) and 
+            not r.metadata.get("is_image", True)
+            for r in results[:5]
+        )
         
-        # Instead of asserting, just log the finding
-        # assert original_in_top, f"Original page {expected_page} not in top 5 results"
+        # Log whether the original page and text are in top results
+        if original_in_top:
+            logger.info(f"Original image of page {expected_page} found in top 5 results")
+        else:
+            logger.warning(f"Original image of page {expected_page} not found in top 5 results")
+        
+        if text_in_top:
+            logger.info(f"Text description related to page {expected_page} found in top 5 results")
+        else:
+            logger.warning(f"Text description related to page {expected_page} not found in top 5 results")
         
         # Check if variations of the expected page are also in top results
         variations_of_expected = [
             r for r in results[:10]
-            if r.metadata.get("original_page") == expected_page and r.metadata.get("variation") != "original"
+            if r.metadata.get("original_page") == expected_page and 
+            r.metadata.get("variation") != "original" and
+            r.metadata.get("is_image", True)
         ]
         
         # Log the number of variations found
@@ -486,13 +637,24 @@ async def test_image_variations_robustness(pdf_path, embedding_model, vector_sto
         # The difference in ranking between original and best variation should not be too large
         original_rank = next(
             (i for i, r in enumerate(results) 
-             if r.metadata.get("page") == expected_page and r.metadata.get("variation") == "original"),
+             if r.metadata.get("page") == expected_page and 
+             r.metadata.get("variation") == "original" and
+             r.metadata.get("is_image", True)),
             -1
         )
         
         best_variation_rank = next(
             (i for i, r in enumerate(results)
-             if r.metadata.get("original_page") == expected_page and r.metadata.get("variation") != "original"),
+             if r.metadata.get("original_page") == expected_page and 
+             r.metadata.get("variation") != "original" and
+             r.metadata.get("is_image", True)),
+            -1
+        )
+        
+        text_rank = next(
+            (i for i, r in enumerate(results)
+             if (r.metadata.get("page") == expected_page or r.metadata.get("related_to_page") == expected_page) and 
+             not r.metadata.get("is_image", True)),
             -1
         )
         
@@ -506,8 +668,7 @@ async def test_image_variations_robustness(pdf_path, embedding_model, vector_sto
                     f"Large rank difference between original (rank {original_rank+1}) and " 
                     f"best variation (rank {best_variation_rank+1})"
                 )
-        else:
-            if original_rank < 0:
-                logger.warning(f"Original page {expected_page} not found in results")
-            if best_variation_rank < 0:
-                logger.warning(f"No variations of page {expected_page} found in results")
+        
+        if original_rank >= 0 and text_rank >= 0:
+            rank_difference = abs(original_rank - text_rank)
+            logger.info(f"Rank difference between original image and text description: {rank_difference}")

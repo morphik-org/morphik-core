@@ -28,11 +28,11 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
             "vidore/colqwen2-v1.0"
         )
 
-    async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> List[torch.Tensor]:
+    async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> np.ndarray:
         if isinstance(chunks, Chunk):
             chunks = [chunks]
-        images = [open_image(io.BytesIO(base64.b64decode(chunk.content))) for chunk in chunks]
-        return [self.generate_embeddings(image) for image in images]
+        contents = [open_image(io.BytesIO(base64.b64decode(chunk.content))) if chunk.metadata.get("is_image") else chunk.content for chunk in chunks]
+        return [self.generate_embeddings(content) for content in contents]
 
     async def embed_for_query(self, text: str) -> torch.Tensor:
         return self.generate_embeddings(text)
