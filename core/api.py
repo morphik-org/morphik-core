@@ -21,6 +21,8 @@ from core.config import get_settings
 from core.database.mongo_database import MongoDatabase
 from core.database.postgres_database import PostgresDatabase
 from core.vector_store.mongo_vector_store import MongoDBAtlasVectorStore
+from core.vector_store.multi_vector_store import MultiVectorStore
+from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.storage.s3_storage import S3Storage
 from core.storage.local_storage import LocalStorage
 from core.embedding.openai_embedding_model import OpenAIEmbeddingModel
@@ -189,6 +191,10 @@ if settings.USE_RERANKING:
 # Initialize cache factory
 cache_factory = LlamaCacheFactory(Path(settings.STORAGE_PATH))
 
+# Initialize ColPali embedding model if enabled
+colpali_embedding_model = ColpaliEmbeddingModel() if settings.ENABLE_COLPALI else None
+colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI) if settings.ENABLE_COLPALI else None
+
 # Initialize document service with configured components
 document_service = DocumentService(
     storage=storage,
@@ -199,6 +205,9 @@ document_service = DocumentService(
     parser=parser,
     reranker=reranker,
     cache_factory=cache_factory,
+    enable_colpali=settings.ENABLE_COLPALI,
+    colpali_embedding_model=colpali_embedding_model,
+    colpali_vector_store=colpali_vector_store,
 )
 
 
@@ -267,12 +276,14 @@ async def ingest_text(
             metadata={
                 "metadata": request.metadata,
                 "rules": request.rules,
+                "use_colpali": request.use_colpali,
             },
         ):
             return await document_service.ingest_text(
                 content=request.content,
                 metadata=request.metadata,
                 rules=request.rules,
+                use_colpali=request.use_colpali,
                 auth=auth,
             )
     except PermissionError as e:
@@ -285,6 +296,7 @@ async def ingest_file(
     metadata: str = Form("{}"),
     rules: str = Form("[]"),
     auth: AuthContext = Depends(verify_token),
+    use_colpali: Optional[bool] = None,
 ) -> Document:
     """
     Ingest a file document.
@@ -303,6 +315,7 @@ async def ingest_file(
     try:
         metadata_dict = json.loads(metadata)
         rules_list = json.loads(rules)
+        use_colpali = bool(use_colpali)
 
         async with telemetry.track_operation(
             operation_type="ingest_file",
@@ -312,10 +325,12 @@ async def ingest_file(
                 "content_type": file.content_type,
                 "metadata": metadata_dict,
                 "rules": rules_list,
+                "use_colpali": use_colpali, 
             },
         ):
+            logger.info(f"API: Ingesting file with use_colpali: {use_colpali}")
             return await document_service.ingest_file(
-                file=file, metadata=metadata_dict, auth=auth, rules=rules_list
+                file=file, metadata=metadata_dict, auth=auth, rules=rules_list, use_colpali=use_colpali
             )
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
@@ -334,6 +349,7 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
                 "k": request.k,
                 "min_score": request.min_score,
                 "use_reranking": request.use_reranking,
+                "use_colpali": request.use_colpali,
             },
         ):
             return await document_service.retrieve_chunks(
@@ -343,6 +359,7 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
                 request.k,
                 request.min_score,
                 request.use_reranking,
+                request.use_colpali,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -359,6 +376,7 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
                 "k": request.k,
                 "min_score": request.min_score,
                 "use_reranking": request.use_reranking,
+                "use_colpali": request.use_colpali,
             },
         ):
             return await document_service.retrieve_docs(
@@ -368,6 +386,7 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
                 request.k,
                 request.min_score,
                 request.use_reranking,
+                request.use_colpali,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -388,6 +407,7 @@ async def query_completion(
                 "max_tokens": request.max_tokens,
                 "temperature": request.temperature,
                 "use_reranking": request.use_reranking,
+                "use_colpali": request.use_colpali,
             },
         ):
             return await document_service.query(
@@ -399,6 +419,7 @@ async def query_completion(
                 request.max_tokens,
                 request.temperature,
                 request.use_reranking,
+                request.use_colpali,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))

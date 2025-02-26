@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     VECTOR_STORE_DATABASE_NAME: Optional[str] = None
     VECTOR_STORE_COLLECTION_NAME: Optional[str] = None
 
+    # Colpali configuration
+    ENABLE_COLPALI: bool
+
 
 @lru_cache()
 def get_settings() -> Settings:
@@ -267,6 +270,11 @@ def get_settings() -> Settings:
         "RULES_BATCH_SIZE": config["rules"]["batch_size"],
     }
 
+    # load databridge config
+    databridge_config = {
+        "ENABLE_COLPALI": config["databridge"]["enable_colpali"],
+    }
+
     settings_dict = {}
     settings_dict.update(
         **api_config,
@@ -279,5 +287,6 @@ def get_settings() -> Settings:
         **storage_config,
         **vector_store_config,
         **rules_config,
+        **databridge_config,
     )
     return Settings(**settings_dict)

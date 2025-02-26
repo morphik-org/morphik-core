@@ -16,73 +16,125 @@ class MultiVectorStore(BaseVectorStore):
     def __init__(
         self,
         uri: str,
-        bit_dimensions: int = 128,
     ):
         """Initialize PostgreSQL connection for multi-vector storage.
         
         Args:
             uri: PostgreSQL connection URI
-            bit_dimensions: Number of bits per vector (default: 128)
         """
         # Convert SQLAlchemy URI to psycopg format if needed
         if uri.startswith("postgresql+asyncpg://"):
             uri = uri.replace("postgresql+asyncpg://", "postgresql://")
         self.uri = uri
-        self.bit_dimensions = bit_dimensions
+        # self.conn = psycopg.connect(self.uri, autocommit=True)
         self.conn = None
+        self.initialize()
 
-    async def initialize(self):
+    def initialize(self):
         """Initialize database tables and max_sim function."""
-        # try:
-        # Connect to database
-        self.conn = psycopg.connect(self.uri, autocommit=True)
-        
-        # Register vector extension
-        self.conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-        register_vector(self.conn)
-        
-        # Create table if it doesn't exist
-        self.conn.execute("""
-            CREATE TABLE IF NOT EXISTS multi_vector_embeddings (
-                id BIGSERIAL PRIMARY KEY,
-                document_id TEXT NOT NULL,
-                chunk_number INTEGER NOT NULL,
-                content TEXT NOT NULL,
-                chunk_metadata TEXT,
-                embeddings BIT(128)[]
-            )
-        """)
-        
-        # Create index on document_id
-        self.conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_multi_vector_document_id 
-            ON multi_vector_embeddings (document_id)
-        """)
-        
-        # Create max_sim function
-        self.conn.execute("""
-            CREATE OR REPLACE FUNCTION max_sim(document bit[], query bit[]) RETURNS double precision AS $$
-                WITH queries AS (
-                    SELECT row_number() OVER () AS query_number, * FROM (SELECT unnest(query) AS query) AS foo
-                ),
-                documents AS (
-                    SELECT unnest(document) AS document
-                ),
-                similarities AS (
-                    SELECT query_number, 1 - ((document <~> query) / bit_length(query)) AS similarity FROM queries CROSS JOIN documents
-                ),
-                max_similarities AS (
-                    SELECT MAX(similarity) AS max_similarity FROM similarities GROUP BY query_number
-                )
-                SELECT SUM(max_similarity) FROM max_similarities
-            $$ LANGUAGE SQL
-        """)
-        
-        logger.info("MultiVectorStore initialized successfully")
-        return True
-        # except Exception as e:
-        #     logger.error(f"Error initializing MultiVectorStore: {str(e)}")
-        #     return False
+        try:
+            # Connect to database
+            self.conn = psycopg.connect(self.uri, autocommit=True)
+            
+            # Register vector extension
+            self.conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            register_vector(self.conn)
+            
+            # First check if the table exists and if it has the required columns
+            check_table = self.conn.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'multi_vector_embeddings'
+                );
+            """).fetchone()[0]
+            
+            if check_table:
+                # Check if document_id column exists
+                has_document_id = self.conn.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.columns 
+                        WHERE table_name = 'multi_vector_embeddings' AND column_name = 'document_id'
+                    );
+                """).fetchone()[0]
+                
+                # If the table exists but doesn't have document_id, we need to add the required columns
+                if not has_document_id:
+                    logger.info("Updating multi_vector_embeddings table with required columns")
+                    self.conn.execute("""
+                        ALTER TABLE multi_vector_embeddings 
+                        ADD COLUMN document_id TEXT,
+                        ADD COLUMN chunk_number INTEGER,
+                        ADD COLUMN content TEXT,
+                        ADD COLUMN chunk_metadata TEXT
+                    """)
+                    self.conn.execute("""
+                        ALTER TABLE multi_vector_embeddings 
+                        ALTER COLUMN document_id SET NOT NULL
+                    """)
+                    
+                    # Add a commit to ensure changes are applied
+                    self.conn.commit()
+            else:
+                # Create table if it doesn't exist with all required columns
+                self.conn.execute("""
+                    CREATE TABLE IF NOT EXISTS multi_vector_embeddings (
+                        id BIGSERIAL PRIMARY KEY,
+                        document_id TEXT NOT NULL,
+                        chunk_number INTEGER NOT NULL,
+                        content TEXT NOT NULL,
+                        chunk_metadata TEXT,
+                        embeddings BIT(128)[]
+                    )
+                """)
+            
+            # Add a commit to ensure table creation is complete
+            self.conn.commit()
+            
+            try:
+                # Create index on document_id
+                self.conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_multi_vector_document_id 
+                    ON multi_vector_embeddings (document_id)
+                """)
+            except Exception as e:
+                # Log index creation failure but continue
+                logger.warning(f"Failed to create index: {str(e)}")
+                
+            try:
+                # First, try to drop the existing function if it exists
+                self.conn.execute("""
+                    DROP FUNCTION IF EXISTS max_sim(bit[], bit[])
+                """)
+                logger.info("Dropped existing max_sim function")
+                
+                # Create max_sim function
+                self.conn.execute("""
+                    CREATE OR REPLACE FUNCTION max_sim(document bit[], query bit[]) RETURNS double precision AS $$
+                        WITH queries AS (
+                            SELECT row_number() OVER () AS query_number, * FROM (SELECT unnest(query) AS query) AS foo
+                        ),
+                        documents AS (
+                            SELECT unnest(document) AS document
+                        ),
+                        similarities AS (
+                            SELECT query_number, 1 - ((document <~> query) / bit_length(query)) AS similarity FROM queries CROSS JOIN documents
+                        ),
+                        max_similarities AS (
+                            SELECT MAX(similarity) AS max_similarity FROM similarities GROUP BY query_number
+                        )
+                        SELECT SUM(max_similarity) FROM max_similarities
+                    $$ LANGUAGE SQL
+                """)
+                logger.info("Created max_sim function successfully")
+            except Exception as e:
+                logger.error(f"Error creating max_sim function: {str(e)}")
+                # Continue even if function creation fails - it might already exist and be usable
+            
+            logger.info("MultiVectorStore initialized successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Error initializing MultiVectorStore: {str(e)}")
+            return False
 
     def _binary_quantize(self, embeddings: Union[np.ndarray, torch.Tensor, List]) -> List[Bit]:
         """Convert embeddings to binary format for PostgreSQL BIT[] arrays."""

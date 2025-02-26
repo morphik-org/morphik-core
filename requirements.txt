@@ -203,7 +203,7 @@ pdfminer.six==20231228
 pdfplumber==0.11.3
 peft==0.14.0
 pexpect==4.9.0
-pgvector==0.2.5
+pgvector==0.3.6
 pikepdf==9.1.1
 pillow==10.4.0
 pillow_heif==0.18.0
@@ -282,7 +282,7 @@ six==1.16.0
 smmap==5.0.2
 sniffio==1.3.1
 soupsieve==2.5
-SQLAlchemy==2.0.32
+SQLAlchemy==2.0.38
 stack-data==0.6.3
 starlette==0.37.2
 streamlit==1.42.0

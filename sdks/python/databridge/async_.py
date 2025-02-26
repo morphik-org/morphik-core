@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 
 import httpx
 import jwt
+from PIL.Image import Image as PILImage
+from PIL import Image
 
 from .models import (
     Document,
@@ -35,13 +37,25 @@ class AsyncCache:
 
     async def query(
         self, query: str, max_tokens: Optional[int] = None, temperature: Optional[float] = None
-    ) -> str:
+    ) -> CompletionResponse:
         response = await self._db._request(
             "POST",
             f"cache/{self._name}/query",
-            {"query": query, "max_tokens": max_tokens, "temperature": temperature},
+            params={"query": query, "max_tokens": max_tokens, "temperature": temperature},
+            data="",
         )
         return CompletionResponse(**response)
+
+
+class FinalChunkResult:
+    content: str | PILImage
+    score: float
+    document_id: str
+    chunk_number: int
+    metadata: Dict[str, Any]
+    content_type: str
+    filename: Optional[str]
+    download_url: Optional[str]
 
 
 class AsyncDataBridge:
@@ -107,6 +121,7 @@ class AsyncDataBridge:
         endpoint: str,
         data: Optional[Dict[str, Any]] = None,
         files: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Make HTTP request"""
         headers = {}
@@ -124,7 +139,7 @@ class AsyncDataBridge:
             request_data = {"json": data}
 
         response = await self._client.request(
-            method, f"{self._base_url}/{endpoint.lstrip('/')}", headers=headers, **request_data
+            method, f"{self._base_url}/{endpoint.lstrip('/')}", headers=headers, params=params, **request_data
         )
         response.raise_for_status()
         return response.json()
@@ -140,6 +155,7 @@ class AsyncDataBridge:
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
+        use_colpali: bool = True,
     ) -> Document:
         """
         Ingest a text document into DataBridge.
@@ -150,7 +166,7 @@ class AsyncDataBridge:
             rules: Optional list of rules to apply during ingestion. Can be:
                   - MetadataExtractionRule: Extract metadata using a schema
                   - NaturalLanguageRule: Transform content using natural language
-
+            use_colpali: Whether to use ColPali-style embedding model to ingest the text (slower, but significantly better retrieval accuracy for text and images)
         Returns:
             Document: Metadata of the ingested document
 
@@ -180,6 +196,7 @@ class AsyncDataBridge:
             content=content,
             metadata=metadata or {},
             rules=[self._convert_rule(r) for r in (rules or [])],
+            use_colpali=use_colpali,
         )
         response = await self._request("POST", "ingest/text", data=request.model_dump())
         return Document(**response)
@@ -190,6 +207,7 @@ class AsyncDataBridge:
         filename: str,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
+        use_colpali: bool = True,
     ) -> Document:
         """
         Ingest a file document into DataBridge.
@@ -201,7 +219,7 @@ class AsyncDataBridge:
             rules: Optional list of rules to apply during ingestion. Can be:
                   - MetadataExtractionRule: Extract metadata using a schema
                   - NaturalLanguageRule: Transform content using natural language
-
+            use_colpali: Whether to use ColPali-style embedding model to ingest the file (slower, but significantly better retrieval accuracy for text and images)
         Returns:
             Document: Metadata of the ingested document
 
@@ -247,6 +265,7 @@ class AsyncDataBridge:
             data = {
                 "metadata": json.dumps(metadata or {}),
                 "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
+                "use_colpali": json.dumps(use_colpali),
             }
 
             response = await self._request("POST", "ingest/file", data=data, files=files)
@@ -262,6 +281,7 @@ class AsyncDataBridge:
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
+        use_colpali: bool = True,
     ) -> List[ChunkResult]:
         """
         Search for relevant chunks.
@@ -271,7 +291,7 @@ class AsyncDataBridge:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-
+            use_colpali: Whether to use ColPali-style embedding model to retrieve chunks (only works for documents ingested with `use_colpali=True`)
         Returns:
             List[ChunkResult]
 
@@ -283,9 +303,16 @@ class AsyncDataBridge:
             )
             ```
         """
-        request = {"query": query, "filters": filters, "k": k, "min_score": min_score}
+        params = {
+            "query": query, 
+            "k": k, 
+            "min_score": min_score,
+            "use_colpali": use_colpali,
+        }
+        if filters:
+            params["filters"] = json.dumps(filters)
 
-        response = await self._request("POST", "retrieve/chunks", request)
+        response = await self._request("POST", "retrieve/chunks", params=params)
         return [ChunkResult(**r) for r in response]
 
     async def retrieve_docs(
@@ -294,6 +321,7 @@ class AsyncDataBridge:
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
+        use_colpali: bool = True,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents.
@@ -303,7 +331,7 @@ class AsyncDataBridge:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-
+            use_colpali: Whether to use ColPali-style embedding model to retrieve documents (only works for documents ingested with `use_colpali=True`)
         Returns:
             List[DocumentResult]
 
@@ -315,9 +343,16 @@ class AsyncDataBridge:
             )
             ```
         """
-        request = {"query": query, "filters": filters, "k": k, "min_score": min_score}
+        params = {
+            "query": query, 
+            "k": k, 
+            "min_score": min_score,
+            "use_colpali": use_colpali,
+        }
+        if filters:
+            params["filters"] = json.dumps(filters)
 
-        response = await self._request("POST", "retrieve/docs", request)
+        response = await self._request("POST", "retrieve/docs", params=params)
         return [DocumentResult(**r) for r in response]
 
     async def query(
@@ -328,6 +363,7 @@ class AsyncDataBridge:
         min_score: float = 0.0,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        use_colpali: bool = True,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context.
@@ -339,7 +375,7 @@ class AsyncDataBridge:
             min_score: Minimum similarity threshold (default: 0.0)
             max_tokens: Maximum tokens in completion
             temperature: Model temperature
-
+            use_colpali: Whether to use ColPali-style embedding model to generate the completion (only works for documents ingested with `use_colpali=True`)
         Returns:
             CompletionResponse
 
@@ -353,16 +389,18 @@ class AsyncDataBridge:
             print(response.completion)
             ```
         """
-        request = {
+        params = {
             "query": query,
-            "filters": filters,
             "k": k,
             "min_score": min_score,
             "max_tokens": max_tokens,
             "temperature": temperature,
+            "use_colpali": use_colpali,
         }
+        if filters:
+            params["filters"] = json.dumps(filters)
 
-        response = await self._request("POST", "query", request)
+        response = await self._request("POST", "query", params=params)
         return CompletionResponse(**response)
 
     async def list_documents(
@@ -447,15 +485,13 @@ class AsyncDataBridge:
             )
             ```
         """
-        request = {
-            "name": name,
-            "model": model,
-            "gguf_file": gguf_file,
-            "filters": filters,
-            "docs": docs,
-        }
+        # Build query parameters for name, model and gguf_file
+        params = {"name": name, "model": model, "gguf_file": gguf_file}
 
-        response = await self._request("POST", "cache/create", request)
+        # Build request body for filters and docs
+        request = {"filters": filters, "docs": docs}
+
+        response = await self._request("POST", "cache/create", request, params=params)
         return response
 
     async def get_cache(self, name: str) -> AsyncCache:

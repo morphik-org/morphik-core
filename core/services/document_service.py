@@ -1,4 +1,5 @@
 import base64
+from io import BytesIO
 from typing import Dict, Any, List, Optional
 from fastapi import UploadFile
 
@@ -23,8 +24,15 @@ from core.config import get_settings
 from core.cache.base_cache import BaseCache
 from core.cache.base_cache_factory import BaseCacheFactory
 from core.services.rules_processor import RulesProcessor
+from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
+from core.vector_store.multi_vector_store import MultiVectorStore
+import filetype
+from filetype.types import IMAGE, archive #, DOCUMENT, document
+import pdf2image
+from PIL.Image import Image
 
 logger = logging.getLogger(__name__)
+IMAGE = {im.mime for im in IMAGE}
 
 
 class DocumentService:
@@ -38,6 +46,9 @@ class DocumentService:
         completion_model: BaseCompletionModel,
         cache_factory: BaseCacheFactory,
         reranker: Optional[BaseReranker] = None,
+        enable_colpali: bool = False,
+        colpali_embedding_model: Optional[ColpaliEmbeddingModel] = None,
+        colpali_vector_store: Optional[MultiVectorStore] = None,
     ):
         self.db = database
         self.vector_store = vector_store
@@ -48,6 +59,10 @@ class DocumentService:
         self.reranker = reranker
         self.cache_factory = cache_factory
         self.rules_processor = RulesProcessor()
+        self.colpali_embedding_model = colpali_embedding_model
+        self.colpali_vector_store = colpali_vector_store
+
+        colpali_vector_store.initialize()
 
         # Cache-related data structures
         # Maps cache name to active cache object
@@ -61,13 +76,15 @@ class DocumentService:
         k: int = 5,
         min_score: float = 0.0,
         use_reranking: Optional[bool] = None,
+        use_colpali: Optional[bool] = None,
     ) -> List[ChunkResult]:
         """Retrieve relevant chunks."""
         settings = get_settings()
         should_rerank = use_reranking if use_reranking is not None else settings.USE_RERANKING
 
         # Get embedding for query
-        query_embedding = await self.embedding_model.embed_for_query(query)
+        query_embedding_regular = await self.embedding_model.embed_for_query(query)
+        query_embedding_multivector = await self.colpali_embedding_model.embed_for_query(query)
         logger.info("Generated query embedding")
 
         # Find authorized documents
@@ -79,9 +96,17 @@ class DocumentService:
 
         # Search chunks with vector similarity
         chunks = await self.vector_store.query_similar(
-            query_embedding, k=10 * k if should_rerank else k, doc_ids=doc_ids
+            query_embedding_regular, k=10 * k if should_rerank else k, doc_ids=doc_ids
         )
-        logger.info(f"Found {len(chunks)} similar chunks")
+
+        chunks_multivector = await self.colpali_vector_store.query_similar(
+            query_embedding_multivector, k=k, doc_ids=doc_ids
+        ) if use_colpali else []
+        
+
+        logger.info(f"Found {len(chunks)} similar chunks via regular embedding")
+        if use_colpali:
+            logger.info(f"Found {len(chunks_multivector)} similar chunks via multivector embedding since we are also using colpali")
 
         # Rerank chunks using the reranker if enabled and available
         if chunks and should_rerank and self.reranker is not None:
@@ -89,6 +114,8 @@ class DocumentService:
             chunks.sort(key=lambda x: x.score, reverse=True)
             chunks = chunks[:k]
             logger.info(f"Reranked {k*10} chunks and selected the top {k}")
+
+        chunks = chunks_multivector + chunks
 
         # Create and return chunk results
         results = await self._create_chunk_results(auth, chunks)
@@ -103,10 +130,11 @@ class DocumentService:
         k: int = 5,
         min_score: float = 0.0,
         use_reranking: Optional[bool] = None,
+        use_colpali: Optional[bool] = None,
     ) -> List[DocumentResult]:
         """Retrieve relevant documents."""
         # Get chunks first
-        chunks = await self.retrieve_chunks(query, auth, filters, k, min_score, use_reranking)
+        chunks = await self.retrieve_chunks(query, auth, filters, k, min_score, use_reranking, use_colpali)
         # Convert to document results
         results = await self._create_document_results(auth, chunks)
         documents = list(results.values())
@@ -123,10 +151,11 @@ class DocumentService:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         use_reranking: Optional[bool] = None,
+        use_colpali: Optional[bool] = None,
     ) -> CompletionResponse:
         """Generate completion using relevant chunks as context."""
         # Get relevant chunks
-        chunks = await self.retrieve_chunks(query, auth, filters, k, min_score, use_reranking)
+        chunks = await self.retrieve_chunks(query, auth, filters, k, min_score, use_reranking, use_colpali)
         documents = await self._create_document_results(auth, chunks)
 
         chunk_contents = [chunk.augmented_content(documents[chunk.document_id]) for chunk in chunks]
@@ -148,6 +177,7 @@ class DocumentService:
         metadata: Optional[Dict[str, Any]] = None,
         auth: AuthContext = None,
         rules: Optional[List[str]] = None,
+        use_colpali: Optional[bool] = None,
     ) -> Document:
         """Ingest a text document."""
         if "write" not in auth.permissions:
@@ -189,13 +219,21 @@ class DocumentService:
         # Generate embeddings for chunks
         embeddings = await self.embedding_model.embed_for_ingestion(chunks)
         logger.info(f"Generated {len(embeddings)} embeddings")
-
-        # Create and store chunk objects
         chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
         logger.info(f"Created {len(chunk_objects)} chunk objects")
 
+        chunk_objects_multivector = []
+
+        if use_colpali:
+            embeddings_multivector = await self.colpali_embedding_model.embed_for_ingestion(chunks)
+            logger.info(f"Generated {len(embeddings_multivector)} embeddings for multivector embedding")
+            chunk_objects_multivector = self._create_chunk_objects(doc.external_id, chunks, embeddings_multivector)
+            logger.info(f"Created {len(chunk_objects_multivector)} chunk objects for multivector embedding")
+
+        # Create and store chunk objects
+        
         # Store everything
-        await self._store_chunks_and_doc(chunk_objects, doc)
+        await self._store_chunks_and_doc(chunk_objects, doc, use_colpali, chunk_objects_multivector)
         logger.info(f"Successfully stored text document {doc.external_id}")
 
         return doc
@@ -206,6 +244,7 @@ class DocumentService:
         metadata: Dict[str, Any],
         auth: AuthContext,
         rules: Optional[List[str]] = None,
+        use_colpali: Optional[bool] = None,
     ) -> Document:
         """Ingest a file document."""
         if "write" not in auth.permissions:
@@ -213,11 +252,10 @@ class DocumentService:
 
         # Read file content
         file_content = await file.read()
+        file_type = filetype.guess(file_content)
 
         # Parse file to text first
-        additional_metadata, text = await self.parser.parse_file_to_text(
-            file_content, file.filename
-        )
+        additional_metadata, text = await self.parser.parse_file_to_text(file_content, file.filename)
         logger.info(f"Parsed file into text of length {len(text)}")
 
         # Apply rules if provided
@@ -231,7 +269,7 @@ class DocumentService:
 
         # Create document record
         doc = Document(
-            content_type=file.content_type or "",
+            content_type=file_type.mime or "",
             filename=file.filename,
             metadata=metadata,
             owner={"type": auth.entity_type, "id": auth.entity_id},
@@ -247,9 +285,10 @@ class DocumentService:
         doc.system_metadata["content"] = text
         logger.info(f"Created file document record with ID {doc.external_id}")
 
+        file_content_base64 = base64.b64encode(file_content).decode()
         # Store the original file
         storage_info = await self.storage.upload_from_base64(
-            base64.b64encode(file_content).decode(), doc.external_id, file.content_type
+            file_content_base64, doc.external_id, file.content_type
         )
         doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
         logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
@@ -268,11 +307,50 @@ class DocumentService:
         chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
         logger.info(f"Created {len(chunk_objects)} chunk objects")
 
+        chunk_objects_multivector = []
+        logger.info(f"use_colpali: {use_colpali}")
+        if use_colpali:
+            chunks_multivector = self._create_chunks_multivector(file_type, file_content_base64, file_content, chunks)
+            logger.info(f"Created {len(chunks_multivector)} chunks for multivector embedding")
+            colpali_embeddings = await self.colpali_embedding_model.embed_for_ingestion(chunks_multivector)
+            logger.info(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
+            chunk_objects_multivector = self._create_chunk_objects(doc.external_id, chunks_multivector, colpali_embeddings)
+
         # Store everything
-        doc.chunk_ids = await self._store_chunks_and_doc(chunk_objects, doc)
+        doc.chunk_ids = await self._store_chunks_and_doc(chunk_objects, doc, use_colpali, chunk_objects_multivector)
         logger.info(f"Successfully stored file document {doc.external_id}")
 
         return doc
+    
+    def img_to_base64_str(self, img:Image):
+        buffered = BytesIO()
+        img.save(buffered, format="PNG")
+        buffered.seek(0)
+        img_byte = buffered.getvalue()
+        img_str = "data:image/png;base64," + base64.b64encode(img_byte).decode()
+        return img_str
+    
+    def _create_chunks_multivector(self, file_type, file_content_base64 : str, file_content : bytes, chunks : List[Chunk]):
+        logger.info(f"Creating chunks for multivector embedding for file type {file_type.mime}")
+        match file_type.mime:
+            case file_type if file_type in IMAGE:
+                return [Chunk(content=file_content_base64, metadata={"is_image": True})]
+            case "application/pdf":
+                logger.info(f"Working with PDF file!")
+                images = pdf2image.convert_from_bytes(file_content)
+                images_b64 = [self.img_to_base64_str(image) for image in images]
+                return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+            # case filetype.get_type(ext="txt"):
+            #     logger.info(f"Found text input: chunks for multivector embedding")
+            #     return chunks.copy()
+            # TODO: Add support for office documents
+            # case document.Xls | document.Xlsx | document.Ods |document.Odp:
+            #     logger.warning(f"Colpali is not supported for file type {file_type.mime} - skipping")
+            # case file_type if file_type in DOCUMENT:
+            #     pass
+            case _:
+                logger.warning(f"Colpali is not supported for file type {file_type.mime} - skipping")
+                return [Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks]
 
     def _create_chunk_objects(
         self,
@@ -287,7 +365,7 @@ class DocumentService:
         ]
 
     async def _store_chunks_and_doc(
-        self, chunk_objects: List[DocumentChunk], doc: Document
+        self, chunk_objects: List[DocumentChunk], doc: Document, use_colpali: bool = False, chunk_objects_multivector: Optional[List[DocumentChunk]] = None
     ) -> List[str]:
         """Helper to store chunks and document"""
         # Store chunks in vector store
@@ -295,15 +373,22 @@ class DocumentService:
         if not success:
             raise Exception("Failed to store chunk embeddings")
         logger.debug("Stored chunk embeddings in vector store")
-
         doc.chunk_ids = result
+
+        if use_colpali and chunk_objects_multivector is not None:
+            success, result_multivector = await self.colpali_vector_store.store_embeddings(chunk_objects_multivector)
+            if not success:
+                raise Exception("Failed to store multivector chunk embeddings")
+            logger.debug("Stored multivector chunk embeddings in vector store")
+            doc.chunk_ids += result_multivector
+        
         # Store document metadata
         if not await self.db.store_document(doc):
             raise Exception("Failed to store document metadata")
         logger.debug("Stored document metadata in database")
-        logger.debug(f"Chunk IDs stored: {result}")
-        return result
-
+        logger.debug(f"Chunk IDs stored: {doc.chunk_ids}")
+        return doc.chunk_ids
+    
     async def _create_chunk_results(
         self, auth: AuthContext, chunks: List[DocumentChunk]
     ) -> List[ChunkResult]:
@@ -325,13 +410,15 @@ class DocumentService:
                 )
                 logger.debug(f"Generated download URL for document {chunk.document_id}")
 
+            metadata = doc.metadata
+            metadata["is_image"] = chunk.metadata.get("is_image", False)
             results.append(
                 ChunkResult(
                     content=chunk.content,
                     score=chunk.score,
                     document_id=chunk.document_id,
                     chunk_number=chunk.chunk_number,
-                    metadata=doc.metadata,
+                    metadata=metadata,
                     content_type=doc.content_type,
                     filename=doc.filename,
                     download_url=download_url,

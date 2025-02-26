@@ -12,7 +12,7 @@ dev_permissions = ["read", "write", "admin"]  # Default dev permissions
 
 [completion]
 provider = "ollama"
-model_name = "llama3.2"
+model_name = "mistral"
 default_max_tokens = "1000"
 default_temperature = 0.7
 # base_url = "http://ollama:11434"  # Just use the service name
@@ -25,11 +25,13 @@ base_url = "http://localhost:11434" # Local configuration
 # default_temperature = 0.7
 
 [database]
-provider = "postgres"
+provider = "mongodb"
+uri = "mongodb://localhost:27017"
+database_name = "databridge"
+documents_collection = "documents"
 
 # [database]
 # provider = "mongodb"
-# database_name = "databridge"
 # collection_name = "documents"
 
 [embedding]
@@ -66,13 +68,13 @@ base_url = "http://localhost:11434"  # Only used for ollama
 # frame_sample_rate = -1 # Set to -1 to disable frame captioning
 
 [reranker]
-use_reranker = true
+use_reranker = false
 provider = "flag"
 model_name = "BAAI/bge-reranker-large"
 query_max_length = 256
 passage_max_length = 512
-use_fp16 = true
-device = "mps"
+use_fp16 = false
+device = "cpu"
 
 # [reranker]
 # use_reranker = false
@@ -91,7 +93,6 @@ provider = "pgvector"
 
 # [vector_store]
 # provider = "mongodb"
-# database_name = "databridge"
 # collection_name = "document_chunks"
 
 [rules]
