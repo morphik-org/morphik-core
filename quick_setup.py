@@ -1,16 +1,17 @@
-import botocore
-from dotenv import load_dotenv, find_dotenv
-import os
-import boto3
+import argparse
 import logging
-import tomli  # for reading toml files
+import os
+import platform
+import subprocess
 from pathlib import Path
+
+import boto3
+import botocore
+import tomli  # for reading toml files
+from dotenv import find_dotenv, load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure
 from pymongo.operations import SearchIndexModel
-import argparse
-import platform
-import subprocess
 
 # Force reload of environment variables
 load_dotenv(find_dotenv(), override=True)
@@ -181,11 +182,14 @@ def setup_mongodb():
 
 def setup_postgres():
     """
-    Set up PostgreSQL database and tables with proper indexes.
+    Set up PostgreSQL database and tables with proper indexes, including initializing a
+    separate multi-vector embeddings table and its associated similarity function without
+    interfering with the existing vector embeddings table.
     """
     import asyncio
-    from sqlalchemy.ext.asyncio import create_async_engine
+
     from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
 
     # Load PostgreSQL URI from .env file
     postgres_uri = os.getenv("POSTGRES_URI")
@@ -239,7 +243,7 @@ def setup_postgres():
                         )
                     raise
 
-                # Import and create all tables
+                # Import and create all base tables
                 from core.database.postgres_database import Base
 
                 # Create regular tables first
@@ -296,6 +300,44 @@ def setup_postgres():
                 """
                 await conn.execute(text(index_sql))
                 LOGGER.info("Created IVFFlat index on vector_embeddings")
+
+                # Initialize multi-vector embeddings table and associated similarity function
+                drop_multi_vector_sql = """
+                DROP TABLE IF EXISTS multi_vector_embeddings;
+                """
+                await conn.execute(text(drop_multi_vector_sql))
+                LOGGER.info("Dropped existing multi_vector_embeddings table (if any)")
+
+                create_multi_vector_sql = """
+                CREATE TABLE multi_vector_embeddings (
+                    id BIGSERIAL PRIMARY KEY,
+                    embeddings BIT(128)[]
+                );
+                """
+                await conn.execute(text(create_multi_vector_sql))
+                LOGGER.info(
+                    "Created multi_vector_embeddings table with BIT(128)[] embeddings column"
+                )
+
+                create_function_sql = """
+                CREATE OR REPLACE FUNCTION max_sim(document_bits BIT[], query_bits BIT[]) RETURNS double precision AS $$
+                    WITH queries AS (
+                        SELECT row_number() OVER () AS query_number, * FROM (SELECT unnest(query_bits) AS query) AS foo
+                    ),
+                    documents AS (
+                        SELECT unnest(document_bits) AS document
+                    ),
+                    similarities AS (
+                        SELECT query_number, 1 - ((document <~> query) / bit_length(query)) AS similarity FROM queries CROSS JOIN documents
+                    ),
+                    max_similarities AS (
+                        SELECT MAX(similarity) AS max_similarity FROM similarities GROUP BY query_number
+                    )
+                    SELECT SUM(max_similarity) FROM max_similarities
+                $$ LANGUAGE SQL;
+                """
+                await conn.execute(text(create_function_sql))
+                LOGGER.info("Created function max_sim for multi-vector similarity computation")
 
             await engine.dispose()
             LOGGER.info("PostgreSQL setup completed successfully")

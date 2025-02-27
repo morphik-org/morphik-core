@@ -7,8 +7,9 @@ from datetime import datetime, timedelta, UTC
 from typing import AsyncGenerator, Dict
 from httpx import AsyncClient
 from fastapi import FastAPI
+from httpx import ASGITransport
 from core.api import app, get_settings
-import mimetypes
+import filetype
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -120,7 +121,7 @@ async def client(
     test_app: FastAPI, event_loop: asyncio.AbstractEventLoop
 ) -> AsyncGenerator[AsyncClient, None]:
     """Create async test client"""
-    async with AsyncClient(app=test_app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
         yield client
 
 
@@ -133,7 +134,7 @@ async def test_ingest_text_document(
 
     response = await client.post(
         "/ingest/text",
-        json={"content": content, "metadata": {"test": True, "type": "text"}},
+        json={"content": content, "metadata": {"test": True, "type": "text"}, "use_colpali": True},
         headers=headers,
     )
 
@@ -155,7 +156,7 @@ async def test_ingest_pdf(client: AsyncClient):
     if not pdf_path.exists():
         pytest.skip("Test PDF file not available")
 
-    content_type, _ = mimetypes.guess_type(pdf_path)
+    content_type = filetype.guess(pdf_path).mime
     if not content_type:
         content_type = "application/octet-stream"
 
@@ -163,7 +164,7 @@ async def test_ingest_pdf(client: AsyncClient):
         response = await client.post(
             "/ingest/file",
             files={"file": (pdf_path.name, f, content_type)},
-            data={"metadata": json.dumps({"test": True, "type": "pdf"})},
+            data={"metadata": json.dumps({"test": True, "type": "pdf"}), "use_colpali": True},
             headers=headers,
         )
 
@@ -336,6 +337,7 @@ async def test_retrieve_chunks(client: AsyncClient):
             "k": 1,
             "min_score": 0.0,
             "filters": {"external_id": doc_id},  # Add filter for specific document
+            "use_colpali": True,
         },
         headers=headers,
     )
@@ -367,6 +369,7 @@ async def test_retrieve_docs(client: AsyncClient):
         json={
             "query": "Headaches, dehydration",
             "filters": {"test": True, "external_id": doc_id},  # Add filter for specific document
+            "use_colpali": True,
         },
         headers=headers,
     )
@@ -469,6 +472,7 @@ async def test_retrieve_chunks_default_reranking(client: AsyncClient):
             "k": 2,
             "min_score": 0.0,
             # Not specifying use_reranking - should use default from config
+            "use_colpali": True,
         },
         headers=headers,
     )
@@ -500,6 +504,7 @@ async def test_retrieve_chunks_explicit_reranking(client: AsyncClient):
             "k": 2,
             "min_score": 0.0,
             "use_reranking": True,
+            "use_colpali": True,
         },
         headers=headers,
     )
@@ -531,6 +536,7 @@ async def test_retrieve_chunks_disabled_reranking(client: AsyncClient):
             "k": 2,
             "min_score": 0.0,
             "use_reranking": False,
+            "use_colpali": True,
         },
         headers=headers,
     )
@@ -564,6 +570,7 @@ async def test_reranking_affects_results(client: AsyncClient):
             "k": 3,
             "min_score": 0.0,
             "use_reranking": False,
+            "use_colpali": True,
         },
         headers=headers,
     )
@@ -576,6 +583,7 @@ async def test_reranking_affects_results(client: AsyncClient):
             "k": 3,
             "min_score": 0.0,
             "use_reranking": True,
+            "use_colpali": True,
         },
         headers=headers,
     )

@@ -1,6 +1,6 @@
 import base64
 import binascii
-import magic
+import filetype
 
 
 def detect_file_type(content: str) -> str:
@@ -8,8 +8,6 @@ def detect_file_type(content: str) -> str:
     Detect file type from content string and return appropriate extension.
     Content can be either base64 encoded or plain text.
     """
-    # Try to detect file type from base64 heade
-
     # Decode base64 content
     try:
         decoded_content = base64.b64decode(content)
@@ -17,9 +15,10 @@ def detect_file_type(content: str) -> str:
         # If not base64, treat as plain text
         decoded_content = content.encode("utf-8")
 
-    # Use python-magic to detect mime type from content
-    mime = magic.Magic(mime=True)
-    detected_type = mime.from_buffer(decoded_content)
+    # Use filetype to detect mime type from content
+    kind = filetype.guess(decoded_content)
+    if kind is None:
+        return ".txt" if isinstance(content, str) else ".bin"
 
     # Map mime type to extension
     extension_map = {
@@ -42,4 +41,4 @@ def detect_file_type(content: str) -> str:
         "application/msword": ".doc",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
     }
-    return extension_map.get(detected_type, ".bin")
+    return extension_map.get(kind.mime, ".bin")

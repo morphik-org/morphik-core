@@ -43,3 +43,28 @@ CREATE TABLE IF NOT EXISTS caches (
 CREATE INDEX IF NOT EXISTS vector_idx
 ON vector_embeddings USING ivfflat (embedding vector_l2_ops)
 WITH (lists = 100);
+
+-- Initialize multi-vector embeddings table for new multi-vector functionality.
+CREATE TABLE IF NOT EXISTS multi_vector_embeddings (
+    id BIGSERIAL PRIMARY KEY,
+    embeddings BIT(128)[]
+);
+
+-- Create function for multi-vector similarity computation
+CREATE OR REPLACE FUNCTION max_sim(document bit[], query bit[]) RETURNS double precision AS $$
+    WITH queries AS (
+        SELECT row_number() OVER () AS query_number, *
+        FROM (SELECT unnest(query) AS query) AS foo
+    ),
+    documents AS (
+        SELECT unnest(document) AS document
+    ),
+    similarities AS (
+        SELECT query_number, 1 - ((document <~> query) / bit_length(query)) AS similarity
+        FROM queries CROSS JOIN documents
+    ),
+    max_similarities AS (
+        SELECT MAX(similarity) AS max_similarity FROM similarities GROUP BY query_number
+    )
+    SELECT SUM(max_similarity) FROM max_similarities;
+$$ LANGUAGE SQL;

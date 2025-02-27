@@ -15,8 +15,8 @@ provider = "ollama"
 model_name = "llama3.2"
 default_max_tokens = "1000"
 default_temperature = 0.7
-base_url = "http://ollama:11434"  # Just use the service name
-# base_url = "http://localhost:11434" # Local configuration
+# base_url = "http://ollama:11434"  # Just use the service name
+base_url = "http://localhost:11434" # Local configuration
 
 # [completion]
 # provider = "openai"
@@ -37,8 +37,8 @@ provider = "ollama"
 model_name = "nomic-embed-text"
 dimensions = 768
 similarity_metric = "cosine"
-base_url = "http://ollama:11434"  # Just use the service name
-# base_url = "http://localhost:11434" # Local configuration
+# base_url = "http://ollama:11434"  # Just use the service name
+base_url = "http://localhost:11434" # Local configuration
 
 # [embedding]
 # provider = "openai"
@@ -57,8 +57,8 @@ use_contextual_chunking = false
 provider = "ollama"
 model_name = "llama3.2-vision"
 frame_sample_rate = -1  # Set to -1 to disable frame captioning
-# base_url = "http://localhost:11434"  # Only used for ollama
-base_url = "http://ollama:11434"  # Use if using via docker
+base_url = "http://localhost:11434"  # Only used for ollama
+# base_url = "http://ollama:11434"  # Use if using via docker
 
 # [parser.vision]
 # provider = "openai"
@@ -66,7 +66,7 @@ base_url = "http://ollama:11434"  # Use if using via docker
 # frame_sample_rate = -1 # Set to -1 to disable frame captioning
 
 [reranker]
-use_reranker = false
+use_reranker = true
 provider = "flag"
 model_name = "BAAI/bge-reranker-large"
 query_max_length = 256
@@ -98,3 +98,6 @@ provider = "pgvector"
 provider = "ollama"
 model_name = "llama3.2"
 batch_size = 4096
+
+[databridge]
+enable_colpali = true

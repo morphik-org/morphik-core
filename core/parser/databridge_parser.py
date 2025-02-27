@@ -3,7 +3,7 @@ import logging
 import os
 import tempfile
 import io
-import magic
+import filetype
 import anthropic
 from abc import ABC, abstractmethod
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -146,32 +146,14 @@ class DatabridgeParser(BaseParser):
         else:
             self.chunker = StandardChunker(chunk_size, chunk_overlap)
 
-        # Initialize magic for file type detection
-        self.magic = magic.Magic(mime=True)
-
     def _is_video_file(self, file: bytes, filename: str) -> bool:
-        """Detect if a file is a video using magic numbers and extension"""
-        video_extensions = {
-            ".mp4",
-            ".avi",
-            ".mov",
-            ".mkv",
-            ".wmv",
-            ".flv",
-            ".webm",
-            ".m4v",
-            ".mpeg",
-            ".mpg",
-        }
-
-        # Check magic numbers
-        mime_type = self.magic.from_buffer(file)
-        if mime_type.startswith("video/"):
-            return True
-
-        # Fallback to extension check
-        ext = os.path.splitext(filename.lower())[1]
-        return ext in video_extensions
+        """Check if the file is a video file."""
+        try:
+            kind = filetype.guess(file)
+            return kind is not None and kind.mime.startswith("video/")
+        except Exception as e:
+            logging.error(f"Error detecting file type: {str(e)}")
+            return False
 
     async def _parse_video(self, file: bytes) -> Tuple[Dict[str, Any], str]:
         """Parse video file to extract transcript and frame descriptions"""
@@ -209,12 +191,9 @@ class DatabridgeParser(BaseParser):
 
     async def _parse_document(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
         """Parse document using unstructured"""
-        # Use magic to detect content type
-        content_type = self.magic.from_buffer(file)
-
         elements = partition(
             file=io.BytesIO(file),
-            content_type=content_type,
+            content_type=None,
             metadata_filename=filename,
             strategy="hi_res",
             api_key=self._unstructured_api_key if self.use_unstructured_api else None,

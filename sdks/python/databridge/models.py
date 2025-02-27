@@ -72,3 +72,4 @@ class IngestTextRequest(BaseModel):
     content: str
     metadata: Dict[str, Any] = Field(default_factory=dict)
     rules: List[Dict[str, Any]] = Field(default_factory=list)
+    use_colpali: bool = Field(default=False)
