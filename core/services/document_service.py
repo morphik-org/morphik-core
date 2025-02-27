@@ -84,7 +84,7 @@ class DocumentService:
 
         # Get embedding for query
         query_embedding_regular = await self.embedding_model.embed_for_query(query)
-        query_embedding_multivector = await self.colpali_embedding_model.embed_for_query(query)
+        query_embedding_multivector = await self.colpali_embedding_model.embed_for_query(query) if use_colpali else None
         logger.info("Generated query embedding")
 
         # Find authorized documents

@@ -191,7 +191,6 @@ class DatabridgeParser(BaseParser):
 
     async def _parse_document(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
         """Parse document using unstructured"""
-        # Use unstructured API to parse document
         elements = partition(
             file=io.BytesIO(file),
             content_type=None,
