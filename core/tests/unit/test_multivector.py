@@ -2,8 +2,7 @@ import pytest
 import asyncio
 import torch
 import numpy as np
-import psycopg
-from pgvector.psycopg import Bit, register_vector
+from pgvector.psycopg import Bit
 import logging
 from core.vector_store.multi_vector_store import MultiVectorStore
 from core.models.chunk import DocumentChunk

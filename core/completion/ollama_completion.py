@@ -5,6 +5,7 @@ from core.completion.base_completion import (
 )
 from ollama import AsyncClient
 
+BASE_64_PREFIX = "data:image/png;base64,"
 
 class OllamaCompletionModel(BaseCompletionModel):
     """Ollama completion model implementation"""
@@ -16,18 +17,33 @@ class OllamaCompletionModel(BaseCompletionModel):
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """Generate completion using Ollama API"""
         # Construct prompt with context
-        context = "\n\n".join(request.context_chunks)
+        images, context = [], []
+        for chunk in request.context_chunks:
+            if chunk.startswith(BASE_64_PREFIX):
+                image_b64 = chunk.split(',', 1)[1]
+                images.append(image_b64)
+            else:
+                context.append(chunk)
+        context = "\n\n".join(context)
         prompt = f"""You are a helpful assistant. Use the provided context to answer questions accurately.
 
-Context:
-{context}
+<QUESTION>
+{request.query}
+</QUESTION>
 
-Question: {request.query}"""
+<CONTEXT>
+{context}
+</CONTEXT>
+"""
 
         # Call Ollama API
         response = await self.client.chat(
             model=self.model_name,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{
+                "role": "user",
+                "content": prompt,
+                "images": [images[0]],
+            }],
             options={
                 "num_predict": request.max_tokens,
                 "temperature": request.temperature,

@@ -4,7 +4,6 @@ import os
 import logging
 from pathlib import Path
 from pdf2image import convert_from_path
-from PIL import Image
 
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.vector_store.multi_vector_store import MultiVectorStore

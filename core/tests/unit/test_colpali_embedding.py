@@ -2,7 +2,6 @@ import pytest
 import base64
 import io
 import numpy as np
-import torch
 from PIL import Image
 
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel

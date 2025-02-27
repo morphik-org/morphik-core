@@ -27,7 +27,7 @@ from core.services.rules_processor import RulesProcessor
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.vector_store.multi_vector_store import MultiVectorStore
 import filetype
-from filetype.types import IMAGE, archive  # , DOCUMENT, document
+from filetype.types import IMAGE  # , DOCUMENT, document
 import pdf2image
 from PIL.Image import Image
 
@@ -363,7 +363,7 @@ class DocumentService:
             case file_type if file_type in IMAGE:
                 return [Chunk(content=file_content_base64, metadata={"is_image": True})]
             case "application/pdf":
-                logger.info(f"Working with PDF file!")
+                logger.info("Working with PDF file!")
                 images = pdf2image.convert_from_bytes(file_content)
                 images_b64 = [self.img_to_base64_str(image) for image in images]
                 return [

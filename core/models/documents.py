@@ -1,6 +1,7 @@
 from typing import Dict, Any, List, Optional, Literal
 from enum import Enum
 from datetime import UTC, datetime
+from PIL import Image
 from pydantic import BaseModel, Field, field_validator
 import uuid
 import logging
@@ -88,7 +89,7 @@ class ChunkResult(BaseModel):
     filename: Optional[str] = None
     download_url: Optional[str] = None
 
-    def augmented_content(self, doc: DocumentResult) -> str:
+    def augmented_content(self, doc: DocumentResult) -> str | Image.Image:
         match self.metadata:
             case m if "timestamp" in m:
                 # if timestamp present, then must be a video. In that case,
@@ -110,5 +111,21 @@ class ChunkResult(BaseModel):
                     for t in timestamps
                 ]
                 return "\n\n".join(augmented_contents)
+            # case m if m.get("is_image", False):
+            #     try:
+            #         # Handle data URI format "data:image/png;base64,..."
+            #         content = self.content
+            #         if content.startswith('data:'):
+            #             # Extract the base64 part after the comma
+            #             content = content.split(',', 1)[1]
+                    
+            #         # Now decode the base64 string
+            #         image_bytes = base64.b64decode(content)
+            #         content = Image.open(io.BytesIO(image_bytes))
+            #         return content
+            #     except Exception as e:
+            #         print(f"Error processing image: {str(e)}")
+            #         # Fall back to using the content as text
+            #         return self.content
             case _:
                 return self.content

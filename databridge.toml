@@ -12,7 +12,7 @@ dev_permissions = ["read", "write", "admin"]  # Default dev permissions
 
 [completion]
 provider = "ollama"
-model_name = "llama3.2"
+model_name = "llama3.2-vision"
 default_max_tokens = "1000"
 default_temperature = 0.7
 # base_url = "http://ollama:11434"  # Just use the service name

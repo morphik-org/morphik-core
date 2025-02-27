@@ -7,7 +7,6 @@ from urllib.parse import urlparse
 import httpx
 import jwt
 from PIL.Image import Image as PILImage
-from PIL import Image
 
 from .models import (
     Document,
