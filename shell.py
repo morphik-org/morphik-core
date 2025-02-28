@@ -63,6 +63,7 @@ class DB:
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[Dict[str, Any]]] = None,
+        use_colpali: bool = True,
     ) -> dict:
         """
         Ingest text content into DataBridge.
@@ -73,8 +74,11 @@ class DB:
             rules: Optional list of rule objects. Examples:
                   [{"type": "metadata_extraction", "schema": {"name": "string"}},
                    {"type": "natural_language", "prompt": "Remove PII"}]
+            use_colpali: Whether to use ColPali-style embedding model to ingest the text
         """
-        doc = self._client.ingest_text(content, metadata=metadata or {}, rules=rules)
+        doc = self._client.ingest_text(
+            content, metadata=metadata or {}, rules=rules, use_colpali=use_colpali
+        )
         return doc.model_dump()
 
     def ingest_file(
@@ -82,8 +86,8 @@ class DB:
         file: str,
         filename: str = None,
         metadata: dict = None,
-        content_type: str = None,
         rules: Optional[List[Dict[str, Any]]] = None,
+        use_colpali: bool = True,
     ) -> dict:
         """
         Ingest a file into DataBridge.
@@ -92,36 +96,56 @@ class DB:
             file: Path to file to ingest
             filename: Optional filename (defaults to basename of file path)
             metadata: Optional metadata dictionary
-            content_type: Optional MIME type
             rules: Optional list of rule objects. Examples:
                   [{"type": "metadata_extraction", "schema": {"title": "string"}},
                    {"type": "natural_language", "prompt": "Summarize"}]
+            use_colpali: Whether to use ColPali-style embedding model to ingest the file
         """
         file_path = Path(file)
         filename = filename or file_path.name
         doc = self._client.ingest_file(
             file=file_path,
             filename=filename,
-            content_type=content_type,
             metadata=metadata or {},
             rules=rules,
+            use_colpali=use_colpali,
         )
         return doc.model_dump()
 
     def retrieve_chunks(
-        self, query: str, filters: dict = None, k: int = 4, min_score: float = 0.0
+        self, query: str, filters: dict = None, k: int = 4, min_score: float = 0.0, use_colpali: bool = True
     ) -> list:
-        """Search for relevant chunks"""
+        """
+        Search for relevant chunks
+        
+        Args:
+            query: Search query text
+            filters: Optional metadata filters
+            k: Number of results (default: 4)
+            min_score: Minimum similarity threshold (default: 0.0)
+            use_colpali: Whether to use ColPali-style embedding model for retrieval
+        """
         results = self._client.retrieve_chunks(
-            query, filters=filters or {}, k=k, min_score=min_score
+            query, filters=filters or {}, k=k, min_score=min_score, use_colpali=use_colpali
         )
         return [r.model_dump() for r in results]
 
     def retrieve_docs(
-        self, query: str, filters: dict = None, k: int = 4, min_score: float = 0.0
+        self, query: str, filters: dict = None, k: int = 4, min_score: float = 0.0, use_colpali: bool = True
     ) -> list:
-        """Retrieve relevant documents"""
-        results = self._client.retrieve_docs(query, filters=filters or {}, k=k, min_score=min_score)
+        """
+        Retrieve relevant documents
+        
+        Args:
+            query: Search query text
+            filters: Optional metadata filters
+            k: Number of results (default: 4)
+            min_score: Minimum similarity threshold (default: 0.0)
+            use_colpali: Whether to use ColPali-style embedding model for retrieval
+        """
+        results = self._client.retrieve_docs(
+            query, filters=filters or {}, k=k, min_score=min_score, use_colpali=use_colpali
+        )
         return [r.model_dump() for r in results]
 
     def query(
@@ -132,8 +156,20 @@ class DB:
         min_score: float = 0.0,
         max_tokens: int = None,
         temperature: float = None,
+        use_colpali: bool = True,
     ) -> dict:
-        """Generate completion using relevant chunks as context"""
+        """
+        Generate completion using relevant chunks as context
+        
+        Args:
+            query: Query text
+            filters: Optional metadata filters
+            k: Number of chunks to use as context (default: 4)
+            min_score: Minimum similarity threshold (default: 0.0)
+            max_tokens: Maximum tokens in completion
+            temperature: Model temperature
+            use_colpali: Whether to use ColPali-style embedding model for retrieval
+        """
         response = self._client.query(
             query,
             filters=filters or {},
@@ -141,6 +177,7 @@ class DB:
             min_score=min_score,
             max_tokens=max_tokens,
             temperature=temperature,
+            use_colpali=use_colpali,
         )
         return response.model_dump()
 
