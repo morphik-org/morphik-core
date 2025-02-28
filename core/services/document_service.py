@@ -30,6 +30,8 @@ import filetype
 from filetype.types import IMAGE  # , DOCUMENT, document
 import pdf2image
 from PIL.Image import Image
+import tempfile
+import os
 
 logger = logging.getLogger(__name__)
 IMAGE = {im.mime for im in IMAGE}
@@ -370,6 +372,96 @@ class DocumentService:
                     Chunk(content=image_b64, metadata={"is_image": True})
                     for image_b64 in images_b64
                 ]
+            case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/msword":
+                logger.info("Working with Word document!")
+                # Check if file content is empty
+                if not file_content or len(file_content) == 0:
+                    logger.error("Word document content is empty")
+                    return [
+                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        for chunk in chunks
+                    ]
+                
+                # Convert Word document to PDF first
+                with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as temp_docx:
+                    temp_docx.write(file_content)
+                    temp_docx_path = temp_docx.name
+                
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf:
+                    temp_pdf_path = temp_pdf.name
+                
+                try:
+                    # Convert Word to PDF
+                    import subprocess
+                    
+                    # Get the base filename without extension
+                    base_filename = os.path.splitext(os.path.basename(temp_docx_path))[0]
+                    output_dir = os.path.dirname(temp_pdf_path)
+                    expected_pdf_path = os.path.join(output_dir, f"{base_filename}.pdf")
+                    
+                    result = subprocess.run(
+                        ["soffice", "--headless", "--convert-to", "pdf", "--outdir", 
+                         output_dir, temp_docx_path],
+                        capture_output=True,
+                        text=True
+                    )
+                    
+                    if result.returncode != 0:
+                        logger.error(f"Failed to convert Word to PDF: {result.stderr}")
+                        return [
+                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            for chunk in chunks
+                        ]
+                    
+                    # LibreOffice creates the PDF with the same base name in the output directory
+                    # Check if the expected PDF file exists
+                    if not os.path.exists(expected_pdf_path) or os.path.getsize(expected_pdf_path) == 0:
+                        logger.error(f"Generated PDF is empty or doesn't exist at expected path: {expected_pdf_path}")
+                        return [
+                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            for chunk in chunks
+                        ]
+                    
+                    # Now process the PDF using the correct path
+                    with open(expected_pdf_path, "rb") as pdf_file:
+                        pdf_content = pdf_file.read()
+                    
+                    try:
+                        images = pdf2image.convert_from_bytes(pdf_content)
+                        if not images:
+                            logger.warning("No images extracted from PDF")
+                            return [
+                                Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                                for chunk in chunks
+                            ]
+                        
+                        images_b64 = [self.img_to_base64_str(image) for image in images]
+                        return [
+                            Chunk(content=image_b64, metadata={"is_image": True})
+                            for image_b64 in images_b64
+                        ]
+                    except Exception as pdf_error:
+                        logger.error(f"Error converting PDF to images: {str(pdf_error)}")
+                        return [
+                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            for chunk in chunks
+                        ]
+                except Exception as e:
+                    logger.error(f"Error processing Word document: {str(e)}")
+                    return [
+                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        for chunk in chunks
+                    ]
+                finally:
+                    # Clean up temporary files
+                    if os.path.exists(temp_docx_path):
+                        os.unlink(temp_docx_path)
+                    if os.path.exists(temp_pdf_path):
+                        os.unlink(temp_pdf_path)
+                    # Also clean up the expected PDF path if it exists and is different from temp_pdf_path
+                    if 'expected_pdf_path' in locals() and os.path.exists(expected_pdf_path) and expected_pdf_path != temp_pdf_path:
+                        os.unlink(expected_pdf_path)
+
             # case filetype.get_type(ext="txt"):
             #     logger.info(f"Found text input: chunks for multivector embedding")
             #     return chunks.copy()
