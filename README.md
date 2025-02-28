@@ -11,7 +11,6 @@ For detailed information about installation, usage, and development:
 - [Installation Guide](https://databridge.gitbook.io/databridge-docs/getting-started/installation)
 - [Quick Start Guide](https://databridge.gitbook.io/databridge-docs/getting-started/quickstart)
 - [API Reference](https://databridge.gitbook.io/databridge-docs/api-reference/overview)
-- [Architecture Overview](https://databridge.gitbook.io/databridge-docs/architecture/overview)
 
 ## Core Features
 
