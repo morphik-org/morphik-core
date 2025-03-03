@@ -42,7 +42,7 @@ class OllamaCompletionModel(BaseCompletionModel):
             messages=[{
                 "role": "user",
                 "content": prompt,
-                "images": [images[0]],
+                "images": [images[0]] if images else [],
             }],
             options={
                 "num_predict": request.max_tokens,
