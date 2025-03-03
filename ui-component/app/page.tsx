@@ -16,6 +16,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { AlertCircle, CheckCircle, FileText, Image, Upload, PlusCircle, Search, MessageSquare, Info, Settings, ChevronDown, ChevronUp } from 'lucide-react';
+import { Sidebar } from '@/components/ui/sidebar';
 
 // API base URL - change this to match your DataBridge server
 const API_BASE_URL = 'http://localhost:8000';
@@ -58,7 +59,7 @@ interface QueryOptions extends SearchOptions {
 }
 
 const DataBridgeUI = () => {
-  const [activeTab, setActiveTab] = useState('documents');
+  const [activeSection, setActiveSection] = useState('documents');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -73,7 +74,7 @@ const DataBridgeUI = () => {
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const [metadata, setMetadata] = useState('{}');
   const [rules, setRules] = useState('[]');
-  const [useColpali, setUseColpali] = useState(false);
+  const [useColpali, setUseColpali] = useState(true);
   
   // Advanced options for search
   const [showSearchAdvanced, setShowSearchAdvanced] = useState(false);
@@ -81,8 +82,8 @@ const DataBridgeUI = () => {
     filters: '{}',
     k: 4,
     min_score: 0,
-    use_reranking: true,
-    use_colpali: false
+    use_reranking: false,
+    use_colpali: true
   });
 
   // Advanced options for chat/query
@@ -91,8 +92,8 @@ const DataBridgeUI = () => {
     filters: '{}',
     k: 4,
     min_score: 0,
-    use_reranking: true,
-    use_colpali: false,
+    use_reranking: false,
+    use_colpali: true,
     max_tokens: 500,
     temperature: 0.7
   });
@@ -197,7 +198,7 @@ const DataBridgeUI = () => {
       setFileToUpload(null);
       setMetadata('{}');
       setRules('[]');
-      setUseColpali(false);
+      setUseColpali(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
@@ -240,7 +241,7 @@ const DataBridgeUI = () => {
       setTextContent('');
       setMetadata('{}');
       setRules('[]');
-      setUseColpali(false);
+      setUseColpali(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
@@ -376,7 +377,7 @@ const DataBridgeUI = () => {
     setTextContent('');
     setMetadata('{}');
     setRules('[]');
-    setUseColpali(false);
+    setUseColpali(true);
   };
 
   // Update search options
@@ -396,26 +397,26 @@ const DataBridgeUI = () => {
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-3xl font-bold mb-6">DataBridge</h1>
+    <div className="flex h-screen">
+      <Sidebar 
+        activeSection={activeSection} 
+        onSectionChange={setActiveSection}
+        className="h-full"
+      />
       
-      {error && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="mb-4">
-          <TabsTrigger value="documents">Documents</TabsTrigger>
-          <TabsTrigger value="search">Search</TabsTrigger>
-          <TabsTrigger value="chat">Chat</TabsTrigger>
-        </TabsList>
+      <div className="flex-1 overflow-auto p-6">
+        <h1 className="text-3xl font-bold mb-6">DataBridge</h1>
         
-        {/* Documents Tab */}
-        <TabsContent value="documents">
+        {error && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        
+        {/* Documents Section */}
+        {activeSection === 'documents' && (
           <Card>
             <CardHeader>
               <div className="flex justify-between items-center">
@@ -649,10 +650,10 @@ const DataBridgeUI = () => {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+        )}
         
-        {/* Search Tab */}
-        <TabsContent value="search">
+        {/* Search Section */}
+        {activeSection === 'search' && (
           <Card>
             <CardHeader>
               <CardTitle>Search Documents</CardTitle>
@@ -803,11 +804,11 @@ const DataBridgeUI = () => {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        )}
         
-        {/* Chat Tab */}
-        <TabsContent value="chat">
-          <Card className="h-[700px] flex flex-col">
+        {/* Chat Section */}
+        {activeSection === 'chat' && (
+          <Card className="h-[calc(100vh-12rem)] flex flex-col">
             <CardHeader>
               <CardTitle>Chat with Your Documents</CardTitle>
               <CardDescription>
@@ -976,8 +977,8 @@ const DataBridgeUI = () => {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        )}
+      </div>
     </div>
   );
 };

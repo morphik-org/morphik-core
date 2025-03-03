@@ -13,18 +13,49 @@ class OpenAICompletionModel(BaseCompletionModel):
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """Generate completion using OpenAI API"""
-        # Construct prompt with context
-        context = "\n\n".join(request.context_chunks)
+        # Process context chunks and handle images
         messages = [
             {
                 "role": "system",
                 "content": "You are a helpful assistant. Use the provided context to answer questions accurately.",
-            },
-            {
-                "role": "user",
-                "content": f"Context:\n{context}\n\nQuestion: {request.query}",
-            },
+            }
         ]
+
+        # Build user message content
+        user_message_content = []
+        context_text = []
+
+        for chunk in request.context_chunks:
+            if chunk.startswith("data:image/"):
+                # Handle image data URI
+                user_message_content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": chunk,
+                    }
+                })
+            else:
+                context_text.append(chunk)
+        
+        max_num_images = min(3, len(user_message_content))
+        user_message_content = user_message_content[:max_num_images] # limit the number of images to 3
+
+        # Add text context if any
+        if context_text:
+            user_message_content.insert(0, {
+                "type": "text",
+                "text": f"Context:\n{'\\n\\n'.join(context_text)}\n\nQuestion: {request.query}"
+            })
+        else:
+            user_message_content.insert(0, {
+                "type": "text",
+                "text": f"{request.query}"
+            })
+
+        messages.append({
+            "role": "user",
+            "content": user_message_content
+        })
 
         # Call OpenAI API
         response = await self.client.chat.completions.create(
