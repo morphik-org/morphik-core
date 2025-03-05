@@ -261,6 +261,7 @@ async def ingest_text(
     Args:
         request: IngestTextRequest containing:
             - content: Text content to ingest
+            - filename: Optional filename to help determine content type
             - metadata: Optional metadata dictionary
             - rules: Optional list of rules. Each rule should be either:
                    - MetadataExtractionRule: {"type": "metadata_extraction", "schema": {...}}
@@ -283,6 +284,7 @@ async def ingest_text(
         ):
             return await document_service.ingest_text(
                 content=request.content,
+                filename=request.filename,
                 metadata=request.metadata,
                 rules=request.rules,
                 use_colpali=request.use_colpali,

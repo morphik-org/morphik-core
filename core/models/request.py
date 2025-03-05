@@ -24,6 +24,7 @@ class IngestTextRequest(BaseModel):
     """Request model for ingesting text content"""
 
     content: str
+    filename: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     rules: List[Dict[str, Any]] = Field(default_factory=list)
     use_colpali: Optional[bool] = None
