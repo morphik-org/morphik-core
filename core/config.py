@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings
 from functools import lru_cache
 import tomli
 from dotenv import load_dotenv
+from collections import ChainMap
 
 
 class Settings(BaseSettings):
@@ -275,18 +276,17 @@ def get_settings() -> Settings:
         "ENABLE_COLPALI": config["databridge"]["enable_colpali"],
     }
 
-    settings_dict = {}
-    settings_dict.update(
-        **api_config,
-        **auth_config,
-        **completion_config,
-        **database_config,
-        **embedding_config,
-        **parser_config,
-        **reranker_config,
-        **storage_config,
-        **vector_store_config,
-        **rules_config,
-        **databridge_config,
-    )
+    settings_dict = dict(ChainMap(
+        api_config,
+        auth_config,
+        completion_config,
+        database_config,
+        embedding_config,
+        parser_config,
+        reranker_config,
+        storage_config,
+        vector_store_config,
+        rules_config,
+        databridge_config,
+    ))
     return Settings(**settings_dict)
