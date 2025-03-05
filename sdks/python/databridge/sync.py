@@ -150,6 +150,7 @@ class DataBridge:
     def ingest_text(
         self,
         content: str,
+        filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
         use_colpali: bool = True,
@@ -191,6 +192,7 @@ class DataBridge:
         """
         request = IngestTextRequest(
             content=content,
+            filename=filename,
             metadata=metadata or {},
             rules=[self._convert_rule(r) for r in (rules or [])],
             use_colpali=use_colpali,

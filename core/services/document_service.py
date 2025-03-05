@@ -36,7 +36,6 @@ import os
 logger = logging.getLogger(__name__)
 IMAGE = {im.mime for im in IMAGE}
 
-
 class DocumentService:
     def __init__(
         self,
@@ -185,6 +184,7 @@ class DocumentService:
     async def ingest_text(
         self,
         content: str,
+        filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         auth: AuthContext = None,
         rules: Optional[List[str]] = None,
@@ -197,6 +197,7 @@ class DocumentService:
 
         doc = Document(
             content_type="text/plain",
+            filename=filename,
             metadata=metadata or {},
             owner={"type": auth.entity_type, "id": auth.entity_id},
             access_control={
