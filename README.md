@@ -2,6 +2,8 @@
 
 ![DataBridge Demo](db_atf_demo_hq.gif)
 
+**Note:** DataBridge is planning to launch a hosted service soon! Please sign up for the [waitlist](https://docs.google.com/forms/d/1gFoUKzECICugInLkRlAlgwrkRVorfNywAgkmcjmVGkE/edit) if interested!!
+
 DataBridge is a powerful document processing and retrieval system designed for building intelligent document-based applications. It provides a robust foundation for semantic search, document processing, and AI-powered document interactions.
 
 ## Documentation
