@@ -29,17 +29,21 @@ class OpenAICompletionModel(BaseCompletionModel):
         for chunk in request.context_chunks:
             if chunk.startswith("data:image/"):
                 # Handle image data URI
-                user_message_content.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": chunk,
+                user_message_content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": chunk,
+                        },
                     }
-                })
+                )
             else:
                 context_text.append(chunk)
-        
+
         max_num_images = min(3, len(user_message_content))
-        user_message_content = user_message_content[:max_num_images] # limit the number of images to 3
+        user_message_content = user_message_content[
+            :max_num_images
+        ]  # limit the number of images to 3
 
         context = "\n" + "\n\n".join(context_text) + "\n\n"
 
@@ -50,15 +54,9 @@ class OpenAICompletionModel(BaseCompletionModel):
                 "text": f"Context: {context} Question: {request.query}"
             })
         else:
-            user_message_content.insert(0, {
-                "type": "text",
-                "text": f"{request.query}"
-            })
+            user_message_content.insert(0, {"type": "text", "text": f"{request.query}"})
 
-        messages.append({
-            "role": "user",
-            "content": user_message_content
-        })
+        messages.append({"role": "user", "content": user_message_content})
 
         # Call OpenAI API
         response = await self.client.chat.completions.create(

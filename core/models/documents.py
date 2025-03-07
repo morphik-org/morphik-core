@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional, Literal
+from typing import Dict, Any, List, Optional, Literal, Set
 from enum import Enum
 from datetime import UTC, datetime
 from PIL import Image
@@ -131,7 +131,7 @@ class ChunkResult(BaseModel):
             #         if content.startswith('data:'):
             #             # Extract the base64 part after the comma
             #             content = content.split(',', 1)[1]
-                    
+
             #         # Now decode the base64 string
             #         image_bytes = base64.b64decode(content)
             #         content = Image.open(io.BytesIO(image_bytes))

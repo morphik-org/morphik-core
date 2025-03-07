@@ -138,11 +138,16 @@ class DB:
         return doc if as_object else doc.model_dump()
 
     def retrieve_chunks(
-        self, query: str, filters: dict = None, k: int = 4, min_score: float = 0.0, use_colpali: bool = True
+        self,
+        query: str,
+        filters: dict = None,
+        k: int = 4,
+        min_score: float = 0.0,
+        use_colpali: bool = True,
     ) -> list:
         """
         Search for relevant chunks
-        
+
         Args:
             query: Search query text
             filters: Optional metadata filters
@@ -156,11 +161,16 @@ class DB:
         return [r.model_dump() for r in results]
 
     def retrieve_docs(
-        self, query: str, filters: dict = None, k: int = 4, min_score: float = 0.0, use_colpali: bool = True
+        self,
+        query: str,
+        filters: dict = None,
+        k: int = 4,
+        min_score: float = 0.0,
+        use_colpali: bool = True,
     ) -> list:
         """
         Retrieve relevant documents
-        
+
         Args:
             query: Search query text
             filters: Optional metadata filters
@@ -185,7 +195,7 @@ class DB:
     ) -> dict:
         """
         Generate completion using relevant chunks as context
-        
+
         Args:
             query: Query text
             filters: Optional metadata filters
@@ -520,6 +530,41 @@ class DB:
         """Get a cache by name"""
         return self._client.get_cache(name)
 
+    def create_graph(
+        self,
+        name: str,
+        filters: Dict[str, Any] = None,
+        documents: List[str] = None,
+    ) -> dict:
+        """
+        Create a graph from documents.
+
+        This function processes documents matching filters or specific document IDs,
+        extracts entities and relationships, and saves them as a graph.
+
+        Args:
+            name: Name of the graph to create
+            filters: Optional metadata filters to determine which documents to include
+            documents: Optional list of specific document IDs to include
+
+        Returns:
+            dict: Information about the created graph
+
+        Examples:
+            Create a graph from documents with category="research":
+            >>> db.create_graph("research_graph", filters={"category": "research"})
+
+            Create a graph from specific documents:
+            >>> db.create_graph("custom_graph", documents=["doc1", "doc2", "doc3"])
+        """
+        graph = self._client.create_graph(
+            name=name,
+            filters=filters,
+            documents=documents,
+        )
+        # Return the graph directly since it's already a dictionary
+        return graph
+
     def close(self):
         """Close the client connection"""
         self._client.close()
@@ -589,6 +634,8 @@ if __name__ == "__main__":
     print("  db.update_document_by_filename_metadata('report.pdf', {'reviewed': True}, new_filename='reviewed_report.pdf')")
     print("\nQuerying:")
     print("  result = db.query('how to use this API?'); print(result['sources'])")
+    print("Example: db.ingest_text('hello world')")
+    print("Example: db.create_graph('knowledge_graph', filters={'category': 'research'})")
     print("Type help(db) for documentation.")
 
     # Start the shell

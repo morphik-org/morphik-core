@@ -1,5 +1,6 @@
 import base64
 from io import BytesIO
+import json
 from typing import Dict, Any, List, Optional
 from fastapi import UploadFile
 from datetime import datetime, UTC
@@ -13,6 +14,7 @@ from core.models.documents import (
     StorageFileInfo,
 )
 from ..models.auth import AuthContext
+from ..models.graph import Graph, Entity, Relationship
 from core.database.base_database import BaseDatabase
 from core.storage.base_storage import BaseStorage
 from core.vector_store.base_vector_store import BaseVectorStore
@@ -28,6 +30,7 @@ from core.cache.base_cache_factory import BaseCacheFactory
 from core.services.rules_processor import RulesProcessor
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.vector_store.multi_vector_store import MultiVectorStore
+from openai import AsyncOpenAI
 import filetype
 from filetype.types import IMAGE  # , DOCUMENT, document
 import pdf2image
@@ -458,69 +461,95 @@ class DocumentService:
                     Chunk(content=image_b64, metadata={"is_image": True})
                     for image_b64 in images_b64
                 ]
-            case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/msword":
+            case (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                | "application/msword"
+            ):
                 logger.info("Working with Word document!")
                 # Check if file content is empty
                 if not file_content or len(file_content) == 0:
                     logger.error("Word document content is empty")
                     return [
-                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        Chunk(
+                            content=chunk.content, metadata=(chunk.metadata | {"is_image": False})
+                        )
                         for chunk in chunks
                     ]
-                
+
                 # Convert Word document to PDF first
                 with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as temp_docx:
                     temp_docx.write(file_content)
                     temp_docx_path = temp_docx.name
-                
+
                 with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf:
                     temp_pdf_path = temp_pdf.name
-                
+
                 try:
                     # Convert Word to PDF
                     import subprocess
-                    
+
                     # Get the base filename without extension
                     base_filename = os.path.splitext(os.path.basename(temp_docx_path))[0]
                     output_dir = os.path.dirname(temp_pdf_path)
                     expected_pdf_path = os.path.join(output_dir, f"{base_filename}.pdf")
-                    
+
                     result = subprocess.run(
-                        ["soffice", "--headless", "--convert-to", "pdf", "--outdir", 
-                         output_dir, temp_docx_path],
+                        [
+                            "soffice",
+                            "--headless",
+                            "--convert-to",
+                            "pdf",
+                            "--outdir",
+                            output_dir,
+                            temp_docx_path,
+                        ],
                         capture_output=True,
-                        text=True
+                        text=True,
                     )
-                    
+
                     if result.returncode != 0:
                         logger.error(f"Failed to convert Word to PDF: {result.stderr}")
                         return [
-                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            Chunk(
+                                content=chunk.content,
+                                metadata=(chunk.metadata | {"is_image": False}),
+                            )
                             for chunk in chunks
                         ]
-                    
+
                     # LibreOffice creates the PDF with the same base name in the output directory
                     # Check if the expected PDF file exists
-                    if not os.path.exists(expected_pdf_path) or os.path.getsize(expected_pdf_path) == 0:
-                        logger.error(f"Generated PDF is empty or doesn't exist at expected path: {expected_pdf_path}")
+                    if (
+                        not os.path.exists(expected_pdf_path)
+                        or os.path.getsize(expected_pdf_path) == 0
+                    ):
+                        logger.error(
+                            f"Generated PDF is empty or doesn't exist at expected path: {expected_pdf_path}"
+                        )
                         return [
-                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            Chunk(
+                                content=chunk.content,
+                                metadata=(chunk.metadata | {"is_image": False}),
+                            )
                             for chunk in chunks
                         ]
-                    
+
                     # Now process the PDF using the correct path
                     with open(expected_pdf_path, "rb") as pdf_file:
                         pdf_content = pdf_file.read()
-                    
+
                     try:
                         images = pdf2image.convert_from_bytes(pdf_content)
                         if not images:
                             logger.warning("No images extracted from PDF")
                             return [
-                                Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                                Chunk(
+                                    content=chunk.content,
+                                    metadata=(chunk.metadata | {"is_image": False}),
+                                )
                                 for chunk in chunks
                             ]
-                        
+
                         images_b64 = [self.img_to_base64_str(image) for image in images]
                         return [
                             Chunk(content=image_b64, metadata={"is_image": True})
@@ -529,13 +558,18 @@ class DocumentService:
                     except Exception as pdf_error:
                         logger.error(f"Error converting PDF to images: {str(pdf_error)}")
                         return [
-                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            Chunk(
+                                content=chunk.content,
+                                metadata=(chunk.metadata | {"is_image": False}),
+                            )
                             for chunk in chunks
                         ]
                 except Exception as e:
                     logger.error(f"Error processing Word document: {str(e)}")
                     return [
-                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        Chunk(
+                            content=chunk.content, metadata=(chunk.metadata | {"is_image": False})
+                        )
                         for chunk in chunks
                     ]
                 finally:
@@ -545,7 +579,11 @@ class DocumentService:
                     if os.path.exists(temp_pdf_path):
                         os.unlink(temp_pdf_path)
                     # Also clean up the expected PDF path if it exists and is different from temp_pdf_path
-                    if 'expected_pdf_path' in locals() and os.path.exists(expected_pdf_path) and expected_pdf_path != temp_pdf_path:
+                    if (
+                        "expected_pdf_path" in locals()
+                        and os.path.exists(expected_pdf_path)
+                        and expected_pdf_path != temp_pdf_path
+                    ):
                         os.unlink(expected_pdf_path)
 
             # case filetype.get_type(ext="txt"):
@@ -1165,6 +1203,233 @@ class DocumentService:
             
         logger.info(f"Created {len(chunk_objects_multivector)} chunk objects for multivector embedding")
         return chunk_objects_multivector
+    async def create_graph(
+        self,
+        name: str,
+        auth: AuthContext,
+        filters: Optional[Dict[str, Any]] = None,
+        documents: Optional[List[str]] = None,
+    ) -> Graph:
+        """Create a graph from documents.
+
+        This function processes documents matching filters or specific document IDs,
+        extracts entities and relationships, and saves them as a graph using Apache AGE.
+
+        Args:
+            name: Name of the graph to create
+            auth: Authentication context
+            filters: Optional metadata filters to determine which documents to include
+            documents: Optional list of specific document IDs to include
+
+        Returns:
+            Graph: The created graph
+        """
+        if "write" not in auth.permissions:
+            raise PermissionError("User does not have write permission")
+
+        # Find documents to process based on filters and/or specific document IDs
+        document_objects = []
+
+        # If specific document IDs were provided, get those documents
+        if documents:
+            for doc_id in documents:
+                doc = await self.db.get_document(doc_id, auth)
+                if doc:
+                    document_objects.append(doc)
+
+        # If filters were provided, get matching documents
+        if filters:
+            filtered_docs = await self.db.get_documents(auth, filters=filters)
+            # Add only documents that aren't already in the list
+            for doc in filtered_docs:
+                if doc not in document_objects:
+                    document_objects.append(doc)
+
+        if not document_objects:
+            raise ValueError("No documents found matching criteria")
+
+        # Create a new graph
+        graph = Graph(
+            name=name,
+            document_ids=[doc.external_id for doc in document_objects],
+            filters=filters,
+            owner={"type": auth.entity_type, "id": auth.entity_id},
+            access_control={
+                "readers": [auth.entity_id],
+                "writers": [auth.entity_id],
+                "admins": [auth.entity_id],
+            },
+        )
+
+        # Process each document to extract entities and relationships using LLM
+        entities = {}
+        relationships = []
+
+        for doc in document_objects:
+            # Get the text content from document
+            content = doc.system_metadata.get("content", "")
+            if not content:
+                logger.warning(f"No content found for document {doc.external_id}")
+                continue
+
+            # Extract entities and relationships using LLM
+            doc_entities, doc_relationships = (
+                await self._extract_entities_and_relationships_with_llm(content, doc.external_id)
+            )
+
+            # Add entities to the graph, avoiding duplicates
+            for entity in doc_entities:
+                if entity.label not in entities:
+                    entities[entity.label] = entity
+                else:
+                    # If entity already exists, add this document to its list of document IDs
+                    existing_entity = entities[entity.label]
+                    if doc.external_id not in existing_entity.document_ids:
+                        existing_entity.document_ids.append(doc.external_id)
+
+            # Add relationships to the graph
+            relationships.extend(doc_relationships)
+
+        # Update the graph with extracted entities and relationships
+        graph.entities = list(entities.values())
+        graph.relationships = relationships
+
+        # Store the graph in the database
+        if not await self.db.store_graph(graph):
+            raise Exception("Failed to store graph")
+
+        return graph
+
+    async def _extract_entities_and_relationships_with_llm(
+        self, content: str, doc_id: str
+    ) -> tuple[List[Entity], List[Relationship]]:
+        """
+        Extract entities and relationships from document content using the LLM.
+
+        Args:
+            content: Document content to process
+            doc_id: Document ID
+
+        Returns:
+            Tuple of (entities, relationships)
+        """
+        # Define the extraction schema for entities and relationships
+        extraction_schema = {
+            "entities": [
+                {
+                    "label": "string - name of the entity",
+                    "type": "string - one of PERSON, ORGANIZATION, LOCATION, DATE, CONCEPT, OTHER",
+                    "properties": "dictionary of additional properties",
+                }
+            ],
+            "relationships": [
+                {
+                    "source": "string - label of the source entity",
+                    "target": "string - label of the target entity",
+                    "type": "string - type of relationship",
+                    "properties": "dictionary of additional properties",
+                }
+            ],
+        }
+
+        # Get the LLM model for entity extraction from settings
+        settings = get_settings()
+
+        # Prepare the prompt for entity and relationship extraction
+        prompt = f"""
+        Extract entities and relationships from the following text according to this schema:
+        {extraction_schema}
+
+        Text to extract from:
+        {content[:5000]}  # Limiting to first 5000 chars to avoid token limits
+        
+        Return ONLY a JSON object with the extracted entities and relationships.
+        """
+
+        # Use the appropriate model based on the provider specified in settings
+        try:
+            extraction_result = {}
+
+            if settings.GRAPH_PROVIDER == "openai":
+                import openai
+
+                client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+                response = await client.chat.completions.create(
+                    model=settings.GRAPH_MODEL,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an entity extraction assistant. Always respond with valid JSON.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    response_format={"type": "json_object"},
+                )
+                extraction_result = json.loads(response.choices[0].message.content)
+
+            elif settings.GRAPH_PROVIDER == "ollama":
+                import httpx
+
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        f"{settings.EMBEDDING_OLLAMA_BASE_URL}/api/chat",
+                        json={
+                            "model": settings.GRAPH_MODEL,
+                            "messages": [
+                                {
+                                    "role": "system",
+                                    "content": "You are an entity extraction assistant. Always respond with valid JSON.",
+                                },
+                                {"role": "user", "content": prompt},
+                            ],
+                            "stream": False,
+                            "format": "json",  # Request JSON format from Ollama
+                        },
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+                    extraction_result = json.loads(result["message"]["content"])
+            else:
+                logger.error(f"Unsupported graph provider: {settings.GRAPH_PROVIDER}")
+                return [], []
+
+            # Convert the extracted data to our model objects
+            entities = []
+            for entity_data in extraction_result.get("entities", []):
+                entity = Entity(
+                    label=entity_data["label"],
+                    type=entity_data["type"],
+                    properties=entity_data.get("properties", {}),
+                    document_ids=[doc_id],
+                )
+                entities.append(entity)
+
+            # Create a mapping of entity labels to IDs
+            entity_mapping = {entity.label: entity.id for entity in entities}
+
+            # Convert relationships
+            relationships = []
+            for relationship_data in extraction_result.get("relationships", []):
+                source_label = relationship_data["source"]
+                target_label = relationship_data["target"]
+
+                # Check if both source and target entities exist
+                if source_label in entity_mapping and target_label in entity_mapping:
+                    relationship = Relationship(
+                        source_id=entity_mapping[source_label],
+                        target_id=entity_mapping[target_label],
+                        type=relationship_data["type"],
+                        properties=relationship_data.get("properties", {}),
+                        document_ids=[doc_id],
+                    )
+                    relationships.append(relationship)
+
+            return entities, relationships
+
+        except Exception as e:
+            logger.error(f"Error extracting entities from document {doc_id}: {str(e)}")
+            return [], []
 
     def close(self):
         """Close all resources."""

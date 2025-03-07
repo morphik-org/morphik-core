@@ -17,7 +17,9 @@ db.ingest_file("assets/colpali_example.pdf", use_colpali=True)
 
 ## retrieving sources
 
-chunks = db.retreive_chunks("At what frequency do we achieve the highest Image Rejection Ratio?", use_colpali=True, k=3)
+chunks = db.retreive_chunks(
+    "At what frequency do we achieve the highest Image Rejection Ratio?", use_colpali=True, k=3
+)
 
 for chunk in chunks:
     if isinstance(chunk.content, Image.Image):
@@ -27,5 +29,7 @@ for chunk in chunks:
         print(chunk.content)
 
 # You can also directly query a VLM as defined in `databridge.toml`
-response = db.query("At what frequency do we achieve the highest Image Rejection Ratio?", use_colpali=True, k=3)
+response = db.query(
+    "At what frequency do we achieve the highest Image Rejection Ratio?", use_colpali=True, k=3
+)
 print(response.completion)

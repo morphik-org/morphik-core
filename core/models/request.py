@@ -28,3 +28,15 @@ class IngestTextRequest(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     rules: List[Dict[str, Any]] = Field(default_factory=list)
     use_colpali: Optional[bool] = None
+
+
+class CreateGraphRequest(BaseModel):
+    """Request model for creating a graph"""
+
+    name: str = Field(..., description="Name of the graph to create")
+    filters: Optional[Dict[str, Any]] = Field(
+        None, description="Optional metadata filters to determine which documents to include"
+    )
+    documents: Optional[List[str]] = Field(
+        None, description="Optional list of specific document IDs to include"
+    )

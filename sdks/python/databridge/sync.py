@@ -1018,6 +1018,50 @@ class DataBridge:
             return Cache(self, name)
         raise ValueError(f"Cache '{name}' not found")
 
+    def create_graph(
+        self,
+        name: str,
+        filters: Optional[Dict[str, Any]] = None,
+        documents: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create a graph from documents for graph-based RAG.
+
+        This function processes documents matching filters or specific document IDs,
+        extracts entities and relationships, and saves them as a graph using Apache AGE.
+
+        Args:
+            name: Name of the graph to create
+            filters: Optional metadata filters to determine which documents to include
+            documents: Optional list of specific document IDs to include
+
+        Returns:
+            Dict[str, Any]: Information about the created graph
+
+        Example:
+            ```python
+            # Create a graph from documents with category="research"
+            graph = db.create_graph(
+                name="research_graph",
+                filters={"category": "research"}
+            )
+
+            # Create a graph from specific documents
+            graph = db.create_graph(
+                name="custom_graph",
+                documents=["doc1", "doc2", "doc3"]
+            )
+            ```
+        """
+        request = {
+            "name": name,
+            "filters": filters,
+            "documents": documents,
+        }
+
+        response = self._request("POST", "graph/create", request)
+        return response
+
     def close(self):
         """Close the HTTP session"""
         self._session.close()
