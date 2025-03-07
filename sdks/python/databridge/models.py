@@ -64,6 +64,8 @@ class CompletionResponse(BaseModel):
 
     completion: str
     usage: Dict[str, int]
+    finish_reason: Optional[str] = None
+    context: Optional[List[str]] = None
 
 
 class IngestTextRequest(BaseModel):

@@ -21,14 +21,17 @@ doc_id = await db.ingest_document(
 )
 
 # Query documents
-results = await db.query(
+response = await db.query(
     query="Your search query",
     filters={"title": "Example Document"}
 )
 
-# Process results
-for result in results:
-    print(f"Content: {result.content}")
-    print(f"Score: {result.score}")
-    print(f"Metadata: {result.metadata}")
+# Access the answer
+print(f"Completion: {response.completion}")
+
+# Access the context used for generating the answer
+if response.context:
+    print("Context used:")
+    for i, chunk in enumerate(response.context):
+        print(f"Chunk {i+1}: {chunk[:100]}...")
 ```

@@ -113,11 +113,16 @@ class DB:
         return doc.model_dump()
 
     def retrieve_chunks(
-        self, query: str, filters: dict = None, k: int = 4, min_score: float = 0.0, use_colpali: bool = True
+        self,
+        query: str,
+        filters: dict = None,
+        k: int = 4,
+        min_score: float = 0.0,
+        use_colpali: bool = True,
     ) -> list:
         """
         Search for relevant chunks
-        
+
         Args:
             query: Search query text
             filters: Optional metadata filters
@@ -131,11 +136,16 @@ class DB:
         return [r.model_dump() for r in results]
 
     def retrieve_docs(
-        self, query: str, filters: dict = None, k: int = 4, min_score: float = 0.0, use_colpali: bool = True
+        self,
+        query: str,
+        filters: dict = None,
+        k: int = 4,
+        min_score: float = 0.0,
+        use_colpali: bool = True,
     ) -> list:
         """
         Retrieve relevant documents
-        
+
         Args:
             query: Search query text
             filters: Optional metadata filters
@@ -160,7 +170,7 @@ class DB:
     ) -> dict:
         """
         Generate completion using relevant chunks as context
-        
+
         Args:
             query: Query text
             filters: Optional metadata filters

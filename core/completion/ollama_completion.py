@@ -7,6 +7,7 @@ from ollama import AsyncClient
 
 BASE_64_PREFIX = "data:image/png;base64,"
 
+
 class OllamaCompletionModel(BaseCompletionModel):
     """Ollama completion model implementation"""
 
@@ -20,7 +21,7 @@ class OllamaCompletionModel(BaseCompletionModel):
         images, context = [], []
         for chunk in request.context_chunks:
             if chunk.startswith(BASE_64_PREFIX):
-                image_b64 = chunk.split(',', 1)[1]
+                image_b64 = chunk.split(",", 1)[1]
                 images.append(image_b64)
             else:
                 context.append(chunk)
@@ -39,11 +40,13 @@ class OllamaCompletionModel(BaseCompletionModel):
         # Call Ollama API
         response = await self.client.chat(
             model=self.model_name,
-            messages=[{
-                "role": "user",
-                "content": prompt,
-                "images": [images[0]] if images else [],
-            }],
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [images[0]] if images else [],
+                }
+            ],
             options={
                 "num_predict": request.max_tokens,
                 "temperature": request.temperature,
