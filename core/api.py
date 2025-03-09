@@ -450,7 +450,11 @@ async def batch_get_chunks(chunk_ids: List[ChunkSource], auth: AuthContext = Dep
 async def query_completion(
     request: CompletionQueryRequest, auth: AuthContext = Depends(verify_token)
 ):
-    """Generate completion using relevant chunks as context."""
+    """Generate completion using relevant chunks as context.
+    
+    When graph_name is provided, the query will leverage the knowledge graph 
+    to enhance retrieval by finding relevant entities and their connected documents.
+    """
     try:
         async with telemetry.track_operation(
             operation_type="query",
@@ -462,6 +466,9 @@ async def query_completion(
                 "temperature": request.temperature,
                 "use_reranking": request.use_reranking,
                 "use_colpali": request.use_colpali,
+                "graph_name": request.graph_name,
+                "hop_depth": request.hop_depth,
+                "include_paths": request.include_paths,
             },
         ):
             return await document_service.query(
@@ -474,6 +481,9 @@ async def query_completion(
                 request.temperature,
                 request.use_reranking,
                 request.use_colpali,
+                request.graph_name,
+                request.hop_depth,
+                request.include_paths,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))

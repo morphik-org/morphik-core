@@ -268,6 +268,9 @@ class MultiVectorStore(BaseVectorStore):
         #     logger.error(f"Error querying similar chunks: {str(e)}")
         #     raise e
         #     return []
+        
+    def get_chunk(self, chunk_id):
+        pass
 
     async def get_chunks_by_id(
         self,

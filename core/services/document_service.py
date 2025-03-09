@@ -238,13 +238,51 @@ class DocumentService:
         temperature: Optional[float] = None,
         use_reranking: Optional[bool] = None,
         use_colpali: Optional[bool] = None,
+        graph_name: Optional[str] = None,
+        hop_depth: int = 1,
+        include_paths: bool = False,
     ) -> CompletionResponse:
-        """Generate completion using relevant chunks as context."""
-        # Get relevant chunks
-        chunks = await self.retrieve_chunks(
-            query, auth, filters, k, min_score, use_reranking, use_colpali
-        )
-        documents = await self._create_document_results(auth, chunks)
+        """Generate completion using relevant chunks as context.
+        
+        When graph_name is provided, the query will leverage the knowledge graph 
+        to enhance retrieval by finding relevant entities and their connected documents.
+        
+        Args:
+            query: The query text
+            auth: Authentication context
+            filters: Optional metadata filters for documents
+            k: Number of chunks to retrieve
+            min_score: Minimum similarity score
+            max_tokens: Maximum tokens for completion
+            temperature: Temperature for completion
+            use_reranking: Whether to use reranking
+            use_colpali: Whether to use colpali embedding
+            graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
+            hop_depth: Number of relationship hops to traverse in the graph (1-3)
+            include_paths: Whether to include relationship paths in the response
+        """
+        if graph_name:
+            # Use knowledge graph enhanced retrieval
+            return await self._query_with_graph(
+                query, 
+                auth, 
+                graph_name,
+                filters=filters,
+                k=k,
+                min_score=min_score,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                use_reranking=use_reranking,
+                use_colpali=use_colpali,
+                hop_depth=hop_depth,
+                include_paths=include_paths,
+            )
+        else:
+            # Use standard retrieval
+            chunks = await self.retrieve_chunks(
+                query, auth, filters, k, min_score, use_reranking, use_colpali
+            )
+            documents = await self._create_document_results(auth, chunks)
 
         chunk_contents = [chunk.augmented_content(documents[chunk.document_id]) for chunk in chunks]
         
@@ -254,13 +292,13 @@ class DocumentService:
             for chunk in chunks
         ]
 
-        # Generate completion
-        request = CompletionRequest(
-            query=query,
-            context_chunks=chunk_contents,
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
+            # Generate completion
+            request = CompletionRequest(
+                query=query,
+                context_chunks=chunk_contents,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
 
         response = await self.completion_model.complete(request)
         
@@ -1430,6 +1468,338 @@ class DocumentService:
         except Exception as e:
             logger.error(f"Error extracting entities from document {doc_id}: {str(e)}")
             return [], []
+
+    async def _query_with_graph(
+        self,
+        query: str,
+        auth: AuthContext,
+        graph_name: str,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 20,
+        min_score: float = 0.0,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        use_reranking: Optional[bool] = None,
+        use_colpali: Optional[bool] = None,
+        hop_depth: int = 1,
+        include_paths: bool = False,
+    ) -> CompletionResponse:
+        """Generate completion using knowledge graph-enhanced retrieval.
+        
+        This method enhances retrieval by combining vector search with graph traversal:
+        1. Performs standard vector similarity search
+        2. In parallel, finds relevant entities and their connected documents through graph traversal
+        3. Combines both result sets to provide more comprehensive context
+        4. Generates a completion with the enhanced context
+        
+        Args:
+            query: The query text
+            auth: Authentication context
+            graph_name: Name of the graph to use
+            filters: Optional metadata filters
+            k: Number of chunks to retrieve
+            min_score: Minimum similarity score
+            max_tokens: Maximum tokens for completion
+            temperature: Temperature for completion
+            use_reranking: Whether to use reranking
+            use_colpali: Whether to use colpali embedding
+            hop_depth: Number of relationship hops to traverse (1-3)
+            include_paths: Whether to include relationship paths in response
+        """
+        logger.info(f"Querying with graph: {graph_name}, hop depth: {hop_depth}")
+        
+        # Step 1: Get the knowledge graph
+        graph = await self.db.get_graph(graph_name, auth)
+        if not graph:
+            logger.warning(f"Graph '{graph_name}' not found or not accessible")
+            # Fall back to standard retrieval if graph not found
+            return await self.query(
+                query=query,
+                auth=auth,
+                filters=filters,
+                k=k,
+                min_score=min_score,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                use_reranking=use_reranking,
+                use_colpali=use_colpali,
+                graph_name=None,
+            )
+        
+        # Step 2: PARALLEL APPROACH - Run both retrieval methods independently
+        
+        # 2A: Standard vector search
+        vector_chunks = await self.retrieve_chunks(
+            query, auth, filters, k, min_score, use_reranking, use_colpali
+        )
+        logger.info(f"Vector search retrieved {len(vector_chunks)} chunks")
+        
+        # 2B: Graph-based retrieval
+        # Find relevant entities based on the query
+        query_embedding = await self.embedding_model.embed_for_query(query)
+        
+        # Calculate entity similarity to query by comparing their properties with the query
+        entity_similarities = []
+        for entity in graph.entities:
+            # Create entity text representation
+            entity_text = f"{entity.label} {entity.type} " + " ".join(
+                f"{key}: {value}" for key, value in entity.properties.items()
+            )
+            
+            # Get entity embedding and calculate similarity
+            entity_embedding = await self.embedding_model.embed_for_query(entity_text)
+            similarity = self._calculate_cosine_similarity(query_embedding, entity_embedding)
+            
+            entity_similarities.append((entity, similarity))
+        
+        # Sort entities by similarity
+        entity_similarities.sort(key=lambda x: x[1], reverse=True)
+        
+        # Take top entities based on k parameter
+        top_k_entities = min(k, len(entity_similarities))
+        top_entities = entity_similarities[:top_k_entities]
+        logger.info(f"Found {len(top_entities)} initial relevant entities")
+        
+        # Traverse the graph to find related entities
+        if hop_depth > 1:
+            expanded_entities = self._expand_entities_with_relationships(
+                graph, [e[0] for e in top_entities], hop_depth
+            )
+            logger.info(f"Expanded to {len(expanded_entities)} entities after traversal")
+        else:
+            expanded_entities = [e[0] for e in top_entities]
+        
+        # Get document IDs connected to these entities
+        graph_doc_ids = set()
+        for entity in expanded_entities:
+            graph_doc_ids.update(entity.document_ids)
+            
+        logger.info(f"Graph search found {len(graph_doc_ids)} documents connected to relevant entities")
+        
+        # Step 3: Get chunks for graph-based documents
+        graph_chunks = []
+        for doc_id in graph_doc_ids:
+            # Get document if authorized
+            doc = await self.db.get_document(doc_id, auth)
+            if not doc:
+                continue
+                
+            # Check filters if provided
+            if filters and not all(doc.metadata.get(k) == v for k, v in filters.items()):
+                continue
+                
+            # Get chunks for this document
+            for chunk_id in doc.chunk_ids:
+                chunk = await self.vector_store.get_chunk(chunk_id)
+                if chunk:
+                    graph_chunks.append(chunk)
+        
+        logger.info(f"Retrieved {len(graph_chunks)} chunks from graph-connected documents")
+        
+        # Calculate paths if requested
+        paths = []
+        if include_paths:
+            paths = self._find_relationship_paths(graph, [e[0] for e in top_entities], hop_depth)
+            logger.info(f"Found {len(paths)} relationship paths")
+        
+        # Step 4: Combine and deduplicate chunks from both methods
+        all_chunks = {}
+        
+        # Add vector chunks
+        for chunk in vector_chunks:
+            chunk_key = f"{chunk.document_id}_{chunk.chunk_number}"
+            if chunk_key not in all_chunks or chunk.score > all_chunks[chunk_key].score:
+                all_chunks[chunk_key] = chunk
+        
+        # Add graph chunks - with a slight boost to their score to prefer graph results
+        for chunk in graph_chunks:
+            chunk_key = f"{chunk.document_id}_{chunk.chunk_number}"
+            # Add a small boost to graph chunks (5%) and ensure they have a score
+            if not hasattr(chunk, 'score') or chunk.score is None:
+                chunk.score = 0.7  # Default score
+            chunk.score = min(1.0, chunk.score * 1.05)  # 5% boost, capped at 1.0
+            
+            if chunk_key not in all_chunks or chunk.score > all_chunks[chunk_key].score:
+                all_chunks[chunk_key] = chunk
+        
+        # Convert to list and sort by score
+        combined_chunks = list(all_chunks.values())
+        combined_chunks.sort(key=lambda x: x.score if hasattr(x, 'score') and x.score is not None else 0, reverse=True)
+        
+        # Limit to top k
+        combined_chunks = combined_chunks[:k]
+        logger.info(f"Combined and sorted to {len(combined_chunks)} chunks")
+        
+        # If we didn't find any chunks, fall back to just the vector chunks
+        if not combined_chunks:
+            logger.warning("No graph-enhanced chunks found, using regular retrieval")
+            combined_chunks = vector_chunks[:k]
+        
+        # Step 5: Get chunk results with document metadata
+        chunk_results = await self._create_chunk_results(auth, combined_chunks)
+        documents = await self._create_document_results(auth, chunk_results)
+        
+        # Create augmented chunk contents
+        chunk_contents = [chunk.augmented_content(documents[chunk.document_id]) for chunk in chunk_results]
+        
+        # Step 6: Include graph context in prompt if paths are requested
+        if include_paths and paths:
+            # Convert paths to a text representation
+            paths_text = "Knowledge Graph Context:\n"
+            for path in paths[:5]:  # Limit to 5 paths to avoid token limits
+                paths_text += " -> ".join(path) + "\n"
+                
+            # Prepend to the first chunk
+            if chunk_contents:
+                chunk_contents[0] = paths_text + "\n\n" + chunk_contents[0]
+        
+        # Step 7: Generate completion with enhanced context
+        request = CompletionRequest(
+            query=query,
+            context_chunks=chunk_contents,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        
+        response = await self.completion_model.complete(request)
+        
+        # Include paths in response metadata if requested
+        if include_paths:
+            # Check if response has metadata attribute
+            if not hasattr(response, 'metadata'):
+                # Add metadata attribute if it doesn't exist
+                response.metadata = {}
+            elif response.metadata is None:
+                response.metadata = {}
+            
+            response.metadata["graph"] = {
+                "name": graph_name,
+                "relevant_entities": [e.label for e in expanded_entities[:10]],
+                "paths": paths[:5] if paths else [],
+            }
+            
+        return response
+        
+    def _calculate_cosine_similarity(self, vec1, vec2):
+        """Calculate cosine similarity between two vectors."""
+        import numpy as np
+        
+        # Convert to numpy arrays
+        vec1 = np.array(vec1)
+        vec2 = np.array(vec2)
+        
+        # Calculate dot product and magnitude
+        dot_product = np.dot(vec1, vec2)
+        magnitude1 = np.linalg.norm(vec1)
+        magnitude2 = np.linalg.norm(vec2)
+        
+        # Avoid division by zero
+        if magnitude1 == 0 or magnitude2 == 0:
+            return 0
+            
+        return dot_product / (magnitude1 * magnitude2)
+    
+    def _expand_entities_with_relationships(self, graph, seed_entities, hop_depth):
+        """Expand seed entities by traversing relationships up to hop_depth.
+        
+        Args:
+            graph: Knowledge graph
+            seed_entities: Initial entities to expand from
+            hop_depth: Maximum number of hops to traverse
+            
+        Returns:
+            List of all connected entities
+        """
+        # Create a set of entity IDs we've seen
+        seen_entity_ids = set(entity.id for entity in seed_entities)
+        all_entities = list(seed_entities)
+        
+        # Create a map from entity ID to entity object for fast lookup
+        entity_map = {entity.id: entity for entity in graph.entities}
+        
+        # For each hop
+        for _ in range(hop_depth - 1):  # -1 because seed entities count as hop 0
+            new_entities = []
+            
+            # For each entity we've found so far
+            for entity in all_entities:
+                # Find relationships where this entity is the source
+                for relationship in graph.relationships:
+                    if relationship.source_id == entity.id and relationship.target_id not in seen_entity_ids:
+                        # Add the target entity if we haven't seen it before
+                        target_entity = entity_map.get(relationship.target_id)
+                        if target_entity:
+                            new_entities.append(target_entity)
+                            seen_entity_ids.add(target_entity.id)
+                    
+                    # Also find relationships where this entity is the target
+                    elif relationship.target_id == entity.id and relationship.source_id not in seen_entity_ids:
+                        # Add the source entity if we haven't seen it before
+                        source_entity = entity_map.get(relationship.source_id)
+                        if source_entity:
+                            new_entities.append(source_entity)
+                            seen_entity_ids.add(source_entity.id)
+            
+            # Add new entities to our list
+            all_entities.extend(new_entities)
+            
+            # If we didn't find any new entities, we can stop early
+            if not new_entities:
+                break
+                
+        return all_entities
+    
+    def _find_relationship_paths(self, graph, seed_entities, hop_depth):
+        """Find meaningful paths in the graph starting from seed entities.
+        
+        Args:
+            graph: Knowledge graph
+            seed_entities: Initial entities to start from
+            hop_depth: Maximum length of paths
+            
+        Returns:
+            List of paths, where each path is a list of entity labels
+        """
+        paths = []
+        entity_map = {entity.id: entity for entity in graph.entities}
+        
+        # For each seed entity
+        for start_entity in seed_entities:
+            # Start a BFS from this entity
+            queue = [(start_entity.id, [start_entity.label])]
+            visited = set([start_entity.id])
+            
+            while queue:
+                entity_id, path = queue.pop(0)
+                
+                # If path is already at max length, record it but don't expand
+                if len(path) >= hop_depth * 2:  # *2 because path includes relationship types
+                    paths.append(path)
+                    continue
+                
+                # Find outgoing relationships
+                for relationship in graph.relationships:
+                    target_id = None
+                    
+                    if relationship.source_id == entity_id:
+                        target_id = relationship.target_id
+                        direction = "outgoing"
+                    elif relationship.target_id == entity_id:
+                        target_id = relationship.source_id
+                        direction = "incoming"
+                        
+                    if target_id and target_id not in visited:
+                        target_entity = entity_map.get(target_id)
+                        if target_entity:
+                            # Add to visited and queue
+                            visited.add(target_id)
+                            new_path = path + [f"({relationship.type})", target_entity.label]
+                            queue.append((target_id, new_path))
+                            
+                            # Record this path
+                            paths.append(new_path)
+        
+        return paths
 
     def close(self):
         """Close all resources."""

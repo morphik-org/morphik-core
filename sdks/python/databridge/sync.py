@@ -409,6 +409,9 @@ class DataBridge:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         use_colpali: bool = True,
+        graph_name: Optional[str] = None,
+        hop_depth: int = 1,
+        include_paths: bool = False,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context.
@@ -421,17 +424,35 @@ class DataBridge:
             max_tokens: Maximum tokens in completion
             temperature: Model temperature
             use_colpali: Whether to use ColPali-style embedding model to generate the completion (only works for documents ingested with `use_colpali=True`)
+            graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
+            hop_depth: Number of relationship hops to traverse in the graph (1-3)
+            include_paths: Whether to include relationship paths in the response
         Returns:
             CompletionResponse
 
         Example:
             ```python
+            # Standard query
             response = db.query(
                 "What are the key findings about customer satisfaction?",
                 filters={"department": "research"},
                 temperature=0.7
             )
+            
+            # Knowledge graph enhanced query
+            response = db.query(
+                "How does product X relate to customer segment Y?",
+                graph_name="market_graph",
+                hop_depth=2,
+                include_paths=True
+            )
+            
             print(response.completion)
+            
+            # If include_paths=True, you can inspect the graph paths
+            if response.metadata and "graph" in response.metadata:
+                for path in response.metadata["graph"]["paths"]:
+                    print(" -> ".join(path))
             ```
         """
         request = {
@@ -442,6 +463,9 @@ class DataBridge:
             "max_tokens": max_tokens,
             "temperature": temperature,
             "use_colpali": json.dumps(use_colpali),
+            "graph_name": graph_name,
+            "hop_depth": hop_depth,
+            "include_paths": include_paths,
         }
 
         response = self._request("POST", "query", request)

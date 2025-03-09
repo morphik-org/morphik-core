@@ -192,6 +192,9 @@ class DB:
         max_tokens: int = None,
         temperature: float = None,
         use_colpali: bool = True,
+        graph_name: str = None,
+        hop_depth: int = 1,
+        include_paths: bool = False,
     ) -> dict:
         """
         Generate completion using relevant chunks as context
@@ -204,6 +207,23 @@ class DB:
             max_tokens: Maximum tokens in completion
             temperature: Model temperature
             use_colpali: Whether to use ColPali-style embedding model for retrieval
+            graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
+            hop_depth: Number of relationship hops to traverse in the graph (1-3)
+            include_paths: Whether to include relationship paths in the response
+            
+        Examples:
+            Standard query:
+            >>> db.query("What are the key findings?", filters={"category": "research"})
+            
+            Knowledge graph enhanced query:
+            >>> db.query("How does product X relate to customer segment Y?", 
+                         graph_name="market_graph", hop_depth=2, include_paths=True)
+                         
+            # If include_paths=True, you can inspect the graph paths
+            >>> response = db.query("...", graph_name="sales_graph", include_paths=True)
+            >>> if "graph" in response.get("metadata", {}):
+            >>>     for path in response["metadata"]["graph"]["paths"]:
+            >>>         print(" -> ".join(path))
         """
         response = self._client.query(
             query,
@@ -213,6 +233,9 @@ class DB:
             max_tokens=max_tokens,
             temperature=temperature,
             use_colpali=use_colpali,
+            graph_name=graph_name,
+            hop_depth=hop_depth,
+            include_paths=include_paths,
         )
         return response.model_dump()
 
@@ -636,6 +659,7 @@ if __name__ == "__main__":
     print("  result = db.query('how to use this API?'); print(result['sources'])")
     print("Example: db.ingest_text('hello world')")
     print("Example: db.create_graph('knowledge_graph', filters={'category': 'research'})")
+    print("Example: db.query('How does X relate to Y?', graph_name='knowledge_graph', include_paths=True)")
     print("Type help(db) for documentation.")
 
     # Start the shell
