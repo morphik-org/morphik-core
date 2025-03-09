@@ -60,5 +60,4 @@ class OllamaCompletionModel(BaseCompletionModel):
                 "completion_tokens": estimated_completion_tokens,
                 "total_tokens": estimated_prompt_tokens + estimated_completion_tokens,
             },
-            sources=request.sources,
         )

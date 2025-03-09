@@ -417,17 +417,17 @@ async def batch_get_documents(document_ids: List[str], auth: AuthContext = Depen
 
 
 @app.post("/batch/chunks", response_model=List[ChunkResult])
-async def batch_get_chunks(sources: List[ChunkSource], auth: AuthContext = Depends(verify_token)):
+async def batch_get_chunks(chunk_ids: List[ChunkSource], auth: AuthContext = Depends(verify_token)):
     """Retrieve specific chunks by their document ID and chunk number in a single batch operation."""
     try:
         async with telemetry.track_operation(
             operation_type="batch_get_chunks",
             user_id=auth.entity_id,
             metadata={
-                "chunk_count": len(sources),
+                "chunk_count": len(chunk_ids),
             },
         ):
-            return await document_service.batch_retrieve_chunks(sources, auth)
+            return await document_service.batch_retrieve_chunks(chunk_ids, auth)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 

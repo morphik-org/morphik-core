@@ -174,24 +174,24 @@ class DocumentService:
         
     async def batch_retrieve_chunks(
         self,
-        sources: List[ChunkSource],
+        chunk_ids: List[ChunkSource],
         auth: AuthContext
     ) -> List[ChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation.
         
         Args:
-            sources: List of ChunkSource objects with document_id and chunk_number
+            chunk_ids: List of ChunkSource objects with document_id and chunk_number
             auth: Authentication context
             
         Returns:
             List of ChunkResult objects
         """
-        if not sources:
+        if not chunk_ids:
             return []
             
         # Collect unique document IDs to check authorization in a single query
-        doc_ids = list({source.document_id for source in sources})
+        doc_ids = list({source.document_id for source in chunk_ids})
         
         # Find authorized documents in a single query
         authorized_docs = await self.batch_retrieve_documents(doc_ids, auth)
@@ -199,7 +199,7 @@ class DocumentService:
         
         # Filter sources to only include authorized documents
         authorized_sources = [
-            source for source in sources 
+            source for source in chunk_ids 
             if source.document_id in authorized_doc_ids
         ]
         
@@ -217,7 +217,7 @@ class DocumentService:
         
         # Convert to chunk results
         results = await self._create_chunk_results(auth, chunks)
-        logger.info(f"Batch retrieved {len(results)} chunks out of {len(sources)} requested")
+        logger.info(f"Batch retrieved {len(results)} chunks out of {len(chunk_ids)} requested")
         return results
 
     async def query(
@@ -253,10 +253,13 @@ class DocumentService:
             context_chunks=chunk_contents,
             max_tokens=max_tokens,
             temperature=temperature,
-            sources=sources,
         )
 
         response = await self.completion_model.complete(request)
+        
+        # Add sources information at the document service level
+        response.sources = sources
+        
         return response
 
     async def ingest_text(
