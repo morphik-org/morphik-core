@@ -18,3 +18,19 @@ class BaseVectorStore(ABC):
     ) -> List[DocumentChunk]:
         """Find similar chunks"""
         pass
+        
+    @abstractmethod
+    async def get_chunks_by_id(
+        self,
+        chunk_identifiers: List[Tuple[str, int]],
+    ) -> List[DocumentChunk]:
+        """
+        Retrieve specific chunks by document ID and chunk number.
+        
+        Args:
+            chunk_identifiers: List of (document_id, chunk_number) tuples
+            
+        Returns:
+            List of DocumentChunk objects
+        """
+        pass

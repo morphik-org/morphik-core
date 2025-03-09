@@ -14,6 +14,7 @@ from .models import (
     DocumentResult,
     CompletionResponse,
     IngestTextRequest,
+    ChunkSource,
 )
 from .rules import Rule
 
@@ -452,6 +453,105 @@ class AsyncDataBridge:
         """
         response = await self._request("GET", f"documents/{document_id}")
         return Document(**response)
+        
+    async def batch_get_documents(self, document_ids: List[str]) -> List[Document]:
+        """
+        Retrieve multiple documents by their IDs in a single batch operation.
+        
+        Args:
+            document_ids: List of document IDs to retrieve
+            
+        Returns:
+            List[Document]: List of document metadata for found documents
+            
+        Example:
+            ```python
+            docs = await db.batch_get_documents(["doc_123", "doc_456", "doc_789"])
+            for doc in docs:
+                print(f"Document {doc.external_id}: {doc.metadata.get('title')}")
+            ```
+        """
+        response = await self._request("POST", "batch/documents", data=document_ids)
+        return [Document(**doc) for doc in response]
+        
+    async def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
+        """
+        Retrieve specific chunks by their document ID and chunk number in a single batch operation.
+        
+        Args:
+            sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
+            
+        Returns:
+            List[FinalChunkResult]: List of chunk results
+            
+        Example:
+            ```python
+            # Using dictionaries
+            sources = [
+                {"document_id": "doc_123", "chunk_number": 0},
+                {"document_id": "doc_456", "chunk_number": 2}
+            ]
+            
+            # Or using ChunkSource objects
+            from databridge.models import ChunkSource
+            sources = [
+                ChunkSource(document_id="doc_123", chunk_number=0),
+                ChunkSource(document_id="doc_456", chunk_number=2)
+            ]
+            
+            chunks = await db.batch_get_chunks(sources)
+            for chunk in chunks:
+                print(f"Chunk from {chunk.document_id}, number {chunk.chunk_number}: {chunk.content[:50]}...")
+            ```
+        """
+        # Convert to list of dictionaries if needed
+        source_dicts = []
+        for source in sources:
+            if isinstance(source, dict):
+                source_dicts.append(source)
+            else:
+                source_dicts.append(source.model_dump())
+                
+        response = await self._request("POST", "batch/chunks", data=source_dicts)
+        chunks = [ChunkResult(**r) for r in response]
+        
+        final_chunks = []
+        for chunk in chunks:
+            if chunk.metadata.get("is_image"):
+                try:
+                    # Handle data URI format "data:image/png;base64,..."
+                    content = chunk.content
+                    if content.startswith("data:"):
+                        # Extract the base64 part after the comma
+                        content = content.split(",", 1)[1]
+
+                    # Now decode the base64 string
+                    import base64
+                    import io
+                    from PIL import Image
+                    image_bytes = base64.b64decode(content)
+                    content = Image.open(io.BytesIO(image_bytes))
+                except Exception as e:
+                    print(f"Error processing image: {str(e)}")
+                    # Fall back to using the content as text
+                    content = chunk.content
+            else:
+                content = chunk.content
+
+            final_chunks.append(
+                FinalChunkResult(
+                    content=content,
+                    score=chunk.score,
+                    document_id=chunk.document_id,
+                    chunk_number=chunk.chunk_number,
+                    metadata=chunk.metadata,
+                    content_type=chunk.content_type,
+                    filename=chunk.filename,
+                    download_url=chunk.download_url,
+                )
+            )
+            
+        return final_chunks
 
     async def create_cache(
         self,

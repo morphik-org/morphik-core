@@ -1,4 +1,5 @@
-from .base_completion import BaseCompletionModel, CompletionRequest, CompletionResponse
+from .base_completion import BaseCompletionModel
+from core.models.completion import CompletionRequest, CompletionResponse
 
 
 class OpenAICompletionModel(BaseCompletionModel):

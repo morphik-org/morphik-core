@@ -269,6 +269,62 @@ class MultiVectorStore(BaseVectorStore):
         #     raise e
         #     return []
 
+    async def get_chunks_by_id(
+        self,
+        chunk_identifiers: List[Tuple[str, int]],
+    ) -> List[DocumentChunk]:
+        """
+        Retrieve specific chunks by document ID and chunk number in a single database query.
+        
+        Args:
+            chunk_identifiers: List of (document_id, chunk_number) tuples
+            
+        Returns:
+            List of DocumentChunk objects
+        """
+        # try:
+        if not chunk_identifiers:
+            return []
+            
+        # Construct the WHERE clause with OR conditions
+        conditions = []
+        for doc_id, chunk_num in chunk_identifiers:
+            conditions.append(f"(document_id = '{doc_id}' AND chunk_number = {chunk_num})")
+        
+        where_clause = " OR ".join(conditions)
+        
+        # Build and execute query
+        query = f"""
+            SELECT document_id, chunk_number, content, chunk_metadata
+            FROM multi_vector_embeddings
+            WHERE {where_clause}
+        """
+        
+        logger.info(f"Batch retrieving {len(chunk_identifiers)} chunks from multi-vector store")
+        
+        result = self.conn.execute(query).fetchall()
+        
+        # Convert to DocumentChunks
+        chunks = []
+        for row in result:
+            try:
+                metadata = eval(row[3]) if row[3] else {}
+            except (ValueError, SyntaxError):
+                metadata = {}
+                
+            chunk = DocumentChunk(
+                document_id=row[0],
+                chunk_number=row[1],
+                content=row[2],
+                embedding=[],  # Don't send embeddings back
+                metadata=metadata,
+                score=0.0,  # No relevance score for direct retrieval
+            )
+            chunks.append(chunk)
+            
+        logger.info(f"Found {len(chunks)} chunks in batch retrieval from multi-vector store")
+        return chunks
+    
     def close(self):
         """Close the database connection."""
         if self.conn:

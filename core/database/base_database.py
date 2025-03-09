@@ -23,6 +23,21 @@ class BaseDatabase(ABC):
         Returns: Document if found and accessible, None otherwise
         """
         pass
+        
+    @abstractmethod
+    async def get_documents_by_id(self, document_ids: List[str], auth: AuthContext) -> List[Document]:
+        """
+        Retrieve multiple documents by their IDs in a single batch operation.
+        Only returns documents the user has access to.
+        
+        Args:
+            document_ids: List of document IDs to retrieve
+            auth: Authentication context
+            
+        Returns:
+            List of Document objects that were found and user has access to
+        """
+        pass
 
     @abstractmethod
     async def get_documents(

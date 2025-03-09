@@ -190,6 +190,38 @@ class DB:
         """Get document metadata by ID"""
         doc = self._client.get_document(document_id)
         return doc.model_dump()
+        
+    def batch_get_documents(self, document_ids: List[str]) -> List[dict]:
+        """
+        Retrieve multiple documents by their IDs in a single batch operation.
+        
+        Args:
+            document_ids: List of document IDs to retrieve
+            
+        Returns:
+            List of document metadata
+        """
+        docs = self._client.batch_get_documents(document_ids)
+        return [doc.model_dump() for doc in docs]
+        
+    def batch_get_chunks(self, sources: List[dict]) -> List[dict]:
+        """
+        Retrieve specific chunks by their document ID and chunk number in a single batch operation.
+        
+        Args:
+            sources: List of dictionaries with document_id and chunk_number fields
+            
+        Returns:
+            List of chunk results
+            
+        Example:
+            sources = [
+                {"document_id": "doc_123", "chunk_number": 0},
+                {"document_id": "doc_456", "chunk_number": 2}
+            ]
+        """
+        chunks = self._client.batch_get_chunks(sources)
+        return [chunk.model_dump() for chunk in chunks]
 
     def create_cache(
         self,
@@ -265,7 +297,12 @@ if __name__ == "__main__":
 
     # Print welcome message
     print("\nDataBridge CLI ready to use. The 'db' object is available with all SDK methods.")
-    print("Example: db.ingest_text('hello world')")
+    print("Examples:")
+    print("  db.ingest_text('hello world')")
+    print("  db.query('what are the key findings?')")
+    print("  db.batch_get_documents(['doc_id1', 'doc_id2'])")
+    print("  db.batch_get_chunks([{'document_id': 'doc_123', 'chunk_number': 0}])")
+    print("  result = db.query('how to use this API?'); print(result['sources'])")
     print("Type help(db) for documentation.")
 
     # Start the shell

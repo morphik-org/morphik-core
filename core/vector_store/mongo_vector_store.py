@@ -132,3 +132,52 @@ class MongoDBAtlasVectorStore(BaseVectorStore):
             logger.error(f"MongoDB error: {e._message}")
             logger.error(f"Error querying similar chunks: {str(e)}")
             raise e
+            
+    async def get_chunks_by_id(
+        self,
+        chunk_identifiers: List[Tuple[str, int]],
+    ) -> List[DocumentChunk]:
+        """
+        Retrieve specific chunks by document ID and chunk number in a single database query.
+        
+        Args:
+            chunk_identifiers: List of (document_id, chunk_number) tuples
+            
+        Returns:
+            List of DocumentChunk objects
+        """
+        try:
+            if not chunk_identifiers:
+                return []
+                
+            # Create a query with $or to find multiple chunks in a single query
+            query = {"$or": []}
+            for doc_id, chunk_num in chunk_identifiers:
+                query["$or"].append({
+                    "document_id": doc_id,
+                    "chunk_number": chunk_num
+                })
+                
+            logger.info(f"Batch retrieving {len(chunk_identifiers)} chunks with a single query")
+                
+            # Find all matching chunks in a single database query
+            cursor = self.collection.find(query)
+            chunks = []
+            
+            async for result in cursor:
+                chunk = DocumentChunk(
+                    document_id=result["document_id"],
+                    chunk_number=result["chunk_number"],
+                    content=result["content"],
+                    embedding=[],  # Don't send embeddings back
+                    metadata=result.get("metadata", {}),
+                    score=0.0,  # No relevance score for direct retrieval
+                )
+                chunks.append(chunk)
+                
+            logger.info(f"Found {len(chunks)} chunks in batch retrieval")
+            return chunks
+                
+        except PyMongoError as e:
+            logger.error(f"Error retrieving chunks by ID: {str(e)}")
+            return []

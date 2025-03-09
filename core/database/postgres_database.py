@@ -149,10 +149,67 @@ class PostgresDatabase(BaseDatabase):
                     }
                     return Document(**doc_dict)
                 return None
-
+                
         except Exception as e:
             logger.error(f"Error retrieving document metadata: {str(e)}")
             return None
+            
+    async def get_documents_by_id(self, document_ids: List[str], auth: AuthContext) -> List[Document]:
+        """
+        Retrieve multiple documents by their IDs in a single batch operation.
+        Only returns documents the user has access to.
+        
+        Args:
+            document_ids: List of document IDs to retrieve
+            auth: Authentication context
+            
+        Returns:
+            List of Document objects that were found and user has access to
+        """
+        try:
+            if not document_ids:
+                return []
+                
+            async with self.async_session() as session:
+                # Build access filter
+                access_filter = self._build_access_filter(auth)
+                
+                # Query documents with both document IDs and access check in a single query
+                query = (
+                    select(DocumentModel)
+                    .where(DocumentModel.external_id.in_(document_ids))
+                    .where(text(f"({access_filter})"))
+                )
+                
+                logger.info(f"Batch retrieving {len(document_ids)} documents with a single query")
+                
+                # Execute batch query
+                result = await session.execute(query)
+                doc_models = result.scalars().all()
+                
+                documents = []
+                for doc_model in doc_models:
+                    # Convert doc_metadata back to metadata
+                    doc_dict = {
+                        "external_id": doc_model.external_id,
+                        "owner": doc_model.owner,
+                        "content_type": doc_model.content_type,
+                        "filename": doc_model.filename,
+                        "metadata": doc_model.doc_metadata,
+                        "storage_info": doc_model.storage_info,
+                        "system_metadata": doc_model.system_metadata,
+                        "additional_metadata": doc_model.additional_metadata,
+                        "access_control": doc_model.access_control,
+                        "chunk_ids": doc_model.chunk_ids,
+                    }
+                    documents.append(Document(**doc_dict))
+                
+                logger.info(f"Found {len(documents)} documents in batch retrieval")
+                return documents
+                
+        except Exception as e:
+            logger.error(f"Error batch retrieving documents: {str(e)}")
+            return []
 
     async def get_documents(
         self,
