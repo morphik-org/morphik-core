@@ -2,12 +2,20 @@ from pydantic import BaseModel
 from typing import Dict, List, Optional
 
 
+class ChunkSource(BaseModel):
+    """Source information for a chunk used in completion"""
+    
+    document_id: str
+    chunk_number: int
+
+
 class CompletionResponse(BaseModel):
     """Response from completion generation"""
 
     completion: str
     usage: Dict[str, int]
     finish_reason: Optional[str] = None
+    sources: List[ChunkSource] = []
 
 
 class CompletionRequest(BaseModel):
@@ -17,3 +25,4 @@ class CompletionRequest(BaseModel):
     context_chunks: List[str]
     max_tokens: Optional[int] = 1000
     temperature: Optional[float] = 0.7
+    sources: List[ChunkSource] = []

@@ -17,7 +17,7 @@ from core.vector_store.base_vector_store import BaseVectorStore
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.parser.base_parser import BaseParser
 from core.completion.base_completion import BaseCompletionModel
-from core.completion.base_completion import CompletionRequest, CompletionResponse
+from core.models.completion import CompletionRequest, CompletionResponse, ChunkSource
 import logging
 from core.reranker.base_reranker import BaseReranker
 from core.config import get_settings
@@ -148,6 +148,77 @@ class DocumentService:
         documents = list(results.values())
         logger.info(f"Returning {len(documents)} document results")
         return documents
+        
+    async def batch_retrieve_documents(
+        self,
+        document_ids: List[str],
+        auth: AuthContext
+    ) -> List[Document]:
+        """
+        Retrieve multiple documents by their IDs in a single batch operation.
+        
+        Args:
+            document_ids: List of document IDs to retrieve
+            auth: Authentication context
+            
+        Returns:
+            List of Document objects that user has access to
+        """
+        if not document_ids:
+            return []
+            
+        # Use the database's batch retrieval method
+        documents = await self.db.get_documents_by_id(document_ids, auth)
+        logger.info(f"Batch retrieved {len(documents)} documents out of {len(document_ids)} requested")
+        return documents
+        
+    async def batch_retrieve_chunks(
+        self,
+        sources: List[ChunkSource],
+        auth: AuthContext
+    ) -> List[ChunkResult]:
+        """
+        Retrieve specific chunks by their document ID and chunk number in a single batch operation.
+        
+        Args:
+            sources: List of ChunkSource objects with document_id and chunk_number
+            auth: Authentication context
+            
+        Returns:
+            List of ChunkResult objects
+        """
+        if not sources:
+            return []
+            
+        # Collect unique document IDs to check authorization in a single query
+        doc_ids = list({source.document_id for source in sources})
+        
+        # Find authorized documents in a single query
+        authorized_docs = await self.batch_retrieve_documents(doc_ids, auth)
+        authorized_doc_ids = {doc.external_id for doc in authorized_docs}
+        
+        # Filter sources to only include authorized documents
+        authorized_sources = [
+            source for source in sources 
+            if source.document_id in authorized_doc_ids
+        ]
+        
+        if not authorized_sources:
+            return []
+            
+        # Create list of (document_id, chunk_number) tuples for vector store query
+        chunk_identifiers = [
+            (source.document_id, source.chunk_number) 
+            for source in authorized_sources
+        ]
+        
+        # Retrieve the chunks from vector store in a single query
+        chunks = await self.vector_store.get_chunks_by_id(chunk_identifiers)
+        
+        # Convert to chunk results
+        results = await self._create_chunk_results(auth, chunks)
+        logger.info(f"Batch retrieved {len(results)} chunks out of {len(sources)} requested")
+        return results
 
     async def query(
         self,
@@ -169,6 +240,12 @@ class DocumentService:
         documents = await self._create_document_results(auth, chunks)
 
         chunk_contents = [chunk.augmented_content(documents[chunk.document_id]) for chunk in chunks]
+        
+        # Collect sources information
+        sources = [
+            ChunkSource(document_id=chunk.document_id, chunk_number=chunk.chunk_number)
+            for chunk in chunks
+        ]
 
         # Generate completion
         request = CompletionRequest(
@@ -176,6 +253,7 @@ class DocumentService:
             context_chunks=chunk_contents,
             max_tokens=max_tokens,
             temperature=temperature,
+            sources=sources,
         )
 
         response = await self.completion_model.complete(request)

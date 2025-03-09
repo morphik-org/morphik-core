@@ -1,4 +1,5 @@
-from .base_completion import BaseCompletionModel, CompletionRequest, CompletionResponse
+from .base_completion import BaseCompletionModel
+from core.models.completion import CompletionRequest, CompletionResponse
 
 
 class OpenAICompletionModel(BaseCompletionModel):
@@ -72,4 +73,5 @@ class OpenAICompletionModel(BaseCompletionModel):
                 "completion_tokens": response.usage.completion_tokens,
                 "total_tokens": response.usage.total_tokens,
             },
+            sources=request.sources,
         )
