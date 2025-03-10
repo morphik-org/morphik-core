@@ -3,7 +3,6 @@ from datetime import datetime, UTC, timedelta
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional
-from core.models.completion import CompletionResponse
 from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import jwt
@@ -12,6 +11,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.completion.openai_completion import OpenAICompletionModel
 from core.embedding.ollama_embedding_model import OllamaEmbeddingModel
 from core.models.request import RetrieveRequest, CompletionQueryRequest, IngestTextRequest
+from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.auth import AuthContext, EntityType
 from core.parser.databridge_parser import DatabridgeParser
@@ -396,6 +396,38 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
                 request.use_reranking,
                 request.use_colpali,
             )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+        
+        
+@app.post("/batch/documents", response_model=List[Document])
+async def batch_get_documents(document_ids: List[str], auth: AuthContext = Depends(verify_token)):
+    """Retrieve multiple documents by their IDs in a single batch operation."""
+    try:
+        async with telemetry.track_operation(
+            operation_type="batch_get_documents",
+            user_id=auth.entity_id,
+            metadata={
+                "document_count": len(document_ids),
+            },
+        ):
+            return await document_service.batch_retrieve_documents(document_ids, auth)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.post("/batch/chunks", response_model=List[ChunkResult])
+async def batch_get_chunks(chunk_ids: List[ChunkSource], auth: AuthContext = Depends(verify_token)):
+    """Retrieve specific chunks by their document ID and chunk number in a single batch operation."""
+    try:
+        async with telemetry.track_operation(
+            operation_type="batch_get_chunks",
+            user_id=auth.entity_id,
+            metadata={
+                "chunk_count": len(chunk_ids),
+            },
+        ):
+            return await document_service.batch_retrieve_chunks(chunk_ids, auth)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 

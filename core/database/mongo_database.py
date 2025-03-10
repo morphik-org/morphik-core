@@ -79,6 +79,49 @@ class MongoDatabase(BaseDatabase):
         except PyMongoError as e:
             logger.error(f"Error retrieving document metadata: {str(e)}")
             raise e
+            
+    async def get_documents_by_id(self, document_ids: List[str], auth: AuthContext) -> List[Document]:
+        """
+        Retrieve multiple documents by their IDs in a single batch operation.
+        Only returns documents the user has access to.
+        
+        Args:
+            document_ids: List of document IDs to retrieve
+            auth: Authentication context
+            
+        Returns:
+            List of Document objects that were found and user has access to
+        """
+        try:
+            if not document_ids:
+                return []
+                
+            # Build access filter
+            access_filter = self._build_access_filter(auth)
+            
+            # Query documents with both document IDs and access check in a single query
+            query = {
+                "$and": [
+                    {"external_id": {"$in": document_ids}},
+                    access_filter
+                ]
+            }
+            
+            logger.info(f"Batch retrieving {len(document_ids)} documents with a single query")
+            
+            # Execute batch query
+            cursor = self.collection.find(query)
+            
+            documents = []
+            async for doc_dict in cursor:
+                documents.append(Document(**doc_dict))
+                
+            logger.info(f"Found {len(documents)} documents in batch retrieval")
+            return documents
+                
+        except PyMongoError as e:
+            logger.error(f"Error batch retrieving documents: {str(e)}")
+            return []
 
     async def get_documents(
         self,

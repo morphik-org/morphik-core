@@ -59,11 +59,21 @@ class DocumentResult(BaseModel):
     content: DocumentContent = Field(..., description="Document content or URL")
 
 
+class ChunkSource(BaseModel):
+    """Source information for a chunk used in completion"""
+    
+    document_id: str = Field(..., description="ID of the source document")
+    chunk_number: int = Field(..., description="Chunk number within the document")
+
+
 class CompletionResponse(BaseModel):
     """Completion response model"""
 
     completion: str
     usage: Dict[str, int]
+    sources: List[ChunkSource] = Field(
+        default_factory=list, description="Sources of chunks used in the completion"
+    )
 
 
 class IngestTextRequest(BaseModel):
