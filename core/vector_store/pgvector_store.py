@@ -178,3 +178,66 @@ class PGVectorStore(BaseVectorStore):
         except Exception as e:
             logger.error(f"Error querying similar chunks: {str(e)}")
             return []
+            
+    async def get_chunks_by_id(
+        self,
+        chunk_identifiers: List[Tuple[str, int]],
+    ) -> List[DocumentChunk]:
+        """
+        Retrieve specific chunks by document ID and chunk number in a single database query.
+        
+        Args:
+            chunk_identifiers: List of (document_id, chunk_number) tuples
+            
+        Returns:
+            List of DocumentChunk objects
+        """
+        try:
+            if not chunk_identifiers:
+                return []
+                
+            async with self.async_session() as session:
+                # Create a list of OR conditions for the query
+                conditions = []
+                for doc_id, chunk_num in chunk_identifiers:
+                    conditions.append(
+                        text(f"(document_id = '{doc_id}' AND chunk_number = {chunk_num})")
+                    )
+                
+                # Join conditions with OR
+                or_condition = text(" OR ".join(f"({condition.text})" for condition in conditions))
+                
+                # Build query to find all matching chunks in a single query
+                query = select(VectorEmbedding).where(or_condition)
+                
+                logger.info(f"Batch retrieving {len(chunk_identifiers)} chunks with a single query")
+                
+                # Execute query
+                result = await session.execute(query)
+                chunk_models = result.scalars().all()
+                
+                # Convert to DocumentChunk objects
+                chunks = []
+                for chunk_model in chunk_models:
+                    # Convert stored metadata string back to dict
+                    try:
+                        metadata = eval(chunk_model.chunk_metadata) if chunk_model.chunk_metadata else {}
+                    except Exception:
+                        metadata = {}
+                        
+                    chunk = DocumentChunk(
+                        document_id=chunk_model.document_id,
+                        chunk_number=chunk_model.chunk_number,
+                        content=chunk_model.content,
+                        embedding=[],  # Don't send embeddings back
+                        metadata=metadata,
+                        score=0.0,  # No relevance score for direct retrieval
+                    )
+                    chunks.append(chunk)
+                
+                logger.info(f"Found {len(chunks)} chunks in batch retrieval")
+                return chunks
+                
+        except Exception as e:
+            logger.error(f"Error retrieving chunks by ID: {str(e)}")
+            return []

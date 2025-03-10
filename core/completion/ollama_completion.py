@@ -1,8 +1,5 @@
-from core.completion.base_completion import (
-    BaseCompletionModel,
-    CompletionRequest,
-    CompletionResponse,
-)
+from core.completion.base_completion import BaseCompletionModel
+from core.models.completion import CompletionRequest, CompletionResponse
 from ollama import AsyncClient
 
 BASE_64_PREFIX = "data:image/png;base64,"
