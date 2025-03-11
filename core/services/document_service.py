@@ -243,7 +243,7 @@ class DocumentService:
         
         # Collect sources information
         sources = [
-            ChunkSource(document_id=chunk.document_id, chunk_number=chunk.chunk_number)
+            ChunkSource(document_id=chunk.document_id, chunk_number=chunk.chunk_number, score=chunk.score)
             for chunk in chunks
         ]
 
