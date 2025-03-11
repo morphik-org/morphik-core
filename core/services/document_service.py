@@ -63,7 +63,8 @@ class DocumentService:
         self.colpali_embedding_model = colpali_embedding_model
         self.colpali_vector_store = colpali_vector_store
 
-        colpali_vector_store.initialize()
+        if colpali_vector_store:
+            colpali_vector_store.initialize()
 
         # Cache-related data structures
         # Maps cache name to active cache object
@@ -243,7 +244,7 @@ class DocumentService:
         
         # Collect sources information
         sources = [
-            ChunkSource(document_id=chunk.document_id, chunk_number=chunk.chunk_number)
+            ChunkSource(document_id=chunk.document_id, chunk_number=chunk.chunk_number, score=chunk.score)
             for chunk in chunks
         ]
 

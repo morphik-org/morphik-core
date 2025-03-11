@@ -7,6 +7,7 @@ class ChunkSource(BaseModel):
     
     document_id: str
     chunk_number: int
+    score: Optional[float] = None
 
 
 class CompletionResponse(BaseModel):
