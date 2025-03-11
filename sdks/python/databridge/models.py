@@ -64,6 +64,7 @@ class ChunkSource(BaseModel):
     
     document_id: str = Field(..., description="ID of the source document")
     chunk_number: int = Field(..., description="Chunk number within the document")
+    score: Optional[float] = Field(None, description="Relevance score")
 
 
 class CompletionResponse(BaseModel):
