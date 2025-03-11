@@ -63,7 +63,8 @@ class DocumentService:
         self.colpali_embedding_model = colpali_embedding_model
         self.colpali_vector_store = colpali_vector_store
 
-        colpali_vector_store.initialize()
+        if colpali_vector_store:
+            colpali_vector_store.initialize()
 
         # Cache-related data structures
         # Maps cache name to active cache object
