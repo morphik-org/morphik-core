@@ -490,7 +490,6 @@ async def get_document(document_id: str, auth: AuthContext = Depends(verify_toke
         raise e
 
 
-# Add dedicated endpoints for text, file, and metadata updates
 @app.post("/documents/{document_id}/update_text", response_model=Document)
 async def update_document_text(
     document_id: str,
@@ -531,13 +530,14 @@ async def update_document_text(
                 update_strategy=update_strategy,
                 use_colpali=request.use_colpali,
             )
-            
+
             if not doc:
                 raise HTTPException(status_code=404, detail="Document not found or update failed")
-                
+
             return doc
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
 
 @app.post("/documents/{document_id}/update_file", response_model=Document)
 async def update_document_file(
@@ -551,7 +551,7 @@ async def update_document_file(
 ):
     """
     Update a document with content from a file using the specified strategy.
-    
+
     Args:
         document_id: ID of the document to update
         file: File to add to the document
@@ -559,14 +559,14 @@ async def update_document_file(
         rules: JSON string of rules to apply to the content
         update_strategy: Strategy for updating the document (default: 'add')
         use_colpali: Whether to use multi-vector embedding
-        
+
     Returns:
         Document: Updated document metadata
     """
     try:
         metadata_dict = json.loads(metadata)
         rules_list = json.loads(rules)
-        
+
         async with telemetry.track_operation(
             operation_type="update_document_file",
             user_id=auth.entity_id,
@@ -589,15 +589,16 @@ async def update_document_file(
                 update_strategy=update_strategy,
                 use_colpali=use_colpali,
             )
-            
+
             if not doc:
                 raise HTTPException(status_code=404, detail="Document not found or update failed")
-                
+
             return doc
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
 
 @app.post("/documents/{document_id}/update_metadata", response_model=Document)
 async def update_document_metadata(
@@ -607,11 +608,11 @@ async def update_document_metadata(
 ):
     """
     Update only a document's metadata.
-    
+
     Args:
         document_id: ID of the document to update
         metadata: New metadata to merge with existing metadata
-        
+
     Returns:
         Document: Updated document metadata
     """
@@ -634,13 +635,14 @@ async def update_document_metadata(
                 update_strategy="add",
                 use_colpali=None,
             )
-            
+
             if not doc:
                 raise HTTPException(status_code=404, detail="Document not found or update failed")
-                
+
             return doc
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
 
 # Usage tracking endpoints
 @app.get("/usage/stats")
