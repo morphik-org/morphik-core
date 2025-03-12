@@ -1085,54 +1085,6 @@ class DocumentService:
         logger.info(f"Successfully updated document {doc.external_id}")
         
         return doc
-        
-    async def update_document_by_filename(
-        self,
-        filename: str,
-        auth: AuthContext,
-        content: Optional[str] = None,
-        file: Optional[UploadFile] = None,
-        new_filename: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        rules: Optional[List] = None,
-        update_strategy: str = "add",
-        use_colpali: Optional[bool] = None,
-    ) -> Optional[Document]:
-        """
-        Update a document identified by filename with new content and/or metadata.
-        
-        Args:
-            filename: Filename of the document to update
-            auth: Authentication context
-            content: The new text content to add (either content or file must be provided)
-            file: File to add (either content or file must be provided)
-            new_filename: Optional new filename for the document
-            metadata: Additional metadata to update
-            rules: Optional list of rules to apply to the content
-            update_strategy: Strategy for updating the document ('add' to append content)
-            use_colpali: Whether to use multi-vector embedding
-            
-        Returns:
-            Updated document if successful, None if failed
-        """
-        # Get document by filename
-        doc = await self.db.get_document_by_filename(filename, auth)
-        if not doc:
-            logger.error(f"Document with filename '{filename}' not found or not accessible")
-            return None
-            
-        # Use existing update_document method with the document_id
-        return await self.update_document(
-            document_id=doc.external_id,
-            auth=auth,
-            content=content,
-            file=file,
-            filename=new_filename if new_filename else filename,
-            metadata=metadata,
-            rules=rules,
-            update_strategy=update_strategy,
-            use_colpali=use_colpali
-        )
 
     def close(self):
         """Close all resources."""
