@@ -41,11 +41,13 @@ class OpenAICompletionModel(BaseCompletionModel):
         max_num_images = min(3, len(user_message_content))
         user_message_content = user_message_content[:max_num_images] # limit the number of images to 3
 
+        context = "\n" + "\n\n".join(context_text) + "\n\n"
+
         # Add text context if any
         if context_text:
             user_message_content.insert(0, {
                 "type": "text",
-                "text": f"Context:\n{'\\n\\n'.join(context_text)}\n\nQuestion: {request.query}"
+                "text": f"Context: {context} Question: {request.query}"
             })
         else:
             user_message_content.insert(0, {
