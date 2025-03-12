@@ -411,8 +411,8 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
-        
-        
+
+
 @app.post("/batch/documents", response_model=List[Document])
 async def batch_get_documents(document_ids: List[str], auth: AuthContext = Depends(verify_token)):
     """Retrieve multiple documents by their IDs in a single batch operation."""
@@ -501,8 +501,8 @@ async def get_document(document_id: str, auth: AuthContext = Depends(verify_toke
     except HTTPException as e:
         logger.error(f"Error getting document: {e}")
         raise e
-        
-        
+
+
 @app.get("/documents/filename/{filename}", response_model=Document)
 async def get_document_by_filename(filename: str, auth: AuthContext = Depends(verify_token)):
     """Get document by filename."""
@@ -564,9 +564,6 @@ async def update_document_text(
             return doc
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
-        
-        
-
 
 @app.post("/documents/{document_id}/update_file", response_model=Document)
 async def update_document_file(
@@ -629,8 +626,6 @@ async def update_document_file(
         raise HTTPException(status_code=403, detail=str(e))
 
 
-
-
 @app.post("/documents/{document_id}/update_metadata", response_model=Document)
 async def update_document_metadata(
     document_id: str,
@@ -673,8 +668,6 @@ async def update_document_metadata(
             return doc
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
-
-
 
 
 # Usage tracking endpoints
