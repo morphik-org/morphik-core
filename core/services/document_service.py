@@ -2,6 +2,7 @@ import base64
 from io import BytesIO
 from typing import Dict, Any, List, Optional
 from fastapi import UploadFile
+from datetime import datetime, UTC
 
 from core.models.chunk import Chunk, DocumentChunk
 from core.models.documents import (
@@ -35,6 +36,7 @@ import os
 
 logger = logging.getLogger(__name__)
 IMAGE = {im.mime for im in IMAGE}
+
 
 class DocumentService:
     def __init__(
@@ -580,6 +582,8 @@ class DocumentService:
         doc: Document,
         use_colpali: bool = False,
         chunk_objects_multivector: Optional[List[DocumentChunk]] = None,
+        is_update: bool = False,
+        auth: Optional[AuthContext] = None,
     ) -> List[str]:
         """Helper to store chunks and document"""
         # Store chunks in vector store
@@ -599,9 +603,25 @@ class DocumentService:
             doc.chunk_ids += result_multivector
 
         # Store document metadata
-        if not await self.db.store_document(doc):
-            raise Exception("Failed to store document metadata")
-        logger.debug("Stored document metadata in database")
+        if is_update and auth:
+            # For updates, use update_document
+            updates = {
+                "chunk_ids": doc.chunk_ids,
+                "metadata": doc.metadata,
+                "system_metadata": doc.system_metadata,
+                "filename": doc.filename,
+                "content_type": doc.content_type,
+                "storage_info": doc.storage_info,
+            }
+            if not await self.db.update_document(doc.external_id, updates, auth):
+                raise Exception("Failed to update document metadata")
+            logger.debug("Updated document metadata in database")
+        else:
+            # For new documents, use store_document
+            if not await self.db.store_document(doc):
+                raise Exception("Failed to store document metadata")
+            logger.debug("Stored document metadata in database")
+            
         logger.debug(f"Chunk IDs stored: {doc.chunk_ids}")
         return doc.chunk_ids
 
@@ -770,6 +790,239 @@ class DocumentService:
             logger.error(f"Failed to load cache {name}: {e}")
             # raise e
             return {"success": False, "message": f"Failed to load cache {name}: {e}"}
+
+    async def update_document(
+        self,
+        document_id: str,
+        auth: AuthContext,
+        content: Optional[str] = None,
+        file: Optional[UploadFile] = None,
+        filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List] = None,
+        update_strategy: str = "add",
+        use_colpali: Optional[bool] = None,
+    ) -> Optional[Document]:
+        """
+        Update a document with new content and/or metadata using the specified strategy.
+        
+        Args:
+            document_id: ID of the document to update
+            auth: Authentication context
+            content: The new text content to add (either content or file must be provided)
+            file: File to add (either content or file must be provided)
+            filename: Optional new filename for the document
+            metadata: Additional metadata to update
+            rules: Optional list of rules to apply to the content
+            update_strategy: Strategy for updating the document ('add' to append content)
+            use_colpali: Whether to use multi-vector embedding
+            
+        Returns:
+            Updated document if successful, None if failed
+        """
+        if "write" not in auth.permissions:
+            logger.error(f"User {auth.entity_id} does not have write permission")
+            raise PermissionError("User does not have write permission")
+            
+        # Check if document exists and user has write access
+        doc = await self.db.get_document(document_id, auth)
+        if not doc:
+            logger.error(f"Document {document_id} not found or not accessible")
+            return None
+            
+        if not await self.db.check_access(document_id, auth, "write"):
+            logger.error(f"User {auth.entity_id} does not have write permission for document {document_id}")
+            raise PermissionError(f"User does not have write permission for document {document_id}")
+        
+        # Get current content
+        current_content = doc.system_metadata.get("content", "")
+        update_content = None
+        
+        # Check if we're doing a metadata-only update
+        metadata_only_update = (content is None and file is None and metadata is not None)
+        
+        # Process content from text or file
+        if content is not None:
+            # Handle text update
+            update_content = content
+            
+            # Update filename if provided
+            if filename:
+                doc.filename = filename
+            
+            # Apply rules if provided for text content
+            if rules:
+                rule_metadata, modified_text = await self.rules_processor.process_rules(content, rules)
+                # Update metadata with extracted metadata from rules
+                if metadata is None:
+                    metadata = {}
+                metadata.update(rule_metadata)
+                
+                if modified_text:
+                    update_content = modified_text
+                    logger.info("Updated content with modified text from rules")
+                    
+        elif file is not None:
+            # Handle file update
+            file_content = await file.read()
+            
+            # Parse the file content
+            additional_file_metadata, file_text = await self.parser.parse_file_to_text(
+                file_content, file.filename
+            )
+            logger.info(f"Parsed file into text of length {len(file_text)}")
+            
+            # Apply rules if provided for file content
+            if rules:
+                rule_metadata, modified_text = await self.rules_processor.process_rules(file_text, rules)
+                # Update metadata with extracted metadata from rules
+                if metadata is None:
+                    metadata = {}
+                metadata.update(rule_metadata)
+                
+                if modified_text:
+                    file_text = modified_text
+                    logger.info("Updated file content with modified text from rules")
+            
+            # Add additional metadata from file if available
+            if additional_file_metadata:
+                if not doc.additional_metadata:
+                    doc.additional_metadata = {}
+                doc.additional_metadata.update(additional_file_metadata)
+            
+            # Store file in storage if needed
+            file_content_base64 = base64.b64encode(file_content).decode()
+            storage_info = await self.storage.upload_from_base64(
+                file_content_base64, doc.external_id, file.content_type
+            )
+            doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
+            logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
+            
+            update_content = file_text
+            
+            # Store file type
+            file_type = filetype.guess(file_content)
+            if file_type:
+                doc.content_type = file_type.mime
+            
+            # Update filename
+            doc.filename = file.filename
+            
+        elif not metadata_only_update:
+            # If neither content nor file is provided, and it's not a metadata-only update
+            logger.error("Neither content nor file provided for document update")
+            return None
+        
+        # Apply the update strategy if we have new content
+        if update_content:
+            if update_strategy == "add":
+                # Append the new content
+                updated_content = current_content + "\n\n" + update_content
+            else:
+                # For now, just use 'add' as default strategy
+                logger.warning(f"Unknown update strategy '{update_strategy}', defaulting to 'add'")
+                updated_content = current_content + "\n\n" + update_content
+            
+            # Update content in document
+            doc.system_metadata["content"] = updated_content
+        else:
+            # No content update, use existing content
+            updated_content = current_content
+        
+        # Update metadata if provided - additive but replacing existing keys
+        if metadata:
+            doc.metadata.update(metadata)
+        
+        # Increment version
+        current_version = doc.system_metadata.get("version", 1)
+        doc.system_metadata["version"] = current_version + 1
+        doc.system_metadata["updated_at"] = datetime.now(UTC)
+        
+        # Track update history
+        if "update_history" not in doc.system_metadata:
+            doc.system_metadata["update_history"] = []
+            
+        update_entry = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "version": current_version + 1,
+            "strategy": update_strategy,
+        }
+        
+        if file:
+            update_entry["filename"] = file.filename
+            
+        if metadata:
+            update_entry["metadata_updated"] = True
+            
+        doc.system_metadata["update_history"].append(update_entry)
+        
+        # If we're only updating metadata with no content changes, we don't need to re-process chunks
+        if metadata_only_update:
+            # Just update the document in the database
+            updates = {
+                "metadata": doc.metadata,
+                "system_metadata": doc.system_metadata,
+                "filename": doc.filename,
+            }
+            success = await self.db.update_document(doc.external_id, updates, auth)
+            if not success:
+                logger.error(f"Failed to update document {doc.external_id} metadata")
+                return None
+                
+            logger.info(f"Successfully updated document metadata for {doc.external_id}")
+            return doc
+            
+        # Re-process the combined content into chunks
+        chunks = await self.parser.split_text(updated_content)
+        if not chunks:
+            logger.error("No content chunks extracted after update")
+            return None
+            
+        logger.info(f"Split updated text into {len(chunks)} chunks")
+        
+        # Generate embeddings for new chunks
+        embeddings = await self.embedding_model.embed_for_ingestion(chunks)
+        logger.info(f"Generated {len(embeddings)} embeddings")
+        
+        # Create new chunk objects
+        chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
+        logger.info(f"Created {len(chunk_objects)} chunk objects")
+        
+        # Handle colpali (multi-vector) embeddings if needed
+        chunk_objects_multivector = []
+        if use_colpali and self.colpali_embedding_model:
+            # For file updates, we need special handling for images and PDFs
+            if file and file_type and (file_type.mime in IMAGE or file_type.mime == "application/pdf"):
+                # Rewind the file and read it again if needed
+                if hasattr(file, 'seek') and callable(file.seek):
+                    await file.seek(0)
+                    file_content = await file.read()
+                
+                file_content_base64 = base64.b64encode(file_content).decode()
+                chunks_multivector = self._create_chunks_multivector(
+                    file_type, file_content_base64, file_content, chunks
+                )
+                logger.info(f"Created {len(chunks_multivector)} chunks for multivector embedding")
+                colpali_embeddings = await self.colpali_embedding_model.embed_for_ingestion(chunks_multivector)
+                logger.info(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
+                chunk_objects_multivector = self._create_chunk_objects(
+                    doc.external_id, chunks_multivector, colpali_embeddings
+                )
+            else:
+                # For text updates or non-image/PDF files
+                embeddings_multivector = await self.colpali_embedding_model.embed_for_ingestion(chunks)
+                logger.info(f"Generated {len(embeddings_multivector)} embeddings for multivector embedding")
+                chunk_objects_multivector = self._create_chunk_objects(
+                    doc.external_id, chunks, embeddings_multivector
+                )
+                
+            logger.info(f"Created {len(chunk_objects_multivector)} chunk objects for multivector embedding")
+        
+        # Store everything - this will replace existing chunks with new ones
+        await self._store_chunks_and_doc(chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth)
+        logger.info(f"Successfully updated document {doc.external_id}")
+        
+        return doc
 
     def close(self):
         """Close all resources."""

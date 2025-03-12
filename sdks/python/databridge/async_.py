@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import httpx
 import jwt
 from PIL.Image import Image as PILImage
+from pydantic import BaseModel, Field
 
 from .models import (
     Document,
@@ -14,7 +15,7 @@ from .models import (
     DocumentResult,
     CompletionResponse,
     IngestTextRequest,
-    ChunkSource,
+    ChunkSource
 )
 from .rules import Rule
 
@@ -47,15 +48,18 @@ class AsyncCache:
         return CompletionResponse(**response)
 
 
-class FinalChunkResult:
-    content: str | PILImage
-    score: float
-    document_id: str
-    chunk_number: int
-    metadata: Dict[str, Any]
-    content_type: str
-    filename: Optional[str]
-    download_url: Optional[str]
+class FinalChunkResult(BaseModel):
+    content: str | PILImage = Field(..., description="Chunk content")
+    score: float = Field(..., description="Relevance score")
+    document_id: str = Field(..., description="Parent document ID")
+    chunk_number: int = Field(..., description="Chunk sequence number")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Document metadata")
+    content_type: str = Field(..., description="Content type")
+    filename: Optional[str] = Field(None, description="Original filename")
+    download_url: Optional[str] = Field(None, description="URL to download full document")
+
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class AsyncDataBridge:
@@ -157,6 +161,7 @@ class AsyncDataBridge:
     async def ingest_text(
         self,
         content: str,
+        filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
         use_colpali: bool = True,
@@ -198,12 +203,15 @@ class AsyncDataBridge:
         """
         request = IngestTextRequest(
             content=content,
+            filename=filename,
             metadata=metadata or {},
             rules=[self._convert_rule(r) for r in (rules or [])],
             use_colpali=use_colpali,
         )
         response = await self._request("POST", "ingest/text", data=request.model_dump())
-        return Document(**response)
+        doc = Document(**response)
+        doc._client = self
+        return doc
 
     async def ingest_file(
         self,
@@ -273,7 +281,9 @@ class AsyncDataBridge:
             }
 
             response = await self._request("POST", "ingest/file", data=data, files=files)
-            return Document(**response)
+            doc = Document(**response)
+            doc._client = self
+            return doc
         finally:
             # Close file if we opened it
             if isinstance(file, (str, Path)):
@@ -433,7 +443,10 @@ class AsyncDataBridge:
         response = await self._request(
             "GET", f"documents?skip={skip}&limit={limit}&filters={filters}"
         )
-        return [Document(**doc) for doc in response]
+        docs = [Document(**doc) for doc in response]
+        for doc in docs:
+            doc._client = self
+        return docs
 
     async def get_document(self, document_id: str) -> Document:
         """
@@ -452,8 +465,185 @@ class AsyncDataBridge:
             ```
         """
         response = await self._request("GET", f"documents/{document_id}")
-        return Document(**response)
+        doc = Document(**response)
+        doc._client = self
+        return doc
         
+    async def update_document_with_text(
+        self,
+        document_id: str,
+        content: str,
+        filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List] = None,
+        update_strategy: str = "add",
+        use_colpali: Optional[bool] = None,
+    ) -> Document:
+        """
+        Update a document with new text content using the specified strategy.
+        
+        Args:
+            document_id: ID of the document to update
+            content: The new content to add
+            filename: Optional new filename for the document
+            metadata: Additional metadata to update (optional)
+            rules: Optional list of rules to apply to the content
+            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            use_colpali: Whether to use multi-vector embedding
+            
+        Returns:
+            Document: Updated document metadata
+            
+        Example:
+            ```python
+            # Add new content to an existing document
+            updated_doc = await db.update_document_with_text(
+                document_id="doc_123",
+                content="This is additional content that will be appended to the document.",
+                filename="updated_document.txt",
+                metadata={"category": "updated"},
+                update_strategy="add"
+            )
+            print(f"Document version: {updated_doc.system_metadata.get('version')}")
+            ```
+        """
+        # Use the dedicated text update endpoint
+        request = IngestTextRequest(
+            content=content,
+            filename=filename,
+            metadata=metadata or {},
+            rules=[self._convert_rule(r) for r in (rules or [])],
+            use_colpali=use_colpali if use_colpali is not None else True,
+        )
+        
+        params = {}
+        if update_strategy != "add":
+            params["update_strategy"] = update_strategy
+            
+        response = await self._request(
+            "POST", 
+            f"documents/{document_id}/update_text", 
+            data=request.model_dump(),
+            params=params
+        )
+        
+        doc = Document(**response)
+        doc._client = self
+        return doc
+        
+    async def update_document_with_file(
+        self,
+        document_id: str,
+        file: Union[str, bytes, BinaryIO, Path],
+        filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List] = None,
+        update_strategy: str = "add",
+        use_colpali: Optional[bool] = None,
+    ) -> Document:
+        """
+        Update a document with content from a file using the specified strategy.
+        
+        Args:
+            document_id: ID of the document to update
+            file: File to add (path string, bytes, file object, or Path)
+            filename: Name of the file
+            metadata: Additional metadata to update (optional)
+            rules: Optional list of rules to apply to the content
+            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            use_colpali: Whether to use multi-vector embedding
+            
+        Returns:
+            Document: Updated document metadata
+            
+        Example:
+            ```python
+            # Add content from a file to an existing document
+            updated_doc = await db.update_document_with_file(
+                document_id="doc_123",
+                file="path/to/update.pdf",
+                metadata={"status": "updated"},
+                update_strategy="add"
+            )
+            print(f"Document version: {updated_doc.system_metadata.get('version')}")
+            ```
+        """
+        # Handle different file input types
+        if isinstance(file, (str, Path)):
+            file_path = Path(file)
+            if not file_path.exists():
+                raise ValueError(f"File not found: {file}")
+            filename = file_path.name if filename is None else filename
+            with open(file_path, "rb") as f:
+                content = f.read()
+                file_obj = BytesIO(content)
+        elif isinstance(file, bytes):
+            if filename is None:
+                raise ValueError("filename is required when updating with bytes")
+            file_obj = BytesIO(file)
+        else:
+            if filename is None:
+                raise ValueError("filename is required when updating with file object")
+            file_obj = file
+            
+        try:
+            # Prepare multipart form data
+            files = {"file": (filename, file_obj)}
+            
+            # Convert metadata and rules to JSON strings
+            form_data = {
+                "metadata": json.dumps(metadata or {}),
+                "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
+                "update_strategy": update_strategy,
+            }
+            
+            if use_colpali is not None:
+                form_data["use_colpali"] = str(use_colpali).lower()
+                
+            # Use the dedicated file update endpoint
+            response = await self._request(
+                "POST", f"documents/{document_id}/update_file", data=form_data, files=files
+            )
+            
+            doc = Document(**response)
+            doc._client = self
+            return doc
+        finally:
+            # Close file if we opened it
+            if isinstance(file, (str, Path)):
+                file_obj.close()
+    
+    async def update_document_metadata(
+        self,
+        document_id: str,
+        metadata: Dict[str, Any],
+    ) -> Document:
+        """
+        Update a document's metadata only.
+        
+        Args:
+            document_id: ID of the document to update
+            metadata: Metadata to update
+            
+        Returns:
+            Document: Updated document metadata
+            
+        Example:
+            ```python
+            # Update just the metadata of a document
+            updated_doc = await db.update_document_metadata(
+                document_id="doc_123",
+                metadata={"status": "reviewed", "reviewer": "Jane Smith"}
+            )
+            print(f"Updated metadata: {updated_doc.metadata}")
+            ```
+        """
+        # Use the dedicated metadata update endpoint
+        response = await self._request("POST", f"documents/{document_id}/update_metadata", data=metadata)
+        doc = Document(**response)
+        doc._client = self
+        return doc
+    
     async def batch_get_documents(self, document_ids: List[str]) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
@@ -472,7 +662,10 @@ class AsyncDataBridge:
             ```
         """
         response = await self._request("POST", "batch/documents", data=document_ids)
-        return [Document(**doc) for doc in response]
+        docs = [Document(**doc) for doc in response]
+        for doc in docs:
+            doc._client = self
+        return docs
         
     async def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
         """
