@@ -821,6 +821,65 @@ class DocumentService:
         Returns:
             Updated document if successful, None if failed
         """
+        # Validate permissions and get document
+        doc = await self._validate_update_access(document_id, auth)
+        if not doc:
+            return None
+        
+        # Get current content and determine update type
+        current_content = doc.system_metadata.get("content", "")
+        metadata_only_update = (content is None and file is None and metadata is not None)
+        
+        # Process content based on update type
+        update_content = None
+        file_content = None
+        file_type = None
+        file_content_base64 = None
+        
+        if content is not None:
+            update_content = await self._process_text_update(content, doc, filename, metadata, rules)
+        elif file is not None:
+            update_content, file_content, file_type, file_content_base64 = await self._process_file_update(
+                file, doc, metadata, rules
+            )
+        elif not metadata_only_update:
+            logger.error("Neither content nor file provided for document update")
+            return None
+        
+        # Apply content update strategy if we have new content
+        if update_content:
+            updated_content = self._apply_update_strategy(current_content, update_content, update_strategy)
+            doc.system_metadata["content"] = updated_content
+        else:
+            updated_content = current_content
+        
+        # Update metadata and version information
+        self._update_metadata_and_version(doc, metadata, update_strategy, file)
+        
+        # For metadata-only updates, we don't need to re-process chunks
+        if metadata_only_update:
+            return await self._update_document_metadata_only(doc, auth)
+        
+        # Process content into chunks and generate embeddings
+        chunks, chunk_objects = await self._process_chunks_and_embeddings(doc.external_id, updated_content)
+        if not chunks:
+            return None
+        
+        # Handle colpali (multi-vector) embeddings if needed
+        chunk_objects_multivector = await self._process_colpali_embeddings(
+            use_colpali, doc.external_id, chunks, file, file_type, file_content, file_content_base64
+        )
+        
+        # Store everything - this will replace existing chunks with new ones
+        await self._store_chunks_and_doc(
+            chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
+        )
+        logger.info(f"Successfully updated document {doc.external_id}")
+        
+        return doc
+        
+    async def _validate_update_access(self, document_id: str, auth: AuthContext) -> Optional[Document]:
+        """Validate user permissions and document access."""
         if "write" not in auth.permissions:
             logger.error(f"User {auth.entity_id} does not have write permission")
             raise PermissionError("User does not have write permission")
@@ -834,163 +893,173 @@ class DocumentService:
         if not await self.db.check_access(document_id, auth, "write"):
             logger.error(f"User {auth.entity_id} does not have write permission for document {document_id}")
             raise PermissionError(f"User does not have write permission for document {document_id}")
-        
-        # Get current content
-        current_content = doc.system_metadata.get("content", "")
-        update_content = None
-        
-        # Check if we're doing a metadata-only update
-        metadata_only_update = (content is None and file is None and metadata is not None)
-        
-        # Process content from text or file
-        if content is not None:
-            # Handle text update
-            update_content = content
             
-            # Update filename if provided
-            if filename:
-                doc.filename = filename
-            
-            # Apply rules if provided for text content
-            if rules:
-                rule_metadata, modified_text = await self.rules_processor.process_rules(content, rules)
-                # Update metadata with extracted metadata from rules
-                if metadata is None:
-                    metadata = {}
+        return doc
+        
+    async def _process_text_update(
+        self, 
+        content: str, 
+        doc: Document, 
+        filename: Optional[str], 
+        metadata: Optional[Dict[str, Any]], 
+        rules: Optional[List]
+    ) -> str:
+        """Process text content updates."""
+        update_content = content
+        
+        # Update filename if provided
+        if filename:
+            doc.filename = filename
+        
+        # Apply rules if provided for text content
+        if rules:
+            rule_metadata, modified_text = await self.rules_processor.process_rules(content, rules)
+            # Update metadata with extracted metadata from rules
+            if metadata is not None:
                 metadata.update(rule_metadata)
-                
-                if modified_text:
-                    update_content = modified_text
-                    logger.info("Updated content with modified text from rules")
-                    
-        elif file is not None:
-            # Handle file update
-            file_content = await file.read()
             
-            # Parse the file content
-            additional_file_metadata, file_text = await self.parser.parse_file_to_text(
-                file_content, file.filename
+            if modified_text:
+                update_content = modified_text
+                logger.info("Updated content with modified text from rules")
+                
+        return update_content
+        
+    async def _process_file_update(
+        self,
+        file: UploadFile,
+        doc: Document,
+        metadata: Optional[Dict[str, Any]],
+        rules: Optional[List]
+    ) -> tuple[str, bytes, Any, str]:
+        """Process file content updates."""
+        # Read file content
+        file_content = await file.read()
+        
+        # Parse the file content
+        additional_file_metadata, file_text = await self.parser.parse_file_to_text(
+            file_content, file.filename
+        )
+        logger.info(f"Parsed file into text of length {len(file_text)}")
+        
+        # Apply rules if provided for file content
+        if rules:
+            rule_metadata, modified_text = await self.rules_processor.process_rules(file_text, rules)
+            # Update metadata with extracted metadata from rules
+            if metadata is not None:
+                metadata.update(rule_metadata)
+            
+            if modified_text:
+                file_text = modified_text
+                logger.info("Updated file content with modified text from rules")
+        
+        # Add additional metadata from file if available
+        if additional_file_metadata:
+            if not doc.additional_metadata:
+                doc.additional_metadata = {}
+            doc.additional_metadata.update(additional_file_metadata)
+        
+        # Store file in storage if needed
+        file_content_base64 = base64.b64encode(file_content).decode()
+        
+        # Store file in storage and update storage info
+        await self._update_storage_info(doc, file, file_content_base64)
+        
+        # Store file type
+        file_type = filetype.guess(file_content)
+        if file_type:
+            doc.content_type = file_type.mime
+        
+        # Update filename
+        doc.filename = file.filename
+        
+        return file_text, file_content, file_type, file_content_base64
+        
+    async def _update_storage_info(self, doc: Document, file: UploadFile, file_content_base64: str):
+        """Update document storage information for file content."""
+        # Check if we should keep previous file versions
+        if hasattr(doc, "storage_files") and len(doc.storage_files) > 0:
+            # In "add" strategy, create a new StorageFileInfo and append it
+            storage_info = await self.storage.upload_from_base64(
+                file_content_base64, f"{doc.external_id}_{len(doc.storage_files)}", file.content_type
             )
-            logger.info(f"Parsed file into text of length {len(file_text)}")
             
-            # Apply rules if provided for file content
-            if rules:
-                rule_metadata, modified_text = await self.rules_processor.process_rules(file_text, rules)
-                # Update metadata with extracted metadata from rules
-                if metadata is None:
-                    metadata = {}
-                metadata.update(rule_metadata)
+            # Create a new StorageFileInfo
+            if not hasattr(doc, "storage_files"):
+                doc.storage_files = []
                 
-                if modified_text:
-                    file_text = modified_text
-                    logger.info("Updated file content with modified text from rules")
-            
-            # Add additional metadata from file if available
-            if additional_file_metadata:
-                if not doc.additional_metadata:
-                    doc.additional_metadata = {}
-                doc.additional_metadata.update(additional_file_metadata)
-            
-            # Store file in storage if needed
-            file_content_base64 = base64.b64encode(file_content).decode()
-            
-            # Check if we should keep previous file versions
-            if update_strategy == "add" and hasattr(doc, "storage_files") and len(doc.storage_files) > 0:
-                # In "add" strategy, create a new StorageFileInfo and append it
-                storage_info = await self.storage.upload_from_base64(
-                    file_content_base64, f"{doc.external_id}_{len(doc.storage_files)}", file.content_type
+            # If storage_files doesn't exist yet but we have legacy storage_info, migrate it
+            if len(doc.storage_files) == 0 and doc.storage_info:
+                # Create StorageFileInfo from legacy storage_info
+                legacy_file_info = StorageFileInfo(
+                    bucket=doc.storage_info.get("bucket", ""),
+                    key=doc.storage_info.get("key", ""),
+                    version=1,
+                    filename=doc.filename,
+                    content_type=doc.content_type,
+                    timestamp=doc.system_metadata.get("updated_at", datetime.now(UTC))
                 )
-                
-                # Create a new StorageFileInfo
-                if not hasattr(doc, "storage_files"):
-                    doc.storage_files = []
-                    
-                # If storage_files doesn't exist yet but we have legacy storage_info, migrate it
-                if len(doc.storage_files) == 0 and doc.storage_info:
-                    # Create StorageFileInfo from legacy storage_info
-                    legacy_file_info = StorageFileInfo(
-                        bucket=doc.storage_info.get("bucket", ""),
-                        key=doc.storage_info.get("key", ""),
-                        version=1,
-                        filename=doc.filename,
-                        content_type=doc.content_type,
-                        timestamp=doc.system_metadata.get("updated_at", datetime.now(UTC))
-                    )
-                    doc.storage_files.append(legacy_file_info)
-                
-                # Add the new file to storage_files
-                new_file_info = StorageFileInfo(
-                    bucket=storage_info[0],
-                    key=storage_info[1],
-                    version=len(doc.storage_files) + 1,
-                    filename=file.filename,
-                    content_type=file.content_type,
-                    timestamp=datetime.now(UTC)
-                )
+                doc.storage_files.append(legacy_file_info)
+            
+            # Add the new file to storage_files
+            new_file_info = StorageFileInfo(
+                bucket=storage_info[0],
+                key=storage_info[1],
+                version=len(doc.storage_files) + 1,
+                filename=file.filename,
+                content_type=file.content_type,
+                timestamp=datetime.now(UTC)
+            )
+            doc.storage_files.append(new_file_info)
+            
+            # Still update legacy storage_info for backward compatibility
+            doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
+        else:
+            # In replace mode (default), just update the storage_info
+            storage_info = await self.storage.upload_from_base64(
+                file_content_base64, doc.external_id, file.content_type
+            )
+            doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
+            
+            # Update storage_files field as well
+            if not hasattr(doc, "storage_files"):
+                doc.storage_files = []
+            
+            # Add or update the primary file info
+            new_file_info = StorageFileInfo(
+                bucket=storage_info[0],
+                key=storage_info[1],
+                version=1,
+                filename=file.filename,
+                content_type=file.content_type,
+                timestamp=datetime.now(UTC)
+            )
+            
+            # Replace the current main file (first file) or add if empty
+            if len(doc.storage_files) > 0:
+                doc.storage_files[0] = new_file_info
+            else:
                 doc.storage_files.append(new_file_info)
                 
-                # Still update legacy storage_info for backward compatibility
-                doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
-            else:
-                # In replace mode (default), just update the storage_info
-                storage_info = await self.storage.upload_from_base64(
-                    file_content_base64, doc.external_id, file.content_type
-                )
-                doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
-                
-                # Update storage_files field as well
-                if not hasattr(doc, "storage_files"):
-                    doc.storage_files = []
-                
-                # Add or update the primary file info
-                new_file_info = StorageFileInfo(
-                    bucket=storage_info[0],
-                    key=storage_info[1],
-                    version=1,
-                    filename=file.filename,
-                    content_type=file.content_type,
-                    timestamp=datetime.now(UTC)
-                )
-                
-                # Replace the current main file (first file) or add if empty
-                if len(doc.storage_files) > 0:
-                    doc.storage_files[0] = new_file_info
-                else:
-                    doc.storage_files.append(new_file_info)
-                    
-            logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
-            
-            update_content = file_text
-            
-            # Store file type
-            file_type = filetype.guess(file_content)
-            if file_type:
-                doc.content_type = file_type.mime
-            
-            # Update filename
-            doc.filename = file.filename
-            
-        elif not metadata_only_update:
-            # If neither content nor file is provided, and it's not a metadata-only update
-            logger.error("Neither content nor file provided for document update")
-            return None
+        logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
         
-        # Apply the update strategy if we have new content
-        if update_content:
-            if update_strategy == "add":
-                # Append the new content
-                updated_content = current_content + "\n\n" + update_content
-            else:
-                # For now, just use 'add' as default strategy
-                logger.warning(f"Unknown update strategy '{update_strategy}', defaulting to 'add'")
-                updated_content = current_content + "\n\n" + update_content
-            
-            # Update content in document
-            doc.system_metadata["content"] = updated_content
+    def _apply_update_strategy(self, current_content: str, update_content: str, update_strategy: str) -> str:
+        """Apply the update strategy to combine current and new content."""
+        if update_strategy == "add":
+            # Append the new content
+            return current_content + "\n\n" + update_content
         else:
-            # No content update, use existing content
-            updated_content = current_content
+            # For now, just use 'add' as default strategy
+            logger.warning(f"Unknown update strategy '{update_strategy}', defaulting to 'add'")
+            return current_content + "\n\n" + update_content
         
+    def _update_metadata_and_version(
+        self, 
+        doc: Document, 
+        metadata: Optional[Dict[str, Any]], 
+        update_strategy: str, 
+        file: Optional[UploadFile]
+    ):
+        """Update document metadata and version tracking."""
         # Update metadata if provided - additive but replacing existing keys
         if metadata:
             doc.metadata.update(metadata)
@@ -1018,27 +1087,28 @@ class DocumentService:
             
         doc.system_metadata["update_history"].append(update_entry)
         
-        # If we're only updating metadata with no content changes, we don't need to re-process chunks
-        if metadata_only_update:
-            # Just update the document in the database
-            updates = {
-                "metadata": doc.metadata,
-                "system_metadata": doc.system_metadata,
-                "filename": doc.filename,
-            }
-            success = await self.db.update_document(doc.external_id, updates, auth)
-            if not success:
-                logger.error(f"Failed to update document {doc.external_id} metadata")
-                return None
-                
-            logger.info(f"Successfully updated document metadata for {doc.external_id}")
-            return doc
+    async def _update_document_metadata_only(self, doc: Document, auth: AuthContext) -> Optional[Document]:
+        """Update document metadata without reprocessing chunks."""
+        updates = {
+            "metadata": doc.metadata,
+            "system_metadata": doc.system_metadata,
+            "filename": doc.filename,
+        }
+        success = await self.db.update_document(doc.external_id, updates, auth)
+        if not success:
+            logger.error(f"Failed to update document {doc.external_id} metadata")
+            return None
             
-        # Re-process the combined content into chunks
-        chunks = await self.parser.split_text(updated_content)
+        logger.info(f"Successfully updated document metadata for {doc.external_id}")
+        return doc
+        
+    async def _process_chunks_and_embeddings(self, doc_id: str, content: str) -> tuple[List[Chunk], List[DocumentChunk]]:
+        """Process content into chunks and generate embeddings."""
+        # Split content into chunks
+        chunks = await self.parser.split_text(content)
         if not chunks:
             logger.error("No content chunks extracted after update")
-            return None
+            return None, None
             
         logger.info(f"Split updated text into {len(chunks)} chunks")
         
@@ -1047,44 +1117,54 @@ class DocumentService:
         logger.info(f"Generated {len(embeddings)} embeddings")
         
         # Create new chunk objects
-        chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
+        chunk_objects = self._create_chunk_objects(doc_id, chunks, embeddings)
         logger.info(f"Created {len(chunk_objects)} chunk objects")
         
-        # Handle colpali (multi-vector) embeddings if needed
+        return chunks, chunk_objects
+        
+    async def _process_colpali_embeddings(
+        self,
+        use_colpali: bool,
+        doc_id: str,
+        chunks: List[Chunk],
+        file: Optional[UploadFile],
+        file_type: Any,
+        file_content: Optional[bytes],
+        file_content_base64: Optional[str]
+    ) -> List[DocumentChunk]:
+        """Process colpali multi-vector embeddings if enabled."""
         chunk_objects_multivector = []
-        if use_colpali and self.colpali_embedding_model and self.colpali_vector_store:
-            # For file updates, we need special handling for images and PDFs
-            if file and file_type and (file_type.mime in IMAGE or file_type.mime == "application/pdf"):
-                # Rewind the file and read it again if needed
-                if hasattr(file, 'seek') and callable(file.seek):
-                    await file.seek(0)
-                    file_content = await file.read()
-                
+        
+        if not (use_colpali and self.colpali_embedding_model and self.colpali_vector_store):
+            return chunk_objects_multivector
+            
+        # For file updates, we need special handling for images and PDFs
+        if file and file_type and (file_type.mime in IMAGE or file_type.mime == "application/pdf"):
+            # Rewind the file and read it again if needed
+            if hasattr(file, 'seek') and callable(file.seek) and not file_content:
+                await file.seek(0)
+                file_content = await file.read()
                 file_content_base64 = base64.b64encode(file_content).decode()
-                chunks_multivector = self._create_chunks_multivector(
-                    file_type, file_content_base64, file_content, chunks
-                )
-                logger.info(f"Created {len(chunks_multivector)} chunks for multivector embedding")
-                colpali_embeddings = await self.colpali_embedding_model.embed_for_ingestion(chunks_multivector)
-                logger.info(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
-                chunk_objects_multivector = self._create_chunk_objects(
-                    doc.external_id, chunks_multivector, colpali_embeddings
-                )
-            else:
-                # For text updates or non-image/PDF files
-                embeddings_multivector = await self.colpali_embedding_model.embed_for_ingestion(chunks)
-                logger.info(f"Generated {len(embeddings_multivector)} embeddings for multivector embedding")
-                chunk_objects_multivector = self._create_chunk_objects(
-                    doc.external_id, chunks, embeddings_multivector
-                )
-                
-            logger.info(f"Created {len(chunk_objects_multivector)} chunk objects for multivector embedding")
-        
-        # Store everything - this will replace existing chunks with new ones
-        await self._store_chunks_and_doc(chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth)
-        logger.info(f"Successfully updated document {doc.external_id}")
-        
-        return doc
+            
+            chunks_multivector = self._create_chunks_multivector(
+                file_type, file_content_base64, file_content, chunks
+            )
+            logger.info(f"Created {len(chunks_multivector)} chunks for multivector embedding")
+            colpali_embeddings = await self.colpali_embedding_model.embed_for_ingestion(chunks_multivector)
+            logger.info(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
+            chunk_objects_multivector = self._create_chunk_objects(
+                doc_id, chunks_multivector, colpali_embeddings
+            )
+        else:
+            # For text updates or non-image/PDF files
+            embeddings_multivector = await self.colpali_embedding_model.embed_for_ingestion(chunks)
+            logger.info(f"Generated {len(embeddings_multivector)} embeddings for multivector embedding")
+            chunk_objects_multivector = self._create_chunk_objects(
+                doc_id, chunks, embeddings_multivector
+            )
+            
+        logger.info(f"Created {len(chunk_objects_multivector)} chunk objects for multivector embedding")
+        return chunk_objects_multivector
 
     def close(self):
         """Close all resources."""
