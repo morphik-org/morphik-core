@@ -93,6 +93,19 @@ match settings.DATABASE_PROVIDER:
     case _:
         raise ValueError(f"Unsupported database provider: {settings.DATABASE_PROVIDER}")
 
+
+@app.on_event("startup")
+async def initialize_database():
+    """Initialize database tables and indexes on application startup."""
+    logger.info("Initializing database...")
+    success = await database.initialize()
+    if success:
+        logger.info("Database initialization successful")
+    else:
+        logger.error("Database initialization failed")
+        # We don't raise an exception here to allow the app to start even if
+        # initialization fails (which might happen if tables already exist)
+
 # Initialize vector store
 match settings.VECTOR_STORE_PROVIDER:
     case "mongodb":
@@ -488,6 +501,20 @@ async def get_document(document_id: str, auth: AuthContext = Depends(verify_toke
     except HTTPException as e:
         logger.error(f"Error getting document: {e}")
         raise e
+        
+        
+@app.get("/documents/filename/{filename}", response_model=Document)
+async def get_document_by_filename(filename: str, auth: AuthContext = Depends(verify_token)):
+    """Get document by filename."""
+    try:
+        doc = await document_service.db.get_document_by_filename(filename, auth)
+        logger.info(f"Found document by filename: {doc}")
+        if not doc:
+            raise HTTPException(status_code=404, detail=f"Document with filename '{filename}' not found")
+        return doc
+    except HTTPException as e:
+        logger.error(f"Error getting document by filename: {e}")
+        raise e
 
 
 @app.post("/documents/{document_id}/update_text", response_model=Document)
@@ -533,6 +560,55 @@ async def update_document_text(
 
             if not doc:
                 raise HTTPException(status_code=404, detail="Document not found or update failed")
+
+            return doc
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+        
+        
+@app.post("/documents/filename/{filename}/update_text", response_model=Document)
+async def update_document_by_filename_text(
+    filename: str,
+    request: IngestTextRequest,
+    update_strategy: str = "add",
+    auth: AuthContext = Depends(verify_token)
+):
+    """
+    Update a document identified by filename with new text content using the specified strategy.
+    
+    Args:
+        filename: Filename of the document to update
+        request: Text content and metadata for the update
+        update_strategy: Strategy for updating the document (default: 'add')
+        
+    Returns:
+        Document: Updated document metadata
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="update_document_by_filename_text",
+            user_id=auth.entity_id,
+            metadata={
+                "filename": filename,
+                "update_strategy": update_strategy,
+                "use_colpali": request.use_colpali,
+                "has_new_filename": request.filename is not None,
+            },
+        ):
+            doc = await document_service.update_document_by_filename(
+                filename=filename,
+                auth=auth,
+                content=request.content,
+                file=None,
+                new_filename=request.filename,
+                metadata=request.metadata,
+                rules=request.rules,
+                update_strategy=update_strategy,
+                use_colpali=request.use_colpali,
+            )
+
+            if not doc:
+                raise HTTPException(status_code=404, detail=f"Document with filename '{filename}' not found or update failed")
 
             return doc
     except PermissionError as e:
@@ -600,6 +676,67 @@ async def update_document_file(
         raise HTTPException(status_code=403, detail=str(e))
 
 
+@app.post("/documents/filename/{filename}/update_file", response_model=Document)
+async def update_document_by_filename_file(
+    filename: str,
+    file: UploadFile,
+    metadata: str = Form("{}"),
+    rules: str = Form("[]"),
+    update_strategy: str = Form("add"),
+    use_colpali: Optional[bool] = None,
+    auth: AuthContext = Depends(verify_token)
+):
+    """
+    Update a document identified by filename with content from a file using the specified strategy.
+
+    Args:
+        filename: Filename of the document to update
+        file: File to add to the document
+        metadata: JSON string of metadata to merge with existing metadata
+        rules: JSON string of rules to apply to the content
+        update_strategy: Strategy for updating the document (default: 'add')
+        use_colpali: Whether to use multi-vector embedding
+
+    Returns:
+        Document: Updated document metadata
+    """
+    try:
+        metadata_dict = json.loads(metadata)
+        rules_list = json.loads(rules)
+
+        async with telemetry.track_operation(
+            operation_type="update_document_by_filename_file",
+            user_id=auth.entity_id,
+            metadata={
+                "original_filename": filename,
+                "new_filename": file.filename,
+                "content_type": file.content_type,
+                "update_strategy": update_strategy,
+                "use_colpali": use_colpali,
+            },
+        ):
+            doc = await document_service.update_document_by_filename(
+                filename=filename,
+                auth=auth,
+                content=None,
+                file=file,
+                new_filename=file.filename,
+                metadata=metadata_dict,
+                rules=rules_list,
+                update_strategy=update_strategy,
+                use_colpali=use_colpali,
+            )
+
+            if not doc:
+                raise HTTPException(status_code=404, detail=f"Document with filename '{filename}' not found or update failed")
+
+            return doc
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
 @app.post("/documents/{document_id}/update_metadata", response_model=Document)
 async def update_document_metadata(
     document_id: str,
@@ -638,6 +775,53 @@ async def update_document_metadata(
 
             if not doc:
                 raise HTTPException(status_code=404, detail="Document not found or update failed")
+
+            return doc
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.post("/documents/filename/{filename}/update_metadata", response_model=Document)
+async def update_document_by_filename_metadata(
+    filename: str,
+    metadata: Dict[str, Any],
+    new_filename: Optional[str] = None,
+    auth: AuthContext = Depends(verify_token)
+):
+    """
+    Update only a document's metadata using filename to identify the document.
+
+    Args:
+        filename: Filename of the document to update
+        metadata: New metadata to merge with existing metadata
+        new_filename: Optional new filename to assign to the document
+
+    Returns:
+        Document: Updated document metadata
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="update_document_by_filename_metadata",
+            user_id=auth.entity_id,
+            metadata={
+                "filename": filename,
+                "has_new_filename": new_filename is not None,
+            },
+        ):
+            doc = await document_service.update_document_by_filename(
+                filename=filename,
+                auth=auth,
+                content=None,
+                file=None,
+                new_filename=new_filename,
+                metadata=metadata,
+                rules=[],
+                update_strategy="add",
+                use_colpali=None,
+            )
+
+            if not doc:
+                raise HTTPException(status_code=404, detail=f"Document with filename '{filename}' not found or update failed")
 
             return doc
     except PermissionError as e:

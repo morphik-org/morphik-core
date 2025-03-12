@@ -244,6 +244,27 @@ class DB:
         doc = self._client.get_document(document_id)
         return doc if as_object else doc.model_dump()
         
+    def get_document_by_filename(self, filename: str, as_object: bool = False) -> Union[dict, 'Document']:
+        """
+        Get document metadata by filename
+        
+        Args:
+            filename: Filename of the document
+            as_object: If True, returns the Document object with update methods, otherwise returns a dict
+            
+        Returns:
+            Document metadata (dict or Document object)
+            
+        Example:
+            ```python
+            # Get a document by its filename
+            doc = db.get_document_by_filename("report.pdf")
+            print(f"Document ID: {doc['external_id']}")
+            ```
+        """
+        doc = self._client.get_document_by_filename(filename)
+        return doc if as_object else doc.model_dump()
+        
     def update_document_with_text(
         self,
         document_id: str,
@@ -334,6 +355,105 @@ class DB:
         doc = self._client.update_document_metadata(
             document_id=document_id,
             metadata=metadata,
+        )
+        return doc.model_dump()
+        
+    def update_document_by_filename_with_text(
+        self,
+        filename: str,
+        content: str,
+        new_filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List] = None,
+        update_strategy: str = "add",
+        use_colpali: bool = None,
+    ) -> dict:
+        """
+        Update a document identified by filename with new text content.
+        
+        Args:
+            filename: Filename of the document to update
+            content: The new content to add
+            new_filename: Optional new filename for the document
+            metadata: Additional metadata to update (optional)
+            rules: Optional list of rules to apply to the content
+            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            use_colpali: Whether to use multi-vector embedding
+            
+        Returns:
+            Updated document metadata
+        """
+        doc = self._client.update_document_by_filename_with_text(
+            filename=filename,
+            content=content,
+            new_filename=new_filename,
+            metadata=metadata,
+            rules=rules,
+            update_strategy=update_strategy,
+            use_colpali=use_colpali,
+        )
+        return doc.model_dump()
+        
+    def update_document_by_filename_with_file(
+        self,
+        filename: str,
+        file: str,
+        new_filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List] = None,
+        update_strategy: str = "add",
+        use_colpali: bool = None,
+    ) -> dict:
+        """
+        Update a document identified by filename with content from a file.
+        
+        Args:
+            filename: Filename of the document to update
+            file: Path to file to add
+            new_filename: Optional new filename for the document
+            metadata: Additional metadata to update (optional)
+            rules: Optional list of rules to apply to the content
+            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            use_colpali: Whether to use multi-vector embedding
+            
+        Returns:
+            Updated document metadata
+        """
+        file_path = Path(file)
+        new_filename = new_filename or file_path.name
+        
+        doc = self._client.update_document_by_filename_with_file(
+            filename=filename,
+            file=file_path,
+            new_filename=new_filename,
+            metadata=metadata,
+            rules=rules,
+            update_strategy=update_strategy,
+            use_colpali=use_colpali,
+        )
+        return doc.model_dump()
+        
+    def update_document_by_filename_metadata(
+        self,
+        filename: str,
+        metadata: Dict[str, Any],
+        new_filename: Optional[str] = None,
+    ) -> dict:
+        """
+        Update a document's metadata using filename to identify the document.
+        
+        Args:
+            filename: Filename of the document to update
+            metadata: New metadata to set
+            new_filename: Optional new filename to assign to the document
+            
+        Returns:
+            Document: Updated document metadata
+        """
+        doc = self._client.update_document_by_filename_metadata(
+            filename=filename,
+            metadata=metadata,
+            new_filename=new_filename,
         )
         return doc.model_dump()
     
@@ -457,9 +577,17 @@ if __name__ == "__main__":
     print("  db.query('what are the key findings?')")
     print("  db.batch_get_documents(['doc_id1', 'doc_id2'])")
     print("  db.batch_get_chunks([{'document_id': 'doc_123', 'chunk_number': 0}])")
+    print("\nUpdate by Document ID:")
+    print("  db.get_document('doc_123')")
     print("  db.update_document_with_text('doc_123', 'This is new content to append', filename='updated_doc.txt')")
     print("  db.update_document_with_file('doc_123', 'path/to/file.pdf', metadata={'status': 'updated'})")
     print("  db.update_document_metadata('doc_123', {'reviewed': True, 'reviewer': 'John'})")
+    print("\nUpdate by Filename:")
+    print("  db.get_document_by_filename('report.pdf')")
+    print("  db.update_document_by_filename_with_text('report.pdf', 'New content', new_filename='updated_report.pdf')")
+    print("  db.update_document_by_filename_with_file('report.pdf', 'path/to/new_data.pdf')")
+    print("  db.update_document_by_filename_metadata('report.pdf', {'reviewed': True}, new_filename='reviewed_report.pdf')")
+    print("\nQuerying:")
     print("  result = db.query('how to use this API?'); print(result['sources'])")
     print("Type help(db) for documentation.")
 

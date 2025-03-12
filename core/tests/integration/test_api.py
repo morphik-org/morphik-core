@@ -12,6 +12,7 @@ from core.api import app, get_settings
 import filetype
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +30,49 @@ async def setup_test_postgres():
     try:
         async with engine.begin() as conn:
             # Drop all tables first
-            from core.database.postgres_database import Base
-
-            await conn.run_sync(Base.metadata.drop_all)
-
-            # Create all tables
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(text("DROP TABLE IF EXISTS documents CASCADE"))
+            await conn.execute(text("DROP TABLE IF EXISTS chunks CASCADE"))
+            await conn.execute(text("DROP TABLE IF EXISTS caches CASCADE"))
+            
+            # Recreate documents table with all needed columns
+            await conn.execute(
+                text(
+                    """
+                CREATE TABLE documents (
+                    external_id VARCHAR PRIMARY KEY,
+                    owner JSONB NOT NULL,
+                    content_type VARCHAR NOT NULL,
+                    filename VARCHAR,
+                    doc_metadata JSONB DEFAULT '{}'::jsonb,
+                    storage_info JSONB DEFAULT '{}'::jsonb,
+                    system_metadata JSONB DEFAULT '{}'::jsonb,
+                    additional_metadata JSONB DEFAULT '{}'::jsonb,
+                    access_control JSONB DEFAULT '{}'::jsonb,
+                    chunk_ids JSONB DEFAULT '[]'::jsonb,
+                    storage_files JSONB DEFAULT '[]'::jsonb
+                )
+                """
+                )
+            )
+            
+            # Create indexes
+            await conn.execute(text("CREATE INDEX idx_owner_id ON documents USING gin(owner)"))
+            await conn.execute(text("CREATE INDEX idx_access_control ON documents USING gin(access_control)"))
+            await conn.execute(text("CREATE INDEX idx_system_metadata ON documents USING gin(system_metadata)"))
+            
+            # Create caches table
+            await conn.execute(
+                text(
+                    """
+                CREATE TABLE IF NOT EXISTS caches (
+                    name TEXT PRIMARY KEY,
+                    metadata JSONB NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+                )
+            )
 
             logger.info("Test PostgreSQL database setup completed")
     except Exception as e:
@@ -311,6 +349,38 @@ async def test_get_document(client: AsyncClient):
     assert doc["external_id"] == doc_id
     assert "metadata" in doc
     assert "content_type" in doc
+    
+    
+@pytest.mark.asyncio
+async def test_get_document_by_filename(client: AsyncClient):
+    """Test getting a document by filename"""
+    # First ingest a document with a specific filename
+    filename = "test_get_by_filename.txt"
+    headers = create_auth_header()
+    
+    initial_content = "This is content for testing get_document_by_filename."
+    response = await client.post(
+        "/ingest/text",
+        json={
+            "content": initial_content, 
+            "filename": filename,
+            "metadata": {"test": True, "type": "text"},
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    doc_id = response.json()["external_id"]
+    
+    # Now try to get the document by filename
+    response = await client.get(f"/documents/filename/{filename}", headers=headers)
+    
+    assert response.status_code == 200
+    doc = response.json()
+    assert doc["external_id"] == doc_id
+    assert doc["filename"] == filename
+    assert "metadata" in doc
+    assert "content_type" in doc
 
 
 @pytest.mark.asyncio
@@ -511,13 +581,302 @@ async def test_update_document_with_rules(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_update_document_by_filename_with_text(client: AsyncClient):
+    """Test updating a document by filename with text content"""
+    # First ingest a document with a specific filename
+    filename = "test_update_by_filename.txt"
+    headers = create_auth_header()
+    
+    initial_content = "This is the initial content for update-by-filename testing."
+    response = await client.post(
+        "/ingest/text",
+        json={
+            "content": initial_content, 
+            "filename": filename,
+            "metadata": {"test": True, "type": "text"},
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    doc_id = response.json()["external_id"]
+    
+    # Now update the document by filename
+    update_content = "This is additional content added by filename update."
+    new_filename = "updated_filename.txt"
+    
+    response = await client.post(
+        f"/documents/filename/{filename}/update_text",
+        json={
+            "content": update_content,
+            "filename": new_filename,
+            "metadata": {"updated_by_filename": True, "version": "2.0"},
+            "use_colpali": True
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    updated_doc = response.json()
+    assert updated_doc["external_id"] == doc_id
+    assert updated_doc["filename"] == new_filename
+    assert updated_doc["metadata"]["updated_by_filename"] is True
+    assert updated_doc["metadata"]["version"] == "2.0"
+    
+    # Verify the content was updated by retrieving chunks
+    search_response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "additional content filename update",
+            "filters": {"external_id": doc_id},
+        },
+        headers=headers,
+    )
+    
+    assert search_response.status_code == 200
+    chunks = search_response.json()
+    assert len(chunks) > 0
+    assert any(update_content in chunk["content"] for chunk in chunks)
+
+
+@pytest.mark.asyncio
+async def test_update_document_by_filename_with_file(client: AsyncClient):
+    """Test updating a document by filename with file content"""
+    # First ingest a document with a specific filename
+    filename = "original_file.txt"
+    headers = create_auth_header()
+    
+    initial_content = "This is the initial content for file update-by-filename testing."
+    response = await client.post(
+        "/ingest/text",
+        json={
+            "content": initial_content, 
+            "filename": filename,
+            "metadata": {"test": True, "type": "text"},
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    doc_id = response.json()["external_id"]
+    
+    # Create a test file to upload
+    test_file_path = TEST_DATA_DIR / "update_by_filename_test.txt"
+    update_content = "This is file content for updating the document by filename."
+    test_file_path.write_text(update_content)
+    
+    # Update the document by filename
+    with open(test_file_path, "rb") as f:
+        response = await client.post(
+            f"/documents/filename/{filename}/update_file",
+            files={"file": ("new_filename.txt", f, "text/plain")},
+            data={
+                "metadata": json.dumps({"updated_with_file_by_filename": True}),
+                "rules": json.dumps([]),
+                "update_strategy": "add",
+            },
+            headers=headers,
+        )
+    
+    assert response.status_code == 200
+    updated_doc = response.json()
+    assert updated_doc["external_id"] == doc_id
+    assert updated_doc["filename"] == "new_filename.txt"
+    assert updated_doc["metadata"]["updated_with_file_by_filename"] is True
+    
+    # Verify the content was updated by retrieving chunks
+    search_response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "file content updating document filename",
+            "filters": {"external_id": doc_id},
+        },
+        headers=headers,
+    )
+    
+    assert search_response.status_code == 200
+    chunks = search_response.json()
+    assert len(chunks) > 0
+    assert any(update_content in chunk["content"] for chunk in chunks)
+    
+    # Clean up the test file
+    test_file_path.unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_file_versioning_with_add_strategy(client: AsyncClient):
+    """Test that file versioning works correctly with 'add' update strategy"""
+    # First ingest a document with a file
+    headers = create_auth_header()
+    
+    # Create the initial file
+    initial_file_path = TEST_DATA_DIR / "version_test_1.txt"
+    initial_content = "This is version 1 of the file for testing versioning."
+    initial_file_path.write_text(initial_content)
+    
+    # Ingest the initial file
+    with open(initial_file_path, "rb") as f:
+        response = await client.post(
+            "/ingest/file",
+            files={"file": ("version_test.txt", f, "text/plain")},
+            data={
+                "metadata": json.dumps({"test": True, "version": 1}),
+                "rules": json.dumps([]),
+            },
+            headers=headers,
+        )
+    
+    assert response.status_code == 200
+    doc_id = response.json()["external_id"]
+    
+    # Create second version of the file
+    second_file_path = TEST_DATA_DIR / "version_test_2.txt"
+    second_content = "This is version 2 of the file for testing versioning."
+    second_file_path.write_text(second_content)
+    
+    # Update with second file using "add" strategy
+    with open(second_file_path, "rb") as f:
+        response = await client.post(
+            f"/documents/{doc_id}/update_file",
+            files={"file": ("version_test_v2.txt", f, "text/plain")},
+            data={
+                "metadata": json.dumps({"test": True, "version": 2}),
+                "rules": json.dumps([]),
+                "update_strategy": "add",
+            },
+            headers=headers,
+        )
+    
+    assert response.status_code == 200
+    updated_doc = response.json()
+    
+    # Create third version of the file
+    third_file_path = TEST_DATA_DIR / "version_test_3.txt"
+    third_content = "This is version 3 of the file for testing versioning."
+    third_file_path.write_text(third_content)
+    
+    # Update with third file using "add" strategy
+    with open(third_file_path, "rb") as f:
+        response = await client.post(
+            f"/documents/{doc_id}/update_file",
+            files={"file": ("version_test_v3.txt", f, "text/plain")},
+            data={
+                "metadata": json.dumps({"test": True, "version": 3}),
+                "rules": json.dumps([]),
+                "update_strategy": "add",
+            },
+            headers=headers,
+        )
+    
+    assert response.status_code == 200
+    final_doc = response.json()
+    
+    # Verify the system_metadata has versioning info
+    assert final_doc["system_metadata"]["version"] >= 3
+    assert "update_history" in final_doc["system_metadata"]
+    assert len(final_doc["system_metadata"]["update_history"]) >= 2  # At least 2 updates
+    
+    # Verify storage_files field exists and has multiple entries
+    assert "storage_files" in final_doc
+    assert len(final_doc["storage_files"]) >= 3  # Should have at least 3 files
+    
+    # Get most recent file's content through search 
+    search_response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "version 3 testing versioning",
+            "filters": {"external_id": doc_id},
+        },
+        headers=headers,
+    )
+    assert search_response.status_code == 200
+    chunks = search_response.json()
+    assert any(third_content in chunk["content"] for chunk in chunks)
+    
+    # Also check for version 1 content, which should still be in the merged content
+    search_response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "version 1 testing versioning",
+            "filters": {"external_id": doc_id},
+        },
+        headers=headers,
+    )
+    assert search_response.status_code == 200
+    chunks = search_response.json()
+    assert any(initial_content in chunk["content"] for chunk in chunks)
+    
+    # Clean up test files
+    initial_file_path.unlink(missing_ok=True)
+    second_file_path.unlink(missing_ok=True)
+    third_file_path.unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_update_document_by_filename_metadata(client: AsyncClient):
+    """Test updating only a document's metadata using filename"""
+    # First ingest a document with a specific filename
+    filename = "metadata_update_test.txt"
+    headers = create_auth_header()
+    
+    initial_content = "This is the content for metadata update-by-filename testing."
+    response = await client.post(
+        "/ingest/text",
+        json={
+            "content": initial_content, 
+            "filename": filename,
+            "metadata": {"test": True, "type": "text"},
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    doc_id = response.json()["external_id"]
+    
+    # Test updating just metadata by filename
+    new_metadata = {
+        "meta_updated_by_filename": True,
+        "tags": ["test", "metadata", "filename", "update"],
+        "priority": 2
+    }
+    
+    response = await client.post(
+        f"/documents/filename/{filename}/update_metadata",
+        json=new_metadata,
+        params={"new_filename": "updated_metadata_filename.txt"},
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    updated_doc = response.json()
+    assert updated_doc["external_id"] == doc_id
+    assert updated_doc["filename"] == "updated_metadata_filename.txt"
+    
+    # Verify the response has the updated metadata
+    assert updated_doc["metadata"]["meta_updated_by_filename"] is True
+    assert "filename" in updated_doc["metadata"]["tags"]
+    assert updated_doc["metadata"]["priority"] == 2
+
+
+@pytest.mark.asyncio
 async def test_update_document_error_cases(client: AsyncClient):
     """Test error cases for document updates"""
     headers = create_auth_header()
     
-    # Test updating non-existent document
+    # Test updating non-existent document by ID
     response = await client.post(
         "/documents/non_existent_id/update_text",
+        json={
+            "content": "Test content for non-existent document",
+            "metadata": {}
+        },
+        headers=headers,
+    )
+    assert response.status_code == 404
+    
+    # Test updating non-existent document by filename
+    response = await client.post(
+        "/documents/filename/non_existent_file.txt/update_text",
         json={
             "content": "Test content for non-existent document",
             "metadata": {}

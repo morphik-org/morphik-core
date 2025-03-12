@@ -10,6 +10,7 @@ from core.models.documents import (
     ChunkResult,
     DocumentContent,
     DocumentResult,
+    StorageFileInfo,
 )
 from ..models.auth import AuthContext
 from core.database.base_database import BaseDatabase
@@ -88,7 +89,7 @@ class DocumentService:
 
         # Get embedding for query
         query_embedding_regular = await self.embedding_model.embed_for_query(query)
-        query_embedding_multivector = await self.colpali_embedding_model.embed_for_query(query) if use_colpali else None
+        query_embedding_multivector = await self.colpali_embedding_model.embed_for_query(query) if (use_colpali and self.colpali_embedding_model) else None
         logger.info("Generated query embedding")
 
         # Find authorized documents
@@ -107,7 +108,7 @@ class DocumentService:
             await self.colpali_vector_store.query_similar(
                 query_embedding_multivector, k=k, doc_ids=doc_ids
             )
-            if use_colpali
+            if (use_colpali and self.colpali_vector_store and query_embedding_multivector)
             else []
         )
 
@@ -320,7 +321,7 @@ class DocumentService:
 
         chunk_objects_multivector = []
 
-        if use_colpali:
+        if use_colpali and self.colpali_embedding_model:
             embeddings_multivector = await self.colpali_embedding_model.embed_for_ingestion(chunks)
             logger.info(
                 f"Generated {len(embeddings_multivector)} embeddings for multivector embedding"
@@ -413,7 +414,7 @@ class DocumentService:
 
         chunk_objects_multivector = []
         logger.info(f"use_colpali: {use_colpali}")
-        if use_colpali:
+        if use_colpali and self.colpali_embedding_model:
             chunks_multivector = self._create_chunks_multivector(
                 file_type, file_content_base64, file_content, chunks
             )
@@ -593,7 +594,7 @@ class DocumentService:
         logger.debug("Stored chunk embeddings in vector store")
         doc.chunk_ids = result
 
-        if use_colpali and chunk_objects_multivector is not None:
+        if use_colpali and self.colpali_vector_store and chunk_objects_multivector:
             success, result_multivector = await self.colpali_vector_store.store_embeddings(
                 chunk_objects_multivector
             )
@@ -892,10 +893,71 @@ class DocumentService:
             
             # Store file in storage if needed
             file_content_base64 = base64.b64encode(file_content).decode()
-            storage_info = await self.storage.upload_from_base64(
-                file_content_base64, doc.external_id, file.content_type
-            )
-            doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
+            
+            # Check if we should keep previous file versions
+            if update_strategy == "add" and hasattr(doc, "storage_files") and len(doc.storage_files) > 0:
+                # In "add" strategy, create a new StorageFileInfo and append it
+                storage_info = await self.storage.upload_from_base64(
+                    file_content_base64, f"{doc.external_id}_{len(doc.storage_files)}", file.content_type
+                )
+                
+                # Create a new StorageFileInfo
+                if not hasattr(doc, "storage_files"):
+                    doc.storage_files = []
+                    
+                # If storage_files doesn't exist yet but we have legacy storage_info, migrate it
+                if len(doc.storage_files) == 0 and doc.storage_info:
+                    # Create StorageFileInfo from legacy storage_info
+                    legacy_file_info = StorageFileInfo(
+                        bucket=doc.storage_info.get("bucket", ""),
+                        key=doc.storage_info.get("key", ""),
+                        version=1,
+                        filename=doc.filename,
+                        content_type=doc.content_type,
+                        timestamp=doc.system_metadata.get("updated_at", datetime.now(UTC))
+                    )
+                    doc.storage_files.append(legacy_file_info)
+                
+                # Add the new file to storage_files
+                new_file_info = StorageFileInfo(
+                    bucket=storage_info[0],
+                    key=storage_info[1],
+                    version=len(doc.storage_files) + 1,
+                    filename=file.filename,
+                    content_type=file.content_type,
+                    timestamp=datetime.now(UTC)
+                )
+                doc.storage_files.append(new_file_info)
+                
+                # Still update legacy storage_info for backward compatibility
+                doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
+            else:
+                # In replace mode (default), just update the storage_info
+                storage_info = await self.storage.upload_from_base64(
+                    file_content_base64, doc.external_id, file.content_type
+                )
+                doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
+                
+                # Update storage_files field as well
+                if not hasattr(doc, "storage_files"):
+                    doc.storage_files = []
+                
+                # Add or update the primary file info
+                new_file_info = StorageFileInfo(
+                    bucket=storage_info[0],
+                    key=storage_info[1],
+                    version=1,
+                    filename=file.filename,
+                    content_type=file.content_type,
+                    timestamp=datetime.now(UTC)
+                )
+                
+                # Replace the current main file (first file) or add if empty
+                if len(doc.storage_files) > 0:
+                    doc.storage_files[0] = new_file_info
+                else:
+                    doc.storage_files.append(new_file_info)
+                    
             logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
             
             update_content = file_text
@@ -990,7 +1052,7 @@ class DocumentService:
         
         # Handle colpali (multi-vector) embeddings if needed
         chunk_objects_multivector = []
-        if use_colpali and self.colpali_embedding_model:
+        if use_colpali and self.colpali_embedding_model and self.colpali_vector_store:
             # For file updates, we need special handling for images and PDFs
             if file and file_type and (file_type.mime in IMAGE or file_type.mime == "application/pdf"):
                 # Rewind the file and read it again if needed
@@ -1023,6 +1085,54 @@ class DocumentService:
         logger.info(f"Successfully updated document {doc.external_id}")
         
         return doc
+        
+    async def update_document_by_filename(
+        self,
+        filename: str,
+        auth: AuthContext,
+        content: Optional[str] = None,
+        file: Optional[UploadFile] = None,
+        new_filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List] = None,
+        update_strategy: str = "add",
+        use_colpali: Optional[bool] = None,
+    ) -> Optional[Document]:
+        """
+        Update a document identified by filename with new content and/or metadata.
+        
+        Args:
+            filename: Filename of the document to update
+            auth: Authentication context
+            content: The new text content to add (either content or file must be provided)
+            file: File to add (either content or file must be provided)
+            new_filename: Optional new filename for the document
+            metadata: Additional metadata to update
+            rules: Optional list of rules to apply to the content
+            update_strategy: Strategy for updating the document ('add' to append content)
+            use_colpali: Whether to use multi-vector embedding
+            
+        Returns:
+            Updated document if successful, None if failed
+        """
+        # Get document by filename
+        doc = await self.db.get_document_by_filename(filename, auth)
+        if not doc:
+            logger.error(f"Document with filename '{filename}' not found or not accessible")
+            return None
+            
+        # Use existing update_document method with the document_id
+        return await self.update_document(
+            document_id=doc.external_id,
+            auth=auth,
+            content=content,
+            file=file,
+            filename=new_filename if new_filename else filename,
+            metadata=metadata,
+            rules=rules,
+            update_strategy=update_strategy,
+            use_colpali=use_colpali
+        )
 
     def close(self):
         """Close all resources."""

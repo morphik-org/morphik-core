@@ -296,7 +296,7 @@ class AsyncDataBridge:
         k: int = 4,
         min_score: float = 0.0,
         use_colpali: bool = True,
-    ) -> List[ChunkResult]:
+    ) -> List[FinalChunkResult]:
         """
         Search for relevant chunks.
 
@@ -307,7 +307,7 @@ class AsyncDataBridge:
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model to retrieve chunks (only works for documents ingested with `use_colpali=True`)
         Returns:
-            List[ChunkResult]
+            List[FinalChunkResult]
 
         Example:
             ```python
@@ -317,17 +317,54 @@ class AsyncDataBridge:
             )
             ```
         """
-        params = {
+        request = {
             "query": query,
+            "filters": filters,
             "k": k,
             "min_score": min_score,
             "use_colpali": use_colpali,
         }
-        if filters:
-            params["filters"] = json.dumps(filters)
 
-        response = await self._request("POST", "retrieve/chunks", params=params)
-        return [ChunkResult(**r) for r in response]
+        response = await self._request("POST", "retrieve/chunks", data=request)
+        chunks = [ChunkResult(**r) for r in response]
+        
+        final_chunks = []
+        for chunk in chunks:
+            if chunk.metadata.get("is_image"):
+                try:
+                    # Handle data URI format "data:image/png;base64,..."
+                    content = chunk.content
+                    if content.startswith("data:"):
+                        # Extract the base64 part after the comma
+                        content = content.split(",", 1)[1]
+
+                    # Now decode the base64 string
+                    import base64
+                    import io
+                    from PIL import Image
+                    image_bytes = base64.b64decode(content)
+                    content = Image.open(io.BytesIO(image_bytes))
+                except Exception as e:
+                    print(f"Error processing image: {str(e)}")
+                    # Fall back to using the content as text
+                    content = chunk.content
+            else:
+                content = chunk.content
+
+            final_chunks.append(
+                FinalChunkResult(
+                    content=content,
+                    score=chunk.score,
+                    document_id=chunk.document_id,
+                    chunk_number=chunk.chunk_number,
+                    metadata=chunk.metadata,
+                    content_type=chunk.content_type,
+                    filename=chunk.filename,
+                    download_url=chunk.download_url,
+                )
+            )
+            
+        return final_chunks
 
     async def retrieve_docs(
         self,
@@ -357,16 +394,15 @@ class AsyncDataBridge:
             )
             ```
         """
-        params = {
+        request = {
             "query": query,
+            "filters": filters,
             "k": k,
             "min_score": min_score,
             "use_colpali": use_colpali,
         }
-        if filters:
-            params["filters"] = json.dumps(filters)
 
-        response = await self._request("POST", "retrieve/docs", params=params)
+        response = await self._request("POST", "retrieve/docs", data=request)
         return [DocumentResult(**r) for r in response]
 
     async def query(
@@ -403,18 +439,17 @@ class AsyncDataBridge:
             print(response.completion)
             ```
         """
-        params = {
+        request = {
             "query": query,
+            "filters": filters,
             "k": k,
             "min_score": min_score,
             "max_tokens": max_tokens,
             "temperature": temperature,
             "use_colpali": use_colpali,
         }
-        if filters:
-            params["filters"] = json.dumps(filters)
 
-        response = await self._request("POST", "query", params=params)
+        response = await self._request("POST", "query", data=request)
         return CompletionResponse(**response)
 
     async def list_documents(
@@ -465,6 +500,28 @@ class AsyncDataBridge:
             ```
         """
         response = await self._request("GET", f"documents/{document_id}")
+        doc = Document(**response)
+        doc._client = self
+        return doc
+        
+    async def get_document_by_filename(self, filename: str) -> Document:
+        """
+        Get document metadata by filename.
+        If multiple documents have the same filename, returns the most recently updated one.
+
+        Args:
+            filename: Filename of the document to retrieve
+
+        Returns:
+            Document: Document metadata
+
+        Example:
+            ```python
+            doc = await db.get_document_by_filename("report.pdf")
+            print(f"Document ID: {doc.external_id}")
+            ```
+        """
+        response = await self._request("GET", f"documents/filename/{filename}")
         doc = Document(**response)
         doc._client = self
         return doc
@@ -640,6 +697,195 @@ class AsyncDataBridge:
         """
         # Use the dedicated metadata update endpoint
         response = await self._request("POST", f"documents/{document_id}/update_metadata", data=metadata)
+        doc = Document(**response)
+        doc._client = self
+        return doc
+        
+    async def update_document_by_filename_with_text(
+        self,
+        filename: str,
+        content: str,
+        new_filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List] = None,
+        update_strategy: str = "add",
+        use_colpali: Optional[bool] = None,
+    ) -> Document:
+        """
+        Update a document identified by filename with new text content using the specified strategy.
+
+        Args:
+            filename: Filename of the document to update
+            content: The new content to add
+            new_filename: Optional new filename for the document
+            metadata: Additional metadata to update (optional)
+            rules: Optional list of rules to apply to the content
+            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            use_colpali: Whether to use multi-vector embedding
+
+        Returns:
+            Document: Updated document metadata
+
+        Example:
+            ```python
+            # Add new content to an existing document identified by filename
+            updated_doc = await db.update_document_by_filename_with_text(
+                filename="report.pdf",
+                content="This is additional content that will be appended to the document.",
+                new_filename="updated_report.pdf",
+                metadata={"category": "updated"},
+                update_strategy="add"
+            )
+            print(f"Document version: {updated_doc.system_metadata.get('version')}")
+            ```
+        """
+        # Use the dedicated text update endpoint
+        request = IngestTextRequest(
+            content=content,
+            filename=new_filename,
+            metadata=metadata or {},
+            rules=[self._convert_rule(r) for r in (rules or [])],
+            use_colpali=use_colpali if use_colpali is not None else True,
+        )
+        
+        params = {}
+        if update_strategy != "add":
+            params["update_strategy"] = update_strategy
+            
+        response = await self._request(
+            "POST", 
+            f"documents/filename/{filename}/update_text", 
+            data=request.model_dump(),
+            params=params
+        )
+        
+        doc = Document(**response)
+        doc._client = self
+        return doc
+        
+    async def update_document_by_filename_with_file(
+        self,
+        filename: str,
+        file: Union[str, bytes, BinaryIO, Path],
+        new_filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List] = None,
+        update_strategy: str = "add",
+        use_colpali: Optional[bool] = None,
+    ) -> Document:
+        """
+        Update a document identified by filename with content from a file using the specified strategy.
+
+        Args:
+            filename: Filename of the document to update
+            file: File to add (path string, bytes, file object, or Path)
+            new_filename: Optional new filename for the document (defaults to the filename of the file)
+            metadata: Additional metadata to update (optional)
+            rules: Optional list of rules to apply to the content
+            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            use_colpali: Whether to use multi-vector embedding
+
+        Returns:
+            Document: Updated document metadata
+
+        Example:
+            ```python
+            # Add content from a file to an existing document identified by filename
+            updated_doc = await db.update_document_by_filename_with_file(
+                filename="report.pdf",
+                file="path/to/update.pdf",
+                metadata={"status": "updated"},
+                update_strategy="add"
+            )
+            print(f"Document version: {updated_doc.system_metadata.get('version')}")
+            ```
+        """
+        # Handle different file input types
+        if isinstance(file, (str, Path)):
+            file_path = Path(file)
+            if not file_path.exists():
+                raise ValueError(f"File not found: {file}")
+            actual_filename = file_path.name if new_filename is None else new_filename
+            with open(file_path, "rb") as f:
+                content = f.read()
+                file_obj = BytesIO(content)
+        elif isinstance(file, bytes):
+            if new_filename is None:
+                raise ValueError("new_filename is required when updating with bytes")
+            actual_filename = new_filename
+            file_obj = BytesIO(file)
+        else:
+            if new_filename is None:
+                raise ValueError("new_filename is required when updating with file object")
+            actual_filename = new_filename
+            file_obj = file
+            
+        try:
+            # Prepare multipart form data
+            files = {"file": (actual_filename, file_obj)}
+            
+            # Convert metadata and rules to JSON strings
+            form_data = {
+                "metadata": json.dumps(metadata or {}),
+                "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
+                "update_strategy": update_strategy,
+            }
+            
+            if use_colpali is not None:
+                form_data["use_colpali"] = str(use_colpali).lower()
+                
+            # Use the dedicated file update endpoint
+            response = await self._request(
+                "POST", f"documents/filename/{filename}/update_file", data=form_data, files=files
+            )
+            
+            doc = Document(**response)
+            doc._client = self
+            return doc
+        finally:
+            # Close file if we opened it
+            if isinstance(file, (str, Path)):
+                file_obj.close()
+                
+    async def update_document_by_filename_metadata(
+        self,
+        filename: str,
+        metadata: Dict[str, Any],
+        new_filename: Optional[str] = None,
+    ) -> Document:
+        """
+        Update a document's metadata using filename to identify the document.
+        
+        Args:
+            filename: Filename of the document to update
+            metadata: Metadata to update
+            new_filename: Optional new filename to assign to the document
+            
+        Returns:
+            Document: Updated document metadata
+            
+        Example:
+            ```python
+            # Update just the metadata of a document identified by filename
+            updated_doc = await db.update_document_by_filename_metadata(
+                filename="report.pdf",
+                metadata={"status": "reviewed", "reviewer": "Jane Smith"},
+                new_filename="reviewed_report.pdf"  # Optional: rename the file
+            )
+            print(f"Updated metadata: {updated_doc.metadata}")
+            ```
+        """
+        params = {}
+        if new_filename:
+            params["new_filename"] = new_filename
+            
+        # Use the dedicated metadata update endpoint
+        response = await self._request(
+            "POST", 
+            f"documents/filename/{filename}/update_metadata", 
+            data=metadata,
+            params=params
+        )
         doc = Document(**response)
         doc._client = self
         return doc
