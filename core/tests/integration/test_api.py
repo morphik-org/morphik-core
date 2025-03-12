@@ -322,6 +322,231 @@ async def test_invalid_document_id(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_update_document_with_text(client: AsyncClient):
+    """Test updating a document with text content"""
+    # First ingest a document to update
+    initial_content = "This is the initial content for update testing."
+    doc_id = await test_ingest_text_document(client, content=initial_content)
+    
+    headers = create_auth_header()
+    update_content = "This is additional content for the document."
+    
+    # Test updating with text content
+    response = await client.post(
+        f"/documents/{doc_id}/update_text",
+        json={
+            "content": update_content,
+            "metadata": {"updated": True, "version": "2.0"},
+            "use_colpali": True
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    updated_doc = response.json()
+    assert updated_doc["external_id"] == doc_id
+    assert updated_doc["metadata"]["updated"] is True
+    assert updated_doc["metadata"]["version"] == "2.0"
+    
+    # Verify the content was updated by retrieving chunks
+    search_response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "additional content",
+            "filters": {"external_id": doc_id},
+        },
+        headers=headers,
+    )
+    
+    assert search_response.status_code == 200
+    chunks = search_response.json()
+    assert len(chunks) > 0
+    assert any(update_content in chunk["content"] for chunk in chunks)
+
+
+@pytest.mark.asyncio
+async def test_update_document_with_file(client: AsyncClient):
+    """Test updating a document with file content"""
+    # First ingest a document to update
+    initial_content = "This is the initial content for file update testing."
+    doc_id = await test_ingest_text_document(client, content=initial_content)
+    
+    headers = create_auth_header()
+    
+    # Create a test file to upload
+    test_file_path = TEST_DATA_DIR / "update_test.txt"
+    update_content = "This is file content for updating the document."
+    test_file_path.write_text(update_content)
+    
+    with open(test_file_path, "rb") as f:
+        response = await client.post(
+            f"/documents/{doc_id}/update_file",
+            files={"file": ("update_test.txt", f, "text/plain")},
+            data={
+                "metadata": json.dumps({"updated_with_file": True}),
+                "rules": json.dumps([]),
+                "update_strategy": "add",
+            },
+            headers=headers,
+        )
+    
+    assert response.status_code == 200
+    updated_doc = response.json()
+    assert updated_doc["external_id"] == doc_id
+    assert updated_doc["metadata"]["updated_with_file"] is True
+    
+    # Verify the content was updated by retrieving chunks
+    search_response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "file content for updating",
+            "filters": {"external_id": doc_id},
+        },
+        headers=headers,
+    )
+    
+    assert search_response.status_code == 200
+    chunks = search_response.json()
+    assert len(chunks) > 0
+    assert any(update_content in chunk["content"] for chunk in chunks)
+    
+    # Clean up the test file
+    test_file_path.unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_update_document_metadata(client: AsyncClient):
+    """Test updating only a document's metadata"""
+    # First ingest a document to update
+    initial_content = "This is the content for metadata update testing."
+    doc_id = await test_ingest_text_document(client, content=initial_content)
+    
+    headers = create_auth_header()
+    
+    # Test updating just metadata
+    new_metadata = {
+        "meta_updated": True,
+        "tags": ["test", "metadata", "update"],
+        "priority": 1
+    }
+    
+    response = await client.post(
+        f"/documents/{doc_id}/update_metadata",
+        json=new_metadata,
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    updated_doc = response.json()
+    assert updated_doc["external_id"] == doc_id
+    assert updated_doc["metadata"]["meta_updated"] is True
+    assert "test" in updated_doc["metadata"]["tags"]
+    assert updated_doc["metadata"]["priority"] == 1
+    
+    # Verify the metadata was updated by retrieving the document
+    get_response = await client.get(f"/documents/{doc_id}", headers=headers)
+    assert get_response.status_code == 200
+    retrieved_doc = get_response.json()
+    assert retrieved_doc["metadata"]["meta_updated"] is True
+    assert "test" in retrieved_doc["metadata"]["tags"]
+    
+    
+@pytest.mark.asyncio
+async def test_update_document_with_rules(client: AsyncClient):
+    """Test updating a document with text content and applying rules"""
+    # First ingest a document to update
+    initial_content = "This is the initial content for rule testing."
+    doc_id = await test_ingest_text_document(client, content=initial_content)
+    
+    headers = create_auth_header()
+    update_content = "This document contains information about John Doe who lives at 123 Main St and has SSN 123-45-6789."
+    
+    # Create a rule to apply during update (natural language rule to remove PII)
+    rule = {
+        "type": "natural_language",
+        "prompt": "Remove all personally identifiable information (PII) such as names, addresses, and SSNs."
+    }
+    
+    # Test updating with text content and a rule
+    response = await client.post(
+        f"/documents/{doc_id}/update_text",
+        json={
+            "content": update_content,
+            "metadata": {"contains_pii": False},
+            "rules": [rule],
+            "use_colpali": True
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    updated_doc = response.json()
+    assert updated_doc["external_id"] == doc_id
+    assert updated_doc["metadata"]["contains_pii"] is False
+    
+    # Verify the content was updated and PII was removed by retrieving chunks
+    # Note: Exact behavior depends on the LLM response, so we check that something changed
+    search_response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "information about person",
+            "filters": {"external_id": doc_id},
+        },
+        headers=headers,
+    )
+    
+    assert search_response.status_code == 200
+    chunks = search_response.json()
+    assert len(chunks) > 0
+    # The processed content should have some of the original content but not the PII
+    assert any("information" in chunk["content"] for chunk in chunks)
+    # Check that at least one of the PII elements is not in the content
+    # This is a loose check since the exact result depends on the LLM
+    content_text = " ".join([chunk["content"] for chunk in chunks])
+    has_some_pii_removed = ("John Doe" not in content_text) or ("123-45-6789" not in content_text) or ("123 Main St" not in content_text)
+    assert has_some_pii_removed, "Rule to remove PII did not seem to have any effect"
+
+
+@pytest.mark.asyncio
+async def test_update_document_error_cases(client: AsyncClient):
+    """Test error cases for document updates"""
+    headers = create_auth_header()
+    
+    # Test updating non-existent document
+    response = await client.post(
+        "/documents/non_existent_id/update_text",
+        json={
+            "content": "Test content for non-existent document",
+            "metadata": {}
+        },
+        headers=headers,
+    )
+    assert response.status_code == 404
+    
+    # Test updating text without content (validation error)
+    doc_id = await test_ingest_text_document(client)
+    response = await client.post(
+        f"/documents/{doc_id}/update_text",
+        json={
+            # Missing required content field
+            "metadata": {"test": True}
+        },
+        headers=headers,
+    )
+    assert response.status_code == 422
+    
+    # Test updating with insufficient permissions
+    if not get_settings().dev_mode:
+        restricted_headers = create_auth_header(permissions=["read"])
+        response = await client.post(
+            f"/documents/{doc_id}/update_metadata",
+            json={"restricted": True},
+            headers=restricted_headers,
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_retrieve_chunks(client: AsyncClient):
     """Test retrieving document chunks"""
     upload_string = "The quick brown fox jumps over the lazy dog"
