@@ -103,8 +103,8 @@ async def initialize_database():
         logger.info("Database initialization successful")
     else:
         logger.error("Database initialization failed")
-        # We don't raise an exception here to allow the app to start even if
-        # initialization fails (which might happen if tables already exist)
+        # We don't raise an exception here to allow the app to continue starting
+        # even if there are initialization errors
 
 # Initialize vector store
 match settings.VECTOR_STORE_PROVIDER:
