@@ -739,29 +739,19 @@ class AsyncDataBridge:
             print(f"Document version: {updated_doc.system_metadata.get('version')}")
             ```
         """
-        # Use the dedicated text update endpoint
-        request = IngestTextRequest(
+        # First get the document by filename to obtain its ID
+        doc = await self.get_document_by_filename(filename)
+        
+        # Then use the regular update_document_with_text endpoint with the document ID
+        return await self.update_document_with_text(
+            document_id=doc.external_id,
             content=content,
             filename=new_filename,
-            metadata=metadata or {},
-            rules=[self._convert_rule(r) for r in (rules or [])],
-            use_colpali=use_colpali if use_colpali is not None else True,
+            metadata=metadata,
+            rules=rules,
+            update_strategy=update_strategy,
+            use_colpali=use_colpali
         )
-        
-        params = {}
-        if update_strategy != "add":
-            params["update_strategy"] = update_strategy
-            
-        response = await self._request(
-            "POST", 
-            f"documents/filename/{filename}/update_text", 
-            data=request.model_dump(),
-            params=params
-        )
-        
-        doc = Document(**response)
-        doc._client = self
-        return doc
         
     async def update_document_by_filename_with_file(
         self,
@@ -800,52 +790,19 @@ class AsyncDataBridge:
             print(f"Document version: {updated_doc.system_metadata.get('version')}")
             ```
         """
-        # Handle different file input types
-        if isinstance(file, (str, Path)):
-            file_path = Path(file)
-            if not file_path.exists():
-                raise ValueError(f"File not found: {file}")
-            actual_filename = file_path.name if new_filename is None else new_filename
-            with open(file_path, "rb") as f:
-                content = f.read()
-                file_obj = BytesIO(content)
-        elif isinstance(file, bytes):
-            if new_filename is None:
-                raise ValueError("new_filename is required when updating with bytes")
-            actual_filename = new_filename
-            file_obj = BytesIO(file)
-        else:
-            if new_filename is None:
-                raise ValueError("new_filename is required when updating with file object")
-            actual_filename = new_filename
-            file_obj = file
-            
-        try:
-            # Prepare multipart form data
-            files = {"file": (actual_filename, file_obj)}
-            
-            # Convert metadata and rules to JSON strings
-            form_data = {
-                "metadata": json.dumps(metadata or {}),
-                "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
-                "update_strategy": update_strategy,
-            }
-            
-            if use_colpali is not None:
-                form_data["use_colpali"] = str(use_colpali).lower()
-                
-            # Use the dedicated file update endpoint
-            response = await self._request(
-                "POST", f"documents/filename/{filename}/update_file", data=form_data, files=files
-            )
-            
-            doc = Document(**response)
-            doc._client = self
-            return doc
-        finally:
-            # Close file if we opened it
-            if isinstance(file, (str, Path)):
-                file_obj.close()
+        # First get the document by filename to obtain its ID
+        doc = await self.get_document_by_filename(filename)
+        
+        # Then use the regular update_document_with_file endpoint with the document ID
+        return await self.update_document_with_file(
+            document_id=doc.external_id,
+            file=file,
+            filename=new_filename,
+            metadata=metadata,
+            rules=rules,
+            update_strategy=update_strategy,
+            use_colpali=use_colpali
+        )
                 
     async def update_document_by_filename_metadata(
         self,
@@ -875,20 +832,35 @@ class AsyncDataBridge:
             print(f"Updated metadata: {updated_doc.metadata}")
             ```
         """
-        params = {}
-        if new_filename:
-            params["new_filename"] = new_filename
-            
-        # Use the dedicated metadata update endpoint
-        response = await self._request(
-            "POST", 
-            f"documents/filename/{filename}/update_metadata", 
-            data=metadata,
-            params=params
+        # First get the document by filename to obtain its ID
+        doc = await self.get_document_by_filename(filename)
+        
+        # Update the metadata
+        result = await self.update_document_metadata(
+            document_id=doc.external_id,
+            metadata=metadata,
         )
-        doc = Document(**response)
-        doc._client = self
-        return doc
+        
+        # If new_filename is provided, update the filename as well
+        if new_filename:
+            # Create a request that retains the just-updated metadata but also changes filename
+            combined_metadata = result.metadata.copy()
+            
+            # Update the document again with filename change and the same metadata
+            response = await self._request(
+                "POST", 
+                f"documents/{doc.external_id}/update_text", 
+                data={
+                    "content": "", 
+                    "filename": new_filename,
+                    "metadata": combined_metadata,
+                    "rules": []
+                }
+            )
+            result = Document(**response)
+            result._client = self
+            
+        return result
     
     async def batch_get_documents(self, document_ids: List[str]) -> List[Document]:
         """

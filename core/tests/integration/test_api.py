@@ -580,127 +580,8 @@ async def test_update_document_with_rules(client: AsyncClient):
     assert has_some_pii_removed, "Rule to remove PII did not seem to have any effect"
 
 
-@pytest.mark.asyncio
-async def test_update_document_by_filename_with_text(client: AsyncClient):
-    """Test updating a document by filename with text content"""
-    # First ingest a document with a specific filename
-    filename = "test_update_by_filename.txt"
-    headers = create_auth_header()
-    
-    initial_content = "This is the initial content for update-by-filename testing."
-    response = await client.post(
-        "/ingest/text",
-        json={
-            "content": initial_content, 
-            "filename": filename,
-            "metadata": {"test": True, "type": "text"},
-        },
-        headers=headers,
-    )
-    
-    assert response.status_code == 200
-    doc_id = response.json()["external_id"]
-    
-    # Now update the document by filename
-    update_content = "This is additional content added by filename update."
-    new_filename = "updated_filename.txt"
-    
-    response = await client.post(
-        f"/documents/filename/{filename}/update_text",
-        json={
-            "content": update_content,
-            "filename": new_filename,
-            "metadata": {"updated_by_filename": True, "version": "2.0"},
-            "use_colpali": True
-        },
-        headers=headers,
-    )
-    
-    assert response.status_code == 200
-    updated_doc = response.json()
-    assert updated_doc["external_id"] == doc_id
-    assert updated_doc["filename"] == new_filename
-    assert updated_doc["metadata"]["updated_by_filename"] is True
-    assert updated_doc["metadata"]["version"] == "2.0"
-    
-    # Verify the content was updated by retrieving chunks
-    search_response = await client.post(
-        "/retrieve/chunks",
-        json={
-            "query": "additional content filename update",
-            "filters": {"external_id": doc_id},
-        },
-        headers=headers,
-    )
-    
-    assert search_response.status_code == 200
-    chunks = search_response.json()
-    assert len(chunks) > 0
-    assert any(update_content in chunk["content"] for chunk in chunks)
 
 
-@pytest.mark.asyncio
-async def test_update_document_by_filename_with_file(client: AsyncClient):
-    """Test updating a document by filename with file content"""
-    # First ingest a document with a specific filename
-    filename = "original_file.txt"
-    headers = create_auth_header()
-    
-    initial_content = "This is the initial content for file update-by-filename testing."
-    response = await client.post(
-        "/ingest/text",
-        json={
-            "content": initial_content, 
-            "filename": filename,
-            "metadata": {"test": True, "type": "text"},
-        },
-        headers=headers,
-    )
-    
-    assert response.status_code == 200
-    doc_id = response.json()["external_id"]
-    
-    # Create a test file to upload
-    test_file_path = TEST_DATA_DIR / "update_by_filename_test.txt"
-    update_content = "This is file content for updating the document by filename."
-    test_file_path.write_text(update_content)
-    
-    # Update the document by filename
-    with open(test_file_path, "rb") as f:
-        response = await client.post(
-            f"/documents/filename/{filename}/update_file",
-            files={"file": ("new_filename.txt", f, "text/plain")},
-            data={
-                "metadata": json.dumps({"updated_with_file_by_filename": True}),
-                "rules": json.dumps([]),
-                "update_strategy": "add",
-            },
-            headers=headers,
-        )
-    
-    assert response.status_code == 200
-    updated_doc = response.json()
-    assert updated_doc["external_id"] == doc_id
-    assert updated_doc["filename"] == "new_filename.txt"
-    assert updated_doc["metadata"]["updated_with_file_by_filename"] is True
-    
-    # Verify the content was updated by retrieving chunks
-    search_response = await client.post(
-        "/retrieve/chunks",
-        json={
-            "query": "file content updating document filename",
-            "filters": {"external_id": doc_id},
-        },
-        headers=headers,
-    )
-    
-    assert search_response.status_code == 200
-    chunks = search_response.json()
-    assert len(chunks) > 0
-    assert any(update_content in chunk["content"] for chunk in chunks)
-    
-    # Clean up the test file
-    test_file_path.unlink(missing_ok=True)
 
 
 @pytest.mark.asyncio
@@ -812,50 +693,6 @@ async def test_file_versioning_with_add_strategy(client: AsyncClient):
     third_file_path.unlink(missing_ok=True)
 
 
-@pytest.mark.asyncio
-async def test_update_document_by_filename_metadata(client: AsyncClient):
-    """Test updating only a document's metadata using filename"""
-    # First ingest a document with a specific filename
-    filename = "metadata_update_test.txt"
-    headers = create_auth_header()
-    
-    initial_content = "This is the content for metadata update-by-filename testing."
-    response = await client.post(
-        "/ingest/text",
-        json={
-            "content": initial_content, 
-            "filename": filename,
-            "metadata": {"test": True, "type": "text"},
-        },
-        headers=headers,
-    )
-    
-    assert response.status_code == 200
-    doc_id = response.json()["external_id"]
-    
-    # Test updating just metadata by filename
-    new_metadata = {
-        "meta_updated_by_filename": True,
-        "tags": ["test", "metadata", "filename", "update"],
-        "priority": 2
-    }
-    
-    response = await client.post(
-        f"/documents/filename/{filename}/update_metadata",
-        json=new_metadata,
-        params={"new_filename": "updated_metadata_filename.txt"},
-        headers=headers,
-    )
-    
-    assert response.status_code == 200
-    updated_doc = response.json()
-    assert updated_doc["external_id"] == doc_id
-    assert updated_doc["filename"] == "updated_metadata_filename.txt"
-    
-    # Verify the response has the updated metadata
-    assert updated_doc["metadata"]["meta_updated_by_filename"] is True
-    assert "filename" in updated_doc["metadata"]["tags"]
-    assert updated_doc["metadata"]["priority"] == 2
 
 
 @pytest.mark.asyncio
@@ -874,16 +711,6 @@ async def test_update_document_error_cases(client: AsyncClient):
     )
     assert response.status_code == 404
     
-    # Test updating non-existent document by filename
-    response = await client.post(
-        "/documents/filename/non_existent_file.txt/update_text",
-        json={
-            "content": "Test content for non-existent document",
-            "metadata": {}
-        },
-        headers=headers,
-    )
-    assert response.status_code == 404
     
     # Test updating text without content (validation error)
     doc_id = await test_ingest_text_document(client)
