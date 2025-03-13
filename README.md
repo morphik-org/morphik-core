@@ -1,4 +1,7 @@
 # DataBridge Core
+![License](https://img.shields.io/badge/license-MIT-blue)
+![PyPI - Version](https://img.shields.io/pypi/v/databridge-client)
+![Discord](https://img.shields.io/discord/1336524712817332276?logo=discord&label=discord)
 
 ![DataBridge Demo](db_atf_demo_hq.gif)
 
