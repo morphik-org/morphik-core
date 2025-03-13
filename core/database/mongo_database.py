@@ -80,6 +80,30 @@ class MongoDatabase(BaseDatabase):
             logger.error(f"Error retrieving document metadata: {str(e)}")
             raise e
             
+    async def get_document_by_filename(self, filename: str, auth: AuthContext) -> Optional[Document]:
+        """Retrieve document metadata by filename if user has access.
+        If multiple documents have the same filename, returns the most recently updated one.
+        """
+        try:
+            # Build access filter
+            access_filter = self._build_access_filter(auth)
+
+            # Query document
+            query = {"$and": [{"filename": filename}, access_filter]}
+            logger.debug(f"Querying document by filename with query: {query}")
+
+            # Sort by updated_at in descending order to get the most recent one
+            sort_criteria = [("system_metadata.updated_at", -1)]
+            
+            doc_dict = await self.collection.find_one(query, sort=sort_criteria)
+            logger.debug(f"Found document by filename: {doc_dict}")
+            
+            return Document(**doc_dict) if doc_dict else None
+
+        except PyMongoError as e:
+            logger.error(f"Error retrieving document metadata by filename: {str(e)}")
+            raise e
+            
     async def get_documents_by_id(self, document_ids: List[str], auth: AuthContext) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
@@ -161,7 +185,7 @@ class MongoDatabase(BaseDatabase):
 
             # Update system metadata
             updates.setdefault("system_metadata", {})
-            updates["system_metadata"]["updated_at"] = datetime.utcnow()
+            updates["system_metadata"]["updated_at"] = datetime.now(UTC)
 
             result = await self.collection.find_one_and_update(
                 {"external_id": document_id},

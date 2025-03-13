@@ -30,6 +30,7 @@ class DocumentModel(Base):
     additional_metadata = Column(JSONB, default=dict)
     access_control = Column(JSONB, default=dict)
     chunk_ids = Column(JSONB, default=list)
+    storage_files = Column(JSONB, default=list)
 
     # Create indexes
     __table_args__ = (
@@ -81,6 +82,28 @@ class PostgresDatabase(BaseDatabase):
                     )
                 )
 
+                # Check if storage_files column exists
+                result = await conn.execute(
+                    text(
+                        """
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'documents' AND column_name = 'storage_files'
+                    """
+                    )
+                )
+                if not result.first():
+                    # Add storage_files column to documents table
+                    await conn.execute(
+                        text(
+                            """
+                        ALTER TABLE documents 
+                        ADD COLUMN IF NOT EXISTS storage_files JSONB DEFAULT '[]'::jsonb
+                        """
+                        )
+                    )
+                    logger.info("Added storage_files column to documents table")
+
             logger.info("PostgreSQL tables and indexes created successfully")
             return True
 
@@ -97,12 +120,18 @@ class PostgresDatabase(BaseDatabase):
             if "metadata" in doc_dict:
                 doc_dict["doc_metadata"] = doc_dict.pop("metadata")
             doc_dict["doc_metadata"]["external_id"] = doc_dict["external_id"]
+            
             # Ensure system metadata
             if "system_metadata" not in doc_dict:
                 doc_dict["system_metadata"] = {}
             doc_dict["system_metadata"]["created_at"] = datetime.now(UTC)
             doc_dict["system_metadata"]["updated_at"] = datetime.now(UTC)
 
+            # Handle storage_files
+            if "storage_files" in doc_dict and doc_dict["storage_files"]:
+                # Convert storage_files to the expected format for storage
+                doc_dict["storage_files"] = [file.model_dump() for file in doc_dict["storage_files"]]
+            
             # Serialize datetime objects to ISO format strings
             doc_dict = _serialize_datetime(doc_dict)
 
@@ -146,12 +175,56 @@ class PostgresDatabase(BaseDatabase):
                         "additional_metadata": doc_model.additional_metadata,
                         "access_control": doc_model.access_control,
                         "chunk_ids": doc_model.chunk_ids,
+                        "storage_files": doc_model.storage_files or [],
                     }
                     return Document(**doc_dict)
                 return None
                 
         except Exception as e:
             logger.error(f"Error retrieving document metadata: {str(e)}")
+            return None
+            
+    async def get_document_by_filename(self, filename: str, auth: AuthContext) -> Optional[Document]:
+        """Retrieve document metadata by filename if user has access.
+        If multiple documents have the same filename, returns the most recently updated one.
+        """
+        try:
+            async with self.async_session() as session:
+                # Build access filter
+                access_filter = self._build_access_filter(auth)
+
+                # Query document
+                query = (
+                    select(DocumentModel)
+                    .where(DocumentModel.filename == filename)
+                    .where(text(f"({access_filter})"))
+                    # Order by updated_at in system_metadata to get the most recent document
+                    .order_by(text("system_metadata->>'updated_at' DESC"))
+                )
+
+                result = await session.execute(query)
+                doc_model = result.scalar_one_or_none()
+
+                if doc_model:
+                    # Convert doc_metadata back to metadata
+                    doc_dict = {
+                        "external_id": doc_model.external_id,
+                        "owner": doc_model.owner,
+                        "content_type": doc_model.content_type,
+                        "filename": doc_model.filename,
+                        "metadata": doc_model.doc_metadata,
+                        "storage_info": doc_model.storage_info,
+                        "system_metadata": doc_model.system_metadata,
+                        "additional_metadata": doc_model.additional_metadata,
+                        "access_control": doc_model.access_control,
+                        "chunk_ids": doc_model.chunk_ids,
+                        "storage_files": doc_model.storage_files or [],
+                    }
+                    return Document(**doc_dict)
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error retrieving document metadata by filename: {str(e)}")
             return None
             
     async def get_documents_by_id(self, document_ids: List[str], auth: AuthContext) -> List[Document]:
@@ -201,6 +274,7 @@ class PostgresDatabase(BaseDatabase):
                         "additional_metadata": doc_model.additional_metadata,
                         "access_control": doc_model.access_control,
                         "chunk_ids": doc_model.chunk_ids,
+                        "storage_files": doc_model.storage_files or [],
                     }
                     documents.append(Document(**doc_dict))
                 
@@ -246,6 +320,7 @@ class PostgresDatabase(BaseDatabase):
                         additional_metadata=doc.additional_metadata,
                         access_control=doc.access_control,
                         chunk_ids=doc.chunk_ids,
+                        storage_files=doc.storage_files or [],
                     )
                     for doc in doc_models
                 ]

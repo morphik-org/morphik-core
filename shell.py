@@ -21,7 +21,7 @@ This provides the exact same interface as the Python SDK:
 import sys
 from pathlib import Path
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 import requests
 
 # Add local SDK to path before other imports
@@ -30,6 +30,7 @@ if _SDK_PATH not in sys.path:
     sys.path.insert(0, _SDK_PATH)
 
 from databridge import DataBridge  # noqa: E402
+from databridge.models import Document  # noqa: E402
 
 
 class DB:
@@ -64,7 +65,8 @@ class DB:
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[Dict[str, Any]]] = None,
         use_colpali: bool = True,
-    ) -> dict:
+        as_object: bool = False,
+    ) -> Union[dict, 'Document']:
         """
         Ingest text content into DataBridge.
 
@@ -75,11 +77,22 @@ class DB:
                   [{"type": "metadata_extraction", "schema": {"name": "string"}},
                    {"type": "natural_language", "prompt": "Remove PII"}]
             use_colpali: Whether to use ColPali-style embedding model to ingest the text
+            as_object: If True, returns the Document object with update methods, otherwise returns a dict
+            
+        Returns:
+            Document metadata (dict or Document object)
+            
+        Example:
+            ```python
+            # Create a document and immediately update it with new content
+            doc = db.ingest_text("Initial content", as_object=True)
+            doc.update_with_text("Additional content")
+            ```
         """
         doc = self._client.ingest_text(
             content, metadata=metadata or {}, rules=rules, use_colpali=use_colpali
         )
-        return doc.model_dump()
+        return doc if as_object else doc.model_dump()
 
     def ingest_file(
         self,
@@ -88,7 +101,8 @@ class DB:
         metadata: dict = None,
         rules: Optional[List[Dict[str, Any]]] = None,
         use_colpali: bool = True,
-    ) -> dict:
+        as_object: bool = False,
+    ) -> Union[dict, 'Document']:
         """
         Ingest a file into DataBridge.
 
@@ -100,6 +114,17 @@ class DB:
                   [{"type": "metadata_extraction", "schema": {"title": "string"}},
                    {"type": "natural_language", "prompt": "Summarize"}]
             use_colpali: Whether to use ColPali-style embedding model to ingest the file
+            as_object: If True, returns the Document object with update methods, otherwise returns a dict
+            
+        Returns:
+            Document metadata (dict or Document object)
+            
+        Example:
+            ```python
+            # Create a document from a file and immediately update it with text
+            doc = db.ingest_file("document.pdf", as_object=True)
+            doc.update_with_text("Additional notes about this document")
+            ```
         """
         file_path = Path(file)
         filename = filename or file_path.name
@@ -110,7 +135,7 @@ class DB:
             rules=rules,
             use_colpali=use_colpali,
         )
-        return doc.model_dump()
+        return doc if as_object else doc.model_dump()
 
     def retrieve_chunks(
         self, query: str, filters: dict = None, k: int = 4, min_score: float = 0.0, use_colpali: bool = True
@@ -181,28 +206,278 @@ class DB:
         )
         return response.model_dump()
 
-    def list_documents(self, skip: int = 0, limit: int = 100, filters: dict = None) -> list:
-        """List accessible documents"""
+    def list_documents(self, skip: int = 0, limit: int = 100, filters: dict = None, as_objects: bool = False) -> list:
+        """
+        List accessible documents
+        
+        Args:
+            skip: Number of documents to skip
+            limit: Maximum number of documents to return
+            filters: Optional metadata filters
+            as_objects: If True, returns Document objects with update methods, otherwise returns dicts
+            
+        Returns:
+            List of documents (as dicts or Document objects)
+            
+        Example:
+            ```python
+            # Get a list of documents that can be updated
+            docs = db.list_documents(as_objects=True)
+            for doc in docs:
+                doc.update_metadata({"status": "reviewed"})
+            ```
+        """
         docs = self._client.list_documents(skip=skip, limit=limit, filters=filters or {})
-        return [doc.model_dump() for doc in docs]
+        return docs if as_objects else [doc.model_dump() for doc in docs]
 
-    def get_document(self, document_id: str) -> dict:
-        """Get document metadata by ID"""
+    def get_document(self, document_id: str, as_object: bool = False) -> Union[dict, 'Document']:
+        """
+        Get document metadata by ID
+        
+        Args:
+            document_id: ID of the document
+            as_object: If True, returns the Document object with update methods, otherwise returns a dict
+            
+        Returns:
+            Document metadata (dict or Document object)
+        """
         doc = self._client.get_document(document_id)
+        return doc if as_object else doc.model_dump()
+        
+    def get_document_by_filename(self, filename: str, as_object: bool = False) -> Union[dict, 'Document']:
+        """
+        Get document metadata by filename
+        
+        Args:
+            filename: Filename of the document
+            as_object: If True, returns the Document object with update methods, otherwise returns a dict
+            
+        Returns:
+            Document metadata (dict or Document object)
+            
+        Example:
+            ```python
+            # Get a document by its filename
+            doc = db.get_document_by_filename("report.pdf")
+            print(f"Document ID: {doc['external_id']}")
+            ```
+        """
+        doc = self._client.get_document_by_filename(filename)
+        return doc if as_object else doc.model_dump()
+        
+    def update_document_with_text(
+        self,
+        document_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List] = None,
+        update_strategy: str = "add",
+        use_colpali: bool = None,
+    ) -> dict:
+        """
+        Update a document with new text content using the specified strategy.
+        
+        Args:
+            document_id: ID of the document to update
+            content: The new content to add
+            metadata: Additional metadata to update (optional)
+            rules: Optional list of rules to apply to the content
+            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            use_colpali: Whether to use multi-vector embedding
+            
+        Returns:
+            Updated document metadata
+        """
+        doc = self._client.update_document_with_text(
+            document_id=document_id,
+            content=content,
+            metadata=metadata,
+            rules=rules,
+            update_strategy=update_strategy,
+            use_colpali=use_colpali,
+        )
         return doc.model_dump()
         
-    def batch_get_documents(self, document_ids: List[str]) -> List[dict]:
+    def update_document_with_file(
+        self,
+        document_id: str,
+        file: str,
+        filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List] = None,
+        update_strategy: str = "add",
+        use_colpali: bool = None,
+    ) -> dict:
+        """
+        Update a document with content from a file using the specified strategy.
+        
+        Args:
+            document_id: ID of the document to update
+            file: Path to file to add
+            filename: Name of the file (optional, defaults to basename of file path)
+            metadata: Additional metadata to update (optional)
+            rules: Optional list of rules to apply to the content
+            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            use_colpali: Whether to use multi-vector embedding
+            
+        Returns:
+            Updated document metadata
+        """
+        file_path = Path(file)
+        filename = filename or file_path.name
+        
+        doc = self._client.update_document_with_file(
+            document_id=document_id,
+            file=file_path,
+            filename=filename,
+            metadata=metadata,
+            rules=rules,
+            update_strategy=update_strategy,
+            use_colpali=use_colpali,
+        )
+        return doc.model_dump()
+        
+    def update_document_metadata(
+        self,
+        document_id: str,
+        metadata: Dict[str, Any],
+    ) -> dict:
+        """
+        Update only the metadata of a document.
+        
+        Args:
+            document_id: ID of the document to update
+            metadata: New metadata to set
+            
+        Returns:
+            Document: Updated document metadata
+        """
+        doc = self._client.update_document_metadata(
+            document_id=document_id,
+            metadata=metadata,
+        )
+        return doc.model_dump()
+        
+    def update_document_by_filename_with_text(
+        self,
+        filename: str,
+        content: str,
+        new_filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List] = None,
+        update_strategy: str = "add",
+        use_colpali: bool = None,
+    ) -> dict:
+        """
+        Update a document identified by filename with new text content.
+        
+        Args:
+            filename: Filename of the document to update
+            content: The new content to add
+            new_filename: Optional new filename for the document
+            metadata: Additional metadata to update (optional)
+            rules: Optional list of rules to apply to the content
+            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            use_colpali: Whether to use multi-vector embedding
+            
+        Returns:
+            Updated document metadata
+        """
+        doc = self._client.update_document_by_filename_with_text(
+            filename=filename,
+            content=content,
+            new_filename=new_filename,
+            metadata=metadata,
+            rules=rules,
+            update_strategy=update_strategy,
+            use_colpali=use_colpali,
+        )
+        return doc.model_dump()
+        
+    def update_document_by_filename_with_file(
+        self,
+        filename: str,
+        file: str,
+        new_filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List] = None,
+        update_strategy: str = "add",
+        use_colpali: bool = None,
+    ) -> dict:
+        """
+        Update a document identified by filename with content from a file.
+        
+        Args:
+            filename: Filename of the document to update
+            file: Path to file to add
+            new_filename: Optional new filename for the document
+            metadata: Additional metadata to update (optional)
+            rules: Optional list of rules to apply to the content
+            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            use_colpali: Whether to use multi-vector embedding
+            
+        Returns:
+            Updated document metadata
+        """
+        file_path = Path(file)
+        new_filename = new_filename or file_path.name
+        
+        doc = self._client.update_document_by_filename_with_file(
+            filename=filename,
+            file=file_path,
+            new_filename=new_filename,
+            metadata=metadata,
+            rules=rules,
+            update_strategy=update_strategy,
+            use_colpali=use_colpali,
+        )
+        return doc.model_dump()
+        
+    def update_document_by_filename_metadata(
+        self,
+        filename: str,
+        metadata: Dict[str, Any],
+        new_filename: Optional[str] = None,
+    ) -> dict:
+        """
+        Update a document's metadata using filename to identify the document.
+        
+        Args:
+            filename: Filename of the document to update
+            metadata: New metadata to set
+            new_filename: Optional new filename to assign to the document
+            
+        Returns:
+            Document: Updated document metadata
+        """
+        doc = self._client.update_document_by_filename_metadata(
+            filename=filename,
+            metadata=metadata,
+            new_filename=new_filename,
+        )
+        return doc.model_dump()
+    
+    def batch_get_documents(self, document_ids: List[str], as_objects: bool = False) -> List[Union[dict, 'Document']]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
         
         Args:
             document_ids: List of document IDs to retrieve
+            as_objects: If True, returns Document objects with update methods, otherwise returns dicts
             
         Returns:
-            List of document metadata
+            List of document metadata (as dicts or Document objects)
+            
+        Example:
+            ```python
+            # Get multiple documents that can be updated
+            docs = db.batch_get_documents(["doc_123", "doc_456"], as_objects=True)
+            for doc in docs:
+                doc.update_metadata({"batch_processed": True})
+            ```
         """
         docs = self._client.batch_get_documents(document_ids)
-        return [doc.model_dump() for doc in docs]
+        return docs if as_objects else [doc.model_dump() for doc in docs]
         
     def batch_get_chunks(self, sources: List[dict]) -> List[dict]:
         """
@@ -302,6 +577,17 @@ if __name__ == "__main__":
     print("  db.query('what are the key findings?')")
     print("  db.batch_get_documents(['doc_id1', 'doc_id2'])")
     print("  db.batch_get_chunks([{'document_id': 'doc_123', 'chunk_number': 0}])")
+    print("\nUpdate by Document ID:")
+    print("  db.get_document('doc_123')")
+    print("  db.update_document_with_text('doc_123', 'This is new content to append', filename='updated_doc.txt')")
+    print("  db.update_document_with_file('doc_123', 'path/to/file.pdf', metadata={'status': 'updated'})")
+    print("  db.update_document_metadata('doc_123', {'reviewed': True, 'reviewer': 'John'})")
+    print("\nUpdate by Filename:")
+    print("  db.get_document_by_filename('report.pdf')")
+    print("  db.update_document_by_filename_with_text('report.pdf', 'New content', new_filename='updated_report.pdf')")
+    print("  db.update_document_by_filename_with_file('report.pdf', 'path/to/new_data.pdf')")
+    print("  db.update_document_by_filename_metadata('report.pdf', {'reviewed': True}, new_filename='reviewed_report.pdf')")
+    print("\nQuerying:")
     print("  result = db.query('how to use this API?'); print(result['sources'])")
     print("Type help(db) for documentation.")
 

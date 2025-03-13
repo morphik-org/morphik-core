@@ -25,6 +25,21 @@ class BaseDatabase(ABC):
         pass
         
     @abstractmethod
+    async def get_document_by_filename(self, filename: str, auth: AuthContext) -> Optional[Document]:
+        """
+        Retrieve document metadata by filename if user has access.
+        If multiple documents have the same filename, returns the most recently updated one.
+        
+        Args:
+            filename: The filename to search for
+            auth: Authentication context
+            
+        Returns:
+            Document if found and accessible, None otherwise
+        """
+        pass
+        
+    @abstractmethod
     async def get_documents_by_id(self, document_ids: List[str], auth: AuthContext) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.

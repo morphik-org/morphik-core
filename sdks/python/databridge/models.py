@@ -19,6 +19,102 @@ class Document(BaseModel):
         default_factory=dict, description="Access control information"
     )
     chunk_ids: List[str] = Field(default_factory=list, description="IDs of document chunks")
+    
+    # Client reference for update methods
+    _client = None
+    
+    def update_with_text(
+        self,
+        content: str,
+        filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List] = None,
+        update_strategy: str = "add",
+        use_colpali: Optional[bool] = None,
+    ) -> "Document":
+        """
+        Update this document with new text content using the specified strategy.
+        
+        Args:
+            content: The new content to add
+            filename: Optional new filename for the document
+            metadata: Additional metadata to update (optional)
+            rules: Optional list of rules to apply to the content
+            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            use_colpali: Whether to use multi-vector embedding
+            
+        Returns:
+            Document: Updated document metadata
+        """
+        if self._client is None:
+            raise ValueError("Document instance not connected to a client. Use a document returned from a DataBridge client method.")
+            
+        return self._client.update_document_with_text(
+            document_id=self.external_id,
+            content=content,
+            filename=filename,
+            metadata=metadata,
+            rules=rules,
+            update_strategy=update_strategy,
+            use_colpali=use_colpali
+        )
+        
+    def update_with_file(
+        self,
+        file: "Union[str, bytes, BinaryIO, Path]",
+        filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List] = None,
+        update_strategy: str = "add",
+        use_colpali: Optional[bool] = None,
+    ) -> "Document":
+        """
+        Update this document with content from a file using the specified strategy.
+        
+        Args:
+            file: File to add (path string, bytes, file object, or Path)
+            filename: Name of the file
+            metadata: Additional metadata to update (optional)
+            rules: Optional list of rules to apply to the content
+            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            use_colpali: Whether to use multi-vector embedding
+            
+        Returns:
+            Document: Updated document metadata
+        """
+        if self._client is None:
+            raise ValueError("Document instance not connected to a client. Use a document returned from a DataBridge client method.")
+            
+        return self._client.update_document_with_file(
+            document_id=self.external_id,
+            file=file,
+            filename=filename,
+            metadata=metadata,
+            rules=rules,
+            update_strategy=update_strategy,
+            use_colpali=use_colpali
+        )
+        
+    def update_metadata(
+        self,
+        metadata: Dict[str, Any],
+    ) -> "Document":
+        """
+        Update this document's metadata only.
+        
+        Args:
+            metadata: Metadata to update
+            
+        Returns:
+            Document: Updated document metadata
+        """
+        if self._client is None:
+            raise ValueError("Document instance not connected to a client. Use a document returned from a DataBridge client method.")
+            
+        return self._client.update_document_metadata(
+            document_id=self.external_id,
+            metadata=metadata
+        )
 
 
 class ChunkResult(BaseModel):
