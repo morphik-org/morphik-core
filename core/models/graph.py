@@ -12,6 +12,7 @@ class Entity(BaseModel):
     type: str
     properties: Dict[str, Any] = Field(default_factory=dict)
     document_ids: List[str] = Field(default_factory=list)
+    chunk_sources: Dict[str, List[int]] = Field(default_factory=dict)
 
     def __hash__(self):
         return hash(self.id)
@@ -31,6 +32,7 @@ class Relationship(BaseModel):
     type: str
     properties: Dict[str, Any] = Field(default_factory=dict)
     document_ids: List[str] = Field(default_factory=list)
+    chunk_sources: Dict[str, List[int]] = Field(default_factory=dict)
 
     def __hash__(self):
         return hash(self.id)

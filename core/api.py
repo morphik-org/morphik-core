@@ -900,9 +900,6 @@ async def create_graph(
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error creating graph: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/local/generate_uri", include_in_schema=True)
