@@ -276,7 +276,7 @@ class DataBridge:
             }
 
             response = self._request(
-                "POST", f"ingest/file?use_colpali={use_colpali}", data=form_data, files=files
+                "POST", f"ingest/file?use_colpali={str(use_colpali).lower()}", data=form_data, files=files
             )
             doc = Document(**response)
             doc._client = self
@@ -319,7 +319,7 @@ class DataBridge:
             "filters": filters,
             "k": k,
             "min_score": min_score,
-            "use_colpali": json.dumps(use_colpali),
+            "use_colpali": use_colpali,
         }
 
         response = self._request("POST", "retrieve/chunks", request)
@@ -394,7 +394,7 @@ class DataBridge:
             "filters": filters,
             "k": k,
             "min_score": min_score,
-            "use_colpali": json.dumps(use_colpali),
+            "use_colpali": use_colpali,
         }
 
         response = self._request("POST", "retrieve/docs", request)
@@ -462,7 +462,7 @@ class DataBridge:
             "min_score": min_score,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "use_colpali": json.dumps(use_colpali),
+            "use_colpali": use_colpali,
             "graph_name": graph_name,
             "hop_depth": hop_depth,
             "include_paths": include_paths,

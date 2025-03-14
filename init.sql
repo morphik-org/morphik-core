@@ -1,12 +1,6 @@
 -- Enable pgvector extension
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Enable Apache AGE extension
-CREATE EXTENSION IF NOT EXISTS age;
-
--- Initialize AGE graph
-SELECT * FROM ag_catalog.create_graph('databridge');
-
 -- Create documents table
 CREATE TABLE IF NOT EXISTS documents (
     external_id VARCHAR PRIMARY KEY,

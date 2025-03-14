@@ -12,9 +12,16 @@ dev_permissions = ["read", "write", "admin"]  # Default dev permissions
 
 # [completion]
 # provider = "openai"
-# model_name = "gpt-4-turbo-preview"
+# model_name = "gpt-4o"
 # default_max_tokens = "1000"
 # default_temperature = 0.7
+
+[completion]
+provider = "ollama"
+model_name = "llama3.2"
+base_url = "http://localhost:11434"
+default_max_tokens = "1000"
+default_temperature = 0.7
 
 [database]
 provider = "postgres"
@@ -95,5 +102,5 @@ batch_size = 4096
 enable_colpali = true
 
 [graph]
-provider = "openai"
-model_name = "gpt-4o"
+provider = "ollama"
+model_name = "llama3.2"

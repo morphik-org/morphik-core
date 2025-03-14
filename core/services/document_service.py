@@ -111,7 +111,7 @@ class DocumentService:
             await self.colpali_vector_store.query_similar(
                 query_embedding_multivector, k=k, doc_ids=doc_ids
             )
-            if (use_colpali and self.colpali_vector_store and query_embedding_multivector)
+            if (use_colpali and self.colpali_vector_store and query_embedding_multivector is not None)
             else []
         )
 
@@ -292,13 +292,13 @@ class DocumentService:
             for chunk in chunks
         ]
 
-            # Generate completion
-            request = CompletionRequest(
-                query=query,
-                context_chunks=chunk_contents,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
+        # Generate completion
+        request = CompletionRequest(
+            query=query,
+            context_chunks=chunk_contents,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
 
         response = await self.completion_model.complete(request)
         
@@ -1251,7 +1251,7 @@ class DocumentService:
         """Create a graph from documents.
 
         This function processes documents matching filters or specific document IDs,
-        extracts entities and relationships, and saves them as a graph using Apache AGE.
+        extracts entities and relationships from document chunks, and saves them as a graph.
 
         Args:
             name: Name of the graph to create
@@ -1266,25 +1266,25 @@ class DocumentService:
             raise PermissionError("User does not have write permission")
 
         # Find documents to process based on filters and/or specific document IDs
-        document_objects = []
+        document_ids = set()
 
-        # If specific document IDs were provided, get those documents
+        # If specific document IDs were provided, add them to our set
         if documents:
-            for doc_id in documents:
-                doc = await self.db.get_document(doc_id, auth)
-                if doc:
-                    document_objects.append(doc)
+            document_ids.update(documents)
 
         # If filters were provided, get matching documents
         if filters:
             filtered_docs = await self.db.get_documents(auth, filters=filters)
-            # Add only documents that aren't already in the list
-            for doc in filtered_docs:
-                if doc not in document_objects:
-                    document_objects.append(doc)
+            # Add document IDs to our set
+            document_ids.update(doc.external_id for doc in filtered_docs)
 
-        if not document_objects:
+        if not document_ids:
             raise ValueError("No documents found matching criteria")
+
+        # Batch retrieve documents instead of getting them one by one
+        document_objects = await self.batch_retrieve_documents(list(document_ids), auth)
+        if not document_objects:
+            raise ValueError("No authorized documents found matching criteria")
 
         # Create a new graph
         graph = Graph(
@@ -1299,34 +1299,39 @@ class DocumentService:
             },
         )
 
-        # Process each document to extract entities and relationships using LLM
+        # Process each document's chunks to extract entities and relationships using LLM
         entities = {}
         relationships = []
-
+        
+        # Collect all chunk sources from documents
+        chunk_sources = []
         for doc in document_objects:
-            # Get the text content from document
-            content = doc.system_metadata.get("content", "")
-            if not content:
-                logger.warning(f"No content found for document {doc.external_id}")
-                continue
-
-            # Extract entities and relationships using LLM
-            doc_entities, doc_relationships = (
-                await self._extract_entities_and_relationships_with_llm(content, doc.external_id)
+            for i, chunk_id in enumerate(doc.chunk_ids):
+                chunk_sources.append(ChunkSource(document_id=doc.external_id, chunk_number=i))
+        
+        # Batch retrieve chunks instead of processing individual documents
+        chunks = await self.batch_retrieve_chunks(chunk_sources, auth)
+        logger.info(f"Retrieved {len(chunks)} chunks for processing")
+        
+        # Process each chunk individually
+        for chunk in chunks:
+            # Extract entities and relationships from the chunk using LLM
+            chunk_entities, chunk_relationships = (
+                await self._extract_entities_and_relationships_with_llm(chunk.content, chunk.document_id)
             )
-
+            
             # Add entities to the graph, avoiding duplicates
-            for entity in doc_entities:
+            for entity in chunk_entities:
                 if entity.label not in entities:
                     entities[entity.label] = entity
                 else:
                     # If entity already exists, add this document to its list of document IDs
                     existing_entity = entities[entity.label]
-                    if doc.external_id not in existing_entity.document_ids:
-                        existing_entity.document_ids.append(doc.external_id)
+                    if chunk.document_id not in existing_entity.document_ids:
+                        existing_entity.document_ids.append(chunk.document_id)
 
             # Add relationships to the graph
-            relationships.extend(doc_relationships)
+            relationships.extend(chunk_relationships)
 
         # Update the graph with extracted entities and relationships
         graph.entities = list(entities.values())
@@ -1576,25 +1581,35 @@ class DocumentService:
             
         logger.info(f"Graph search found {len(graph_doc_ids)} documents connected to relevant entities")
         
-        # Step 3: Get chunks for graph-based documents
-        graph_chunks = []
-        for doc_id in graph_doc_ids:
-            # Get document if authorized
-            doc = await self.db.get_document(doc_id, auth)
-            if not doc:
-                continue
-                
-            # Check filters if provided
-            if filters and not all(doc.metadata.get(k) == v for k, v in filters.items()):
-                continue
-                
-            # Get chunks for this document
-            for chunk_id in doc.chunk_ids:
-                chunk = await self.vector_store.get_chunk(chunk_id)
-                if chunk:
-                    graph_chunks.append(chunk)
+        # Step 3: Get chunks for graph-based documents using batch operations
+        # Batch retrieve all documents at once
+        documents = await self.batch_retrieve_documents(list(graph_doc_ids), auth)
+        logger.info(f"Batch retrieved {len(documents)} documents out of {len(graph_doc_ids)} requested")
         
-        logger.info(f"Retrieved {len(graph_chunks)} chunks from graph-connected documents")
+        # Apply filters if needed
+        if filters:
+            documents = [
+                doc for doc in documents 
+                if all(doc.metadata.get(k) == v for k, v in filters.items())
+            ]
+            logger.info(f"{len(documents)} documents remain after applying filters")
+        
+        # Collect all chunks to retrieve
+        chunk_sources = []
+        doc_id_to_chunks = {}
+        
+        for doc in documents:
+            doc_id_to_chunks[doc.external_id] = []
+            for i, chunk_id in enumerate(doc.chunk_ids):
+                chunk_sources.append(ChunkSource(document_id=doc.external_id, chunk_number=i))
+        
+        # Batch retrieve all chunks at once
+        if chunk_sources:
+            graph_chunks = await self.batch_retrieve_chunks(chunk_sources, auth)
+            logger.info(f"Batch retrieved {len(graph_chunks)} chunks from graph-connected documents")
+        else:
+            graph_chunks = []
+            logger.info("No chunks to retrieve from graph-connected documents")
         
         # Calculate paths if requested
         paths = []
@@ -1662,6 +1677,19 @@ class DocumentService:
         )
         
         response = await self.completion_model.complete(request)
+        
+        # Collect sources information from all chunks, using 0 as default score if not present
+        sources = [
+            ChunkSource(
+                document_id=chunk.document_id, 
+                chunk_number=chunk.chunk_number, 
+                score=chunk.score if hasattr(chunk, 'score') and chunk.score is not None else 0
+            )
+            for chunk in chunk_results
+        ]
+        
+        # Add sources information to the response
+        response.sources = sources
         
         # Include paths in response metadata if requested
         if include_paths:

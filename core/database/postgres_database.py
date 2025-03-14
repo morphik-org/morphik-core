@@ -178,43 +178,7 @@ class PostgresDatabase(BaseDatabase):
                         )
                     )
                     logger.info("Added storage_files column to documents table")
-                # Create Apache AGE extension if it doesn't exist
-                try:
-                    # First try to create the extension
-                    await conn.execute(text("CREATE EXTENSION IF NOT EXISTS age"))
-
-                    # Check if the extension is actually created before trying to use it
-                    result = await conn.execute(
-                        text("SELECT 1 FROM pg_extension WHERE extname = 'age'")
-                    )
-                    extension_exists = await result.scalar()
-
-                    if extension_exists:
-                        # Check if graph already exists
-                        try:
-                            result = await conn.execute(
-                                text(
-                                    "SELECT count(*) FROM ag_catalog.ag_graph WHERE name = 'databridge'"
-                                )
-                            )
-                            graph_exists = await result.scalar()
-
-                            if not graph_exists:
-                                # Initialize AGE graph DB only if it doesn't exist
-                                await conn.execute(
-                                    text("SELECT * FROM ag_catalog.create_graph('databridge')")
-                                )
-
-                            logger.info(
-                                "Apache AGE extension and graph 'databridge' created successfully"
-                            )
-                        except Exception as graph_error:
-                            logger.warning(f"Error setting up AGE graph: {str(graph_error)}")
-                    else:
-                        logger.warning("Apache AGE extension exists but couldn't be loaded")
-                except Exception as age_error:
-                    logger.warning(f"Error creating Apache AGE extension: {str(age_error)}")
-                    logger.warning("Graph functionality might be limited without Apache AGE")
+                # Graph data is stored in standard PostgreSQL tables
 
             logger.info("PostgreSQL tables and indexes created successfully")
             self._initialized = True
@@ -641,8 +605,8 @@ class PostgresDatabase(BaseDatabase):
     async def store_graph(self, graph: Graph) -> bool:
         """Store a graph in PostgreSQL.
 
-        This method stores the graph metadata in a PostgreSQL table
-        and also creates the graph structure in Apache AGE.
+        This method stores the graph metadata, entities, and relationships
+        in a PostgreSQL table.
 
         Args:
             graph: Graph to store
@@ -667,52 +631,11 @@ class PostgresDatabase(BaseDatabase):
 
             # Store the graph metadata in PostgreSQL
             async with self.async_session() as session:
-                # Store graph metadata in our normal table
+                # Store graph metadata in our table
                 graph_model = GraphModel(**graph_dict)
                 session.add(graph_model)
                 await session.commit()
-
-                # Now create the graph in Apache AGE
-                try:
-                    # For each entity in the graph, create a vertex in AGE
-                    for entity in graph.entities:
-                        # Convert label to valid identifier (remove spaces and special chars)
-                        label = "".join(c for c in entity.type if c.isalnum())
-
-                        # Create Cypher query to create vertex
-                        cypher_query = f"""
-                        SELECT * FROM ag_catalog.cypher('databridge', $$
-                            MERGE (e:{label} {{id: '{entity.id}', label: '{entity.label}'}})
-                            SET e += {json.dumps(entity.properties)}
-                            RETURN e
-                        $$) as (e agtype);
-                        """
-
-                        await session.execute(text(cypher_query))
-
-                    # For each relationship in the graph, create an edge in AGE
-                    for relationship in graph.relationships:
-                        # Create Cypher query to create edge
-                        rel_type = "".join(c for c in relationship.type if c.isalnum())
-
-                        cypher_query = f"""
-                        SELECT * FROM ag_catalog.cypher('databridge', $$
-                            MATCH (source {{id: '{relationship.source_id}'}})
-                            MATCH (target {{id: '{relationship.target_id}'}})
-                            MERGE (source)-[r:{rel_type} {{id: '{relationship.id}'}}]->(target)
-                            SET r += {json.dumps(relationship.properties)}
-                            RETURN r
-                        $$) as (r agtype);
-                        """
-
-                        await session.execute(text(cypher_query))
-
-                    await session.commit()
-
-                except Exception as age_error:
-                    # Log the error but continue - graph metadata is still stored
-                    logger.error(f"Error creating graph in Apache AGE: {str(age_error)}")
-                    logger.warning("Graph is stored in PostgreSQL but not in AGE graph database")
+                logger.info(f"Stored graph '{graph.name}' with {len(graph.entities)} entities and {len(graph.relationships)} relationships")
 
             return True
 
