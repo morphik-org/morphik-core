@@ -33,6 +33,3 @@ class BaseVectorStore(ABC):
         Returns:
             List of DocumentChunk objects
         """
-    async def get_chunk(self, chunk_id: str) -> Optional[DocumentChunk]:
-        """Retrieve a specific chunk by ID"""
-        pass
