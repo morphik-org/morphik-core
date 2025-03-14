@@ -33,3 +33,4 @@ class BaseVectorStore(ABC):
         Returns:
             List of DocumentChunk objects
         """
+        pass
