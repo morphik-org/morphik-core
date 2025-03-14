@@ -902,6 +902,66 @@ async def create_graph(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/graph/{name}", response_model=Graph)
+async def get_graph(
+    name: str,
+    auth: AuthContext = Depends(verify_token),
+) -> Graph:
+    """
+    Get a graph by name.
+
+    This endpoint retrieves a graph by its name if the user has access to it.
+
+    Args:
+        name: Name of the graph to retrieve
+        auth: Authentication context
+
+    Returns:
+        Graph: The requested graph object
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="get_graph",
+            user_id=auth.entity_id,
+            metadata={"name": name},
+        ):
+            graph = await document_service.db.get_graph(name, auth)
+            if not graph:
+                raise HTTPException(status_code=404, detail=f"Graph '{name}' not found")
+            return graph
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/graphs", response_model=List[Graph])
+async def list_graphs(
+    auth: AuthContext = Depends(verify_token),
+) -> List[Graph]:
+    """
+    List all graphs the user has access to.
+
+    This endpoint retrieves all graphs the user has access to.
+
+    Args:
+        auth: Authentication context
+
+    Returns:
+        List[Graph]: List of graph objects
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="list_graphs",
+            user_id=auth.entity_id,
+        ):
+            return await document_service.db.list_graphs(auth)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/local/generate_uri", include_in_schema=True)
 async def generate_local_uri(
     name: str = Form("admin"),
