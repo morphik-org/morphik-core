@@ -113,12 +113,12 @@ class DocumentService:
             query_embedding_regular, k=10 * k if should_rerank else k, doc_ids=doc_ids
         )
 
+        search_multi = use_colpali and self.colpali_vector_store and query_embedding_multivector is not None
+
         chunks_multivector = (
             await self.colpali_vector_store.query_similar(
                 query_embedding_multivector, k=k, doc_ids=doc_ids
-            )
-            if (use_colpali and self.colpali_vector_store and query_embedding_multivector is not None)
-            else []
+            ) if search_multi else []
         )
 
         logger.info(f"Found {len(chunks)} similar chunks via regular embedding")
