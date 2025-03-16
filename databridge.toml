@@ -104,3 +104,7 @@ enable_colpali = true
 [graph]
 provider = "ollama"
 model_name = "llama3.2"
+
+# [graph]
+# provider = "openai"
+# model_name = "gpt-4o-mini"

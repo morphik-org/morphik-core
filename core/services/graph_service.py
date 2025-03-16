@@ -109,7 +109,7 @@ class GraphService:
         entities, relationships = await self._process_documents_for_entities(
             document_objects, auth, document_service
         )
-        
+
         # Add entities and relationships to the graph
         graph.entities = list(entities.values())
         graph.relationships = relationships
@@ -161,7 +161,7 @@ class GraphService:
                     chunk.document_id,
                     chunk.chunk_number
                 )
-                
+
                 # Add entities to the collection, avoiding duplicates
                 for entity in chunk_entities:
                     if entity.label not in entities:
@@ -170,7 +170,7 @@ class GraphService:
                     else:
                         # If entity already exists, add this chunk source if not already present
                         existing_entity = entities[entity.label]
-                        
+
                         # Add to chunk_sources dictionary
                         if chunk.document_id not in existing_entity.chunk_sources:
                             existing_entity.chunk_sources[chunk.document_id] = [chunk.chunk_number]
@@ -184,10 +184,10 @@ class GraphService:
                         relationship.chunk_sources[chunk.document_id] = [chunk.chunk_number]
                     elif chunk.chunk_number not in relationship.chunk_sources[chunk.document_id]:
                         relationship.chunk_sources[chunk.document_id].append(chunk.chunk_number)
-                
+
                 # Add relationships to the collection
                 relationships.extend(chunk_relationships)
-                
+
             except ValueError as e:
                 # Handle specific extraction errors we've wrapped
                 logger.warning(f"Skipping chunk {chunk.chunk_number} in document {chunk.document_id}: {e}")
@@ -196,7 +196,7 @@ class GraphService:
                 # For other errors, log and re-raise to abort graph creation
                 logger.error(f"Fatal error processing chunk {chunk.chunk_number} in document {chunk.document_id}: {e}")
                 raise
-                
+
         return entities, relationships
 
     async def extract_entities_from_text(
@@ -214,48 +214,107 @@ class GraphService:
             Tuple of (entities, relationships)
         """
         settings = get_settings()
-        
+
         # Limit text length to avoid token limits
         content_limited = content[:min(len(content), 5000)]
+
+        # Define the JSON schema for structured output
+        json_schema = {
+            "type": "object",
+            "properties": {
+                "entities": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string"},
+                            "type": {"type": "string"}
+                        },
+                        "required": ["label", "type"],
+                        "additionalProperties": False
+                    }
+                },
+                "relationships": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "source": {"type": "string"},
+                            "target": {"type": "string"},
+                            "relationship": {"type": "string"}
+                        },
+                        "required": ["source", "target", "relationship"],
+                        "additionalProperties": False
+                    }
+                }
+            },
+            "required": ["entities", "relationships"],
+            "additionalProperties": False
+        }
         
-        # System message with clear instructions
+        # Modify the system message to handle properties as a string that will be parsed later
         system_message = {
             "role": "system",
             "content": (
                 "You are an entity extraction assistant. Extract entities and their relationships from text precisely and thoroughly. "
+                "For entities, include entity label and type (PERSON, ORGANIZATION, LOCATION, CONCEPT, etc.). "
                 "For relationships, use a simple format with source, target, and relationship fields."
             )
         }
-        
-        # User message with text to analyze
+
         user_message = {
             "role": "user",
             "content": (
                 "Extract named entities and their relationships from the following text. "
-                "For entities, include entity types (PERSON, ORGANIZATION, LOCATION, CONCEPT, etc.) and any relevant properties. "
+                "For entities, include entity label and type (PERSON, ORGANIZATION, LOCATION, CONCEPT, etc.). "
                 "For relationships, simply specify the source entity, target entity, and the relationship between them. "
                 "Return your response as valid JSON:\n\n" + content_limited
             )
         }
 
         if settings.GRAPH_PROVIDER == "openai":
-            # Use OpenAI with structured output using parse for Pydantic model
             client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-            
-            # The parse method will ensure we get a structured result matching our model
-            response = await client.chat.completions.parse(
-                model=settings.GRAPH_MODEL,
-                messages=[system_message, user_message],
-                response_format=ExtractionResult,
-            )
-            extraction_result = response.choices[0].message.parsed
-            
+            try:
+                response = await client.responses.create(
+                    model=settings.GRAPH_MODEL,
+                    input=[system_message, user_message],
+                    text={
+                        "format": {
+                            "type": "json_schema",
+                            "name": "entity_extraction",
+                            "schema": json_schema,
+                            "strict": True
+                        },
+                    },
+                )
+
+                if response.output_text:
+                    import json
+                    extraction_data = json.loads(response.output_text)
+
+                    for entity in extraction_data.get("entities", []):
+                        entity["properties"] = {}
+
+                    extraction_result = ExtractionResult(**extraction_data)
+                elif hasattr(response, 'refusal') and response.refusal:
+                    # Handle refusal
+                    logger.warning(f"OpenAI refused to extract entities: {response.refusal}")
+                    return [], []
+                else:
+                    # Handle empty response
+                    logger.warning(f"Empty response from OpenAI for document {doc_id}, chunk {chunk_number}")
+                    return [], []
+
+            except Exception as e:
+                logger.error(f"Error during entity extraction with OpenAI: {str(e)}")
+                return [], []
+
         elif settings.GRAPH_PROVIDER == "ollama":
             # For Ollama, use structured output format
             async with httpx.AsyncClient(timeout=60.0) as client:
                 # Create the schema for structured output
                 format_schema = ExtractionResult.model_json_schema()
-                
+
                 response = await client.post(
                     f"{settings.EMBEDDING_OLLAMA_BASE_URL}/api/chat",
                     json={
@@ -267,10 +326,10 @@ class GraphService:
                 )
                 response.raise_for_status()
                 result = response.json()
-                
+
                 # Log the raw response for debugging
                 logger.info(f"Raw Ollama response for entity extraction: {result['message']['content']}")
-                
+
                 # Parse the JSON response - Pydantic will handle validation
                 extraction_result = ExtractionResult.model_validate_json(result["message"]["content"])
         else:
@@ -283,15 +342,15 @@ class GraphService:
         return entities, relationships
 
     def _process_extraction_results(
-        self, 
-        extraction_result: ExtractionResult, 
-        doc_id: str, 
+        self,
+        extraction_result: ExtractionResult,
+        doc_id: str,
         chunk_number: int
     ) -> Tuple[List[Entity], List[Relationship]]:
         """Process extraction results into entity and relationship objects."""
         # Initialize chunk_sources with the current chunk - reused across entities
         chunk_sources = {doc_id: [chunk_number]}
-        
+
         # Convert extracted data to entity objects using list comprehension
         entities = [
             Entity(
@@ -364,7 +423,7 @@ class GraphService:
             include_paths: Whether to include relationship paths in response
         """
         logger.info(f"Querying with graph: {graph_name}, hop depth: {hop_depth}")
-        
+
         # Get the knowledge graph
         graph = await self.db.get_graph(graph_name, auth)
         if not graph:
@@ -382,19 +441,19 @@ class GraphService:
                 use_colpali=use_colpali,
                 graph_name=None,
             )
-        
+
         # Parallel approach
         # 1. Standard vector search
         vector_chunks = await document_service.retrieve_chunks(
             query, auth, filters, k, min_score, use_reranking, use_colpali
         )
         logger.info(f"Vector search retrieved {len(vector_chunks)} chunks")
-        
+
         # 2. Graph-based retrieval
         # First extract entities from the query
         query_entities = await self._extract_entities_from_query(query)
         logger.info(f"Extracted {len(query_entities)} entities from query: {', '.join(e.label for e in query_entities)}")
-        
+
         # If no entities extracted, fallback to embedding similarity
         if not query_entities:
             # Find similar entities using embedding similarity
@@ -403,37 +462,37 @@ class GraphService:
             # Use extracted entities directly
             entity_map = {entity.label.lower(): entity for entity in graph.entities}
             matched_entities = []
-            
+
             # Match extracted entities with graph entities
             for query_entity in query_entities:
                 if query_entity.label.lower() in entity_map:
                     matched_entities.append(entity_map[query_entity.label.lower()])
-                    
+
             # If no matches, fallback to embedding similarity
             if matched_entities:
                 top_entities = [(entity, 1.0) for entity in matched_entities]  # Score 1.0 for direct matches
             else:
                 top_entities = await self._find_similar_entities(query, graph.entities, k)
-        
+
         logger.info(f"Found {len(top_entities)} relevant entities in graph")
-        
+
         # Traverse the graph to find related entities
         expanded_entities = self._expand_entities(graph, [e[0] for e in top_entities], hop_depth)
         logger.info(f"Expanded to {len(expanded_entities)} entities after traversal")
-        
+
         # Get specific chunks containing these entities
         graph_chunks = await self._retrieve_entity_chunks(expanded_entities, auth, filters, document_service)
         logger.info(f"Retrieved {len(graph_chunks)} chunks containing relevant entities")
-        
+
         # Calculate paths if requested
         paths = []
         if include_paths:
             paths = self._find_relationship_paths(graph, [e[0] for e in top_entities], hop_depth)
             logger.info(f"Found {len(paths)} relationship paths")
-        
+
         # Combine vector and graph results
         combined_chunks = self._combine_chunk_results(vector_chunks, graph_chunks, k)
-        
+
         # Generate completion with enhanced context
         completion_response = await self._generate_completion(
             query,
@@ -446,9 +505,9 @@ class GraphService:
             auth,
             graph_name
         )
-        
+
         return completion_response
-    
+
     async def _extract_entities_from_query(self, query: str) -> List[Entity]:
         """Extract entities from the query text using the LLM."""
         try:
@@ -464,17 +523,17 @@ class GraphService:
             # If extraction fails, log and return empty list to fall back to embedding similarity
             logger.warning(f"Failed to extract entities from query: {e}")
             return []
-    
+
     async def _find_similar_entities(
         self, query: str, entities: List[Entity], k: int
     ) -> List[Tuple[Entity, float]]:
         """Find entities similar to the query based on embedding similarity."""
         if not entities:
             return []
-            
+
         # Get embedding for query
         query_embedding = await self.embedding_model.embed_for_query(query)
-        
+
         # Create entity text representations and get embeddings for all entities
         entity_texts = [
             f"{entity.label} {entity.type} " + " ".join(
@@ -482,35 +541,35 @@ class GraphService:
             )
             for entity in entities
         ]
-        
+
         # Get embeddings for all entity texts
         entity_embeddings = await self._batch_get_embeddings(entity_texts)
-        
+
         # Calculate similarities and pair with entities
         entity_similarities = [
             (entity, self._calculate_cosine_similarity(query_embedding, embedding))
             for entity, embedding in zip(entities, entity_embeddings)
         ]
-        
+
         # Sort by similarity and take top k
         entity_similarities.sort(key=lambda x: x[1], reverse=True)
         return entity_similarities[:min(k, len(entity_similarities))]
-        
+
     async def _batch_get_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Get embeddings for a batch of texts efficiently."""
         # This could be implemented with proper batch embedding if the embedding model supports it
         # For now, we'll just map over the texts and get embeddings one by one
         return [await self.embedding_model.embed_for_query(text) for text in texts]
-    
+
     def _expand_entities(self, graph: Graph, seed_entities: List[Entity], hop_depth: int) -> List[Entity]:
         """Expand entities by traversing relationships."""
         if hop_depth <= 1:
             return seed_entities
-            
+
         # Create a set of entity IDs we've seen
         seen_entity_ids = {entity.id for entity in seed_entities}
         all_entities = list(seed_entities)
-        
+
         # Create a map for fast entity lookup
         entity_map = {entity.id: entity for entity in graph.entities}
         

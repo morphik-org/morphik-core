@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS graphs (
     name VARCHAR UNIQUE,
     entities JSONB DEFAULT '[]',
     relationships JSONB DEFAULT '[]',
-    metadata JSONB DEFAULT '{}',
+    graph_metadata JSONB DEFAULT '{}',
     document_ids JSONB DEFAULT '[]',
     filters JSONB DEFAULT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

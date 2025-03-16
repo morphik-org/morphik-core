@@ -96,54 +96,15 @@ class PostgresDatabase(BaseDatabase):
 
         try:
             logger.info("Initializing PostgreSQL database tables and indexes...")
-            # First, create ORM models
+            # Create ORM models
             async with self.engine.begin() as conn:
-                # Explicitly create all tables
-                await conn.run_sync(Base.metadata.create_all)
+                # Explicitly create all tables with checkfirst=True to avoid errors if tables already exist
+                await conn.run_sync(lambda conn: Base.metadata.create_all(conn, checkfirst=True))
 
-                # Create graphs table directly with SQL to avoid ORM issues
-                try:
-                    # Create the table if it doesn't exist (don't drop existing table)
-                    await conn.execute(
-                        text(
-                            """
-                        CREATE TABLE IF NOT EXISTS graphs (
-                            id VARCHAR PRIMARY KEY,
-                            name VARCHAR UNIQUE,
-                            entities JSONB DEFAULT '[]'::jsonb,
-                            relationships JSONB DEFAULT '[]'::jsonb,
-                            graph_metadata JSONB DEFAULT '{}'::jsonb,
-                            document_ids JSONB DEFAULT '[]'::jsonb,
-                            filters JSONB,
-                            created_at VARCHAR,
-                            updated_at VARCHAR,
-                            owner JSONB,
-                            access_control JSONB DEFAULT '{}'::jsonb
-                        )
-                    """
-                        )
-                    )
+                # No need to manually create graphs table again since SQLAlchemy does it
+                logger.info("Created database tables successfully")
 
-                    # Create indexes
-                    await conn.execute(
-                        text("CREATE INDEX IF NOT EXISTS idx_graph_name ON graphs (name)")
-                    )
-                    await conn.execute(
-                        text(
-                            "CREATE INDEX IF NOT EXISTS idx_graph_owner ON graphs USING gin (owner)"
-                        )
-                    )
-                    await conn.execute(
-                        text(
-                            "CREATE INDEX IF NOT EXISTS idx_graph_access_control ON graphs USING gin (access_control)"
-                        )
-                    )
-
-                    logger.info("Created graphs table and indexes")
-                except Exception as table_error:
-                    logger.error(f"Error creating graphs table: {str(table_error)}")
-
-                # Create caches table if it doesn't exist
+                # Create caches table if it doesn't exist (kept as direct SQL for backward compatibility)
                 await conn.execute(
                     text(
                         """
@@ -178,7 +139,6 @@ class PostgresDatabase(BaseDatabase):
                         )
                     )
                     logger.info("Added storage_files column to documents table")
-                # Graph data is stored in standard PostgreSQL tables
 
             logger.info("PostgreSQL tables and indexes created successfully")
             self._initialized = True
@@ -197,7 +157,7 @@ class PostgresDatabase(BaseDatabase):
             if "metadata" in doc_dict:
                 doc_dict["doc_metadata"] = doc_dict.pop("metadata")
             doc_dict["doc_metadata"]["external_id"] = doc_dict["external_id"]
-            
+
             # Ensure system metadata
             if "system_metadata" not in doc_dict:
                 doc_dict["system_metadata"] = {}
@@ -208,7 +168,7 @@ class PostgresDatabase(BaseDatabase):
             if "storage_files" in doc_dict and doc_dict["storage_files"]:
                 # Convert storage_files to the expected format for storage
                 doc_dict["storage_files"] = [file.model_dump() for file in doc_dict["storage_files"]]
-            
+
             # Serialize datetime objects to ISO format strings
             doc_dict = _serialize_datetime(doc_dict)
 
@@ -547,6 +507,12 @@ class PostgresDatabase(BaseDatabase):
             # Convert boolean values to string 'true' or 'false'
             if isinstance(value, bool):
                 value = str(value).lower()
+                
+            # Use proper SQL escaping for string values
+            if isinstance(value, str):
+                # Replace single quotes with double single quotes to escape them
+                value = value.replace("'", "''") 
+                
             filter_conditions.append(f"doc_metadata->>'{key}' = '{value}'")
 
         return " AND ".join(filter_conditions)

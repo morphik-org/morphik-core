@@ -585,8 +585,42 @@ class DB:
             filters=filters,
             documents=documents,
         )
-        # Return the graph directly since it's already a dictionary
-        return graph
+        return graph.model_dump()
+
+    def get_graph(self, name: str) -> dict:
+        """
+        Get a graph by name.
+
+        Args:
+            name: Name of the graph to retrieve
+
+        Returns:
+            dict: The requested graph object containing entities and relationships
+
+        Examples:
+            Get a graph by name and inspect its contents:
+            >>> graph = db.get_graph("research_graph")
+            >>> print(f"Graph has {len(graph['entities'])} entities and {len(graph['relationships'])} relationships")
+            >>> print(f"Entities: {[entity['label'] for entity in graph['entities'][:5]]}")
+        """
+        graph = self._client.get_graph(name)
+        return graph.model_dump() if graph else {}
+
+    def list_graphs(self) -> list:
+        """
+        List all graphs the user has access to.
+
+        Returns:
+            list: List of graph objects
+
+        Examples:
+            List all accessible graphs:
+            >>> graphs = db.list_graphs()
+            >>> for graph in graphs:
+            >>>     print(f"Graph: {graph['name']}, Entities: {len(graph['entities'])}")
+        """
+        graphs = self._client.list_graphs()
+        return [graph.model_dump() for graph in graphs] if graphs else []
 
     def close(self):
         """Close the client connection"""

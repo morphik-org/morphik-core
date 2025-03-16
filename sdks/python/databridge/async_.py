@@ -15,7 +15,8 @@ from .models import (
     DocumentResult,
     CompletionResponse,
     IngestTextRequest,
-    ChunkSource
+    ChunkSource,
+    Graph
 )
 from .rules import Rule
 
@@ -1057,12 +1058,12 @@ class AsyncDataBridge:
         name: str,
         filters: Optional[Dict[str, Any]] = None,
         documents: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+    ) -> Graph:
         """
-        Create a graph from documents for graph-based RAG.
+        Create a graph from documents.
 
-        This function processes documents matching filters or specific document IDs,
-        extracts entities and relationships, and saves them as a graph using Apache AGE.
+        This method extracts entities and relationships from documents
+        matching the specified filters or document IDs and creates a graph.
 
         Args:
             name: Name of the graph to create
@@ -1070,7 +1071,7 @@ class AsyncDataBridge:
             documents: Optional list of specific document IDs to include
 
         Returns:
-            Dict[str, Any]: Information about the created graph
+            Graph: The created graph object
 
         Example:
             ```python
@@ -1094,7 +1095,45 @@ class AsyncDataBridge:
         }
 
         response = await self._request("POST", "graph/create", request)
-        return response
+        return Graph(**response)
+
+    async def get_graph(self, name: str) -> Graph:
+        """
+        Get a graph by name.
+
+        Args:
+            name: Name of the graph to retrieve
+
+        Returns:
+            Graph: The requested graph object
+
+        Example:
+            ```python
+            # Get a graph by name
+            graph = await db.get_graph("finance_graph")
+            print(f"Graph has {len(graph.entities)} entities and {len(graph.relationships)} relationships")
+            ```
+        """
+        response = await self._request("GET", f"graph/{name}")
+        return Graph(**response)
+
+    async def list_graphs(self) -> List[Graph]:
+        """
+        List all graphs the user has access to.
+
+        Returns:
+            List[Graph]: List of graph objects
+
+        Example:
+            ```python
+            # List all accessible graphs
+            graphs = await db.list_graphs()
+            for graph in graphs:
+                print(f"Graph: {graph.name}, Entities: {len(graph.entities)}")
+            ```
+        """
+        response = await self._request("GET", "graphs")
+        return [Graph(**graph) for graph in response]
 
     async def close(self):
         """Close the HTTP client"""

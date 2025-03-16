@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, List, Optional
 from datetime import UTC, datetime
 from pydantic import BaseModel, Field
 import uuid
@@ -30,7 +30,6 @@ class Relationship(BaseModel):
     source_id: str
     target_id: str
     type: str
-    properties: Dict[str, Any] = Field(default_factory=dict)
     document_ids: List[str] = Field(default_factory=list)
     chunk_sources: Dict[str, List[int]] = Field(default_factory=dict)
 
