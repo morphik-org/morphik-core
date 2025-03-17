@@ -1,22 +1,21 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { AlertCircle, CheckCircle, FileText, Image, Upload, PlusCircle, Search, MessageSquare, Info, Settings, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertCircle, Upload, Search, MessageSquare, Info, Settings, ChevronDown, ChevronUp } from 'lucide-react';
 import { Sidebar } from '@/components/ui/sidebar';
+import GraphSection from '@/components/GraphSection';
+import Image from 'next/image';
 
 // API base URL - change this to match your DataBridge server
 const API_BASE_URL = 'http://localhost:8000';
@@ -25,9 +24,9 @@ interface Document {
   external_id: string;
   filename?: string;
   content_type: string;
-  metadata: Record<string, any>;
-  system_metadata: Record<string, any>;
-  additional_metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
+  system_metadata: Record<string, unknown>;
+  additional_metadata: Record<string, unknown>;
 }
 
 interface SearchResult {
@@ -37,7 +36,7 @@ interface SearchResult {
   content_type: string;
   score: number;
   filename?: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 interface ChatMessage {
@@ -56,6 +55,7 @@ interface SearchOptions {
 interface QueryOptions extends SearchOptions {
   max_tokens: number;
   temperature: number;
+  graph_name?: string;
 }
 
 const DataBridgeUI = () => {
@@ -106,11 +106,6 @@ const DataBridgeUI = () => {
     'Authorization': authToken
   };
 
-  // Fetch documents on component mount
-  useEffect(() => {
-    fetchDocuments();
-  }, []);
-
   // Fetch all documents
   const fetchDocuments = async () => {
     try {
@@ -133,6 +128,12 @@ const DataBridgeUI = () => {
       setLoading(false);
     }
   };
+
+  // Fetch documents on component mount
+  useEffect(() => {
+    fetchDocuments();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch a specific document by ID
   const fetchDocument = async (documentId: string) => {
@@ -192,8 +193,7 @@ const DataBridgeUI = () => {
         throw new Error(`Failed to upload file: ${response.statusText}`);
       }
       
-      const data = await response.json();
-      fetchDocuments(); // Refresh document list
+      await fetchDocuments(); // Refresh document list
       setShowUploadDialog(false);
       setFileToUpload(null);
       setMetadata('{}');
@@ -235,8 +235,7 @@ const DataBridgeUI = () => {
         throw new Error(`Failed to upload text: ${response.statusText}`);
       }
       
-      const data = await response.json();
-      fetchDocuments(); // Refresh document list
+      await fetchDocuments(); // Refresh document list
       setShowUploadDialog(false);
       setTextContent('');
       setMetadata('{}');
@@ -304,6 +303,18 @@ const DataBridgeUI = () => {
       const userMessage: ChatMessage = { role: 'user', content: chatQuery };
       setChatMessages(prev => [...prev, userMessage]);
       
+      // Prepare options with graph_name if it exists
+      const options = {
+        filters: JSON.parse(queryOptions.filters || '{}'),
+        k: queryOptions.k,
+        min_score: queryOptions.min_score,
+        use_reranking: queryOptions.use_reranking,
+        use_colpali: queryOptions.use_colpali,
+        max_tokens: queryOptions.max_tokens,
+        temperature: queryOptions.temperature,
+        graph_name: queryOptions.graph_name
+      };
+      
       const response = await fetch(`${API_BASE_URL}/query`, {
         method: 'POST',
         headers: {
@@ -312,13 +323,7 @@ const DataBridgeUI = () => {
         },
         body: JSON.stringify({
           query: chatQuery,
-          filters: JSON.parse(queryOptions.filters || '{}'),
-          k: queryOptions.k,
-          min_score: queryOptions.min_score,
-          use_reranking: queryOptions.use_reranking,
-          use_colpali: queryOptions.use_colpali,
-          max_tokens: queryOptions.max_tokens,
-          temperature: queryOptions.temperature
+          ...options
         })
       });
       
@@ -344,20 +349,24 @@ const DataBridgeUI = () => {
     if (contentType.startsWith('image/')) {
       return (
         <div className="flex justify-center p-4 bg-gray-100 rounded-md">
-          <img 
+          <Image 
             src={content} 
             alt="Document content" 
             className="max-w-full max-h-96 object-contain"
+            width={500}
+            height={300}
           />
         </div>
       );
     } else if (content.startsWith('data:image/png;base64,') || content.startsWith('data:image/jpeg;base64,')) {
       return (
         <div className="flex justify-center p-4 bg-gray-100 rounded-md">
-          <img 
+          <Image 
             src={content} 
             alt="Base64 image content" 
             className="max-w-full max-h-96 object-contain"
+            width={500}
+            height={300}
           />
         </div>
       );
@@ -387,6 +396,29 @@ const DataBridgeUI = () => {
       [key]: value
     }));
   };
+
+  // Fetch available graphs for dropdown
+  const [availableGraphs, setAvailableGraphs] = useState<string[]>([]);
+  
+  // Fetch graphs
+  const fetchGraphs = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/graphs`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch graphs: ${response.statusText}`);
+      }
+      const graphsData = await response.json();
+      setAvailableGraphs(graphsData.map((graph: { name: string }) => graph.name));
+    } catch (err) {
+      console.error('Error fetching available graphs:', err);
+    }
+  };
+
+  // Fetch graphs on component mount
+  useEffect(() => {
+    fetchGraphs();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Update query options
   const updateQueryOption = <K extends keyof QueryOptions>(key: K, value: QueryOptions[K]) => {
@@ -759,7 +791,7 @@ const DataBridgeUI = () => {
                   <div className="space-y-6">
                     <h3 className="text-lg font-medium">Results ({searchResults.length})</h3>
                     
-                    {searchResults.map((result, index) => (
+                    {searchResults.map((result) => (
                       <Card key={`${result.document_id}-${result.chunk_number}`}>
                         <CardHeader className="pb-2">
                           <div className="flex justify-between items-start">
@@ -965,6 +997,29 @@ const DataBridgeUI = () => {
                               onChange={(e) => updateQueryOption('temperature', parseFloat(e.target.value) || 0)}
                             />
                           </div>
+
+                          <div>
+                            <Label htmlFor="graphName" className="block mb-2">Knowledge Graph</Label>
+                            <select
+                              id="graphName"
+                              className="w-full p-2 border rounded-md dark:bg-gray-800"
+                              value={queryOptions.graph_name || ''}
+                              onChange={(e) => setQueryOptions({
+                                ...queryOptions,
+                                graph_name: e.target.value || undefined
+                              })}
+                            >
+                              <option value="">None (Standard RAG)</option>
+                              {availableGraphs.map(graphName => (
+                                <option key={graphName} value={graphName}>
+                                  {graphName}
+                                </option>
+                              ))}
+                            </select>
+                            <p className="text-sm text-gray-500">
+                              Select a knowledge graph to enhance your query with structured relationships
+                            </p>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -977,6 +1032,27 @@ const DataBridgeUI = () => {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* Graphs Section */}
+        {activeSection === 'graphs' && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold mb-2">Knowledge Graphs</h2>
+              {queryOptions.graph_name && (
+                <Badge variant="outline" className="bg-blue-50 px-3 py-1">
+                  Current Query Graph: {queryOptions.graph_name}
+                </Badge>
+              )}
+            </div>
+            
+            <p className="text-gray-600 mb-4">
+              Knowledge graphs represent relationships between entities extracted from your documents. 
+              Use them to enhance your queries with structured information and improve retrieval quality.
+            </p>
+            
+            <GraphSection apiBaseUrl={API_BASE_URL} />
+          </div>
         )}
       </div>
     </div>

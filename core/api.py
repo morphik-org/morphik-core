@@ -10,9 +10,10 @@ import logging
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.completion.openai_completion import OpenAICompletionModel
 from core.embedding.ollama_embedding_model import OllamaEmbeddingModel
-from core.models.request import RetrieveRequest, CompletionQueryRequest, IngestTextRequest
+from core.models.request import RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import Document, DocumentResult, ChunkResult
+from core.models.graph import Graph
 from core.models.auth import AuthContext, EntityType
 from core.parser.databridge_parser import DatabridgeParser
 from core.services.document_service import DocumentService
@@ -449,7 +450,11 @@ async def batch_get_chunks(chunk_ids: List[ChunkSource], auth: AuthContext = Dep
 async def query_completion(
     request: CompletionQueryRequest, auth: AuthContext = Depends(verify_token)
 ):
-    """Generate completion using relevant chunks as context."""
+    """Generate completion using relevant chunks as context.
+    
+    When graph_name is provided, the query will leverage the knowledge graph 
+    to enhance retrieval by finding relevant entities and their connected documents.
+    """
     try:
         async with telemetry.track_operation(
             operation_type="query",
@@ -461,6 +466,9 @@ async def query_completion(
                 "temperature": request.temperature,
                 "use_reranking": request.use_reranking,
                 "use_colpali": request.use_colpali,
+                "graph_name": request.graph_name,
+                "hop_depth": request.hop_depth,
+                "include_paths": request.include_paths,
             },
         ):
             return await document_service.query(
@@ -473,6 +481,9 @@ async def query_completion(
                 request.temperature,
                 request.use_reranking,
                 request.use_colpali,
+                request.graph_name,
+                request.hop_depth,
+                request.include_paths,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -846,6 +857,109 @@ async def query_cache(
             return cache.query(query)  # , max_tokens, temperature)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.post("/graph/create", response_model=Graph)
+async def create_graph(
+    request: CreateGraphRequest,
+    auth: AuthContext = Depends(verify_token),
+) -> Graph:
+    """
+    Create a graph from documents.
+
+    This endpoint extracts entities and relationships from documents
+    matching the specified filters or document IDs and creates a graph.
+
+    Args:
+        request: CreateGraphRequest containing:
+            - name: Name of the graph to create
+            - filters: Optional metadata filters to determine which documents to include
+            - documents: Optional list of specific document IDs to include
+        auth: Authentication context
+
+    Returns:
+        Graph: The created graph object
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="create_graph",
+            user_id=auth.entity_id,
+            metadata={
+                "name": request.name,
+                "filters": request.filters,
+                "documents": request.documents,
+            },
+        ):
+            return await document_service.create_graph(
+                name=request.name,
+                auth=auth,
+                filters=request.filters,
+                documents=request.documents,
+            )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/graph/{name}", response_model=Graph)
+async def get_graph(
+    name: str,
+    auth: AuthContext = Depends(verify_token),
+) -> Graph:
+    """
+    Get a graph by name.
+
+    This endpoint retrieves a graph by its name if the user has access to it.
+
+    Args:
+        name: Name of the graph to retrieve
+        auth: Authentication context
+
+    Returns:
+        Graph: The requested graph object
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="get_graph",
+            user_id=auth.entity_id,
+            metadata={"name": name},
+        ):
+            graph = await document_service.db.get_graph(name, auth)
+            if not graph:
+                raise HTTPException(status_code=404, detail=f"Graph '{name}' not found")
+            return graph
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/graphs", response_model=List[Graph])
+async def list_graphs(
+    auth: AuthContext = Depends(verify_token),
+) -> List[Graph]:
+    """
+    List all graphs the user has access to.
+
+    This endpoint retrieves all graphs the user has access to.
+
+    Args:
+        auth: Authentication context
+
+    Returns:
+        List[Graph]: List of graph objects
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="list_graphs",
+            user_id=auth.entity_id,
+        ):
+            return await document_service.db.list_graphs(auth)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/local/generate_uri", include_in_schema=True)

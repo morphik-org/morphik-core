@@ -4,7 +4,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { FileText, Search, MessageSquare, ChevronLeft, ChevronRight } from "lucide-react"
+import { FileText, Search, MessageSquare, ChevronLeft, ChevronRight, Network } from "lucide-react"
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   activeSection: string
@@ -71,6 +71,18 @@ export function Sidebar({ className, activeSection, onSectionChange, ...props }:
           >
             <MessageSquare className="h-4 w-4" />
             {!isCollapsed && <span className="ml-2">Chat</span>}
+          </Button>
+          
+          <Button
+            variant={activeSection === "graphs" ? "secondary" : "ghost"}
+            className={cn(
+              "w-full justify-start",
+              isCollapsed && "justify-center"
+            )}
+            onClick={() => onSectionChange("graphs")}
+          >
+            <Network className="h-4 w-4" />
+            {!isCollapsed && <span className="ml-2">Graphs</span>}
           </Button>
         </div>
       </ScrollArea>
