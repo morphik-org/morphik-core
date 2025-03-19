@@ -13,7 +13,6 @@ import filetype
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
-import time
 
 logger = logging.getLogger(__name__)
 
