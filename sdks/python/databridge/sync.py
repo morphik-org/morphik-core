@@ -1,9 +1,10 @@
 import base64
-from io import BytesIO
+from io import BytesIO, IOBase
 import io
 from PIL.Image import Image as PILImage
 from PIL import Image
 import json
+import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, BinaryIO
 from urllib.parse import urlparse
@@ -22,6 +23,8 @@ from .models import (
     Graph
 )
 from .rules import Rule
+
+logger = logging.getLogger(__name__)
 
 # Type alias for rules
 RuleOrDict = Union[Rule, Dict[str, Any]]
@@ -293,6 +296,131 @@ class DataBridge:
             # Close file if we opened it
             if isinstance(file, (str, Path)):
                 file_obj.close()
+
+    def ingest_files(
+        self,
+        files: List[Union[str, bytes, BinaryIO, Path]],
+        metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
+        rules: Optional[List[RuleOrDict]] = None,
+        use_colpali: bool = True,
+        parallel: bool = True,
+    ) -> List[Document]:
+        """
+        Ingest multiple files into DataBridge.
+
+        Args:
+            files: List of files to ingest (path strings, bytes, file objects, or Paths)
+            metadata: Optional metadata (single dict for all files or list of dicts)
+            rules: Optional list of rules to apply
+            use_colpali: Whether to use ColPali-style embedding
+            parallel: Whether to process files in parallel
+
+        Returns:
+            List[Document]: List of successfully ingested documents
+
+        Raises:
+            ValueError: If metadata list length doesn't match files length
+        """
+        # Convert files to format expected by API
+        file_objects = []
+        for file in files:
+            if isinstance(file, (str, Path)):
+                path = Path(file)
+                file_objects.append(("files", (path.name, open(path, "rb"))))
+            elif isinstance(file, bytes):
+                file_objects.append(("files", ("file.bin", file)))
+            else:
+                file_objects.append(("files", (getattr(file, "name", "file.bin"), file)))
+
+        try:
+            # Prepare request data
+            # Convert rules appropriately based on whether it's a flat list or list of lists
+            if rules:
+                if all(isinstance(r, list) for r in rules):
+                    # List of lists - per-file rules
+                    converted_rules = [[self._convert_rule(r) for r in rule_list] for rule_list in rules]
+                else:
+                    # Flat list - shared rules for all files
+                    converted_rules = [self._convert_rule(r) for r in rules]
+            else:
+                converted_rules = []
+
+            data = {
+                "metadata": json.dumps(metadata or {}),
+                "rules": json.dumps(converted_rules),
+                "use_colpali": str(use_colpali).lower() if use_colpali is not None else None,
+                "parallel": str(parallel).lower(),
+            }
+
+            response = self._request("POST", "ingest/files", data=data, files=file_objects)
+            
+            if response.get("errors"):
+                # Log errors but don't raise exception
+                for error in response["errors"]:
+                    logger.error(f"Failed to ingest {error['filename']}: {error['error']}")
+            
+            docs = [Document(**doc) for doc in response["documents"]]
+            for doc in docs:
+                doc._client = self
+            return docs
+        finally:
+            # Clean up file objects
+            for _, (_, file_obj) in file_objects:
+                if isinstance(file_obj, (IOBase, BytesIO)) and not file_obj.closed:
+                    file_obj.close()
+
+    def ingest_directory(
+        self,
+        directory: Union[str, Path],
+        recursive: bool = False,
+        pattern: str = "*",
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List[RuleOrDict]] = None,
+        use_colpali: bool = True,
+        parallel: bool = True,
+    ) -> List[Document]:
+        """
+        Ingest all files in a directory into DataBridge.
+
+        Args:
+            directory: Path to directory containing files to ingest
+            recursive: Whether to recursively process subdirectories
+            pattern: Optional glob pattern to filter files (e.g. "*.pdf")
+            metadata: Optional metadata dictionary to apply to all files
+            rules: Optional list of rules to apply
+            use_colpali: Whether to use ColPali-style embedding
+            parallel: Whether to process files in parallel
+
+        Returns:
+            List[Document]: List of ingested documents
+
+        Raises:
+            ValueError: If directory not found
+        """
+        directory = Path(directory)
+        if not directory.is_dir():
+            raise ValueError(f"Directory not found: {directory}")
+
+        # Collect all files matching pattern
+        if recursive:
+            files = list(directory.rglob(pattern))
+        else:
+            files = list(directory.glob(pattern))
+
+        # Filter out directories
+        files = [f for f in files if f.is_file()]
+        
+        if not files:
+            return []
+
+        # Use ingest_files with collected paths
+        return self.ingest_files(
+            files=files,
+            metadata=metadata,
+            rules=rules,
+            use_colpali=use_colpali,
+            parallel=parallel
+        )
 
     def retrieve_chunks(
         self,
