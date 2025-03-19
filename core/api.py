@@ -334,8 +334,7 @@ async def ingest_file(
     try:
         metadata_dict = json.loads(metadata)
         rules_list = json.loads(rules)
-        # Don't convert use_colpali to bool, keep as None if it's None
-        # to allow using system default from config
+        use_colpali = bool(use_colpali)
 
         async with telemetry.track_operation(
             operation_type="ingest_file",

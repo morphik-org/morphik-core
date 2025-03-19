@@ -57,14 +57,3 @@ class BatchIngestResponse(BaseModel):
     """Response model for batch ingestion"""
     documents: List[Document]
     errors: List[Dict[str, str]]
-
-
-class DirectoryIngestRequest(BaseModel):
-    """Request model for directory ingestion"""
-    directory: str = Field(..., description="Path to directory to ingest")
-    recursive: bool = Field(default=False, description="Whether to process subdirectories")
-    pattern: str = Field(default="*", description="Glob pattern to filter files")
-    metadata: Optional[Dict[str, Any]] = None
-    rules: List[Dict[str, Any]] = Field(default_factory=list)
-    use_colpali: Optional[bool] = None
-    parallel: bool = True

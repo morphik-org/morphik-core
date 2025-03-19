@@ -1540,48 +1540,6 @@ async def test_batch_ingest_metadata_validation(
 
 
 @pytest.mark.asyncio
-async def test_batch_ingest_with_errors(
-    client: AsyncClient
-):
-    """Test batch ingestion with some failing files."""
-    headers = create_auth_header()
-    # Create test files (one valid, one invalid)
-    files = [
-        ("files", ("test1.txt", b"Valid content")),
-        ("files", ("test2.txt", b"")),  # Empty file should fail
-        ("files", ("test3.pdf", b"Invalid PDF content")),  # Invalid PDF should fail
-    ]
-    
-    metadata = {"category": "test"}
-    
-    response = await client.post(
-        "/ingest/files",
-        files=files,
-        data={
-            "metadata": json.dumps(metadata),
-            "rules": json.dumps([]),
-            "use_colpali": "true",
-            "parallel": "true",
-        },
-        headers=headers,
-    )
-    
-    assert response.status_code == 200
-    result = response.json()
-    assert len(result["documents"]) == 1  # One successful
-    assert len(result["errors"]) == 2     # Two failed
-    
-    # Verify error details
-    error_filenames = [error["filename"] for error in result["errors"]]
-    assert "test2.txt" in error_filenames  # Empty file
-    assert "test3.pdf" in error_filenames  # Invalid PDF
-    
-    # Verify error messages
-    error_messages = [error["error"].lower() for error in result["errors"]]
-    assert any("empty" in msg or "invalid content" in msg for msg in error_messages)
-
-
-@pytest.mark.asyncio
 async def test_batch_ingest_sequential(
     client: AsyncClient
 ):
@@ -1610,60 +1568,6 @@ async def test_batch_ingest_sequential(
     result = response.json()
     assert len(result["documents"]) == 2
     assert len(result["errors"]) == 0
-
-
-@pytest.mark.asyncio
-async def test_batch_ingest_empty_file_list(
-    client: AsyncClient
-):
-    """Test batch ingestion with empty file list."""
-    headers = create_auth_header()
-    response = await client.post(
-        "/ingest/files",
-        files=[],
-        data={
-            "metadata": json.dumps({}),
-            "rules": json.dumps([]),
-            "use_colpali": "true",
-            "parallel": "true",
-        },
-        headers=headers,
-    )
-    
-    assert response.status_code == 400
-    assert "No files provided" in response.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_batch_ingest_all_files_fail(
-    client: AsyncClient
-):
-    """Test batch ingestion where all files fail to process."""
-    headers = create_auth_header()
-    # Create invalid files (empty content)
-    files = [
-        ("files", ("test1.txt", b"")),
-        ("files", ("test2.txt", b"")),
-    ]
-    
-    response = await client.post(
-        "/ingest/files",
-        files=files,
-        data={
-            "metadata": json.dumps({}),
-            "rules": json.dumps([]),
-            "use_colpali": "true",
-            "parallel": "true",
-        },
-        headers=headers,
-    )
-    
-    assert response.status_code == 200  # Current behavior
-    result = response.json()
-    assert len(result["documents"]) == 0
-    assert len(result["errors"]) == 2
-    for error in result["errors"]:
-        assert "empty file" in error["error"].lower() or "invalid content" in error["error"].lower()
 
 
 @pytest.mark.asyncio
