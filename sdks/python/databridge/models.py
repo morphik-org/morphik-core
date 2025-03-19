@@ -1,5 +1,4 @@
-from typing import Dict, Any, List, Literal, Optional, Union
-from io import BinaryIO
+from typing import Dict, Any, List, Literal, Optional, Union, BinaryIO
 from pathlib import Path
 from datetime import datetime
 from pydantic import BaseModel, Field, field_validator

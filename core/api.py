@@ -1,16 +1,17 @@
+import asyncio
 import json
 from datetime import datetime, UTC, timedelta
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import jwt
 import logging
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.completion.openai_completion import OpenAICompletionModel
 from core.embedding.ollama_embedding_model import OllamaEmbeddingModel
-from core.models.request import RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest
+from core.models.request import RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, BatchIngestResponse
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.graph import Graph
@@ -358,6 +359,118 @@ async def ingest_file(
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.post("/ingest/files", response_model=BatchIngestResponse)
+async def batch_ingest_files(
+    files: List[UploadFile] = File(...),
+    metadata: str = Form("{}"),
+    rules: str = Form("[]"),
+    use_colpali: Optional[bool] = Form(None),
+    parallel: bool = Form(True),
+    auth: AuthContext = Depends(verify_token),
+) -> BatchIngestResponse:
+    """
+    Batch ingest multiple files.
+    
+    Args:
+        files: List of files to ingest
+        metadata: JSON string of metadata (either a single dict or list of dicts)
+        rules: JSON string of rules list. Can be either:
+               - A single list of rules to apply to all files
+               - A list of rule lists, one per file
+        use_colpali: Whether to use ColPali-style embedding
+        parallel: Whether to process files in parallel
+        auth: Authentication context
+
+    Returns:
+        BatchIngestResponse containing:
+            - documents: List of successfully ingested documents
+            - errors: List of errors encountered during ingestion
+    """
+    if not files:
+        raise HTTPException(
+            status_code=400,
+            detail="No files provided for batch ingestion"
+        )
+
+    try:
+        metadata_value = json.loads(metadata)
+        rules_list = json.loads(rules)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+
+    # Validate metadata if it's a list
+    if isinstance(metadata_value, list) and len(metadata_value) != len(files):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Number of metadata items ({len(metadata_value)}) must match number of files ({len(files)})"
+        )
+
+    # Validate rules if it's a list of lists
+    if isinstance(rules_list, list) and rules_list and isinstance(rules_list[0], list):
+        if len(rules_list) != len(files):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Number of rule lists ({len(rules_list)}) must match number of files ({len(files)})"
+            )
+
+    documents = []
+    errors = []
+
+    async with telemetry.track_operation(
+        operation_type="batch_ingest",
+        user_id=auth.entity_id,
+        metadata={
+            "file_count": len(files),
+            "metadata_type": "list" if isinstance(metadata_value, list) else "single",
+            "rules_type": "per_file" if isinstance(rules_list, list) and rules_list and isinstance(rules_list[0], list) else "shared",
+        },
+    ):
+        if parallel:
+            tasks = []
+            for i, file in enumerate(files):
+                metadata_item = metadata_value[i] if isinstance(metadata_value, list) else metadata_value
+                file_rules = rules_list[i] if isinstance(rules_list, list) and rules_list and isinstance(rules_list[0], list) else rules_list
+                task = document_service.ingest_file(
+                    file=file,
+                    metadata=metadata_item,
+                    auth=auth,
+                    rules=file_rules,
+                    use_colpali=use_colpali
+                )
+                tasks.append(task)
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    errors.append({
+                        "filename": files[i].filename,
+                        "error": str(result)
+                    })
+                else:
+                    documents.append(result)
+        else:
+            for i, file in enumerate(files):
+                try:
+                    metadata_item = metadata_value[i] if isinstance(metadata_value, list) else metadata_value
+                    file_rules = rules_list[i] if isinstance(rules_list, list) and rules_list and isinstance(rules_list[0], list) else rules_list
+                    doc = await document_service.ingest_file(
+                        file=file,
+                        metadata=metadata_item,
+                        auth=auth,
+                        rules=file_rules,
+                        use_colpali=use_colpali
+                    )
+                    documents.append(doc)
+                except Exception as e:
+                    errors.append({
+                        "filename": file.filename,
+                        "error": str(e)
+                    })
+
+    return BatchIngestResponse(documents=documents, errors=errors)
 
 
 @app.post("/retrieve/chunks", response_model=List[ChunkResult])

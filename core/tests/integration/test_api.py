@@ -8,7 +8,7 @@ from typing import AsyncGenerator, Dict
 from httpx import AsyncClient
 from fastapi import FastAPI
 from httpx import ASGITransport
-from core.api import app, get_settings
+from core.api import get_settings
 import filetype
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -1424,6 +1424,303 @@ async def test_query_with_graph(client: AsyncClient):
     )
     
     assert response_no_graph.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_batch_ingest_with_shared_metadata(
+    client: AsyncClient
+):
+    """Test batch ingestion with shared metadata for all files."""
+    headers = create_auth_header()
+    # Create test files
+    files = [
+        ("files", ("test1.txt", b"Test content 1")),
+        ("files", ("test2.txt", b"Test content 2")),
+    ]
+    
+    # Shared metadata for all files
+    metadata = {"category": "test", "batch": "shared"}
+    
+    response = await client.post(
+        "/ingest/files",
+        files=files,
+        data={
+            "metadata": json.dumps(metadata),
+            "rules": json.dumps([]),
+            "use_colpali": "true",
+            "parallel": "true",
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result["documents"]) == 2
+    assert len(result["errors"]) == 0
+    
+    # Verify all documents got the same metadata
+    for doc in result["documents"]:
+        assert doc["metadata"]["category"] == "test"
+        assert doc["metadata"]["batch"] == "shared"
+
+
+@pytest.mark.asyncio
+async def test_batch_ingest_with_individual_metadata(
+    client: AsyncClient
+):
+    """Test batch ingestion with individual metadata per file."""
+    headers = create_auth_header()
+    # Create test files
+    files = [
+        ("files", ("test1.txt", b"Test content 1")),
+        ("files", ("test2.txt", b"Test content 2")),
+    ]
+    
+    # Individual metadata
+    metadata = [
+        {"category": "test1", "batch": "individual"},
+        {"category": "test2", "batch": "individual"},
+    ]
+    
+    response = await client.post(
+        "/ingest/files",
+        files=files,
+        data={
+            "metadata": json.dumps(metadata),
+            "rules": json.dumps([]),
+            "use_colpali": "true",
+            "parallel": "true",
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result["documents"]) == 2
+    assert len(result["errors"]) == 0
+    
+    # Verify each document got its correct metadata
+    assert result["documents"][0]["metadata"]["category"] == "test1"
+    assert result["documents"][1]["metadata"]["category"] == "test2"
+
+
+@pytest.mark.asyncio
+async def test_batch_ingest_metadata_validation(
+    client: AsyncClient
+):
+    """Test validation when metadata list length doesn't match files."""
+    headers = create_auth_header()
+    files = [
+        ("files", ("test1.txt", b"Test content 1")),
+        ("files", ("test2.txt", b"Test content 2")),
+    ]
+    
+    # Metadata list with wrong length
+    metadata = [
+        {"category": "test1"},
+        {"category": "test2"},
+        {"category": "test3"},  # Extra metadata
+    ]
+    
+    response = await client.post(
+        "/ingest/files",
+        files=files,
+        data={
+            "metadata": json.dumps(metadata),
+            "rules": json.dumps([]),
+            "use_colpali": "true",
+            "parallel": "true",
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 400
+    assert "must match number of files" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_batch_ingest_sequential(
+    client: AsyncClient
+):
+    """Test sequential batch ingestion."""
+    headers = create_auth_header()
+    files = [
+        ("files", ("test1.txt", b"Test content 1")),
+        ("files", ("test2.txt", b"Test content 2")),
+    ]
+    
+    metadata = {"category": "test"}
+    
+    response = await client.post(
+        "/ingest/files",
+        files=files,
+        data={
+            "metadata": json.dumps(metadata),
+            "rules": json.dumps([]),
+            "use_colpali": "true",
+            "parallel": "false",  # Process sequentially
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result["documents"]) == 2
+    assert len(result["errors"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_batch_ingest_with_rules(
+    client: AsyncClient
+):
+    """Test batch ingestion with rules applied."""
+    headers = create_auth_header()
+    files = [
+        ("files", ("test1.txt", b"Test content 1")),
+        ("files", ("test2.txt", b"Test content 2")),
+    ]
+    
+    # Test shared rules for all files
+    shared_rules = [{"type": "natural_language", "prompt": "Extract keywords"}]
+    
+    response = await client.post(
+        "/ingest/files",
+        files=files,
+        data={
+            "metadata": json.dumps({}),
+            "rules": json.dumps(shared_rules),
+            "use_colpali": "true",
+            "parallel": "true",
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result["documents"]) == 2
+    assert len(result["errors"]) == 0
+    
+    # Test per-file rules
+    per_file_rules = [
+        [{"type": "natural_language", "prompt": "Extract keywords"}],  # Rules for first file
+        [{"type": "metadata_extraction", "schema": {"title": "string"}}],  # Rules for second file
+    ]
+    
+    response = await client.post(
+        "/ingest/files",
+        files=files,
+        data={
+            "metadata": json.dumps({}),
+            "rules": json.dumps(per_file_rules),
+            "use_colpali": "true",
+            "parallel": "true",
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result["documents"]) == 2
+    assert len(result["errors"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_batch_ingest_rules_validation(
+    client: AsyncClient
+):
+    """Test validation of rules format and length."""
+    headers = create_auth_header()
+    files = [
+        ("files", ("test1.txt", b"Test content 1")),
+        ("files", ("test2.txt", b"Test content 2")),
+    ]
+    
+    # Test invalid rules format
+    invalid_rules = "not a list"
+    
+    response = await client.post(
+        "/ingest/files",
+        files=files,
+        data={
+            "metadata": json.dumps({}),
+            "rules": invalid_rules,
+            "use_colpali": "true",
+            "parallel": "true",
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 400
+    assert "Invalid JSON" in response.json()["detail"]
+    
+    # Test per-file rules with wrong length
+    per_file_rules = [
+        [{"type": "natural_language", "prompt": "Extract keywords"}],  # Only one set of rules
+    ]
+    
+    response = await client.post(
+        "/ingest/files",
+        files=files,
+        data={
+            "metadata": json.dumps({}),
+            "rules": json.dumps(per_file_rules),
+            "use_colpali": "true",
+            "parallel": "true",
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 400
+    assert "must match number of files" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_batch_ingest_sequential_vs_parallel(
+    client: AsyncClient
+):
+    """Test both sequential and parallel batch ingestion."""
+    headers = create_auth_header()
+    files = [
+        ("files", ("test1.txt", b"Test content 1")),
+        ("files", ("test2.txt", b"Test content 2")),
+        ("files", ("test3.txt", b"Test content 3")),
+    ]
+    
+    # Test parallel processing
+    response = await client.post(
+        "/ingest/files",
+        files=files,
+        data={
+            "metadata": json.dumps({}),
+            "rules": json.dumps([]),
+            "use_colpali": "true",
+            "parallel": "true",
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result["documents"]) == 3
+    assert len(result["errors"]) == 0
+    
+    # Test sequential processing 
+    response = await client.post(
+        "/ingest/files",
+        files=files,
+        data={
+            "metadata": json.dumps({}),
+            "rules": json.dumps([]),
+            "use_colpali": "true",
+            "parallel": "false",
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result["documents"]) == 3
+    assert len(result["errors"]) == 0
 
 
 @pytest.mark.asyncio

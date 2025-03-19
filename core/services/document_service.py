@@ -405,6 +405,24 @@ class DocumentService:
         # Read file content
         file_content = await file.read()
         file_type = filetype.guess(file_content)
+        
+        # Set default mime type for cases where filetype.guess returns None
+        mime_type = ""
+        if file_type is not None:
+            mime_type = file_type.mime
+        elif file.filename:
+            # Try to determine by file extension as fallback
+            import mimetypes
+            guessed_type = mimetypes.guess_type(file.filename)[0]
+            if guessed_type:
+                mime_type = guessed_type
+            else:
+                # Default for text files
+                mime_type = "text/plain"
+        else:
+            mime_type = "application/octet-stream"  # Generic binary data
+            
+        logger.info(f"Determined MIME type: {mime_type} for file {file.filename}")
 
         # Parse file to text first
         additional_metadata, text = await self.parser.parse_file_to_text(
@@ -423,7 +441,7 @@ class DocumentService:
 
         # Create document record
         doc = Document(
-            content_type=file_type.mime or "",
+            content_type=mime_type,
             filename=file.filename,
             metadata=metadata,
             owner={"type": auth.entity_type, "id": auth.entity_id},
@@ -495,8 +513,19 @@ class DocumentService:
     def _create_chunks_multivector(
         self, file_type, file_content_base64: str, file_content: bytes, chunks: List[Chunk]
     ):
-        logger.info(f"Creating chunks for multivector embedding for file type {file_type.mime}")
-        match file_type.mime:
+        # Handle the case where file_type is None
+        mime_type = file_type.mime if file_type is not None else "text/plain"
+        logger.info(f"Creating chunks for multivector embedding for file type {mime_type}")
+        
+        # If file_type is None, treat it as a text file
+        if file_type is None:
+            logger.info("File type is None, treating as text")
+            return [
+                Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                for chunk in chunks
+            ]
+            
+        match mime_type:
             case file_type if file_type in IMAGE:
                 return [Chunk(content=file_content_base64, metadata={"is_image": True})]
             case "application/pdf":
@@ -1017,6 +1046,15 @@ class DocumentService:
         file_type = filetype.guess(file_content)
         if file_type:
             doc.content_type = file_type.mime
+        else:
+            # If filetype.guess failed, try to determine from filename
+            import mimetypes
+            guessed_type = mimetypes.guess_type(file.filename)[0]
+            if guessed_type:
+                doc.content_type = guessed_type
+            else:
+                # Default fallback
+                doc.content_type = "text/plain" if file.filename.endswith('.txt') else "application/octet-stream"
         
         # Update filename
         doc.filename = file.filename

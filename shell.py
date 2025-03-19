@@ -137,6 +137,120 @@ class DB:
         )
         return doc if as_object else doc.model_dump()
 
+    def ingest_files(
+        self,
+        files: List[str],
+        metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
+        rules: Optional[List[Dict[str, Any]]] = None,
+        use_colpali: bool = True,
+        parallel: bool = True,
+        as_objects: bool = False,
+    ) -> List[Union[dict, 'Document']]:
+        """
+        Batch ingest multiple files into DataBridge.
+
+        Args:
+            files: List of file paths to ingest
+            metadata: Optional metadata (single dict for all files or list of dicts)
+            rules: Optional list of rules. Can be either:
+                   - A single list of rules to apply to all files
+                   - A list of rule lists, one per file
+            use_colpali: Whether to use ColPali-style embedding model
+            parallel: Whether to process files in parallel
+            as_objects: If True, returns Document objects with update methods, otherwise returns dicts
+
+        Returns:
+            List of document metadata (dicts or Document objects)
+
+        Example:
+            ```python
+            # Ingest multiple files with shared metadata
+            docs = db.ingest_files(
+                ["doc1.pdf", "doc2.pdf"],
+                metadata={"category": "research"},
+                parallel=True
+            )
+
+            # Ingest files with individual metadata
+            docs = db.ingest_files(
+                ["doc1.pdf", "doc2.pdf"],
+                metadata=[
+                    {"category": "research", "author": "Alice"},
+                    {"category": "reports", "author": "Bob"}
+                ]
+            )
+            ```
+        """
+        # Convert file paths to Path objects
+        file_paths = [Path(f) for f in files]
+        
+        # Ingest files using the client
+        docs = self._client.ingest_files(
+            files=file_paths,
+            metadata=metadata,
+            rules=rules,
+            use_colpali=use_colpali,
+            parallel=parallel,
+        )
+        
+        return docs if as_objects else [doc.model_dump() for doc in docs]
+
+    def ingest_directory(
+        self,
+        directory: str,
+        recursive: bool = False,
+        pattern: str = "*",
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List[Dict[str, Any]]] = None,
+        use_colpali: bool = True,
+        parallel: bool = True,
+        as_objects: bool = False,
+    ) -> List[Union[dict, 'Document']]:
+        """
+        Ingest all files in a directory into DataBridge.
+
+        Args:
+            directory: Path to directory containing files to ingest
+            recursive: Whether to recursively process subdirectories
+            pattern: Optional glob pattern to filter files (e.g. "*.pdf")
+            metadata: Optional metadata dictionary to apply to all files
+            rules: Optional list of rules. Can be either:
+                   - A single list of rules to apply to all files
+                   - A list of rule lists, one per file
+            use_colpali: Whether to use ColPali-style embedding model
+            parallel: Whether to process files in parallel
+            as_objects: If True, returns Document objects with update methods, otherwise returns dicts
+
+        Returns:
+            List of document metadata (dicts or Document objects)
+
+        Example:
+            ```python
+            # Ingest all PDFs in a directory and its subdirectories
+            docs = db.ingest_directory(
+                "data/documents",
+                recursive=True,
+                metadata={"category": "research"},
+                pattern="*.pdf"
+            )
+            ```
+        """
+        # Convert directory to Path
+        dir_path = Path(directory)
+        
+        # Ingest directory using the client
+        docs = self._client.ingest_directory(
+            directory=dir_path,
+            recursive=recursive,
+            pattern=pattern,
+            metadata=metadata,
+            rules=rules,
+            use_colpali=use_colpali,
+            parallel=parallel,
+        )
+        
+        return docs if as_objects else [doc.model_dump() for doc in docs]
+
     def retrieve_chunks(
         self,
         query: str,
