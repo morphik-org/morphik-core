@@ -12,6 +12,8 @@ import uuid
 import hashlib
 import logging
 
+from core.config import get_settings
+
 from opentelemetry import trace, metrics
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.metrics import MeterProvider
@@ -29,32 +31,34 @@ from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExp
 import requests
 from urllib3.exceptions import ProtocolError, ReadTimeoutError
 
-# Telemetry configuration
-TELEMETRY_ENABLED = os.getenv("DATABRIDGE_TELEMETRY_ENABLED", "1").lower() in ("1", "true", "yes")
-HONEYCOMB_ENABLED = os.getenv("DATABRIDGE_HONEYCOMB_ENABLED", "1").lower() in ("1", "true", "yes")
+# Get settings from config
+settings = get_settings()
 
-# Honeycomb configuration
-HONEYCOMB_API_KEY = os.getenv("OTEL_EXPORTER_OTLP_HEADERS", "").split("=")[1] if os.getenv("OTEL_EXPORTER_OTLP_HEADERS") else None
-HONEYCOMB_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://api.honeycomb.io")
-SERVICE_NAME = os.getenv("OTEL_SERVICE_NAME", "databridge-core")
+# Telemetry configuration - use settings directly from TOML
+TELEMETRY_ENABLED = settings.TELEMETRY_ENABLED
+HONEYCOMB_ENABLED = settings.HONEYCOMB_ENABLED
 
-# Headers for Honeycomb with proper formatting
+# Honeycomb configuration - using proxy to avoid exposing API key in code
+# Default to localhost:8080 for the proxy, but allow override from settings
+HONEYCOMB_PROXY_ENDPOINT = getattr(settings, "HONEYCOMB_PROXY_ENDPOINT", "http://localhost:8080")
+SERVICE_NAME = settings.SERVICE_NAME
+
+# Headers for OTLP - no API key needed as the proxy will add it
 OTLP_HEADERS = {
-    "x-honeycomb-team": HONEYCOMB_API_KEY,
     "Content-Type": "application/x-protobuf"
-} if HONEYCOMB_API_KEY else {}
+}
 
-# Configure timeouts and retries - updated values
-OTLP_TIMEOUT = 10  # Reduced timeout to 10 seconds to fail faster
-OTLP_MAX_RETRIES = 3  # Reduced retries to 3 to avoid too many retries
-OTLP_RETRY_DELAY = 1  # Initial retry delay in seconds
-OTLP_MAX_EXPORT_BATCH_SIZE = 512  # Limit batch size to avoid large payloads
-OTLP_SCHEDULE_DELAY_MILLIS = 5000  # 5 seconds between export attempts
-OTLP_MAX_QUEUE_SIZE = 2048  # Maximum number of spans to buffer
+# Configure timeouts and retries directly from TOML config
+OTLP_TIMEOUT = settings.OTLP_TIMEOUT
+OTLP_MAX_RETRIES = settings.OTLP_MAX_RETRIES
+OTLP_RETRY_DELAY = settings.OTLP_RETRY_DELAY
+OTLP_MAX_EXPORT_BATCH_SIZE = settings.OTLP_MAX_EXPORT_BATCH_SIZE
+OTLP_SCHEDULE_DELAY_MILLIS = settings.OTLP_SCHEDULE_DELAY_MILLIS
+OTLP_MAX_QUEUE_SIZE = settings.OTLP_MAX_QUEUE_SIZE
 
-# OTLP endpoints
-OTLP_TRACES_ENDPOINT = f"{HONEYCOMB_ENDPOINT}/v1/traces"
-OTLP_METRICS_ENDPOINT = f"{HONEYCOMB_ENDPOINT}/v1/metrics"
+# OTLP endpoints - using our proxy instead of direct Honeycomb connection
+OTLP_TRACES_ENDPOINT = f"{HONEYCOMB_PROXY_ENDPOINT}/v1/traces"
+OTLP_METRICS_ENDPOINT = f"{HONEYCOMB_PROXY_ENDPOINT}/v1/metrics"
 
 # Enable debug logging for OpenTelemetry
 os.environ["OTEL_PYTHON_LOGGING_LEVEL"] = "INFO"  # Changed from DEBUG to reduce verbosity
@@ -376,26 +380,20 @@ class TelemetryService:
         tracer_provider.add_span_processor(file_span_processor)
         
         # Add Honeycomb OTLP exporter with retry logic
-        if HONEYCOMB_API_KEY and HONEYCOMB_ENABLED:
-            try:
-                # Create BatchSpanProcessor with improved configuration
-                otlp_span_processor = BatchSpanProcessor(
-                    RetryingOTLPSpanExporter(
-                        endpoint=OTLP_TRACES_ENDPOINT,
-                        headers=OTLP_HEADERS,
-                        timeout=OTLP_TIMEOUT,
-                    ),
-                    # Configure batch processing settings
-                    max_queue_size=OTLP_MAX_QUEUE_SIZE,
-                    max_export_batch_size=OTLP_MAX_EXPORT_BATCH_SIZE,
-                    schedule_delay_millis=OTLP_SCHEDULE_DELAY_MILLIS,
-                )
-                tracer_provider.add_span_processor(otlp_span_processor)
-                print(f"Successfully configured Honeycomb trace exporter to {OTLP_TRACES_ENDPOINT}")
-            except Exception as e:
-                print(f"Failed to configure Honeycomb trace exporter: {str(e)}")
-        elif not HONEYCOMB_ENABLED:
-            print("Honeycomb telemetry is disabled via DATABRIDGE_HONEYCOMB_ENABLED")
+        if HONEYCOMB_ENABLED:
+            # Create BatchSpanProcessor with improved configuration
+            otlp_span_processor = BatchSpanProcessor(
+                RetryingOTLPSpanExporter(
+                    endpoint=OTLP_TRACES_ENDPOINT,
+                    headers=OTLP_HEADERS,
+                    timeout=OTLP_TIMEOUT,
+                ),
+                # Configure batch processing settings
+                max_queue_size=OTLP_MAX_QUEUE_SIZE,
+                max_export_batch_size=OTLP_MAX_EXPORT_BATCH_SIZE,
+                schedule_delay_millis=OTLP_SCHEDULE_DELAY_MILLIS,
+            )
+            tracer_provider.add_span_processor(otlp_span_processor)
 
         trace.set_tracer_provider(tracer_provider)
         self.tracer = trace.get_tracer(__name__)
@@ -410,7 +408,7 @@ class TelemetryService:
         ]
 
         # Add Honeycomb metrics reader if API key is available
-        if HONEYCOMB_API_KEY and HONEYCOMB_ENABLED:
+        if HONEYCOMB_ENABLED:
             try:
                 # Configure the OTLP metric exporter with improved error handling
                 otlp_metric_exporter = RetryingOTLPMetricExporter(
