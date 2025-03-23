@@ -476,13 +476,16 @@ class TelemetryService:
             current_span.set_attribute("operation.type", operation_type)
             current_span.set_attribute("user.id", hashed_user_id)
             if metadata:
-                # Remove any potential PII from metadata
-                safe_metadata = {
-                    k: str(v) for k, v in metadata.items() 
-                    if not any(pii in k.lower() for pii in ["email", "name", "phone", "address", "token", "key", "password", "secret"])
-                }
-                for key, value in safe_metadata.items():
-                    current_span.set_attribute(f"metadata.{key}", value)
+                # Create a copy of metadata to avoid modifying the original
+                metadata_copy = metadata.copy()
+                
+                # Remove the nested 'metadata' field completely if it exists
+                if 'metadata' in metadata_copy:
+                    del metadata_copy['metadata']
+                
+                # Set attributes for all remaining metadata fields
+                for key, value in metadata_copy.items():
+                    current_span.set_attribute(f"metadata.{key}", str(value))
 
             yield current_span
 
@@ -506,6 +509,14 @@ class TelemetryService:
             self.operation_duration.record(duration, attributes)
 
             # Record usage
+            # Create a sanitized copy of metadata for the usage record
+            sanitized_metadata = None
+            if metadata:
+                sanitized_metadata = metadata.copy()
+                # Remove the nested 'metadata' field completely if it exists
+                if 'metadata' in sanitized_metadata:
+                    del sanitized_metadata['metadata']
+            
             record = UsageRecord(
                 timestamp=datetime.now(),
                 operation_type=operation_type,
@@ -513,7 +524,7 @@ class TelemetryService:
                 user_id=hashed_user_id,
                 duration_ms=duration,
                 status=status,
-                metadata=metadata,
+                metadata=sanitized_metadata,
             )
 
             with self._lock:
