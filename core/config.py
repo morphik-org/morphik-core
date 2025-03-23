@@ -90,6 +90,19 @@ class Settings(BaseSettings):
 
     # Colpali configuration
     ENABLE_COLPALI: bool
+    
+    # Telemetry configuration
+    TELEMETRY_ENABLED: bool = True
+    HONEYCOMB_ENABLED: bool = True
+    HONEYCOMB_ENDPOINT: str = "https://api.honeycomb.io"
+    HONEYCOMB_PROXY_ENDPOINT: str = "https://otel-proxy.onrender.com/"
+    SERVICE_NAME: str = "databridge-core"
+    OTLP_TIMEOUT: int = 10
+    OTLP_MAX_RETRIES: int = 3
+    OTLP_RETRY_DELAY: int = 1
+    OTLP_MAX_EXPORT_BATCH_SIZE: int = 512
+    OTLP_SCHEDULE_DELAY_MILLIS: int = 5000
+    OTLP_MAX_QUEUE_SIZE: int = 2048
 
 
 @lru_cache()
@@ -286,6 +299,22 @@ def get_settings() -> Settings:
         "GRAPH_MODEL": config["graph"]["model_name"],
     }
     
+    # load telemetry config
+    telemetry_config = {}
+    if "telemetry" in config:
+        telemetry_config = {
+            "TELEMETRY_ENABLED": config["telemetry"].get("enabled", True),
+            "HONEYCOMB_ENABLED": config["telemetry"].get("honeycomb_enabled", True),
+            "HONEYCOMB_ENDPOINT": config["telemetry"].get("honeycomb_endpoint", "https://api.honeycomb.io"),
+            "SERVICE_NAME": config["telemetry"].get("service_name", "databridge-core"),
+            "OTLP_TIMEOUT": config["telemetry"].get("otlp_timeout", 10),
+            "OTLP_MAX_RETRIES": config["telemetry"].get("otlp_max_retries", 3),
+            "OTLP_RETRY_DELAY": config["telemetry"].get("otlp_retry_delay", 1),
+            "OTLP_MAX_EXPORT_BATCH_SIZE": config["telemetry"].get("otlp_max_export_batch_size", 512),
+            "OTLP_SCHEDULE_DELAY_MILLIS": config["telemetry"].get("otlp_schedule_delay_millis", 5000),
+            "OTLP_MAX_QUEUE_SIZE": config["telemetry"].get("otlp_max_queue_size", 2048),
+        }
+    
     settings_dict = dict(ChainMap(
         api_config,
         auth_config,
@@ -299,6 +328,7 @@ def get_settings() -> Settings:
         rules_config,
         databridge_config,
         graph_config,
+        telemetry_config,
     ))
 
     return Settings(**settings_dict)
