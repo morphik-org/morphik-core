@@ -58,6 +58,11 @@ interface QueryOptions extends SearchOptions {
   graph_name?: string;
 }
 
+interface BatchUploadError {
+  filename: string;
+  error: string;
+}
+
 const DataBridgeUI = () => {
   const [activeSection, setActiveSection] = useState('documents');
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -248,7 +253,7 @@ const DataBridgeUI = () => {
       
       // Check if there were any errors during batch upload
       if (result.errors && result.errors.length > 0) {
-        const errorMessages = result.errors.map((err: any) => 
+        const errorMessages = result.errors.map((err: BatchUploadError) => 
           `${err.filename}: ${err.error}`
         ).join('\n');
         setError(`Some files failed to upload:\n${errorMessages}`);
