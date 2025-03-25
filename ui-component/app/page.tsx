@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, ChangeEvent } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -69,9 +69,10 @@ const DataBridgeUI = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
-  const [uploadType, setUploadType] = useState<'file' | 'text'>('file');
+  const [uploadType, setUploadType] = useState<'file' | 'text' | 'batch'>('file');
   const [textContent, setTextContent] = useState('');
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
+  const [batchFilesToUpload, setBatchFilesToUpload] = useState<File[]>([]);
   const [metadata, setMetadata] = useState('{}');
   const [rules, setRules] = useState('[]');
   const [useColpali, setUseColpali] = useState(true);
@@ -196,6 +197,66 @@ const DataBridgeUI = () => {
       await fetchDocuments(); // Refresh document list
       setShowUploadDialog(false);
       setFileToUpload(null);
+      setMetadata('{}');
+      setRules('[]');
+      setUseColpali(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An unknown error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle batch file upload
+  const handleBatchFileUpload = async () => {
+    if (batchFilesToUpload.length === 0) {
+      setError('Please select files to upload');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const formData = new FormData();
+      
+      // Append each file to the formData with the same field name
+      batchFilesToUpload.forEach(file => {
+        formData.append('files', file);
+      });
+      
+      formData.append('metadata', metadata);
+      formData.append('rules', rules);
+      formData.append('parallel', 'true');
+      if (useColpali !== undefined) {
+        formData.append('use_colpali', useColpali.toString());
+      }
+      
+      const response = await fetch(`${API_BASE_URL}/ingest/files`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authToken
+        },
+        body: formData
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to batch upload files: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      
+      // Check if there were any errors during batch upload
+      if (result.errors && result.errors.length > 0) {
+        const errorMessages = result.errors.map((err: any) => 
+          `${err.filename}: ${err.error}`
+        ).join('\n');
+        setError(`Some files failed to upload:\n${errorMessages}`);
+      }
+      
+      await fetchDocuments(); // Refresh document list
+      setShowUploadDialog(false);
+      setBatchFilesToUpload([]);
       setMetadata('{}');
       setRules('[]');
       setUseColpali(true);
@@ -383,6 +444,7 @@ const DataBridgeUI = () => {
   const resetUploadDialog = () => {
     setUploadType('file');
     setFileToUpload(null);
+    setBatchFilesToUpload([]);
     setTextContent('');
     setMetadata('{}');
     setRules('[]');
@@ -482,6 +544,12 @@ const DataBridgeUI = () => {
                           File
                         </Button>
                         <Button 
+                          variant={uploadType === 'batch' ? "default" : "outline"} 
+                          onClick={() => setUploadType('batch')}
+                        >
+                          Batch Files
+                        </Button>
+                        <Button 
                           variant={uploadType === 'text' ? "default" : "outline"} 
                           onClick={() => setUploadType('text')}
                         >
@@ -502,6 +570,35 @@ const DataBridgeUI = () => {
                               }
                             }}
                           />
+                        </div>
+                      ) : uploadType === 'batch' ? (
+                        <div>
+                          <Label htmlFor="batchFiles" className="block mb-2">Select Multiple Files</Label>
+                          <Input 
+                            id="batchFiles" 
+                            type="file" 
+                            multiple
+                            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                              const files = e.target.files;
+                              if (files && files.length > 0) {
+                                setBatchFilesToUpload(Array.from(files));
+                              }
+                            }}
+                          />
+                          {batchFilesToUpload.length > 0 && (
+                            <div className="mt-2">
+                              <p className="text-sm font-medium mb-1">{batchFilesToUpload.length} files selected:</p>
+                              <ScrollArea className="h-24 w-full rounded-md border p-2">
+                                <ul className="text-xs">
+                                  {Array.from(batchFilesToUpload).map((file, index) => (
+                                    <li key={index} className="py-1 border-b border-gray-100 last:border-0">
+                                      {file.name} ({(file.size / 1024).toFixed(1)} KB)
+                                    </li>
+                                  ))}
+                                </ul>
+                              </ScrollArea>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div>
@@ -554,7 +651,7 @@ const DataBridgeUI = () => {
                         Cancel
                       </Button>
                       <Button 
-                        onClick={uploadType === 'file' ? handleFileUpload : handleTextUpload}
+                        onClick={uploadType === 'file' ? handleFileUpload : uploadType === 'batch' ? handleBatchFileUpload : handleTextUpload}
                         disabled={loading}
                       >
                         {loading ? 'Uploading...' : 'Upload'}
