@@ -1,4 +1,4 @@
-# DataBridge Core
+# Morphik Core (previously databridge-core)
 
 **Note**: DataBridge is launching a hosted service soon! Please sign up for the [waitlist](https://docs.google.com/forms/d/1gFoUKzECICugInLkRlAlgwrkRVorfNywAgkmcjmVGkE/edit).
 
