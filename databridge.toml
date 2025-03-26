@@ -104,10 +104,12 @@ enable_colpali = true
 [graph]
 provider = "ollama"
 model_name = "llama3.2"
+enable_entity_resolution = true
 
 # [graph]
 # provider = "openai"
 # model_name = "gpt-4o-mini"
+# enable_entity_resolution = true
 
 [telemetry]
 enabled = true
