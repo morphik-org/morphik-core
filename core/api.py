@@ -270,6 +270,7 @@ async def check_and_increment_limits(auth: AuthContext, limit_type: str, value: 
             "storage_size": f"Storage size limit exceeded for your {tier} tier. Please delete some files or upgrade.",
             "graph": f"Graph creation limit exceeded for your {tier} tier. Please upgrade to create more graphs.",
             "cache": f"Cache creation limit exceeded for your {tier} tier. Please upgrade to create more caches.",
+            "cache_query": f"Cache query limit exceeded for your {tier} tier. Please upgrade or try again later.",
         }
         
         # Get message for the limit type or use default message
