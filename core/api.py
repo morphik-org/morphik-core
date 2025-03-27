@@ -11,7 +11,7 @@ import logging
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.completion.openai_completion import OpenAICompletionModel
 from core.embedding.ollama_embedding_model import OllamaEmbeddingModel
-from core.models.request import RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, BatchIngestResponse
+from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, BatchIngestResponse
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.graph import Graph
@@ -228,6 +228,85 @@ document_service = DocumentService(
 )
 
 
+async def check_and_increment_limits(auth: AuthContext, limit_type: str, value: int = 1) -> None:
+    """
+    Check if the user is within limits for an operation and increment usage.
+    
+    Args:
+        auth: Authentication context with user_id
+        limit_type: Type of limit to check (query, ingest, storage_file, storage_size, graph, cache)
+        value: Value to check against limit (e.g., file size for storage_size)
+        
+    Raises:
+        HTTPException: If the user exceeds limits
+    """
+    # Skip limit checking in self-hosted mode
+    if settings.MODE == "self_hosted":
+        return
+        
+    # Check if user_id is available
+    if not auth.user_id:
+        logger.warning("User ID not available in auth context, skipping limit check")
+        return
+        
+    # Initialize user service
+    from core.services.user_service import UserService
+    user_service = UserService()
+    await user_service.initialize()
+    
+    # Check if user is within limits
+    within_limits = await user_service.check_limit(auth.user_id, limit_type, value)
+    
+    if not within_limits:
+        # Get tier information for better error message
+        user_data = await user_service.get_user_limits(auth.user_id)
+        tier = user_data.get("tier", "unknown") if user_data else "unknown"
+        
+        # Throw appropriate error based on limit type
+        if limit_type == "query":
+            raise HTTPException(
+                status_code=429,
+                detail=f"Query limit exceeded for your {tier} tier. Please upgrade or try again later."
+            )
+        elif limit_type == "ingest":
+            raise HTTPException(
+                status_code=429,
+                detail=f"Ingest limit exceeded for your {tier} tier. Please upgrade or try again later."
+            )
+        elif limit_type == "storage_file":
+            raise HTTPException(
+                status_code=429,
+                detail=f"Storage file count limit exceeded for your {tier} tier. Please delete some files or upgrade."
+            )
+        elif limit_type == "storage_size":
+            raise HTTPException(
+                status_code=429,
+                detail=f"Storage size limit exceeded for your {tier} tier. Please delete some files or upgrade."
+            )
+        elif limit_type == "graph":
+            raise HTTPException(
+                status_code=429,
+                detail=f"Graph creation limit exceeded for your {tier} tier. Please upgrade to create more graphs."
+            )
+        elif limit_type == "cache":
+            raise HTTPException(
+                status_code=429,
+                detail=f"Cache creation limit exceeded for your {tier} tier. Please upgrade to create more caches."
+            )
+        else:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Limit exceeded for your {tier} tier. Please upgrade or contact support."
+            )
+    
+    # Record usage asynchronously 
+    try:
+        await user_service.record_usage(auth.user_id, limit_type, value)
+    except Exception as e:
+        # Just log if recording usage fails, don't fail the operation
+        logger.error(f"Failed to record usage: {e}")
+
+
 async def verify_token(authorization: str = Header(None)) -> AuthContext:
     """Verify JWT Bearer token or return dev context if dev_mode is enabled."""
     # Check if dev mode is enabled
@@ -236,6 +315,7 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:
             entity_type=EntityType(settings.dev_entity_type),
             entity_id=settings.dev_entity_id,
             permissions=set(settings.dev_permissions),
+            user_id=settings.dev_entity_id,  # In dev mode, entity_id is also the user_id
         )
 
     # Normal token verification flow
@@ -255,11 +335,17 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:
         if datetime.fromtimestamp(payload["exp"], UTC) < datetime.now(UTC):
             raise HTTPException(status_code=401, detail="Token expired")
 
+        # Support both "type" and "entity_type" fields for compatibility
+        entity_type_field = payload.get("type") or payload.get("entity_type")
+        if not entity_type_field:
+            raise HTTPException(status_code=401, detail="Missing entity type in token")
+            
         return AuthContext(
-            entity_type=EntityType(payload["type"]),
+            entity_type=EntityType(entity_type_field),
             entity_id=payload["entity_id"],
             app_id=payload.get("app_id"),
             permissions=set(payload.get("permissions", ["read"])),
+            user_id=payload.get("user_id", payload["entity_id"]),  # Use user_id if available, fallback to entity_id
         )
     except jwt.InvalidTokenError as e:
         raise HTTPException(status_code=401, detail=str(e))
@@ -569,6 +655,11 @@ async def query_completion(
     to enhance retrieval by finding relevant entities and their connected documents.
     """
     try:
+        # Check query limits if in cloud mode
+        if settings.MODE == "cloud" and auth.user_id:
+            # Check limits before proceeding
+            await check_and_increment_limits(auth, "query", 1)
+            
         async with telemetry.track_operation(
             operation_type="query",
             user_id=auth.entity_id,
@@ -856,6 +947,11 @@ async def create_cache(
 ) -> Dict[str, Any]:
     """Create a new cache with specified configuration."""
     try:
+        # Check cache creation limits if in cloud mode
+        if settings.MODE == "cloud" and auth.user_id:
+            # Check limits before proceeding
+            await check_and_increment_limits(auth, "cache", 1)
+            
         async with telemetry.track_operation(
             operation_type="create_cache",
             user_id=auth.entity_id,
@@ -955,6 +1051,11 @@ async def query_cache(
 ) -> CompletionResponse:
     """Query the cache with a prompt."""
     try:
+        # Check cache query limits if in cloud mode
+        if settings.MODE == "cloud" and auth.user_id:
+            # Check limits before proceeding
+            await check_and_increment_limits(auth, "cache_query", 1)
+            
         async with telemetry.track_operation(
             operation_type="query_cache",
             user_id=auth.entity_id,
@@ -994,6 +1095,11 @@ async def create_graph(
         Graph: The created graph object
     """
     try:
+        # Check graph creation limits if in cloud mode
+        if settings.MODE == "cloud" and auth.user_id:
+            # Check limits before proceeding
+            await check_and_increment_limits(auth, "graph", 1)
+            
         async with telemetry.track_operation(
             operation_type="create_graph",
             user_id=auth.entity_id,
@@ -1108,4 +1214,206 @@ async def generate_local_uri(
         return {"uri": uri}
     except Exception as e:
         logger.error(f"Error generating local URI: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/cloud/generate_uri", include_in_schema=True)
+async def generate_cloud_uri(
+    request: GenerateUriRequest,
+    authorization: str = Header(None),
+) -> Dict[str, str]:
+    """Generate a URI for cloud hosted applications."""
+    try:
+        app_id = request.app_id
+        name = request.name
+        user_id = request.user_id
+        expiry_days = request.expiry_days
+
+        logger.info(f"Generating cloud URI for app_id={app_id}, name={name}, user_id={user_id}")
+
+        # Verify authorization header before proceeding
+        if not authorization:
+            logger.warning("Missing authorization header")
+            raise HTTPException(
+                status_code=401,
+                detail="Missing authorization header",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Verify the token is valid
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+        token = authorization[7:]  # Remove "Bearer "
+
+        try:
+            # Decode the token to ensure it's valid
+            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+
+            # Only allow users to create apps for themselves (or admin)
+            token_user_id = payload.get("user_id")
+            logger.debug(f"Token user ID: {token_user_id}")
+            logger.debug(f"User ID: {user_id}")
+            if not (token_user_id == user_id or "admin" in payload.get("permissions", [])):
+                raise HTTPException(
+                    status_code=403,
+                    detail="You can only create apps for your own account unless you have admin permissions"
+                )
+        except jwt.InvalidTokenError as e:
+            raise HTTPException(status_code=401, detail=str(e))
+
+        # Import UserService here to avoid circular imports
+        from core.services.user_service import UserService
+        user_service = UserService()
+
+        # Initialize user service if needed
+        await user_service.initialize()
+
+        # Clean name
+        name = name.replace(" ", "_").lower()
+
+        # Check if the user is within app limit and generate URI
+        uri = await user_service.generate_cloud_uri(user_id, app_id, name, expiry_days)
+
+        if not uri:
+            logger.info("Application limit reached for this account tier with user_id: %s", user_id)
+            raise HTTPException(
+                status_code=403,
+                detail="Application limit reached for this account tier"
+            )
+
+        return {"uri": uri, "app_id": app_id}
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error generating cloud URI: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/user/limits", include_in_schema=True)
+async def get_user_limits(
+    user_id: str,
+    authorization: str = Header(None),
+) -> Dict[str, Any]:
+    """Get user limits and usage statistics."""
+    try:
+        # Verify authorization
+        if not authorization:
+            raise HTTPException(
+                status_code=401,
+                detail="Missing authorization header",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid authorization header")
+            
+        token = authorization[7:]  # Remove "Bearer "
+        
+        try:
+            # Decode token
+            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+            
+            # Allow only the user themselves or admins to access limits
+            token_user_id = payload.get("user_id")
+            if not (token_user_id == user_id or "admin" in payload.get("permissions", [])):
+                raise HTTPException(
+                    status_code=403,
+                    detail="You can only access your own limits unless you have admin permissions"
+                )
+        except jwt.InvalidTokenError as e:
+            raise HTTPException(status_code=401, detail=str(e))
+        
+        # Get user limits
+        from core.services.user_service import UserService
+        user_service = UserService()
+        
+        # Initialize user service
+        await user_service.initialize()
+        
+        # Get user stats
+        stats = await user_service.get_user_stats(user_id)
+        
+        if not stats:
+            raise HTTPException(
+                status_code=404,
+                detail="User not found"
+            )
+        
+        return stats
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting user limits: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/user/upgrade", include_in_schema=True)
+async def upgrade_user_tier(
+    user_id: str,
+    tier: str,
+    custom_limits: Optional[Dict[str, Any]] = None,
+    authorization: str = Header(None),
+) -> Dict[str, Any]:
+    """Upgrade a user to a higher tier."""
+    try:
+        # Verify admin authorization
+        if not authorization:
+            raise HTTPException(
+                status_code=401,
+                detail="Missing authorization header",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid authorization header")
+            
+        token = authorization[7:]  # Remove "Bearer "
+        
+        try:
+            # Decode token
+            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+            
+            # Only allow admins to upgrade users
+            if "admin" not in payload.get("permissions", []):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Admin permission required"
+                )
+        except jwt.InvalidTokenError as e:
+            raise HTTPException(status_code=401, detail=str(e))
+        
+        # Validate tier
+        from core.models.tiers import AccountTier
+        try:
+            account_tier = AccountTier(tier)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid tier: {tier}")
+        
+        # Upgrade user
+        from core.services.user_service import UserService
+        user_service = UserService()
+        
+        # Initialize user service
+        await user_service.initialize()
+        
+        # Update user tier
+        success = await user_service.update_user_tier(user_id, tier, custom_limits)
+        
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail="User not found or upgrade failed"
+            )
+        
+        return {
+            "user_id": user_id,
+            "tier": tier,
+            "message": f"User upgraded to {tier} tier"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error upgrading user tier: {e}")
         raise HTTPException(status_code=500, detail=str(e))
