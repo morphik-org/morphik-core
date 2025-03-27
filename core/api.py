@@ -262,44 +262,26 @@ async def check_and_increment_limits(auth: AuthContext, limit_type: str, value: 
         user_data = await user_service.get_user_limits(auth.user_id)
         tier = user_data.get("tier", "unknown") if user_data else "unknown"
         
-        # Throw appropriate error based on limit type
-        if limit_type == "query":
-            raise HTTPException(
-                status_code=429,
-                detail=f"Query limit exceeded for your {tier} tier. Please upgrade or try again later."
-            )
-        elif limit_type == "ingest":
-            raise HTTPException(
-                status_code=429,
-                detail=f"Ingest limit exceeded for your {tier} tier. Please upgrade or try again later."
-            )
-        elif limit_type == "storage_file":
-            raise HTTPException(
-                status_code=429,
-                detail=f"Storage file count limit exceeded for your {tier} tier. Please delete some files or upgrade."
-            )
-        elif limit_type == "storage_size":
-            raise HTTPException(
-                status_code=429,
-                detail=f"Storage size limit exceeded for your {tier} tier. Please delete some files or upgrade."
-            )
-        elif limit_type == "graph":
-            raise HTTPException(
-                status_code=429,
-                detail=f"Graph creation limit exceeded for your {tier} tier. Please upgrade to create more graphs."
-            )
-        elif limit_type == "cache":
-            raise HTTPException(
-                status_code=429,
-                detail=f"Cache creation limit exceeded for your {tier} tier. Please upgrade to create more caches."
-            )
-        else:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Limit exceeded for your {tier} tier. Please upgrade or contact support."
-            )
-    
-    # Record usage asynchronously 
+        # Map limit types to appropriate error messages
+        limit_type_messages = {
+            "query": f"Query limit exceeded for your {tier} tier. Please upgrade or try again later.",
+            "ingest": f"Ingest limit exceeded for your {tier} tier. Please upgrade or try again later.",
+            "storage_file": f"Storage file count limit exceeded for your {tier} tier. Please delete some files or upgrade.",
+            "storage_size": f"Storage size limit exceeded for your {tier} tier. Please delete some files or upgrade.",
+            "graph": f"Graph creation limit exceeded for your {tier} tier. Please upgrade to create more graphs.",
+            "cache": f"Cache creation limit exceeded for your {tier} tier. Please upgrade to create more caches.",
+        }
+        
+        # Get message for the limit type or use default message
+        detail = limit_type_messages.get(
+            limit_type, 
+            f"Limit exceeded for your {tier} tier. Please upgrade or contact support."
+        )
+        
+        # Raise the exception with appropriate message
+        raise HTTPException(status_code=429, detail=detail)
+
+    # Record usage asynchronously
     try:
         await user_service.record_usage(auth.user_id, limit_type, value)
     except Exception as e:
