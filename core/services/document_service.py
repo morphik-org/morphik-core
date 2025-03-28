@@ -121,9 +121,9 @@ class DocumentService:
             ) if search_multi else []
         )
 
-        logger.info(f"Found {len(chunks)} similar chunks via regular embedding")
+        logger.debug(f"Found {len(chunks)} similar chunks via regular embedding")
         if use_colpali:
-            logger.info(
+            logger.debug(
                 f"Found {len(chunks_multivector)} similar chunks via multivector embedding since we are also using colpali"
             )
 
@@ -132,7 +132,7 @@ class DocumentService:
             chunks = await self.reranker.rerank(query, chunks)
             chunks.sort(key=lambda x: x.score, reverse=True)
             chunks = chunks[:k]
-            logger.info(f"Reranked {k*10} chunks and selected the top {k}")
+            logger.debug(f"Reranked {k*10} chunks and selected the top {k}")
 
         chunks = chunks_multivector + chunks
 
@@ -350,7 +350,7 @@ class DocumentService:
                 "user_id": [auth.user_id] if auth.user_id else [],  # Add user_id to access control for filtering (as a list)
             },
         )
-        logger.info(f"Created text document record with ID {doc.external_id}")
+        logger.debug(f"Created text document record with ID {doc.external_id}")
 
         # Apply rules if provided
         if rules:
@@ -370,13 +370,13 @@ class DocumentService:
         chunks = await self.parser.split_text(content)
         if not chunks:
             raise ValueError("No content chunks extracted")
-        logger.info(f"Split processed text into {len(chunks)} chunks")
+        logger.debug(f"Split processed text into {len(chunks)} chunks")
 
         # Generate embeddings for chunks
         embeddings = await self.embedding_model.embed_for_ingestion(chunks)
-        logger.info(f"Generated {len(embeddings)} embeddings")
+        logger.debug(f"Generated {len(embeddings)} embeddings")
         chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
-        logger.info(f"Created {len(chunk_objects)} chunk objects")
+        logger.debug(f"Created {len(chunk_objects)} chunk objects")
 
         chunk_objects_multivector = []
 
@@ -396,7 +396,7 @@ class DocumentService:
 
         # Store everything
         await self._store_chunks_and_doc(chunk_objects, doc, use_colpali, chunk_objects_multivector)
-        logger.info(f"Successfully stored text document {doc.external_id}")
+        logger.debug(f"Successfully stored text document {doc.external_id}")
 
         return doc
 
@@ -452,7 +452,7 @@ class DocumentService:
         additional_metadata, text = await self.parser.parse_file_to_text(
             file_content, file.filename
         )
-        logger.info(f"Parsed file into text of length {len(text)}")
+        logger.debug(f"Parsed file into text of length {len(text)}")
 
         # Apply rules if provided
         if rules:
@@ -479,7 +479,7 @@ class DocumentService:
 
         # Store full content
         doc.system_metadata["content"] = text
-        logger.info(f"Created file document record with ID {doc.external_id}")
+        logger.debug(f"Created file document record with ID {doc.external_id}")
 
         file_content_base64 = base64.b64encode(file_content).decode()
         # Store the original file
@@ -487,33 +487,33 @@ class DocumentService:
             file_content_base64, doc.external_id, file.content_type
         )
         doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
-        logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
+        logger.debug(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
 
         # Split into chunks after all processing is done
         chunks = await self.parser.split_text(text)
         if not chunks:
             raise ValueError("No content chunks extracted")
-        logger.info(f"Split processed text into {len(chunks)} chunks")
+        logger.debug(f"Split processed text into {len(chunks)} chunks")
 
         # Generate embeddings for chunks
         embeddings = await self.embedding_model.embed_for_ingestion(chunks)
-        logger.info(f"Generated {len(embeddings)} embeddings")
+        logger.debug(f"Generated {len(embeddings)} embeddings")
 
         # Create and store chunk objects
         chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
-        logger.info(f"Created {len(chunk_objects)} chunk objects")
+        logger.debug(f"Created {len(chunk_objects)} chunk objects")
 
         chunk_objects_multivector = []
-        logger.info(f"use_colpali: {use_colpali}")
+        logger.debug(f"use_colpali: {use_colpali}")
         if use_colpali and self.colpali_embedding_model:
             chunks_multivector = self._create_chunks_multivector(
                 file_type, file_content_base64, file_content, chunks
             )
-            logger.info(f"Created {len(chunks_multivector)} chunks for multivector embedding")
+            logger.debug(f"Created {len(chunks_multivector)} chunks for multivector embedding")
             colpali_embeddings = await self.colpali_embedding_model.embed_for_ingestion(
                 chunks_multivector
             )
-            logger.info(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
+            logger.debug(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
             chunk_objects_multivector = self._create_chunk_objects(
                 doc.external_id, chunks_multivector, colpali_embeddings
             )
@@ -522,7 +522,7 @@ class DocumentService:
         doc.chunk_ids = await self._store_chunks_and_doc(
             chunk_objects, doc, use_colpali, chunk_objects_multivector
         )
-        logger.info(f"Successfully stored file document {doc.external_id}")
+        logger.debug(f"Successfully stored file document {doc.external_id}")
 
         return doc
 
@@ -780,7 +780,7 @@ class DocumentService:
             ):
                 doc_chunks[chunk.document_id] = chunk
         logger.info(f"Grouped chunks into {len(doc_chunks)} documents")
-        logger.info(f"Document chunks: {doc_chunks}")
+        logger.debug(f"Document chunks: {doc_chunks}")
         results = {}
         for doc_id, chunk in doc_chunks.items():
             # Get document metadata

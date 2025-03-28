@@ -355,7 +355,7 @@ async def ingest_file(
                 "use_colpali": use_colpali,
             },
         ):
-            logger.info(f"API: Ingesting file with use_colpali: {use_colpali}")
+            logger.debug(f"API: Ingesting file with use_colpali: {use_colpali}")
             return await document_service.ingest_file(
                 file=file,
                 metadata=metadata_dict,
@@ -631,7 +631,7 @@ async def get_document(document_id: str, auth: AuthContext = Depends(verify_toke
     """Get document by ID."""
     try:
         doc = await document_service.db.get_document(document_id, auth)
-        logger.info(f"Found document: {doc}")
+        logger.debug(f"Found document: {doc}")
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
         return doc
@@ -645,7 +645,7 @@ async def get_document_by_filename(filename: str, auth: AuthContext = Depends(ve
     """Get document by filename."""
     try:
         doc = await document_service.db.get_document_by_filename(filename, auth)
-        logger.info(f"Found document by filename: {doc}")
+        logger.debug(f"Found document by filename: {doc}")
         if not doc:
             raise HTTPException(status_code=404, detail=f"Document with filename '{filename}' not found")
         return doc
@@ -1152,7 +1152,7 @@ async def generate_cloud_uri(
         user_id = request.user_id
         expiry_days = request.expiry_days
 
-        logger.info(f"Generating cloud URI for app_id={app_id}, name={name}, user_id={user_id}")
+        logger.debug(f"Generating cloud URI for app_id={app_id}, name={name}, user_id={user_id}")
 
         # Verify authorization header before proceeding
         if not authorization:
@@ -1199,7 +1199,7 @@ async def generate_cloud_uri(
         uri = await user_service.generate_cloud_uri(user_id, app_id, name, expiry_days)
 
         if not uri:
-            logger.info("Application limit reached for this account tier with user_id: %s", user_id)
+            logger.debug("Application limit reached for this account tier with user_id: %s", user_id)
             raise HTTPException(
                 status_code=403,
                 detail="Application limit reached for this account tier"
