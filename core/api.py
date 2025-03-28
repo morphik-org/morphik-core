@@ -11,6 +11,7 @@ import logging
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.completion.openai_completion import OpenAICompletionModel
 from core.embedding.ollama_embedding_model import OllamaEmbeddingModel
+from core.limits_utils import check_and_increment_limits
 from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, BatchIngestResponse
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import Document, DocumentResult, ChunkResult
@@ -226,68 +227,6 @@ document_service = DocumentService(
     colpali_embedding_model=colpali_embedding_model,
     colpali_vector_store=colpali_vector_store,
 )
-
-
-async def check_and_increment_limits(auth: AuthContext, limit_type: str, value: int = 1) -> None:
-    """
-    Check if the user is within limits for an operation and increment usage.
-    
-    Args:
-        auth: Authentication context with user_id
-        limit_type: Type of limit to check (query, ingest, storage_file, storage_size, graph, cache)
-        value: Value to check against limit (e.g., file size for storage_size)
-        
-    Raises:
-        HTTPException: If the user exceeds limits
-    """
-    # Skip limit checking in self-hosted mode
-    if settings.MODE == "self_hosted":
-        return
-        
-    # Check if user_id is available
-    if not auth.user_id:
-        logger.warning("User ID not available in auth context, skipping limit check")
-        return
-        
-    # Initialize user service
-    from core.services.user_service import UserService
-    user_service = UserService()
-    await user_service.initialize()
-    
-    # Check if user is within limits
-    within_limits = await user_service.check_limit(auth.user_id, limit_type, value)
-    
-    if not within_limits:
-        # Get tier information for better error message
-        user_data = await user_service.get_user_limits(auth.user_id)
-        tier = user_data.get("tier", "unknown") if user_data else "unknown"
-        
-        # Map limit types to appropriate error messages
-        limit_type_messages = {
-            "query": f"Query limit exceeded for your {tier} tier. Please upgrade or try again later.",
-            "ingest": f"Ingest limit exceeded for your {tier} tier. Please upgrade or try again later.",
-            "storage_file": f"Storage file count limit exceeded for your {tier} tier. Please delete some files or upgrade.",
-            "storage_size": f"Storage size limit exceeded for your {tier} tier. Please delete some files or upgrade.",
-            "graph": f"Graph creation limit exceeded for your {tier} tier. Please upgrade to create more graphs.",
-            "cache": f"Cache creation limit exceeded for your {tier} tier. Please upgrade to create more caches.",
-            "cache_query": f"Cache query limit exceeded for your {tier} tier. Please upgrade or try again later.",
-        }
-        
-        # Get message for the limit type or use default message
-        detail = limit_type_messages.get(
-            limit_type, 
-            f"Limit exceeded for your {tier} tier. Please upgrade or contact support."
-        )
-        
-        # Raise the exception with appropriate message
-        raise HTTPException(status_code=429, detail=detail)
-
-    # Record usage asynchronously
-    try:
-        await user_service.record_usage(auth.user_id, limit_type, value)
-    except Exception as e:
-        # Just log if recording usage fails, don't fail the operation
-        logger.error(f"Failed to record usage: {e}")
 
 
 async def verify_token(authorization: str = Header(None)) -> AuthContext:
@@ -762,6 +701,7 @@ async def update_document_text(
             return doc
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
 
 @app.post("/documents/{document_id}/update_file", response_model=Document)
 async def update_document_file(
@@ -1271,64 +1211,6 @@ async def generate_cloud_uri(
         raise
     except Exception as e:
         logger.error(f"Error generating cloud URI: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/user/limits", include_in_schema=True)
-async def get_user_limits(
-    user_id: str,
-    authorization: str = Header(None),
-) -> Dict[str, Any]:
-    """Get user limits and usage statistics."""
-    try:
-        # Verify authorization
-        if not authorization:
-            raise HTTPException(
-                status_code=401,
-                detail="Missing authorization header",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        if not authorization.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Invalid authorization header")
-            
-        token = authorization[7:]  # Remove "Bearer "
-        
-        try:
-            # Decode token
-            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-            
-            # Allow only the user themselves or admins to access limits
-            token_user_id = payload.get("user_id")
-            if not (token_user_id == user_id or "admin" in payload.get("permissions", [])):
-                raise HTTPException(
-                    status_code=403,
-                    detail="You can only access your own limits unless you have admin permissions"
-                )
-        except jwt.InvalidTokenError as e:
-            raise HTTPException(status_code=401, detail=str(e))
-        
-        # Get user limits
-        from core.services.user_service import UserService
-        user_service = UserService()
-        
-        # Initialize user service
-        await user_service.initialize()
-        
-        # Get user stats
-        stats = await user_service.get_user_stats(user_id)
-        
-        if not stats:
-            raise HTTPException(
-                status_code=404,
-                detail="User not found"
-            )
-        
-        return stats
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting user limits: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
