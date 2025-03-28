@@ -329,6 +329,15 @@ class DocumentService:
             logger.error(f"User {auth.entity_id} does not have write permission")
             raise PermissionError("User does not have write permission")
 
+        # First check ingest limits if in cloud mode
+        from core.config import get_settings
+        settings = get_settings()
+        
+        if settings.MODE == "cloud" and auth.user_id:
+            # Check limits before proceeding
+            from core.api import check_and_increment_limits
+            await check_and_increment_limits(auth, "ingest", 1)
+        
         doc = Document(
             content_type="text/plain",
             filename=filename,
@@ -338,6 +347,7 @@ class DocumentService:
                 "readers": [auth.entity_id],
                 "writers": [auth.entity_id],
                 "admins": [auth.entity_id],
+                "user_id": [auth.user_id] if auth.user_id else [],  # Add user_id to access control for filtering (as a list)
             },
         )
         logger.info(f"Created text document record with ID {doc.external_id}")
@@ -404,6 +414,20 @@ class DocumentService:
 
         # Read file content
         file_content = await file.read()
+        file_size = len(file_content)  # Get file size in bytes for limit checking
+        
+        # Check limits before doing any expensive processing
+        from core.config import get_settings
+        settings = get_settings()
+        
+        if settings.MODE == "cloud" and auth.user_id:
+            # Check limits before proceeding with parsing
+            from core.api import check_and_increment_limits
+            await check_and_increment_limits(auth, "ingest", 1)
+            await check_and_increment_limits(auth, "storage_file", 1)
+            await check_and_increment_limits(auth, "storage_size", file_size)
+            
+        # Now proceed with parsing and processing the file
         file_type = filetype.guess(file_content)
         
         # Set default mime type for cases where filetype.guess returns None
@@ -438,8 +462,7 @@ class DocumentService:
             if modified_text:
                 text = modified_text
                 logger.info("Updated text with modified content from rules")
-
-        # Create document record
+        
         doc = Document(
             content_type=mime_type,
             filename=file.filename,
@@ -449,6 +472,7 @@ class DocumentService:
                 "readers": [auth.entity_id],
                 "writers": [auth.entity_id],
                 "admins": [auth.entity_id],
+                "user_id": [auth.user_id] if auth.user_id else [],  # Add user_id to access control for filtering (as a list)
             },
             additional_metadata=additional_metadata,
         )
