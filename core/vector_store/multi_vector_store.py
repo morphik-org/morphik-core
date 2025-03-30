@@ -328,6 +328,28 @@ class MultiVectorStore(BaseVectorStore):
         logger.debug(f"Found {len(chunks)} chunks in batch retrieval from multi-vector store")
         return chunks
     
+    async def delete_chunks_by_document_id(self, document_id: str) -> bool:
+        """
+        Delete all chunks associated with a document.
+        
+        Args:
+            document_id: ID of the document whose chunks should be deleted
+            
+        Returns:
+            bool: True if the operation was successful, False otherwise
+        """
+        try:
+            # Delete all chunks for the specified document
+            query = f"DELETE FROM multi_vector_embeddings WHERE document_id = '{document_id}'"
+            self.conn.execute(query)
+            
+            logger.info(f"Deleted all chunks for document {document_id} from multi-vector store")
+            return True
+                
+        except Exception as e:
+            logger.error(f"Error deleting chunks for document {document_id} from multi-vector store: {str(e)}")
+            return False
+    
     def close(self):
         """Close the database connection."""
         if self.conn:

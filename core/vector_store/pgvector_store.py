@@ -241,3 +241,27 @@ class PGVectorStore(BaseVectorStore):
         except Exception as e:
             logger.error(f"Error retrieving chunks by ID: {str(e)}")
             return []
+            
+    async def delete_chunks_by_document_id(self, document_id: str) -> bool:
+        """
+        Delete all chunks associated with a document.
+        
+        Args:
+            document_id: ID of the document whose chunks should be deleted
+            
+        Returns:
+            bool: True if the operation was successful, False otherwise
+        """
+        try:
+            async with self.async_session() as session:
+                # Delete all chunks for the specified document
+                query = text(f"DELETE FROM vector_embeddings WHERE document_id = :doc_id")
+                await session.execute(query, {"doc_id": document_id})
+                await session.commit()
+                
+                logger.info(f"Deleted all chunks for document {document_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error deleting chunks for document {document_id}: {str(e)}")
+            return False

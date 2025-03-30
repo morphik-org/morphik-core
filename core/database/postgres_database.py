@@ -399,9 +399,9 @@ class PostgresDatabase(BaseDatabase):
             return False
 
     async def delete_document(self, document_id: str, auth: AuthContext) -> bool:
-        """Delete document if user has admin access."""
+        """Delete document if user has write access."""
         try:
-            if not await self.check_access(document_id, auth, "admin"):
+            if not await self.check_access(document_id, auth, "write"):
                 return False
 
             async with self.async_session() as session:

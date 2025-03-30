@@ -1307,6 +1307,95 @@ class DocumentService:
             documents=documents,
         )
 
+    async def delete_document(self, document_id: str, auth: AuthContext) -> bool:
+        """
+        Delete a document and all its associated data.
+
+        This method:
+        1. Checks if the user has write access to the document
+        2. Gets the document to retrieve its chunk IDs
+        3. Deletes the document from the database
+        4. Deletes all associated chunks from the vector store (if possible)
+        5. Deletes the original file from storage if present
+
+        Args:
+            document_id: ID of the document to delete
+            auth: Authentication context
+
+        Returns:
+            bool: True if deletion was successful, False otherwise
+
+        Raises:
+            PermissionError: If the user doesn't have write access
+        """
+        # First get the document to retrieve its chunk IDs
+        document = await self.db.get_document(document_id, auth)
+
+        if not document:
+            logger.error(f"Document {document_id} not found")
+            return False
+
+        # Verify write access - the database layer also checks this, but we check here too
+        # to avoid unnecessary operations if the user doesn't have permission
+        if not await self.db.check_access(document_id, auth, "write"):
+            logger.error(f"User {auth.entity_id} doesn't have write access to document {document_id}")
+            raise PermissionError(f"User doesn't have write access to document {document_id}")
+
+        # Delete document from database
+        db_success = await self.db.delete_document(document_id, auth)
+        if not db_success:
+            logger.error(f"Failed to delete document {document_id} from database")
+            return False
+            
+        logger.info(f"Deleted document {document_id} from database")
+        
+        # Try to delete chunks from vector store if they exist
+        if hasattr(document, 'chunk_ids') and document.chunk_ids:
+            try:
+                # Try to delete chunks by document ID
+                # Note: Some vector stores may not implement this method
+                if hasattr(self.vector_store, 'delete_chunks_by_document_id'):
+                    await self.vector_store.delete_chunks_by_document_id(document_id)
+                    logger.info(f"Deleted chunks for document {document_id} from vector store")
+                else:
+                    logger.warning(f"Vector store does not support deleting chunks by document ID")
+                
+                # Try to delete from colpali vector store as well
+                if self.colpali_vector_store and hasattr(self.colpali_vector_store, 'delete_chunks_by_document_id'):
+                    await self.colpali_vector_store.delete_chunks_by_document_id(document_id)
+                    logger.info(f"Deleted chunks for document {document_id} from colpali vector store")
+            except Exception as e:
+                logger.error(f"Error deleting chunks for document {document_id}: {e}")
+                # We continue even if chunk deletion fails - don't block document deletion
+        
+        # Delete file from storage if it exists
+        if hasattr(document, 'storage_info') and document.storage_info:
+            try:
+                bucket = document.storage_info.get("bucket")
+                key = document.storage_info.get("key")
+                if bucket and key:
+                    # Check if the storage provider supports deletion
+                    if hasattr(self.storage, 'delete_file'):
+                        await self.storage.delete_file(bucket, key)
+                        logger.info(f"Deleted file for document {document_id} from storage (bucket: {bucket}, key: {key})")
+                    else:
+                        logger.warning(f"Storage provider does not support file deletion")
+                
+                # Also handle the case of multiple file versions in storage_files
+                if hasattr(document, 'storage_files') and document.storage_files:
+                    for file_info in document.storage_files:
+                        bucket = file_info.get("bucket")
+                        key = file_info.get("key")
+                        if bucket and key and hasattr(self.storage, 'delete_file'):
+                            await self.storage.delete_file(bucket, key)
+                            logger.info(f"Deleted file version for document {document_id} from storage (bucket: {bucket}, key: {key})")
+            except Exception as e:
+                logger.error(f"Error deleting file for document {document_id}: {e}")
+                # We continue even if file deletion fails - don't block document deletion
+        
+        logger.info(f"Successfully deleted document {document_id} and all associated data")
+        return True
+    
     def close(self):
         """Close all resources."""
         # Close any active caches
