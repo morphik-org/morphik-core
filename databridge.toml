@@ -18,6 +18,9 @@ default_temperature = 0.7
 # base_url = "http://ollama:11434"  # Just use the service name
 base_url = "http://localhost:11434"
 
+# OpenAI configuration
+# openai_base_url = "https://api.openai.com/v1"  # Optional: override the base URL for all OpenAI API calls
+
 # [completion]
 # provider = "openai"
 # model_name = "gpt-4o"
@@ -71,7 +74,7 @@ model_name = "BAAI/bge-reranker-large"
 query_max_length = 256
 passage_max_length = 512
 use_fp16 = true
-device = "mps"
+device = "mps" # use "cpu" if on docker and using a mac, "cuda" if cuda enabled device
 
 # [reranker]
 # use_reranker = false
@@ -97,6 +100,12 @@ provider = "pgvector"
 provider = "ollama"
 model_name = "llama3.2"
 batch_size = 4096
+base_url = "http://localhost:11434"  # Only used for ollama
+
+# [rules]
+# provider = "openai"
+# model_name = "gpt-4o"
+# batch_size = 4096
 
 [databridge]
 enable_colpali = true

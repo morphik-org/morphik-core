@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     COMPLETION_MAX_TOKENS: Optional[str] = None
     COMPLETION_TEMPERATURE: Optional[float] = None
     COMPLETION_OLLAMA_BASE_URL: Optional[str] = None
+    
+    # OpenAI configuration (global for all OpenAI API calls)
+    OPENAI_BASE_URL: Optional[str] = None
 
     # Database configuration
     DATABASE_PROVIDER: Literal["postgres", "mongodb"]
@@ -119,6 +122,13 @@ def get_settings() -> Settings:
         config = tomli.load(f)
 
     em = "'{missing_value}' needed if '{field}' is set to '{value}'"
+    # load OpenAI config if present
+    openai_config = {}
+    if "openai_base_url" in config:
+        openai_config = {
+            "OPENAI_BASE_URL": config["openai_base_url"]
+        }
+    
     # load api config
     api_config = {
         "HOST": config["api"]["host"],
@@ -335,6 +345,7 @@ def get_settings() -> Settings:
         databridge_config,
         graph_config,
         telemetry_config,
+        openai_config,
     ))
 
     return Settings(**settings_dict)

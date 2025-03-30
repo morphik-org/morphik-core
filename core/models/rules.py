@@ -12,7 +12,11 @@ settings = get_settings()
 
 # Initialize the appropriate client based on settings
 if settings.RULES_PROVIDER == "openai":
-    rules_client = AsyncOpenAI()
+    # Use global OpenAI base URL if provided
+    if hasattr(settings, "OPENAI_BASE_URL") and settings.OPENAI_BASE_URL:
+        rules_client = AsyncOpenAI(base_url=settings.OPENAI_BASE_URL)
+    else:
+        rules_client = AsyncOpenAI()
 else:  # ollama
     rules_client = AsyncClient(host=settings.COMPLETION_OLLAMA_BASE_URL)
 

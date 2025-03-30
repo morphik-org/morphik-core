@@ -76,6 +76,8 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl }) => {
   const [graphName, setGraphName] = useState('');
   const [graphDocuments, setGraphDocuments] = useState<string[]>([]);
   const [graphFilters, setGraphFilters] = useState('{}');
+  const [additionalDocuments, setAdditionalDocuments] = useState<string[]>([]);
+  const [additionalFilters, setAdditionalFilters] = useState('{}');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('list');
@@ -248,6 +250,63 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl }) => {
       setLoading(false);
     }
   };
+  
+  // Update an existing graph
+  const handleUpdateGraph = async () => {
+    if (!selectedGraph) {
+      setError('No graph selected for update');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Parse additional filters
+      let parsedFilters = {};
+      try {
+        parsedFilters = JSON.parse(additionalFilters);
+      } catch {
+        throw new Error('Invalid JSON in additional filters field');
+      }
+      
+      const response = await fetch(`${apiBaseUrl}/graph/${encodeURIComponent(selectedGraph.name)}/update`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          additional_filters: Object.keys(parsedFilters).length > 0 ? parsedFilters : undefined,
+          additional_documents: additionalDocuments.length > 0 ? additionalDocuments : undefined,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `Failed to update graph: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      setSelectedGraph(data);
+      
+      // Refresh the graphs list
+      await fetchGraphs();
+      
+      // Reset form
+      setAdditionalDocuments([]);
+      setAdditionalFilters('{}');
+      
+      // Switch to visualize tab
+      setActiveTab('visualize');
+      
+    } catch (err: unknown) {
+      const error = err as Error;
+      setError(`Error updating graph: ${error.message}`);
+      console.error('Error updating graph:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Initialize or update graph visualization when the selected graph changes
   useEffect(() => {
@@ -347,6 +406,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl }) => {
         <TabsList className="mb-4">
           <TabsTrigger value="list">Available Graphs</TabsTrigger>
           <TabsTrigger value="create">Create New Graph</TabsTrigger>
+          <TabsTrigger value="update" disabled={!selectedGraph}>Update Graph</TabsTrigger>
           <TabsTrigger value="visualize" disabled={!selectedGraph}>Visualize Graph</TabsTrigger>
         </TabsList>
 
@@ -594,6 +654,94 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl }) => {
           </Card>
         </TabsContent>
 
+        {/* Update Graph Tab */}
+        <TabsContent value="update">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Network className="mr-2 h-5 w-5" />
+                Update Knowledge Graph: {selectedGraph?.name}
+              </CardTitle>
+              <CardDescription>
+                Update your knowledge graph with new documents to add more entities and relationships.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {selectedGraph ? (
+                <div className="space-y-4">
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                    <h4 className="font-medium mb-2">Current Graph Information</h4>
+                    <div className="grid grid-cols-3 gap-2 text-sm">
+                      <div>
+                        <span className="font-medium">Documents:</span> {selectedGraph.document_ids.length}
+                      </div>
+                      <div>
+                        <span className="font-medium">Entities:</span> {selectedGraph.entities.length}
+                      </div>
+                      <div>
+                        <span className="font-medium">Relationships:</span> {selectedGraph.relationships.length}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="border-t pt-4 mt-4">
+                    <h3 className="text-md font-medium mb-3">Add New Documents</h3>
+                    <p className="text-sm text-gray-500 mb-3">
+                      Choose additional documents to include in your graph. You can specify document IDs directly or use metadata filters.
+                    </p>
+                    
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="additional-documents">Additional Document IDs</Label>
+                        <Textarea
+                          id="additional-documents"
+                          placeholder="Enter document IDs separated by commas"
+                          value={additionalDocuments.join(', ')}
+                          onChange={(e) => setAdditionalDocuments(e.target.value.split(',').map(id => id.trim()).filter(id => id))}
+                          className="min-h-[80px]"
+                        />
+                        <p className="text-xs text-gray-500">
+                          Specify additional document IDs to include in the graph, or use filters below.
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="additional-filters">Additional Metadata Filters</Label>
+                        <Textarea
+                          id="additional-filters"
+                          placeholder='{"category": "research", "author": "Jane Doe"}'
+                          value={additionalFilters}
+                          onChange={(e) => setAdditionalFilters(e.target.value)}
+                          className="min-h-[80px] font-mono"
+                        />
+                        <p className="text-xs text-gray-500">
+                          JSON object with metadata filters to select additional documents.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button 
+                    onClick={handleUpdateGraph} 
+                    disabled={loading}
+                    className="w-full"
+                  >
+                    {loading ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    ) : null}
+                    Update Knowledge Graph
+                  </Button>
+                </div>
+              ) : (
+                <div className="text-center p-8 border-2 border-dashed rounded-lg">
+                  <Network className="mx-auto h-12 w-12 mb-3 text-gray-400" />
+                  <p className="text-gray-500 mb-3">Please select a graph to update.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
         {/* Visualize Graph Tab */}
         <TabsContent value="visualize">
           {renderVisualization()}

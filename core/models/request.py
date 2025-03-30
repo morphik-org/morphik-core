@@ -51,6 +51,17 @@ class CreateGraphRequest(BaseModel):
     documents: Optional[List[str]] = Field(
         None, description="Optional list of specific document IDs to include"
     )
+    
+    
+class UpdateGraphRequest(BaseModel):
+    """Request model for updating a graph"""
+    
+    additional_filters: Optional[Dict[str, Any]] = Field(
+        None, description="Optional additional metadata filters to determine which new documents to include"
+    )
+    additional_documents: Optional[List[str]] = Field(
+        None, description="Optional list of additional document IDs to include"
+    )
 
 
 class BatchIngestResponse(BaseModel):
