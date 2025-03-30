@@ -1306,6 +1306,36 @@ class DocumentService:
             filters=filters,
             documents=documents,
         )
+        
+    async def update_graph(
+        self,
+        name: str,
+        auth: AuthContext,
+        additional_filters: Optional[Dict[str, Any]] = None,
+        additional_documents: Optional[List[str]] = None,
+    ) -> Graph:
+        """Update an existing graph with new documents.
+        
+        This function processes additional documents matching the original or new filters,
+        extracts entities and relationships, and updates the graph with new information.
+        
+        Args:
+            name: Name of the graph to update
+            auth: Authentication context
+            additional_filters: Optional additional metadata filters to determine which new documents to include
+            additional_documents: Optional list of additional document IDs to include
+            
+        Returns:
+            Graph: The updated graph
+        """
+        # Delegate to the GraphService
+        return await self.graph_service.update_graph(
+            name=name,
+            auth=auth,
+            document_service=self,
+            additional_filters=additional_filters,
+            additional_documents=additional_documents,
+        )
 
     async def delete_document(self, document_id: str, auth: AuthContext) -> bool:
         """

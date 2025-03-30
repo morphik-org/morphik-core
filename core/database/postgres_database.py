@@ -714,3 +714,55 @@ class PostgresDatabase(BaseDatabase):
         except Exception as e:
             logger.error(f"Error listing graphs: {str(e)}")
             return []
+            
+    async def update_graph(self, graph: Graph) -> bool:
+        """Update an existing graph in PostgreSQL.
+
+        This method updates the graph metadata, entities, and relationships
+        in the PostgreSQL table.
+
+        Args:
+            graph: Graph to update
+
+        Returns:
+            bool: Whether the operation was successful
+        """
+        # Ensure database is initialized
+        if not self._initialized:
+            await self.initialize()
+
+        try:
+            # First serialize the graph model to dict
+            graph_dict = graph.model_dump()
+
+            # Change 'metadata' to 'graph_metadata' to match our model
+            if "metadata" in graph_dict:
+                graph_dict["graph_metadata"] = graph_dict.pop("metadata")
+
+            # Serialize datetime objects to ISO format strings
+            graph_dict = _serialize_datetime(graph_dict)
+
+            # Update the graph in PostgreSQL
+            async with self.async_session() as session:
+                # Check if the graph exists
+                result = await session.execute(
+                    select(GraphModel).where(GraphModel.id == graph.id)
+                )
+                graph_model = result.scalar_one_or_none()
+
+                if not graph_model:
+                    logger.error(f"Graph '{graph.name}' with ID {graph.id} not found for update")
+                    return False
+
+                # Update the graph model with new values
+                for key, value in graph_dict.items():
+                    setattr(graph_model, key, value)
+
+                await session.commit()
+                logger.info(f"Updated graph '{graph.name}' with {len(graph.entities)} entities and {len(graph.relationships)} relationships")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error updating graph: {str(e)}")
+            return False

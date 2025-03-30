@@ -29,7 +29,14 @@ class VisionModelClient:
         self.model_name = self.config.get("model_name", "llama3.2-vision")
 
         if self.provider == "openai":
-            self.client = OpenAI()
+            from core.config import get_settings
+            settings = get_settings()
+            
+            # Use global OpenAI base URL setting
+            if hasattr(settings, "OPENAI_BASE_URL") and settings.OPENAI_BASE_URL:
+                self.client = OpenAI(base_url=settings.OPENAI_BASE_URL)
+            else:
+                self.client = OpenAI()
         elif self.provider == "ollama":
             base_url = self.config.get("base_url", "http://localhost:11434")
             self.client = AsyncClient(host=base_url)

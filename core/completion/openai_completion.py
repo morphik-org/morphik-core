@@ -5,12 +5,20 @@ from core.models.completion import CompletionRequest, CompletionResponse
 class OpenAICompletionModel(BaseCompletionModel):
     """OpenAI completion model implementation"""
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, base_url: str = None):
         self.model_name = model_name
         # Import here to avoid dependency if not using OpenAI
         from openai import AsyncOpenAI
+        from core.config import get_settings
 
-        self.client = AsyncOpenAI()
+        settings = get_settings()
+        # Use base_url param first, then global setting, then default
+        if base_url:
+            self.client = AsyncOpenAI(base_url=base_url)
+        elif hasattr(settings, "OPENAI_BASE_URL") and settings.OPENAI_BASE_URL:
+            self.client = AsyncOpenAI(base_url=settings.OPENAI_BASE_URL)
+        else:
+            self.client = AsyncOpenAI()
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """Generate completion using OpenAI API"""

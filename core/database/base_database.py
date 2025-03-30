@@ -165,3 +165,15 @@ class BaseDatabase(ABC):
             List[Graph]: List of graphs
         """
         pass
+        
+    @abstractmethod
+    async def update_graph(self, graph: Graph) -> bool:
+        """Update an existing graph.
+
+        Args:
+            graph: Graph to update
+
+        Returns:
+            bool: Whether the operation was successful
+        """
+        pass

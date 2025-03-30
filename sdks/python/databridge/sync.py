@@ -1260,6 +1260,45 @@ class DataBridge:
         response = self._request("GET", "graphs")
         return [Graph(**graph) for graph in response]
         
+    def update_graph(
+        self,
+        name: str,
+        additional_filters: Optional[Dict[str, Any]] = None,
+        additional_documents: Optional[List[str]] = None,
+    ) -> Graph:
+        """
+        Update an existing graph with new documents.
+        
+        This method processes additional documents matching the original or new filters,
+        extracts entities and relationships, and updates the graph with new information.
+        
+        Args:
+            name: Name of the graph to update
+            additional_filters: Optional additional metadata filters to determine which new documents to include
+            additional_documents: Optional list of additional document IDs to include
+            
+        Returns:
+            Graph: The updated graph
+            
+        Example:
+            ```python
+            # Update a graph with new documents
+            updated_graph = db.update_graph(
+                name="research_graph",
+                additional_filters={"category": "new_research"},
+                additional_documents=["doc4", "doc5"]
+            )
+            print(f"Graph now has {len(updated_graph.entities)} entities")
+            ```
+        """
+        request = {
+            "additional_filters": additional_filters,
+            "additional_documents": additional_documents,
+        }
+
+        response = self._request("POST", f"graph/{name}/update", request)
+        return Graph(**response)
+        
     def delete_document(self, document_id: str) -> Dict[str, str]:
         """
         Delete a document and all its associated data.

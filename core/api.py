@@ -12,7 +12,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.completion.openai_completion import OpenAICompletionModel
 from core.embedding.ollama_embedding_model import OllamaEmbeddingModel
 from core.limits_utils import check_and_increment_limits
-from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, BatchIngestResponse
+from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, UpdateGraphRequest, BatchIngestResponse
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.graph import Graph
@@ -1132,6 +1132,54 @@ async def list_graphs(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/graph/{name}/update", response_model=Graph)
+async def update_graph(
+    name: str,
+    request: UpdateGraphRequest,
+    auth: AuthContext = Depends(verify_token),
+) -> Graph:
+    """
+    Update an existing graph with new documents.
+
+    This endpoint processes additional documents based on the original graph filters 
+    and/or new filters/document IDs, extracts entities and relationships, and 
+    updates the graph with new information.
+
+    Args:
+        name: Name of the graph to update
+        request: UpdateGraphRequest containing:
+            - additional_filters: Optional additional metadata filters to determine which new documents to include
+            - additional_documents: Optional list of additional document IDs to include
+        auth: Authentication context
+
+    Returns:
+        Graph: The updated graph object
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="update_graph",
+            user_id=auth.entity_id,
+            metadata={
+                "name": name,
+                "additional_filters": request.additional_filters,
+                "additional_documents": request.additional_documents,
+            },
+        ):
+            return await document_service.update_graph(
+                name=name,
+                auth=auth,
+                additional_filters=request.additional_filters,
+                additional_documents=request.additional_documents,
+            )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error updating graph: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

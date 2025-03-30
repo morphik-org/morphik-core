@@ -1875,3 +1875,186 @@ async def test_cross_document_query_with_graph(client: AsyncClient):
     )
 
     assert response_no_graph.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_update_graph(client: AsyncClient):
+    """Test updating a knowledge graph with new documents."""
+    # Create initial graph with some documents
+    doc_id1 = await test_ingest_text_document(
+        client,
+        content="SpaceX was founded by Elon Musk in 2002. It develops and manufactures spacecraft and rockets."
+    )
+    
+    doc_id2 = await test_ingest_text_document(
+        client,
+        content="Elon Musk is also the CEO of Tesla, an electric vehicle manufacturer."
+    )
+    
+    headers = create_auth_header()
+    graph_name = "test_update_graph"
+    
+    # Create initial graph
+    response = await client.post(
+        "/graph/create",
+        json={
+            "name": graph_name,
+            "documents": [doc_id1, doc_id2]
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    initial_graph = response.json()
+    
+    # Verify initial graph structure
+    assert initial_graph["name"] == graph_name
+    assert len(initial_graph["document_ids"]) == 2
+    assert all(doc_id in initial_graph["document_ids"] for doc_id in [doc_id1, doc_id2])
+    
+    # Create some new documents to add to the graph
+    doc_id3 = await test_ingest_text_document(
+        client,
+        content="The Starship is a spacecraft being developed by SpaceX. It's designed for missions to Mars."
+    )
+    
+    doc_id4 = await test_ingest_text_document(
+        client,
+        content="Gwynne Shotwell is the President and COO of SpaceX. She joined the company in 2002."
+    )
+    
+    # Update the graph with new documents
+    update_response = await client.post(
+        f"/graph/{graph_name}/update",
+        json={
+            "additional_documents": [doc_id3, doc_id4]
+        },
+        headers=headers,
+    )
+    
+    assert update_response.status_code == 200
+    updated_graph = update_response.json()
+    
+    # Verify updated graph structure
+    assert updated_graph["name"] == graph_name
+    assert len(updated_graph["document_ids"]) == 4
+    assert all(doc_id in updated_graph["document_ids"] for doc_id in [doc_id1, doc_id2, doc_id3, doc_id4])
+    
+    # Verify new entities and relationships were added
+    assert len(updated_graph["entities"]) > len(initial_graph["entities"])
+    assert len(updated_graph["relationships"]) > len(initial_graph["relationships"])
+    
+    # Verify specific new entities were extracted
+    entity_labels = [entity["label"].lower() for entity in updated_graph["entities"]]
+    assert any("starship" in label for label in entity_labels)
+    assert any("gwynne shotwell" in label for label in entity_labels)
+    
+    # Test updating with filters
+    # Create a document with specific metadata
+    doc_id5 = await test_ingest_text_document(
+        client,
+        content="The Falcon 9 is a reusable rocket developed by SpaceX."
+    )
+    
+    # Update the document with specific metadata
+    metadata_response = await client.post(
+        f"/documents/{doc_id5}/update_metadata",
+        json={"company": "spacex", "type": "rocket"},
+        headers=headers,
+    )
+    assert metadata_response.status_code == 200
+    
+    # Verify metadata was set correctly
+    doc_response = await client.get(f"/documents/{doc_id5}", headers=headers)
+    assert doc_response.status_code == 200
+    doc_data = doc_response.json()
+    print(f"\nDEBUG - Document {doc_id5} metadata: {doc_data['metadata']}")
+    
+    # Update graph using filters
+    print(f"\nDEBUG - Updating graph with filter: {{'company': 'spacex'}}")
+    filter_update_response = await client.post(
+        f"/graph/{graph_name}/update",
+        json={
+            "additional_filters": {"company": "spacex"}
+        },
+        headers=headers,
+    )
+    print(f"\nDEBUG - Filter update response status: {filter_update_response.status_code}")
+    
+    assert filter_update_response.status_code == 200
+    filter_updated_graph = filter_update_response.json()
+    
+    # Verify the document was added via filters
+    print(f"\nDEBUG - Graph document IDs: {filter_updated_graph['document_ids']}")
+    print(f"\nDEBUG - Looking for document: {doc_id5}")
+    print(f"\nDEBUG - Number of document IDs: {len(filter_updated_graph['document_ids'])}")
+    print(f"\nDEBUG - doc_id5 in document_ids: {doc_id5 in filter_updated_graph['document_ids']}")
+    
+    assert len(filter_updated_graph["document_ids"]) == 5
+    assert doc_id5 in filter_updated_graph["document_ids"]
+    
+    # Verify the new entity was added
+    new_entity_labels = [entity["label"].lower() for entity in filter_updated_graph["entities"]]
+    assert any("falcon 9" in label for label in new_entity_labels)
+    
+    # Test updating with both documents and filters
+    doc_id6 = await test_ingest_text_document(
+        client,
+        content="The Tesla Cybertruck is an electric pickup truck announced in 2019."
+    )
+    
+    doc_id7 = await test_ingest_text_document(
+        client,
+        content="SpaceX plans to launch thousands of Starlink satellites to provide global internet coverage."
+    )
+    
+    # Add metadata to one document
+    await client.post(
+        f"/documents/{doc_id7}/update_metadata",
+        json={"company": "spacex", "type": "satellite"},
+        headers=headers,
+    )
+    
+    # Update with both specific document and filter
+    combined_update_response = await client.post(
+        f"/graph/{graph_name}/update",
+        json={
+            "additional_documents": [doc_id6],
+            "additional_filters": {"type": "satellite"}
+        },
+        headers=headers,
+    )
+    
+    assert combined_update_response.status_code == 200
+    combined_updated_graph = combined_update_response.json()
+    
+    # Verify both documents were added
+    assert len(combined_updated_graph["document_ids"]) == 7
+    assert doc_id6 in combined_updated_graph["document_ids"]
+    assert doc_id7 in combined_updated_graph["document_ids"]
+    
+    # Verify new entities
+    final_entity_labels = [entity["label"].lower() for entity in combined_updated_graph["entities"]]
+    assert any("cybertruck" in label for label in final_entity_labels)
+    assert any("starlink" in label for label in final_entity_labels)
+    
+    # Test querying with the updated graph
+    query_response = await client.post(
+        "/query",
+        json={
+            "query": "What spacecraft and rockets has SpaceX developed?",
+            "graph_name": graph_name,
+            "hop_depth": 2,
+            "include_paths": True
+        },
+        headers=headers,
+    )
+    
+    assert query_response.status_code == 200
+    query_result = query_response.json()
+    
+    # Verify the completion includes information from the added documents
+    completion = query_result["completion"].lower()
+    assert "starship" in completion
+    assert "falcon 9" in completion
+    assert "starlink" in completion
