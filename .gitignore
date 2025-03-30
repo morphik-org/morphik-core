@@ -33,3 +33,4 @@ offload/*
 test.pdf
 
 experiments/*
+ui-component/package-lock.json

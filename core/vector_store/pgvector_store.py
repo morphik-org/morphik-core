@@ -210,7 +210,7 @@ class PGVectorStore(BaseVectorStore):
                 # Build query to find all matching chunks in a single query
                 query = select(VectorEmbedding).where(or_condition)
                 
-                logger.info(f"Batch retrieving {len(chunk_identifiers)} chunks with a single query")
+                logger.debug(f"Batch retrieving {len(chunk_identifiers)} chunks with a single query")
                 
                 # Execute query
                 result = await session.execute(query)
@@ -235,9 +235,33 @@ class PGVectorStore(BaseVectorStore):
                     )
                     chunks.append(chunk)
                 
-                logger.info(f"Found {len(chunks)} chunks in batch retrieval")
+                logger.debug(f"Found {len(chunks)} chunks in batch retrieval")
                 return chunks
                 
         except Exception as e:
             logger.error(f"Error retrieving chunks by ID: {str(e)}")
             return []
+            
+    async def delete_chunks_by_document_id(self, document_id: str) -> bool:
+        """
+        Delete all chunks associated with a document.
+        
+        Args:
+            document_id: ID of the document whose chunks should be deleted
+            
+        Returns:
+            bool: True if the operation was successful, False otherwise
+        """
+        try:
+            async with self.async_session() as session:
+                # Delete all chunks for the specified document
+                query = text(f"DELETE FROM vector_embeddings WHERE document_id = :doc_id")
+                await session.execute(query, {"doc_id": document_id})
+                await session.commit()
+                
+                logger.info(f"Deleted all chunks for document {document_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error deleting chunks for document {document_id}: {str(e)}")
+            return False

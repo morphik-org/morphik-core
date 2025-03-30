@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     # Colpali configuration
     ENABLE_COLPALI: bool
     
+    # Mode configuration     
+    MODE: Literal["cloud", "self_hosted"] = "cloud"
+    
     # Telemetry configuration
     TELEMETRY_ENABLED: bool = True
     HONEYCOMB_ENABLED: bool = True
@@ -238,7 +241,7 @@ def get_settings() -> Settings:
         )
 
     # load storage config
-    storage_config = {"STORAGE_PROVIDER": config["storage"]["provider"]}
+    storage_config = {"STORAGE_PROVIDER": config["storage"]["provider"], "STORAGE_PATH": config["storage"]["storage_path"]}
     match storage_config["STORAGE_PROVIDER"]:
         case "local":
             storage_config.update({"STORAGE_PATH": config["storage"]["storage_path"]})
@@ -292,6 +295,7 @@ def get_settings() -> Settings:
     # load databridge config
     databridge_config = {
         "ENABLE_COLPALI": config["databridge"]["enable_colpali"],
+        "MODE": config["databridge"].get("mode", "cloud"),  # Default to "cloud" mode
     }
 
     # load graph config

@@ -1724,6 +1724,94 @@ async def test_batch_ingest_sequential_vs_parallel(
 
 
 @pytest.mark.asyncio
+async def test_delete_document(client: AsyncClient):
+    """Test deleting a document and verifying it's gone."""
+    # First ingest a document to delete
+    content = "This is a test document that will be deleted."
+    doc_id = await test_ingest_text_document(client, content=content)
+    
+    headers = create_auth_header()
+    
+    # Verify document exists
+    response = await client.get(f"/documents/{doc_id}", headers=headers)
+    assert response.status_code == 200
+    
+    # Verify document is searchable
+    search_response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "test document deleted",
+            "filters": {"external_id": doc_id},
+        },
+        headers=headers,
+    )
+    assert search_response.status_code == 200
+    chunks = search_response.json()
+    assert len(chunks) > 0
+    
+    # Delete document
+    delete_response = await client.delete(
+        f"/documents/{doc_id}",
+        headers=headers,
+    )
+    assert delete_response.status_code == 200
+    result = delete_response.json()
+    assert result["status"] == "success"
+    assert f"Document {doc_id} deleted successfully" in result["message"]
+    
+    # Verify document no longer exists
+    response = await client.get(f"/documents/{doc_id}", headers=headers)
+    assert response.status_code == 404
+    
+    # Verify document is no longer searchable
+    search_response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "test document deleted",
+            "filters": {"external_id": doc_id},
+        },
+        headers=headers,
+    )
+    assert search_response.status_code == 200
+    chunks = search_response.json()
+    assert len(chunks) == 0  # No chunks should be found
+
+@pytest.mark.asyncio
+async def test_delete_document_permission_error(client: AsyncClient):
+    """Test permissions handling for document deletion."""
+    if get_settings().dev_mode:
+        pytest.skip("Auth tests skipped in dev mode")
+    
+    # First ingest a document to delete
+    content = "This is a test document for testing delete permissions."
+    doc_id = await test_ingest_text_document(client, content=content)
+    
+    # Try to delete with read-only permission
+    headers = create_auth_header(permissions=["read"])
+    
+    delete_response = await client.delete(
+        f"/documents/{doc_id}",
+        headers=headers,
+    )
+    assert delete_response.status_code == 403
+    
+    # Verify document still exists
+    headers = create_auth_header()  # Full permissions
+    response = await client.get(f"/documents/{doc_id}", headers=headers)
+    assert response.status_code == 200
+
+@pytest.mark.asyncio
+async def test_delete_nonexistent_document(client: AsyncClient):
+    """Test deleting a document that doesn't exist."""
+    headers = create_auth_header()
+    
+    delete_response = await client.delete(
+        "/documents/nonexistent_document_id",
+        headers=headers,
+    )
+    assert delete_response.status_code == 404
+
+@pytest.mark.asyncio
 async def test_cross_document_query_with_graph(client: AsyncClient):
     """Test cross-document information retrieval using knowledge graph."""
     # Create a graph with multiple documents containing related information

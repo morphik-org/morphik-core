@@ -121,9 +121,9 @@ class DocumentService:
             ) if search_multi else []
         )
 
-        logger.info(f"Found {len(chunks)} similar chunks via regular embedding")
+        logger.debug(f"Found {len(chunks)} similar chunks via regular embedding")
         if use_colpali:
-            logger.info(
+            logger.debug(
                 f"Found {len(chunks_multivector)} similar chunks via multivector embedding since we are also using colpali"
             )
 
@@ -132,7 +132,7 @@ class DocumentService:
             chunks = await self.reranker.rerank(query, chunks)
             chunks.sort(key=lambda x: x.score, reverse=True)
             chunks = chunks[:k]
-            logger.info(f"Reranked {k*10} chunks and selected the top {k}")
+            logger.debug(f"Reranked {k*10} chunks and selected the top {k}")
 
         chunks = chunks_multivector + chunks
 
@@ -329,6 +329,15 @@ class DocumentService:
             logger.error(f"User {auth.entity_id} does not have write permission")
             raise PermissionError("User does not have write permission")
 
+        # First check ingest limits if in cloud mode
+        from core.config import get_settings
+        settings = get_settings()
+        
+        if settings.MODE == "cloud" and auth.user_id:
+            # Check limits before proceeding
+            from core.api import check_and_increment_limits
+            await check_and_increment_limits(auth, "ingest", 1)
+        
         doc = Document(
             content_type="text/plain",
             filename=filename,
@@ -338,9 +347,10 @@ class DocumentService:
                 "readers": [auth.entity_id],
                 "writers": [auth.entity_id],
                 "admins": [auth.entity_id],
+                "user_id": [auth.user_id] if auth.user_id else [],  # Add user_id to access control for filtering (as a list)
             },
         )
-        logger.info(f"Created text document record with ID {doc.external_id}")
+        logger.debug(f"Created text document record with ID {doc.external_id}")
 
         # Apply rules if provided
         if rules:
@@ -360,13 +370,13 @@ class DocumentService:
         chunks = await self.parser.split_text(content)
         if not chunks:
             raise ValueError("No content chunks extracted")
-        logger.info(f"Split processed text into {len(chunks)} chunks")
+        logger.debug(f"Split processed text into {len(chunks)} chunks")
 
         # Generate embeddings for chunks
         embeddings = await self.embedding_model.embed_for_ingestion(chunks)
-        logger.info(f"Generated {len(embeddings)} embeddings")
+        logger.debug(f"Generated {len(embeddings)} embeddings")
         chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
-        logger.info(f"Created {len(chunk_objects)} chunk objects")
+        logger.debug(f"Created {len(chunk_objects)} chunk objects")
 
         chunk_objects_multivector = []
 
@@ -386,7 +396,7 @@ class DocumentService:
 
         # Store everything
         await self._store_chunks_and_doc(chunk_objects, doc, use_colpali, chunk_objects_multivector)
-        logger.info(f"Successfully stored text document {doc.external_id}")
+        logger.debug(f"Successfully stored text document {doc.external_id}")
 
         return doc
 
@@ -404,6 +414,20 @@ class DocumentService:
 
         # Read file content
         file_content = await file.read()
+        file_size = len(file_content)  # Get file size in bytes for limit checking
+        
+        # Check limits before doing any expensive processing
+        from core.config import get_settings
+        settings = get_settings()
+        
+        if settings.MODE == "cloud" and auth.user_id:
+            # Check limits before proceeding with parsing
+            from core.api import check_and_increment_limits
+            await check_and_increment_limits(auth, "ingest", 1)
+            await check_and_increment_limits(auth, "storage_file", 1)
+            await check_and_increment_limits(auth, "storage_size", file_size)
+            
+        # Now proceed with parsing and processing the file
         file_type = filetype.guess(file_content)
         
         # Set default mime type for cases where filetype.guess returns None
@@ -428,7 +452,7 @@ class DocumentService:
         additional_metadata, text = await self.parser.parse_file_to_text(
             file_content, file.filename
         )
-        logger.info(f"Parsed file into text of length {len(text)}")
+        logger.debug(f"Parsed file into text of length {len(text)}")
 
         # Apply rules if provided
         if rules:
@@ -438,8 +462,7 @@ class DocumentService:
             if modified_text:
                 text = modified_text
                 logger.info("Updated text with modified content from rules")
-
-        # Create document record
+        
         doc = Document(
             content_type=mime_type,
             filename=file.filename,
@@ -449,13 +472,14 @@ class DocumentService:
                 "readers": [auth.entity_id],
                 "writers": [auth.entity_id],
                 "admins": [auth.entity_id],
+                "user_id": [auth.user_id] if auth.user_id else [],  # Add user_id to access control for filtering (as a list)
             },
             additional_metadata=additional_metadata,
         )
 
         # Store full content
         doc.system_metadata["content"] = text
-        logger.info(f"Created file document record with ID {doc.external_id}")
+        logger.debug(f"Created file document record with ID {doc.external_id}")
 
         file_content_base64 = base64.b64encode(file_content).decode()
         # Store the original file
@@ -463,33 +487,33 @@ class DocumentService:
             file_content_base64, doc.external_id, file.content_type
         )
         doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
-        logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
+        logger.debug(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
 
         # Split into chunks after all processing is done
         chunks = await self.parser.split_text(text)
         if not chunks:
             raise ValueError("No content chunks extracted")
-        logger.info(f"Split processed text into {len(chunks)} chunks")
+        logger.debug(f"Split processed text into {len(chunks)} chunks")
 
         # Generate embeddings for chunks
         embeddings = await self.embedding_model.embed_for_ingestion(chunks)
-        logger.info(f"Generated {len(embeddings)} embeddings")
+        logger.debug(f"Generated {len(embeddings)} embeddings")
 
         # Create and store chunk objects
         chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
-        logger.info(f"Created {len(chunk_objects)} chunk objects")
+        logger.debug(f"Created {len(chunk_objects)} chunk objects")
 
         chunk_objects_multivector = []
-        logger.info(f"use_colpali: {use_colpali}")
+        logger.debug(f"use_colpali: {use_colpali}")
         if use_colpali and self.colpali_embedding_model:
             chunks_multivector = self._create_chunks_multivector(
                 file_type, file_content_base64, file_content, chunks
             )
-            logger.info(f"Created {len(chunks_multivector)} chunks for multivector embedding")
+            logger.debug(f"Created {len(chunks_multivector)} chunks for multivector embedding")
             colpali_embeddings = await self.colpali_embedding_model.embed_for_ingestion(
                 chunks_multivector
             )
-            logger.info(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
+            logger.debug(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
             chunk_objects_multivector = self._create_chunk_objects(
                 doc.external_id, chunks_multivector, colpali_embeddings
             )
@@ -498,7 +522,7 @@ class DocumentService:
         doc.chunk_ids = await self._store_chunks_and_doc(
             chunk_objects, doc, use_colpali, chunk_objects_multivector
         )
-        logger.info(f"Successfully stored file document {doc.external_id}")
+        logger.debug(f"Successfully stored file document {doc.external_id}")
 
         return doc
 
@@ -756,7 +780,7 @@ class DocumentService:
             ):
                 doc_chunks[chunk.document_id] = chunk
         logger.info(f"Grouped chunks into {len(doc_chunks)} documents")
-        logger.info(f"Document chunks: {doc_chunks}")
+        logger.debug(f"Document chunks: {doc_chunks}")
         results = {}
         for doc_id, chunk in doc_chunks.items():
             # Get document metadata
@@ -1283,6 +1307,95 @@ class DocumentService:
             documents=documents,
         )
 
+    async def delete_document(self, document_id: str, auth: AuthContext) -> bool:
+        """
+        Delete a document and all its associated data.
+
+        This method:
+        1. Checks if the user has write access to the document
+        2. Gets the document to retrieve its chunk IDs
+        3. Deletes the document from the database
+        4. Deletes all associated chunks from the vector store (if possible)
+        5. Deletes the original file from storage if present
+
+        Args:
+            document_id: ID of the document to delete
+            auth: Authentication context
+
+        Returns:
+            bool: True if deletion was successful, False otherwise
+
+        Raises:
+            PermissionError: If the user doesn't have write access
+        """
+        # First get the document to retrieve its chunk IDs
+        document = await self.db.get_document(document_id, auth)
+
+        if not document:
+            logger.error(f"Document {document_id} not found")
+            return False
+
+        # Verify write access - the database layer also checks this, but we check here too
+        # to avoid unnecessary operations if the user doesn't have permission
+        if not await self.db.check_access(document_id, auth, "write"):
+            logger.error(f"User {auth.entity_id} doesn't have write access to document {document_id}")
+            raise PermissionError(f"User doesn't have write access to document {document_id}")
+
+        # Delete document from database
+        db_success = await self.db.delete_document(document_id, auth)
+        if not db_success:
+            logger.error(f"Failed to delete document {document_id} from database")
+            return False
+            
+        logger.info(f"Deleted document {document_id} from database")
+        
+        # Try to delete chunks from vector store if they exist
+        if hasattr(document, 'chunk_ids') and document.chunk_ids:
+            try:
+                # Try to delete chunks by document ID
+                # Note: Some vector stores may not implement this method
+                if hasattr(self.vector_store, 'delete_chunks_by_document_id'):
+                    await self.vector_store.delete_chunks_by_document_id(document_id)
+                    logger.info(f"Deleted chunks for document {document_id} from vector store")
+                else:
+                    logger.warning(f"Vector store does not support deleting chunks by document ID")
+                
+                # Try to delete from colpali vector store as well
+                if self.colpali_vector_store and hasattr(self.colpali_vector_store, 'delete_chunks_by_document_id'):
+                    await self.colpali_vector_store.delete_chunks_by_document_id(document_id)
+                    logger.info(f"Deleted chunks for document {document_id} from colpali vector store")
+            except Exception as e:
+                logger.error(f"Error deleting chunks for document {document_id}: {e}")
+                # We continue even if chunk deletion fails - don't block document deletion
+        
+        # Delete file from storage if it exists
+        if hasattr(document, 'storage_info') and document.storage_info:
+            try:
+                bucket = document.storage_info.get("bucket")
+                key = document.storage_info.get("key")
+                if bucket and key:
+                    # Check if the storage provider supports deletion
+                    if hasattr(self.storage, 'delete_file'):
+                        await self.storage.delete_file(bucket, key)
+                        logger.info(f"Deleted file for document {document_id} from storage (bucket: {bucket}, key: {key})")
+                    else:
+                        logger.warning(f"Storage provider does not support file deletion")
+                
+                # Also handle the case of multiple file versions in storage_files
+                if hasattr(document, 'storage_files') and document.storage_files:
+                    for file_info in document.storage_files:
+                        bucket = file_info.get("bucket")
+                        key = file_info.get("key")
+                        if bucket and key and hasattr(self.storage, 'delete_file'):
+                            await self.storage.delete_file(bucket, key)
+                            logger.info(f"Deleted file version for document {document_id} from storage (bucket: {bucket}, key: {key})")
+            except Exception as e:
+                logger.error(f"Error deleting file for document {document_id}: {e}")
+                # We continue even if file deletion fails - don't block document deletion
+        
+        logger.info(f"Successfully deleted document {document_id} and all associated data")
+        return True
+    
     def close(self):
         """Close all resources."""
         # Close any active caches
