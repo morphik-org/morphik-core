@@ -225,15 +225,15 @@ class GraphService:
                 resolved_entities_dict[entity.label] = entity
             # Update relationships to use canonical entity labels
             updated_relationships = []
+            
+            # Create an entity index by ID for efficient lookups
+            entity_by_id = {entity.id: entity for entity in all_entities}
+            
             for relationship in relationships:
-                source_entity = None
-                target_entity = None
-                # Find source and target entities by ID
-                for entity in all_entities:
-                    if entity.id == relationship.source_id:
-                        source_entity = entity
-                    elif entity.id == relationship.target_id:
-                        target_entity = entity
+                # Lookup entities by ID directly from the index
+                source_entity = entity_by_id.get(relationship.source_id)
+                target_entity = entity_by_id.get(relationship.target_id)
+                
                 if source_entity and target_entity:
                     # Get canonical labels
                     source_canonical = entity_mapping.get(source_entity.label, source_entity.label)
