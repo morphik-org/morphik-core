@@ -244,7 +244,7 @@ async def test_ingest_text_document_with_metadata(client: AsyncClient, content: 
     assert "external_id" in data
     assert data["content_type"] == "text/plain"
     
-    for key, value in metadata.items():
+    for key, value in (metadata or {}).items():
         assert data["metadata"][key] == value
 
     return data["external_id"]
