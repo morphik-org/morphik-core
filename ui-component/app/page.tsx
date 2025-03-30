@@ -17,7 +17,7 @@ import { Sidebar } from '@/components/ui/sidebar';
 import GraphSection from '@/components/GraphSection';
 import Image from 'next/image';
 
-// API base URL - change this to match your DataBridge server
+// API base URL - change this to match your Morphik server
 const API_BASE_URL = 'http://localhost:8000';
 
 interface Document {
@@ -63,7 +63,7 @@ interface BatchUploadError {
   error: string;
 }
 
-const DataBridgeUI = () => {
+const MorphikUI = () => {
   const [activeSection, setActiveSection] = useState('documents');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
@@ -534,7 +534,6 @@ const DataBridgeUI = () => {
       />
       
       <div className="flex-1 overflow-auto p-6">
-        <h1 className="text-3xl font-bold mb-6">DataBridge</h1>
         
         {error && (
           <Alert variant="destructive" className="mb-4">
@@ -566,7 +565,7 @@ const DataBridgeUI = () => {
                     <DialogHeader>
                       <DialogTitle>Upload Document</DialogTitle>
                       <DialogDescription>
-                        Upload a file or text to your DataBridge repository.
+                        Upload a file or text to your Morphik repository.
                       </DialogDescription>
                     </DialogHeader>
                     
@@ -1202,19 +1201,13 @@ const DataBridgeUI = () => {
         {/* Graphs Section */}
         {activeSection === 'graphs' && (
           <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-bold mb-2">Knowledge Graphs</h2>
+            <div className="flex justify-end items-center">
               {queryOptions.graph_name && (
                 <Badge variant="outline" className="bg-blue-50 px-3 py-1">
                   Current Query Graph: {queryOptions.graph_name}
                 </Badge>
               )}
             </div>
-            
-            <p className="text-gray-600 mb-4">
-              Knowledge graphs represent relationships between entities extracted from your documents. 
-              Use them to enhance your queries with structured information and improve retrieval quality.
-            </p>
             
             <GraphSection apiBaseUrl={API_BASE_URL} />
           </div>
@@ -1224,4 +1217,4 @@ const DataBridgeUI = () => {
   );
 };
 
-export default DataBridgeUI;
+export default MorphikUI;

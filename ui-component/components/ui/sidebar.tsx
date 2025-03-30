@@ -24,7 +24,7 @@ export function Sidebar({ className, activeSection, onSectionChange, ...props }:
       {...props}
     >
       <div className="flex items-center justify-between p-4 border-b">
-        {!isCollapsed && <h2 className="text-lg font-semibold">DataBridge</h2>}
+        {!isCollapsed && <h2 className="text-lg font-semibold">Morphik</h2>}
         <Button
           variant="ghost"
           size="icon"

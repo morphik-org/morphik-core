@@ -333,7 +333,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl }) => {
   const renderVisualization = () => {
     if (!selectedGraph) {
       return (
-        <div className="flex items-center justify-center h-[600px] border rounded-md">
+        <div className="flex items-center justify-center h-[900px] border rounded-md">
           <div className="text-center p-8">
             <Network className="h-16 w-16 mx-auto mb-4 text-gray-400" />
             <h3 className="text-lg font-medium mb-2">No Graph Selected</h3>
@@ -373,11 +373,11 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl }) => {
             />
           </div>
         </div>
-        <div ref={graphContainerRef} className="h-[600px]">
+        <div ref={graphContainerRef} className="h-[900px]">
           <ForceGraphComponent 
             data={prepareGraphData(selectedGraph)}
             width={graphContainerRef.current?.clientWidth || 800}
-            height={600}
+            height={900}
             showNodeLabels={showNodeLabels}
             showLinkLabels={showLinkLabels}
           />
@@ -388,18 +388,24 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold flex items-center">
-          <Network className="mr-2 h-6 w-6" />
-          Knowledge Graphs
-        </h2>
-        {selectedGraph && (
-          <div className="flex items-center">
-            <Badge variant="outline" className="text-md px-3 py-1 bg-blue-50">
-              Current Graph: {selectedGraph.name}
-            </Badge>
-          </div>
-        )}
+      <div className="space-y-2">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold flex items-center">
+            <Network className="mr-2 h-6 w-6" />
+            Knowledge Graphs
+          </h2>
+          {selectedGraph && (
+            <div className="flex items-center">
+              <Badge variant="outline" className="text-md px-3 py-1 bg-blue-50">
+                Current Graph: {selectedGraph.name}
+              </Badge>
+            </div>
+          )}
+        </div>
+        <p className="text-gray-600">
+          Knowledge graphs represent relationships between entities extracted from your documents. 
+          Use them to enhance your queries with structured information and improve retrieval quality.
+        </p>
       </div>
 
       <Tabs defaultValue="list" value={activeTab} onValueChange={handleTabChange}>
@@ -584,7 +590,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl }) => {
                 Create New Knowledge Graph
               </CardTitle>
               <CardDescription>
-                Create a knowledge graph from documents in your collection to enhance your queries.
+                Create a knowledge graph from documents in your Morphik collection to enhance your queries.
               </CardDescription>
             </CardHeader>
             <CardContent>

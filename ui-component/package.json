@@ -1,13 +1,13 @@
 {
-  "name": "@databridge/ui",
+  "name": "@morphik/ui",
   "version": "0.1.0",
   "private": true,
-  "description": "Modern UI component for DataBridge - A powerful document processing and querying system",
-  "author": "DataBridge Team",
+  "description": "Modern UI component for Morphik - A powerful document processing and querying system",
+  "author": "Morphik Team",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/databridge-org/databridge-core"
+    "url": "https://github.com/morphik-org/morphik-core"
   },
   "scripts": {
     "dev": "next dev",
@@ -52,5 +52,6 @@
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
-  }
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

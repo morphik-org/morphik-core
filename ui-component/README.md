@@ -1,6 +1,6 @@
-# DataBridge UI Component
+# Morphik UI Component
 
-A modern React-based UI for DataBridge, built with Next.js and Tailwind CSS. This component provides a user-friendly interface for:
+A modern React-based UI for Morphik, built with Next.js and Tailwind CSS. This component provides a user-friendly interface for:
 - Document management and uploads
 - Interactive chat with your knowledge base
 - Real-time document processing feedback
@@ -10,7 +10,7 @@ A modern React-based UI for DataBridge, built with Next.js and Tailwind CSS. Thi
 
 - Node.js 18 or later
 - npm or yarn package manager
-- A running DataBridge server
+- A running Morphik server
 
 ## Quick Start
 
@@ -30,7 +30,7 @@ yarn dev
 
 3. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-4. Connect to your DataBridge server using a URI from the `/local/generate_uri` endpoint
+4. Connect to your Morphik server using a URI from the `/local/generate_uri` endpoint
 
 ## Features
 
@@ -82,4 +82,4 @@ We welcome contributions! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is part of DataBridge and is licensed under the MIT License.
+This project is part of Morphik and is licensed under the MIT License.
