@@ -109,12 +109,14 @@ class DocumentService:
             return []
         logger.info(f"Found {len(doc_ids)} authorized documents")
 
+
+        search_multi = use_colpali and self.colpali_vector_store and query_embedding_multivector is not None
+        should_rerank = should_rerank and (not search_multi) # colpali has a different re-ranking method
+
         # Search chunks with vector similarity
         chunks = await self.vector_store.query_similar(
             query_embedding_regular, k=10 * k if should_rerank else k, doc_ids=doc_ids
         )
-
-        search_multi = use_colpali and self.colpali_vector_store and query_embedding_multivector is not None
 
         chunks_multivector = (
             await self.colpali_vector_store.query_similar(
