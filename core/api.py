@@ -640,6 +640,37 @@ async def get_document(document_id: str, auth: AuthContext = Depends(verify_toke
         raise e
 
 
+@app.delete("/documents/{document_id}")
+async def delete_document(document_id: str, auth: AuthContext = Depends(verify_token)):
+    """
+    Delete a document and all associated data.
+
+    This endpoint deletes a document and all its associated data, including:
+    - Document metadata
+    - Document content in storage
+    - Document chunks and embeddings in vector store
+
+    Args:
+        document_id: ID of the document to delete
+        auth: Authentication context (must have write access to the document)
+
+    Returns:
+        Deletion status
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="delete_document",
+            user_id=auth.entity_id,
+            metadata={"document_id": document_id},
+        ):
+            success = await document_service.delete_document(document_id, auth)
+            if not success:
+                raise HTTPException(status_code=404, detail="Document not found or delete failed")
+            return {"status": "success", "message": f"Document {document_id} deleted successfully"}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
 @app.get("/documents/filename/{filename}", response_model=Document)
 async def get_document_by_filename(filename: str, auth: AuthContext = Depends(verify_token)):
     """Get document by filename."""

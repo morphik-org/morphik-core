@@ -34,3 +34,16 @@ class BaseVectorStore(ABC):
             List of DocumentChunk objects
         """
         pass
+        
+    @abstractmethod
+    async def delete_chunks_by_document_id(self, document_id: str) -> bool:
+        """
+        Delete all chunks associated with a document.
+        
+        Args:
+            document_id: ID of the document whose chunks should be deleted
+            
+        Returns:
+            bool: True if the operation was successful, False otherwise
+        """
+        pass

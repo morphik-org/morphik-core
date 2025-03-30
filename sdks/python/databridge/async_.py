@@ -1228,6 +1228,57 @@ class AsyncDataBridge:
         """
         response = await self._request("GET", "graphs")
         return [Graph(**graph) for graph in response]
+        
+    async def delete_document(self, document_id: str) -> Dict[str, str]:
+        """
+        Delete a document and all its associated data.
+        
+        This method deletes a document and all its associated data, including:
+        - Document metadata
+        - Document content in storage
+        - Document chunks and embeddings in vector store
+        
+        Args:
+            document_id: ID of the document to delete
+            
+        Returns:
+            Dict[str, str]: Deletion status
+            
+        Example:
+            ```python
+            # Delete a document
+            result = await db.delete_document("doc_123")
+            print(result["message"])  # Document doc_123 deleted successfully
+            ```
+        """
+        response = await self._request("DELETE", f"documents/{document_id}")
+        return response
+        
+    async def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
+        """
+        Delete a document by its filename.
+        
+        This is a convenience method that first retrieves the document ID by filename
+        and then deletes the document by ID.
+        
+        Args:
+            filename: Filename of the document to delete
+            
+        Returns:
+            Dict[str, str]: Deletion status
+            
+        Example:
+            ```python
+            # Delete a document by filename
+            result = await db.delete_document_by_filename("report.pdf")
+            print(result["message"])
+            ```
+        """
+        # First get the document by filename to obtain its ID
+        doc = await self.get_document_by_filename(filename)
+        
+        # Then delete the document by ID
+        return await self.delete_document(doc.external_id)
 
     async def close(self):
         """Close the HTTP client"""
