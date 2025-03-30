@@ -168,6 +168,36 @@ const DataBridgeUI = () => {
   const handleDocumentClick = (document: Document) => {
     fetchDocument(document.external_id);
   };
+  
+  // Handle document deletion
+  const handleDeleteDocument = async (documentId: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
+        method: 'DELETE',
+        headers
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to delete document: ${response.statusText}`);
+      }
+      
+      // Clear selected document if it was the one deleted
+      if (selectedDocument?.external_id === documentId) {
+        setSelectedDocument(null);
+      }
+      
+      // Refresh documents list
+      await fetchDocuments();
+      
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An unknown error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Handle file upload
   const handleFileUpload = async () => {
@@ -762,6 +792,39 @@ const DataBridgeUI = () => {
                                   </AccordionContent>
                                 </AccordionItem>
                               </Accordion>
+                              
+                              <div className="pt-4 border-t mt-4">
+                                <Dialog>
+                                  <DialogTrigger asChild>
+                                    <Button variant="outline" size="sm" className="w-full border-red-500 text-red-500 hover:bg-red-50">
+                                      Delete Document
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent>
+                                    <DialogHeader>
+                                      <DialogTitle>Delete Document</DialogTitle>
+                                      <DialogDescription>
+                                        Are you sure you want to delete this document? This action cannot be undone.
+                                      </DialogDescription>
+                                    </DialogHeader>
+                                    <div className="py-3">
+                                      <p className="font-medium">Document: {selectedDocument.filename || selectedDocument.external_id}</p>
+                                      <p className="text-sm text-gray-500 mt-1">ID: {selectedDocument.external_id}</p>
+                                    </div>
+                                    <DialogFooter>
+                                      <Button variant="outline" onClick={() => (document.querySelector('[data-state="open"] button[data-state="closed"]') as HTMLElement)?.click()}>Cancel</Button>
+                                      <Button 
+                                        variant="outline" 
+                                        className="border-red-500 text-red-500 hover:bg-red-50"
+                                        onClick={() => handleDeleteDocument(selectedDocument.external_id)}
+                                        disabled={loading}
+                                      >
+                                        {loading ? 'Deleting...' : 'Delete'}
+                                      </Button>
+                                    </DialogFooter>
+                                  </DialogContent>
+                                </Dialog>
+                              </div>
                             </div>
                           </ScrollArea>
                         </CardContent>
