@@ -229,6 +229,28 @@ async def test_ingest_text_document(
 
 
 @pytest.mark.asyncio
+async def test_ingest_text_document_with_metadata(client: AsyncClient, content: str = "Test content for document ingestion", metadata: dict = None):
+    """Test ingesting a text document with metadata"""
+    headers = create_auth_header()
+
+    response = await client.post(
+        "/ingest/text",
+        json={"content": content, "metadata": metadata, "use_colpali": True},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "external_id" in data
+    assert data["content_type"] == "text/plain"
+    
+    for key, value in metadata.items():
+        assert data["metadata"][key] == value
+
+    return data["external_id"]
+
+
+@pytest.mark.asyncio
 async def test_ingest_pdf(client: AsyncClient):
     """Test ingesting a pdf"""
     headers = create_auth_header()
@@ -1951,19 +1973,12 @@ async def test_update_graph(client: AsyncClient):
     
     # Test updating with filters
     # Create a document with specific metadata
-    doc_id5 = await test_ingest_text_document(
+    doc_id5 = await test_ingest_text_document_with_metadata(
         client,
-        content="The Falcon 9 is a reusable rocket developed by SpaceX."
+        content="The Falcon 9 is a reusable rocket developed by SpaceX.",
+        metadata={"company": "spacex"}
     )
-    
-    # Update the document with specific metadata
-    metadata_response = await client.post(
-        f"/documents/{doc_id5}/update_metadata",
-        json={"company": "spacex", "type": "rocket"},
-        headers=headers,
-    )
-    assert metadata_response.status_code == 200
-    
+
     # Verify metadata was set correctly
     doc_response = await client.get(f"/documents/{doc_id5}", headers=headers)
     assert doc_response.status_code == 200
@@ -2003,18 +2018,12 @@ async def test_update_graph(client: AsyncClient):
         content="The Tesla Cybertruck is an electric pickup truck announced in 2019."
     )
     
-    doc_id7 = await test_ingest_text_document(
+    doc_id7 = await test_ingest_text_document_with_metadata(
         client,
-        content="SpaceX plans to launch thousands of Starlink satellites to provide global internet coverage."
+        content="Starlink is a satellite internet constellation developed by SpaceX.",
+        metadata={"company": "spacex", "type": "satellite"}
     )
-    
-    # Add metadata to one document
-    await client.post(
-        f"/documents/{doc_id7}/update_metadata",
-        json={"company": "spacex", "type": "satellite"},
-        headers=headers,
-    )
-    
+
     # Update with both specific document and filter
     combined_update_response = await client.post(
         f"/graph/{graph_name}/update",

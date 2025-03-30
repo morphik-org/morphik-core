@@ -103,21 +103,29 @@ class GraphService:
         all_doc_ids = set(existing_graph.document_ids).union(document_ids).union(explicit_doc_ids)
         logger.info(f"Total document IDs to include in updated graph: {len(all_doc_ids)}")
 
-        # Batch retrieve new documents for authorization check
-        document_objects = await document_service.batch_retrieve_documents(list(document_ids), auth)
+        # Batch retrieve all document IDs (both regular and explicit) in a single call
+        all_ids_to_retrieve = list(document_ids)
         
-        # If we have explicitly added documents, check if they're authorized
+        # Add explicit document IDs if not already included
         if explicit_doc_ids and additional_documents:
-            explicit_docs = await document_service.batch_retrieve_documents(additional_documents, auth)
-            authorized_explicit_ids = {doc.external_id for doc in explicit_docs}
+            # Add any missing IDs to the list
+            for doc_id in additional_documents:
+                if doc_id not in document_ids:
+                    all_ids_to_retrieve.append(doc_id)
+        
+        # Batch retrieve all documents in a single call
+        document_objects = await document_service.batch_retrieve_documents(all_ids_to_retrieve, auth)
+        
+        # Process explicit documents if needed
+        if explicit_doc_ids and additional_documents:
+            # Extract authorized explicit IDs from the retrieved documents
+            authorized_explicit_ids = {doc.external_id for doc in document_objects 
+                                       if doc.external_id in explicit_doc_ids}
             logger.info(f"Authorized explicit document IDs: {len(authorized_explicit_ids)} out of {len(explicit_doc_ids)}")
             
-            # Update document_ids to include authorized explicit documents
+            # Update document_ids and all_doc_ids
             document_ids.update(authorized_explicit_ids)
             all_doc_ids.update(authorized_explicit_ids)
-            
-            # Add any authorized explicit docs to document_objects for processing
-            document_objects.extend(doc for doc in explicit_docs if doc.external_id not in {d.external_id for d in document_objects})
             
         # If we have additional filters, make sure we include the document IDs from filter matches
         # even if they don't have new entities or relationships
@@ -177,10 +185,6 @@ class GraphService:
             orig_filter_doc_ids = {doc.external_id for doc in filtered_docs}
             logger.info(f"Found {len(orig_filter_doc_ids)} documents matching original filters")
             document_ids.update(orig_filter_doc_ids)
-
-        # Make sure we're not losing any documents from additional_documents
-        if additional_documents:
-            document_ids.update(additional_documents)
             
         # Get only the document IDs that are not already in the graph
         new_doc_ids = document_ids - set(existing_graph.document_ids)
@@ -228,11 +232,32 @@ class GraphService:
 
         # Update filters if additional filters were provided
         if additional_filters and existing_graph.filters:
-            # Merge filters (simple union approach)
-            for key, value in additional_filters.items():
-                existing_graph.filters[key] = value
+            # Smarter filter merging
+            self._smart_merge_filters(existing_graph.filters, additional_filters)
 
         return existing_graph
+        
+    def _smart_merge_filters(self, existing_filters: Dict[str, Any], additional_filters: Dict[str, Any]):
+        """Merge filters with more intelligence to handle different data types and filter values."""
+        for key, value in additional_filters.items():
+            # If the key doesn't exist in existing filters, just add it
+            if key not in existing_filters:
+                existing_filters[key] = value
+                continue
+                
+            existing_value = existing_filters[key]
+            
+            # Handle list values - merge them
+            if isinstance(existing_value, list) and isinstance(value, list):
+                # Union the lists without duplicates 
+                existing_filters[key] = list(set(existing_value + value))
+            # Handle dict values - recursively merge them
+            elif isinstance(existing_value, dict) and isinstance(value, dict):
+                # Recursive merge for nested dictionaries
+                self._smart_merge_filters(existing_value, value)
+            # Default to overwriting with the new value
+            else:
+                existing_filters[key] = value
 
     def _merge_entities(
         self, existing_entities: Dict[str, Entity], new_entities: Dict[str, Entity]
@@ -273,25 +298,14 @@ class GraphService:
     ) -> List[Relationship]:
         """Merge new relationships with existing ones."""
         merged_relationships = list(existing_relationships)
+        
+        # Create reverse mappings for entity IDs to labels for efficient lookup
+        entity_id_to_label = {entity.id: label for label, entity in new_entities_dict.items()}
 
         for rel in new_relationships:
-            # Find entity labels for source and target
-            source_label = next(
-                (
-                    label
-                    for label, entity in new_entities_dict.items()
-                    if entity.id == rel.source_id
-                ),
-                None,
-            )
-            target_label = next(
-                (
-                    label
-                    for label, entity in new_entities_dict.items()
-                    if entity.id == rel.target_id
-                ),
-                None,
-            )
+            # Look up entity labels using the reverse mapping
+            source_label = entity_id_to_label.get(rel.source_id)
+            target_label = entity_id_to_label.get(rel.target_id)
 
             if source_label in entity_id_map and target_label in entity_id_map:
                 # Update relationship to use existing entity IDs
