@@ -34,3 +34,7 @@ test.pdf
 
 experiments/*
 ui-component/package-lock.json
+
+
+ui-component/notebook-storage/notebooks.json
+ui-component/notebook-storage/notebooks.json
