@@ -1342,24 +1342,17 @@ async def test_list_graphs(client: AsyncClient):
 async def test_create_graph_with_filters(client: AsyncClient):
     """Test creating a knowledge graph using metadata filters."""
     # Ingest test documents with specific metadata
-    doc_id1 = await test_ingest_text_document(
+    doc_id1 = await test_ingest_text_document_with_metadata(
         client,
         content="The solar system consists of the Sun and eight planets. "
-        "Earth is the third planet from the Sun. Mars is the fourth planet."
+        "Earth is the third planet from the Sun. Mars is the fourth planet.",
+        metadata={"category": "astronomy", "subject": "planets"}
     )
 
     headers = create_auth_header()
 
     # Get the document to add specific metadata
     response = await client.get(f"/documents/{doc_id1}", headers=headers)
-    assert response.status_code == 200
-
-    # Update document with metadata
-    response = await client.post(
-        f"/documents/{doc_id1}/update_metadata",
-        json={"category": "astronomy", "subject": "planets"},
-        headers=headers,
-    )
     assert response.status_code == 200
 
     # Create graph with filters - using metadata field which is renamed to doc_metadata in PostgresDatabase
