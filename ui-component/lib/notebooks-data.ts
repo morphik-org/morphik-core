@@ -28,10 +28,18 @@ const DEFAULT_NOTEBOOKS: Notebook[] = [
 
 /**
  * Load notebooks from the API
+ * 
+ * Using cache:no-store to prevent React's automatic caching from causing issues
  */
 export async function loadNotebooksFromAPI(): Promise<Notebook[]> {
   try {
-    const response = await fetch('/api/notebooks');
+    const response = await fetch('/api/notebooks', {
+      method: 'GET',
+      cache: 'no-store',
+      headers: {
+        'cache-control': 'no-cache'
+      }
+    });
     
     if (!response.ok) {
       console.error('Failed to load notebooks from API:', response.statusText);

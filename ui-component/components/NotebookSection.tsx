@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,8 +26,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+// Removed unused accordion imports
 import OpenAI from 'openai';
+// Import OpenAI types for chat completions
+import type { ChatCompletionContentPart } from 'openai/resources';
 import { 
   Notebook, 
   loadNotebooksFromAPI,
@@ -68,8 +70,9 @@ interface ChatOptions {
   use_colpali: boolean;
   max_tokens: number;
   temperature: number;
-  model_provider: 'openai' | 'claude';
+  model_provider: 'openai' | 'claude' | 'ollama';
   model: string;
+  custom_model?: string;
   graph_name?: string;
 }
 
@@ -167,29 +170,27 @@ const NotebookSection: React.FC<NotebookSectionProps> = ({ apiBaseUrl }) => {
   // API keys and model configuration
   const [openaiApiKey, setOpenaiApiKey] = useState<string>('');
   const [claudeApiKey, setClaudeApiKey] = useState<string>('');
+  const [ollamaUrl, setOllamaUrl] = useState<string>('http://localhost:11434');
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
   
   // Available models
   const openaiModels = [
     { id: 'gpt-4o', name: 'GPT-4o' },
-    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
-    { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' },
+    { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+    { id: 'o3-mini', name: 'o3 Mini' },
+    { id: 'other', name: 'Other (Custom)' },
   ];
   
   const claudeModels = [
-    { id: 'claude-3-5-sonnet-20240620', name: 'Claude 3.5 Sonnet' },
-    { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' },
-    { id: 'claude-3-sonnet-20240229', name: 'Claude 3 Sonnet' },
-    { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku' },
+    { id: 'claude-3-7-sonnet-latest', name: 'Claude 3.7 Sonnet' },
+    { id: 'claude-3-5-haiku-latest', name: 'Claude 3.5 Haiku' },
+    { id: 'other', name: 'Other (Custom)' },
   ];
+  
+  // For Ollama, we'll use a text input instead of a dropdown
   
   // Auth token - in a real application, you would get this from your auth system
   const authToken = 'YOUR_AUTH_TOKEN';
-
-  // Headers for API requests
-  const headers = {
-    'Authorization': authToken
-  };
   
   // Check if API keys are available
   const getOpenAIClient = useCallback(() => {
@@ -214,12 +215,48 @@ const NotebookSection: React.FC<NotebookSectionProps> = ({ apiBaseUrl }) => {
       dangerouslyAllowBrowser: true // Only for demo purposes
     });
   }, [claudeApiKey]);
+  
+  const getOllamaApiUrl = useCallback(() => {
+    if (!ollamaUrl) {
+      throw new Error('Ollama URL is not set');
+    }
+    
+    console.log('[DEBUG] Using Ollama API URL:', ollamaUrl);
+    return ollamaUrl;
+  }, [ollamaUrl]);
 
-  // Load notebooks and API keys on component mount
+  // Load notebooks and API keys on component mount - Using a dedicated state to track loading
+  const [isLoadingNotebooks, setIsLoadingNotebooks] = useState(false);
+  
+  // Default notebooks in case loading fails completely
+  const DEFAULT_NOTEBOOKS: Notebook[] = [
+    {
+      id: "nb_default_1",
+      name: "Research Papers",
+      description: "Collection of scientific papers and research documents",
+      created_at: "2023-01-15T12:00:00Z"
+    },
+    {
+      id: "nb_default_2",
+      name: "Project Documentation", 
+      description: "Technical specifications and project documents",
+      created_at: "2023-01-20T14:30:00Z"
+    }
+  ];
+  
   useEffect(() => {
+    // Only run once on mount
     const loadData = async () => {
+      // Don't attempt to load if we're already loading
+      if (isLoadingNotebooks) return;
+      
       try {
+        setIsLoadingNotebooks(true);
+        // Prevent auto-save during initial load
+        shouldSaveNotebooks.current = false;
+        
         // First try to load from the file-based API
+        console.log('Loading notebooks from API');
         const apiNotebooks = await loadNotebooksFromAPI();
         if (apiNotebooks && apiNotebooks.length > 0) {
           console.log('Loaded notebooks from file-based API:', apiNotebooks.length);
@@ -231,20 +268,20 @@ const NotebookSection: React.FC<NotebookSectionProps> = ({ apiBaseUrl }) => {
             console.log('Loaded notebooks from localStorage:', localNotebooks.length);
             setNotebooks(localNotebooks);
             
-            // Save to the file API for future use
+            // Save to the file API for future use, but don't trigger the useEffect
             await saveNotebooksToAPI(localNotebooks);
           } else {
             console.log('Using default notebooks');
             // Both API and localStorage failed, use the default notebooks
-            const defaultNotebooks = await loadNotebooksFromAPI();
-            setNotebooks(defaultNotebooks);
+            setNotebooks(DEFAULT_NOTEBOOKS);
           }
         }
       } catch (error) {
         console.error('Error loading notebooks:', error);
         // Use default notebooks in case of error
-        const defaultNotebooks = await loadNotebooksFromAPI();
-        setNotebooks(defaultNotebooks);
+        setNotebooks(DEFAULT_NOTEBOOKS);
+      } finally {
+        setIsLoadingNotebooks(false);
       }
       
       // Load API keys
@@ -258,34 +295,66 @@ const NotebookSection: React.FC<NotebookSectionProps> = ({ apiBaseUrl }) => {
         setClaudeApiKey(storedClaudeApiKey);
       }
       
+      const storedOllamaUrl = localStorage.getItem('ollama_url');
+      if (storedOllamaUrl) {
+        setOllamaUrl(storedOllamaUrl);
+      }
+      
       // If no API keys are set, show the dialog
-      if (!storedOpenaiApiKey && !storedClaudeApiKey) {
+      if (!storedOpenaiApiKey && !storedClaudeApiKey && !storedOllamaUrl) {
         setShowApiKeyDialog(true);
       }
     };
     
     loadData();
+    // We need these dependencies for ESLint, but we only want this to run once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Save notebooks to both file API and localStorage when they change
+  // Using a ref to track whether notebooks were changed programmatically 
+  // to avoid infinite loop with the load/save cycle
+  const notebooksRef = useRef<Notebook[]>([]);
+  const shouldSaveNotebooks = useRef(false);
+  
   useEffect(() => {
-    if (notebooks.length > 0) {
-      // Save to both storage mechanisms for redundancy
-      saveNotebooksToAPI(notebooks)
-        .then(success => {
-          if (!success) {
-            console.warn('Failed to save notebooks to API, falling back to localStorage');
-          }
-          // Always save to localStorage as a backup
-          saveNotebooksToLocalStorage(notebooks);
-        })
-        .catch(error => {
-          console.error('Error saving notebooks to API:', error);
-          // Save to localStorage as fallback
-          saveNotebooksToLocalStorage(notebooks);
-        });
+    // Skip if we're currently loading notebooks or if notebooks are empty
+    if (isLoadingNotebooks || notebooks.length === 0) {
+      return;
     }
-  }, [notebooks]);
+    
+    // Only save if notebooks changed from user actions AND we're not in the initial load
+    if (shouldSaveNotebooks.current) {
+      console.log('Saving notebooks after user action');
+      
+      // Check if the notebooks array actually changed
+      const prevNotebooksStr = JSON.stringify(notebooksRef.current);
+      const currNotebooksStr = JSON.stringify(notebooks);
+      
+      if (prevNotebooksStr !== currNotebooksStr) {
+        // Save to both storage mechanisms for redundancy
+        saveNotebooksToAPI(notebooks)
+          .then(success => {
+            if (!success) {
+              console.warn('Failed to save notebooks to API, falling back to localStorage');
+            }
+            // Always save to localStorage as a backup
+            saveNotebooksToLocalStorage(notebooks);
+          })
+          .catch(error => {
+            console.error('Error saving notebooks to API:', error);
+            // Save to localStorage as fallback
+            saveNotebooksToLocalStorage(notebooks);
+          });
+      }
+    } else {
+      // First time - enable saving for subsequent changes
+      shouldSaveNotebooks.current = true;
+    }
+    
+    // Update ref with current notebooks
+    notebooksRef.current = notebooks;
+  }, [notebooks, isLoadingNotebooks]);
   
   // Notebooks will be automatically persisted and loaded from the data store
   
@@ -299,6 +368,10 @@ const NotebookSection: React.FC<NotebookSectionProps> = ({ apiBaseUrl }) => {
       localStorage.setItem('claude_api_key', claudeApiKey);
     }
     
+    if (ollamaUrl) {
+      localStorage.setItem('ollama_url', ollamaUrl);
+    }
+    
     setShowApiKeyDialog(false);
   };
 
@@ -306,6 +379,11 @@ const NotebookSection: React.FC<NotebookSectionProps> = ({ apiBaseUrl }) => {
   const fetchDocuments = useCallback(async () => {
     try {
       setLoading(true);
+      
+      // Define headers inside the callback to avoid dependency issues
+      const headers = {
+        'Authorization': authToken
+      };
       
       const response = await fetch(`${apiBaseUrl}/documents`, {
         headers
@@ -377,7 +455,8 @@ const NotebookSection: React.FC<NotebookSectionProps> = ({ apiBaseUrl }) => {
         created_at: new Date().toISOString()
       };
       
-      // Add the notebook to the list
+      // Add the notebook to the list and ensure it's saved
+      shouldSaveNotebooks.current = true;
       setNotebooks(prev => [...prev, newNotebook]);
       
       // Select the new notebook
@@ -464,7 +543,8 @@ const NotebookSection: React.FC<NotebookSectionProps> = ({ apiBaseUrl }) => {
       setLoading(true);
       setError(null);
       
-      // Remove the notebook from the list
+      // Remove the notebook from the list and ensure it's saved
+      shouldSaveNotebooks.current = true;
       setNotebooks(prev => prev.filter(nb => nb.id !== selectedNotebook.id));
       
       // Reset selected notebook
@@ -587,7 +667,7 @@ const NotebookSection: React.FC<NotebookSectionProps> = ({ apiBaseUrl }) => {
         // IMPORTANT: Here we modify the chunk to properly mark it as an image
         // This ensures it will be handled correctly
         if (!chunk.metadata) chunk.metadata = {};
-        (chunk.metadata as any).is_image = true;
+        (chunk.metadata as Record<string, boolean>).is_image = true;
         
         // Set content type if missing
         if (!chunk.content_type) {
@@ -649,11 +729,16 @@ ${content}
       return;
     }
     
-    // Check if we have the required API key
+    // Check if we have the required API key or URL
     if ((chatOptions.model_provider === 'openai' && !openaiApiKey) || 
-        (chatOptions.model_provider === 'claude' && !claudeApiKey)) {
+        (chatOptions.model_provider === 'claude' && !claudeApiKey) ||
+        (chatOptions.model_provider === 'ollama' && !ollamaUrl)) {
       setShowApiKeyDialog(true);
-      setError(`Please provide a valid ${chatOptions.model_provider === 'openai' ? 'OpenAI' : 'Claude'} API key`);
+      setError(`Please provide a valid ${
+        chatOptions.model_provider === 'openai' ? 'OpenAI API key' : 
+        chatOptions.model_provider === 'claude' ? 'Claude API key' : 
+        'Ollama URL'
+      }`);
       return;
     }
 
@@ -670,7 +755,7 @@ ${content}
       try {
         const parsedFilters = JSON.parse(chatOptions.filters);
         filters = { ...parsedFilters, notebook: selectedNotebook.name };
-      } catch (e) {
+      } catch {
         // Keep default filters
       }
       
@@ -699,7 +784,7 @@ ${content}
       setChatResults(chunksData);
       
       // Separate image chunks from text chunks
-      const allImageChunks = chunksData.filter(chunk => isImageChunk(chunk));
+      const allImageChunks = chunksData.filter((chunk: ChunkResult) => isImageChunk(chunk));
       console.log('[DEBUG] Number of image chunks identified:', allImageChunks.length);
       
       // IMPORTANT: Limit to only the top 4 images to avoid token limits
@@ -743,7 +828,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
         if (imageChunks.length > 0) {
           // Create a new content array following OpenAI's multimodal format exactly
           console.log('[DEBUG] Creating multimodal message array for OpenAI');
-          const contentArray = [];
+          const contentArray: ChatCompletionContentPart[] = [];
           
           // First element is the text context
           contentArray.push({
@@ -752,7 +837,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
           });
           
           // Process image chunks - limit to top 4 only
-          imageChunks.forEach((chunk, index) => {
+          imageChunks.forEach((chunk: ChunkResult, index: number) => {
             console.log(`[DEBUG] Processing image ${index} for OpenAI`);
             
             // Determine image format
@@ -785,22 +870,23 @@ Given the context information and not prior knowledge, answer the question: ${ch
           });
           
           // Log the content array structure (without the actual base64 data)
-          console.log('[DEBUG] Content array structure:', contentArray.map(item => {
-            if (item.type === 'image_url') {
-              return { 
-                type: 'image_url', 
-                image_url: { 
-                  url: item.image_url.url.substring(0, 30) + '... [truncated]' 
-                } 
-              };
-            }
-            return item;
-          }));
+          // console.log('[DEBUG] Content array structure:', contentArray.map(item => {
+          //   if (item.type === 'image_url') {
+          //     return { 
+          //       type: 'image_url', 
+          //       image_url: { 
+          //         url: item.image_url.url.substring(0, 30) + '... [truncated]' 
+          //       } 
+          //     };
+          //   }
+          //   return item;
+          // }));
           
           let response;
           try {
             // Add a special function to check for base64 content in text
-            const checkForLargeTextContent = (content) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const checkForLargeTextContent = (content: any) => {
               if (Array.isArray(content)) {
                 return content.some(item => {
                   if (item.type === 'text' && item.text && item.text.length > 10000) {
@@ -842,7 +928,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
               model: chatOptions.model,
               messages: [
                 { role: "system", content: systemMessage },
-                { role: "user", content: contentArray }
+                { role: "user", content: contentArray as unknown as ChatCompletionContentPart[] } // Type assertion with proper typing
               ],
               temperature: chatOptions.temperature,
               max_tokens: chatOptions.max_tokens,
@@ -868,7 +954,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
           
           completionText = response.choices[0].message.content || 'No response generated';
         }
-      } else {
+      } else if (chatOptions.model_provider === 'claude') {
         // Create an instance of the Claude client (using OpenAI compatible interface)
         const claude = getClaudeClient();
         
@@ -884,7 +970,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
           });
           
           // Process images (up to 4) - use the exact same format as OpenAI
-          imageChunks.forEach((chunk, index) => {
+          imageChunks.forEach((chunk: ChunkResult, index: number) => {
             console.log(`[DEBUG] Processing image ${index} for Claude`);
             
             // Determine image format
@@ -918,10 +1004,12 @@ Given the context information and not prior knowledge, answer the question: ${ch
           // Log the content array structure (without the actual base64 data)
           console.log('[DEBUG] Claude content array structure:', contentArray.map(item => {
             if (item.type === 'image_url') {
+              // Use two-step type assertion to safely handle the image_url property
+              const imageItem = item as unknown as { type: 'image_url', image_url: { url: string } };
               return { 
                 type: 'image_url', 
                 image_url: { 
-                  url: item.image_url.url.substring(0, 30) + '... [truncated]' 
+                  url: imageItem.image_url.url.substring(0, 30) + '... [truncated]' 
                 } 
               };
             }
@@ -936,7 +1024,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
               model: chatOptions.model,
               messages: [
                 { role: "system", content: systemMessage },
-                { role: "user", content: contentArray }
+                { role: "user", content: contentArray as unknown as ChatCompletionContentPart[] } // Type assertion with proper typing
               ],
               temperature: chatOptions.temperature,
               max_tokens: chatOptions.max_tokens,
@@ -961,6 +1049,189 @@ Given the context information and not prior knowledge, answer the question: ${ch
           });
           
           completionText = response.choices[0].message.content || 'No response generated';
+        }
+      } else if (chatOptions.model_provider === 'ollama') {
+        // Get the Ollama API URL for direct API calls
+        getOllamaApiUrl(); // Just validate the URL is set
+        
+        console.log('[DEBUG] Using Ollama with model:', chatOptions.model);
+        
+        // Ollama supports images too but with a slightly different format
+        if (imageChunks.length > 0) {
+          // Create a new content array following OpenAI's format but adapting for Ollama
+          console.log('[DEBUG] Creating multimodal message array for Ollama');
+          const contentArray = [];
+          
+          // First element is the text context
+          contentArray.push({
+            type: "text",
+            text: textPrompt
+          });
+          
+          // Process only the first image as Ollama might have limitations with multiple images
+          if (imageChunks.length > 0) {
+            const chunk = imageChunks[0];
+            console.log(`[DEBUG] Processing image for Ollama`);
+            
+            // Determine image format
+            let imageFormat = 'jpeg'; // Default fallback
+            if (chunk.content_type && chunk.content_type.includes('/')) {
+              imageFormat = chunk.content_type.split('/')[1];
+            }
+            console.log(`[DEBUG] Using image format: ${imageFormat}`);
+            
+            // Create valid data URI
+            let imageUrl;
+            if (chunk.content.startsWith('data:image/')) {
+              // Already has data URI prefix
+              imageUrl = chunk.content;
+              console.log(`[DEBUG] Image already has data URI`);
+            } else {
+              // Create data URI from base64
+              imageUrl = `data:image/${imageFormat};base64,${chunk.content}`;
+              console.log(`[DEBUG] Created data URI for image`);
+            }
+            
+            // Add image in OpenAI format which Ollama supports
+            contentArray.push({
+              type: "image_url",
+              image_url: {
+                url: imageUrl
+              }
+            });
+          }
+          
+          try {
+            // Call Ollama API with content using native API
+            console.log('[DEBUG] Calling Ollama API with content using native API');
+            
+            // Extract base64 image content
+            let extractedBase64 = '';
+            const chunk = imageChunks[0];
+            
+            if (chunk.content.startsWith('data:image/')) {
+              // Extract base64 from data URI
+              extractedBase64 = chunk.content.split(',')[1];
+            } else {
+              // Already have base64
+              extractedBase64 = chunk.content;
+            }
+            
+            // Format body for Ollama's native API
+            const apiUrl = getOllamaApiUrl();
+            const response = await fetch(`${apiUrl}/api/generate`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: chatOptions.model,
+                prompt: textPrompt,
+                system: systemMessage,
+                images: [extractedBase64],
+                stream: false,
+                options: {
+                  temperature: chatOptions.temperature,
+                  num_predict: chatOptions.max_tokens,
+                }
+              })
+            });
+            
+            if (!response.ok) {
+              throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+            }
+            
+            const responseData = await response.json();
+            console.log('[DEBUG] Ollama API call successful');
+            completionText = responseData.response || 'No response generated';
+          } catch (error) {
+            console.error('[DEBUG] Ollama API error:', error);
+            // Fallback to text-only if multimodal fails with Ollama
+            console.log('[DEBUG] Falling back to text-only query for Ollama');
+            try {
+              // Fallback to text-only using native API
+              const apiUrl = getOllamaApiUrl();
+              const response = await fetch(`${apiUrl}/api/generate`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  model: chatOptions.model,
+                  prompt: textPrompt,
+                  system: systemMessage,
+                  stream: false,
+                  options: {
+                    temperature: chatOptions.temperature,
+                    num_predict: chatOptions.max_tokens,
+                  }
+                })
+              });
+              
+              if (!response.ok) {
+                throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+              }
+              
+              const responseData = await response.json();
+              completionText = responseData.response || 'No response generated';
+            } catch (fallbackError) {
+              console.error('[DEBUG] Ollama fallback error:', fallbackError);
+              
+              // Check if it's a CORS error - use type assertion to safely access message property
+              const errorWithMessage = fallbackError as { message?: string };
+              if (errorWithMessage.message && errorWithMessage.message.includes('Failed to fetch')) {
+                throw new Error(
+                  'Unable to connect to Ollama. This might be a CORS issue. ' +
+                  'Try running Ollama with CORS allowed: OLLAMA_ORIGINS=http://localhost:3000 ollama serve'
+                );
+              }
+              
+              throw fallbackError;
+            }
+          }
+        } else {
+          // Text-only query for Ollama using native API
+          try {
+            const apiUrl = getOllamaApiUrl();
+            const response = await fetch(`${apiUrl}/api/chat`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: chatOptions.model,
+                messages: [
+                  { role: "system", content: systemMessage },
+                  { role: "user", content: textPrompt }
+                ],
+                stream: false,
+                options: {
+                  temperature: chatOptions.temperature,
+                  num_predict: chatOptions.max_tokens,
+                }
+              })
+            });
+            
+            if (!response.ok) {
+              throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+            }
+            
+            const responseData = await response.json();
+            completionText = responseData.message.content || 'No response generated';
+          } catch (error) {
+            console.error('[DEBUG] Ollama API error:', error);
+            
+            // Check if it's a CORS error - use type assertion to safely access message property
+            const errorWithMessage = error as { message?: string };
+            if (errorWithMessage.message && errorWithMessage.message.includes('Failed to fetch')) {
+              throw new Error(
+                'Unable to connect to Ollama. This might be a CORS issue. ' +
+                'Try running Ollama with CORS allowed: OLLAMA_ORIGINS=http://localhost:3000 ollama serve'
+              );
+            }
+            
+            throw error;
+          }
         }
       }
       
@@ -1000,7 +1271,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
       const metadataObj = JSON.parse(metadata);
       metadataObj.notebook = notebook.name;
       setMetadata(JSON.stringify(metadataObj, null, 2));
-    } catch (e) {
+    } catch {
       setMetadata(JSON.stringify({ notebook: notebook.name }, null, 2));
     }
     
@@ -1032,7 +1303,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
         if (!metadataObj.notebook) {
           metadataObj.notebook = selectedNotebook.name;
         }
-      } catch (e) {
+      } catch {
         metadataObj = { notebook: selectedNotebook.name };
       }
       
@@ -1210,7 +1481,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
         if (!metadataObj.notebook) {
           metadataObj.notebook = selectedNotebook.name;
         }
-      } catch (e) {
+      } catch {
         metadataObj = { notebook: selectedNotebook.name };
       }
       
@@ -1372,6 +1643,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
     if (contentType.startsWith('image/') || content.startsWith('data:image/')) {
       return (
         <div className="flex justify-center p-4 bg-gray-100 rounded-md">
+          { /* eslint-disable-next-line @next/next/no-img-element */ }
           <img 
             src={content} 
             alt="Document content" 
@@ -1437,7 +1709,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
           <DialogHeader>
             <DialogTitle>API Keys</DialogTitle>
             <DialogDescription>
-              Enter your API keys to use OpenAI or Claude models.
+              Enter your API keys to use OpenAI, Claude, or Ollama models.
             </DialogDescription>
           </DialogHeader>
           
@@ -1463,11 +1735,28 @@ Given the context information and not prior knowledge, answer the question: ${ch
                 onChange={(e) => setClaudeApiKey(e.target.value)}
               />
             </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="ollama-url">Ollama URL</Label>
+              <Input
+                id="ollama-url"
+                type="text"
+                placeholder="http://localhost:11434"
+                value={ollamaUrl}
+                onChange={(e) => setOllamaUrl(e.target.value)}
+              />
+              <p className="text-xs text-gray-500">
+                No API key needed for Ollama. Just ensure Ollama is running locally.
+                <br />
+                <strong>Note:</strong> You may need to start Ollama with CORS allowed: <br />
+                <code className="bg-gray-100 px-1 py-0.5 text-xs rounded">OLLAMA_ORIGINS=http://localhost:3000 ollama serve</code>
+              </p>
+            </div>
           </div>
           
           <DialogFooter>
             <Button onClick={saveApiKeys}>
-              Save Keys
+              Save Settings
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1879,7 +2168,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
                         <Plus className="h-4 w-4 mr-1" />
                         Upload Document
                       </Button>
-                      <Button variant="outline" onClick={() => document.querySelector('[data-value="add-existing"]')?.click()}>
+                      <Button variant="outline" onClick={() => (document.querySelector('[data-value="add-existing"]') as HTMLElement)?.click()}>
                         Add Existing Documents
                       </Button>
                     </div>
@@ -2237,12 +2526,15 @@ Given the context information and not prior knowledge, answer the question: ${ch
                             <Label htmlFor="model-provider" className="text-xs block mb-1">
                               Provider
                             </Label>
-                            <div className="flex gap-1">
+                            <div className="flex gap-1 flex-wrap">
                               <Button
                                 type="button"
                                 size="sm"
                                 variant={chatOptions.model_provider === 'openai' ? 'default' : 'outline'}
-                                onClick={() => updateChatOption('model_provider', 'openai')}
+                                onClick={() => {
+                                  updateChatOption('model_provider', 'openai');
+                                  updateChatOption('model', 'gpt-4o');
+                                }}
                                 className="flex-1 h-8 text-xs"
                               >
                                 OpenAI
@@ -2251,10 +2543,25 @@ Given the context information and not prior knowledge, answer the question: ${ch
                                 type="button"
                                 size="sm"
                                 variant={chatOptions.model_provider === 'claude' ? 'default' : 'outline'}
-                                onClick={() => updateChatOption('model_provider', 'claude')}
+                                onClick={() => {
+                                  updateChatOption('model_provider', 'claude');
+                                  updateChatOption('model', 'claude-3-7-sonnet-latest');
+                                }}
                                 className="flex-1 h-8 text-xs"
                               >
                                 Claude
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={chatOptions.model_provider === 'ollama' ? 'default' : 'outline'}
+                                onClick={() => {
+                                  updateChatOption('model_provider', 'ollama');
+                                  updateChatOption('model', 'llama3');
+                                }}
+                                className="flex-1 h-8 text-xs"
+                              >
+                                Ollama
                               </Button>
                             </div>
                           </div>
@@ -2263,26 +2570,56 @@ Given the context information and not prior knowledge, answer the question: ${ch
                             <Label htmlFor="model" className="text-xs block mb-1">
                               Model
                             </Label>
-                            <select
-                              id="model"
-                              className="w-full p-1 text-xs border rounded-md h-8"
-                              value={chatOptions.model}
-                              onChange={(e) => updateChatOption('model', e.target.value)}
-                            >
-                              {chatOptions.model_provider === 'openai' ? (
-                                openaiModels.map(model => (
-                                  <option key={model.id} value={model.id}>
-                                    {model.name}
-                                  </option>
-                                ))
-                              ) : (
-                                claudeModels.map(model => (
-                                  <option key={model.id} value={model.id}>
-                                    {model.name}
-                                  </option>
-                                ))
-                              )}
-                            </select>
+                            {chatOptions.model_provider === 'ollama' ? (
+                              // Text input for Ollama models
+                              <Input
+                                id="model"
+                                className="w-full text-xs h-8"
+                                value={chatOptions.model}
+                                onChange={(e) => updateChatOption('model', e.target.value)}
+                                placeholder="llama3, llama2, mistral, gemma, etc."
+                              />
+                            ) : (
+                              <div className="space-y-2">
+                                <select
+                                  id="model"
+                                  className="w-full p-1 text-xs border rounded-md h-8"
+                                  value={chatOptions.model}
+                                  onChange={(e) => updateChatOption('model', e.target.value)}
+                                >
+                                  {chatOptions.model_provider === 'openai' ? (
+                                    openaiModels.map(model => (
+                                      <option key={model.id} value={model.id}>
+                                        {model.name}
+                                      </option>
+                                    ))
+                                  ) : (
+                                    claudeModels.map(model => (
+                                      <option key={model.id} value={model.id}>
+                                        {model.name}
+                                      </option>
+                                    ))
+                                  )}
+                                </select>
+                                
+                                {/* Custom model input field shown when "other" is selected */}
+                                {chatOptions.model === 'other' && (
+                                  <Input
+                                    className="w-full text-xs h-8 mt-1"
+                                    placeholder="Enter custom model name"
+                                    onChange={(e) => {
+                                      if (e.target.value) {
+                                        // Update the model directly to the custom value
+                                        updateChatOption('model', e.target.value);
+                                      } else {
+                                        // Keep it as "other" if empty (to keep the input box visible)
+                                        updateChatOption('model', 'other');
+                                      }
+                                    }}
+                                  />
+                                )}
+                              </div>
+                            )}
                           </div>
                           
                           <div className="flex items-center justify-between">

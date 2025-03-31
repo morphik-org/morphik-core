@@ -33,7 +33,14 @@ function readNotebooks() {
   }
 }
 
-function writeNotebooks(notebooks) {
+interface Notebook {
+  id: string;
+  name: string;
+  description: string;
+  created_at: string;
+}
+
+function writeNotebooks(notebooks: Notebook[]) {
   try {
     const data = {
       notebooks,
@@ -48,7 +55,7 @@ function writeNotebooks(notebooks) {
 }
 
 // GET endpoint to retrieve notebooks
-export async function GET(request: NextRequest) {
+export async function GET() {
   const notebooks = readNotebooks();
   return NextResponse.json({ notebooks });
 }
