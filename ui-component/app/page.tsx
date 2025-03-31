@@ -15,6 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { AlertCircle, Upload, Search, MessageSquare, Info, Settings, ChevronDown, ChevronUp } from 'lucide-react';
 import { Sidebar } from '@/components/ui/sidebar';
 import GraphSection from '@/components/GraphSection';
+import NotebookSection from '@/components/NotebookSection';
 import Image from 'next/image';
 
 // API base URL - change this to match your Morphik server
@@ -1196,6 +1197,11 @@ const MorphikUI = () => {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* Notebooks Section */}
+        {activeSection === 'notebooks' && (
+          <NotebookSection apiBaseUrl={API_BASE_URL} />
         )}
 
         {/* Graphs Section */}
