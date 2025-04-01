@@ -13,6 +13,11 @@ import filetype
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
+from core.models.prompts import (
+    EntityExtractionPromptOverride,
+    EntityResolutionPromptOverride,
+    GraphPromptOverrides,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2060,3 +2065,302 @@ async def test_update_graph(client: AsyncClient):
     assert "starship" in completion
     assert "falcon 9" in completion
     assert "starlink" in completion
+
+
+@pytest.mark.asyncio
+async def test_create_graph_with_prompt_overrides(client: AsyncClient):
+    """Test creating a knowledge graph with custom prompt overrides."""
+    # First ingest multiple documents with related content to extract entities and relationships
+    doc_id1 = await test_ingest_text_document(
+        client,
+        content="Apple Inc. is a technology company headquartered in Cupertino, California. "
+        "Tim Cook is the CEO of Apple. Steve Jobs was the co-founder of Apple.",
+    )
+
+    doc_id2 = await test_ingest_text_document(
+        client,
+        content="Microsoft is a technology company based in Redmond, Washington. "
+        "Satya Nadella is the CEO of Microsoft. Bill Gates co-founded Microsoft.",
+    )
+
+    headers = create_auth_header()
+    graph_name = "test_graph_with_prompt_overrides"
+
+    # Create custom prompt overrides
+    extraction_override = EntityExtractionPromptOverride(
+        prompt_template="Extract only companies and their CEOs from the following text, ignore other entities: {content}\n{examples}",
+        examples=[
+            {"label": "Example Corp", "type": "ORGANIZATION"},
+            {"label": "Jane Smith", "type": "PERSON", "properties": {"role": "CEO"}},
+        ],
+    )
+
+    resolution_override = EntityResolutionPromptOverride(
+        examples=[
+            {"canonical": "Apple Inc.", "variants": ["Apple", "Apple Computer"]},
+            {"canonical": "Timothy Cook", "variants": ["Tim Cook", "Cook"]},
+        ]
+    )
+
+    prompt_overrides = GraphPromptOverrides(
+        entity_extraction=extraction_override, entity_resolution=resolution_override
+    )
+
+    # Create graph using the document IDs and custom prompt overrides
+    response = await client.post(
+        "/graph/create",
+        json={
+            "name": graph_name,
+            "documents": [doc_id1, doc_id2],
+            "prompt_overrides": json.loads(prompt_overrides.model_dump_json()),
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    graph = response.json()
+
+    # Verify graph structure
+    assert graph["name"] == graph_name
+    assert len(graph["document_ids"]) == 2
+    assert all(doc_id in graph["document_ids"] for doc_id in [doc_id1, doc_id2])
+    assert len(graph["entities"]) > 0
+    assert len(graph["relationships"]) > 0
+
+    # Verify that custom extraction worked (focus should be on companies and CEOs)
+    entity_labels = [entity["label"] for entity in graph["entities"]]
+    entity_types = [entity["type"] for entity in graph["entities"]]
+
+    # Should capture companies
+    assert any("Apple" in label for label in entity_labels)
+    assert any("Microsoft" in label for label in entity_labels)
+
+    # Should capture CEOs
+    assert any("Tim Cook" in label for label in entity_labels)
+    assert any("Satya Nadella" in label for label in entity_labels)
+
+    # Should have ORGANIZATION and PERSON types
+    assert "ORGANIZATION" in entity_types or "COMPANY" in entity_types
+    assert "PERSON" in entity_types
+
+    return graph_name, [doc_id1, doc_id2]
+
+
+@pytest.mark.asyncio
+async def test_update_graph_with_prompt_overrides(client: AsyncClient):
+    """Test updating a knowledge graph with custom prompt overrides."""
+    # Create initial graph with some documents
+    doc_id1 = await test_ingest_text_document(
+        client, content="Tesla is an electric vehicle manufacturer. Elon Musk is the CEO of Tesla."
+    )
+
+    doc_id2 = await test_ingest_text_document(
+        client,
+        content="SpaceX develops spacecraft and rockets. Elon Musk is also the CEO of SpaceX.",
+    )
+
+    headers = create_auth_header()
+    graph_name = "test_update_graph_with_prompts"
+
+    # Create initial graph with default settings
+    response = await client.post(
+        "/graph/create",
+        json={"name": graph_name, "documents": [doc_id1, doc_id2]},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    initial_graph = response.json()
+
+    # Create a new document to add to the graph
+    doc_id3 = await test_ingest_text_document(
+        client,
+        content="The Boring Company was founded by Elon Musk. It focuses on tunnel construction technology.",
+    )
+
+    # Create custom prompt overrides for update
+    extraction_override = EntityExtractionPromptOverride(
+        prompt_template="Extract specifically company names and their founders from the following text: {content}\n{examples}",
+        examples=[
+            {"label": "Tech Company", "type": "ORGANIZATION"},
+            {"label": "Founder Person", "type": "PERSON", "properties": {"role": "founder"}},
+        ],
+    )
+
+    prompt_overrides = GraphPromptOverrides(entity_extraction=extraction_override)
+
+    # Update the graph with new document and custom prompts
+    update_response = await client.post(
+        f"/graph/{graph_name}/update",
+        json={
+            "additional_documents": [doc_id3],
+            "prompt_overrides": json.loads(prompt_overrides.model_dump_json()),
+        },
+        headers=headers,
+    )
+
+    assert update_response.status_code == 200
+    updated_graph = update_response.json()
+
+    # Verify updated graph structure
+    assert updated_graph["name"] == graph_name
+    assert len(updated_graph["document_ids"]) == 3
+    assert all(doc_id in updated_graph["document_ids"] for doc_id in [doc_id1, doc_id2, doc_id3])
+
+    # Verify new entity was added
+    entity_labels = [entity["label"].lower() for entity in updated_graph["entities"]]
+    assert any("boring company" in label for label in entity_labels)
+
+    # Verify relationships include founder relationship (from custom prompt)
+    relationship_types = [rel["type"].lower() for rel in updated_graph["relationships"]]
+    founder_relationship = any("found" in rel_type for rel_type in relationship_types)
+    assert founder_relationship, "Expected to find a founder relationship due to custom prompt"
+
+    return graph_name, [doc_id1, doc_id2, doc_id3]
+
+
+@pytest.mark.asyncio
+async def test_query_with_graph_and_prompt_overrides(client: AsyncClient):
+    """Test querying with a graph and custom prompt overrides."""
+    # First create a graph
+    graph_name, doc_ids = await test_create_graph_with_prompt_overrides(client)
+
+    headers = create_auth_header()
+
+    # Create query prompt overrides
+    query_prompt_override = {
+        "entity_extraction": {
+            "prompt_template": "Extract specifically people and organizations from the following query: {content}\n{examples}",
+            "examples": [
+                {"label": "Apple", "type": "ORGANIZATION"},
+                {"label": "CEO", "type": "ROLE"},
+            ],
+        },
+        "entity_resolution": {
+            "examples": [
+                {"canonical": "Timothy Cook", "variants": ["Tim Cook", "Apple CEO", "Cook"]}
+            ]
+        },
+    }
+
+    # Query using the graph with prompt overrides
+    response = await client.post(
+        "/query",
+        json={
+            "query": "Who is the CEO of Apple?",
+            "graph_name": graph_name,
+            "hop_depth": 2,
+            "include_paths": True,
+            "prompt_overrides": query_prompt_override,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Verify the completion contains relevant information from graph
+    assert "completion" in result
+    assert any(term in result["completion"] for term in ["Tim Cook", "CEO", "Apple"])
+
+    # Verify we have graph metadata
+    assert "metadata" in result
+    assert "graph" in result["metadata"]
+    assert result["metadata"]["graph"]["name"] == graph_name
+
+    # Get relevant entities to verify entity extraction worked
+    assert "relevant_entities" in result["metadata"]["graph"]
+    relevant_entities = result["metadata"]["graph"]["relevant_entities"]
+
+    has_tim_cook = any("Tim" in entity or "Cook" in entity for entity in relevant_entities)
+    has_apple = any("Apple" in entity for entity in relevant_entities)
+
+    assert has_tim_cook, "Should extract Tim Cook as a relevant entity"
+    assert has_apple, "Should extract Apple as a relevant entity"
+
+
+@pytest.mark.asyncio
+async def test_query_with_completion_override(client: AsyncClient):
+    """Test querying with a custom completion prompt override."""
+    # First ingest a document for testing
+    doc_id = await test_ingest_text_document(
+        client, 
+        content="Apple Inc. is a technology company headquartered in Cupertino, California. "
+        "Tim Cook is the CEO of Apple. The company designs, manufactures, and markets smartphones, "
+        "personal computers, tablets, wearables, and accessories."
+    )
+
+    headers = create_auth_header()
+
+    # Define custom query prompt override
+    query_prompt_override = {
+        "query": {
+            "prompt_template": "Using the provided information, answer the following question in the style of a technical expert using '*' for bullet points: {question}"
+        }
+    }
+
+    # Query with the custom prompt override
+    response = await client.post(
+        "/query",
+        json={
+            "query": "Who is the CEO of Apple?",
+            "k": 4,
+            "prompt_overrides": query_prompt_override,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Verify the completion contains relevant information
+    assert "completion" in result
+    assert any(term in result["completion"] for term in ["Tim Cook", "CEO", "Apple"])
+    
+    # Check that the style was applied (bullet points should be present)
+    assert "*" in result["completion"]
+
+
+@pytest.mark.asyncio
+async def test_invalid_prompt_overrides(client: AsyncClient):
+    """Test validation of invalid prompt overrides."""
+    # Create test document
+    doc_id = await test_ingest_text_document(
+        client, content="Test content for invalid prompt overrides."
+    )
+
+    headers = create_auth_header()
+    graph_name = "test_invalid_prompts_graph"
+
+    # Test with invalid prompt override structure (invalid field)
+    invalid_override = {
+        "entity_extraction": {
+            "prompt_template": "Valid template: {content}",
+            "invalid_field": "This field doesn't exist",
+        }
+    }
+
+    response = await client.post(
+        "/graph/create",
+        json={"name": graph_name, "documents": [doc_id], "prompt_overrides": invalid_override},
+        headers=headers,
+    )
+
+    assert response.status_code in [400, 422]  # Either bad request or validation error
+
+    # Test with invalid query field in graph context (should be rejected)
+    invalid_field_override = {
+        "query": {"prompt_template": "This field shouldn't be allowed in graph context"}
+    }
+
+    response = await client.post(
+        "/graph/create",
+        json={
+            "name": graph_name + "_2",
+            "documents": [doc_id],
+            "prompt_overrides": invalid_field_override,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code in [400, 422]  # Either bad request or validation error

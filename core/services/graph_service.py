@@ -1,9 +1,14 @@
 import httpx
 import logging
 import numpy as np
-from typing import Dict, Any, List, Optional, Tuple, Set
+import json
+from typing import Dict, Any, List, Optional, Tuple, Set, Union
 from pydantic import BaseModel
 from datetime import datetime, timezone
+from core.models.prompts import (
+    GraphPromptOverrides, QueryPromptOverrides, 
+    EntityExtractionPromptOverride, EntityResolutionPromptOverride
+)
 
 from core.models.completion import ChunkSource, CompletionResponse, CompletionRequest
 from core.models.graph import Graph, Entity, Relationship
@@ -63,6 +68,7 @@ class GraphService:
         document_service,  # Passed in to avoid circular import
         additional_filters: Optional[Dict[str, Any]] = None,
         additional_documents: Optional[List[str]] = None,
+        prompt_overrides: Optional[GraphPromptOverrides] = None,
     ) -> Graph:
         """Update an existing graph with new documents.
 
@@ -75,6 +81,7 @@ class GraphService:
             document_service: DocumentService instance for retrieving documents and chunks
             additional_filters: Optional additional metadata filters to determine which new documents to include
             additional_documents: Optional list of specific additional document IDs to include
+            prompt_overrides: Optional GraphPromptOverrides with customizations for prompts
 
         Returns:
             Graph: The updated graph
@@ -142,10 +149,12 @@ class GraphService:
         if not document_objects:
             # No authorized new documents
             return existing_graph
+            
+        # Validation is now handled by type annotations
 
         # Extract entities and relationships from new documents
         new_entities_dict, new_relationships = await self._process_documents_for_entities(
-            document_objects, auth, document_service
+            document_objects, auth, document_service, prompt_overrides
         )
 
         # Track document IDs that need to be included even without entities/relationships
@@ -358,6 +367,7 @@ class GraphService:
         document_service,  # Passed in to avoid circular import
         filters: Optional[Dict[str, Any]] = None,
         documents: Optional[List[str]] = None,
+        prompt_overrides: Optional[GraphPromptOverrides] = None,
     ) -> Graph:
         """Create a graph from documents.
 
@@ -370,6 +380,7 @@ class GraphService:
             document_service: DocumentService instance for retrieving documents and chunks
             filters: Optional metadata filters to determine which documents to include
             documents: Optional list of specific document IDs to include
+            prompt_overrides: Optional GraphPromptOverrides with customizations for prompts
 
         Returns:
             Graph: The created graph
@@ -393,6 +404,8 @@ class GraphService:
         if not document_objects:
             raise ValueError("No authorized documents found matching criteria")
 
+        # Validation is now handled by type annotations
+                
         # Create a new graph with authorization info
         graph = Graph(
             name=name,
@@ -408,7 +421,7 @@ class GraphService:
 
         # Extract entities and relationships
         entities, relationships = await self._process_documents_for_entities(
-            document_objects, auth, document_service
+            document_objects, auth, document_service, prompt_overrides
         )
 
         # Add entities and relationships to the graph
@@ -422,7 +435,8 @@ class GraphService:
         return graph
 
     async def _process_documents_for_entities(
-        self, documents: List[Document], auth: AuthContext, document_service
+        self, documents: List[Document], auth: AuthContext, document_service, 
+        prompt_overrides: Optional[GraphPromptOverrides] = None
     ) -> Tuple[Dict[str, Entity], List[Relationship]]:
         """Process documents to extract entities and relationships.
 
@@ -430,6 +444,13 @@ class GraphService:
             documents: List of documents to process
             auth: Authentication context
             document_service: DocumentService instance for retrieving chunks
+            prompt_overrides: Optional dictionary with customizations for prompts
+                {
+                    "entity_resolution": {
+                        "prompt_template": "Custom template...",
+                        "examples": [{"canonical": "...", "variants": [...]}]
+                    }
+                }
 
         Returns:
             Tuple of (entities_dict, relationships_list)
@@ -455,9 +476,15 @@ class GraphService:
         # Process each chunk individually
         for chunk in chunks:
             try:
+                # Get entity_extraction override if provided
+                extraction_overrides = None
+                if prompt_overrides:
+                    # Get entity_extraction from the model
+                    extraction_overrides = prompt_overrides.entity_extraction
+                
                 # Extract entities and relationships from the chunk
                 chunk_entities, chunk_relationships = await self.extract_entities_from_text(
-                    chunk.content, chunk.document_id, chunk.chunk_number
+                    chunk.content, chunk.document_id, chunk.chunk_number, extraction_overrides
                 )
 
                 # Add entities to the collection, avoiding duplicates based on exact label match
@@ -511,7 +538,23 @@ class GraphService:
         # Resolve entities to handle variations like "Trump" vs "Donald J Trump"
         if settings.ENABLE_ENTITY_RESOLUTION:
             logger.info("Resolving %d entities using LLM...", len(all_entities))
-            resolved_entities, entity_mapping = await self.entity_resolver.resolve_entities(all_entities)
+            
+            # Extract entity_resolution part if this is a structured override
+            resolution_overrides = None
+            if prompt_overrides:
+                if hasattr(prompt_overrides, 'entity_resolution'):
+                    # Get from Pydantic model
+                    resolution_overrides = prompt_overrides.entity_resolution
+                elif isinstance(prompt_overrides, dict) and "entity_resolution" in prompt_overrides:
+                    # Get from dict
+                    resolution_overrides = prompt_overrides["entity_resolution"]
+                else:
+                    # Otherwise pass as-is
+                    resolution_overrides = prompt_overrides
+                    
+            resolved_entities, entity_mapping = await self.entity_resolver.resolve_entities(
+                all_entities, resolution_overrides
+            )
             logger.info("Entity resolution completed successfully")
         else:
             logger.info("Entity resolution is disabled in settings.")
@@ -560,7 +603,8 @@ class GraphService:
         return entities, relationships
 
     async def extract_entities_from_text(
-        self, content: str, doc_id: str, chunk_number: int
+        self, content: str, doc_id: str, chunk_number: int, 
+        prompt_overrides: Optional[EntityExtractionPromptOverride] = None
     ) -> Tuple[List[Entity], List[Relationship]]:
         """
         Extract entities and relationships from text content using the LLM.
@@ -609,6 +653,32 @@ class GraphService:
             "additionalProperties": False,
         }
 
+        # Get entity extraction overrides if available
+        extraction_overrides = {}
+        
+        # Convert prompt_overrides to dict for processing
+        if prompt_overrides:
+            # If it's already an EntityExtractionPromptOverride, convert to dict
+            extraction_overrides = prompt_overrides.model_dump(exclude_none=True)
+            
+        # Check for custom prompt template
+        custom_prompt = extraction_overrides.get("prompt_template")
+        custom_examples = extraction_overrides.get("examples")
+        
+        # Prepare examples if provided
+        examples_str = ""
+        if custom_examples:
+            # Ensure proper serialization for both dict and Pydantic model examples
+            if isinstance(custom_examples, list) and custom_examples and hasattr(custom_examples[0], 'model_dump'):
+                # List of Pydantic model objects
+                serialized_examples = [example.model_dump() for example in custom_examples]
+            else:
+                # List of dictionaries
+                serialized_examples = custom_examples
+                
+            examples_json = {"entities": serialized_examples}
+            examples_str = f"\nHere are some examples of the kind of entities to extract:\n```json\n{json.dumps(examples_json, indent=2)}\n```\n"
+        
         # Modify the system message to handle properties as a string that will be parsed later
         system_message = {
             "role": "system",
@@ -619,15 +689,26 @@ class GraphService:
             ),
         }
 
-        user_message = {
-            "role": "user",
-            "content": (
-                "Extract named entities and their relationships from the following text. "
-                "For entities, include entity label and type (PERSON, ORGANIZATION, LOCATION, CONCEPT, etc.). "
-                "For relationships, simply specify the source entity, target entity, and the relationship between them. "
-                "Return your response as valid JSON:\n\n" + content_limited
-            ),
-        }
+        # Use custom prompt if provided, otherwise use default
+        if custom_prompt:
+            user_message = {
+                "role": "user",
+                "content": custom_prompt.format(
+                    content=content_limited,
+                    examples=examples_str
+                )
+            }
+        else:
+            user_message = {
+                "role": "user",
+                "content": (
+                    "Extract named entities and their relationships from the following text. "
+                    "For entities, include entity label and type (PERSON, ORGANIZATION, LOCATION, CONCEPT, etc.). "
+                    "For relationships, simply specify the source entity, target entity, and the relationship between them. "
+                    f"{examples_str}"
+                    "Return your response as valid JSON:\n\n" + content_limited
+                ),
+            }
 
         if settings.GRAPH_PROVIDER == "openai":
             # Use global OpenAI base URL if provided
@@ -652,8 +733,6 @@ class GraphService:
                 )
 
                 if response.output_text:
-                    import json
-
                     extraction_data = json.loads(response.output_text)
 
                     for entity in extraction_data.get("entities", []):
@@ -765,6 +844,7 @@ class GraphService:
         use_colpali: Optional[bool] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
+        prompt_overrides: Optional[QueryPromptOverrides] = None,
     ) -> CompletionResponse:
         """Generate completion using knowledge graph-enhanced retrieval.
 
@@ -790,8 +870,11 @@ class GraphService:
             use_colpali: Whether to use colpali embedding
             hop_depth: Number of relationship hops to traverse (1-3)
             include_paths: Whether to include relationship paths in response
+            prompt_overrides: Optional QueryPromptOverrides with customizations for prompts
         """
         logger.info(f"Querying with graph: {graph_name}, hop depth: {hop_depth}")
+        
+        # Validation is now handled by type annotations
 
         # Get the knowledge graph
         graph = await self.db.get_graph(graph_name, auth)
@@ -820,7 +903,7 @@ class GraphService:
 
         # 2. Graph-based retrieval
         # First extract entities from the query
-        query_entities = await self._extract_entities_from_query(query)
+        query_entities = await self._extract_entities_from_query(query, prompt_overrides)
         logger.info(
             f"Extracted {len(query_entities)} entities from query: {', '.join(e.label for e in query_entities)}"
         )
@@ -839,7 +922,16 @@ class GraphService:
             # Resolve entities to identify variants if enabled
             if settings.ENABLE_ENTITY_RESOLUTION:
                 logger.info(f"Resolving {len(combined_entities)} entities from query and graph...")
-                resolved_entities, entity_mapping = await self.entity_resolver.resolve_entities(combined_entities)
+                # Get the entity_resolution override if provided
+                resolution_overrides = None
+                if prompt_overrides:
+                    # Get just the entity_resolution part
+                    resolution_overrides = prompt_overrides.entity_resolution
+                        
+                resolved_entities, entity_mapping = await self.entity_resolver.resolve_entities(
+                    combined_entities, 
+                    prompt_overrides=resolution_overrides
+                )
             else:
                 logger.info("Entity resolution is disabled in settings.")
                 # Return identity mapping (each entity maps to itself)
@@ -901,19 +993,31 @@ class GraphService:
             paths,
             auth,
             graph_name,
+            prompt_overrides,
         )
 
         return completion_response
 
-    async def _extract_entities_from_query(self, query: str) -> List[Entity]:
+    async def _extract_entities_from_query(
+        self, 
+        query: str, 
+        prompt_overrides: Optional[QueryPromptOverrides] = None
+    ) -> List[Entity]:
         """Extract entities from the query text using the LLM."""
         try:
+            # Get entity_extraction override if provided
+            extraction_overrides = None
+            if prompt_overrides:
+                # Get the entity_extraction part
+                extraction_overrides = prompt_overrides.entity_extraction
+            
             # Extract entities from the query using the same extraction function
             # but with a simplified prompt specific for queries
             entities, _ = await self.extract_entities_from_text(
                 content=query,
                 doc_id="query",  # Use "query" as doc_id
                 chunk_number=0,  # Use 0 as chunk_number
+                prompt_overrides=extraction_overrides
             )
             return entities
         except Exception as e:
@@ -1206,6 +1310,7 @@ class GraphService:
         paths: Optional[List[List[str]]] = None,
         auth: Optional[AuthContext] = None,
         graph_name: Optional[str] = None,
+        prompt_overrides: Optional[QueryPromptOverrides] = None,
     ) -> CompletionResponse:
         """Generate completion using the retrieved chunks and optional path information."""
         if not chunks:
@@ -1235,12 +1340,17 @@ class GraphService:
             else:
                 chunk_contents = [paths_text]
 
-        # Generate completion
+        # Generate completion with prompt override if provided
+        custom_prompt_template = None
+        if prompt_overrides and prompt_overrides.query:
+            custom_prompt_template = prompt_overrides.query.prompt_template
+            
         request = CompletionRequest(
             query=query,
             context_chunks=chunk_contents,
             max_tokens=max_tokens,
             temperature=temperature,
+            prompt_template=custom_prompt_template,
         )
 
         # Get completion from model

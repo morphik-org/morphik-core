@@ -610,6 +610,7 @@ async def query_completion(
                 request.graph_name,
                 request.hop_depth,
                 request.include_paths,
+                request.prompt_overrides,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -1068,6 +1069,7 @@ async def create_graph(
                 auth=auth,
                 filters=request.filters,
                 documents=request.documents,
+                prompt_overrides=request.prompt_overrides,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -1173,6 +1175,7 @@ async def update_graph(
                 auth=auth,
                 additional_filters=request.additional_filters,
                 additional_documents=request.additional_documents,
+                prompt_overrides=request.prompt_overrides,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))

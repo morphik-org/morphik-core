@@ -309,6 +309,7 @@ class DB:
         graph_name: str = None,
         hop_depth: int = 1,
         include_paths: bool = False,
+        prompt_overrides: dict = None,
     ) -> dict:
         """
         Generate completion using relevant chunks as context
@@ -324,6 +325,7 @@ class DB:
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
+            prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
             
         Examples:
             Standard query:
@@ -332,6 +334,14 @@ class DB:
             Knowledge graph enhanced query:
             >>> db.query("How does product X relate to customer segment Y?", 
                          graph_name="market_graph", hop_depth=2, include_paths=True)
+                         
+            With prompt customization:
+            >>> db.query("What are the key findings?",
+                         prompt_overrides={
+                             "query": {
+                                 "prompt_template": "Answer the question in a formal, academic tone: {question}"
+                             }
+                         })
                          
             # If include_paths=True, you can inspect the graph paths
             >>> response = db.query("...", graph_name="sales_graph", include_paths=True)
@@ -350,6 +360,7 @@ class DB:
             graph_name=graph_name,
             hop_depth=hop_depth,
             include_paths=include_paths,
+            prompt_overrides=prompt_overrides,
         )
         return response.model_dump()
 
@@ -672,6 +683,7 @@ class DB:
         name: str,
         filters: Dict[str, Any] = None,
         documents: List[str] = None,
+        prompt_overrides: Dict[str, Any] = None,
     ) -> dict:
         """
         Create a graph from documents.
@@ -683,6 +695,7 @@ class DB:
             name: Name of the graph to create
             filters: Optional metadata filters to determine which documents to include
             documents: Optional list of specific document IDs to include
+            prompt_overrides: Optional customizations for entity extraction and resolution prompts
 
         Returns:
             dict: Information about the created graph
@@ -693,11 +706,26 @@ class DB:
 
             Create a graph from specific documents:
             >>> db.create_graph("custom_graph", documents=["doc1", "doc2", "doc3"])
+            
+            With custom entity extraction examples:
+            >>> db.create_graph(
+            >>>     "medical_graph", 
+            >>>     filters={"category": "medical"},
+            >>>     prompt_overrides={
+            >>>         "entity_extraction": {
+            >>>             "examples": [
+            >>>                 {"label": "Insulin", "type": "MEDICATION"},
+            >>>                 {"label": "Diabetes", "type": "CONDITION"}
+            >>>             ]
+            >>>         }
+            >>>     }
+            >>> )
         """
         graph = self._client.create_graph(
             name=name,
             filters=filters,
             documents=documents,
+            prompt_overrides=prompt_overrides,
         )
         return graph.model_dump()
 
@@ -720,6 +748,56 @@ class DB:
         graph = self._client.get_graph(name)
         return graph.model_dump() if graph else {}
 
+    def update_graph(
+        self, 
+        name: str, 
+        additional_filters: dict = None, 
+        additional_documents: list = None,
+        prompt_overrides: dict = None,
+    ) -> dict:
+        """
+        Update an existing graph with new documents.
+
+        Args:
+            name: Name of the graph to update
+            additional_filters: Optional additional metadata filters to determine which new documents to include
+            additional_documents: Optional list of additional document IDs to include
+            prompt_overrides: Optional customizations for entity extraction and resolution prompts
+
+        Returns:
+            dict: The updated graph
+
+        Examples:
+            Update a graph with new documents:
+            >>> updated_graph = db.update_graph(
+            >>>     "research_graph",
+            >>>     additional_filters={"category": "new_research"},
+            >>>     additional_documents=["doc4", "doc5"]
+            >>> )
+            >>> print(f"Graph now has {len(updated_graph['entities'])} entities")
+            
+            With entity resolution examples:
+            >>> updated_graph = db.update_graph(
+            >>>     "research_graph",
+            >>>     additional_documents=["doc4"],
+            >>>     prompt_overrides={
+            >>>         "entity_resolution": {
+            >>>             "examples": [{
+            >>>                 "canonical": "Machine Learning", 
+            >>>                 "variants": ["ML", "machine learning", "AI/ML"]
+            >>>             }]
+            >>>         }
+            >>>     }
+            >>> )
+        """
+        graph = self._client.update_graph(
+            name=name,
+            additional_filters=additional_filters,
+            additional_documents=additional_documents,
+            prompt_overrides=prompt_overrides,
+        )
+        return graph.model_dump()
+    
     def list_graphs(self) -> list:
         """
         List all graphs the user has access to.
@@ -805,9 +883,18 @@ if __name__ == "__main__":
     print("  db.update_document_by_filename_metadata('report.pdf', {'reviewed': True}, new_filename='reviewed_report.pdf')")
     print("\nQuerying:")
     print("  result = db.query('how to use this API?'); print(result['sources'])")
-    print("Example: db.ingest_text('hello world')")
-    print("Example: db.create_graph('knowledge_graph', filters={'category': 'research'})")
-    print("Example: db.query('How does X relate to Y?', graph_name='knowledge_graph', include_paths=True)")
+    print("\nPrompt Overrides:")
+    print("  db.query('explain this concept', prompt_overrides={'query': {'prompt_template': 'Answer as a professor: {question}'}})")
+    print("  db.create_graph('medical_graph', filters={'category': 'medical'}, prompt_overrides={")
+    print("    'entity_extraction': {'examples': [{'label': 'Insulin', 'type': 'MEDICATION'}]}")
+    print("  })")
+    print("  db.update_graph('research_graph', additional_documents=['doc123'], prompt_overrides={")
+    print("    'entity_resolution': {'examples': [{'canonical': 'Machine Learning', 'variants': ['ML', 'machine learning']}]}")
+    print("  })")
+    print("\nExamples:")
+    print("  db.ingest_text('hello world')")
+    print("  db.create_graph('knowledge_graph', filters={'category': 'research'})")
+    print("  db.query('How does X relate to Y?', graph_name='knowledge_graph', include_paths=True)")
     print("Type help(db) for documentation.")
 
     # Start the shell

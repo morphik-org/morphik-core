@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Literal, Optional, Union, BinaryIO
 from pathlib import Path
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Document(BaseModel):
@@ -239,4 +239,162 @@ class Graph(BaseModel):
     owner: Dict[str, str] = Field(default_factory=dict, description="Graph owner information")
     access_control: Dict[str, List[str]] = Field(
         default_factory=dict, description="Access control information"
+    )
+
+
+class EntityExtractionExample(BaseModel):
+    """
+    Example entity for guiding entity extraction.
+
+    Used to provide domain-specific examples to the LLM of what entities to extract.
+    These examples help steer the extraction process toward entities relevant to your domain.
+    """
+
+    label: str = Field(..., description="The entity label (e.g., 'John Doe', 'Apple Inc.')")
+    type: str = Field(
+        ..., description="The entity type (e.g., 'PERSON', 'ORGANIZATION', 'PRODUCT')"
+    )
+    properties: Optional[Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Optional properties of the entity (e.g., {'role': 'CEO', 'age': 42})",
+    )
+
+
+class EntityResolutionExample(BaseModel):
+    """
+    Example for entity resolution, showing how variants should be grouped.
+
+    Entity resolution is the process of identifying when different references
+    (variants) in text refer to the same real-world entity. These examples
+    help the LLM understand domain-specific patterns for resolving entities.
+    """
+
+    canonical: str = Field(..., description="The canonical (standard/preferred) form of the entity")
+    variants: List[str] = Field(
+        ..., description="List of variant forms that should resolve to the canonical form"
+    )
+
+
+class EntityExtractionPromptOverride(BaseModel):
+    """
+    Configuration for customizing entity extraction prompts.
+
+    This allows you to override both the prompt template used for entity extraction
+    and provide domain-specific examples of entities to be extracted.
+
+    If only examples are provided (without a prompt_template), they will be
+    incorporated into the default prompt. If only prompt_template is provided,
+    it will be used with default examples (if any).
+    """
+
+    prompt_template: Optional[str] = Field(
+        None,
+        description="Custom prompt template, supports {content} and {examples} placeholders. "
+        "The {content} placeholder will be replaced with the text to analyze, and "
+        "{examples} will be replaced with formatted examples.",
+    )
+    examples: Optional[List[EntityExtractionExample]] = Field(
+        None,
+        description="Examples of entities to extract, used to guide the LLM toward "
+        "domain-specific entity types and patterns.",
+    )
+
+
+class EntityResolutionPromptOverride(BaseModel):
+    """
+    Configuration for customizing entity resolution prompts.
+
+    Entity resolution identifies and groups variant forms of the same entity.
+    This override allows you to customize how this process works by providing
+    a custom prompt template and/or domain-specific examples.
+
+    If only examples are provided (without a prompt_template), they will be
+    incorporated into the default prompt. If only prompt_template is provided,
+    it will be used with default examples (if any).
+    """
+
+    prompt_template: Optional[str] = Field(
+        None,
+        description="Custom prompt template that supports {entities_str} and {examples_json} placeholders. "
+        "The {entities_str} placeholder will be replaced with the extracted entities, and "
+        "{examples_json} will be replaced with JSON-formatted examples of entity resolution groups.",
+    )
+    examples: Optional[List[EntityResolutionExample]] = Field(
+        None,
+        description="Examples of entity resolution groups showing how variants of the same entity "
+        "should be resolved to their canonical forms. This is particularly useful for "
+        "domain-specific terminology, abbreviations, and naming conventions.",
+    )
+
+
+class QueryPromptOverride(BaseModel):
+    """
+    Configuration for customizing query prompts.
+
+    This allows you to customize how responses are generated during query operations.
+    Query prompts guide the LLM on how to format and style responses, what tone to use,
+    and how to incorporate retrieved information into the response.
+    """
+
+    prompt_template: Optional[str] = Field(
+        None,
+        description="Custom prompt template for generating responses to queries. "
+        "The exact placeholders available depend on the query context, but "
+        "typically include {question}, {context}, and other system-specific variables. "
+        "Use this to control response style, format, and tone.",
+    )
+
+
+class GraphPromptOverrides(BaseModel):
+    """
+    Container for graph-related prompt overrides.
+
+    Use this class when customizing prompts for graph operations like
+    create_graph() and update_graph(), which only support entity extraction
+    and entity resolution customizations.
+
+    This class enforces that only graph-relevant override types are used.
+    """
+
+    entity_extraction: Optional[EntityExtractionPromptOverride] = Field(
+        None,
+        description="Overrides for entity extraction prompts - controls how entities are identified in text during graph operations",
+    )
+    entity_resolution: Optional[EntityResolutionPromptOverride] = Field(
+        None,
+        description="Overrides for entity resolution prompts - controls how variant forms are grouped during graph operations",
+    )
+
+    @model_validator(mode="after")
+    def validate_graph_fields(self) -> "GraphPromptOverrides":
+        """Ensure only graph-related fields are present."""
+        allowed_fields = {"entity_extraction", "entity_resolution"}
+        for field in self.model_fields:
+            if field not in allowed_fields and getattr(self, field, None) is not None:
+                raise ValueError(f"Field '{field}' is not allowed in graph prompt overrides")
+        return self
+
+
+class QueryPromptOverrides(BaseModel):
+    """
+    Container for query-related prompt overrides.
+
+    Use this class when customizing prompts for query operations, which may
+    include customizations for entity extraction, entity resolution, and
+    the query/response generation itself.
+
+    This is the most feature-complete override class, supporting all customization types.
+    """
+
+    entity_extraction: Optional[EntityExtractionPromptOverride] = Field(
+        None,
+        description="Overrides for entity extraction prompts - controls how entities are identified in text during queries",
+    )
+    entity_resolution: Optional[EntityResolutionPromptOverride] = Field(
+        None,
+        description="Overrides for entity resolution prompts - controls how variant forms are grouped during queries",
+    )
+    query: Optional[QueryPromptOverride] = Field(
+        None,
+        description="Overrides for query prompts - controls response generation style, format, and tone",
     )

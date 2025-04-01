@@ -1,8 +1,10 @@
 import httpx
 import logging
 import json
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from pydantic import BaseModel, ConfigDict
+
+from core.models.prompts import EntityResolutionPromptOverride
 
 from core.config import get_settings
 from core.models.graph import Entity
@@ -33,12 +35,17 @@ class EntityResolver:
         """Initialize the entity resolver"""
         self.settings = get_settings()
 
-    async def resolve_entities(self, entities: List[Entity]) -> Tuple[List[Entity], Dict[str, str]]:
+    async def resolve_entities(
+        self, 
+        entities: List[Entity], 
+        prompt_overrides: Optional[EntityResolutionPromptOverride] = None
+    ) -> Tuple[List[Entity], Dict[str, str]]:
         """
         Resolves entities by identifying and grouping entities that refer to the same real-world entity.
 
         Args:
             entities: List of extracted entities
+            prompt_overrides: Optional EntityResolutionPromptOverride with customizations for entity resolution
 
         Returns:
             Tuple containing:
@@ -55,8 +62,16 @@ class EntityResolver:
         if len(entity_labels) <= 1:
             return entities, {entity_labels[0]: entity_labels[0]} if entity_labels else {}
         
+        # Extract relevant overrides for entity resolution if they exist
+        er_overrides = {}
+        
+        # Convert prompt_overrides to dict for LLM request
+        if prompt_overrides:
+            # Convert EntityResolutionPromptOverride to dict
+            er_overrides = prompt_overrides.model_dump(exclude_none=True)
+        
         # Use LLM to identify and group similar entities
-        resolved_entities = await self._resolve_with_llm(entity_labels)
+        resolved_entities = await self._resolve_with_llm(entity_labels, **er_overrides)
         
         # Create mapping from original to canonical forms
         entity_mapping = {}
@@ -118,19 +133,27 @@ class EntityResolver:
             
         return unique_entities, entity_mapping
     
-    async def _resolve_with_llm(self, entity_labels: List[str]) -> List[Dict[str, Any]]:
+    async def _resolve_with_llm(self, entity_labels: List[str], 
+                              prompt_template=None, examples=None, **options) -> List[Dict[str, Any]]:
         """
         Uses LLM to identify and group similar entities.
         
         Args:
             entity_labels: List of entity labels to resolve
+            prompt_template: Optional custom prompt template
+            examples: Optional custom examples for entity resolution
+            **options: Additional options for entity resolution
             
         Returns:
             List of entity groups, where each group is a dict with:
             - "canonical": The canonical form of the entity
             - "variants": List of variant forms of the entity
         """
-        prompt = self._create_entity_resolution_prompt(entity_labels)
+        prompt = self._create_entity_resolution_prompt(
+            entity_labels, 
+            prompt_template=prompt_template,
+            examples=examples
+        )
         
         if self.settings.GRAPH_PROVIDER == "openai":
             return await self._resolve_with_openai(prompt, entity_labels)
@@ -285,30 +308,55 @@ class EntityResolver:
         # Fallback: treat each entity as unique
         return [{"canonical": label, "variants": [label]} for label in entity_labels]
     
-    def _create_entity_resolution_prompt(self, entity_labels: List[str]) -> str:
+    def _create_entity_resolution_prompt(self, entity_labels: List[str], 
+                                    prompt_template=None, examples=None) -> str:
         """
         Creates a prompt for the LLM to resolve entities.
         
         Args:
             entity_labels: List of entity labels to resolve
+            prompt_template: Optional custom prompt template
+            examples: Optional custom examples for entity resolution
             
         Returns:
             Prompt string for the LLM
         """
         entities_str = "\n".join([f"- {label}" for label in entity_labels])
-        entities_example_dict = {
-            "entity_groups": [
-                {
-                    "canonical": "John F. Kennedy",
-                    "variants": ["John F. Kennedy", "JFK", "Kennedy"]
-                },
-                {
-                    "canonical": "United States of America",
-                    "variants": ["United States of America", "USA", "United States"]
-                }
-            ]
-        }
         
+        # Use custom examples if provided, otherwise use defaults
+        if examples is not None:
+            # Ensure proper serialization for both dict and Pydantic model examples
+            if isinstance(examples, list) and examples and hasattr(examples[0], 'model_dump'):
+                # List of Pydantic model objects
+                serialized_examples = [example.model_dump() for example in examples]
+            else:
+                # List of dictionaries
+                serialized_examples = examples
+                
+            entities_example_dict = {"entity_groups": serialized_examples}
+        else:
+            entities_example_dict = {
+                "entity_groups": [
+                    {
+                        "canonical": "John F. Kennedy",
+                        "variants": ["John F. Kennedy", "JFK", "Kennedy"]
+                    },
+                    {
+                        "canonical": "United States of America",
+                        "variants": ["United States of America", "USA", "United States"]
+                    }
+                ]
+            }
+        
+        # If a custom template is provided, use it
+        if prompt_template:
+            # Format the custom template with our variables
+            return prompt_template.format(
+                entities_str=entities_str,
+                examples_json=str(entities_example_dict)
+            )
+        
+        # Otherwise use the default prompt
         prompt = f"""
 Below is a list of entities extracted from a document:
 

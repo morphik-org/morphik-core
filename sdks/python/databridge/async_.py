@@ -17,7 +17,15 @@ from .models import (
     CompletionResponse,
     IngestTextRequest,
     ChunkSource,
-    Graph
+    Graph,
+    # Prompt override models
+    EntityExtractionExample,
+    EntityResolutionExample,
+    EntityExtractionPromptOverride,
+    EntityResolutionPromptOverride,
+    QueryPromptOverride,
+    GraphPromptOverrides,
+    QueryPromptOverrides
 )
 from .rules import Rule
 
@@ -512,6 +520,7 @@ class AsyncDataBridge:
         graph_name: Optional[str] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
+        prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context.
@@ -527,6 +536,8 @@ class AsyncDataBridge:
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
+            prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
+                Either a QueryPromptOverrides object or a dictionary with the same structure
         Returns:
             CompletionResponse
 
@@ -547,6 +558,27 @@ class AsyncDataBridge:
                 include_paths=True
             )
             
+            # With prompt customization
+            from databridge.models import QueryPromptOverride, QueryPromptOverrides
+            response = await db.query(
+                "What are the key findings?",
+                prompt_overrides=QueryPromptOverrides(
+                    query=QueryPromptOverride(
+                        prompt_template="Answer the question in a formal, academic tone: {question}"
+                    )
+                )
+            )
+            
+            # Or using a dictionary
+            response = await db.query(
+                "What are the key findings?",
+                prompt_overrides={
+                    "query": {
+                        "prompt_template": "Answer the question in a formal, academic tone: {question}"
+                    }
+                }
+            )
+            
             print(response.completion)
             
             # If include_paths=True, you can inspect the graph paths
@@ -555,6 +587,10 @@ class AsyncDataBridge:
                     print(" -> ".join(path))
             ```
         """
+        # Convert prompt_overrides to dict if it's a model
+        if prompt_overrides and isinstance(prompt_overrides, QueryPromptOverrides):
+            prompt_overrides = prompt_overrides.model_dump(exclude_none=True)
+            
         request = {
             "query": query,
             "filters": filters,
@@ -566,6 +602,7 @@ class AsyncDataBridge:
             "graph_name": graph_name,
             "hop_depth": hop_depth,
             "include_paths": include_paths,
+            "prompt_overrides": prompt_overrides,
         }
 
         response = await self._request("POST", "query", data=request)
@@ -1152,6 +1189,7 @@ class AsyncDataBridge:
         name: str,
         filters: Optional[Dict[str, Any]] = None,
         documents: Optional[List[str]] = None,
+        prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
     ) -> Graph:
         """
         Create a graph from documents.
@@ -1163,6 +1201,8 @@ class AsyncDataBridge:
             name: Name of the graph to create
             filters: Optional metadata filters to determine which documents to include
             documents: Optional list of specific document IDs to include
+            prompt_overrides: Optional customizations for entity extraction and resolution prompts
+                Either a GraphPromptOverrides object or a dictionary with the same structure
 
         Returns:
             Graph: The created graph object
@@ -1180,12 +1220,32 @@ class AsyncDataBridge:
                 name="custom_graph",
                 documents=["doc1", "doc2", "doc3"]
             )
+            
+            # With custom entity extraction examples
+            from databridge.models import EntityExtractionPromptOverride, EntityExtractionExample, GraphPromptOverrides
+            graph = await db.create_graph(
+                name="medical_graph", 
+                filters={"category": "medical"},
+                prompt_overrides=GraphPromptOverrides(
+                    entity_extraction=EntityExtractionPromptOverride(
+                        examples=[
+                            EntityExtractionExample(label="Insulin", type="MEDICATION"),
+                            EntityExtractionExample(label="Diabetes", type="CONDITION")
+                        ]
+                    )
+                )
+            )
             ```
         """
+        # Convert prompt_overrides to dict if it's a model
+        if prompt_overrides and isinstance(prompt_overrides, GraphPromptOverrides):
+            prompt_overrides = prompt_overrides.model_dump(exclude_none=True)
+            
         request = {
             "name": name,
             "filters": filters,
             "documents": documents,
+            "prompt_overrides": prompt_overrides,
         }
 
         response = await self._request("POST", "graph/create", request)
@@ -1228,27 +1288,30 @@ class AsyncDataBridge:
         """
         response = await self._request("GET", "graphs")
         return [Graph(**graph) for graph in response]
-        
+
     async def update_graph(
         self,
         name: str,
         additional_filters: Optional[Dict[str, Any]] = None,
         additional_documents: Optional[List[str]] = None,
+        prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
     ) -> Graph:
         """
         Update an existing graph with new documents.
-        
+
         This method processes additional documents matching the original or new filters,
         extracts entities and relationships, and updates the graph with new information.
-        
+
         Args:
             name: Name of the graph to update
             additional_filters: Optional additional metadata filters to determine which new documents to include
             additional_documents: Optional list of additional document IDs to include
-            
+            prompt_overrides: Optional customizations for entity extraction and resolution prompts
+                Either a GraphPromptOverrides object or a dictionary with the same structure
+
         Returns:
             Graph: The updated graph
-            
+
         Example:
             ```python
             # Update a graph with new documents
@@ -1258,11 +1321,33 @@ class AsyncDataBridge:
                 additional_documents=["doc4", "doc5"]
             )
             print(f"Graph now has {len(updated_graph.entities)} entities")
+
+            # With entity resolution examples
+            from databridge.models import EntityResolutionPromptOverride, EntityResolutionExample, GraphPromptOverrides
+            updated_graph = await db.update_graph(
+                name="research_graph",
+                additional_documents=["doc4"],
+                prompt_overrides=GraphPromptOverrides(
+                    entity_resolution=EntityResolutionPromptOverride(
+                        examples=[
+                            EntityResolutionExample(
+                                canonical="Machine Learning", 
+                                variants=["ML", "machine learning", "AI/ML"]
+                            )
+                        ]
+                    )
+                )
+            )
             ```
         """
+        # Convert prompt_overrides to dict if it's a model
+        if prompt_overrides and isinstance(prompt_overrides, GraphPromptOverrides):
+            prompt_overrides = prompt_overrides.model_dump(exclude_none=True)
+            
         request = {
             "additional_filters": additional_filters,
             "additional_documents": additional_documents,
+            "prompt_overrides": prompt_overrides,
         }
 
         response = await self._request("POST", f"graph/{name}/update", request)

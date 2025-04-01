@@ -22,7 +22,17 @@ class OllamaCompletionModel(BaseCompletionModel):
             else:
                 context.append(chunk)
         context = "\n\n".join(context)
-        prompt = f"""You are a helpful assistant. Use the provided context to answer questions accurately.
+        
+        if request.prompt_template:
+            # Use custom template if provided
+            prompt = request.prompt_template.format(
+                context=context,
+                question=request.query,
+                query=request.query  # Alternative name for the query
+            )
+        else:
+            # Default prompt template
+            prompt = f"""You are a helpful assistant. Use the provided context to answer questions accurately.
 
 <QUESTION>
 {request.query}
