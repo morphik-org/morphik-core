@@ -154,11 +154,27 @@ class EntityExtractionPromptOverride(BaseModel):
     If only examples are provided (without a prompt_template), they will be
     incorporated into the default prompt. If only prompt_template is provided,
     it will be used with default examples (if any).
+    
+    Required placeholders:
+    - {content}: Will be replaced with the text to analyze for entity extraction
+    - {examples}: Will be replaced with formatted examples of entities to extract
+    
+    Example prompt template:
+    ```
+    Extract entities from the following text. Look for entities similar to these examples:
+    
+    {examples}
+    
+    Text to analyze:
+    {content}
+    
+    Extracted entities (in JSON format):
+    ```
     """
 
     prompt_template: Optional[str] = Field(
         None,
-        description="Custom prompt template, supports {content} and {examples} placeholders. "
+        description="Custom prompt template, MUST include both {content} and {examples} placeholders. "
         "The {content} placeholder will be replaced with the text to analyze, and "
         "{examples} will be replaced with formatted examples.",
     )
@@ -180,11 +196,29 @@ class EntityResolutionPromptOverride(BaseModel):
     If only examples are provided (without a prompt_template), they will be
     incorporated into the default prompt. If only prompt_template is provided,
     it will be used with default examples (if any).
+    
+    Required placeholders:
+    - {entities_str}: Will be replaced with the extracted entities
+    - {examples_json}: Will be replaced with JSON-formatted examples of entity resolution groups
+    
+    Example prompt template:
+    ```
+    I have extracted the following entities:
+    
+    {entities_str}
+    
+    Below are examples of how different entity references can be grouped together:
+    
+    {examples_json}
+    
+    Group the above entities by resolving which mentions refer to the same entity.
+    Return the results in JSON format.
+    ```
     """
 
     prompt_template: Optional[str] = Field(
         None,
-        description="Custom prompt template that supports {entities_str} and {examples_json} placeholders. "
+        description="Custom prompt template that MUST include both {entities_str} and {examples_json} placeholders. "
         "The {entities_str} placeholder will be replaced with the extracted entities, and "
         "{examples_json} will be replaced with JSON-formatted examples of entity resolution groups.",
     )
@@ -203,13 +237,30 @@ class QueryPromptOverride(BaseModel):
     This allows you to customize how responses are generated during query operations.
     Query prompts guide the LLM on how to format and style responses, what tone to use,
     and how to incorporate retrieved information into the response.
+    
+    Required placeholders:
+    - {question}: Will be replaced with the user's query
+    - {context}: Will be replaced with the retrieved content/context
+    
+    Example prompt template:
+    ```
+    Answer the following question based on the provided information.
+    
+    Question: {question}
+    
+    Context:
+    {context}
+    
+    Answer:
+    ```
     """
 
     prompt_template: Optional[str] = Field(
         None,
         description="Custom prompt template for generating responses to queries. "
-        "The exact placeholders available depend on the query context, but "
-        "typically include {question}, {context}, and other system-specific variables. "
+        "REQUIRED PLACEHOLDERS: {question} and {context} must be included in the template. "
+        "The {question} placeholder will be replaced with the user query, and "
+        "{context} will be replaced with the retrieved content. "
         "Use this to control response style, format, and tone.",
     )
 
@@ -247,6 +298,9 @@ class GraphPromptOverrides(BaseModel):
 
     This class enforces that only graph-relevant override types are used.
     """
+    model_config = {
+        "extra": "forbid"  # This will cause validation error for extra fields
+    }
 
     entity_extraction: Optional[EntityExtractionPromptOverride] = Field(
         None,
@@ -257,14 +311,97 @@ class GraphPromptOverrides(BaseModel):
         description="Overrides for entity resolution prompts - controls how variant forms are grouped during graph operations",
     )
 
-    @model_validator(mode="after")
-    def validate_graph_fields(self) -> "GraphPromptOverrides":
-        """Ensure only graph-related fields are present."""
+
+def validate_prompt_template_placeholders(prompt_type: str, template: str) -> None:
+    """
+    Validate that a prompt template contains all required placeholders.
+    
+    Args:
+        prompt_type: The type of prompt ("query", "entity_extraction", or "entity_resolution")
+        template: The prompt template to validate
+        
+    Raises:
+        ValueError: If any required placeholders are missing
+    """
+    if not template:
+        return
+        
+    if prompt_type == "query":
+        required = ["{question}", "{context}"]
+    elif prompt_type == "entity_extraction":
+        required = ["{content}", "{examples}"]
+    elif prompt_type == "entity_resolution":
+        required = ["{entities_str}", "{examples_json}"]
+    else:
+        raise ValueError(f"Unknown prompt type: {prompt_type}")
+        
+    missing = [p for p in required if p not in template]
+    if missing:
+        raise ValueError(f"Required placeholders {missing} are missing from {prompt_type} prompt template")
+
+
+def validate_prompt_overrides(prompt_overrides):
+    """
+    Validate that all prompt templates in the prompt_overrides have the required placeholders.
+    
+    This function is meant to be called from API endpoints to provide better error messages
+    for incorrectly formatted prompt templates.
+    
+    Args:
+        prompt_overrides: The prompt overrides object (can be of type QueryPromptOverrides or GraphPromptOverrides)
+                         or a dictionary representation
+        
+    Raises:
+        ValueError: If any required placeholders are missing from any templates or if invalid fields are present
+    """
+    if not prompt_overrides:
+        return
+
+    # First, validate field names 
+    # This handles dictionary inputs that haven't been validated by Pydantic models yet
+    if isinstance(prompt_overrides, dict):
+        # Determine allowed fields based on whether 'query' is one of expected fields
+        # If GraphPromptOverrides: only entity_extraction and entity_resolution are allowed
+        # If QueryPromptOverrides: entity_extraction, entity_resolution, and query are allowed
+        is_graph_context = 'query' not in prompt_overrides and any(
+            key in {'entity_extraction', 'entity_resolution'} for key in prompt_overrides
+        )
+        
         allowed_fields = {"entity_extraction", "entity_resolution"}
-        for field in self.model_fields:
-            if field not in allowed_fields and getattr(self, field, None) is not None:
-                raise ValueError(f"Field '{field}' is not allowed in graph prompt overrides")
-        return self
+        if not is_graph_context:
+            allowed_fields.add("query")
+            
+        # Check for invalid fields
+        for field in prompt_overrides:
+            if field not in allowed_fields:
+                context_type = "graph" if is_graph_context else "query"
+                raise ValueError(f"Field '{field}' is not allowed in {context_type} prompt overrides")
+                
+        # Validate query prompt template if present
+        if 'query' in prompt_overrides and prompt_overrides['query'] and 'prompt_template' in prompt_overrides['query']:
+            validate_prompt_template_placeholders("query", prompt_overrides['query']['prompt_template'])
+        
+        # Validate entity_extraction prompt template if present
+        if 'entity_extraction' in prompt_overrides and prompt_overrides['entity_extraction'] and 'prompt_template' in prompt_overrides['entity_extraction']:
+            validate_prompt_template_placeholders("entity_extraction", prompt_overrides['entity_extraction']['prompt_template'])
+        
+        # Validate entity_resolution prompt template if present  
+        if 'entity_resolution' in prompt_overrides and prompt_overrides['entity_resolution'] and 'prompt_template' in prompt_overrides['entity_resolution']:
+            validate_prompt_template_placeholders("entity_resolution", prompt_overrides['entity_resolution']['prompt_template'])
+            
+    else:
+        # Object is a model instance, validate with attribute access
+        # Validate query prompt template if present
+        if hasattr(prompt_overrides, 'query') and prompt_overrides.query and prompt_overrides.query.prompt_template:
+            validate_prompt_template_placeholders("query", prompt_overrides.query.prompt_template)
+        
+        # Validate entity_extraction prompt template if present
+        if hasattr(prompt_overrides, 'entity_extraction') and prompt_overrides.entity_extraction and prompt_overrides.entity_extraction.prompt_template:
+            validate_prompt_template_placeholders("entity_extraction", prompt_overrides.entity_extraction.prompt_template)
+        
+        # Validate entity_resolution prompt template if present
+        if hasattr(prompt_overrides, 'entity_resolution') and prompt_overrides.entity_resolution and prompt_overrides.entity_resolution.prompt_template:
+            validate_prompt_template_placeholders("entity_resolution", prompt_overrides.entity_resolution.prompt_template)
 
 
 class QueryPromptOverrides(BaseModel):
@@ -276,7 +413,18 @@ class QueryPromptOverrides(BaseModel):
     the query/response generation itself.
 
     This is the most feature-complete override class, supporting all customization types.
+    
+    Available customizations:
+    - entity_extraction: Customize how entities are identified in text
+    - entity_resolution: Customize how entity variants are grouped 
+    - query: Customize response generation style, format, and tone
+    
+    Each type has its own required placeholders. See the specific class documentation
+    for details and examples.
     """
+    model_config = {
+        "extra": "forbid"  # This will cause validation error for extra fields
+    }
 
     entity_extraction: Optional[EntityExtractionPromptOverride] = Field(
         None,

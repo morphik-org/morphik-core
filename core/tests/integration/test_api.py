@@ -2295,7 +2295,7 @@ async def test_query_with_completion_override(client: AsyncClient):
     # Define custom query prompt override
     query_prompt_override = {
         "query": {
-            "prompt_template": "Using the provided information, answer the following question in the style of a technical expert using '*' for bullet points: {question}"
+            "prompt_template": "Using the provided information, answer the following question in the style of a technical expert using '*' for bullet points: {question} with context: {context}",
         }
     }
 
@@ -2364,3 +2364,79 @@ async def test_invalid_prompt_overrides(client: AsyncClient):
     )
 
     assert response.status_code in [400, 422]  # Either bad request or validation error
+
+@pytest.mark.asyncio
+async def test_prompt_override_placeholder_validation(client: AsyncClient):
+    """Test validation of required placeholders in prompt override templates."""
+    # Create test document
+    doc_id = await test_ingest_text_document(
+        client, content="Test content for prompt placeholder validation."
+    )
+
+    headers = create_auth_header()
+    
+    # Test missing {content} placeholder in entity extraction prompt
+    missing_content_override = {
+        "entity_extraction": {
+            "prompt_template": "Invalid template with only {examples} but missing content placeholder",
+        }
+    }
+    
+    response = await client.post(
+        "/graph/create",
+        json={"name": "test_missing_content", "documents": [doc_id], "prompt_overrides": missing_content_override},
+        headers=headers,
+    )
+    
+    assert response.status_code in [400, 422]
+    assert "missing" in response.json()["detail"].lower() and "content" in response.json()["detail"].lower()
+    
+    # Test missing {examples} placeholder in entity extraction prompt
+    missing_examples_override = {
+        "entity_extraction": {
+            "prompt_template": "Invalid template with only {content} but missing examples placeholder",
+        }
+    }
+    
+    response = await client.post(
+        "/graph/create",
+        json={"name": "test_missing_examples", "documents": [doc_id], "prompt_overrides": missing_examples_override},
+        headers=headers,
+    )
+    
+    assert response.status_code in [400, 422]
+    assert "missing" in response.json()["detail"].lower() and "examples" in response.json()["detail"].lower()
+    
+    # Test missing placeholders in query prompt override
+    missing_query_placeholders_override = {
+        "query": {
+            "prompt_template": "Invalid template with no required placeholders",
+        }
+    }
+    
+    response = await client.post(
+        "/query",
+        json={
+            "query": "Test query",
+            "prompt_overrides": missing_query_placeholders_override,
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code in [400, 422]
+    assert "question" in response.json()["detail"].lower() and "context" in response.json()["detail"].lower()
+    
+    # Test valid prompt overrides with all required placeholders
+    valid_extraction_override = {
+        "entity_extraction": {
+            "prompt_template": "Valid template with {content} and {examples} placeholders",
+        }
+    }
+    
+    response = await client.post(
+        "/graph/create",
+        json={"name": "test_valid_placeholders", "documents": [doc_id], "prompt_overrides": valid_extraction_override},
+        headers=headers,
+    )
+    
+    assert response.status_code == 200

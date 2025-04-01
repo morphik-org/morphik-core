@@ -58,7 +58,13 @@ class CreateGraphRequest(BaseModel):
     )
     prompt_overrides: Optional[GraphPromptOverrides] = Field(
         None,
-        description="Optional customizations for entity extraction and resolution prompts"
+        description="Optional customizations for entity extraction and resolution prompts",
+        json_schema_extra={"example": {
+            "entity_extraction": {
+                "prompt_template": "Extract entities from the following text: {content}\n{examples}", 
+                "examples": [{"label": "Example", "type": "ENTITY"}]
+            }
+        }}
     )
 
 
