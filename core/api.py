@@ -17,7 +17,7 @@ from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.graph import Graph
 from core.models.auth import AuthContext, EntityType
-from core.models.prompts import validate_prompt_overrides
+from core.models.prompts import validate_prompt_overrides_with_http_exception
 from core.parser.databridge_parser import DatabridgeParser
 from core.services.document_service import DocumentService
 from core.services.telemetry import TelemetryService
@@ -580,17 +580,7 @@ async def query_completion(
     try:
         # Validate prompt overrides before proceeding
         if request.prompt_overrides:
-            try:
-                # This validation happens after Pydantic model validation, so any invalid 
-                # fields would already be caught due to the "extra": "forbid" setting on
-                # the QueryPromptOverrides model. This just checks for required placeholders.
-                validate_prompt_overrides(request.prompt_overrides)
-            except ValueError as e:
-                # Convert validation errors to HTTP exceptions with helpful messages
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Invalid prompt override: {str(e)}. Make sure all required placeholders are included in your prompt templates."
-                )
+            validate_prompt_overrides_with_http_exception(request.prompt_overrides, operation_type="query")
         
         # Check query limits if in cloud mode
         if settings.MODE == "cloud" and auth.user_id:
@@ -628,16 +618,7 @@ async def query_completion(
                 request.prompt_overrides,
             )
     except ValueError as e:
-        error_msg = str(e).lower()
-        if ("not allowed in query prompt overrides" in error_msg or 
-            "extra fields not permitted" in error_msg or
-            "field is not allowed" in error_msg):
-            # More helpful error message for invalid fields in query prompt overrides
-            raise HTTPException(
-                status_code=422,
-                detail=f"Invalid field in query prompt overrides: {str(e)}. For query operations, valid fields are 'entity_extraction', 'entity_resolution', and 'query'."
-            )
-        raise HTTPException(status_code=400, detail=str(e))
+        validate_prompt_overrides_with_http_exception(operation_type="query", error=e)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
@@ -1078,17 +1059,7 @@ async def create_graph(
     try:
         # Validate prompt overrides before proceeding
         if request.prompt_overrides:
-            try:
-                # This validation happens after Pydantic model validation, so any invalid 
-                # fields would already be caught due to the "extra": "forbid" setting on
-                # the GraphPromptOverrides model. This just checks for required placeholders.
-                validate_prompt_overrides(request.prompt_overrides)
-            except ValueError as e:
-                # Convert validation errors to HTTP exceptions with helpful messages
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Invalid prompt override: {str(e)}. Make sure all required placeholders are included in your prompt templates."
-                )
+            validate_prompt_overrides_with_http_exception(request.prompt_overrides, operation_type="graph")
         
         # Check graph creation limits if in cloud mode
         if settings.MODE == "cloud" and auth.user_id:
@@ -1114,16 +1085,7 @@ async def create_graph(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
-        error_msg = str(e).lower()
-        if ("not allowed in graph prompt overrides" in error_msg or 
-            "extra fields not permitted" in error_msg or
-            "field is not allowed" in error_msg):
-            # More helpful error message for invalid fields in graph prompt overrides
-            raise HTTPException(
-                status_code=422,
-                detail=f"Invalid field in graph prompt overrides: {str(e)}. For graph operations, only 'entity_extraction' and 'entity_resolution' overrides are supported."
-            )
-        raise HTTPException(status_code=400, detail=str(e))
+        validate_prompt_overrides_with_http_exception(operation_type="graph", error=e)
 
 
 @app.get("/graph/{name}", response_model=Graph)
@@ -1212,17 +1174,7 @@ async def update_graph(
     try:
         # Validate prompt overrides before proceeding
         if request.prompt_overrides:
-            try:
-                # This validation happens after Pydantic model validation, so any invalid 
-                # fields would already be caught due to the "extra": "forbid" setting on
-                # the GraphPromptOverrides model. This just checks for required placeholders.
-                validate_prompt_overrides(request.prompt_overrides)
-            except ValueError as e:
-                # Convert validation errors to HTTP exceptions with helpful messages
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Invalid prompt override: {str(e)}. Make sure all required placeholders are included in your prompt templates."
-                )
+            validate_prompt_overrides_with_http_exception(request.prompt_overrides, operation_type="graph")
         
         async with telemetry.track_operation(
             operation_type="update_graph",
@@ -1243,16 +1195,7 @@ async def update_graph(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
-        error_msg = str(e).lower()
-        if ("not allowed in graph prompt overrides" in error_msg or 
-            "extra fields not permitted" in error_msg or
-            "field is not allowed" in error_msg):
-            # More helpful error message for invalid fields in graph prompt overrides
-            raise HTTPException(
-                status_code=422,
-                detail=f"Invalid field in graph prompt overrides: {str(e)}. For graph operations, only 'entity_extraction' and 'entity_resolution' overrides are supported."
-            )
-        raise HTTPException(status_code=400, detail=str(e))
+        validate_prompt_overrides_with_http_exception(operation_type="graph", error=e)
     except Exception as e:
         logger.error(f"Error updating graph: {e}")
         raise HTTPException(status_code=500, detail=str(e))
