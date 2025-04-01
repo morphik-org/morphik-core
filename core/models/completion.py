@@ -27,3 +27,4 @@ class CompletionRequest(BaseModel):
     context_chunks: List[str]
     max_tokens: Optional[int] = 1000
     temperature: Optional[float] = 0.7
+    prompt_template: Optional[str] = None

@@ -1,6 +1,7 @@
 import base64
 from io import BytesIO
 from typing import Dict, Any, List, Optional
+from core.models.prompts import QueryPromptOverrides, GraphPromptOverrides
 from fastapi import UploadFile
 from datetime import datetime, UTC
 import torch
@@ -286,6 +287,7 @@ class DocumentService:
         graph_name: Optional[str] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
+        prompt_overrides: Optional["QueryPromptOverrides"] = None,
     ) -> CompletionResponse:
         """Generate completion using relevant chunks as context.
         
@@ -322,6 +324,7 @@ class DocumentService:
                 use_colpali=use_colpali,
                 hop_depth=hop_depth,
                 include_paths=include_paths,
+                prompt_overrides=prompt_overrides,
             )
         
         # Standard retrieval without graph
@@ -339,12 +342,17 @@ class DocumentService:
             for chunk in chunks
         ]
 
-        # Generate completion
+        # Generate completion with prompt override if provided
+        custom_prompt_template = None
+        if prompt_overrides and prompt_overrides.query:
+            custom_prompt_template = prompt_overrides.query.prompt_template
+            
         request = CompletionRequest(
             query=query,
             context_chunks=chunk_contents,
             max_tokens=max_tokens,
             temperature=temperature,
+            prompt_template=custom_prompt_template,
         )
 
         response = await self.completion_model.complete(request)
@@ -1322,6 +1330,7 @@ class DocumentService:
         auth: AuthContext,
         filters: Optional[Dict[str, Any]] = None,
         documents: Optional[List[str]] = None,
+        prompt_overrides: Optional[GraphPromptOverrides] = None,
     ) -> Graph:
         """Create a graph from documents.
 
@@ -1344,6 +1353,7 @@ class DocumentService:
             document_service=self,
             filters=filters,
             documents=documents,
+            prompt_overrides=prompt_overrides,
         )
         
     async def update_graph(
@@ -1352,6 +1362,7 @@ class DocumentService:
         auth: AuthContext,
         additional_filters: Optional[Dict[str, Any]] = None,
         additional_documents: Optional[List[str]] = None,
+        prompt_overrides: Optional[GraphPromptOverrides] = None,
     ) -> Graph:
         """Update an existing graph with new documents.
         
@@ -1374,6 +1385,7 @@ class DocumentService:
             document_service=self,
             additional_filters=additional_filters,
             additional_documents=additional_documents,
+            prompt_overrides=prompt_overrides,
         )
 
     async def delete_document(self, document_id: str, auth: AuthContext) -> bool:

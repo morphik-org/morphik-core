@@ -17,6 +17,7 @@ from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.graph import Graph
 from core.models.auth import AuthContext, EntityType
+from core.models.prompts import validate_prompt_overrides_with_http_exception
 from core.parser.databridge_parser import DatabridgeParser
 from core.services.document_service import DocumentService
 from core.services.telemetry import TelemetryService
@@ -577,6 +578,10 @@ async def query_completion(
     to enhance retrieval by finding relevant entities and their connected documents.
     """
     try:
+        # Validate prompt overrides before proceeding
+        if request.prompt_overrides:
+            validate_prompt_overrides_with_http_exception(request.prompt_overrides, operation_type="query")
+        
         # Check query limits if in cloud mode
         if settings.MODE == "cloud" and auth.user_id:
             # Check limits before proceeding
@@ -610,7 +615,10 @@ async def query_completion(
                 request.graph_name,
                 request.hop_depth,
                 request.include_paths,
+                request.prompt_overrides,
             )
+    except ValueError as e:
+        validate_prompt_overrides_with_http_exception(operation_type="query", error=e)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
@@ -1049,6 +1057,10 @@ async def create_graph(
         Graph: The created graph object
     """
     try:
+        # Validate prompt overrides before proceeding
+        if request.prompt_overrides:
+            validate_prompt_overrides_with_http_exception(request.prompt_overrides, operation_type="graph")
+        
         # Check graph creation limits if in cloud mode
         if settings.MODE == "cloud" and auth.user_id:
             # Check limits before proceeding
@@ -1068,11 +1080,12 @@ async def create_graph(
                 auth=auth,
                 filters=request.filters,
                 documents=request.documents,
+                prompt_overrides=request.prompt_overrides,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        validate_prompt_overrides_with_http_exception(operation_type="graph", error=e)
 
 
 @app.get("/graph/{name}", response_model=Graph)
@@ -1159,6 +1172,10 @@ async def update_graph(
         Graph: The updated graph object
     """
     try:
+        # Validate prompt overrides before proceeding
+        if request.prompt_overrides:
+            validate_prompt_overrides_with_http_exception(request.prompt_overrides, operation_type="graph")
+        
         async with telemetry.track_operation(
             operation_type="update_graph",
             user_id=auth.entity_id,
@@ -1173,11 +1190,12 @@ async def update_graph(
                 auth=auth,
                 additional_filters=request.additional_filters,
                 additional_documents=request.additional_documents,
+                prompt_overrides=request.prompt_overrides,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        validate_prompt_overrides_with_http_exception(operation_type="graph", error=e)
     except Exception as e:
         logger.error(f"Error updating graph: {e}")
         raise HTTPException(status_code=500, detail=str(e))

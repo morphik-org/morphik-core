@@ -51,8 +51,19 @@ class OpenAICompletionModel(BaseCompletionModel):
 
         context = "\n" + "\n\n".join(context_text) + "\n\n"
 
-        # Add text context if any
-        if context_text:
+        # Add text context if any, using custom prompt template if provided
+        if request.prompt_template:
+            # Use custom prompt template with placeholders for context and query
+            formatted_text = request.prompt_template.format(
+                context=context, 
+                question=request.query,
+                query=request.query  # Alternative name for the query
+            )
+            user_message_content.insert(0, {
+                "type": "text",
+                "text": formatted_text
+            })
+        elif context_text:
             user_message_content.insert(0, {
                 "type": "text",
                 "text": f"Context: {context} Question: {request.query}"
