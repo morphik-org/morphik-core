@@ -120,7 +120,12 @@ const MorphikUI = () => {
       setError(null);
       
       const response = await fetch(`${API_BASE_URL}/documents`, {
-        headers
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
       });
       
       if (!response.ok) {

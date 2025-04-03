@@ -394,7 +394,8 @@ def validate_prompt_overrides_with_http_exception(prompt_overrides=None, operati
         try:
             validate_prompt_overrides(prompt_overrides)
             return  # Validation passed, return without raising exception
-        except ValueError as e:
+        except ValueError as validation_error:
+            e = validation_error
             error_msg = str(e).lower()
     else:
         return  # Nothing to validate or handle

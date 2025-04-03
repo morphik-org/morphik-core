@@ -386,7 +386,12 @@ const NotebookSection: React.FC<NotebookSectionProps> = ({ apiBaseUrl }) => {
       };
       
       const response = await fetch(`${apiBaseUrl}/documents`, {
-        headers
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
       });
       
       if (!response.ok) {

@@ -623,7 +623,7 @@ async def query_completion(
         raise HTTPException(status_code=403, detail=str(e))
 
 
-@app.get("/documents", response_model=List[Document])
+@app.post("/documents", response_model=List[Document])
 async def list_documents(
     auth: AuthContext = Depends(verify_token),
     skip: int = 0,

@@ -395,7 +395,8 @@ async def test_list_documents(client: AsyncClient):
     doc_id2 = await test_ingest_text_document(client)
 
     headers = create_auth_header()
-    response = await client.get("/documents", headers=headers)
+    # Test without filters
+    response = await client.post("/documents", headers=headers)
 
     assert response.status_code == 200
     docs = response.json()
@@ -403,6 +404,21 @@ async def test_list_documents(client: AsyncClient):
     doc_ids = [doc["external_id"] for doc in docs]
     assert doc_id1 in doc_ids
     assert doc_id2 in doc_ids
+    
+    # Test with filters
+    metadata = {"test_specific": "filter_value"}
+    doc_id3 = await test_ingest_text_document_with_metadata(client, metadata=metadata)
+    
+    response = await client.post(
+        "/documents?skip=0&limit=10",
+        json={"test_specific": "filter_value"},
+        headers=headers
+    )
+    
+    assert response.status_code == 200
+    filtered_docs = response.json()
+    filtered_doc_ids = [doc["external_id"] for doc in filtered_docs]
+    assert doc_id3 in filtered_doc_ids
 
 
 @pytest.mark.asyncio

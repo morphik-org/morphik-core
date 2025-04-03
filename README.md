@@ -1,8 +1,6 @@
 ![Morphik Logo](/morphik_no_pad.png)
 
-# Morphik Core (previously databridge-core)
-
-**Looking for DataBridge? You're in the right place!**
+# Morphik Core
 
 **Note**: Morphik is launching a hosted service soon! Please sign up for the [waitlist](https://docs.google.com/forms/d/1gFoUKzECICugInLkRlAlgwrkRVorfNywAgkmcjmVGkE/edit).
 

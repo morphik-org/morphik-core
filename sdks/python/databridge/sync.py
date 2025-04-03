@@ -667,7 +667,8 @@ class DataBridge:
             next_page = db.list_documents(skip=10, limit=10, filters={"department": "research"})
             ```
         """
-        response = self._request("GET", f"documents?skip={skip}&limit={limit}&filters={filters}")
+        # Use query params for pagination and POST body for filters
+        response = self._request("POST", f"documents?skip={skip}&limit={limit}", data=filters or {})
         docs = [Document(**doc) for doc in response]
         for doc in docs:
             doc._client = self

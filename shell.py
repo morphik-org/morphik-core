@@ -797,7 +797,7 @@ class DB:
             prompt_overrides=prompt_overrides,
         )
         return graph.model_dump()
-    
+
     def list_graphs(self) -> list:
         """
         List all graphs the user has access to.
