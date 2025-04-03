@@ -151,6 +151,8 @@ class DocumentService:
         # by filtering for only the chunks which weren't ingested via colpali...
         if len(chunks_multivector) == 0:
             return chunks
+        if len(chunks) == 0:
+            return chunks_multivector
 
         # TODO: this is duct tape, fix it properly later
 

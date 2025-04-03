@@ -110,6 +110,19 @@ async def initialize_database():
         # We don't raise an exception here to allow the app to continue starting
         # even if there are initialization errors
 
+@app.on_event("startup")
+async def initialize_vector_store():
+    """Initialize vector store tables and indexes on application startup."""
+    logger.info("Initializing vector store...")
+    if hasattr(vector_store, 'initialize'):
+        success = await vector_store.initialize()
+        if success:
+            logger.info("Vector store initialization successful")
+        else:
+            logger.error("Vector store initialization failed")
+    else:
+        logger.warning("Vector store does not have an initialize method")
+
 # Initialize vector store
 match settings.VECTOR_STORE_PROVIDER:
     case "mongodb":

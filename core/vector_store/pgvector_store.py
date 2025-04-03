@@ -1,10 +1,14 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, AsyncContextManager, Any
 import logging
+import time
+import asyncio
+from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy import Column, String, Integer, Index, select, text
 from sqlalchemy.sql.expression import func
 from sqlalchemy.types import UserDefinedType
+from sqlalchemy.exc import OperationalError
 
 from .base_vector_store import BaseVectorStore
 from core.models.chunk import DocumentChunk
@@ -68,34 +72,194 @@ class PGVectorStore(BaseVectorStore):
     def __init__(
         self,
         uri: str,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
     ):
-        """Initialize PostgreSQL connection for vector storage."""
+        """Initialize PostgreSQL connection for vector storage.
+        
+        Args:
+            uri: PostgreSQL connection URI
+            max_retries: Maximum number of connection retry attempts
+            retry_delay: Delay in seconds between retry attempts
+        """
+        # Use the URI exactly as provided without any modifications
+        # This ensures compatibility with Supabase and other PostgreSQL providers
+        logger.info(f"Initializing database engine with provided URI")
+        
+        # Create the engine with the URI as is
         self.engine = create_async_engine(uri)
+        
+        # Log success
+        logger.info("Created database engine successfully")
         self.async_session = sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        
+    @asynccontextmanager
+    async def get_session_with_retry(self) -> AsyncContextManager[AsyncSession]:
+        """Get a SQLAlchemy async session with retry logic.
+        
+        Yields:
+            AsyncSession: A SQLAlchemy async session
+            
+        Raises:
+            OperationalError: If all connection attempts fail
+        """
+        attempt = 0
+        last_error = None
+        
+        while attempt < self.max_retries:
+            try:
+                async with self.async_session() as session:
+                    # Test if the connection is valid with a simple query
+                    await session.execute(text("SELECT 1"))
+                    yield session
+                    return
+            except OperationalError as e:
+                last_error = e
+                attempt += 1
+                if attempt < self.max_retries:
+                    logger.warning(f"Database connection attempt {attempt} failed: {str(e)}. Retrying in {self.retry_delay} seconds...")
+                    await asyncio.sleep(self.retry_delay)
+        
+        # If we get here, all retries failed
+        logger.error(f"All database connection attempts failed after {self.max_retries} retries: {str(last_error)}")
+        raise last_error
 
     async def initialize(self):
         """Initialize database tables and vector extension."""
         try:
+            # Import config to get vector dimensions
+            from core.config import get_settings
+            settings = get_settings()
+            dimensions = settings.VECTOR_DIMENSIONS
+            
+            logger.info(f"Initializing PGVector store with {dimensions} dimensions")
+            
+            # Use retry logic for initialization
+            attempt = 0
+            last_error = None
+            
+            while attempt < self.max_retries:
+                try:
+                    async with self.engine.begin() as conn:
+                        # Enable pgvector extension
+                        await conn.execute(
+                            text("CREATE EXTENSION IF NOT EXISTS vector")
+                        )
+                        logger.info("Enabled pgvector extension")
+                        
+                        # Rest of initialization code follows
+                        break  # Success, exit the retry loop
+                except OperationalError as e:
+                    last_error = e
+                    attempt += 1
+                    if attempt < self.max_retries:
+                        logger.warning(f"Database initialization attempt {attempt} failed: {str(e)}. Retrying in {self.retry_delay} seconds...")
+                        await asyncio.sleep(self.retry_delay)
+                    else:
+                        logger.error(f"All database initialization attempts failed after {self.max_retries} retries: {str(last_error)}")
+                        raise last_error
+            
+            # Continue with the rest of the initialization
             async with self.engine.begin() as conn:
-                # Enable pgvector extension
-                await conn.execute(
-                    func.create_extension("vector", schema="public", if_not_exists=True)
-                )
-
-                # Create tables and indexes
-                await conn.run_sync(Base.metadata.create_all)
-
-                # Create vector index
-                await conn.execute(
-                    text(
-                        """
-                    CREATE INDEX IF NOT EXISTS vector_idx
-                    ON vector_embeddings
-                    USING ivfflat (embedding vector_cosine_ops)
-                    WITH (lists = 100);
+                
+                # Check if vector_embeddings table exists
+                check_table_sql = """
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'vector_embeddings'
+                );
                 """
+                result = await conn.execute(text(check_table_sql))
+                table_exists = result.scalar()
+                
+                if table_exists:
+                    # Check current vector dimensions
+                    check_dim_sql = """
+                    SELECT atttypmod - 4 AS dimensions
+                    FROM pg_attribute a
+                    JOIN pg_class c ON a.attrelid = c.oid
+                    JOIN pg_type t ON a.atttypid = t.oid
+                    WHERE c.relname = 'vector_embeddings'
+                    AND a.attname = 'embedding'
+                    AND t.typname = 'vector';
+                    """
+                    result = await conn.execute(text(check_dim_sql))
+                    current_dim = result.scalar()
+                    
+                    if current_dim != dimensions:
+                        logger.info(f"Vector dimensions changed from {current_dim} to {dimensions}, recreating table")
+                        
+                        # Drop existing vector index if it exists
+                        await conn.execute(text("DROP INDEX IF EXISTS vector_idx;"))
+                        
+                        # Drop existing vector embeddings table
+                        await conn.execute(text("DROP TABLE IF EXISTS vector_embeddings;"))
+                        
+                        # Create vector embeddings table with proper vector column
+                        create_table_sql = f"""
+                        CREATE TABLE vector_embeddings (
+                            id SERIAL PRIMARY KEY,
+                            document_id VARCHAR(255) NOT NULL,
+                            chunk_number INTEGER NOT NULL,
+                            content TEXT NOT NULL,
+                            chunk_metadata TEXT,
+                            embedding vector({dimensions}) NOT NULL,
+                            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                        );
+                        """
+                        await conn.execute(text(create_table_sql))
+                        logger.info(f"Created vector_embeddings table with vector({dimensions})")
+                        
+                        # Create indexes
+                        await conn.execute(text("CREATE INDEX idx_document_id ON vector_embeddings(document_id);"))
+                        
+                        # Create vector index
+                        await conn.execute(
+                            text(
+                                f"""
+                                CREATE INDEX vector_idx
+                                ON vector_embeddings
+                                USING ivfflat (embedding vector_cosine_ops)
+                                WITH (lists = 100);
+                                """
+                            )
+                        )
+                        logger.info("Created IVFFlat index on vector_embeddings")
+                    else:
+                        logger.info(f"Vector dimensions unchanged ({dimensions}), using existing table")
+                else:
+                    # Create tables and indexes if they don't exist
+                    create_table_sql = f"""
+                    CREATE TABLE vector_embeddings (
+                        id SERIAL PRIMARY KEY,
+                        document_id VARCHAR(255) NOT NULL,
+                        chunk_number INTEGER NOT NULL,
+                        content TEXT NOT NULL,
+                        chunk_metadata TEXT,
+                        embedding vector({dimensions}) NOT NULL,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                    """
+                    await conn.execute(text(create_table_sql))
+                    logger.info(f"Created vector_embeddings table with vector({dimensions})")
+                    
+                    # Create indexes
+                    await conn.execute(text("CREATE INDEX idx_document_id ON vector_embeddings(document_id);"))
+                    
+                    # Create vector index
+                    await conn.execute(
+                        text(
+                            f"""
+                            CREATE INDEX vector_idx
+                            ON vector_embeddings
+                            USING ivfflat (embedding vector_cosine_ops)
+                            WITH (lists = 100);
+                            """
+                        )
                     )
-                )
+                    logger.info("Created IVFFlat index on vector_embeddings")
 
             logger.info("PGVector store initialized successfully")
             return True
@@ -109,7 +273,7 @@ class PGVectorStore(BaseVectorStore):
             if not chunks:
                 return True, []
 
-            async with self.async_session() as session:
+            async with self.get_session_with_retry() as session:
                 stored_ids = []
                 for chunk in chunks:
                     if not chunk.embedding:
@@ -143,7 +307,7 @@ class PGVectorStore(BaseVectorStore):
     ) -> List[DocumentChunk]:
         """Find similar chunks using cosine similarity."""
         try:
-            async with self.async_session() as session:
+            async with self.get_session_with_retry() as session:
                 # Build query
                 query = select(VectorEmbedding).order_by(
                     VectorEmbedding.embedding.op("<->")(query_embedding)
@@ -196,7 +360,7 @@ class PGVectorStore(BaseVectorStore):
             if not chunk_identifiers:
                 return []
                 
-            async with self.async_session() as session:
+            async with self.get_session_with_retry() as session:
                 # Create a list of OR conditions for the query
                 conditions = []
                 for doc_id, chunk_num in chunk_identifiers:
@@ -253,7 +417,7 @@ class PGVectorStore(BaseVectorStore):
             bool: True if the operation was successful, False otherwise
         """
         try:
-            async with self.async_session() as session:
+            async with self.get_session_with_retry() as session:
                 # Delete all chunks for the specified document
                 query = text(f"DELETE FROM vector_embeddings WHERE document_id = :doc_id")
                 await session.execute(query, {"doc_id": document_id})
