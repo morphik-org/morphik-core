@@ -80,8 +80,8 @@ CREATE TABLE IF NOT EXISTS graphs (
     graph_metadata JSONB DEFAULT '{}',
     document_ids JSONB DEFAULT '[]',
     filters JSONB DEFAULT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_at VARCHAR,
+    updated_at VARCHAR,
     owner JSONB DEFAULT '{}',
     access_control JSONB DEFAULT '{"readers": [], "writers": [], "admins": []}'
 );
