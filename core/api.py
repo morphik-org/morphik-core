@@ -113,15 +113,30 @@ async def initialize_database():
 @app.on_event("startup")
 async def initialize_vector_store():
     """Initialize vector store tables and indexes on application startup."""
-    logger.info("Initializing vector store...")
+    # First initialize the primary vector store (PGVectorStore if using pgvector)
+    logger.info("Initializing primary vector store...")
     if hasattr(vector_store, 'initialize'):
         success = await vector_store.initialize()
         if success:
-            logger.info("Vector store initialization successful")
+            logger.info("Primary vector store initialization successful")
         else:
-            logger.error("Vector store initialization failed")
+            logger.error("Primary vector store initialization failed")
     else:
-        logger.warning("Vector store does not have an initialize method")
+        logger.warning("Primary vector store does not have an initialize method")
+    
+    # Then initialize the multivector store if enabled
+    if settings.ENABLE_COLPALI and colpali_vector_store:
+        logger.info("Initializing multivector store...")
+        # Handle both synchronous and asynchronous initialize methods
+        if hasattr(colpali_vector_store.initialize, '__awaitable__'):
+            success = await colpali_vector_store.initialize()
+        else:
+            success = colpali_vector_store.initialize()
+            
+        if success:
+            logger.info("Multivector store initialization successful")
+        else:
+            logger.error("Multivector store initialization failed")
 
 # Initialize vector store
 match settings.VECTOR_STORE_PROVIDER:

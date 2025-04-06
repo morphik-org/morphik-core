@@ -35,7 +35,7 @@ class MultiVectorStore(BaseVectorStore):
         self.conn = None
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self.initialize()
+        # Don't initialize here - initialization will be handled separately
         
     @contextmanager
     def get_connection(self):

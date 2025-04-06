@@ -77,8 +77,8 @@ class DocumentService:
             completion_model=completion_model,
         )
 
-        if colpali_vector_store:
-            colpali_vector_store.initialize()
+        # MultiVectorStore initialization is now handled in the FastAPI startup event
+        # so we don't need to initialize it here again
 
         # Cache-related data structures
         # Maps cache name to active cache object
