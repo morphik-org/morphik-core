@@ -132,6 +132,9 @@ async def test_app(event_loop: asyncio.AbstractEventLoop) -> FastAPI:
         # Create a new vector store with the test URI
         test_vector_store = PGVectorStore(uri=TEST_POSTGRES_URI)
         
+        # Initialize the vector store database
+        await test_vector_store.initialize()
+        
         # Replace the global vector store with our test version
         core.api.vector_store = test_vector_store
     
@@ -1241,9 +1244,48 @@ async def cleanup_graphs():
     engine = create_async_engine(TEST_POSTGRES_URI)
     try:
         async with engine.begin() as conn:
-            # Delete all rows from the graphs table
-            await conn.execute(text("DELETE FROM graphs"))
-            logger.info("Cleaned up all graph-related tables")
+            # First check if the graphs table exists
+            result = await conn.execute(
+                text(
+                    """
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'graphs'
+                );
+                """
+                )
+            )
+            table_exists = result.scalar()
+            
+            if table_exists:
+                # Only delete if the table exists
+                await conn.execute(text("DELETE FROM graphs"))
+                logger.info("Cleaned up all graph-related tables")
+            else:
+                # Create the table if it doesn't exist
+                await conn.execute(
+                    text(
+                        """
+                        CREATE TABLE IF NOT EXISTS graphs (
+                            id VARCHAR PRIMARY KEY,
+                            name VARCHAR UNIQUE,
+                            entities JSONB DEFAULT '[]',
+                            relationships JSONB DEFAULT '[]',
+                            graph_metadata JSONB DEFAULT '{}',
+                            document_ids JSONB DEFAULT '[]',
+                            filters JSONB DEFAULT NULL,
+                            created_at VARCHAR,
+                            updated_at VARCHAR,
+                            owner JSONB DEFAULT '{}',
+                            access_control JSONB DEFAULT '{"readers": [], "writers": [], "admins": []}'
+                        );
+                        """
+                    )
+                )
+                await conn.execute(
+                    text("""CREATE INDEX IF NOT EXISTS idx_graph_name ON graphs(name);""")
+                )
+                logger.info("Created graphs table as it did not exist")
     except Exception as e:
         logger.error(f"Failed to clean up graph tables: {e}")
         raise
