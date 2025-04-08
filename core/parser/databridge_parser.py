@@ -4,14 +4,13 @@ import os
 import tempfile
 import io
 import filetype
-import anthropic
 from abc import ABC, abstractmethod
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from unstructured.partition.auto import partition
 
 from core.models.chunk import Chunk
 from core.parser.base_parser import BaseParser
-from core.parser.video.parse_video import VideoParser
+from core.parser.video.parse_video import VideoParser, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,7 @@ class StandardChunker(BaseChunker):
 
 
 class ContextualChunker(BaseChunker):
-    """Contextual chunking using Claude to add context to each chunk"""
+    """Contextual chunking using LLMs to add context to each chunk"""
 
     DOCUMENT_CONTEXT_PROMPT = """
     <document>
@@ -62,50 +61,63 @@ class ContextualChunker(BaseChunker):
 
     def __init__(self, chunk_size: int, chunk_overlap: int, anthropic_api_key: str):
         self.standard_chunker = StandardChunker(chunk_size, chunk_overlap)
-        self._anthropic_client = None
-        self._anthropic_api_key = anthropic_api_key
 
-    @property
-    def anthropic_client(self):
-        if self._anthropic_client is None:
-            if not self._anthropic_api_key:
-                raise ValueError("Anthropic API key is required for contextual chunking")
-            self._anthropic_client = anthropic.Anthropic(api_key=self._anthropic_api_key)
-        return self._anthropic_client
+        # Get the config for contextual chunking
+        config = load_config()
+        parser_config = config.get("parser", {})
+        self.model_key = parser_config.get("contextual_chunking_model", "claude_sonnet")
+
+        # Get the settings for registered models
+        from core.config import get_settings
+
+        self.settings = get_settings()
+
+        # Make sure the model exists in registered_models
+        if (
+            not hasattr(self.settings, "REGISTERED_MODELS")
+            or self.model_key not in self.settings.REGISTERED_MODELS
+        ):
+            raise ValueError(
+                f"Model '{self.model_key}' not found in registered_models configuration"
+            )
+
+        self.model_config = self.settings.REGISTERED_MODELS[self.model_key]
+        logger.info(f"Initialized ContextualChunker with model_key={self.model_key}")
 
     def _situate_context(self, doc: str, chunk: str) -> str:
-        response = self.anthropic_client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=1024,
-            temperature=0.0,
-            system=[
-                {
-                    "type": "text",
-                    "text": "You are an AI assistant that situates a chunk within a document for the purposes of improving search retrieval of the chunk.",
-                },
-                {
-                    "type": "text",
-                    "text": self.DOCUMENT_CONTEXT_PROMPT.format(doc_content=doc),
-                    "cache_control": {"type": "ephemeral"},
-                },
-            ],
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": self.CHUNK_CONTEXT_PROMPT.format(chunk_content=chunk),
-                        }
-                    ],
-                }
-            ],
-        )
+        import litellm
 
-        context = response.content[0]
-        if context.type == "text":
-            return context.text
-        raise ValueError(f"Unexpected response type from Anthropic: {context.type}")
+        # Extract model name from config
+        model_name = self.model_config.get("model_name")
+
+        # Create system and user messages
+        system_message = {
+            "role": "system",
+            "content": "You are an AI assistant that situates a chunk within a document for the purposes of improving search retrieval of the chunk.",
+        }
+
+        # Add document context and chunk to user message
+        user_message = {
+            "role": "user",
+            "content": f"{self.DOCUMENT_CONTEXT_PROMPT.format(doc_content=doc)}\n\n{self.CHUNK_CONTEXT_PROMPT.format(chunk_content=chunk)}",
+        }
+
+        # Prepare parameters for litellm
+        model_params = {
+            "model": model_name,
+            "messages": [system_message, user_message],
+            "max_tokens": 1024,
+            "temperature": 0.0,
+        }
+
+        # Add all model-specific parameters from the config
+        for key, value in self.model_config.items():
+            if key != "model_name":
+                model_params[key] = value
+
+        # Use litellm for completion
+        response = litellm.completion(**model_params)
+        return response.choices[0].message.content
 
     def split_text(self, text: str) -> List[Chunk]:
         base_chunks = self.standard_chunker.split_text(text)
@@ -166,11 +178,17 @@ class DatabridgeParser(BaseParser):
             video_path = temp_file.name
 
         try:
+            # Load the config to get the frame_sample_rate from databridge.toml
+            config = load_config()
+            parser_config = config.get("parser", {})
+            vision_config = parser_config.get("vision", {})
+            frame_sample_rate = vision_config.get("frame_sample_rate", self.frame_sample_rate)
+
             # Process video
             parser = VideoParser(
                 video_path,
                 assemblyai_api_key=self._assemblyai_api_key,
-                frame_sample_rate=self.frame_sample_rate,
+                frame_sample_rate=frame_sample_rate,
             )
             results = await parser.process_video()
 

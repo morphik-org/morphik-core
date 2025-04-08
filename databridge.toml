@@ -1,5 +1,5 @@
 [api]
-host = "localhost" # Needs to be "0.0.0.0" for docker
+host = "0.0.0.0"
 port = 8000
 reload = true
 
@@ -10,62 +10,55 @@ dev_entity_id = "dev_user"  # Default dev user ID
 dev_entity_type = "developer"  # Default dev entity type
 dev_permissions = ["read", "write", "admin"]  # Default dev permissions
 
+#### Registered models
+# OpenAI models
+openai_gpt4o = { model_name = "gpt-4o" }
+openai_gpt4 = { model_name = "gpt-4" }
+
+# Azure OpenAI models
+azure_gpt4 = { model_name = "gpt-4", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "gpt-4-deployment" }
+azure_gpt35 = { model_name = "gpt-3.5-turbo", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "gpt-35-turbo-deployment" }
+
+# Anthropic models
+claude_opus = { model_name = "claude-3-opus-20240229" }
+claude_sonnet = { model_name = "claude-3-sonnet-20240229" }
+
+# Ollama models
+ollama_llama = { model_name = "ollama_chat/llama3.2", api_base = "http://localhost:11434" }
+ollama_llama_docker = { model_name = "ollama_chat/llama3.2", api_base = "http://ollama:11434" }
+ollama_llama_vision = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://localhost:11434", vision = true }
+
+# Embedding models
+openai_embedding = { model_name = "text-embedding-3-small" }
+openai_embedding_large = { model_name = "text-embedding-3-large" }
+azure_embedding = { model_name = "text-embedding-ada-002", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "embedding-ada-002" }
+ollama_embedding = { model_name = "ollama/nomic-embed-text", api_base = "http://localhost:11434" }
+
+#### Component configurations ####
+
 [completion]
-provider = "ollama"
-model_name = "llama3.2-vision"
+model = "ollama_llama"  # Reference to a key in registered_models
 default_max_tokens = "1000"
-default_temperature = 0.7
-# base_url = "http://ollama:11434"  # Just use the service name
-base_url = "http://localhost:11434"
-
-# OpenAI configuration
-# openai_base_url = "https://api.openai.com/v1"  # Optional: override the base URL for all OpenAI API calls
-
-# [completion]
-# provider = "openai"
-# model_name = "gpt-4o"
-# default_max_tokens = "1000"
-# default_temperature = 0.7
+default_temperature = 0.5
 
 [database]
 provider = "postgres"
 
-# [database]
-# provider = "mongodb"
-# database_name = "databridge"
-# collection_name = "documents"
-
 [embedding]
-provider = "ollama"
-model_name = "nomic-embed-text"
+model = "ollama_embedding"  # Reference to registered model
 dimensions = 768
 similarity_metric = "cosine"
-# base_url = "http://ollama:11434"  # Just use the service name
-base_url = "http://localhost:11434" # Local configuration
-
-# [embedding]
-# provider = "openai"
-# model_name = "text-embedding-3-small"
-# dimensions = 1536
-# similarity_metric = "dotProduct"
 
 [parser]
 chunk_size = 1000
 chunk_overlap = 200
 use_unstructured_api = false
 use_contextual_chunking = false
+contextual_chunking_model = "ollama_llama"  # Reference to a key in registered_models
 
 [parser.vision]
-provider = "ollama"
-model_name = "llama3.2-vision"
+model = "ollama_llama_vision"  # Reference to a key in registered_models
 frame_sample_rate = -1  # Set to -1 to disable frame captioning
-base_url = "http://localhost:11434"  # Only used for ollama
-# base_url = "http://ollama:11434"  # Use if using via docker
-
-# [parser.vision]
-# provider = "openai"
-# model_name = "gpt-4o-mini"
-# frame_sample_rate = -1 # Set to -1 to disable frame captioning
 
 [reranker]
 use_reranker = true
@@ -75,9 +68,6 @@ query_max_length = 256
 passage_max_length = 512
 use_fp16 = true
 device = "mps" # use "cpu" if on docker and using a mac, "cuda" if cuda enabled device
-
-# [reranker]
-# use_reranker = false
 
 [storage]
 provider = "local"
@@ -91,35 +81,17 @@ storage_path = "./storage"
 [vector_store]
 provider = "pgvector"
 
-# [vector_store]
-# provider = "mongodb"
-# database_name = "databridge"
-# collection_name = "document_chunks"
-
 [rules]
-provider = "ollama"
-model_name = "llama3.2"
+model = "ollama_llama"
 batch_size = 4096
-base_url = "http://localhost:11434"  # Only used for ollama
-
-# [rules]
-# provider = "openai"
-# model_name = "gpt-4o"
-# batch_size = 4096
 
 [databridge]
 enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"
 
 [graph]
-provider = "ollama"
-model_name = "llama3.2"
+model = "ollama_llama"
 enable_entity_resolution = true
-
-# [graph]
-# provider = "openai"
-# model_name = "gpt-4o-mini"
-# enable_entity_resolution = true
 
 [telemetry]
 enabled = true

@@ -4,13 +4,14 @@ import os
 import logging
 from pathlib import Path
 from pdf2image import convert_from_path
+from core.tests import setup_test_logging
 
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.vector_store.multi_vector_store import MultiVectorStore
 from core.models.chunk import DocumentChunk
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure test logging
+setup_test_logging()
 logger = logging.getLogger(__name__)
 
 # Test database URI

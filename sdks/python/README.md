@@ -1,6 +1,6 @@
-# DataBridge
+# Morphik
 
-A Python client for DataBridge API that enables document ingestion and semantic search capabilities.
+A Python client for Morphik API that enables document ingestion and semantic search capabilities.
 
 ## Installation
 

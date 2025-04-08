@@ -3,16 +3,15 @@ import os
 import json
 from datetime import datetime
 import logging
+from core.tests import setup_test_logging
 
+# Configure test logging
+setup_test_logging()
 logger = logging.getLogger(__name__)
 
 
 async def main():
-    # Configure logging
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+    # Logging is already configured in the setup_test_logging() function
 
     # Get the current directory where test_parser.py is located
     current_dir = os.path.dirname(os.path.abspath(__file__))

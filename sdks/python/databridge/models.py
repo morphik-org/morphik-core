@@ -49,7 +49,7 @@ class Document(BaseModel):
             Document: Updated document metadata
         """
         if self._client is None:
-            raise ValueError("Document instance not connected to a client. Use a document returned from a DataBridge client method.")
+            raise ValueError("Document instance not connected to a client. Use a document returned from a Morphik client method.")
             
         return self._client.update_document_with_text(
             document_id=self.external_id,
@@ -85,7 +85,7 @@ class Document(BaseModel):
             Document: Updated document metadata
         """
         if self._client is None:
-            raise ValueError("Document instance not connected to a client. Use a document returned from a DataBridge client method.")
+            raise ValueError("Document instance not connected to a client. Use a document returned from a Morphik client method.")
             
         return self._client.update_document_with_file(
             document_id=self.external_id,
@@ -111,7 +111,7 @@ class Document(BaseModel):
             Document: Updated document metadata
         """
         if self._client is None:
-            raise ValueError("Document instance not connected to a client. Use a document returned from a DataBridge client method.")
+            raise ValueError("Document instance not connected to a client. Use a document returned from a Morphik client method.")
             
         return self._client.update_document_metadata(
             document_id=self.external_id,

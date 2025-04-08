@@ -9,8 +9,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import jwt
 import logging
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from core.completion.openai_completion import OpenAICompletionModel
-from core.embedding.ollama_embedding_model import OllamaEmbeddingModel
 from core.limits_utils import check_and_increment_limits
 from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, UpdateGraphRequest, BatchIngestResponse
 from core.models.completion import ChunkSource, CompletionResponse
@@ -29,14 +27,12 @@ from core.vector_store.multi_vector_store import MultiVectorStore
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.storage.s3_storage import S3Storage
 from core.storage.local_storage import LocalStorage
-from core.embedding.openai_embedding_model import OpenAIEmbeddingModel
-from core.completion.ollama_completion import OllamaCompletionModel
 from core.reranker.flag_reranker import FlagReranker
 from core.cache.llama_cache_factory import LlamaCacheFactory
 import tomli
 
 # Initialize FastAPI app
-app = FastAPI(title="DataBridge API")
+app = FastAPI(title="Morphik API")
 logger = logging.getLogger(__name__)
 
 
@@ -186,37 +182,24 @@ parser = DatabridgeParser(
 )
 
 # Initialize embedding model
-match settings.EMBEDDING_PROVIDER:
-    case "ollama":
-        embedding_model = OllamaEmbeddingModel(
-            base_url=settings.EMBEDDING_OLLAMA_BASE_URL,
-            model_name=settings.EMBEDDING_MODEL,
-        )
-    case "openai":
-        if not settings.OPENAI_API_KEY:
-            raise ValueError("OpenAI API key is required for OpenAI embedding model")
-        embedding_model = OpenAIEmbeddingModel(
-            api_key=settings.OPENAI_API_KEY,
-            model_name=settings.EMBEDDING_MODEL,
-        )
-    case _:
-        raise ValueError(f"Unsupported embedding provider: {settings.EMBEDDING_PROVIDER}")
+# Import here to avoid circular imports
+from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
+
+# Create a LiteLLM model using the registered model config
+embedding_model = LiteLLMEmbeddingModel(
+    model_key=settings.EMBEDDING_MODEL,
+)
+logger.info(f"Initialized LiteLLM embedding model with model key: {settings.EMBEDDING_MODEL}")
 
 # Initialize completion model
-match settings.COMPLETION_PROVIDER:
-    case "ollama":
-        completion_model = OllamaCompletionModel(
-            model_name=settings.COMPLETION_MODEL,
-            base_url=settings.COMPLETION_OLLAMA_BASE_URL,
-        )
-    case "openai":
-        if not settings.OPENAI_API_KEY:
-            raise ValueError("OpenAI API key is required for OpenAI completion model")
-        completion_model = OpenAICompletionModel(
-            model_name=settings.COMPLETION_MODEL,
-        )
-    case _:
-        raise ValueError(f"Unsupported completion provider: {settings.COMPLETION_PROVIDER}")
+# Import here to avoid circular imports
+from core.completion.litellm_completion import LiteLLMCompletionModel
+
+# Create a LiteLLM model using the registered model config
+completion_model = LiteLLMCompletionModel(
+    model_key=settings.COMPLETION_MODEL,
+)
+logger.info(f"Initialized LiteLLM completion model with model key: {settings.COMPLETION_MODEL}")
 
 # Initialize reranker
 reranker = None

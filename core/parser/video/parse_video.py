@@ -1,13 +1,13 @@
 import cv2
 import base64
-from openai import OpenAI
 import assemblyai as aai
 import logging
+import litellm
 from core.models.video import TimeSeriesData, ParseVideoResult
 import tomli
 import os
 from typing import Optional, Dict, Any
-from ollama import AsyncClient
+from core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,49 +25,74 @@ def load_config() -> Dict[str, Any]:
 class VisionModelClient:
     def __init__(self, config: Dict[str, Any]):
         self.config = config["parser"]["vision"]
-        self.provider = self.config.get("provider", "ollama")
-        self.model_name = self.config.get("model_name", "llama3.2-vision")
+        self.model_key = self.config.get("model")
+        self.settings = get_settings()
 
-        if self.provider == "openai":
-            from core.config import get_settings
-            settings = get_settings()
-            
-            # Use global OpenAI base URL setting
-            if hasattr(settings, "OPENAI_BASE_URL") and settings.OPENAI_BASE_URL:
-                self.client = OpenAI(base_url=settings.OPENAI_BASE_URL)
-            else:
-                self.client = OpenAI()
-        elif self.provider == "ollama":
-            base_url = self.config.get("base_url", "http://localhost:11434")
-            self.client = AsyncClient(host=base_url)
-        else:
-            raise ValueError(f"Unsupported vision model provider: {self.provider}")
+        # Get the model configuration from registered_models
+        if (
+            not hasattr(self.settings, "REGISTERED_MODELS")
+            or self.model_key not in self.settings.REGISTERED_MODELS
+        ):
+            raise ValueError(
+                f"Model '{self.model_key}' not found in registered_models configuration"
+            )
+
+        self.model_config = self.settings.REGISTERED_MODELS[self.model_key]
+        logger.info(
+            f"Initialized VisionModelClient with model_key={self.model_key}, config={self.model_config}"
+        )
+
+        # Check if the model has vision capability
+        if not self.model_config.get("vision", False):
+            logger.warning(
+                f"Model '{self.model_key}' does not have vision capability marked in config"
+            )
 
     async def get_frame_description(self, image_base64: str, context: str) -> str:
-        if self.provider == "openai":
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": context},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
-                            },
-                        ],
-                    }
-                ],
-                max_tokens=300,
-            )
-            return response.choices[0].message.content
-        else:  # ollama
-            response = await self.client.chat(
-                model=self.model_name,
-                messages=[{"role": "user", "content": context, "images": [image_base64]}],
-            )
-            return response["message"]["content"]
+        # Create a system message
+        system_message = {
+            "role": "system",
+            "content": "You are a video frame description assistant. Describe the frame clearly and concisely.",
+        }
+
+        # Determine if the model is OpenAI compatible or Ollama compatible based on model name
+        model_name = self.model_config.get("model_name", "")
+
+        if "ollama" in model_name.lower():
+            # Ollama format with images parameter
+            messages = [system_message, {"role": "user", "content": context}]
+
+            model_params = {"model": model_name, "messages": messages, "images": [image_base64]}
+        else:
+            # Standard format with image_url (OpenAI, Anthropic, etc.)
+            messages = [
+                system_message,
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": context},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
+                        },
+                    ],
+                },
+            ]
+
+            model_params = {
+                "model": model_name,
+                "messages": messages,
+                "max_tokens": 300,
+            }
+
+        # Add all additional parameters from the model config
+        for key, value in self.model_config.items():
+            if key not in ["model_name", "vision"]:
+                model_params[key] = value
+
+        # Use litellm for the completion
+        response = await litellm.acompletion(**model_params)
+        return response.choices[0].message.content
 
 
 class VideoParser:

@@ -6,6 +6,10 @@ from pgvector.psycopg import Bit
 import logging
 from core.vector_store.multi_vector_store import MultiVectorStore
 from core.models.chunk import DocumentChunk
+from core.tests import setup_test_logging
+
+# Set up test logging
+setup_test_logging()
 
 # Test database URI
 TEST_DB_URI = "postgresql://postgres:postgres@localhost:5432/test_db"
