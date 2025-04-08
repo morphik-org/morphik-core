@@ -114,26 +114,17 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             if key not in ["model_name", "vision"]:  # Skip these as we've already handled them
                 model_params[key] = value
 
-        try:
-            # Call LiteLLM
-            logger.debug(f"Calling LiteLLM with params: {model_params}")
-            response = await litellm.acompletion(**model_params)
+        # Call LiteLLM
+        logger.debug(f"Calling LiteLLM with params: {model_params}")
+        response = await litellm.acompletion(**model_params)
 
-            # Format response to match CompletionResponse
-            return CompletionResponse(
-                completion=response.choices[0].message.content,
-                usage={
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens,
-                },
-                finish_reason=response.choices[0].finish_reason,
-            )
-        except Exception as e:
-            logger.error(f"Error in LiteLLM completion: {e}")
-            # Provide a fallback response
-            return CompletionResponse(
-                completion=f"I encountered an error processing your request. Error details: {str(e)}",
-                usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-                finish_reason="error",
-            )
+        # Format response to match CompletionResponse
+        return CompletionResponse(
+            completion=response.choices[0].message.content,
+            usage={
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+            },
+            finish_reason=response.choices[0].finish_reason,
+        )
