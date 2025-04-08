@@ -9,9 +9,10 @@ import logging
 import uuid
 import asyncio
 from datetime import datetime
+from core.tests import setup_test_logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+# Configure test logging
+setup_test_logging()
 logger = logging.getLogger("telemetry-test")
 
 # Import the telemetry service

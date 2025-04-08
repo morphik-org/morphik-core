@@ -1,13 +1,13 @@
-import httpx
 import logging
 import numpy as np
 import json
-from typing import Dict, Any, List, Optional, Tuple, Set, Union
+from typing import Dict, Any, List, Optional, Tuple, Set
 from pydantic import BaseModel
 from datetime import datetime, timezone
 from core.models.prompts import (
-    GraphPromptOverrides, QueryPromptOverrides, 
-    EntityExtractionPromptOverride, EntityResolutionPromptOverride
+    GraphPromptOverrides,
+    QueryPromptOverrides,
+    EntityExtractionPromptOverride
 )
 
 from core.models.completion import ChunkSource, CompletionResponse, CompletionRequest
@@ -19,7 +19,6 @@ from core.database.base_database import BaseDatabase
 from core.models.documents import Document, ChunkResult
 from core.config import get_settings
 from core.services.entity_resolution import EntityResolver
-from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +92,7 @@ class GraphService:
         existing_graph = await self.db.get_graph(name, auth)
         if not existing_graph:
             raise ValueError(f"Graph '{name}' not found")
-            
+
         # Track explicitly added documents to ensure they're included in the final graph
         # even if they don't have new entities or relationships
         explicit_doc_ids = set(additional_documents or [])
@@ -114,34 +113,43 @@ class GraphService:
 
         # Batch retrieve all document IDs (both regular and explicit) in a single call
         all_ids_to_retrieve = list(document_ids)
-        
+
         # Add explicit document IDs if not already included
         if explicit_doc_ids and additional_documents:
             # Add any missing IDs to the list
             for doc_id in additional_documents:
                 if doc_id not in document_ids:
                     all_ids_to_retrieve.append(doc_id)
-        
+
         # Batch retrieve all documents in a single call
-        document_objects = await document_service.batch_retrieve_documents(all_ids_to_retrieve, auth)
-        
+        document_objects = await document_service.batch_retrieve_documents(
+            all_ids_to_retrieve, auth
+        )
+
         # Process explicit documents if needed
         if explicit_doc_ids and additional_documents:
             # Extract authorized explicit IDs from the retrieved documents
-            authorized_explicit_ids = {doc.external_id for doc in document_objects 
-                                       if doc.external_id in explicit_doc_ids}
-            logger.info(f"Authorized explicit document IDs: {len(authorized_explicit_ids)} out of {len(explicit_doc_ids)}")
-            
+            authorized_explicit_ids = {
+                doc.external_id for doc in document_objects if doc.external_id in explicit_doc_ids
+            }
+            logger.info(
+                f"Authorized explicit document IDs: {len(authorized_explicit_ids)} out of {len(explicit_doc_ids)}"
+            )
+
             # Update document_ids and all_doc_ids
             document_ids.update(authorized_explicit_ids)
             all_doc_ids.update(authorized_explicit_ids)
-            
+
         # If we have additional filters, make sure we include the document IDs from filter matches
         # even if they don't have new entities or relationships
         if additional_filters:
             filtered_docs = await document_service.batch_retrieve_documents(
-                [doc_id for doc_id in all_doc_ids if doc_id not in {d.external_id for d in document_objects}], 
-                auth
+                [
+                    doc_id
+                    for doc_id in all_doc_ids
+                    if doc_id not in {d.external_id for d in document_objects}
+                ],
+                auth,
             )
             logger.info(f"Additional filtered documents to include: {len(filtered_docs)}")
             document_objects.extend(filtered_docs)
@@ -149,7 +157,7 @@ class GraphService:
         if not document_objects:
             # No authorized new documents
             return existing_graph
-            
+
         # Validation is now handled by type annotations
 
         # Extract entities and relationships from new documents
@@ -159,11 +167,15 @@ class GraphService:
 
         # Track document IDs that need to be included even without entities/relationships
         additional_doc_ids = {doc.external_id for doc in document_objects}
-        
+
         # Merge new entities and relationships with existing ones
         existing_graph = self._merge_graph_data(
-            existing_graph, new_entities_dict, new_relationships, all_doc_ids, additional_filters,
-            additional_doc_ids
+            existing_graph,
+            new_entities_dict,
+            new_relationships,
+            all_doc_ids,
+            additional_filters,
+            additional_doc_ids,
         )
 
         # Store the updated graph in the database
@@ -196,10 +208,12 @@ class GraphService:
             orig_filter_doc_ids = {doc.external_id for doc in filtered_docs}
             logger.info(f"Found {len(orig_filter_doc_ids)} documents matching original filters")
             document_ids.update(orig_filter_doc_ids)
-            
+
         # Get only the document IDs that are not already in the graph
         new_doc_ids = document_ids - set(existing_graph.document_ids)
-        logger.info(f"Found {len(new_doc_ids)} new documents to add to graph '{existing_graph.name}'")
+        logger.info(
+            f"Found {len(new_doc_ids)} new documents to add to graph '{existing_graph.name}'"
+        )
         return new_doc_ids
 
     def _merge_graph_data(
@@ -229,14 +243,14 @@ class GraphService:
         # Update the graph
         existing_graph.entities = list(merged_entities.values())
         existing_graph.relationships = merged_relationships
-        
+
         # Ensure we include all necessary document IDs:
         # 1. All document IDs from document_ids parameter
         # 2. All document IDs that have authorized documents (from additional_doc_ids)
         final_doc_ids = document_ids.copy()
         if additional_doc_ids:
             final_doc_ids.update(additional_doc_ids)
-            
+
         logger.info(f"Final document count in graph: {len(final_doc_ids)}")
         existing_graph.document_ids = list(final_doc_ids)
         existing_graph.updated_at = datetime.now(timezone.utc)
@@ -247,20 +261,22 @@ class GraphService:
             self._smart_merge_filters(existing_graph.filters, additional_filters)
 
         return existing_graph
-        
-    def _smart_merge_filters(self, existing_filters: Dict[str, Any], additional_filters: Dict[str, Any]):
+
+    def _smart_merge_filters(
+        self, existing_filters: Dict[str, Any], additional_filters: Dict[str, Any]
+    ):
         """Merge filters with more intelligence to handle different data types and filter values."""
         for key, value in additional_filters.items():
             # If the key doesn't exist in existing filters, just add it
             if key not in existing_filters:
                 existing_filters[key] = value
                 continue
-                
+
             existing_value = existing_filters[key]
-            
+
             # Handle list values - merge them
             if isinstance(existing_value, list) and isinstance(value, list):
-                # Union the lists without duplicates 
+                # Union the lists without duplicates
                 existing_filters[key] = list(set(existing_value + value))
             # Handle dict values - recursively merge them
             elif isinstance(existing_value, dict) and isinstance(value, dict):
@@ -309,7 +325,7 @@ class GraphService:
     ) -> List[Relationship]:
         """Merge new relationships with existing ones."""
         merged_relationships = list(existing_relationships)
-        
+
         # Create reverse mappings for entity IDs to labels for efficient lookup
         entity_id_to_label = {entity.id: label for label, entity in new_entities_dict.items()}
 
@@ -405,7 +421,7 @@ class GraphService:
             raise ValueError("No authorized documents found matching criteria")
 
         # Validation is now handled by type annotations
-                
+
         # Create a new graph with authorization info
         graph = Graph(
             name=name,
@@ -435,8 +451,11 @@ class GraphService:
         return graph
 
     async def _process_documents_for_entities(
-        self, documents: List[Document], auth: AuthContext, document_service, 
-        prompt_overrides: Optional[GraphPromptOverrides] = None
+        self,
+        documents: List[Document],
+        auth: AuthContext,
+        document_service,
+        prompt_overrides: Optional[GraphPromptOverrides] = None,
     ) -> Tuple[Dict[str, Entity], List[Relationship]]:
         """Process documents to extract entities and relationships.
 
@@ -481,7 +500,7 @@ class GraphService:
                 if prompt_overrides:
                     # Get entity_extraction from the model
                     extraction_overrides = prompt_overrides.entity_extraction
-                
+
                 # Extract entities and relationships from the chunk
                 chunk_entities, chunk_relationships = await self.extract_entities_from_text(
                     chunk.content, chunk.document_id, chunk.chunk_number, extraction_overrides
@@ -534,15 +553,15 @@ class GraphService:
 
         # Check if entity resolution is enabled in settings
         settings = get_settings()
-        
+
         # Resolve entities to handle variations like "Trump" vs "Donald J Trump"
         if settings.ENABLE_ENTITY_RESOLUTION:
             logger.info("Resolving %d entities using LLM...", len(all_entities))
-            
+
             # Extract entity_resolution part if this is a structured override
             resolution_overrides = None
             if prompt_overrides:
-                if hasattr(prompt_overrides, 'entity_resolution'):
+                if hasattr(prompt_overrides, "entity_resolution"):
                     # Get from Pydantic model
                     resolution_overrides = prompt_overrides.entity_resolution
                 elif isinstance(prompt_overrides, dict) and "entity_resolution" in prompt_overrides:
@@ -551,7 +570,7 @@ class GraphService:
                 else:
                     # Otherwise pass as-is
                     resolution_overrides = prompt_overrides
-                    
+
             resolved_entities, entity_mapping = await self.entity_resolver.resolve_entities(
                 all_entities, resolution_overrides
             )
@@ -561,7 +580,7 @@ class GraphService:
             # Return identity mapping (each entity maps to itself)
             entity_mapping = {entity.label: entity.label for entity in all_entities}
             resolved_entities = all_entities
-        
+
         if entity_mapping:
             logger.info("Entity resolution complete. Found %d mappings.", len(entity_mapping))
             # Create a new entities dictionary with resolved entities
@@ -571,15 +590,15 @@ class GraphService:
                 resolved_entities_dict[entity.label] = entity
             # Update relationships to use canonical entity labels
             updated_relationships = []
-            
+
             # Create an entity index by ID for efficient lookups
             entity_by_id = {entity.id: entity for entity in all_entities}
-            
+
             for relationship in relationships:
                 # Lookup entities by ID directly from the index
                 source_entity = entity_by_id.get(relationship.source_id)
                 target_entity = entity_by_id.get(relationship.target_id)
-                
+
                 if source_entity and target_entity:
                     # Get canonical labels
                     source_canonical = entity_mapping.get(source_entity.label, source_entity.label)
@@ -594,7 +613,11 @@ class GraphService:
                         updated_relationships.append(relationship)
                     else:
                         # Skip relationships that can't be properly mapped
-                        logger.warning("Skipping relationship between '%s' and '%s' - canonical entities not found", source_entity.label, target_entity.label)
+                        logger.warning(
+                            "Skipping relationship between '%s' and '%s' - canonical entities not found",
+                            source_entity.label,
+                            target_entity.label,
+                        )
                 else:
                     # Keep relationship as is if we can't find the entities
                     updated_relationships.append(relationship)
@@ -603,8 +626,11 @@ class GraphService:
         return entities, relationships
 
     async def extract_entities_from_text(
-        self, content: str, doc_id: str, chunk_number: int, 
-        prompt_overrides: Optional[EntityExtractionPromptOverride] = None
+        self,
+        content: str,
+        doc_id: str,
+        chunk_number: int,
+        prompt_overrides: Optional[EntityExtractionPromptOverride] = None,
     ) -> Tuple[List[Entity], List[Relationship]]:
         """
         Extract entities and relationships from text content using the LLM.
@@ -622,70 +648,49 @@ class GraphService:
         # Limit text length to avoid token limits
         content_limited = content[: min(len(content), 5000)]
 
-        # Define the JSON schema for structured output
-        json_schema = {
-            "type": "object",
-            "properties": {
-                "entities": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {"label": {"type": "string"}, "type": {"type": "string"}},
-                        "required": ["label", "type"],
-                        "additionalProperties": False,
-                    },
-                },
-                "relationships": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "source": {"type": "string"},
-                            "target": {"type": "string"},
-                            "relationship": {"type": "string"},
-                        },
-                        "required": ["source", "target", "relationship"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            "required": ["entities", "relationships"],
-            "additionalProperties": False,
-        }
+        # We'll use the Pydantic model directly when calling litellm
+        # No need to generate JSON schema separately
 
         # Get entity extraction overrides if available
         extraction_overrides = {}
-        
+
         # Convert prompt_overrides to dict for processing
         if prompt_overrides:
             # If it's already an EntityExtractionPromptOverride, convert to dict
             extraction_overrides = prompt_overrides.model_dump(exclude_none=True)
-            
+
         # Check for custom prompt template
         custom_prompt = extraction_overrides.get("prompt_template")
         custom_examples = extraction_overrides.get("examples")
-        
+
         # Prepare examples if provided
         examples_str = ""
         if custom_examples:
             # Ensure proper serialization for both dict and Pydantic model examples
-            if isinstance(custom_examples, list) and custom_examples and hasattr(custom_examples[0], 'model_dump'):
+            if (
+                isinstance(custom_examples, list)
+                and custom_examples
+                and hasattr(custom_examples[0], "model_dump")
+            ):
                 # List of Pydantic model objects
                 serialized_examples = [example.model_dump() for example in custom_examples]
             else:
                 # List of dictionaries
                 serialized_examples = custom_examples
-                
+
             examples_json = {"entities": serialized_examples}
             examples_str = f"\nHere are some examples of the kind of entities to extract:\n```json\n{json.dumps(examples_json, indent=2)}\n```\n"
-        
+
         # Modify the system message to handle properties as a string that will be parsed later
         system_message = {
             "role": "system",
             "content": (
                 "You are an entity extraction assistant. Extract entities and their relationships from text precisely and thoroughly. "
                 "For entities, include entity label and type (PERSON, ORGANIZATION, LOCATION, CONCEPT, etc.). "
-                "For relationships, use a simple format with source, target, and relationship fields."
+                "For relationships, use a simple format with source, target, and relationship fields. "
+                "IMPORTANT: The source and target fields must be simple strings representing entity labels. For example: "
+                "if you extract entities 'Entity A' and 'Entity B', a relationship would have source: 'Entity A', target: 'Entity B', relationship: 'relates to'. "
+                "Respond directly in json format, without any additional text or explanations. "
             ),
         }
 
@@ -693,10 +698,7 @@ class GraphService:
         if custom_prompt:
             user_message = {
                 "role": "user",
-                "content": custom_prompt.format(
-                    content=content_limited,
-                    examples=examples_str
-                )
+                "content": custom_prompt.format(content=content_limited, examples=examples_str),
             }
         else:
             user_message = {
@@ -704,83 +706,71 @@ class GraphService:
                 "content": (
                     "Extract named entities and their relationships from the following text. "
                     "For entities, include entity label and type (PERSON, ORGANIZATION, LOCATION, CONCEPT, etc.). "
-                    "For relationships, simply specify the source entity, target entity, and the relationship between them. "
+                    "For relationships, specify the source entity, target entity, and the relationship between them. "
+                    "The source and target must be simple strings matching the entity labels, not objects. "
                     f"{examples_str}"
+                    "Sample relationship format: {\"source\": \"Entity A\", \"target\": \"Entity B\", \"relationship\": \"works for\"}\n\n"
                     "Return your response as valid JSON:\n\n" + content_limited
                 ),
             }
 
-        if settings.GRAPH_PROVIDER == "openai":
-            # Use global OpenAI base URL if provided
-            if hasattr(settings, "OPENAI_BASE_URL") and settings.OPENAI_BASE_URL:
-                client = AsyncOpenAI(
-                    api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL
-                )
-            else:
-                client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        # Get the model configuration from registered_models
+        model_config = settings.REGISTERED_MODELS.get(settings.GRAPH_MODEL, {})
+        if not model_config:
+            raise ValueError(
+                f"Model '{settings.GRAPH_MODEL}' not found in registered_models configuration"
+            )
+
+        # Prepare the completion request parameters
+        model_params = {
+            "model": model_config.get("model_name"),
+            "messages": [system_message, user_message],
+            "response_format": ExtractionResult,
+        }
+
+        # Add all model-specific parameters from the config
+        for key, value in model_config.items():
+            if key != "model_name":  # Skip as we've already handled it
+                model_params[key] = value
+        import litellm
+        import instructor
+
+        # Use instructor with litellm to get structured responses
+        client = instructor.from_litellm(litellm.acompletion, mode=instructor.Mode.JSON)
+        try:
+            # Use LiteLLM with instructor for structured completion
+            logger.debug(f"Calling LiteLLM with instructor and params: {model_params}")
+            # Extract the model and messages from model_params
+            model = model_params.pop("model")
+            messages = model_params.pop("messages")
+            # Use instructor's chat.completions.create with response_model
+            response = await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                response_model=ExtractionResult,
+                **model_params
+            )
+
             try:
-                response = await client.responses.create(
-                    model=settings.GRAPH_MODEL,
-                    input=[system_message, user_message],
-                    text={
-                        "format": {
-                            "type": "json_schema",
-                            "name": "entity_extraction",
-                            "schema": json_schema,
-                            "strict": True,
-                        },
-                    },
-                )
 
-                if response.output_text:
-                    extraction_data = json.loads(response.output_text)
+                logger.info(f"Extraction result type: {type(response)}")
+                extraction_result = response  # The response is already our Pydantic model
 
-                    for entity in extraction_data.get("entities", []):
-                        entity["properties"] = {}
+                # Make sure the extraction_result has the expected properties
+                if not hasattr(extraction_result, "entities"):
+                    extraction_result.entities = []
+                if not hasattr(extraction_result, "relationships"):
+                    extraction_result.relationships = []
 
-                    extraction_result = ExtractionResult(**extraction_data)
-                elif hasattr(response, "refusal") and response.refusal:
-                    # Handle refusal
-                    logger.warning(f"OpenAI refused to extract entities: {response.refusal}")
-                    return [], []
-                else:
-                    # Handle empty response
-                    logger.warning(
-                        f"Empty response from OpenAI for document {doc_id}, chunk {chunk_number}"
-                    )
-                    return [], []
-
-            except Exception as e:
-                logger.error(f"Error during entity extraction with OpenAI: {str(e)}")
+            except AttributeError as e:
+                logger.error(f"Invalid response format from LiteLLM: {e}")
+                logger.debug(f"Raw response structure: {response.choices[0]}")
                 return [], []
 
-        elif settings.GRAPH_PROVIDER == "ollama":
-            # For Ollama, use structured output format
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                # Create the schema for structured output
-                format_schema = ExtractionResult.model_json_schema()
-
-                response = await client.post(
-                    f"{settings.EMBEDDING_OLLAMA_BASE_URL}/api/chat",
-                    json={
-                        "model": settings.GRAPH_MODEL,
-                        "messages": [system_message, user_message],
-                        "stream": False,
-                        "format": format_schema,
-                    },
-                )
-                response.raise_for_status()
-                result = response.json()
-
-                # Log the raw response for debugging
-                logger.debug(f"Raw Ollama response for entity extraction: {result['message']['content']}")
-
-                # Parse the JSON response - Pydantic will handle validation
-                extraction_result = ExtractionResult.model_validate_json(
-                    result["message"]["content"]
-                )
-        else:
-            logger.error(f"Unsupported graph provider: {settings.GRAPH_PROVIDER}")
+        except Exception as e:
+            logger.error(f"Error during entity extraction with LiteLLM: {str(e)}")
+            # Enable this for more verbose debugging
+            # litellm.set_verbose = True
             return [], []
 
         # Process extraction results
@@ -873,7 +863,7 @@ class GraphService:
             prompt_overrides: Optional QueryPromptOverrides with customizations for prompts
         """
         logger.info(f"Querying with graph: {graph_name}, hop depth: {hop_depth}")
-        
+
         # Validation is now handled by type annotations
 
         # Get the knowledge graph
@@ -915,10 +905,10 @@ class GraphService:
         else:
             # Use entity resolution to handle variants of the same entity
             settings = get_settings()
-            
+
             # First, create combined list of query entities and graph entities for resolution
             combined_entities = query_entities + graph.entities
-            
+
             # Resolve entities to identify variants if enabled
             if settings.ENABLE_ENTITY_RESOLUTION:
                 logger.info(f"Resolving {len(combined_entities)} entities from query and graph...")
@@ -927,24 +917,22 @@ class GraphService:
                 if prompt_overrides:
                     # Get just the entity_resolution part
                     resolution_overrides = prompt_overrides.entity_resolution
-                        
+
                 resolved_entities, entity_mapping = await self.entity_resolver.resolve_entities(
-                    combined_entities, 
-                    prompt_overrides=resolution_overrides
+                    combined_entities, prompt_overrides=resolution_overrides
                 )
             else:
                 logger.info("Entity resolution is disabled in settings.")
                 # Return identity mapping (each entity maps to itself)
                 entity_mapping = {entity.label: entity.label for entity in combined_entities}
-                resolved_entities = combined_entities
-            
+
             # Create a mapping of resolved entity labels to graph entities
             entity_map = {}
             for entity in graph.entities:
                 # Get canonical form for this entity
                 canonical_label = entity_mapping.get(entity.label, entity.label)
                 entity_map[canonical_label.lower()] = entity
-            
+
             matched_entities = []
             # Match extracted entities with graph entities using canonical labels
             for query_entity in query_entities:
@@ -999,9 +987,7 @@ class GraphService:
         return completion_response
 
     async def _extract_entities_from_query(
-        self, 
-        query: str, 
-        prompt_overrides: Optional[QueryPromptOverrides] = None
+        self, query: str, prompt_overrides: Optional[QueryPromptOverrides] = None
     ) -> List[Entity]:
         """Extract entities from the query text using the LLM."""
         try:
@@ -1010,14 +996,14 @@ class GraphService:
             if prompt_overrides:
                 # Get the entity_extraction part
                 extraction_overrides = prompt_overrides.entity_extraction
-            
+
             # Extract entities from the query using the same extraction function
             # but with a simplified prompt specific for queries
             entities, _ = await self.extract_entities_from_text(
                 content=query,
                 doc_id="query",  # Use "query" as doc_id
                 chunk_number=0,  # Use 0 as chunk_number
-                prompt_overrides=extraction_overrides
+                prompt_overrides=extraction_overrides,
             )
             return entities
         except Exception as e:
@@ -1344,7 +1330,7 @@ class GraphService:
         custom_prompt_template = None
         if prompt_overrides and prompt_overrides.query:
             custom_prompt_template = prompt_overrides.query.prompt_template
-            
+
         request = CompletionRequest(
             query=query,
             context_chunks=chunk_contents,

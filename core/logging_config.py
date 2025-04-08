@@ -44,3 +44,14 @@ def setup_logging(log_level: str = "INFO"):
     logging.getLogger("fastapi").setLevel(logging.INFO)
     # Set debug level for core code to match root logger level
     logging.getLogger("core").setLevel(level)
+
+    # Silence LiteLLM logs to prevent noisy output
+    logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+
+    # Silence telemetry logs to prevent noisy output
+    logging.getLogger("opentelemetry.exporter.otlp.proto.http.trace_exporter").setLevel(
+        logging.CRITICAL
+    )
+    logging.getLogger("opentelemetry.exporter.otlp.proto.http.metric_exporter").setLevel(
+        logging.CRITICAL
+    )

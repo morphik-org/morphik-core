@@ -53,7 +53,7 @@ class DB:
 
             if attempt < max_retries - 1:
                 print(
-                    f"Waiting for DataBridge server to be ready... (attempt {attempt + 1}/{max_retries})"
+                    f"Waiting for Morphik server to be ready... (attempt {attempt + 1}/{max_retries})"
                 )
                 time.sleep(retry_interval)
 
@@ -66,7 +66,7 @@ class DB:
         rules: Optional[List[Dict[str, Any]]] = None,
         use_colpali: bool = True,
         as_object: bool = False,
-    ) -> Union[dict, 'Document']:
+    ) -> Union[dict, "Document"]:
         """
         Ingest text content into DataBridge.
 
@@ -78,10 +78,10 @@ class DB:
                    {"type": "natural_language", "prompt": "Remove PII"}]
             use_colpali: Whether to use ColPali-style embedding model to ingest the text
             as_object: If True, returns the Document object with update methods, otherwise returns a dict
-            
+
         Returns:
             Document metadata (dict or Document object)
-            
+
         Example:
             ```python
             # Create a document and immediately update it with new content
@@ -102,7 +102,7 @@ class DB:
         rules: Optional[List[Dict[str, Any]]] = None,
         use_colpali: bool = True,
         as_object: bool = False,
-    ) -> Union[dict, 'Document']:
+    ) -> Union[dict, "Document"]:
         """
         Ingest a file into DataBridge.
 
@@ -115,10 +115,10 @@ class DB:
                    {"type": "natural_language", "prompt": "Summarize"}]
             use_colpali: Whether to use ColPali-style embedding model to ingest the file
             as_object: If True, returns the Document object with update methods, otherwise returns a dict
-            
+
         Returns:
             Document metadata (dict or Document object)
-            
+
         Example:
             ```python
             # Create a document from a file and immediately update it with text
@@ -145,7 +145,7 @@ class DB:
         use_colpali: bool = True,
         parallel: bool = True,
         as_objects: bool = False,
-    ) -> List[Union[dict, 'Document']]:
+    ) -> List[Union[dict, "Document"]]:
         """
         Batch ingest multiple files into DataBridge.
 
@@ -183,7 +183,7 @@ class DB:
         """
         # Convert file paths to Path objects
         file_paths = [Path(f) for f in files]
-        
+
         # Ingest files using the client
         docs = self._client.ingest_files(
             files=file_paths,
@@ -192,7 +192,7 @@ class DB:
             use_colpali=use_colpali,
             parallel=parallel,
         )
-        
+
         return docs if as_objects else [doc.model_dump() for doc in docs]
 
     def ingest_directory(
@@ -205,7 +205,7 @@ class DB:
         use_colpali: bool = True,
         parallel: bool = True,
         as_objects: bool = False,
-    ) -> List[Union[dict, 'Document']]:
+    ) -> List[Union[dict, "Document"]]:
         """
         Ingest all files in a directory into DataBridge.
 
@@ -237,7 +237,7 @@ class DB:
         """
         # Convert directory to Path
         dir_path = Path(directory)
-        
+
         # Ingest directory using the client
         docs = self._client.ingest_directory(
             directory=dir_path,
@@ -248,7 +248,7 @@ class DB:
             use_colpali=use_colpali,
             parallel=parallel,
         )
-        
+
         return docs if as_objects else [doc.model_dump() for doc in docs]
 
     def retrieve_chunks(
@@ -326,15 +326,15 @@ class DB:
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
-            
+
         Examples:
             Standard query:
             >>> db.query("What are the key findings?", filters={"category": "research"})
-            
+
             Knowledge graph enhanced query:
-            >>> db.query("How does product X relate to customer segment Y?", 
+            >>> db.query("How does product X relate to customer segment Y?",
                          graph_name="market_graph", hop_depth=2, include_paths=True)
-                         
+
             With prompt customization:
             >>> db.query("What are the key findings?",
                          prompt_overrides={
@@ -342,7 +342,7 @@ class DB:
                                  "prompt_template": "Answer the question in a formal, academic tone: {question}"
                              }
                          })
-                         
+
             # If include_paths=True, you can inspect the graph paths
             >>> response = db.query("...", graph_name="sales_graph", include_paths=True)
             >>> if "graph" in response.get("metadata", {}):
@@ -364,19 +364,21 @@ class DB:
         )
         return response.model_dump()
 
-    def list_documents(self, skip: int = 0, limit: int = 100, filters: dict = None, as_objects: bool = False) -> list:
+    def list_documents(
+        self, skip: int = 0, limit: int = 100, filters: dict = None, as_objects: bool = False
+    ) -> list:
         """
         List accessible documents
-        
+
         Args:
             skip: Number of documents to skip
             limit: Maximum number of documents to return
             filters: Optional metadata filters
             as_objects: If True, returns Document objects with update methods, otherwise returns dicts
-            
+
         Returns:
             List of documents (as dicts or Document objects)
-            
+
         Example:
             ```python
             # Get a list of documents that can be updated
@@ -388,31 +390,33 @@ class DB:
         docs = self._client.list_documents(skip=skip, limit=limit, filters=filters or {})
         return docs if as_objects else [doc.model_dump() for doc in docs]
 
-    def get_document(self, document_id: str, as_object: bool = False) -> Union[dict, 'Document']:
+    def get_document(self, document_id: str, as_object: bool = False) -> Union[dict, "Document"]:
         """
         Get document metadata by ID
-        
+
         Args:
             document_id: ID of the document
             as_object: If True, returns the Document object with update methods, otherwise returns a dict
-            
+
         Returns:
             Document metadata (dict or Document object)
         """
         doc = self._client.get_document(document_id)
         return doc if as_object else doc.model_dump()
-        
-    def get_document_by_filename(self, filename: str, as_object: bool = False) -> Union[dict, 'Document']:
+
+    def get_document_by_filename(
+        self, filename: str, as_object: bool = False
+    ) -> Union[dict, "Document"]:
         """
         Get document metadata by filename
-        
+
         Args:
             filename: Filename of the document
             as_object: If True, returns the Document object with update methods, otherwise returns a dict
-            
+
         Returns:
             Document metadata (dict or Document object)
-            
+
         Example:
             ```python
             # Get a document by its filename
@@ -422,7 +426,7 @@ class DB:
         """
         doc = self._client.get_document_by_filename(filename)
         return doc if as_object else doc.model_dump()
-        
+
     def update_document_with_text(
         self,
         document_id: str,
@@ -434,7 +438,7 @@ class DB:
     ) -> dict:
         """
         Update a document with new text content using the specified strategy.
-        
+
         Args:
             document_id: ID of the document to update
             content: The new content to add
@@ -442,7 +446,7 @@ class DB:
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
             use_colpali: Whether to use multi-vector embedding
-            
+
         Returns:
             Updated document metadata
         """
@@ -455,7 +459,7 @@ class DB:
             use_colpali=use_colpali,
         )
         return doc.model_dump()
-        
+
     def update_document_with_file(
         self,
         document_id: str,
@@ -468,7 +472,7 @@ class DB:
     ) -> dict:
         """
         Update a document with content from a file using the specified strategy.
-        
+
         Args:
             document_id: ID of the document to update
             file: Path to file to add
@@ -477,13 +481,13 @@ class DB:
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
             use_colpali: Whether to use multi-vector embedding
-            
+
         Returns:
             Updated document metadata
         """
         file_path = Path(file)
         filename = filename or file_path.name
-        
+
         doc = self._client.update_document_with_file(
             document_id=document_id,
             file=file_path,
@@ -494,7 +498,7 @@ class DB:
             use_colpali=use_colpali,
         )
         return doc.model_dump()
-        
+
     def update_document_metadata(
         self,
         document_id: str,
@@ -502,11 +506,11 @@ class DB:
     ) -> dict:
         """
         Update only the metadata of a document.
-        
+
         Args:
             document_id: ID of the document to update
             metadata: New metadata to set
-            
+
         Returns:
             Document: Updated document metadata
         """
@@ -515,7 +519,7 @@ class DB:
             metadata=metadata,
         )
         return doc.model_dump()
-        
+
     def update_document_by_filename_with_text(
         self,
         filename: str,
@@ -528,7 +532,7 @@ class DB:
     ) -> dict:
         """
         Update a document identified by filename with new text content.
-        
+
         Args:
             filename: Filename of the document to update
             content: The new content to add
@@ -537,7 +541,7 @@ class DB:
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
             use_colpali: Whether to use multi-vector embedding
-            
+
         Returns:
             Updated document metadata
         """
@@ -551,7 +555,7 @@ class DB:
             use_colpali=use_colpali,
         )
         return doc.model_dump()
-        
+
     def update_document_by_filename_with_file(
         self,
         filename: str,
@@ -564,7 +568,7 @@ class DB:
     ) -> dict:
         """
         Update a document identified by filename with content from a file.
-        
+
         Args:
             filename: Filename of the document to update
             file: Path to file to add
@@ -573,13 +577,13 @@ class DB:
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
             use_colpali: Whether to use multi-vector embedding
-            
+
         Returns:
             Updated document metadata
         """
         file_path = Path(file)
         new_filename = new_filename or file_path.name
-        
+
         doc = self._client.update_document_by_filename_with_file(
             filename=filename,
             file=file_path,
@@ -590,7 +594,7 @@ class DB:
             use_colpali=use_colpali,
         )
         return doc.model_dump()
-        
+
     def update_document_by_filename_metadata(
         self,
         filename: str,
@@ -599,12 +603,12 @@ class DB:
     ) -> dict:
         """
         Update a document's metadata using filename to identify the document.
-        
+
         Args:
             filename: Filename of the document to update
             metadata: New metadata to set
             new_filename: Optional new filename to assign to the document
-            
+
         Returns:
             Document: Updated document metadata
         """
@@ -614,18 +618,20 @@ class DB:
             new_filename=new_filename,
         )
         return doc.model_dump()
-    
-    def batch_get_documents(self, document_ids: List[str], as_objects: bool = False) -> List[Union[dict, 'Document']]:
+
+    def batch_get_documents(
+        self, document_ids: List[str], as_objects: bool = False
+    ) -> List[Union[dict, "Document"]]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
-        
+
         Args:
             document_ids: List of document IDs to retrieve
             as_objects: If True, returns Document objects with update methods, otherwise returns dicts
-            
+
         Returns:
             List of document metadata (as dicts or Document objects)
-            
+
         Example:
             ```python
             # Get multiple documents that can be updated
@@ -636,17 +642,17 @@ class DB:
         """
         docs = self._client.batch_get_documents(document_ids)
         return docs if as_objects else [doc.model_dump() for doc in docs]
-        
+
     def batch_get_chunks(self, sources: List[dict]) -> List[dict]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation.
-        
+
         Args:
             sources: List of dictionaries with document_id and chunk_number fields
-            
+
         Returns:
             List of chunk results
-            
+
         Example:
             sources = [
                 {"document_id": "doc_123", "chunk_number": 0},
@@ -706,10 +712,10 @@ class DB:
 
             Create a graph from specific documents:
             >>> db.create_graph("custom_graph", documents=["doc1", "doc2", "doc3"])
-            
+
             With custom entity extraction examples:
             >>> db.create_graph(
-            >>>     "medical_graph", 
+            >>>     "medical_graph",
             >>>     filters={"category": "medical"},
             >>>     prompt_overrides={
             >>>         "entity_extraction": {
@@ -749,9 +755,9 @@ class DB:
         return graph.model_dump() if graph else {}
 
     def update_graph(
-        self, 
-        name: str, 
-        additional_filters: dict = None, 
+        self,
+        name: str,
+        additional_filters: dict = None,
         additional_documents: list = None,
         prompt_overrides: dict = None,
     ) -> dict:
@@ -775,7 +781,7 @@ class DB:
             >>>     additional_documents=["doc4", "doc5"]
             >>> )
             >>> print(f"Graph now has {len(updated_graph['entities'])} entities")
-            
+
             With entity resolution examples:
             >>> updated_graph = db.update_graph(
             >>>     "research_graph",
@@ -783,7 +789,7 @@ class DB:
             >>>     prompt_overrides={
             >>>         "entity_resolution": {
             >>>             "examples": [{
-            >>>                 "canonical": "Machine Learning", 
+            >>>                 "canonical": "Machine Learning",
             >>>                 "variants": ["ML", "machine learning", "AI/ML"]
             >>>             }]
             >>>         }
@@ -873,23 +879,35 @@ if __name__ == "__main__":
     print("  db.batch_get_chunks([{'document_id': 'doc_123', 'chunk_number': 0}])")
     print("\nUpdate by Document ID:")
     print("  db.get_document('doc_123')")
-    print("  db.update_document_with_text('doc_123', 'This is new content to append', filename='updated_doc.txt')")
-    print("  db.update_document_with_file('doc_123', 'path/to/file.pdf', metadata={'status': 'updated'})")
+    print(
+        "  db.update_document_with_text('doc_123', 'This is new content to append', filename='updated_doc.txt')"
+    )
+    print(
+        "  db.update_document_with_file('doc_123', 'path/to/file.pdf', metadata={'status': 'updated'})"
+    )
     print("  db.update_document_metadata('doc_123', {'reviewed': True, 'reviewer': 'John'})")
     print("\nUpdate by Filename:")
     print("  db.get_document_by_filename('report.pdf')")
-    print("  db.update_document_by_filename_with_text('report.pdf', 'New content', new_filename='updated_report.pdf')")
+    print(
+        "  db.update_document_by_filename_with_text('report.pdf', 'New content', new_filename='updated_report.pdf')"
+    )
     print("  db.update_document_by_filename_with_file('report.pdf', 'path/to/new_data.pdf')")
-    print("  db.update_document_by_filename_metadata('report.pdf', {'reviewed': True}, new_filename='reviewed_report.pdf')")
+    print(
+        "  db.update_document_by_filename_metadata('report.pdf', {'reviewed': True}, new_filename='reviewed_report.pdf')"
+    )
     print("\nQuerying:")
     print("  result = db.query('how to use this API?'); print(result['sources'])")
     print("\nPrompt Overrides:")
-    print("  db.query('explain this concept', prompt_overrides={'query': {'prompt_template': 'Answer as a professor: {question}'}})")
+    print(
+        "  db.query('explain this concept', prompt_overrides={'query': {'prompt_template': 'Answer as a professor: {question}'}})"
+    )
     print("  db.create_graph('medical_graph', filters={'category': 'medical'}, prompt_overrides={")
     print("    'entity_extraction': {'examples': [{'label': 'Insulin', 'type': 'MEDICATION'}]}")
     print("  })")
     print("  db.update_graph('research_graph', additional_documents=['doc123'], prompt_overrides={")
-    print("    'entity_resolution': {'examples': [{'canonical': 'Machine Learning', 'variants': ['ML', 'machine learning']}]}")
+    print(
+        "    'entity_resolution': {'examples': [{'canonical': 'Machine Learning', 'variants': ['ML', 'machine learning']}]}"
+    )
     print("  })")
     print("\nExamples:")
     print("  db.ingest_text('hello world')")

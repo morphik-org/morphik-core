@@ -92,7 +92,7 @@ def aggregate_python_files(
 
     with open(output_file, "w", encoding="utf-8") as outfile:
         # Write header information
-        header = f"""DataBridge Code Aggregation
+        header = f"""Morphik Code Aggregation
 {'=' * 80}
 Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 Mode: {mode}

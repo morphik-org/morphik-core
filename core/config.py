@@ -1,5 +1,5 @@
 import os
-from typing import Literal, Optional
+from typing import Literal, Optional, Dict, Any
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 import tomli
@@ -33,15 +33,13 @@ class Settings(BaseSettings):
     dev_entity_id: str = "dev_user"
     dev_permissions: list = ["read", "write", "admin"]
 
+    # Registered models configuration
+    REGISTERED_MODELS: Dict[str, Dict[str, Any]] = {}
+
     # Completion configuration
-    COMPLETION_PROVIDER: Literal["ollama", "openai"]
+    COMPLETION_PROVIDER: Literal["litellm"] = "litellm"
     COMPLETION_MODEL: str
-    COMPLETION_MAX_TOKENS: Optional[str] = None
-    COMPLETION_TEMPERATURE: Optional[float] = None
-    COMPLETION_OLLAMA_BASE_URL: Optional[str] = None
     
-    # OpenAI configuration (global for all OpenAI API calls)
-    OPENAI_BASE_URL: Optional[str] = None
 
     # Database configuration
     DATABASE_PROVIDER: Literal["postgres", "mongodb"]
@@ -49,11 +47,10 @@ class Settings(BaseSettings):
     DOCUMENTS_COLLECTION: Optional[str] = None
 
     # Embedding configuration
-    EMBEDDING_PROVIDER: Literal["ollama", "openai"]
+    EMBEDDING_PROVIDER: Literal["litellm"] = "litellm"
     EMBEDDING_MODEL: str
     VECTOR_DIMENSIONS: int
     EMBEDDING_SIMILARITY_METRIC: Literal["cosine", "dotProduct"]
-    EMBEDDING_OLLAMA_BASE_URL: Optional[str] = None
 
     # Parser configuration
     CHUNK_SIZE: int
@@ -63,12 +60,12 @@ class Settings(BaseSettings):
     USE_CONTEXTUAL_CHUNKING: bool = False
 
     # Rules configuration
-    RULES_PROVIDER: Literal["ollama", "openai"]
+    RULES_PROVIDER: Literal["litellm"] = "litellm"
     RULES_MODEL: str
     RULES_BATCH_SIZE: int = 4096
 
     # Graph configuration
-    GRAPH_PROVIDER: Literal["ollama", "openai"]
+    GRAPH_PROVIDER: Literal["litellm"] = "litellm"
     GRAPH_MODEL: str
     ENABLE_ENTITY_RESOLUTION: bool = True
 
@@ -122,12 +119,7 @@ def get_settings() -> Settings:
         config = tomli.load(f)
 
     em = "'{missing_value}' needed if '{field}' is set to '{value}'"
-    # load OpenAI config if present
     openai_config = {}
-    if "openai_base_url" in config:
-        openai_config = {
-            "OPENAI_BASE_URL": config["openai_base_url"]
-        }
     
     # load api config
     api_config = {
@@ -152,29 +144,20 @@ def get_settings() -> Settings:
     if not auth_config["dev_mode"] and "JWT_SECRET_KEY" not in os.environ:
         raise ValueError("JWT_SECRET_KEY is required when dev_mode is disabled")
 
+    # Load registered models if available
+    registered_models = {}
+    if "registered_models" in config:
+        registered_models = {"REGISTERED_MODELS": config["registered_models"]}
+
     # load completion config
     completion_config = {
-        "COMPLETION_PROVIDER": config["completion"]["provider"],
-        "COMPLETION_MODEL": config["completion"]["model_name"],
+        "COMPLETION_PROVIDER": "litellm",
     }
-    match completion_config["COMPLETION_PROVIDER"]:
-        case "openai" if "OPENAI_API_KEY" in os.environ:
-            completion_config.update({"OPENAI_API_KEY": os.environ["OPENAI_API_KEY"]})
-        case "openai":
-            msg = em.format(
-                missing_value="OPENAI_API_KEY", field="completion.provider", value="openai"
-            )
-            raise ValueError(msg)
-        case "ollama" if "base_url" in config["completion"]:
-            completion_config.update(
-                {"COMPLETION_OLLAMA_BASE_URL": config["completion"]["base_url"]}
-            )
-        case "ollama":
-            msg = em.format(missing_value="base_url", field="completion.provider", value="ollama")
-            raise ValueError(msg)
-        case _:
-            prov = completion_config["COMPLETION_PROVIDER"]
-            raise ValueError(f"Unknown completion provider selected: '{prov}'")
+    
+    # Set the model key for LiteLLM
+    if "model" not in config["completion"]:
+        raise ValueError("'model' is required in the completion configuration")
+    completion_config["COMPLETION_MODEL"] = config["completion"]["model"]
 
     # load database config
     database_config = {"DATABASE_PROVIDER": config["database"]["provider"]}
@@ -199,27 +182,15 @@ def get_settings() -> Settings:
 
     # load embedding config
     embedding_config = {
-        "EMBEDDING_PROVIDER": config["embedding"]["provider"],
-        "EMBEDDING_MODEL": config["embedding"]["model_name"],
+        "EMBEDDING_PROVIDER": "litellm",
         "VECTOR_DIMENSIONS": config["embedding"]["dimensions"],
         "EMBEDDING_SIMILARITY_METRIC": config["embedding"]["similarity_metric"],
     }
-    match embedding_config["EMBEDDING_PROVIDER"]:
-        case "openai" if "OPENAI_API_KEY" in os.environ:
-            embedding_config.update({"OPENAI_API_KEY": os.environ["OPENAI_API_KEY"]})
-        case "openai":
-            msg = em.format(
-                missing_value="OPENAI_API_KEY", field="embedding.provider", value="openai"
-            )
-            raise ValueError(msg)
-        case "ollama" if "base_url" in config["embedding"]:
-            embedding_config.update({"EMBEDDING_OLLAMA_BASE_URL": config["embedding"]["base_url"]})
-        case "ollama":
-            msg = em.format(missing_value="base_url", field="embedding.provider", value="ollama")
-            raise ValueError(msg)
-        case _:
-            prov = embedding_config["EMBEDDING_PROVIDER"]
-            raise ValueError(f"Unknown embedding provider selected: '{prov}'")
+    
+    # Set the model key for LiteLLM
+    if "model" not in config["embedding"]:
+        raise ValueError("'model' is required in the embedding configuration")
+    embedding_config["EMBEDDING_MODEL"] = config["embedding"]["model"]
 
     # load parser config
     parser_config = {
@@ -295,12 +266,16 @@ def get_settings() -> Settings:
             prov = vector_store_config["VECTOR_STORE_PROVIDER"]
             raise ValueError(f"Unknown vector store provider selected: '{prov}'")
 
-    # load rules config - simplified
+    # load rules config
     rules_config = {
-        "RULES_PROVIDER": config["rules"]["provider"],
-        "RULES_MODEL": config["rules"]["model_name"],
+        "RULES_PROVIDER": "litellm",
         "RULES_BATCH_SIZE": config["rules"]["batch_size"],
     }
+    
+    # Set the model key for LiteLLM
+    if "model" not in config["rules"]:
+        raise ValueError("'model' is required in the rules configuration")
+    rules_config["RULES_MODEL"] = config["rules"]["model"]
 
     # load databridge config
     databridge_config = {
@@ -310,10 +285,14 @@ def get_settings() -> Settings:
 
     # load graph config
     graph_config = {
-        "GRAPH_PROVIDER": config["graph"]["provider"],
-        "GRAPH_MODEL": config["graph"]["model_name"],
+        "GRAPH_PROVIDER": "litellm",
         "ENABLE_ENTITY_RESOLUTION": config["graph"].get("enable_entity_resolution", True),
     }
+    
+    # Set the model key for LiteLLM
+    if "model" not in config["graph"]:
+        raise ValueError("'model' is required in the graph configuration")
+    graph_config["GRAPH_MODEL"] = config["graph"]["model"]
     
     # load telemetry config
     telemetry_config = {}
@@ -334,6 +313,7 @@ def get_settings() -> Settings:
     settings_dict = dict(ChainMap(
         api_config,
         auth_config,
+        registered_models,
         completion_config,
         database_config,
         embedding_config,

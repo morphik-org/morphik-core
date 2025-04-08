@@ -105,7 +105,7 @@ services:
 
 ## Accessing Services
 
-- DataBridge API: http://localhost:8000
+- Morphik API: http://localhost:8000
 - API Documentation: http://localhost:8000/docs
 - Health Check: http://localhost:8000/health
 
