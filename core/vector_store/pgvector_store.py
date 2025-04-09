@@ -15,6 +15,7 @@ from core.models.chunk import DocumentChunk
 
 logger = logging.getLogger(__name__)
 Base = declarative_base()
+PGVECTOR_MAX_DIMENSIONS = 2000  # Maximum dimensions for pgvector
 
 
 class Vector(UserDefinedType):
@@ -132,7 +133,7 @@ class PGVectorStore(BaseVectorStore):
             # Import config to get vector dimensions
             from core.config import get_settings
             settings = get_settings()
-            dimensions = settings.VECTOR_DIMENSIONS
+            dimensions = min(settings.VECTOR_DIMENSIONS, PGVECTOR_MAX_DIMENSIONS)
             
             logger.info(f"Initializing PGVector store with {dimensions} dimensions")
             

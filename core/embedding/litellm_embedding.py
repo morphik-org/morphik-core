@@ -7,6 +7,7 @@ from core.models.chunk import Chunk
 from core.config import get_settings
 
 logger = logging.getLogger(__name__)
+PGVECTOR_MAX_DIMENSIONS = 2000  # Maximum dimensions for pgvector
 
 
 class LiteLLMEmbeddingModel(BaseEmbeddingModel):
@@ -33,7 +34,7 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
             raise ValueError(f"Model '{model_key}' not found in registered_models configuration")
 
         self.model_config = settings.REGISTERED_MODELS[model_key]
-        self.dimensions = settings.VECTOR_DIMENSIONS
+        self.dimensions = min(settings.VECTOR_DIMENSIONS, 2000)
         logger.info(
             f"Initialized LiteLLM embedding model with model_key={model_key}, config={self.model_config}"
         )
@@ -53,6 +54,8 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
 
         try:
             model_params = {"model": self.model_config["model_name"]}
+            if self.model_config["model_name"] == "text-embedding-3-large":
+                model_params["dimensions"] = PGVECTOR_MAX_DIMENSIONS
 
             # Add all model-specific parameters from the config
             for key, value in self.model_config.items():
