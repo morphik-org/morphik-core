@@ -213,7 +213,7 @@ class DatabridgeParser(BaseParser):
             file=io.BytesIO(file),
             content_type=None,
             metadata_filename=filename,
-            strategy="hi_res",
+            strategy="fast",
             api_key=self._unstructured_api_key if self.use_unstructured_api else None,
         )
 

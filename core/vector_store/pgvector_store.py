@@ -21,6 +21,8 @@ PGVECTOR_MAX_DIMENSIONS = 2000  # Maximum dimensions for pgvector
 class Vector(UserDefinedType):
     """Custom type for pgvector vectors."""
 
+    cache_ok = True  # Enable caching for better performance
+
     def get_col_spec(self, **kw):
         return "vector"
 
