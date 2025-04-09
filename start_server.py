@@ -27,39 +27,51 @@ def get_ollama_usage_info():
 
         ollama_configs = []
 
-        # Check embedding provider
-        if "embedding" in config and config["embedding"].get("provider") == "ollama":
-            base_url = config["embedding"].get("base_url")
-            if base_url:
-                ollama_configs.append({"component": "embedding", "base_url": base_url})
+        # Get registered Ollama models first
+        ollama_models = {}
+        if "registered_models" in config:
+            for model_key, model_config in config["registered_models"].items():
+                model_name = model_config.get("model_name", "")
+                if "ollama" in model_name:
+                    api_base = model_config.get("api_base")
+                    if api_base:
+                        ollama_models[model_key] = api_base
 
-        # Check completion provider
-        if "completion" in config and config["completion"].get("provider") == "ollama":
-            base_url = config["completion"].get("base_url")
-            if base_url:
-                ollama_configs.append({"component": "completion", "base_url": base_url})
+        # Check which components are using Ollama models
+        components_to_check = ["embedding", "completion", "rules", "graph", "parser.vision"]
 
-        # Check rules provider
-        if "rules" in config and config["rules"].get("provider") == "ollama":
-            base_url = config["rules"].get("base_url")
-            if base_url:
-                ollama_configs.append({"component": "rules", "base_url": base_url})
+        for component in components_to_check:
+            if component == "parser.vision":
+                # Special handling for parser.vision
+                if "parser" in config and "vision" in config["parser"]:
+                    model_key = config["parser"]["vision"].get("model")
+                    if model_key in ollama_models:
+                        ollama_configs.append(
+                            {"component": component, "base_url": ollama_models[model_key]}
+                        )
+            else:
+                # Standard component check
+                if component in config:
+                    model_key = config[component].get("model")
+                    if model_key in ollama_models:
+                        ollama_configs.append(
+                            {"component": component, "base_url": ollama_models[model_key]}
+                        )
 
-        # Check graph provider
-        if "graph" in config and config["graph"].get("provider") == "ollama":
-            base_url = config["graph"].get("base_url")
-            if base_url:
-                ollama_configs.append({"component": "graph", "base_url": base_url})
-
-        # Check parser.vision provider
+        # Add contextual chunking model check
         if (
             "parser" in config
-            and "vision" in config["parser"]
-            and config["parser"]["vision"].get("provider") == "ollama"
+            and config["parser"].get("use_contextual_chunking")
+            and "contextual_chunking_model" in config["parser"]
         ):
-            base_url = config["parser"]["vision"].get("base_url")
-            if base_url:
-                ollama_configs.append({"component": "parser.vision", "base_url": base_url})
+            model_key = config["parser"]["contextual_chunking_model"]
+            if model_key in ollama_models:
+                ollama_configs.append(
+                    {
+                        "component": "parser.contextual_chunking",
+                        "base_url": ollama_models[model_key],
+                    }
+                )
 
         return ollama_configs
     except Exception as e:
