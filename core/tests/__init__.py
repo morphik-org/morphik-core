@@ -10,7 +10,7 @@ def setup_test_logging():
     This function configures logging specifically for test runs to:
     - Suppress verbose logs from LiteLLM and other external libraries
     - Show only warnings and errors from these libraries
-    - Keep INFO level for DataBridge core components
+    - Keep INFO level for Morphik core components
     """
     # Configure root logger
     root_logger = logging.getLogger()

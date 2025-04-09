@@ -4,7 +4,7 @@
 
 **Note**: Morphik is launching a hosted service soon! Please sign up for the [waitlist](https://docs.google.com/forms/d/1gFoUKzECICugInLkRlAlgwrkRVorfNywAgkmcjmVGkE/edit).
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/databridge-org/databridge-core/tree/main?tab=License-1-ov-file#readme) [![PyPI - Version](https://img.shields.io/pypi/v/databridge-client)](https://pypi.org/project/databridge-client/) [![Discord](https://img.shields.io/discord/1336524712817332276?logo=discord&label=discord)](https://discord.gg/BwMtv3Zaju)
+[![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/morphik-org/morphik-core/tree/main?tab=License-1-ov-file#readme) [![PyPI - Version](https://img.shields.io/pypi/v/morphik)](https://pypi.org/project/morphik/) [![Discord](https://img.shields.io/discord/1336524712817332276?logo=discord&label=discord)](https://discord.gg/BwMtv3Zaju)
 
 ## What is Morphik?
 
@@ -72,10 +72,10 @@ python start_server.py
 ### Using the Python SDK
 
 ```python
-from databridge import DataBridge
+from morphik import Morphik
 
-# Connect to DataBridge server
-db = DataBridge("databridge://localhost:8000")
+# Connect to Morphik server
+db = Morphik("morphik://localhost:8000")
 
 # Ingest a document
 doc = db.ingest_text("This is a sample document about AI technology.", 
@@ -182,10 +182,10 @@ for chunk in chunks:
 
 For comprehensive documentation:
 
-- [Installation Guide](https://databridge.mintlify.app/getting-started)
-- [Core Concepts](https://databridge.mintlify.app/concepts/naive-rag)
-- [Python SDK](https://databridge.mintlify.app/python-sdk/databridge)
-- [API Reference](https://databridge.mintlify.app/api-reference/health-check)
+- [Installation Guide](https://docs.morphik.ai/getting-started)
+- [Core Concepts](https://docs.morphik.ai/concepts/naive-rag)
+- [Python SDK](https://docs.morphik.ai/python-sdk/morphik)
+- [API Reference](https://docs.morphik.ai/api-reference/health-check)
 
 ## License
 
@@ -194,7 +194,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Community
 
 - [Discord](https://discord.gg/BwMtv3Zaju) - Join our community
-- [GitHub](https://github.com/databridge-org/databridge-core) - Contribute to development
+- [GitHub](https://github.com/morphik-org/morphik-core) - Contribute to development
 
 ---
 

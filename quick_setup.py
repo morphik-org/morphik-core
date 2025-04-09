@@ -38,11 +38,11 @@ formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(messag
 console_handler.setFormatter(formatter)
 LOGGER.addHandler(console_handler)
 
-# Load configuration from databridge.toml
-config_path = Path("databridge.toml")
+# Load configuration from morphik.toml
+config_path = Path("morphik.toml")
 with open(config_path, "rb") as f:
     CONFIG = tomli.load(f)
-    LOGGER.info("Loaded configuration from databridge.toml")
+    LOGGER.info("Loaded configuration from morphik.toml")
 
 # Extract configuration values
 STORAGE_PROVIDER = CONFIG["storage"]["provider"]

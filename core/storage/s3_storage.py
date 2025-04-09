@@ -22,7 +22,7 @@ class S3Storage(BaseStorage):
         aws_access_key: str,
         aws_secret_key: str,
         region_name: str = "us-east-2",
-        default_bucket: str = "databridge-storage",
+        default_bucket: str = "morphik-storage",
     ):
         self.default_bucket = default_bucket
         self.s3_client = boto3.client(
