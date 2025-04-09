@@ -1,21 +1,24 @@
+import base64
 from io import BytesIO, IOBase
+import io
+from PIL.Image import Image as PILImage
+from PIL import Image
 import json
 import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, BinaryIO
 from urllib.parse import urlparse
 
-import httpx
 import jwt
-from PIL.Image import Image as PILImage
 from pydantic import BaseModel, Field
+import requests
 
 from .models import (
-    Document,
-    ChunkResult,
-    DocumentResult,
-    CompletionResponse,
-    IngestTextRequest,
+    Document, 
+    ChunkResult, 
+    DocumentResult, 
+    CompletionResponse, 
+    IngestTextRequest, 
     ChunkSource,
     Graph,
     # Prompt override models
@@ -35,23 +38,23 @@ logger = logging.getLogger(__name__)
 RuleOrDict = Union[Rule, Dict[str, Any]]
 
 
-class AsyncCache:
-    def __init__(self, db: "AsyncDataBridge", name: str):
+class Cache:
+    def __init__(self, db: "Morphik", name: str):
         self._db = db
         self._name = name
 
-    async def update(self) -> bool:
-        response = await self._db._request("POST", f"cache/{self._name}/update")
+    def update(self) -> bool:
+        response = self._db._request("POST", f"cache/{self._name}/update")
         return response.get("success", False)
 
-    async def add_docs(self, docs: List[str]) -> bool:
-        response = await self._db._request("POST", f"cache/{self._name}/add_docs", {"docs": docs})
+    def add_docs(self, docs: List[str]) -> bool:
+        response = self._db._request("POST", f"cache/{self._name}/add_docs", {"docs": docs})
         return response.get("success", False)
 
-    async def query(
+    def query(
         self, query: str, max_tokens: Optional[int] = None, temperature: Optional[float] = None
     ) -> CompletionResponse:
-        response = await self._db._request(
+        response = self._db._request(
             "POST",
             f"cache/{self._name}/query",
             params={"query": query, "max_tokens": max_tokens, "temperature": temperature},
@@ -74,39 +77,31 @@ class FinalChunkResult(BaseModel):
         arbitrary_types_allowed = True
 
 
-class AsyncDataBridge:
+class Morphik:
     """
-    DataBridge client for document operations.
+    Morphik client for document operations.
 
     Args:
-        uri (str, optional): DataBridge URI in format "databridge://<owner_id>:<token>@<host>".
+        uri (str, optional): Morphik URI in format "morphik://<owner_id>:<token>@<host>".
             If not provided, connects to http://localhost:8000 without authentication.
         timeout (int, optional): Request timeout in seconds. Defaults to 30.
-        is_local (bool, optional): Whether to connect to a local server. Defaults to False.
+        is_local (bool, optional): Whether connecting to local development server. Defaults to False.
 
     Examples:
         ```python
         # Without authentication
-        async with AsyncDataBridge() as db:
-            doc = await db.ingest_text("Sample content")
+        db = Morphik()
 
         # With authentication
-        async with AsyncDataBridge("databridge://owner_id:token@api.databridge.ai") as db:
-            doc = await db.ingest_text("Sample content")
+        db = Morphik("morphik://owner_id:token@api.morphik.ai")
         ```
     """
 
     def __init__(self, uri: Optional[str] = None, timeout: int = 30, is_local: bool = False):
         self._timeout = timeout
-        self._client = (
-            httpx.AsyncClient(timeout=timeout)
-            if not is_local
-            else httpx.AsyncClient(
-                timeout=timeout,
-                verify=False,  # Disable SSL for localhost
-                http2=False,  # Force HTTP/1.1
-            )
-        )
+        self._session = requests.Session()
+        if is_local:
+            self._session.verify = False  # Disable SSL for localhost
         self._is_local = is_local
 
         if uri:
@@ -131,7 +126,7 @@ class AsyncDataBridge:
         # Basic token validation
         jwt.decode(self._auth_token, options={"verify_signature": False})
 
-    async def _request(
+    def _request(
         self,
         method: str,
         endpoint: str,
@@ -148,16 +143,17 @@ class AsyncDataBridge:
         if files:
             # Multipart form data for files
             request_data = {"files": files, "data": data}
-            # Don't set Content-Type, let httpx handle it
+            # Don't set Content-Type, let requests handle it
         else:
             # JSON for everything else
             headers["Content-Type"] = "application/json"
             request_data = {"json": data}
 
-        response = await self._client.request(
+        response = self._session.request(
             method,
             f"{self._base_url}/{endpoint.lstrip('/')}",
             headers=headers,
+            timeout=self._timeout,
             params=params,
             **request_data,
         )
@@ -170,7 +166,7 @@ class AsyncDataBridge:
             return rule.to_dict()
         return rule
 
-    async def ingest_text(
+    def ingest_text(
         self,
         content: str,
         filename: Optional[str] = None,
@@ -179,7 +175,7 @@ class AsyncDataBridge:
         use_colpali: bool = True,
     ) -> Document:
         """
-        Ingest a text document into DataBridge.
+        Ingest a text document into Morphik.
 
         Args:
             content: Text content to ingest
@@ -193,7 +189,7 @@ class AsyncDataBridge:
 
         Example:
             ```python
-            from databridge.rules import MetadataExtractionRule, NaturalLanguageRule
+            from morphik.rules import MetadataExtractionRule, NaturalLanguageRule
             from pydantic import BaseModel
 
             class DocumentInfo(BaseModel):
@@ -201,7 +197,7 @@ class AsyncDataBridge:
                 author: str
                 date: str
 
-            doc = await db.ingest_text(
+            doc = db.ingest_text(
                 "Machine learning is fascinating...",
                 metadata={"category": "tech"},
                 rules=[
@@ -220,31 +216,72 @@ class AsyncDataBridge:
             rules=[self._convert_rule(r) for r in (rules or [])],
             use_colpali=use_colpali,
         )
-        response = await self._request("POST", "ingest/text", data=request.model_dump())
+        response = self._request("POST", "ingest/text", data=request.model_dump())
         doc = Document(**response)
         doc._client = self
         return doc
 
-    async def ingest_file(
+    def ingest_file(
         self,
         file: Union[str, bytes, BinaryIO, Path],
-        filename: str,
+        filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
         use_colpali: bool = True,
     ) -> Document:
-        """Ingest a file document into DataBridge."""
+        """
+        Ingest a file document into Morphik.
+
+        Args:
+            file: File to ingest (path string, bytes, file object, or Path)
+            filename: Name of the file
+            metadata: Optional metadata dictionary
+            rules: Optional list of rules to apply during ingestion. Can be:
+                  - MetadataExtractionRule: Extract metadata using a schema
+                  - NaturalLanguageRule: Transform content using natural language
+            use_colpali: Whether to use ColPali-style embedding model to ingest the file (slower, but significantly better retrieval accuracy for images)
+
+        Returns:
+            Document: Metadata of the ingested document
+
+        Example:
+            ```python
+            from morphik.rules import MetadataExtractionRule, NaturalLanguageRule
+            from pydantic import BaseModel
+
+            class DocumentInfo(BaseModel):
+                title: str
+                author: str
+                department: str
+
+            doc = db.ingest_file(
+                "document.pdf",
+                filename="document.pdf",
+                metadata={"category": "research"},
+                rules=[
+                    MetadataExtractionRule(schema=DocumentInfo),
+                    NaturalLanguageRule(prompt="Extract key points only")
+                ], # Optional
+                use_colpali=True, # Optional
+            )
+            ```
+        """
         # Handle different file input types
         if isinstance(file, (str, Path)):
             file_path = Path(file)
             if not file_path.exists():
                 raise ValueError(f"File not found: {file}")
+            filename = file_path.name if filename is None else filename
             with open(file_path, "rb") as f:
                 content = f.read()
                 file_obj = BytesIO(content)
         elif isinstance(file, bytes):
+            if filename is None:
+                raise ValueError("filename is required when ingesting bytes")
             file_obj = BytesIO(file)
         else:
+            if filename is None:
+                raise ValueError("filename is required when ingesting file object")
             file_obj = file
 
         try:
@@ -252,13 +289,14 @@ class AsyncDataBridge:
             files = {"file": (filename, file_obj)}
 
             # Add metadata and rules
-            data = {
+            form_data = {
                 "metadata": json.dumps(metadata or {}),
                 "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
-                "use_colpali": json.dumps(use_colpali),
             }
 
-            response = await self._request("POST", "ingest/file", data=data, files=files)
+            response = self._request(
+                "POST", f"ingest/file?use_colpali={str(use_colpali).lower()}", data=form_data, files=files
+            )
             doc = Document(**response)
             doc._client = self
             return doc
@@ -267,7 +305,7 @@ class AsyncDataBridge:
             if isinstance(file, (str, Path)):
                 file_obj.close()
 
-    async def ingest_files(
+    def ingest_files(
         self,
         files: List[Union[str, bytes, BinaryIO, Path]],
         metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
@@ -276,7 +314,7 @@ class AsyncDataBridge:
         parallel: bool = True,
     ) -> List[Document]:
         """
-        Ingest multiple files into DataBridge.
+        Ingest multiple files into Morphik.
 
         Args:
             files: List of files to ingest (path strings, bytes, file objects, or Paths)
@@ -322,7 +360,7 @@ class AsyncDataBridge:
                 "parallel": str(parallel).lower(),
             }
 
-            response = await self._request("POST", "ingest/files", data=data, files=file_objects)
+            response = self._request("POST", "ingest/files", data=data, files=file_objects)
             
             if response.get("errors"):
                 # Log errors but don't raise exception
@@ -339,7 +377,7 @@ class AsyncDataBridge:
                 if isinstance(file_obj, (IOBase, BytesIO)) and not file_obj.closed:
                     file_obj.close()
 
-    async def ingest_directory(
+    def ingest_directory(
         self,
         directory: Union[str, Path],
         recursive: bool = False,
@@ -350,7 +388,7 @@ class AsyncDataBridge:
         parallel: bool = True,
     ) -> List[Document]:
         """
-        Ingest all files in a directory into DataBridge.
+        Ingest all files in a directory into Morphik.
 
         Args:
             directory: Path to directory containing files to ingest
@@ -384,7 +422,7 @@ class AsyncDataBridge:
             return []
 
         # Use ingest_files with collected paths
-        return await self.ingest_files(
+        return self.ingest_files(
             files=files,
             metadata=metadata,
             rules=rules,
@@ -392,7 +430,7 @@ class AsyncDataBridge:
             parallel=parallel
         )
 
-    async def retrieve_chunks(
+    def retrieve_chunks(
         self,
         query: str,
         filters: Optional[Dict[str, Any]] = None,
@@ -401,20 +439,20 @@ class AsyncDataBridge:
         use_colpali: bool = True,
     ) -> List[FinalChunkResult]:
         """
-        Search for relevant chunks.
+        Retrieve relevant chunks.
 
         Args:
             query: Search query text
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model to retrieve chunks (only works for documents ingested with `use_colpali=True`)
+            use_colpali: Whether to use ColPali-style embedding model to retrieve the chunks (only works for documents ingested with `use_colpali=True`)
         Returns:
-            List[FinalChunkResult]
+            List[ChunkResult]
 
         Example:
             ```python
-            chunks = await db.retrieve_chunks(
+            chunks = db.retrieve_chunks(
                 "What are the key findings?",
                 filters={"department": "research"}
             )
@@ -428,10 +466,11 @@ class AsyncDataBridge:
             "use_colpali": use_colpali,
         }
 
-        response = await self._request("POST", "retrieve/chunks", data=request)
+        response = self._request("POST", "retrieve/chunks", request)
         chunks = [ChunkResult(**r) for r in response]
-        
+
         final_chunks = []
+
         for chunk in chunks:
             if chunk.metadata.get("is_image"):
                 try:
@@ -442,15 +481,12 @@ class AsyncDataBridge:
                         content = content.split(",", 1)[1]
 
                     # Now decode the base64 string
-                    import base64
-                    import io
-                    from PIL import Image
                     image_bytes = base64.b64decode(content)
                     content = Image.open(io.BytesIO(image_bytes))
                 except Exception as e:
                     print(f"Error processing image: {str(e)}")
                     # Fall back to using the content as text
-                    content = chunk.content
+                    print(chunk.content)
             else:
                 content = chunk.content
 
@@ -466,10 +502,10 @@ class AsyncDataBridge:
                     download_url=chunk.download_url,
                 )
             )
-            
+
         return final_chunks
 
-    async def retrieve_docs(
+    def retrieve_docs(
         self,
         query: str,
         filters: Optional[Dict[str, Any]] = None,
@@ -485,13 +521,13 @@ class AsyncDataBridge:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model to retrieve documents (only works for documents ingested with `use_colpali=True`)
+            use_colpali: Whether to use ColPali-style embedding model to retrieve the documents (only works for documents ingested with `use_colpali=True`)
         Returns:
             List[DocumentResult]
 
         Example:
             ```python
-            docs = await db.retrieve_docs(
+            docs = db.retrieve_docs(
                 "machine learning",
                 k=5
             )
@@ -505,10 +541,10 @@ class AsyncDataBridge:
             "use_colpali": use_colpali,
         }
 
-        response = await self._request("POST", "retrieve/docs", data=request)
+        response = self._request("POST", "retrieve/docs", request)
         return [DocumentResult(**r) for r in response]
 
-    async def query(
+    def query(
         self,
         query: str,
         filters: Optional[Dict[str, Any]] = None,
@@ -544,14 +580,14 @@ class AsyncDataBridge:
         Example:
             ```python
             # Standard query
-            response = await db.query(
+            response = db.query(
                 "What are the key findings about customer satisfaction?",
                 filters={"department": "research"},
                 temperature=0.7
             )
             
             # Knowledge graph enhanced query
-            response = await db.query(
+            response = db.query(
                 "How does product X relate to customer segment Y?",
                 graph_name="market_graph",
                 hop_depth=2,
@@ -559,8 +595,8 @@ class AsyncDataBridge:
             )
             
             # With prompt customization
-            from databridge.models import QueryPromptOverride, QueryPromptOverrides
-            response = await db.query(
+            from morphik.models import QueryPromptOverride, QueryPromptOverrides
+            response = db.query(
                 "What are the key findings?",
                 prompt_overrides=QueryPromptOverrides(
                     query=QueryPromptOverride(
@@ -570,7 +606,7 @@ class AsyncDataBridge:
             )
             
             # Or using a dictionary
-            response = await db.query(
+            response = db.query(
                 "What are the key findings?",
                 prompt_overrides={
                     "query": {
@@ -605,10 +641,10 @@ class AsyncDataBridge:
             "prompt_overrides": prompt_overrides,
         }
 
-        response = await self._request("POST", "query", data=request)
+        response = self._request("POST", "query", request)
         return CompletionResponse(**response)
 
-    async def list_documents(
+    def list_documents(
         self, skip: int = 0, limit: int = 100, filters: Optional[Dict[str, Any]] = None
     ) -> List[Document]:
         """
@@ -625,22 +661,20 @@ class AsyncDataBridge:
         Example:
             ```python
             # Get first page
-            docs = await db.list_documents(limit=10)
+            docs = db.list_documents(limit=10)
 
             # Get next page
-            next_page = await db.list_documents(skip=10, limit=10, filters={"department": "research"})
+            next_page = db.list_documents(skip=10, limit=10, filters={"department": "research"})
             ```
         """
         # Use query params for pagination and POST body for filters
-        response = await self._request(
-            "POST", f"documents?skip={skip}&limit={limit}", data=filters or {}
-        )
+        response = self._request("POST", f"documents?skip={skip}&limit={limit}", data=filters or {})
         docs = [Document(**doc) for doc in response]
         for doc in docs:
             doc._client = self
         return docs
 
-    async def get_document(self, document_id: str) -> Document:
+    def get_document(self, document_id: str) -> Document:
         """
         Get document metadata by ID.
 
@@ -652,16 +686,16 @@ class AsyncDataBridge:
 
         Example:
             ```python
-            doc = await db.get_document("doc_123")
+            doc = db.get_document("doc_123")
             print(f"Title: {doc.metadata.get('title')}")
             ```
         """
-        response = await self._request("GET", f"documents/{document_id}")
+        response = self._request("GET", f"documents/{document_id}")
         doc = Document(**response)
         doc._client = self
         return doc
         
-    async def get_document_by_filename(self, filename: str) -> Document:
+    def get_document_by_filename(self, filename: str) -> Document:
         """
         Get document metadata by filename.
         If multiple documents have the same filename, returns the most recently updated one.
@@ -674,16 +708,16 @@ class AsyncDataBridge:
 
         Example:
             ```python
-            doc = await db.get_document_by_filename("report.pdf")
+            doc = db.get_document_by_filename("report.pdf")
             print(f"Document ID: {doc.external_id}")
             ```
         """
-        response = await self._request("GET", f"documents/filename/{filename}")
+        response = self._request("GET", f"documents/filename/{filename}")
         doc = Document(**response)
         doc._client = self
         return doc
         
-    async def update_document_with_text(
+    def update_document_with_text(
         self,
         document_id: str,
         content: str,
@@ -695,7 +729,7 @@ class AsyncDataBridge:
     ) -> Document:
         """
         Update a document with new text content using the specified strategy.
-        
+
         Args:
             document_id: ID of the document to update
             content: The new content to add
@@ -704,14 +738,14 @@ class AsyncDataBridge:
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
             use_colpali: Whether to use multi-vector embedding
-            
+
         Returns:
             Document: Updated document metadata
-            
+
         Example:
             ```python
             # Add new content to an existing document
-            updated_doc = await db.update_document_with_text(
+            updated_doc = db.update_document_with_text(
                 document_id="doc_123",
                 content="This is additional content that will be appended to the document.",
                 filename="updated_document.txt",
@@ -734,7 +768,7 @@ class AsyncDataBridge:
         if update_strategy != "add":
             params["update_strategy"] = update_strategy
             
-        response = await self._request(
+        response = self._request(
             "POST", 
             f"documents/{document_id}/update_text", 
             data=request.model_dump(),
@@ -744,8 +778,8 @@ class AsyncDataBridge:
         doc = Document(**response)
         doc._client = self
         return doc
-        
-    async def update_document_with_file(
+
+    def update_document_with_file(
         self,
         document_id: str,
         file: Union[str, bytes, BinaryIO, Path],
@@ -757,7 +791,7 @@ class AsyncDataBridge:
     ) -> Document:
         """
         Update a document with content from a file using the specified strategy.
-        
+
         Args:
             document_id: ID of the document to update
             file: File to add (path string, bytes, file object, or Path)
@@ -766,14 +800,14 @@ class AsyncDataBridge:
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
             use_colpali: Whether to use multi-vector embedding
-            
+
         Returns:
             Document: Updated document metadata
-            
+
         Example:
             ```python
             # Add content from a file to an existing document
-            updated_doc = await db.update_document_with_file(
+            updated_doc = db.update_document_with_file(
                 document_id="doc_123",
                 file="path/to/update.pdf",
                 metadata={"status": "updated"},
@@ -815,7 +849,7 @@ class AsyncDataBridge:
                 form_data["use_colpali"] = str(use_colpali).lower()
                 
             # Use the dedicated file update endpoint
-            response = await self._request(
+            response = self._request(
                 "POST", f"documents/{document_id}/update_file", data=form_data, files=files
             )
             
@@ -827,7 +861,7 @@ class AsyncDataBridge:
             if isinstance(file, (str, Path)):
                 file_obj.close()
     
-    async def update_document_metadata(
+    def update_document_metadata(
         self,
         document_id: str,
         metadata: Dict[str, Any],
@@ -845,7 +879,7 @@ class AsyncDataBridge:
         Example:
             ```python
             # Update just the metadata of a document
-            updated_doc = await db.update_document_metadata(
+            updated_doc = db.update_document_metadata(
                 document_id="doc_123",
                 metadata={"status": "reviewed", "reviewer": "Jane Smith"}
             )
@@ -853,12 +887,12 @@ class AsyncDataBridge:
             ```
         """
         # Use the dedicated metadata update endpoint
-        response = await self._request("POST", f"documents/{document_id}/update_metadata", data=metadata)
+        response = self._request("POST", f"documents/{document_id}/update_metadata", data=metadata)
         doc = Document(**response)
         doc._client = self
         return doc
         
-    async def update_document_by_filename_with_text(
+    def update_document_by_filename_with_text(
         self,
         filename: str,
         content: str,
@@ -886,7 +920,7 @@ class AsyncDataBridge:
         Example:
             ```python
             # Add new content to an existing document identified by filename
-            updated_doc = await db.update_document_by_filename_with_text(
+            updated_doc = db.update_document_by_filename_with_text(
                 filename="report.pdf",
                 content="This is additional content that will be appended to the document.",
                 new_filename="updated_report.pdf",
@@ -897,10 +931,10 @@ class AsyncDataBridge:
             ```
         """
         # First get the document by filename to obtain its ID
-        doc = await self.get_document_by_filename(filename)
+        doc = self.get_document_by_filename(filename)
         
         # Then use the regular update_document_with_text endpoint with the document ID
-        return await self.update_document_with_text(
+        return self.update_document_with_text(
             document_id=doc.external_id,
             content=content,
             filename=new_filename,
@@ -910,7 +944,7 @@ class AsyncDataBridge:
             use_colpali=use_colpali
         )
         
-    async def update_document_by_filename_with_file(
+    def update_document_by_filename_with_file(
         self,
         filename: str,
         file: Union[str, bytes, BinaryIO, Path],
@@ -938,7 +972,7 @@ class AsyncDataBridge:
         Example:
             ```python
             # Add content from a file to an existing document identified by filename
-            updated_doc = await db.update_document_by_filename_with_file(
+            updated_doc = db.update_document_by_filename_with_file(
                 filename="report.pdf",
                 file="path/to/update.pdf",
                 metadata={"status": "updated"},
@@ -948,10 +982,10 @@ class AsyncDataBridge:
             ```
         """
         # First get the document by filename to obtain its ID
-        doc = await self.get_document_by_filename(filename)
+        doc = self.get_document_by_filename(filename)
         
         # Then use the regular update_document_with_file endpoint with the document ID
-        return await self.update_document_with_file(
+        return self.update_document_with_file(
             document_id=doc.external_id,
             file=file,
             filename=new_filename,
@@ -961,7 +995,7 @@ class AsyncDataBridge:
             use_colpali=use_colpali
         )
                 
-    async def update_document_by_filename_metadata(
+    def update_document_by_filename_metadata(
         self,
         filename: str,
         metadata: Dict[str, Any],
@@ -981,7 +1015,7 @@ class AsyncDataBridge:
         Example:
             ```python
             # Update just the metadata of a document identified by filename
-            updated_doc = await db.update_document_by_filename_metadata(
+            updated_doc = db.update_document_by_filename_metadata(
                 filename="report.pdf",
                 metadata={"status": "reviewed", "reviewer": "Jane Smith"},
                 new_filename="reviewed_report.pdf"  # Optional: rename the file
@@ -990,10 +1024,10 @@ class AsyncDataBridge:
             ```
         """
         # First get the document by filename to obtain its ID
-        doc = await self.get_document_by_filename(filename)
+        doc = self.get_document_by_filename(filename)
         
         # Update the metadata
-        result = await self.update_document_metadata(
+        result = self.update_document_metadata(
             document_id=doc.external_id,
             metadata=metadata,
         )
@@ -1004,7 +1038,7 @@ class AsyncDataBridge:
             combined_metadata = result.metadata.copy()
             
             # Update the document again with filename change and the same metadata
-            response = await self._request(
+            response = self._request(
                 "POST", 
                 f"documents/{doc.external_id}/update_text", 
                 data={
@@ -1018,8 +1052,8 @@ class AsyncDataBridge:
             result._client = self
             
         return result
-    
-    async def batch_get_documents(self, document_ids: List[str]) -> List[Document]:
+        
+    def batch_get_documents(self, document_ids: List[str]) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
         
@@ -1031,18 +1065,18 @@ class AsyncDataBridge:
             
         Example:
             ```python
-            docs = await db.batch_get_documents(["doc_123", "doc_456", "doc_789"])
+            docs = db.batch_get_documents(["doc_123", "doc_456", "doc_789"])
             for doc in docs:
                 print(f"Document {doc.external_id}: {doc.metadata.get('title')}")
             ```
         """
-        response = await self._request("POST", "batch/documents", data=document_ids)
+        response = self._request("POST", "batch/documents", data=document_ids)
         docs = [Document(**doc) for doc in response]
         for doc in docs:
             doc._client = self
         return docs
         
-    async def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
+    def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation.
         
@@ -1061,13 +1095,13 @@ class AsyncDataBridge:
             ]
             
             # Or using ChunkSource objects
-            from databridge.models import ChunkSource
+            from morphik.models import ChunkSource
             sources = [
                 ChunkSource(document_id="doc_123", chunk_number=0),
                 ChunkSource(document_id="doc_456", chunk_number=2)
             ]
             
-            chunks = await db.batch_get_chunks(sources)
+            chunks = db.batch_get_chunks(sources)
             for chunk in chunks:
                 print(f"Chunk from {chunk.document_id}, number {chunk.chunk_number}: {chunk.content[:50]}...")
             ```
@@ -1080,7 +1114,7 @@ class AsyncDataBridge:
             else:
                 source_dicts.append(source.model_dump())
                 
-        response = await self._request("POST", "batch/chunks", data=source_dicts)
+        response = self._request("POST", "batch/chunks", data=source_dicts)
         chunks = [ChunkResult(**r) for r in response]
         
         final_chunks = []
@@ -1094,9 +1128,6 @@ class AsyncDataBridge:
                         content = content.split(",", 1)[1]
 
                     # Now decode the base64 string
-                    import base64
-                    import io
-                    from PIL import Image
                     image_bytes = base64.b64decode(content)
                     content = Image.open(io.BytesIO(image_bytes))
                 except Exception as e:
@@ -1121,7 +1152,7 @@ class AsyncDataBridge:
             
         return final_chunks
 
-    async def create_cache(
+    def create_cache(
         self,
         name: str,
         model: str,
@@ -1147,7 +1178,7 @@ class AsyncDataBridge:
             # This will include both:
             # 1. Any documents with category="programming"
             # 2. The specific documents "doc1" and "doc2" (regardless of their category)
-            cache = await db.create_cache(
+            cache = db.create_cache(
                 name="programming_cache",
                 model="llama2",
                 gguf_file="llama-2-7b-chat.Q4_K_M.gguf",
@@ -1162,10 +1193,10 @@ class AsyncDataBridge:
         # Build request body for filters and docs
         request = {"filters": filters, "docs": docs}
 
-        response = await self._request("POST", "cache/create", request, params=params)
+        response = self._request("POST", "cache/create", request, params=params)
         return response
 
-    async def get_cache(self, name: str) -> AsyncCache:
+    def get_cache(self, name: str) -> Cache:
         """
         Get a cache by name.
 
@@ -1177,15 +1208,15 @@ class AsyncDataBridge:
 
         Example:
             ```python
-            cache = await db.get_cache("programming_cache")
+            cache = db.get_cache("programming_cache")
             ```
         """
-        response = await self._request("GET", f"cache/{name}")
+        response = self._request("GET", f"cache/{name}")
         if response.get("exists", False):
-            return AsyncCache(self, name)
+            return Cache(self, name)
         raise ValueError(f"Cache '{name}' not found")
 
-    async def create_graph(
+    def create_graph(
         self,
         name: str,
         filters: Optional[Dict[str, Any]] = None,
@@ -1211,20 +1242,20 @@ class AsyncDataBridge:
         Example:
             ```python
             # Create a graph from documents with category="research"
-            graph = await db.create_graph(
+            graph = db.create_graph(
                 name="research_graph",
                 filters={"category": "research"}
             )
 
             # Create a graph from specific documents
-            graph = await db.create_graph(
+            graph = db.create_graph(
                 name="custom_graph",
                 documents=["doc1", "doc2", "doc3"]
             )
             
             # With custom entity extraction examples
-            from databridge.models import EntityExtractionPromptOverride, EntityExtractionExample, GraphPromptOverrides
-            graph = await db.create_graph(
+            from morphik.models import EntityExtractionPromptOverride, EntityExtractionExample, GraphPromptOverrides
+            graph = db.create_graph(
                 name="medical_graph", 
                 filters={"category": "medical"},
                 prompt_overrides=GraphPromptOverrides(
@@ -1249,10 +1280,10 @@ class AsyncDataBridge:
             "prompt_overrides": prompt_overrides,
         }
 
-        response = await self._request("POST", "graph/create", request)
+        response = self._request("POST", "graph/create", request)
         return Graph(**response)
-
-    async def get_graph(self, name: str) -> Graph:
+        
+    def get_graph(self, name: str) -> Graph:
         """
         Get a graph by name.
 
@@ -1265,14 +1296,14 @@ class AsyncDataBridge:
         Example:
             ```python
             # Get a graph by name
-            graph = await db.get_graph("finance_graph")
+            graph = db.get_graph("finance_graph")
             print(f"Graph has {len(graph.entities)} entities and {len(graph.relationships)} relationships")
             ```
         """
-        response = await self._request("GET", f"graph/{name}")
+        response = self._request("GET", f"graph/{name}")
         return Graph(**response)
 
-    async def list_graphs(self) -> List[Graph]:
+    def list_graphs(self) -> List[Graph]:
         """
         List all graphs the user has access to.
 
@@ -1282,15 +1313,15 @@ class AsyncDataBridge:
         Example:
             ```python
             # List all accessible graphs
-            graphs = await db.list_graphs()
+            graphs = db.list_graphs()
             for graph in graphs:
                 print(f"Graph: {graph.name}, Entities: {len(graph.entities)}")
             ```
         """
-        response = await self._request("GET", "graphs")
+        response = self._request("GET", "graphs")
         return [Graph(**graph) for graph in response]
-
-    async def update_graph(
+        
+    def update_graph(
         self,
         name: str,
         additional_filters: Optional[Dict[str, Any]] = None,
@@ -1299,33 +1330,33 @@ class AsyncDataBridge:
     ) -> Graph:
         """
         Update an existing graph with new documents.
-
+        
         This method processes additional documents matching the original or new filters,
         extracts entities and relationships, and updates the graph with new information.
-
+        
         Args:
             name: Name of the graph to update
             additional_filters: Optional additional metadata filters to determine which new documents to include
             additional_documents: Optional list of additional document IDs to include
             prompt_overrides: Optional customizations for entity extraction and resolution prompts
                 Either a GraphPromptOverrides object or a dictionary with the same structure
-
+            
         Returns:
             Graph: The updated graph
-
+            
         Example:
             ```python
             # Update a graph with new documents
-            updated_graph = await db.update_graph(
+            updated_graph = db.update_graph(
                 name="research_graph",
                 additional_filters={"category": "new_research"},
                 additional_documents=["doc4", "doc5"]
             )
             print(f"Graph now has {len(updated_graph.entities)} entities")
-
+            
             # With entity resolution examples
-            from databridge.models import EntityResolutionPromptOverride, EntityResolutionExample, GraphPromptOverrides
-            updated_graph = await db.update_graph(
+            from morphik.models import EntityResolutionPromptOverride, EntityResolutionExample, GraphPromptOverrides
+            updated_graph = db.update_graph(
                 name="research_graph",
                 additional_documents=["doc4"],
                 prompt_overrides=GraphPromptOverrides(
@@ -1351,10 +1382,10 @@ class AsyncDataBridge:
             "prompt_overrides": prompt_overrides,
         }
 
-        response = await self._request("POST", f"graph/{name}/update", request)
+        response = self._request("POST", f"graph/{name}/update", request)
         return Graph(**response)
         
-    async def delete_document(self, document_id: str) -> Dict[str, str]:
+    def delete_document(self, document_id: str) -> Dict[str, str]:
         """
         Delete a document and all its associated data.
         
@@ -1372,14 +1403,14 @@ class AsyncDataBridge:
         Example:
             ```python
             # Delete a document
-            result = await db.delete_document("doc_123")
+            result = db.delete_document("doc_123")
             print(result["message"])  # Document doc_123 deleted successfully
             ```
         """
-        response = await self._request("DELETE", f"documents/{document_id}")
+        response = self._request("DELETE", f"documents/{document_id}")
         return response
         
-    async def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
+    def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
         """
         Delete a document by its filename.
         
@@ -1395,22 +1426,22 @@ class AsyncDataBridge:
         Example:
             ```python
             # Delete a document by filename
-            result = await db.delete_document_by_filename("report.pdf")
+            result = db.delete_document_by_filename("report.pdf")
             print(result["message"])
             ```
         """
         # First get the document by filename to obtain its ID
-        doc = await self.get_document_by_filename(filename)
+        doc = self.get_document_by_filename(filename)
         
         # Then delete the document by ID
-        return await self.delete_document(doc.external_id)
+        return self.delete_document(doc.external_id)
 
-    async def close(self):
-        """Close the HTTP client"""
-        await self._client.aclose()
+    def close(self):
+        """Close the HTTP session"""
+        self._session.close()
 
-    async def __aenter__(self):
+    def __enter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.close()
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()

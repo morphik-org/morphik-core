@@ -1,13 +1,13 @@
 import os
 import tempfile
 from dotenv import load_dotenv
-from databridge import DataBridge
+from morphik import Morphik
 
 # Load environment variables
 load_dotenv()
 
-# Connect to DataBridge
-db = DataBridge(os.getenv("DATABRIDGE_URI"), timeout=10000, is_local=True)
+# Connect to Morphik
+db = Morphik(os.getenv("MORPHIK_URI"), timeout=10000, is_local=True)
 
 # Create some sample text files for batch ingestion
 def create_sample_files():

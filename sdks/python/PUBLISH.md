@@ -1,7 +1,7 @@
 # Publish to PyPI
 
 - `cd` into the `sdks/python` directory
-- Update the package version in `pyproject.toml`, `databridge/__init__.py`.
+- Update the package version in `pyproject.toml`, `morphik/__init__.py`.
 - Ensure you have the correct PyPI API key/certificates/ssh keys installed
 
 ```bash
