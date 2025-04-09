@@ -54,7 +54,7 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
 
         try:
             model_params = {"model": self.model_config["model_name"]}
-            if self.model_config["model_name"] == "text-embedding-3-large":
+            if self.model_config["model_name"] in ["text-embedding-3-large", "azure/text-embedding-3-large"]:
                 model_params["dimensions"] = PGVECTOR_MAX_DIMENSIONS
 
             # Add all model-specific parameters from the config
