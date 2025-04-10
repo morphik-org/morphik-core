@@ -17,7 +17,7 @@ def debug_object(title, obj):
 
 
 def load_config() -> Dict[str, Any]:
-    config_path = os.path.join(os.path.dirname(__file__), "../../../databridge.toml")
+    config_path = os.path.join(os.path.dirname(__file__), "../../../morphik.toml")
     with open(config_path, "rb") as f:
         return tomli.load(f)
 

@@ -22,7 +22,7 @@ def check_ollama_running(base_url):
 def get_ollama_usage_info():
     """Check if Ollama is required based on the configuration file and get base URLs."""
     try:
-        with open("databridge.toml", "rb") as f:
+        with open("morphik.toml", "rb") as f:
             config = tomli.load(f)
 
         ollama_configs = []
@@ -81,7 +81,7 @@ def get_ollama_usage_info():
 
 def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Start the DataBridge server")
+    parser = argparse.ArgumentParser(description="Start the Morphik server")
     parser.add_argument(
         "--log",
         choices=["debug", "info", "warning", "error"],

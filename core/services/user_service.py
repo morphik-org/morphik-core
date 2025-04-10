@@ -231,6 +231,6 @@ class UserService:
 
         # Generate URI with API domain
         api_domain = getattr(self.settings, "API_DOMAIN", "api.morphik.ai")
-        uri = f"databridge://{name}:{token}@{api_domain}"
+        uri = f"morphik://{name}:{token}@{api_domain}"
 
         return uri

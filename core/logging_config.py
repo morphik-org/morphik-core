@@ -31,7 +31,7 @@ def setup_logging(log_level: str = "INFO"):
     console_handler.setLevel(level)
 
     # File handler
-    file_handler = logging.FileHandler(log_dir / "databridge.log")
+    file_handler = logging.FileHandler(log_dir / "morphik.log")
     file_handler.setFormatter(console_formatter)
     file_handler.setLevel(level)
 

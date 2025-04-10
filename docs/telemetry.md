@@ -1,6 +1,6 @@
-# DataBridge Telemetry
+# Morphik Telemetry
 
-DataBridge includes an anonymous telemetry system to help us understand how the library is being used and to improve its functionality. We take privacy very seriously and ensure that no personally identifiable information (PII) is ever collected.
+Morphik includes an anonymous telemetry system to help us understand how the library is being used and to improve its functionality. We take privacy very seriously and ensure that no personally identifiable information (PII) is ever collected.
 
 ## What We Collect
 
@@ -42,7 +42,7 @@ os.environ["DATABRIDGE_TELEMETRY_ENABLED"] = "0"
 All telemetry data is:
 - Stored securely
 - Automatically anonymized before transmission
-- Used only for improving DataBridge
+- Used only for improving Morphik
 - Never shared with third parties
 - Retained for a maximum of 90 days
 
@@ -57,7 +57,7 @@ You can inspect the telemetry data being collected by looking at the local log f
 ## Why We Collect Telemetry
 
 This data helps us:
-1. Understand how DataBridge is used in real-world scenarios
+1. Understand how Morphik is used in real-world scenarios
 2. Identify performance bottlenecks
 3. Prioritize features and improvements
 4. Fix bugs faster
@@ -67,5 +67,5 @@ This data helps us:
 
 If you have any questions or concerns about our telemetry collection, please:
 1. Open an issue on our GitHub repository
-2. Email us at privacy@databridge.dev
+2. Email us at founders@morphik.ai
 3. Review our telemetry implementation in `core/services/telemetry.py` 

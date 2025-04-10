@@ -16,7 +16,7 @@ from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.graph import Graph
 from core.models.auth import AuthContext, EntityType
 from core.models.prompts import validate_prompt_overrides_with_http_exception
-from core.parser.databridge_parser import DatabridgeParser
+from core.parser.morphik_parser import MorphikParser
 from core.services.document_service import DocumentService
 from core.services.telemetry import TelemetryService
 from core.config import get_settings
@@ -171,7 +171,7 @@ match settings.STORAGE_PROVIDER:
         raise ValueError(f"Unsupported storage provider: {settings.STORAGE_PROVIDER}")
 
 # Initialize parser
-parser = DatabridgeParser(
+parser = MorphikParser(
     chunk_size=settings.CHUNK_SIZE,
     chunk_overlap=settings.CHUNK_OVERLAP,
     use_unstructured_api=settings.USE_UNSTRUCTURED_API,
@@ -1234,14 +1234,14 @@ async def generate_local_uri(
         token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
         # Read config for host/port
-        with open("databridge.toml", "rb") as f:
+        with open("morphik.toml", "rb") as f:
             config = tomli.load(f)
         base_url = f"{config['api']['host']}:{config['api']['port']}".replace(
             "localhost", "127.0.0.1"
         )
 
         # Generate URI
-        uri = f"databridge://{name}:{token}@{base_url}"
+        uri = f"morphik://{name}:{token}@{base_url}"
         return {"uri": uri}
     except Exception as e:
         logger.error(f"Error generating local URI: {e}")

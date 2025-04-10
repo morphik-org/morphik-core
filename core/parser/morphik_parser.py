@@ -131,7 +131,7 @@ class ContextualChunker(BaseChunker):
         return contextualized_chunks
 
 
-class DatabridgeParser(BaseParser):
+class MorphikParser(BaseParser):
     """Unified parser that handles different file types and chunking strategies"""
 
     def __init__(
@@ -178,7 +178,7 @@ class DatabridgeParser(BaseParser):
             video_path = temp_file.name
 
         try:
-            # Load the config to get the frame_sample_rate from databridge.toml
+            # Load the config to get the frame_sample_rate from morphik.toml
             config = load_config()
             parser_config = config.get("parser", {})
             vision_config = parser_config.get("vision", {})

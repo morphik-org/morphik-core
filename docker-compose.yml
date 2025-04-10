@@ -4,7 +4,7 @@ x-ollama-check: &ollama-check
   # This command reads the toml file and checks if any provider is set to "ollama"
   command: >
     /bin/sh -c '
-    grep -q "provider *= *\"ollama\"" databridge.toml &&
+    grep -q "provider *= *\"ollama\"" morphik.toml &&
     echo "true" > /tmp/needs_ollama ||
     echo "false" > /tmp/needs_ollama'
 
@@ -12,24 +12,24 @@ services:
   config-check:
     image: alpine
     volumes:
-      - ./databridge.toml:/databridge.toml
+      - ./morphik.toml:/morphik.toml
     <<: *ollama-check
 
-  databridge:
+  morphik:
     build: .
     ports:
       - "8000:8000"
     environment:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
-      - POSTGRES_URI=postgresql+asyncpg://databridge:databridge@postgres:5432/databridge
-      - PGPASSWORD=databridge
+      - POSTGRES_URI=postgresql+asyncpg://morphik:morphik@postgres:5432/morphik
+      - PGPASSWORD=morphik
       - HOST=0.0.0.0
       - PORT=8000
       - LOG_LEVEL=DEBUG
     volumes:
       - ./storage:/app/storage
       - ./logs:/app/logs
-      - ./databridge.toml:/app/databridge.toml
+      - ./morphik.toml:/app/morphik.toml
       - huggingface_cache:/root/.cache/huggingface
     depends_on:
       postgres:
@@ -40,7 +40,7 @@ services:
         condition: service_started
         required: false
     networks:
-      - databridge-network
+      - morphik-network
     env_file:
       - .env
 
@@ -50,22 +50,22 @@ services:
       dockerfile: postgres.dockerfile
     shm_size: 128mb
     environment:
-      - POSTGRES_USER=databridge
-      - POSTGRES_PASSWORD=databridge
-      - POSTGRES_DB=databridge
+      - POSTGRES_USER=morphik
+      - POSTGRES_PASSWORD=morphik
+      - POSTGRES_DB=morphik
       - PGDATA=/var/lib/postgresql/data/pgdata
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U databridge -d databridge"]
+      test: ["CMD-SHELL", "pg_isready -U morphik -d morphik"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
     networks:
-      - databridge-network
+      - morphik-network
 
   ollama:
     image: ollama/ollama:latest
@@ -77,11 +77,11 @@ services:
       - ollama_data:/root/.ollama
       - ./ollama-entrypoint.sh:/ollama-entrypoint.sh
     networks:
-      - databridge-network
+      - morphik-network
     entrypoint: ["/ollama-entrypoint.sh"]
 
 networks:
-  databridge-network:
+  morphik-network:
     driver: bridge
 
 volumes:

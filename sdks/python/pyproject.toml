@@ -3,12 +3,12 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "databridge-client"
-version = "0.3.0"
+name = "morphik"
+version = "0.1.0"
 authors = [
-    { name = "DataBridge", email = "databridgesuperuser@gmail.com" },
+    { name = "Morphik", email = "founders@morphik.ai" },
 ]
-description = "DataBridge Python Client"
+description = "Morphik Python Client"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
@@ -20,9 +20,9 @@ dependencies = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["databridge"]
+packages = ["morphik"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/databridge",
+    "/morphik",
 ]

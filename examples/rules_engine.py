@@ -1,14 +1,14 @@
 import os
 from dotenv import load_dotenv
-from databridge import DataBridge
-from databridge.rules import MetadataExtractionRule, NaturalLanguageRule
+from morphik import Morphik
+from morphik.rules import MetadataExtractionRule, NaturalLanguageRule
 from pydantic import BaseModel
 
 # Load environment variables
 load_dotenv()
 
-# Connect to DataBridge
-db = DataBridge(os.getenv("DATABRIDGE_URI"), timeout=10000, is_local=True)
+# Connect to Morphik
+db = Morphik(os.getenv("MORPHIK_URI"), timeout=10000, is_local=True)
 
 # Define sample text with information we want to extract
 sample_text = """

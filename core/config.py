@@ -8,7 +8,7 @@ from collections import ChainMap
 
 
 class Settings(BaseSettings):
-    """DataBridge configuration settings."""
+    """Morphik configuration settings."""
 
     # Environment variables
     JWT_SECRET_KEY: str
@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     HONEYCOMB_ENABLED: bool = True
     HONEYCOMB_ENDPOINT: str = "https://api.honeycomb.io"
     HONEYCOMB_PROXY_ENDPOINT: str = "https://otel-proxy.onrender.com/"
-    SERVICE_NAME: str = "databridge-core"
+    SERVICE_NAME: str = "morphik-core"
     OTLP_TIMEOUT: int = 10
     OTLP_MAX_RETRIES: int = 3
     OTLP_RETRY_DELAY: int = 1
@@ -115,7 +115,7 @@ def get_settings() -> Settings:
     load_dotenv(override=True)
 
     # Load config.toml
-    with open("databridge.toml", "rb") as f:
+    with open("morphik.toml", "rb") as f:
         config = tomli.load(f)
 
     em = "'{missing_value}' needed if '{field}' is set to '{value}'"
@@ -277,10 +277,10 @@ def get_settings() -> Settings:
         raise ValueError("'model' is required in the rules configuration")
     rules_config["RULES_MODEL"] = config["rules"]["model"]
 
-    # load databridge config
-    databridge_config = {
-        "ENABLE_COLPALI": config["databridge"]["enable_colpali"],
-        "MODE": config["databridge"].get("mode", "cloud"),  # Default to "cloud" mode
+    # load morphik config
+    morphik_config = {
+        "ENABLE_COLPALI": config["morphik"]["enable_colpali"],
+        "MODE": config["morphik"].get("mode", "cloud"),  # Default to "cloud" mode
     }
 
     # load graph config
@@ -301,7 +301,7 @@ def get_settings() -> Settings:
             "TELEMETRY_ENABLED": config["telemetry"].get("enabled", True),
             "HONEYCOMB_ENABLED": config["telemetry"].get("honeycomb_enabled", True),
             "HONEYCOMB_ENDPOINT": config["telemetry"].get("honeycomb_endpoint", "https://api.honeycomb.io"),
-            "SERVICE_NAME": config["telemetry"].get("service_name", "databridge-core"),
+            "SERVICE_NAME": config["telemetry"].get("service_name", "morphik-core"),
             "OTLP_TIMEOUT": config["telemetry"].get("otlp_timeout", 10),
             "OTLP_MAX_RETRIES": config["telemetry"].get("otlp_max_retries", 3),
             "OTLP_RETRY_DELAY": config["telemetry"].get("otlp_retry_delay", 1),
@@ -322,7 +322,7 @@ def get_settings() -> Settings:
         storage_config,
         vector_store_config,
         rules_config,
-        databridge_config,
+        morphik_config,
         graph_config,
         telemetry_config,
         openai_config,

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-DataBridge interactive CLI.
-Assumes a DataBridge server is running.
+Morphik interactive CLI.
+Assumes a Morphik server is running.
 
 Usage:
     Without authentication (connects to localhost):
@@ -9,7 +9,7 @@ Usage:
     
     With authentication:
         python shell.py <uri>
-        Example: python shell.py "databridge://user:token@localhost:8000"
+        Example: python shell.py "morphik://user:token@localhost:8000"
 
 This provides the exact same interface as the Python SDK:
     db.ingest_text("content", metadata={...})
@@ -29,18 +29,18 @@ _SDK_PATH = str(Path(__file__).parent / "sdks" / "python")
 if _SDK_PATH not in sys.path:
     sys.path.insert(0, _SDK_PATH)
 
-from databridge import DataBridge  # noqa: E402
-from databridge.models import Document  # noqa: E402
+from morphik import Morphik  # noqa: E402
+from morphik.models import Document  # noqa: E402
 
 
 class DB:
     def __init__(self, uri: str = None):
-        """Initialize DataBridge with optional URI"""
-        self._client = DataBridge(uri, is_local=True, timeout=1000)
+        """Initialize Morphik with optional URI"""
+        self._client = Morphik(uri, is_local=True, timeout=1000)
         self.base_url = "http://localhost:8000"  # For health check only
 
     def check_health(self, max_retries=30, retry_interval=1) -> bool:
-        """Check if DataBridge server is healthy with retries"""
+        """Check if Morphik server is healthy with retries"""
         health_url = f"{self.base_url}/health"
 
         for attempt in range(max_retries):
@@ -68,7 +68,7 @@ class DB:
         as_object: bool = False,
     ) -> Union[dict, "Document"]:
         """
-        Ingest text content into DataBridge.
+        Ingest text content into Morphik.
 
         Args:
             content: Text content to ingest
@@ -104,7 +104,7 @@ class DB:
         as_object: bool = False,
     ) -> Union[dict, "Document"]:
         """
-        Ingest a file into DataBridge.
+        Ingest a file into Morphik.
 
         Args:
             file: Path to file to ingest
@@ -147,7 +147,7 @@ class DB:
         as_objects: bool = False,
     ) -> List[Union[dict, "Document"]]:
         """
-        Batch ingest multiple files into DataBridge.
+        Batch ingest multiple files into Morphik.
 
         Args:
             files: List of file paths to ingest
@@ -207,7 +207,7 @@ class DB:
         as_objects: bool = False,
     ) -> List[Union[dict, "Document"]]:
         """
-        Ingest all files in a directory into DataBridge.
+        Ingest all files in a directory into Morphik.
 
         Args:
             directory: Path to directory containing files to ingest
@@ -855,10 +855,10 @@ if __name__ == "__main__":
 
     # Check server health
     if not db.check_health():
-        print("Error: Could not connect to DataBridge server")
+        print("Error: Could not connect to Morphik server")
         sys.exit(1)
 
-    print("\nConnected to DataBridge")
+    print("\nConnected to Morphik")
 
     # Start an interactive Python shell with 'db' already imported
     import code
@@ -871,7 +871,7 @@ if __name__ == "__main__":
     shell = code.InteractiveConsole(locals())
 
     # Print welcome message
-    print("\nDataBridge CLI ready to use. The 'db' object is available with all SDK methods.")
+    print("\nMorphik CLI ready to use. The 'db' object is available with all SDK methods.")
     print("Examples:")
     print("  db.ingest_text('hello world')")
     print("  db.query('what are the key findings?')")

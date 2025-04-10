@@ -51,7 +51,7 @@ async def setup_test_environment(event_loop):
     # Create a test text file
     text_file = TEST_DATA_DIR / "test.txt"
     if not text_file.exists():
-        text_file.write_text("This is a test document for DataBridge testing.")
+        text_file.write_text("This is a test document for Morphik testing.")
 
     # Create a small test PDF if it doesn't exist
     pdf_file = TEST_DATA_DIR / "test.pdf"

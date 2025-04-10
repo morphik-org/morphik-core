@@ -1,17 +1,17 @@
 import os
 from dotenv import load_dotenv
-from databridge import DataBridge
+from morphik import Morphik
 
 # Load environment variables
 load_dotenv()
 
-# Connect to DataBridge
-db = DataBridge(os.getenv("DATABRIDGE_URI"), timeout=10000, is_local=True)
+# Connect to Morphik
+db = Morphik(os.getenv("MORPHIK_URI"), timeout=10000, is_local=True)
 
 # Basic text ingestion
 text_doc = db.ingest_text(
-    "DataBridge is an open-source database designed for AI applications that simplifies working with unstructured data.",
-    metadata={"category": "tech", "author": "DataBridge"}
+    "Morphik is an open-source database designed for AI applications that simplifies working with unstructured data.",
+    metadata={"category": "tech", "author": "Morphik"}
 )
 print(f"Ingested text document with ID: {text_doc.external_id}")
 
@@ -24,7 +24,7 @@ print(f"Ingested file with ID: {file_doc.external_id}")
 
 # Basic retrieval
 chunks = db.retrieve_chunks(
-    query="What is DataBridge?",
+    query="What is Morphik?",
     k=3
 )
 
@@ -34,6 +34,6 @@ for chunk in chunks:
     print(f"Score: {chunk.score}\n")
 
 # Basic query with RAG
-response = db.query("What is DataBridge and what is it used for?")
+response = db.query("What is Morphik and what is it used for?")
 print("Query response:")
 print(response.completion)

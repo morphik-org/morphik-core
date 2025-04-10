@@ -1,6 +1,6 @@
-# Docker Setup Guide for DataBridge Core
+# Docker Setup Guide for Morphik Core
 
-DataBridge Core provides a streamlined Docker-based setup that includes all necessary components: the core API, PostgreSQL with pgvector, and Ollama for AI models.
+Morphik Core provides a streamlined Docker-based setup that includes all necessary components: the core API, PostgreSQL with pgvector, and Ollama for AI models.
 
 ## Prerequisites
 
@@ -12,8 +12,8 @@ DataBridge Core provides a streamlined Docker-based setup that includes all nece
 
 1. Clone the repository and navigate to the project directory:
 ```bash
-git clone https://github.com/databridge-org/databridge-core.git
-cd databridge-core
+git clone https://github.com/morphik-org/morphik-core.git
+cd morphik-core
 ```
 
 2. First-time setup:
@@ -50,9 +50,9 @@ The default configuration works out of the box and includes:
 - Local file storage
 - Basic authentication
 
-### 2. Configuration File (databridge.toml)
+### 2. Configuration File (morphik.toml)
 
-The default `databridge.toml` is configured for Docker and includes:
+The default `morphik.toml` is configured for Docker and includes:
 
 ```toml
 [api]
@@ -94,13 +94,13 @@ PORT=8000                            # Change if needed
 ### 4. Custom Configuration
 
 To use your own configuration:
-1. Create a custom `databridge.toml`
+1. Create a custom `morphik.toml`
 2. Mount it in `docker-compose.yml`:
 ```yaml
 services:
-  databridge:
+  morphik:
     volumes:
-      - ./my-custom-databridge.toml:/app/databridge.toml
+      - ./my-custom-morphik.toml:/app/morphik.toml
 ```
 
 ## Accessing Services
@@ -124,14 +124,14 @@ services:
    docker compose logs
    
    # View specific service logs
-   docker compose logs databridge
+   docker compose logs morphik
    docker compose logs postgres
    docker compose logs ollama
    ```
 
 2. **Database Issues**
    - Check PostgreSQL is healthy: `docker compose ps`
-   - Verify database connection: `docker compose exec postgres psql -U databridge -d databridge`
+   - Verify database connection: `docker compose exec postgres psql -U morphik -d morphik`
 
 3. **Model Download Issues**
    - Check Ollama logs: `docker compose logs ollama`
@@ -166,8 +166,8 @@ For production environments:
 ## Support
 
 For issues and feature requests:
-- GitHub Issues: [https://github.com/databridge-org/databridge-core/issues](https://github.com/databridge-org/databridge-core/issues)
-- Documentation: [https://databridge.gitbook.io/databridge-docs](https://databridge.gitbook.io/databridge-docs)
+- GitHub Issues: [https://github.com/morphik-org/morphik-core/issues](https://github.com/morphik-org/morphik-core/issues)
+- Documentation: [https://docs.morphik.ai](https://docs.morphik.ai)
 
 ## Repository Information
 
