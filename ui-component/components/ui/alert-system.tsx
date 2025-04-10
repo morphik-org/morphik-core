@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 
 interface AlertInstanceProps {
   id: string;
-  type: 'error' | 'success' | 'info' | 'upload';
+  type: 'error' | 'success' | 'info' | 'upload' | 'warning';
   title?: string;
   message: string;
   duration?: number;
@@ -29,7 +29,8 @@ const AlertInstance = ({
         type === 'error' && "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive",
         type === 'upload' && "bg-blue-50 text-blue-700 border-blue-200",
         type === 'success' && "bg-green-50 text-green-700 border-green-200",
-        type === 'info' && "bg-gray-50 text-gray-700 border-gray-200"
+        type === 'info' && "bg-gray-50 text-gray-700 border-gray-200",
+        type === 'warning' && "bg-amber-50 text-amber-700 border-amber-200"
       )}
     >
       {dismissible && (
@@ -57,13 +58,22 @@ export function AlertSystem({ position = 'bottom-right' }: AlertSystemProps) {
 
   // Custom event handlers for adding and removing alerts
   useEffect(() => {
-    const handleAddAlert = (event: CustomEvent) => {
-      const alert = event.detail;
+    const handleAddAlert = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        id?: string;
+        type: 'error' | 'success' | 'info' | 'upload' | 'warning';
+        title?: string;
+        message: string;
+        duration?: number;
+        dismissible?: boolean;
+      }>;
+      const alert = customEvent.detail;
       if (alert) {
-        const newAlert = {
+        const newAlert: AlertInstanceProps = {
           ...alert,
           id: alert.id || Date.now().toString(),
           dismissible: alert.dismissible !== false,
+          onDismiss: removeAlert,
         };
 
         setAlerts(prev => [...prev, newAlert]);
@@ -77,20 +87,20 @@ export function AlertSystem({ position = 'bottom-right' }: AlertSystemProps) {
       }
     };
     
-    const handleRemoveAlert = (event: CustomEvent) => {
-      const { id } = event.detail;
+    const handleRemoveAlert = (event: Event) => {
+      const customEvent = event as CustomEvent<{id: string}>;
+      const { id } = customEvent.detail;
       if (id) {
         removeAlert(id);
       }
     };
 
-    // Cast to any to handle CustomEvent
-    window.addEventListener('morphik:alert' as any, handleAddAlert);
-    window.addEventListener('morphik:alert:remove' as any, handleRemoveAlert);
+    window.addEventListener('morphik:alert', handleAddAlert as EventListener);
+    window.addEventListener('morphik:alert:remove', handleRemoveAlert as EventListener);
     
     return () => {
-      window.removeEventListener('morphik:alert' as any, handleAddAlert);
-      window.removeEventListener('morphik:alert:remove' as any, handleRemoveAlert);
+      window.removeEventListener('morphik:alert', handleAddAlert as EventListener);
+      window.removeEventListener('morphik:alert:remove', handleRemoveAlert as EventListener);
     };
   }, []);
 
@@ -125,7 +135,7 @@ export function AlertSystem({ position = 'bottom-right' }: AlertSystemProps) {
 export const showAlert = (
   message: string, 
   options?: {
-    type?: 'error' | 'success' | 'info' | 'upload';
+    type?: 'error' | 'success' | 'info' | 'upload' | 'warning';
     title?: string;
     duration?: number; // in milliseconds, none means it stays until dismissed
     dismissible?: boolean;

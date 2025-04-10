@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, ChangeEvent } from 'react';
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -59,15 +60,17 @@ interface QueryOptions extends SearchOptions {
   graph_name?: string;
 }
 
-interface BatchUploadError {
-  filename: string;
-  error: string;
-}
+// Commented out as currently unused
+// interface BatchUploadError {
+//   filename: string;
+//   error: string;
+// }
 
 const MorphikUI = () => {
   const [activeSection, setActiveSection] = useState('documents');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
+  const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [chatQuery, setChatQuery] = useState('');
@@ -248,6 +251,108 @@ const MorphikUI = () => {
     } finally {
       setLoading(false);
     }
+  };
+  
+  // Handle multiple document deletion
+  const handleDeleteMultipleDocuments = async () => {
+    if (selectedDocuments.length === 0) return;
+    
+    try {
+      setLoading(true);
+      
+      // Show initial alert for deletion progress
+      const alertId = 'delete-multiple-progress';
+      showAlert(`Deleting ${selectedDocuments.length} documents...`, {
+        type: 'info',
+        dismissible: false,
+        id: alertId
+      });
+      
+      // Perform deletions sequentially
+      const results = await Promise.all(
+        selectedDocuments.map(docId =>
+          fetch(`${API_BASE_URL}/documents/${docId}`, {
+            method: 'DELETE',
+            headers
+          })
+        )
+      );
+      
+      // Check if any deletion failed
+      const failedCount = results.filter(res => !res.ok).length;
+      
+      // Clear selected document if it was among deleted ones
+      if (selectedDocument && selectedDocuments.includes(selectedDocument.external_id)) {
+        setSelectedDocument(null);
+      }
+      
+      // Clear selection
+      setSelectedDocuments([]);
+      
+      // Refresh documents list
+      await fetchDocuments();
+      
+      // Remove progress alert
+      removeAlert(alertId);
+      
+      // Show final result alert
+      if (failedCount > 0) {
+        showAlert(`Deleted ${selectedDocuments.length - failedCount} documents. ${failedCount} deletions failed.`, {
+          type: "warning",
+          duration: 4000
+        });
+      } else {
+        showAlert(`Successfully deleted ${selectedDocuments.length} documents`, {
+          type: "success",
+          duration: 3000
+        });
+      }
+      
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+      showAlert(errorMsg, {
+        type: 'error',
+        title: 'Delete Failed',
+        duration: 5000
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Toggle document selection - currently handled by handleCheckboxChange
+  // Keeping implementation in comments for reference
+  /*
+  const toggleDocumentSelection = (e: React.MouseEvent, docId: string) => {
+    e.stopPropagation(); // Prevent document selection/details view
+    
+    setSelectedDocuments(prev => {
+      if (prev.includes(docId)) {
+        return prev.filter(id => id !== docId);
+      } else {
+        return [...prev, docId];
+      }
+    });
+  };
+  */
+  
+  // Handle checkbox change (wrapper function for use with shadcn checkbox)
+  const handleCheckboxChange = (checked: boolean | "indeterminate", docId: string) => {
+    setSelectedDocuments(prev => {
+      if (checked === true && !prev.includes(docId)) {
+        return [...prev, docId];
+      } else if (checked === false && prev.includes(docId)) {
+        return prev.filter(id => id !== docId);
+      }
+      return prev;
+    });
+  };
+  
+  // Helper function to get "indeterminate" state for select all checkbox
+  const getSelectAllState = () => {
+    if (selectedDocuments.length === 0) return false;
+    if (selectedDocuments.length === documents.length) return true;
+    return "indeterminate";
   };
 
   // Handle file upload
@@ -780,9 +885,21 @@ const MorphikUI = () => {
         {activeSection === 'documents' && (
           <div className="flex-1 flex flex-col h-full">
             <div className="flex justify-between items-center bg-white py-3 mb-4">
-              <div>
-                <h2 className="text-2xl font-bold leading-tight">Your Documents</h2>
-                <p className="text-muted-foreground">Manage your uploaded documents and view their metadata.</p>
+              <div className="flex items-center gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold leading-tight">Your Documents</h2>
+                  <p className="text-muted-foreground">Manage your uploaded documents and view their metadata.</p>
+                </div>
+                {selectedDocuments.length > 0 && (
+                  <Button 
+                    variant="outline" 
+                    onClick={handleDeleteMultipleDocuments} 
+                    disabled={loading}
+                    className="border-red-500 text-red-500 hover:bg-red-50 ml-4"
+                  >
+                    Delete {selectedDocuments.length} selected
+                  </Button>
+                )}
               </div>
               <Dialog 
                 open={showUploadDialog} 
@@ -939,7 +1056,21 @@ const MorphikUI = () => {
                   <div className="border rounded-md">
                     <div className="bg-gray-100 border-b p-3 font-medium sticky top-0">
                       <div className="grid grid-cols-12">
-                        <div className="col-span-5">Filename</div>
+                        <div className="col-span-1 flex items-center justify-center">
+                          <Checkbox
+                            id="select-all-documents"
+                            checked={getSelectAllState()}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedDocuments(documents.map(doc => doc.external_id));
+                              } else {
+                                setSelectedDocuments([]);
+                              }
+                            }}
+                            aria-label="Select all documents"
+                          />
+                        </div>
+                        <div className="col-span-4">Filename</div>
                         <div className="col-span-3">Type</div>
                         <div className="col-span-4">ID</div>
                       </div>
@@ -952,7 +1083,16 @@ const MorphikUI = () => {
                           onClick={() => handleDocumentClick(doc)}
                           className="grid grid-cols-12 p-3 cursor-pointer hover:bg-gray-50 border-b"
                         >
-                          <div className="col-span-5 flex items-center">
+                          <div className="col-span-1 flex items-center justify-center">
+                            <Checkbox 
+                              id={`doc-${doc.external_id}`}
+                              checked={selectedDocuments.includes(doc.external_id)}
+                              onCheckedChange={(checked) => handleCheckboxChange(checked, doc.external_id)}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`Select ${doc.filename || 'document'}`}
+                            />
+                          </div>
+                          <div className="col-span-4 flex items-center">
                             {doc.filename || 'N/A'}
                             {doc.external_id === selectedDocument?.external_id && (
                               <Badge variant="outline" className="ml-2">Selected</Badge>
@@ -1083,14 +1223,14 @@ const MorphikUI = () => {
         
         {/* Search Section */}
         {activeSection === 'search' && (
-          <Card>
+          <Card className="flex-1 flex flex-col h-full">
             <CardHeader>
               <CardTitle>Search Documents</CardTitle>
               <CardDescription>
                 Search across your documents to find relevant information.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex-1 flex flex-col">
               <div className="space-y-4">
                 <div className="flex gap-2">
                   <Input 
@@ -1108,19 +1248,22 @@ const MorphikUI = () => {
                 </div>
                 
                 <div>
-                  <button
-                    type="button" 
-                    className="flex items-center text-sm text-gray-600 hover:text-gray-900"
-                    onClick={() => setShowSearchAdvanced(!showSearchAdvanced)}
-                  >
-                    <Settings className="mr-1 h-4 w-4" />
-                    Advanced Options
-                    {showSearchAdvanced ? <ChevronUp className="ml-1 h-4 w-4" /> : <ChevronDown className="ml-1 h-4 w-4" />}
-                  </button>
-                  
-                  {showSearchAdvanced && (
-                    <div className="mt-3 p-4 border rounded-md bg-gray-50">
-                      <div className="space-y-4">
+                  <Dialog open={showSearchAdvanced} onOpenChange={setShowSearchAdvanced}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm" className="flex items-center">
+                        <Settings className="mr-2 h-4 w-4" />
+                        Advanced Options
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>Search Options</DialogTitle>
+                        <DialogDescription>
+                          Configure advanced search parameters
+                        </DialogDescription>
+                      </DialogHeader>
+                      
+                      <div className="grid gap-4 py-4">
                         <div>
                           <Label htmlFor="search-filters" className="block mb-2">Filters (JSON)</Label>
                           <Textarea 
@@ -1178,49 +1321,57 @@ const MorphikUI = () => {
                           />
                         </div>
                       </div>
-                    </div>
-                  )}
+                      
+                      <DialogFooter>
+                        <Button onClick={() => setShowSearchAdvanced(false)}>Apply</Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 </div>
               </div>
               
-              <div className="mt-6">
+              <div className="mt-6 flex-1 overflow-hidden">
                 {searchResults.length > 0 ? (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-medium">Results ({searchResults.length})</h3>
+                  <div>
+                    <h3 className="text-lg font-medium mb-4">Results ({searchResults.length})</h3>
                     
-                    {searchResults.map((result) => (
-                      <Card key={`${result.document_id}-${result.chunk_number}`}>
-                        <CardHeader className="pb-2">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <CardTitle className="text-base">
-                                {result.filename || `Document ${result.document_id.substring(0, 8)}...`}
-                              </CardTitle>
-                              <CardDescription>
-                                Chunk {result.chunk_number} • Score: {result.score.toFixed(2)}
-                              </CardDescription>
-                            </div>
-                            <Badge variant="outline">
-                              {result.content_type}
-                            </Badge>
-                          </div>
-                        </CardHeader>
-                        <CardContent>
-                          {renderContent(result.content, result.content_type)}
-                          
-                          <Accordion type="single" collapsible className="mt-4">
-                            <AccordionItem value="metadata">
-                              <AccordionTrigger className="text-sm">Metadata</AccordionTrigger>
-                              <AccordionContent>
-                                <pre className="bg-gray-50 p-2 rounded text-xs overflow-x-auto">
-                                  {JSON.stringify(result.metadata, null, 2)}
-                                </pre>
-                              </AccordionContent>
-                            </AccordionItem>
-                          </Accordion>
-                        </CardContent>
-                      </Card>
-                    ))}
+                    <ScrollArea className="h-[calc(100vh-320px)]">
+                      <div className="space-y-6 pr-4">
+                        {searchResults.map((result) => (
+                          <Card key={`${result.document_id}-${result.chunk_number}`}>
+                            <CardHeader className="pb-2">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <CardTitle className="text-base">
+                                    {result.filename || `Document ${result.document_id.substring(0, 8)}...`}
+                                  </CardTitle>
+                                  <CardDescription>
+                                    Chunk {result.chunk_number} • Score: {result.score.toFixed(2)}
+                                  </CardDescription>
+                                </div>
+                                <Badge variant="outline">
+                                  {result.content_type}
+                                </Badge>
+                              </div>
+                            </CardHeader>
+                            <CardContent>
+                              {renderContent(result.content, result.content_type)}
+                              
+                              <Accordion type="single" collapsible className="mt-4">
+                                <AccordionItem value="metadata">
+                                  <AccordionTrigger className="text-sm">Metadata</AccordionTrigger>
+                                  <AccordionContent>
+                                    <pre className="bg-gray-50 p-2 rounded text-xs overflow-x-auto">
+                                      {JSON.stringify(result.metadata, null, 2)}
+                                    </pre>
+                                  </AccordionContent>
+                                </AccordionItem>
+                              </Accordion>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </ScrollArea>
                   </div>
                 ) : (
                   <div className="text-center py-16 border border-dashed rounded-lg">

@@ -56,10 +56,10 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
             else:
                 contents.append(chunk.content)
 
-        return [self.generate_embeddings(content) for content in contents]
+        return [await self.generate_embeddings(content) for content in contents]
 
     async def embed_for_query(self, text: str) -> torch.Tensor:
-        return self.generate_embeddings(text)
+        return await self.generate_embeddings(text)
 
     async def generate_embeddings(self, content: str | Image) -> np.ndarray:
         if isinstance(content, Image):
