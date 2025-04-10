@@ -189,7 +189,7 @@ class PGVectorStore(BaseVectorStore):
                     result = await conn.execute(text(check_dim_sql))
                     current_dim = result.scalar()
                     
-                    if current_dim != dimensions:
+                    if (current_dim + 4) != dimensions:
                         logger.info(f"Vector dimensions changed from {current_dim} to {dimensions}, recreating table")
                         
                         # Drop existing vector index if it exists
