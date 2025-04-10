@@ -61,7 +61,7 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
     async def embed_for_query(self, text: str) -> torch.Tensor:
         return self.generate_embeddings(text)
 
-    def generate_embeddings(self, content: str | Image) -> np.ndarray:
+    async def generate_embeddings(self, content: str | Image) -> np.ndarray:
         if isinstance(content, Image):
             processed = self.processor.process_images([content]).to(self.model.device)
         else:

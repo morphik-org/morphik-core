@@ -10,12 +10,12 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
-import { AlertCircle, Upload, Search, MessageSquare, Info, Settings, ChevronDown, ChevronUp } from 'lucide-react';
+import { Upload, Search, MessageSquare, Info, Settings, ChevronDown, ChevronUp } from 'lucide-react';
 import { Sidebar } from '@/components/ui/sidebar';
 import GraphSection from '@/components/GraphSection';
 import NotebookSection from '@/components/NotebookSection';
+import { showAlert, removeAlert } from '@/components/ui/alert-system';
 import Image from 'next/image';
 
 // API base URL - change this to match your Morphik server
@@ -73,8 +73,9 @@ const MorphikUI = () => {
   const [chatQuery, setChatQuery] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // No longer need error state as we're using alert system
   const [showUploadDialog, setShowUploadDialog] = useState(false);
+  // Alert system now handles upload status messages
   const [uploadType, setUploadType] = useState<'file' | 'text' | 'batch'>('file');
   const [textContent, setTextContent] = useState('');
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
@@ -113,30 +114,50 @@ const MorphikUI = () => {
     'Authorization': authToken
   };
 
-  // Fetch all documents
+  // Fetch all documents - non-blocking implementation
   const fetchDocuments = async () => {
     try {
-      setLoading(true);
-      setError(null);
+      // Only set loading state for initial load, not for refreshes
+      if (documents.length === 0) {
+        setLoading(true);
+      }
+      // Using alerts instead of error state
       
-      const response = await fetch(`${API_BASE_URL}/documents`, {
+      // Use non-blocking fetch
+      fetch(`${API_BASE_URL}/documents`, {
         method: 'POST',
         headers: {
           ...headers,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({})
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Failed to fetch documents: ${response.statusText}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        setDocuments(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+        showAlert(errorMsg, {
+          type: 'error',
+          title: 'Error',
+          duration: 5000
+        });
+        setLoading(false);
       });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch documents: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      setDocuments(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
-    } finally {
+      const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+      showAlert(errorMsg, {
+        type: 'error',
+        title: 'Error',
+        duration: 5000
+      });
       setLoading(false);
     }
   };
@@ -147,26 +168,39 @@ const MorphikUI = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch a specific document by ID
+  // Fetch a specific document by ID - fully non-blocking
   const fetchDocument = async (documentId: string) => {
     try {
-      setLoading(true);
-      setError(null);
+      // Using alerts instead of error state
       
-      const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
+      // Use non-blocking fetch to avoid locking the UI
+      fetch(`${API_BASE_URL}/documents/${documentId}`, {
         headers
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Failed to fetch document: ${response.statusText}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        setSelectedDocument(data);
+      })
+      .catch(err => {
+        const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+        showAlert(errorMsg, {
+          type: 'error',
+          title: 'Error',
+          duration: 5000
+        });
       });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch document: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      setSelectedDocument(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
-    } finally {
-      setLoading(false);
+      const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+      showAlert(errorMsg, {
+        type: 'error',
+        title: 'Error',
+        duration: 5000
+      });
     }
   };
 
@@ -179,7 +213,7 @@ const MorphikUI = () => {
   const handleDeleteDocument = async (documentId: string) => {
     try {
       setLoading(true);
-      setError(null);
+      // Using alerts instead of error state
       
       const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
         method: 'DELETE',
@@ -198,8 +232,19 @@ const MorphikUI = () => {
       // Refresh documents list
       await fetchDocuments();
       
+      // Show success message
+      showAlert("Document deleted successfully", {
+        type: "success",
+        duration: 3000
+      });
+      
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+      showAlert(errorMsg, {
+        type: 'error',
+        title: 'Delete Failed',
+        duration: 5000
+      });
     } finally {
       setLoading(false);
     }
@@ -208,158 +253,325 @@ const MorphikUI = () => {
   // Handle file upload
   const handleFileUpload = async () => {
     if (!fileToUpload) {
-      setError('Please select a file to upload');
+      showAlert('Please select a file to upload', {
+        type: 'error',
+        duration: 3000
+      });
       return;
     }
 
+    // Close dialog and update upload count using alert system
+    setShowUploadDialog(false);
+    const uploadId = 'upload-progress';
+    showAlert(`Uploading 1 file...`, {
+      type: 'upload',
+      dismissible: false,
+      id: uploadId
+    });
+    
+    // Reset form data immediately so users can initiate another upload if desired
+    const fileToUploadRef = fileToUpload;
+    const metadataRef = metadata;
+    const rulesRef = rules;
+    const useColpaliRef = useColpali;
+    
+    // Reset form
+    setFileToUpload(null);
+    setMetadata('{}');
+    setRules('[]');
+    setUseColpali(true);
+    
     try {
-      setLoading(true);
-      setError(null);
+      // Using alerts instead of error state
       
       const formData = new FormData();
-      formData.append('file', fileToUpload);
-      formData.append('metadata', metadata);
-      formData.append('rules', rules);
+      formData.append('file', fileToUploadRef);
+      formData.append('metadata', metadataRef);
+      formData.append('rules', rulesRef);
       
-      const url = `${API_BASE_URL}/ingest/file${useColpali ? '?use_colpali=true' : ''}`;
+      const url = `${API_BASE_URL}/ingest/file${useColpaliRef ? '?use_colpali=true' : ''}`;
       
-      const response = await fetch(url, {
+      // Non-blocking fetch
+      fetch(url, {
         method: 'POST',
         headers: {
           'Authorization': authToken
         },
         body: formData
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Failed to upload: ${response.statusText}`);
+        }
+        return response.json();
+      })
+      .then(() => {
+        fetchDocuments(); // Refresh document list (non-blocking)
+        
+        // Show success message and remove upload progress
+        showAlert(`File uploaded successfully!`, {
+          type: 'success',
+          duration: 3000
+        });
+        
+        // Remove the upload alert
+        removeAlert('upload-progress');
+      })
+      .catch(err => {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+        const errorMsg = `Error uploading ${fileToUploadRef.name}: ${errorMessage}`;
+        
+        // Show error alert and remove upload progress
+        showAlert(errorMsg, {
+          type: 'error',
+          title: 'Upload Failed',
+          duration: 5000
+        });
+        
+        // Remove the upload alert
+        removeAlert('upload-progress');
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      const errorMsg = `Error uploading ${fileToUploadRef.name}: ${errorMessage}`;
+      
+      // Show error alert
+      showAlert(errorMsg, {
+        type: 'error',
+        title: 'Upload Failed',
+        duration: 5000
       });
       
-      if (!response.ok) {
-        throw new Error(`Failed to upload file: ${response.statusText}`);
-      }
-      
-      await fetchDocuments(); // Refresh document list
-      setShowUploadDialog(false);
-      setFileToUpload(null);
-      setMetadata('{}');
-      setRules('[]');
-      setUseColpali(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
-    } finally {
-      setLoading(false);
+      // Remove the upload progress alert
+      removeAlert('upload-progress');
     }
   };
 
   // Handle batch file upload
   const handleBatchFileUpload = async () => {
     if (batchFilesToUpload.length === 0) {
-      setError('Please select files to upload');
+      showAlert('Please select files to upload', {
+        type: 'error',
+        duration: 3000
+      });
       return;
     }
 
+    // Close dialog and update upload count using alert system
+    setShowUploadDialog(false);
+    const fileCount = batchFilesToUpload.length;
+    const uploadId = 'batch-upload-progress';
+    showAlert(`Uploading ${fileCount} files...`, {
+      type: 'upload',
+      dismissible: false,
+      id: uploadId
+    });
+    
+    // Save form data locally before resetting
+    const batchFilesRef = [...batchFilesToUpload];
+    const metadataRef = metadata;
+    const rulesRef = rules;
+    const useColpaliRef = useColpali;
+    
+    // Reset form immediately
+    setBatchFilesToUpload([]);
+    setMetadata('{}');
+    setRules('[]');
+    setUseColpali(true);
+    
     try {
-      setLoading(true);
-      setError(null);
+      // Using alerts instead of error state
       
       const formData = new FormData();
       
       // Append each file to the formData with the same field name
-      batchFilesToUpload.forEach(file => {
+      batchFilesRef.forEach(file => {
         formData.append('files', file);
       });
       
-      formData.append('metadata', metadata);
-      formData.append('rules', rules);
+      formData.append('metadata', metadataRef);
+      formData.append('rules', rulesRef);
       formData.append('parallel', 'true');
-      if (useColpali !== undefined) {
-        formData.append('use_colpali', useColpali.toString());
+      if (useColpaliRef !== undefined) {
+        formData.append('use_colpali', useColpaliRef.toString());
       }
       
-      const response = await fetch(`${API_BASE_URL}/ingest/files`, {
+      // Non-blocking fetch
+      fetch(`${API_BASE_URL}/ingest/files`, {
         method: 'POST',
         headers: {
           'Authorization': authToken
         },
         body: formData
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Failed to upload: ${response.statusText}`);
+        }
+        return response.json();
+      })
+      .then(result => {
+        fetchDocuments(); // Refresh document list (non-blocking)
+        
+        // If there are errors, show them in the error alert
+        if (result.errors && result.errors.length > 0) {
+          const errorMsg = `${result.errors.length} of ${fileCount} files failed to upload`;
+          
+          showAlert(errorMsg, {
+            type: 'error',
+            title: 'Upload Partially Failed',
+            duration: 5000
+          });
+        } else {
+          // Show success message
+          showAlert(`${fileCount} files uploaded successfully!`, {
+            type: 'success',
+            duration: 3000
+          });
+        }
+        
+        // Remove the upload alert
+        removeAlert('batch-upload-progress');
+      })
+      .catch(err => {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+        const errorMsg = `Error uploading files: ${errorMessage}`;
+        
+        // Show error alert
+        showAlert(errorMsg, {
+          type: 'error',
+          title: 'Upload Failed',
+          duration: 5000
+        });
+        
+        // Remove the upload alert
+        removeAlert('batch-upload-progress');
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      const errorMsg = `Error uploading files: ${errorMessage}`;
+      
+      // Show error alert
+      showAlert(errorMsg, {
+        type: 'error',
+        title: 'Upload Failed',
+        duration: 5000
       });
       
-      if (!response.ok) {
-        throw new Error(`Failed to batch upload files: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      
-      // Check if there were any errors during batch upload
-      if (result.errors && result.errors.length > 0) {
-        const errorMessages = result.errors.map((err: BatchUploadError) => 
-          `${err.filename}: ${err.error}`
-        ).join('\n');
-        setError(`Some files failed to upload:\n${errorMessages}`);
-      }
-      
-      await fetchDocuments(); // Refresh document list
-      setShowUploadDialog(false);
-      setBatchFilesToUpload([]);
-      setMetadata('{}');
-      setRules('[]');
-      setUseColpali(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
-    } finally {
-      setLoading(false);
+      // Remove the upload progress alert
+      removeAlert('batch-upload-progress');
     }
   };
 
   // Handle text upload
   const handleTextUpload = async () => {
     if (!textContent.trim()) {
-      setError('Please enter text content');
+      showAlert('Please enter text content', {
+        type: 'error',
+        duration: 3000
+      });
       return;
     }
 
+    // Close dialog and update upload count using alert system
+    setShowUploadDialog(false);
+    const uploadId = 'text-upload-progress';
+    showAlert(`Uploading text document...`, {
+      type: 'upload',
+      dismissible: false,
+      id: uploadId
+    });
+    
+    // Save content before resetting
+    const textContentRef = textContent;
+    const metadataRef = metadata;
+    const rulesRef = rules;
+    const useColpaliRef = useColpali;
+    
+    // Reset form immediately
+    setTextContent('');
+    setMetadata('{}');
+    setRules('[]');
+    setUseColpali(true);
+    
     try {
-      setLoading(true);
-      setError(null);
+      // Using alerts instead of error state
       
-      const response = await fetch(`${API_BASE_URL}/ingest/text`, {
+      // Non-blocking fetch
+      fetch(`${API_BASE_URL}/ingest/text`, {
         method: 'POST',
         headers: {
           'Authorization': authToken,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          content: textContent,
-          metadata: JSON.parse(metadata || '{}'),
-          rules: JSON.parse(rules || '[]'),
-          use_colpali: useColpali
+          content: textContentRef,
+          metadata: JSON.parse(metadataRef || '{}'),
+          rules: JSON.parse(rulesRef || '[]'),
+          use_colpali: useColpaliRef
         })
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Failed to upload: ${response.statusText}`);
+        }
+        return response.json();
+      })
+      .then(() => {
+        fetchDocuments(); // Refresh document list (non-blocking)
+        
+        // Show success message
+        showAlert(`Text document uploaded successfully!`, {
+          type: 'success',
+          duration: 3000
+        });
+        
+        // Remove the upload alert
+        removeAlert('text-upload-progress');
+      })
+      .catch(err => {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+        const errorMsg = `Error uploading text: ${errorMessage}`;
+        
+        // Show error alert
+        showAlert(errorMsg, {
+          type: 'error',
+          title: 'Upload Failed',
+          duration: 5000
+        });
+        
+        // Remove the upload alert
+        removeAlert('text-upload-progress');
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      const errorMsg = `Error uploading text: ${errorMessage}`;
+      
+      // Show error alert
+      showAlert(errorMsg, {
+        type: 'error',
+        title: 'Upload Failed',
+        duration: 5000
       });
       
-      if (!response.ok) {
-        throw new Error(`Failed to upload text: ${response.statusText}`);
-      }
-      
-      await fetchDocuments(); // Refresh document list
-      setShowUploadDialog(false);
-      setTextContent('');
-      setMetadata('{}');
-      setRules('[]');
-      setUseColpali(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
-    } finally {
-      setLoading(false);
+      // Remove the upload progress alert
+      removeAlert('text-upload-progress');
     }
   };
 
   // Handle search
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
-      setError('Please enter a search query');
+      showAlert('Please enter a search query', {
+        type: 'error',
+        duration: 3000
+      });
       return;
     }
 
     try {
       setLoading(true);
-      setError(null);
+      // Using alerts instead of error state
       
       const response = await fetch(`${API_BASE_URL}/retrieve/chunks`, {
         method: 'POST',
@@ -383,8 +595,20 @@ const MorphikUI = () => {
       
       const data = await response.json();
       setSearchResults(data);
+      
+      if (data.length === 0) {
+        showAlert("No search results found for the query", {
+          type: "info",
+          duration: 3000
+        });
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+      showAlert(errorMsg, {
+        type: 'error',
+        title: 'Search Failed',
+        duration: 5000
+      });
     } finally {
       setLoading(false);
     }
@@ -393,13 +617,16 @@ const MorphikUI = () => {
   // Handle chat
   const handleChat = async () => {
     if (!chatQuery.trim()) {
-      setError('Please enter a message');
+      showAlert('Please enter a message', {
+        type: 'error',
+        duration: 3000
+      });
       return;
     }
 
     try {
       setLoading(true);
-      setError(null);
+      // Using alerts instead of error state
       
       // Add user message to chat
       const userMessage: ChatMessage = { role: 'user', content: chatQuery };
@@ -440,7 +667,12 @@ const MorphikUI = () => {
       setChatMessages(prev => [...prev, assistantMessage]);
       setChatQuery(''); // Clear input
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+      showAlert(errorMsg, {
+        type: 'error',
+        title: 'Chat Query Failed',
+        duration: 5000
+      });
     } finally {
       setLoading(false);
     }
@@ -536,322 +768,317 @@ const MorphikUI = () => {
       <Sidebar 
         activeSection={activeSection} 
         onSectionChange={setActiveSection}
-        className="h-full"
+        className="h-screen"
       />
       
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 p-6 flex flex-col h-screen overflow-hidden">
+        {/* Upload status is now handled by the AlertSystem */}
         
-        {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        {/* Error alerts now appear in the bottom-right via the AlertSystem */}
         
         {/* Documents Section */}
         {activeSection === 'documents' && (
-          <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <CardTitle>Your Documents</CardTitle>
-                <Dialog 
-                  open={showUploadDialog} 
-                  onOpenChange={(open) => {
-                    setShowUploadDialog(open);
-                    if (!open) resetUploadDialog();
-                  }}
-                >
-                  <DialogTrigger asChild>
-                    <Button onClick={() => setShowUploadDialog(true)}>
-                      <Upload className="mr-2 h-4 w-4" /> Upload Document
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                      <DialogTitle>Upload Document</DialogTitle>
-                      <DialogDescription>
-                        Upload a file or text to your Morphik repository.
-                      </DialogDescription>
-                    </DialogHeader>
-                    
-                    <div className="grid gap-4 py-4">
-                      <div className="flex gap-2">
-                        <Button 
-                          variant={uploadType === 'file' ? "default" : "outline"} 
-                          onClick={() => setUploadType('file')}
-                        >
-                          File
-                        </Button>
-                        <Button 
-                          variant={uploadType === 'batch' ? "default" : "outline"} 
-                          onClick={() => setUploadType('batch')}
-                        >
-                          Batch Files
-                        </Button>
-                        <Button 
-                          variant={uploadType === 'text' ? "default" : "outline"} 
-                          onClick={() => setUploadType('text')}
-                        >
-                          Text
-                        </Button>
-                      </div>
-                      
-                      {uploadType === 'file' ? (
-                        <div>
-                          <Label htmlFor="file" className="block mb-2">File</Label>
-                          <Input 
-                            id="file" 
-                            type="file" 
-                            onChange={(e) => {
-                              const files = e.target.files;
-                              if (files && files.length > 0) {
-                                setFileToUpload(files[0]);
-                              }
-                            }}
-                          />
-                        </div>
-                      ) : uploadType === 'batch' ? (
-                        <div>
-                          <Label htmlFor="batchFiles" className="block mb-2">Select Multiple Files</Label>
-                          <Input 
-                            id="batchFiles" 
-                            type="file" 
-                            multiple
-                            onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                              const files = e.target.files;
-                              if (files && files.length > 0) {
-                                setBatchFilesToUpload(Array.from(files));
-                              }
-                            }}
-                          />
-                          {batchFilesToUpload.length > 0 && (
-                            <div className="mt-2">
-                              <p className="text-sm font-medium mb-1">{batchFilesToUpload.length} files selected:</p>
-                              <ScrollArea className="h-24 w-full rounded-md border p-2">
-                                <ul className="text-xs">
-                                  {Array.from(batchFilesToUpload).map((file, index) => (
-                                    <li key={index} className="py-1 border-b border-gray-100 last:border-0">
-                                      {file.name} ({(file.size / 1024).toFixed(1)} KB)
-                                    </li>
-                                  ))}
-                                </ul>
-                              </ScrollArea>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div>
-                          <Label htmlFor="text" className="block mb-2">Text Content</Label>
-                          <Textarea 
-                            id="text" 
-                            value={textContent} 
-                            onChange={(e) => setTextContent(e.target.value)}
-                            placeholder="Enter text content"
-                            rows={6}
-                          />
-                        </div>
-                      )}
-                      
-                      <div>
-                        <Label htmlFor="metadata" className="block mb-2">Metadata (JSON)</Label>
-                        <Textarea 
-                          id="metadata" 
-                          value={metadata} 
-                          onChange={(e) => setMetadata(e.target.value)}
-                          placeholder='{"key": "value"}'
-                          rows={3}
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="rules" className="block mb-2">Rules (JSON)</Label>
-                        <Textarea 
-                          id="rules" 
-                          value={rules} 
-                          onChange={(e) => setRules(e.target.value)}
-                          placeholder='[{"type": "metadata_extraction", "schema": {...}}]'
-                          rows={3}
-                        />
-                      </div>
-                      
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          id="useColpali"
-                          checked={useColpali}
-                          onChange={(e) => setUseColpali(e.target.checked)}
-                        />
-                        <Label htmlFor="useColpali">Use Colpali</Label>
-                      </div>
-                    </div>
-                    
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowUploadDialog(false)}>
-                        Cancel
+          <div className="flex-1 flex flex-col h-full">
+            <div className="flex justify-between items-center bg-white py-3 mb-4">
+              <div>
+                <h2 className="text-2xl font-bold leading-tight">Your Documents</h2>
+                <p className="text-muted-foreground">Manage your uploaded documents and view their metadata.</p>
+              </div>
+              <Dialog 
+                open={showUploadDialog} 
+                onOpenChange={(open) => {
+                  setShowUploadDialog(open);
+                  if (!open) resetUploadDialog();
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button onClick={() => setShowUploadDialog(true)}>
+                    <Upload className="mr-2 h-4 w-4" /> Upload Document
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Upload Document</DialogTitle>
+                    <DialogDescription>
+                      Upload a file or text to your Morphik repository.
+                    </DialogDescription>
+                  </DialogHeader>
+                  
+                  <div className="grid gap-4 py-4">
+                    <div className="flex gap-2">
+                      <Button 
+                        variant={uploadType === 'file' ? "default" : "outline"} 
+                        onClick={() => setUploadType('file')}
+                      >
+                        File
                       </Button>
                       <Button 
-                        onClick={uploadType === 'file' ? handleFileUpload : uploadType === 'batch' ? handleBatchFileUpload : handleTextUpload}
-                        disabled={loading}
+                        variant={uploadType === 'batch' ? "default" : "outline"} 
+                        onClick={() => setUploadType('batch')}
                       >
-                        {loading ? 'Uploading...' : 'Upload'}
+                        Batch Files
                       </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-              <CardDescription>
-                Manage your uploaded documents and view their metadata.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading && !documents.length ? (
-                <div className="text-center py-8">Loading documents...</div>
-              ) : documents.length > 0 ? (
-                <div className="flex flex-col md:flex-row gap-4">
-                  <div className="w-full md:w-2/3">
-                    <ScrollArea className="h-[500px]">
-                      <div className="border rounded-md">
-                        <div className="grid grid-cols-12 bg-gray-100 p-3 font-medium border-b">
-                          <div className="col-span-5">Filename</div>
-                          <div className="col-span-3">Type</div>
-                          <div className="col-span-4">ID</div>
-                        </div>
-                        <div className="divide-y">
-                          {documents.map((doc) => (
-                            <div 
-                              key={doc.external_id}
-                              onClick={() => handleDocumentClick(doc)}
-                              className="grid grid-cols-12 p-3 cursor-pointer hover:bg-gray-50"
-                            >
-                              <div className="col-span-5 flex items-center">
-                                {doc.filename || 'N/A'}
-                                {doc.external_id === selectedDocument?.external_id && (
-                                  <Badge variant="outline" className="ml-2">Selected</Badge>
-                                )}
-                              </div>
-                              <div className="col-span-3">
-                                <Badge variant="secondary">
-                                  {doc.content_type.split('/')[0]}
-                                </Badge>
-                              </div>
-                              <div className="col-span-4 font-mono text-xs">
-                                {doc.external_id.substring(0, 8)}...
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                      <Button 
+                        variant={uploadType === 'text' ? "default" : "outline"} 
+                        onClick={() => setUploadType('text')}
+                      >
+                        Text
+                      </Button>
+                    </div>
+                    
+                    {uploadType === 'file' ? (
+                      <div>
+                        <Label htmlFor="file" className="block mb-2">File</Label>
+                        <Input 
+                          id="file" 
+                          type="file" 
+                          onChange={(e) => {
+                            const files = e.target.files;
+                            if (files && files.length > 0) {
+                              setFileToUpload(files[0]);
+                            }
+                          }}
+                        />
                       </div>
-                    </ScrollArea>
-                  </div>
-                  
-                  <div className="w-full md:w-1/3">
-                    {selectedDocument ? (
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-lg">Document Details</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <ScrollArea className="h-[400px]">
-                            <div className="space-y-4">
-                              <div>
-                                <h3 className="font-medium mb-1">Filename</h3>
-                                <p>{selectedDocument.filename || 'N/A'}</p>
-                              </div>
-                              
-                              <div>
-                                <h3 className="font-medium mb-1">Content Type</h3>
-                                <Badge>{selectedDocument.content_type}</Badge>
-                              </div>
-                              
-                              <div>
-                                <h3 className="font-medium mb-1">Document ID</h3>
-                                <p className="font-mono text-xs">{selectedDocument.external_id}</p>
-                              </div>
-                              
-                              <Accordion type="single" collapsible>
-                                <AccordionItem value="metadata">
-                                  <AccordionTrigger>Metadata</AccordionTrigger>
-                                  <AccordionContent>
-                                    <pre className="bg-gray-50 p-2 rounded text-xs overflow-x-auto">
-                                      {JSON.stringify(selectedDocument.metadata, null, 2)}
-                                    </pre>
-                                  </AccordionContent>
-                                </AccordionItem>
-                                
-                                <AccordionItem value="system-metadata">
-                                  <AccordionTrigger>System Metadata</AccordionTrigger>
-                                  <AccordionContent>
-                                    <pre className="bg-gray-50 p-2 rounded text-xs overflow-x-auto">
-                                      {JSON.stringify(selectedDocument.system_metadata, null, 2)}
-                                    </pre>
-                                  </AccordionContent>
-                                </AccordionItem>
-                                
-                                <AccordionItem value="additional-metadata">
-                                  <AccordionTrigger>Additional Metadata</AccordionTrigger>
-                                  <AccordionContent>
-                                    <pre className="bg-gray-50 p-2 rounded text-xs overflow-x-auto">
-                                      {JSON.stringify(selectedDocument.additional_metadata, null, 2)}
-                                    </pre>
-                                  </AccordionContent>
-                                </AccordionItem>
-                              </Accordion>
-                              
-                              <div className="pt-4 border-t mt-4">
-                                <Dialog>
-                                  <DialogTrigger asChild>
-                                    <Button variant="outline" size="sm" className="w-full border-red-500 text-red-500 hover:bg-red-50">
-                                      Delete Document
-                                    </Button>
-                                  </DialogTrigger>
-                                  <DialogContent>
-                                    <DialogHeader>
-                                      <DialogTitle>Delete Document</DialogTitle>
-                                      <DialogDescription>
-                                        Are you sure you want to delete this document? This action cannot be undone.
-                                      </DialogDescription>
-                                    </DialogHeader>
-                                    <div className="py-3">
-                                      <p className="font-medium">Document: {selectedDocument.filename || selectedDocument.external_id}</p>
-                                      <p className="text-sm text-gray-500 mt-1">ID: {selectedDocument.external_id}</p>
-                                    </div>
-                                    <DialogFooter>
-                                      <Button variant="outline" onClick={() => (document.querySelector('[data-state="open"] button[data-state="closed"]') as HTMLElement)?.click()}>Cancel</Button>
-                                      <Button 
-                                        variant="outline" 
-                                        className="border-red-500 text-red-500 hover:bg-red-50"
-                                        onClick={() => handleDeleteDocument(selectedDocument.external_id)}
-                                        disabled={loading}
-                                      >
-                                        {loading ? 'Deleting...' : 'Delete'}
-                                      </Button>
-                                    </DialogFooter>
-                                  </DialogContent>
-                                </Dialog>
-                              </div>
-                            </div>
-                          </ScrollArea>
-                        </CardContent>
-                      </Card>
+                    ) : uploadType === 'batch' ? (
+                      <div>
+                        <Label htmlFor="batchFiles" className="block mb-2">Select Multiple Files</Label>
+                        <Input 
+                          id="batchFiles" 
+                          type="file" 
+                          multiple
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                            const files = e.target.files;
+                            if (files && files.length > 0) {
+                              setBatchFilesToUpload(Array.from(files));
+                            }
+                          }}
+                        />
+                        {batchFilesToUpload.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-sm font-medium mb-1">{batchFilesToUpload.length} files selected:</p>
+                            <ScrollArea className="h-24 w-full rounded-md border p-2">
+                              <ul className="text-xs">
+                                {Array.from(batchFilesToUpload).map((file, index) => (
+                                  <li key={index} className="py-1 border-b border-gray-100 last:border-0">
+                                    {file.name} ({(file.size / 1024).toFixed(1)} KB)
+                                  </li>
+                                ))}
+                              </ul>
+                            </ScrollArea>
+                          </div>
+                        )}
+                      </div>
                     ) : (
-                      <div className="h-full flex items-center justify-center p-8 border border-dashed rounded-lg">
-                        <div className="text-center text-gray-500">
-                          <Info className="mx-auto h-12 w-12 mb-2" />
-                          <p>Select a document to view details</p>
-                        </div>
+                      <div>
+                        <Label htmlFor="text" className="block mb-2">Text Content</Label>
+                        <Textarea 
+                          id="text" 
+                          value={textContent} 
+                          onChange={(e) => setTextContent(e.target.value)}
+                          placeholder="Enter text content"
+                          rows={6}
+                        />
                       </div>
                     )}
+                    
+                    <div>
+                      <Label htmlFor="metadata" className="block mb-2">Metadata (JSON)</Label>
+                      <Textarea 
+                        id="metadata" 
+                        value={metadata} 
+                        onChange={(e) => setMetadata(e.target.value)}
+                        placeholder='{"key": "value"}'
+                        rows={3}
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="rules" className="block mb-2">Rules (JSON)</Label>
+                      <Textarea 
+                        id="rules" 
+                        value={rules} 
+                        onChange={(e) => setRules(e.target.value)}
+                        placeholder='[{"type": "metadata_extraction", "schema": {...}}]'
+                        rows={3}
+                      />
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="useColpali"
+                        checked={useColpali}
+                        onChange={(e) => setUseColpali(e.target.checked)}
+                      />
+                      <Label htmlFor="useColpali">Use Colpali</Label>
+                    </div>
+                  </div>
+                  
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setShowUploadDialog(false)}>
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={uploadType === 'file' ? handleFileUpload : uploadType === 'batch' ? handleBatchFileUpload : handleTextUpload}
+                      disabled={loading}
+                    >
+                      {loading ? 'Uploading...' : 'Upload'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            {loading && !documents.length ? (
+              <div className="text-center py-8 flex-1">Loading documents...</div>
+            ) : documents.length > 0 ? (
+              <div className="flex flex-col md:flex-row gap-4 flex-1">
+                <div className="w-full md:w-2/3">
+                  {/* Document List */}
+                  <div className="border rounded-md">
+                    <div className="bg-gray-100 border-b p-3 font-medium sticky top-0">
+                      <div className="grid grid-cols-12">
+                        <div className="col-span-5">Filename</div>
+                        <div className="col-span-3">Type</div>
+                        <div className="col-span-4">ID</div>
+                      </div>
+                    </div>
+
+                    <ScrollArea className="h-[calc(100vh-200px)]">
+                      {documents.map((doc) => (
+                        <div 
+                          key={doc.external_id}
+                          onClick={() => handleDocumentClick(doc)}
+                          className="grid grid-cols-12 p-3 cursor-pointer hover:bg-gray-50 border-b"
+                        >
+                          <div className="col-span-5 flex items-center">
+                            {doc.filename || 'N/A'}
+                            {doc.external_id === selectedDocument?.external_id && (
+                              <Badge variant="outline" className="ml-2">Selected</Badge>
+                            )}
+                          </div>
+                          <div className="col-span-3">
+                            <Badge variant="secondary">
+                              {doc.content_type.split('/')[0]}
+                            </Badge>
+                          </div>
+                          <div className="col-span-4 font-mono text-xs">
+                            {doc.external_id.substring(0, 8)}...
+                          </div>
+                        </div>
+                      ))}
+                    </ScrollArea>
                   </div>
                 </div>
-              ) : (
-                <div className="text-center py-8 border border-dashed rounded-lg">
+                
+                <div className="w-full md:w-1/3">
+                  {selectedDocument ? (
+                    <div className="border rounded-lg">
+                      <div className="bg-gray-50 px-4 py-3 border-b sticky top-0">
+                        <h3 className="text-lg font-semibold">Document Details</h3>
+                      </div>
+                      
+                      <ScrollArea className="h-[calc(100vh-200px)]">
+                        <div className="p-4 space-y-4">
+                          <div>
+                            <h3 className="font-medium mb-1">Filename</h3>
+                            <p>{selectedDocument.filename || 'N/A'}</p>
+                          </div>
+                          
+                          <div>
+                            <h3 className="font-medium mb-1">Content Type</h3>
+                            <Badge>{selectedDocument.content_type}</Badge>
+                          </div>
+                          
+                          <div>
+                            <h3 className="font-medium mb-1">Document ID</h3>
+                            <p className="font-mono text-xs">{selectedDocument.external_id}</p>
+                          </div>
+                          
+                          <Accordion type="single" collapsible>
+                            <AccordionItem value="metadata">
+                              <AccordionTrigger>Metadata</AccordionTrigger>
+                              <AccordionContent>
+                                <pre className="bg-gray-50 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap">
+                                  {JSON.stringify(selectedDocument.metadata, null, 2)}
+                                </pre>
+                              </AccordionContent>
+                            </AccordionItem>
+                            
+                            <AccordionItem value="system-metadata">
+                              <AccordionTrigger>System Metadata</AccordionTrigger>
+                              <AccordionContent>
+                                <pre className="bg-gray-50 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap">
+                                  {JSON.stringify(selectedDocument.system_metadata, null, 2)}
+                                </pre>
+                              </AccordionContent>
+                            </AccordionItem>
+                            
+                            <AccordionItem value="additional-metadata">
+                              <AccordionTrigger>Additional Metadata</AccordionTrigger>
+                              <AccordionContent>
+                                <pre className="bg-gray-50 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap">
+                                  {JSON.stringify(selectedDocument.additional_metadata, null, 2)}
+                                </pre>
+                              </AccordionContent>
+                            </AccordionItem>
+                          </Accordion>
+                          
+                          <div className="pt-4 border-t mt-4">
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button variant="outline" size="sm" className="w-full border-red-500 text-red-500 hover:bg-red-50">
+                                  Delete Document
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Delete Document</DialogTitle>
+                                  <DialogDescription>
+                                    Are you sure you want to delete this document? This action cannot be undone.
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="py-3">
+                                  <p className="font-medium">Document: {selectedDocument.filename || selectedDocument.external_id}</p>
+                                  <p className="text-sm text-gray-500 mt-1">ID: {selectedDocument.external_id}</p>
+                                </div>
+                                <DialogFooter>
+                                  <Button variant="outline" onClick={() => (document.querySelector('[data-state="open"] button[data-state="closed"]') as HTMLElement)?.click()}>Cancel</Button>
+                                  <Button 
+                                    variant="outline" 
+                                    className="border-red-500 text-red-500 hover:bg-red-50"
+                                    onClick={() => handleDeleteDocument(selectedDocument.external_id)}
+                                    disabled={loading}
+                                  >
+                                    {loading ? 'Deleting...' : 'Delete'}
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          </div>
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  ) : (
+                    <div className="h-[calc(100vh-200px)] flex items-center justify-center p-8 border border-dashed rounded-lg">
+                      <div className="text-center text-gray-500">
+                        <Info className="mx-auto h-12 w-12 mb-2" />
+                        <p>Select a document to view details</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 border border-dashed rounded-lg flex-1 flex items-center justify-center">
+                <div>
                   <Upload className="mx-auto h-12 w-12 mb-2 text-gray-400" />
                   <p className="text-gray-500">No documents found. Upload your first document.</p>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </div>
+            )}
+          </div>
         )}
         
         {/* Search Section */}
