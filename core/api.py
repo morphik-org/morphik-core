@@ -4,14 +4,14 @@ from datetime import datetime, UTC, timedelta
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile, File
+from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 import jwt
 import logging
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.limits_utils import check_and_increment_limits
-from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, UpdateGraphRequest, BatchIngestResponse
-from core.models.completion import ChunkSource, CompletionResponse
+from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, UpdateGraphRequest, BatchIngestResponse, ChatCompletionRequest
+from core.models.completion import ChunkSource, CompletionResponse, CompletionRequest
 from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.graph import Graph
 from core.models.auth import AuthContext, EntityType
@@ -632,6 +632,339 @@ async def query_completion(
         validate_prompt_overrides_with_http_exception(operation_type="query", error=e)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.post("/chat/completions", response_model=CompletionResponse)
+async def chat_completions(
+    request: ChatCompletionRequest, 
+    background_tasks: BackgroundTasks,
+    auth: AuthContext = Depends(verify_token)
+):
+    """Generate chat completion using conversation history and relevant chunks as context.
+    
+    This endpoint handles chat interactions, optionally remembering conversation history 
+    for future reference when the remember flag is set to true.
+    """
+    try:
+        # Check limits if in cloud mode
+        if settings.MODE == "cloud" and auth.user_id:
+            # Check limits before proceeding
+            await check_and_increment_limits(auth, "chat", 1)
+            
+        async with telemetry.track_operation(
+            operation_type="chat_completion",
+            user_id=auth.entity_id,
+            metadata={
+                "message_count": len(request.messages),
+                "end_user_id": request.end_user_id,
+                "conversation_id": request.conversation_id,
+                "remember": request.remember,
+                "k": request.k,
+                "max_tokens": request.max_tokens,
+                "temperature": request.temperature,
+                "use_colpali": request.use_colpali,
+            },
+        ):
+            try:
+                # Log the received messages
+                logger.info(f"Received chat request with {len(request.messages)} messages for end_user_id={request.end_user_id}")
+                for i, msg in enumerate(request.messages):
+                    logger.debug(f"Message {i+1}: Role={msg.role}, Content={msg.content[:50]}...")
+                
+                # Find the last user message as the query
+                last_user_message = None
+                for msg in reversed(request.messages):
+                    if msg.role == "user":
+                        last_user_message = msg.content
+                        break
+                
+                if not last_user_message:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="No user message found in the conversation"
+                    )
+                
+                logger.info(f"Using last user message as query: {last_user_message[:50]}...")
+                
+                # Step 1: Retrieve the end-user's UKG if it exists
+                ukg_chunks = []
+                ukg_context_chunks = []
+                try:
+                    logger.info(f"Retrieving UKG for end_user_id={request.end_user_id}")
+                    graph_service = document_service.graph_service
+                    user_ukg = await graph_service._get_ukg(auth, request.end_user_id)
+                    
+                    if user_ukg:
+                        logger.info(f"Found UKG for end_user_id={request.end_user_id} with {len(user_ukg.entities)} entities and {len(user_ukg.relationships)} relationships")
+                        
+                        # Step 2: Extract entities from the current query
+                        query_entities = await graph_service._extract_entities_from_query(last_user_message)
+                        
+                        if query_entities:
+                            logger.info(f"Extracted {len(query_entities)} entities from query: {', '.join(e.label for e in query_entities[:3])}")
+                            
+                            # Step 3: Find relevant entities in the UKG and traverse to get related entities
+                            # First, find similar entities in the UKG
+                            sim_entities = await graph_service._find_similar_entities(
+                                last_user_message, user_ukg.entities, k=5
+                            )
+                            
+                            # Get the top entities (entity, score) pairs
+                            top_entities = [entity for entity, score in sim_entities if score > 0.5]
+                            
+                            if top_entities:
+                                logger.info(f"Found {len(top_entities)} relevant entities in UKG: {', '.join(e.label for e in top_entities[:3])}")
+                                
+                                # Expand to related entities
+                                expanded_entities = graph_service._expand_entities(user_ukg, top_entities, hop_depth=1)
+                                
+                                # Step 4: Extract chunk sources from relevant entities and relationships
+                                chunk_sources_set = set()
+                                
+                                # Add chunk sources from entities
+                                for entity in expanded_entities:
+                                    for doc_id, chunk_numbers in entity.chunk_sources.items():
+                                        for chunk_num in chunk_numbers:
+                                            chunk_sources_set.add((doc_id, chunk_num))
+                                
+                                # Add chunk sources from relationships connecting these entities
+                                for rel in user_ukg.relationships:
+                                    source_id = rel.source_id
+                                    target_id = rel.target_id
+                                    
+                                    # Check if this relationship connects entities we care about
+                                    if any(e.id == source_id for e in expanded_entities) and any(e.id == target_id for e in expanded_entities):
+                                        for doc_id, chunk_numbers in rel.chunk_sources.items():
+                                            for chunk_num in chunk_numbers:
+                                                chunk_sources_set.add((doc_id, chunk_num))
+                                
+                                # Convert to ChunkSource objects
+                                if chunk_sources_set:
+                                    logger.info(f"Found {len(chunk_sources_set)} chunk sources from UKG")
+                                    
+                                    ukg_chunk_sources = [
+                                        ChunkSource(document_id=doc_id, chunk_number=chunk_num)
+                                        for doc_id, chunk_num in chunk_sources_set
+                                    ]
+                                    
+                                    # Retrieve the actual chunks
+                                    ukg_chunks = await document_service.batch_retrieve_chunks(ukg_chunk_sources, auth)
+                                    logger.info(f"Retrieved {len(ukg_chunks)} chunks from UKG references")
+                        else:
+                            logger.info("No entities extracted from query, skipping UKG context retrieval")
+                    else:
+                        logger.info(f"No UKG found for end_user_id={request.end_user_id}")
+                except Exception as ukg_error:
+                    logger.error(f"Error retrieving UKG context: {str(ukg_error)}", exc_info=True)
+                    # Continue with standard RAG if UKG retrieval fails
+                
+                # Step 5: Retrieve standard RAG chunks using the last user message
+                logger.info(f"Retrieving standard RAG chunks for query with k={request.k}, filters={request.filters}")
+                rag_chunks = await document_service.retrieve_chunks(
+                    query=last_user_message,
+                    auth=auth,
+                    filters=request.filters,
+                    k=request.k,
+                    min_score=0.0,  # Default value
+                    use_reranking=None,  # Use default from config
+                    use_colpali=request.use_colpali
+                )
+                logger.info(f"Retrieved {len(rag_chunks)} standard RAG chunks for the query")
+                
+                # Step 6: Combine UKG context with standard RAG results
+                # Create a deduplicated list of chunks with UKG chunks first (prioritized)
+                combined_chunks = []
+                seen_chunk_keys = set()
+                
+                # Add UKG chunks first (higher priority)
+                for chunk in ukg_chunks:
+                    chunk_key = f"{chunk.document_id}_{chunk.chunk_number}"
+                    if chunk_key not in seen_chunk_keys:
+                        seen_chunk_keys.add(chunk_key)
+                        # Apply a slight score boost to UKG chunks (5%)
+                        if hasattr(chunk, 'score'):
+                            chunk.score = min(1.0, chunk.score * 1.05)
+                        # Tag as memory-sourced in metadata
+                        if not hasattr(chunk, 'metadata'):
+                            chunk.metadata = {}
+                        chunk.metadata["source_type"] = "memory"
+                        combined_chunks.append(chunk)
+                
+                # Add standard RAG chunks
+                for chunk in rag_chunks:
+                    chunk_key = f"{chunk.document_id}_{chunk.chunk_number}"
+                    if chunk_key not in seen_chunk_keys:
+                        seen_chunk_keys.add(chunk_key)
+                        # Tag as document-sourced in metadata
+                        if not hasattr(chunk, 'metadata'):
+                            chunk.metadata = {}
+                        chunk.metadata["source_type"] = "document"
+                        combined_chunks.append(chunk)
+                
+                # Sort by score if available
+                combined_chunks.sort(key=lambda x: getattr(x, 'score', 0), reverse=True)
+                
+                # Limit to max chunks (prioritizing UKG chunks)
+                max_chunks = max(request.k, 10)  # Ensure we have enough context
+                chunks = combined_chunks[:max_chunks]
+                logger.info(f"Combined {len(ukg_chunks)} UKG chunks and {len(rag_chunks)} RAG chunks into {len(chunks)} final chunks")
+                
+                # Generate document results for creating augmented content
+                documents = {}
+                if chunks:
+                    logger.info("Creating document results for chunks")
+                    documents = await document_service._create_document_results(auth, chunks)
+                    logger.info(f"Created document results for {len(documents)} documents")
+                
+                # Create augmented chunk contents with source annotations
+                chunk_contents = []
+                memory_chunks = []
+                document_chunks = []
+                
+                if chunks:
+                    logger.info("Creating augmented chunk contents")
+                    for chunk in chunks:
+                        if chunk.document_id in documents:
+                            augmented_content = chunk.augmented_content(documents[chunk.document_id])
+                            
+                            # Separate memory chunks and document chunks
+                            source_type = chunk.metadata.get("source_type", "document")
+                            if source_type == "memory":
+                                memory_chunks.append(augmented_content)
+                            else:
+                                document_chunks.append(augmented_content)
+                    
+                    # Create combined content with source labels
+                    if memory_chunks:
+                        chunk_contents.append("--- FROM YOUR MEMORY ---\n" + "\n\n".join(memory_chunks))
+                    if document_chunks:
+                        chunk_contents.append("--- FROM DOCUMENTS ---\n" + "\n\n".join(document_chunks))
+                    
+                    logger.info(f"Created {len(chunk_contents)} augmented chunk sections")
+                
+                # Collect sources information
+                sources = []
+                if chunks:
+                    logger.info("Collecting source information")
+                    sources = [
+                        ChunkSource(document_id=chunk.document_id, chunk_number=chunk.chunk_number, score=getattr(chunk, 'score', 0))
+                        for chunk in chunks
+                    ]
+                
+                # Create a modified prompt template that incorporates chat history
+                # We'll limit history to the last 5 messages (excluding the last user message which is handled separately)
+                MAX_HISTORY_MESSAGES = 5
+                relevant_history = request.messages[:-1]  # Exclude the last user message
+                if len(relevant_history) > MAX_HISTORY_MESSAGES:
+                    # Keep only the most recent messages if we have more than the limit
+                    relevant_history = relevant_history[-MAX_HISTORY_MESSAGES:]
+                
+                # Format chat history into a string
+                history_text = ""
+                for msg in relevant_history:
+                    role_prefix = "User" if msg.role == "user" else "Assistant" if msg.role == "assistant" else "System"
+                    history_text += f"{role_prefix}: {msg.content}\n\n"
+                
+                # Create a custom prompt template that includes history and distinguishes memory from documents
+                prompt_template = """
+You are a helpful assistant that answers questions accurately based on the provided context.
+
+Previous conversation:
+{history}
+
+Context information:
+{context}
+
+The context information above may include memory from previous conversations with this specific user (marked as "FROM YOUR MEMORY") and/or information from documents (marked as "FROM DOCUMENTS"). Pay special attention to information from memory as it represents what you've previously discussed with this user.
+
+Question: {query}
+
+Respond conversationally, considering:
+1. The previous conversation history
+2. Memory from past interactions with this specific user (if available)
+3. Document information relevant to the query
+
+Integrate knowledge from memory naturally, as if you remember discussing these topics with the user before.
+"""
+                
+                # Fill in the template with actual history
+                prompt_template = prompt_template.replace("{history}", history_text)
+                
+                logger.info(f"Using chat history with {len(relevant_history)} messages")
+                logger.debug(f"Chat history: {history_text[:200]}...")
+                
+                # Create completion request
+                logger.info("Creating completion request")
+                completion_request = CompletionRequest(
+                    query=last_user_message,
+                    context_chunks=chunk_contents,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
+                    prompt_template=prompt_template
+                )
+                
+                # Generate completion
+                logger.info("Generating completion")
+                response = await document_service.completion_model.complete(completion_request)
+                logger.info(f"Generated completion with {len(response.completion)} characters")
+                
+                # Add sources information
+                response.sources = sources
+                
+                # Schedule memory ingestion as a background task if requested
+                if request.remember is True:
+                    logger.info(f"Scheduling memory ingestion for end_user_id={request.end_user_id}")
+                    
+                    # Convert messages to a list of dictionaries for serialization
+                    # Include both the last user message and the assistant's response
+                    conversation_segment = []
+                    
+                    # Add all messages from the history
+                    for msg in request.messages:
+                        conversation_segment.append({
+                            "role": msg.role,
+                            "content": msg.content
+                        })
+                    
+                    # Add the assistant's response as the latest message
+                    conversation_segment.append({
+                        "role": "assistant",
+                        "content": response.completion
+                    })
+                    
+                    # Add the background task
+                    try:
+                        # Access the graph service through document_service
+                        graph_service = document_service.graph_service
+                        
+                        # Add the memory update task
+                        background_tasks.add_task(
+                            graph_service.process_memory_update,
+                            developer_auth=auth,
+                            end_user_id=request.end_user_id,
+                            conversation_segment=conversation_segment,
+                            conversation_id=request.conversation_id
+                        )
+                        
+                        logger.info(f"Memory ingestion task scheduled for developer_auth.entity_id={auth.entity_id}, end_user_id={request.end_user_id}")
+                    except Exception as memory_error:
+                        # Log error but don't fail the request
+                        logger.error(f"Failed to schedule memory ingestion: {str(memory_error)}", exc_info=True)
+                
+                return response
+            except Exception as e:
+                logger.error(f"Error in chat completions endpoint: {str(e)}", exc_info=True)
+                # Return a fallback response in case of errors during processing
+                return CompletionResponse(
+                    completion=f"I encountered an error processing your request. Error: {str(e)}", 
+                    usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    sources=[]
+                )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unhandled error in chat completions endpoint: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/documents", response_model=List[Document])

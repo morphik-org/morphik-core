@@ -116,6 +116,13 @@ class LiteLLMCompletionModel(BaseCompletionModel):
 
         # Call LiteLLM
         logger.debug(f"Calling LiteLLM with params: {model_params}")
+        
+        # Log the actual messages being sent to the LLM for debugging
+        logger.info(f"Sending {len(messages)} messages to LLM")
+        for i, msg in enumerate(messages):
+            content_preview = str(msg.get("content", ""))[:100] + "..." if len(str(msg.get("content", ""))) > 100 else str(msg.get("content", ""))
+            logger.info(f"Message {i+1} - Role: {msg.get('role')}, Content: {content_preview}")
+        
         response = await litellm.acompletion(**model_params)
 
         # Format response to match CompletionResponse

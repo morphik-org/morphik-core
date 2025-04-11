@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Literal
 from pydantic import BaseModel, Field
 
 from core.models.documents import Document
@@ -22,6 +22,47 @@ class RetrieveRequest(BaseModel):
     )
     include_paths: Optional[bool] = Field(
         False, description="Whether to include relationship paths in the response"
+    )
+
+
+class ChatMessage(BaseModel):
+    """A message in a chat conversation"""
+    
+    role: Literal["user", "assistant", "system"] = Field(
+        ..., description="The role of the message sender"
+    )
+    content: str = Field(..., description="The content of the message")
+
+
+class ChatCompletionRequest(BaseModel):
+    """Request model for chat completion generation"""
+    
+    messages: List[ChatMessage] = Field(
+        ..., description="The messages in the chat conversation", min_items=1
+    )
+    end_user_id: str = Field(
+        ..., description="Identifier for the end user for whom the chat is intended", min_length=1
+    )
+    conversation_id: Optional[str] = Field(
+        None, description="Optional identifier for the conversation"
+    )
+    remember: Optional[bool] = Field(
+        None, description="Whether to remember this conversation for future reference"
+    )
+    filters: Optional[Dict[str, Any]] = Field(
+        None, description="Optional metadata filters for documents"
+    )
+    k: int = Field(
+        default=4, gt=0, description="Number of chunks to retrieve"
+    )
+    temperature: Optional[float] = Field(
+        None, description="Temperature for completion generation"
+    )
+    max_tokens: Optional[int] = Field(
+        None, description="Maximum tokens for completion generation"
+    )
+    use_colpali: Optional[bool] = Field(
+        None, description="Whether to use multi-vector embedding"
     )
 
 
