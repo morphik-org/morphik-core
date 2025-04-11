@@ -37,3 +37,5 @@ ui-component/package-lock.json
 
 
 ui-component/notebook-storage/notebooks.json
+
+instructions-rules/*
