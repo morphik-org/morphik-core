@@ -61,6 +61,8 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             if chunk.startswith("data:image/"):
                 # Handle image data URI
                 image_urls.append(chunk)
+                # Log image size for debugging
+                logger.info(f"Found image data URI with size: {len(chunk)} bytes")
             else:
                 context_text.append(chunk)
 
@@ -119,9 +121,12 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         
         # Log the actual messages being sent to the LLM for debugging
         logger.info(f"Sending {len(messages)} messages to LLM")
-        for i, msg in enumerate(messages):
-            content_preview = str(msg.get("content", ""))[:100] + "..." if len(str(msg.get("content", ""))) > 100 else str(msg.get("content", ""))
-            logger.info(f"Message {i+1} - Role: {msg.get('role')}, Content: {content_preview}")
+        for i, msg in enumerate(messages, 1):
+            if isinstance(msg.get("content", ""), str):
+                content_preview = msg.get("content", "")[:100] + "..." if len(msg.get("content", "")) > 100 else msg.get("content", "")
+                logger.info(f"Message {i} - Role: {msg.get('role')}, Content: {content_preview}")
+            elif isinstance(msg.get("content", ""), list):
+                logger.info(f"Message {i} - Role: {msg.get('role')}, Content: [complex structured content with {len(msg.get('content', []))} items]")
         
         response = await litellm.acompletion(**model_params)
 

@@ -102,7 +102,7 @@ class ChunkResult(BaseModel):
     filename: Optional[str] = None
     download_url: Optional[str] = None
 
-    def augmented_content(self, doc: DocumentResult) -> str | Image.Image:
+    def augmented_content(self, doc: DocumentResult) -> str:
         match self.metadata:
             case m if "timestamp" in m:
                 # if timestamp present, then must be a video. In that case,
@@ -140,5 +140,11 @@ class ChunkResult(BaseModel):
             #         print(f"Error processing image: {str(e)}")
             #         # Fall back to using the content as text
             #         return self.content
+            case m if m.get("is_image", False):
+                return self.content
+            case m if m.get("source_type", "document") == "document":
+                return f"From Document: {self.content}"
+            case m if m.get("source_type", "document") == "memory":
+                return f"From Memory: {self.content}"
             case _:
                 return self.content

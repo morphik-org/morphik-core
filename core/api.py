@@ -716,40 +716,18 @@ async def chat_completions(
                                 logger.info(f"Found {len(top_entities)} relevant entities in UKG: {', '.join(e.label for e in top_entities[:3])}")
                                 
                                 # Expand to related entities
-                                expanded_entities = graph_service._expand_entities(user_ukg, top_entities, hop_depth=1)
-                                
-                                # Step 4: Extract chunk sources from relevant entities and relationships
-                                chunk_sources_set = set()
-                                
-                                # Add chunk sources from entities
-                                for entity in expanded_entities:
-                                    for doc_id, chunk_numbers in entity.chunk_sources.items():
-                                        for chunk_num in chunk_numbers:
-                                            chunk_sources_set.add((doc_id, chunk_num))
-                                
-                                # Add chunk sources from relationships connecting these entities
-                                for rel in user_ukg.relationships:
-                                    source_id = rel.source_id
-                                    target_id = rel.target_id
-                                    
-                                    # Check if this relationship connects entities we care about
-                                    if any(e.id == source_id for e in expanded_entities) and any(e.id == target_id for e in expanded_entities):
-                                        for doc_id, chunk_numbers in rel.chunk_sources.items():
-                                            for chunk_num in chunk_numbers:
-                                                chunk_sources_set.add((doc_id, chunk_num))
-                                
-                                # Convert to ChunkSource objects
-                                if chunk_sources_set:
-                                    logger.info(f"Found {len(chunk_sources_set)} chunk sources from UKG")
-                                    
-                                    ukg_chunk_sources = [
-                                        ChunkSource(document_id=doc_id, chunk_number=chunk_num)
-                                        for doc_id, chunk_num in chunk_sources_set
-                                    ]
-                                    
-                                    # Retrieve the actual chunks
-                                    ukg_chunks = await document_service.batch_retrieve_chunks(ukg_chunk_sources, auth)
-                                    logger.info(f"Retrieved {len(ukg_chunks)} chunks from UKG references")
+                                entity_relations = graph_service._find_relationship_paths(user_ukg, top_entities, hop_depth=2)
+                                ukg_chunks = [
+                                    ChunkResult(
+                                        content="->".join(path),
+                                        score=0.5, # temp. TODO: figure out an actual way to score
+                                        document_id = "ukg",
+                                        chunk_number = i,
+                                        content_type = "text/plain",
+                                        metadata={"source_type": "memory"}
+                                    ) for i, path in enumerate(entity_relations)
+                                ]
+                                logger.info(f"Retrieved {len(ukg_chunks)} chunks from UKG references")
                         else:
                             logger.info("No entities extracted from query, skipping UKG context retrieval")
                     else:
@@ -773,7 +751,7 @@ async def chat_completions(
                 
                 # Step 6: Combine UKG context with standard RAG results
                 # Create a deduplicated list of chunks with UKG chunks first (prioritized)
-                combined_chunks = []
+                combined_chunks : List[ChunkResult] = []
                 seen_chunk_keys = set()
                 
                 # Add UKG chunks first (higher priority)
@@ -807,6 +785,7 @@ async def chat_completions(
                 # Limit to max chunks (prioritizing UKG chunks)
                 max_chunks = max(request.k, 10)  # Ensure we have enough context
                 chunks = combined_chunks[:max_chunks]
+                
                 logger.info(f"Combined {len(ukg_chunks)} UKG chunks and {len(rag_chunks)} RAG chunks into {len(chunks)} final chunks")
                 
                 # Generate document results for creating augmented content
@@ -815,32 +794,34 @@ async def chat_completions(
                     logger.info("Creating document results for chunks")
                     documents = await document_service._create_document_results(auth, chunks)
                     logger.info(f"Created document results for {len(documents)} documents")
+
+                chunks_augmented = [chunk.augmented_content(documents.get(chunk.document_id, None)) for chunk in chunks]
                 
-                # Create augmented chunk contents with source annotations
-                chunk_contents = []
-                memory_chunks = []
-                document_chunks = []
+                # # Create augmented chunk contents with source annotations
+                # chunk_contents = []
+                # memory_chunks = []
+                # document_chunks = []
                 
-                if chunks:
-                    logger.info("Creating augmented chunk contents")
-                    for chunk in chunks:
-                        if chunk.document_id in documents:
-                            augmented_content = chunk.augmented_content(documents[chunk.document_id])
+                # if chunks:
+                #     logger.info("Creating augmented chunk contents")
+                #     for chunk in chunks:
+                #         if chunk.document_id in documents:
+                #             augmented_content = chunk.augmented_content(documents[chunk.document_id])
                             
-                            # Separate memory chunks and document chunks
-                            source_type = chunk.metadata.get("source_type", "document")
-                            if source_type == "memory":
-                                memory_chunks.append(augmented_content)
-                            else:
-                                document_chunks.append(augmented_content)
+                #             # Separate memory chunks and document chunks
+                #             source_type = chunk.metadata.get("source_type", "document")
+                #             if source_type == "memory":
+                #                 memory_chunks.append(augmented_content)
+                #             else:
+                #                 document_chunks.append(augmented_content)
                     
-                    # Create combined content with source labels
-                    if memory_chunks:
-                        chunk_contents.append("--- FROM YOUR MEMORY ---\n" + "\n\n".join(memory_chunks))
-                    if document_chunks:
-                        chunk_contents.append("--- FROM DOCUMENTS ---\n" + "\n\n".join(document_chunks))
+                #     # Create combined content with source labels
+                #     if memory_chunks:
+                #         chunk_contents.append("--- FROM YOUR MEMORY ---\n" + "\n\n".join(memory_chunks))
+                #     if document_chunks:
+                #         chunk_contents.append("--- FROM DOCUMENTS ---\n" + "\n\n".join(document_chunks))
                     
-                    logger.info(f"Created {len(chunk_contents)} augmented chunk sections")
+                #     logger.info(f"Created {len(chunk_contents)} augmented chunk sections")
                 
                 # Collect sources information
                 sources = []
@@ -897,7 +878,7 @@ Integrate knowledge from memory naturally, as if you remember discussing these t
                 logger.info("Creating completion request")
                 completion_request = CompletionRequest(
                     query=last_user_message,
-                    context_chunks=chunk_contents,
+                    context_chunks=chunks_augmented,#chunk_contents,
                     max_tokens=request.max_tokens,
                     temperature=request.temperature,
                     prompt_template=prompt_template

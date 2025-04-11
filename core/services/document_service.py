@@ -832,6 +832,8 @@ class DocumentService:
         logger.debug(f"Document chunks: {doc_chunks}")
         results = {}
         for doc_id, chunk in doc_chunks.items():
+            if doc_id == "ukg":
+                continue
             # Get document metadata
             doc = await self.db.get_document(doc_id, auth)
             if not doc:
