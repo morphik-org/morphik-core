@@ -4,7 +4,7 @@ x-ollama-check: &ollama-check
   # This command reads the toml file and checks if any provider is set to "ollama"
   command: >
     /bin/sh -c '
-    grep -q "provider *= *\"ollama\"" morphik.toml &&
+    grep -q "model_name *= *\"ollama" morphik.toml &&
     echo "true" > /tmp/needs_ollama ||
     echo "false" > /tmp/needs_ollama'
 
@@ -43,6 +43,13 @@ services:
       - morphik-network
     env_file:
       - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   postgres:
     build:
@@ -63,9 +70,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 30s
     networks:
       - morphik-network
+    restart: unless-stopped
 
   ollama:
     image: ollama/ollama:latest
@@ -79,6 +87,7 @@ services:
     networks:
       - morphik-network
     entrypoint: ["/ollama-entrypoint.sh"]
+    restart: unless-stopped
 
 networks:
   morphik-network:
