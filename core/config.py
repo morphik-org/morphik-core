@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     # Mode configuration     
     MODE: Literal["cloud", "self_hosted"] = "cloud"
     
+    # API configuration
+    API_DOMAIN: str = "api.morphik.ai"
+    
     # Telemetry configuration
     TELEMETRY_ENABLED: bool = True
     HONEYCOMB_ENABLED: bool = True
@@ -281,6 +284,7 @@ def get_settings() -> Settings:
     morphik_config = {
         "ENABLE_COLPALI": config["morphik"]["enable_colpali"],
         "MODE": config["morphik"].get("mode", "cloud"),  # Default to "cloud" mode
+        "API_DOMAIN": config["morphik"].get("api_domain", "api.morphik.ai"),  # Default API domain
     }
 
     # load graph config
