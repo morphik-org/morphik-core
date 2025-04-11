@@ -41,9 +41,27 @@ interface SearchResult {
   metadata: Record<string, unknown>;
 }
 
+interface Source {
+  document_id: string;
+  chunk_number: number;
+  score: number;
+  content?: string;  // Optional field for content if we fetch it
+  filename?: string; // Optional field for display purposes
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  sources?: Source[];  // Sources are only included for assistant messages
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  endUserId: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 interface SearchOptions {
@@ -60,12 +78,6 @@ interface QueryOptions extends SearchOptions {
   graph_name?: string;
 }
 
-// Commented out as currently unused
-// interface BatchUploadError {
-//   filename: string;
-//   error: string;
-// }
-
 const MorphikUI = () => {
   const [activeSection, setActiveSection] = useState('documents');
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -74,11 +86,12 @@ const MorphikUI = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [chatQuery, setChatQuery] = useState('');
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [endUserId, setEndUserId] = useState('');
   const [loading, setLoading] = useState(false);
-  // No longer need error state as we're using alert system
+  const [showChatSidebar, setShowChatSidebar] = useState(true);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
-  // Alert system now handles upload status messages
   const [uploadType, setUploadType] = useState<'file' | 'text' | 'batch'>('file');
   const [textContent, setTextContent] = useState('');
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
@@ -99,6 +112,7 @@ const MorphikUI = () => {
 
   // Advanced options for chat/query
   const [showChatAdvanced, setShowChatAdvanced] = useState(false);
+  const [rememberTurn, setRememberTurn] = useState(true); // Set to true by default
   const [queryOptions, setQueryOptions] = useState<QueryOptions>({
     filters: '{}',
     k: 4,
@@ -108,6 +122,9 @@ const MorphikUI = () => {
     max_tokens: 500,
     temperature: 0.7
   });
+  
+  // Fetch available graphs for dropdown
+  const [availableGraphs, setAvailableGraphs] = useState<string[]>([]);
 
   // Auth token - in a real application, you would get this from your auth system
   const authToken = 'YOUR_AUTH_TOKEN';
@@ -117,6 +134,86 @@ const MorphikUI = () => {
     'Authorization': authToken
   };
 
+  // Function to get current active chat session
+  const getActiveChat = (): ChatSession | undefined => {
+    return chatSessions.find(chat => chat.id === activeChatId);
+  };
+
+  // Function to get active chat messages
+  const getActiveChatMessages = (): ChatMessage[] => {
+    const activeChat = getActiveChat();
+    return activeChat ? activeChat.messages : [];
+  };
+  
+  // Function to create a new chat session
+  const createNewChat = (initialEndUserId: string = '') => {
+    const newChatId = `chat_${Date.now()}`;
+    const newChat: ChatSession = {
+      id: newChatId,
+      title: `New Chat ${chatSessions.length + 1}`,
+      messages: [],
+      endUserId: initialEndUserId,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    
+    const updatedSessions = [...chatSessions, newChat];
+    setChatSessions(updatedSessions);
+    setActiveChatId(newChatId);
+    setEndUserId(initialEndUserId);
+    
+    // Save to localStorage
+    localStorage.setItem('chatSessions', JSON.stringify(updatedSessions));
+    localStorage.setItem('activeChatId', newChatId);
+    
+    return newChatId;
+  };
+  
+  // Function to update a chat session
+  const updateChatSession = (
+    chatId: string,
+    updates: Partial<Omit<ChatSession, 'id' | 'createdAt'>>
+  ) => {
+    setChatSessions(prev => {
+      const updated = prev.map(chat => {
+        if (chat.id === chatId) {
+          return {
+            ...chat,
+            ...updates,
+            updatedAt: Date.now()
+          };
+        }
+        return chat;
+      });
+      
+      // Save to localStorage
+      localStorage.setItem('chatSessions', JSON.stringify(updated));
+      
+      return updated;
+    });
+  };
+  
+  // Function to delete a chat session
+  const deleteChatSession = (chatId: string) => {
+    setChatSessions(prev => {
+      const filtered = prev.filter(chat => chat.id !== chatId);
+      
+      // If we're deleting the active chat, set a new active chat
+      if (chatId === activeChatId && filtered.length > 0) {
+        setActiveChatId(filtered[filtered.length - 1].id);
+        localStorage.setItem('activeChatId', filtered[filtered.length - 1].id);
+      } else if (filtered.length === 0) {
+        setActiveChatId(null);
+        localStorage.removeItem('activeChatId');
+      }
+      
+      // Save to localStorage
+      localStorage.setItem('chatSessions', JSON.stringify(filtered));
+      
+      return filtered;
+    });
+  };
+
   // Fetch all documents - non-blocking implementation
   const fetchDocuments = async () => {
     try {
@@ -124,7 +221,6 @@ const MorphikUI = () => {
       if (documents.length === 0) {
         setLoading(true);
       }
-      // Using alerts instead of error state
       
       // Use non-blocking fetch
       fetch(`${API_BASE_URL}/documents`, {
@@ -165,17 +261,9 @@ const MorphikUI = () => {
     }
   };
 
-  // Fetch documents on component mount
-  useEffect(() => {
-    fetchDocuments();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // Fetch a specific document by ID - fully non-blocking
   const fetchDocument = async (documentId: string) => {
     try {
-      // Using alerts instead of error state
-      
       // Use non-blocking fetch to avoid locking the UI
       fetch(`${API_BASE_URL}/documents/${documentId}`, {
         headers
@@ -216,7 +304,6 @@ const MorphikUI = () => {
   const handleDeleteDocument = async (documentId: string) => {
     try {
       setLoading(true);
-      // Using alerts instead of error state
       
       const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
         method: 'DELETE',
@@ -320,22 +407,6 @@ const MorphikUI = () => {
     }
   };
   
-  // Toggle document selection - currently handled by handleCheckboxChange
-  // Keeping implementation in comments for reference
-  /*
-  const toggleDocumentSelection = (e: React.MouseEvent, docId: string) => {
-    e.stopPropagation(); // Prevent document selection/details view
-    
-    setSelectedDocuments(prev => {
-      if (prev.includes(docId)) {
-        return prev.filter(id => id !== docId);
-      } else {
-        return [...prev, docId];
-      }
-    });
-  };
-  */
-  
   // Handle checkbox change (wrapper function for use with shadcn checkbox)
   const handleCheckboxChange = (checked: boolean | "indeterminate", docId: string) => {
     setSelectedDocuments(prev => {
@@ -387,8 +458,6 @@ const MorphikUI = () => {
     setUseColpali(true);
     
     try {
-      // Using alerts instead of error state
-      
       const formData = new FormData();
       formData.append('file', fileToUploadRef);
       formData.append('metadata', metadataRef);
@@ -485,8 +554,6 @@ const MorphikUI = () => {
     setUseColpali(true);
     
     try {
-      // Using alerts instead of error state
-      
       const formData = new FormData();
       
       // Append each file to the formData with the same field name
@@ -600,8 +667,6 @@ const MorphikUI = () => {
     setUseColpali(true);
     
     try {
-      // Using alerts instead of error state
-      
       // Non-blocking fetch
       fetch(`${API_BASE_URL}/ingest/text`, {
         method: 'POST',
@@ -676,7 +741,6 @@ const MorphikUI = () => {
 
     try {
       setLoading(true);
-      // Using alerts instead of error state
       
       const response = await fetch(`${API_BASE_URL}/retrieve/chunks`, {
         method: 'POST',
@@ -728,14 +792,54 @@ const MorphikUI = () => {
       });
       return;
     }
+    
+    if (!endUserId.trim()) {
+      showAlert('Please enter an End-User ID', {
+        type: 'error',
+        duration: 3000
+      });
+      return;
+    }
+    
+    // Make sure we have an active chat session
+    if (!activeChatId) {
+      const newChatId = createNewChat(endUserId);
+      setActiveChatId(newChatId);
+    }
 
     try {
       setLoading(true);
-      // Using alerts instead of error state
       
-      // Add user message to chat
+      // Create a new user message
       const userMessage: ChatMessage = { role: 'user', content: chatQuery };
-      setChatMessages(prev => [...prev, userMessage]);
+      
+      // Get active chat session
+      const activeChat = getActiveChat();
+      if (!activeChat) {
+        throw new Error("No active chat session");
+      }
+      
+      // Update end user ID if it changed
+      if (activeChat.endUserId !== endUserId) {
+        updateChatSession(activeChat.id, { endUserId });
+      }
+      
+      // Create a copy of active chat messages and add the new message
+      const updatedMessages = [...activeChat.messages, userMessage];
+      
+      // Update chat session with new message
+      updateChatSession(activeChat.id, { 
+        messages: updatedMessages,
+        endUserId
+      });
+      
+      // Update chat title based on first message if it's still default
+      if (activeChat.title.startsWith('New Chat') && updatedMessages.length === 1) {
+        const truncatedContent = userMessage.content.length > 30 
+          ? userMessage.content.substring(0, 30) + '...' 
+          : userMessage.content;
+        updateChatSession(activeChat.id, { title: truncatedContent });
+      }
       
       // Prepare options with graph_name if it exists
       const options = {
@@ -749,33 +853,64 @@ const MorphikUI = () => {
         graph_name: queryOptions.graph_name
       };
       
-      const response = await fetch(`${API_BASE_URL}/query`, {
+      console.log("Sending chat request with end-user ID:", endUserId);
+      
+      // Log the request payload for debugging
+      console.log("Chat request payload:", {
+        messages: updatedMessages,
+        end_user_id: endUserId.trim(),
+        remember: rememberTurn,
+        ...options
+      });
+      
+      // Send request to the new /chat/completions endpoint
+      const response = await fetch(`${API_BASE_URL}/chat/completions`, {
         method: 'POST',
         headers: {
           'Authorization': authToken,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          query: chatQuery,
+          messages: updatedMessages,
+          end_user_id: endUserId.trim(),
+          remember: rememberTurn, // Use the remember toggle state
+          temperature: queryOptions.temperature,
+          max_tokens: queryOptions.max_tokens,
           ...options
         })
       });
       
       if (!response.ok) {
-        throw new Error(`Query failed: ${response.statusText}`);
+        throw new Error(`Chat request failed: ${response.statusText}`);
       }
       
       const data = await response.json();
+      console.log("Chat response:", data);
       
-      // Add assistant response to chat
-      const assistantMessage: ChatMessage = { role: 'assistant', content: data.completion };
-      setChatMessages(prev => [...prev, assistantMessage]);
+      // Add assistant response to chat with sources if available
+      const assistantMessage: ChatMessage = { 
+        role: 'assistant', 
+        content: data.completion,
+        sources: data.sources || [] 
+      };
+      
+      // Update chat session with assistant's message
+      updateChatSession(activeChat.id, { 
+        messages: [...updatedMessages, assistantMessage]
+      });
+      
       setChatQuery(''); // Clear input
+      
+      // We're keeping the remember toggle on by default
+      // It will stay on after each message is sent
+      if (rememberTurn) {
+        console.log("Memory update triggered - Remember setting maintained");
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
       showAlert(errorMsg, {
         type: 'error',
-        title: 'Chat Query Failed',
+        title: 'Chat Request Failed',
         duration: 5000
       });
     } finally {
@@ -837,9 +972,14 @@ const MorphikUI = () => {
     }));
   };
 
-  // Fetch available graphs for dropdown
-  const [availableGraphs, setAvailableGraphs] = useState<string[]>([]);
-  
+  // Update query options
+  const updateQueryOption = <K extends keyof QueryOptions>(key: K, value: QueryOptions[K]) => {
+    setQueryOptions(prev => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
   // Fetch graphs
   const fetchGraphs = async () => {
     try {
@@ -854,19 +994,62 @@ const MorphikUI = () => {
     }
   };
 
+  // Load chat sessions from localStorage on component mount
+  useEffect(() => {
+    const savedSessions = localStorage.getItem('chatSessions');
+    const savedActiveId = localStorage.getItem('activeChatId');
+    
+    if (savedSessions) {
+      try {
+        const sessions = JSON.parse(savedSessions) as ChatSession[];
+        setChatSessions(sessions);
+        
+        if (savedActiveId && sessions.some(chat => chat.id === savedActiveId)) {
+          setActiveChatId(savedActiveId);
+          // Set endUserId based on active chat
+          const activeChat = sessions.find(chat => chat.id === savedActiveId);
+          if (activeChat) {
+            setEndUserId(activeChat.endUserId);
+          }
+        } else if (sessions.length > 0) {
+          // If no valid active ID, set the most recent chat as active
+          setActiveChatId(sessions[sessions.length - 1].id);
+          setEndUserId(sessions[sessions.length - 1].endUserId);
+        }
+      } catch (error) {
+        console.error('Error loading chat sessions from localStorage:', error);
+      }
+    }
+    
+    // If no saved sessions or failed to load, create a new chat
+    if (!savedSessions || chatSessions.length === 0) {
+      createNewChat();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fetch documents on component mount
+  useEffect(() => {
+    fetchDocuments();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Fetch graphs on component mount
   useEffect(() => {
     fetchGraphs();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Update query options
-  const updateQueryOption = <K extends keyof QueryOptions>(key: K, value: QueryOptions[K]) => {
-    setQueryOptions(prev => ({
-      ...prev,
-      [key]: value
-    }));
-  };
+  
+  // Auto-scroll chat to the bottom when messages are updated
+  useEffect(() => {
+    const activeChat = getActiveChat();
+    if (activeChat && activeChat.messages.length > 0) {
+      const chatContainer = document.querySelector('.chat-scroll-area');
+      if (chatContainer) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      }
+    }
+  }, [chatSessions, activeChatId]);
 
   return (
     <div className="flex h-screen">
@@ -877,10 +1060,6 @@ const MorphikUI = () => {
       />
       
       <div className="flex-1 p-6 flex flex-col h-screen overflow-hidden">
-        {/* Upload status is now handled by the AlertSystem */}
-        
-        {/* Error alerts now appear in the bottom-right via the AlertSystem */}
-        
         {/* Documents Section */}
         {activeSection === 'documents' && (
           <div className="flex-1 flex flex-col h-full">
@@ -1388,198 +1567,334 @@ const MorphikUI = () => {
         
         {/* Chat Section */}
         {activeSection === 'chat' && (
-          <Card className="h-[calc(100vh-12rem)] flex flex-col">
-            <CardHeader>
-              <CardTitle>Chat with Your Documents</CardTitle>
-              <CardDescription>
-                Ask questions about your documents and get AI-powered answers.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex-grow overflow-hidden flex flex-col">
-              <ScrollArea className="flex-grow pr-4 mb-4">
-                {chatMessages.length > 0 ? (
-                  <div className="space-y-4">
-                    {chatMessages.map((message, index) => (
+          <div className="h-[calc(100vh-12rem)] flex flex-row">
+            {/* Chat sidebar */}
+            <div className={`border-r ${showChatSidebar ? 'w-64' : 'w-12'} flex flex-col transition-all duration-200`}>
+              <div className="p-2 border-b flex items-center justify-between">
+                {showChatSidebar && <h3 className="font-medium">Chat History</h3>}
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => setShowChatSidebar(!showChatSidebar)}
+                  className="p-1"
+                >
+                  {showChatSidebar ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                </Button>
+              </div>
+              
+              <ScrollArea className="flex-grow">
+                {showChatSidebar && (
+                  <div className="p-2 space-y-2">
+                    <Button 
+                      variant="outline" 
+                      className="w-full justify-start"
+                      onClick={() => createNewChat(endUserId)}
+                    >
+                      <span className="mr-2">+</span> New Chat
+                    </Button>
+                    
+                    {chatSessions.map(chat => (
                       <div 
-                        key={index} 
-                        className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                        key={chat.id}
+                        className={`p-2 rounded-md cursor-pointer flex items-center justify-between group ${
+                          chat.id === activeChatId ? 'bg-primary/10' : 'hover:bg-gray-100'
+                        }`}
+                        onClick={() => {
+                          setActiveChatId(chat.id);
+                          setEndUserId(chat.endUserId);
+                          localStorage.setItem('activeChatId', chat.id);
+                        }}
                       >
-                        <div 
-                          className={`max-w-3/4 p-3 rounded-lg ${
-                            message.role === 'user' 
-                              ? 'bg-primary text-primary-foreground' 
-                              : 'bg-muted'
-                          }`}
-                        >
-                          <div className="whitespace-pre-wrap">{message.content}</div>
+                        <div className="truncate max-w-[180px]">
+                          <MessageSquare className="h-4 w-4 inline-block mr-2" />
+                          {chat.title}
                         </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteChatSession(chat.id);
+                          }}
+                        >
+                          <span className="sr-only">Delete</span>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-trash">
+                            <path d="M3 6h18"></path>
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                          </svg>
+                        </Button>
                       </div>
                     ))}
                   </div>
-                ) : (
-                  <div className="h-full flex items-center justify-center">
-                    <div className="text-center text-gray-500">
-                      <MessageSquare className="mx-auto h-12 w-12 mb-2" />
-                      <p>Start a conversation about your documents</p>
-                    </div>
-                  </div>
                 )}
               </ScrollArea>
-              
-              <div className="pt-4 border-t">
-                <div className="space-y-4">
-                  <div className="flex gap-2">
-                    <Textarea 
-                      placeholder="Ask a question..." 
-                      value={chatQuery}
-                      onChange={(e) => setChatQuery(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleChat();
-                        }
-                      }}
-                      className="min-h-10"
-                    />
-                    <Button onClick={handleChat} disabled={loading}>
-                      {loading ? 'Sending...' : 'Send'}
-                    </Button>
-                  </div>
-                  
-                  <div>
-                    <button
-                      type="button" 
-                      className="flex items-center text-sm text-gray-600 hover:text-gray-900"
-                      onClick={() => setShowChatAdvanced(!showChatAdvanced)}
-                    >
-                      <Settings className="mr-1 h-4 w-4" />
-                      Advanced Options
-                      {showChatAdvanced ? <ChevronUp className="ml-1 h-4 w-4" /> : <ChevronDown className="ml-1 h-4 w-4" />}
-                    </button>
-                    
-                    {showChatAdvanced && (
-                      <div className="mt-3 p-4 border rounded-md bg-gray-50">
-                        <div className="space-y-4">
-                          <div>
-                            <Label htmlFor="query-filters" className="block mb-2">Filters (JSON)</Label>
-                            <Textarea 
-                              id="query-filters" 
-                              value={queryOptions.filters} 
-                              onChange={(e) => updateQueryOption('filters', e.target.value)}
-                              placeholder='{"key": "value"}'
-                              rows={3}
-                            />
-                          </div>
-                          
-                          <div>
-                            <Label htmlFor="query-k" className="block mb-2">
-                              Number of Results (k): {queryOptions.k}
-                            </Label>
-                            <Input 
-                              id="query-k" 
-                              type="number" 
-                              min={1} 
-                              value={queryOptions.k}
-                              onChange={(e) => updateQueryOption('k', parseInt(e.target.value) || 1)}
-                            />
-                          </div>
-                          
-                          <div>
-                            <Label htmlFor="query-min-score" className="block mb-2">
-                              Minimum Score: {queryOptions.min_score.toFixed(2)}
-                            </Label>
-                            <Input 
-                              id="query-min-score" 
-                              type="number" 
-                              min={0} 
-                              max={1} 
-                              step={0.01}
-                              value={queryOptions.min_score}
-                              onChange={(e) => updateQueryOption('min_score', parseFloat(e.target.value) || 0)}
-                            />
-                          </div>
-                          
-                          <div className="flex items-center justify-between">
-                            <Label htmlFor="query-reranking">Use Reranking</Label>
-                            <Switch 
-                              id="query-reranking"
-                              checked={queryOptions.use_reranking}
-                              onCheckedChange={(checked) => updateQueryOption('use_reranking', checked)}
-                            />
-                          </div>
-                          
-                          <div className="flex items-center justify-between">
-                            <Label htmlFor="query-colpali">Use Colpali</Label>
-                            <Switch 
-                              id="query-colpali"
-                              checked={queryOptions.use_colpali}
-                              onCheckedChange={(checked) => updateQueryOption('use_colpali', checked)}
-                            />
-                          </div>
-                          
-                          <div>
-                            <Label htmlFor="query-max-tokens" className="block mb-2">
-                              Max Tokens: {queryOptions.max_tokens}
-                            </Label>
-                            <Input 
-                              id="query-max-tokens" 
-                              type="number" 
-                              min={1} 
-                              max={2048}
-                              value={queryOptions.max_tokens}
-                              onChange={(e) => updateQueryOption('max_tokens', parseInt(e.target.value) || 1)}
-                            />
-                          </div>
-                          
-                          <div>
-                            <Label htmlFor="query-temperature" className="block mb-2">
-                              Temperature: {queryOptions.temperature.toFixed(2)}
-                            </Label>
-                            <Input 
-                              id="query-temperature" 
-                              type="number" 
-                              min={0} 
-                              max={2} 
-                              step={0.01}
-                              value={queryOptions.temperature}
-                              onChange={(e) => updateQueryOption('temperature', parseFloat(e.target.value) || 0)}
-                            />
-                          </div>
-
-                          <div>
-                            <Label htmlFor="graphName" className="block mb-2">Knowledge Graph</Label>
-                            <select
-                              id="graphName"
-                              className="w-full p-2 border rounded-md dark:bg-gray-800"
-                              value={queryOptions.graph_name || ''}
-                              onChange={(e) => setQueryOptions({
-                                ...queryOptions,
-                                graph_name: e.target.value || undefined
-                              })}
-                            >
-                              <option value="">None (Standard RAG)</option>
-                              {availableGraphs.map(graphName => (
-                                <option key={graphName} value={graphName}>
-                                  {graphName}
-                                </option>
-                              ))}
-                            </select>
-                            <p className="text-sm text-gray-500">
-                              Select a knowledge graph to enhance your query with structured relationships
-                            </p>
+            </div>
+            
+            {/* Main chat area */}
+            <Card className="flex-1 flex flex-col border-0 shadow-none">
+              <CardHeader>
+                <CardTitle>Chat with Your Documents</CardTitle>
+                <CardDescription>
+                  Ask questions about your documents and get AI-powered answers.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex-grow overflow-hidden flex flex-col">
+                <ScrollArea className="flex-grow pr-4 mb-4 chat-scroll-area">
+                  {getActiveChat() && getActiveChatMessages().length > 0 ? (
+                    <div className="space-y-4">
+                      {getActiveChatMessages().map((message, index) => (
+                        <div 
+                          key={index} 
+                          className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div 
+                            className={`max-w-3/4 p-3 rounded-lg ${
+                              message.role === 'user' 
+                                ? 'bg-primary text-primary-foreground' 
+                                : 'bg-muted'
+                            }`}
+                          >
+                            <div className="whitespace-pre-wrap">{message.content}</div>
+                            
+                            {/* Display sources for assistant messages */}
+                            {message.role === 'assistant' && message.sources && message.sources.length > 0 && (
+                              <div className="mt-3 pt-2 border-t border-gray-200 text-xs">
+                                <Accordion type="single" collapsible>
+                                  <AccordionItem value="sources">
+                                    <AccordionTrigger className="text-xs py-1">
+                                      Sources ({message.sources.length})
+                                    </AccordionTrigger>
+                                    <AccordionContent>
+                                      <div className="space-y-2">
+                                        {message.sources.map((source, idx) => (
+                                          <div key={idx} className="p-2 bg-gray-100 rounded text-gray-800">
+                                            <div className="flex justify-between">
+                                              <span className="font-medium">Document ID:</span> 
+                                              <span className="font-mono">{source.document_id.substring(0, 8)}...</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                              <span className="font-medium">Chunk:</span> 
+                                              <span>{source.chunk_number}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                              <span className="font-medium">Score:</span> 
+                                              <span>{source.score.toFixed(3)}</span>
+                                            </div>
+                                            <button 
+                                              onClick={() => fetchDocument(source.document_id)}
+                                              className="mt-1 text-xs text-blue-600 hover:underline"
+                                            >
+                                              View document details
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </AccordionContent>
+                                  </AccordionItem>
+                                </Accordion>
+                              </div>
+                            )}
                           </div>
                         </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="h-full flex items-center justify-center">
+                      <div className="text-center text-gray-500">
+                        <MessageSquare className="mx-auto h-12 w-12 mb-2" />
+                        <p>Start a conversation about your documents</p>
                       </div>
-                    )}
-                  </div>
-                </div>
+                    </div>
+                  )}
+                </ScrollArea>
                 
-                <p className="text-xs text-gray-500 mt-2">
-                  Press Enter to send, Shift+Enter for a new line
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="pt-4 border-t">
+                  <div className="space-y-4">
+                    <div className="mb-4">
+                      <Label htmlFor="end-user-id" className="mb-2 block">
+                        Simulate End-User ID: <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="end-user-id"
+                        placeholder="Enter end-user ID (required)"
+                        value={endUserId}
+                        onChange={(e) => {
+                          setEndUserId(e.target.value);
+                          // If there's an active chat, update its endUserId
+                          if (activeChatId) {
+                            updateChatSession(activeChatId, { endUserId: e.target.value });
+                          }
+                          console.log("End-User ID updated:", e.target.value);
+                        }}
+                        className="w-full"
+                        required
+                      />
+                    </div>
+                    <div className="flex items-center space-x-2 mb-4">
+                      <Switch
+                        id="remember-turn"
+                        checked={rememberTurn}
+                        onCheckedChange={setRememberTurn}
+                      />
+                      <Label htmlFor="remember-turn" className="cursor-pointer">
+                        Remember this turn <span className="text-xs text-gray-500">(enabled by default)</span>
+                      </Label>
+                    </div>
+                    <div className="flex gap-2">
+                      <Textarea 
+                        placeholder="Ask a question..." 
+                        value={chatQuery}
+                        onChange={(e) => setChatQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleChat();
+                          }
+                        }}
+                        className="min-h-10"
+                      />
+                      <Button onClick={handleChat} disabled={loading}>
+                        {loading ? 'Sending...' : 'Send'}
+                      </Button>
+                    </div>
+                  
+                    <div>
+                      <button
+                        type="button" 
+                        className="flex items-center text-sm text-gray-600 hover:text-gray-900"
+                        onClick={() => setShowChatAdvanced(!showChatAdvanced)}
+                      >
+                        <Settings className="mr-1 h-4 w-4" />
+                        Advanced Options
+                        {showChatAdvanced ? <ChevronUp className="ml-1 h-4 w-4" /> : <ChevronDown className="ml-1 h-4 w-4" />}
+                      </button>
+                    
+                      {showChatAdvanced && (
+                        <div className="mt-3 p-4 border rounded-md bg-gray-50">
+                          <div className="space-y-4">
+                            <div>
+                              <Label htmlFor="query-filters" className="block mb-2">Filters (JSON)</Label>
+                              <Textarea 
+                                id="query-filters" 
+                                value={queryOptions.filters} 
+                                onChange={(e) => updateQueryOption('filters', e.target.value)}
+                                placeholder='{"key": "value"}'
+                                rows={3}
+                              />
+                            </div>
+                            
+                            <div>
+                              <Label htmlFor="query-k" className="block mb-2">
+                                Number of Results (k): {queryOptions.k}
+                              </Label>
+                              <Input 
+                                id="query-k" 
+                                type="number" 
+                                min={1} 
+                                value={queryOptions.k}
+                                onChange={(e) => updateQueryOption('k', parseInt(e.target.value) || 1)}
+                              />
+                            </div>
+                            
+                            <div>
+                              <Label htmlFor="query-min-score" className="block mb-2">
+                                Minimum Score: {queryOptions.min_score.toFixed(2)}
+                              </Label>
+                              <Input 
+                                id="query-min-score" 
+                                type="number" 
+                                min={0} 
+                                max={1} 
+                                step={0.01}
+                                value={queryOptions.min_score}
+                                onChange={(e) => updateQueryOption('min_score', parseFloat(e.target.value) || 0)}
+                              />
+                            </div>
+                            
+                            <div className="flex items-center justify-between">
+                              <Label htmlFor="query-reranking">Use Reranking</Label>
+                              <Switch 
+                                id="query-reranking"
+                                checked={queryOptions.use_reranking}
+                                onCheckedChange={(checked) => updateQueryOption('use_reranking', checked)}
+                              />
+                            </div>
+                            
+                            <div className="flex items-center justify-between">
+                              <Label htmlFor="query-colpali">Use Colpali</Label>
+                              <Switch 
+                                id="query-colpali"
+                                checked={queryOptions.use_colpali}
+                                onCheckedChange={(checked) => updateQueryOption('use_colpali', checked)}
+                              />
+                            </div>
+                            
+                            <div>
+                              <Label htmlFor="query-max-tokens" className="block mb-2">
+                                Max Tokens: {queryOptions.max_tokens}
+                              </Label>
+                              <Input 
+                                id="query-max-tokens" 
+                                type="number" 
+                                min={1} 
+                                max={2048}
+                                value={queryOptions.max_tokens}
+                                onChange={(e) => updateQueryOption('max_tokens', parseInt(e.target.value) || 1)}
+                              />
+                            </div>
+                            
+                            <div>
+                              <Label htmlFor="query-temperature" className="block mb-2">
+                                Temperature: {queryOptions.temperature.toFixed(2)}
+                              </Label>
+                              <Input 
+                                id="query-temperature" 
+                                type="number" 
+                                min={0} 
+                                max={2} 
+                                step={0.01}
+                                value={queryOptions.temperature}
+                                onChange={(e) => updateQueryOption('temperature', parseFloat(e.target.value) || 0)}
+                              />
+                            </div>
+
+                            <div>
+                              <Label htmlFor="graphName" className="block mb-2">Knowledge Graph</Label>
+                              <select
+                                id="graphName"
+                                className="w-full p-2 border rounded-md dark:bg-gray-800"
+                                value={queryOptions.graph_name || ''}
+                                onChange={(e) => setQueryOptions({
+                                  ...queryOptions,
+                                  graph_name: e.target.value || undefined
+                                })}
+                              >
+                                <option value="">None (Standard RAG)</option>
+                                {availableGraphs.map(graphName => (
+                                  <option key={graphName} value={graphName}>
+                                    {graphName}
+                                  </option>
+                                ))}
+                              </select>
+                              <p className="text-sm text-gray-500">
+                                Select a knowledge graph to enhance your query with structured relationships
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                
+                  <p className="text-xs text-gray-500 mt-2">
+                    Press Enter to send, Shift+Enter for a new line
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         )}
 
         {/* Notebooks Section */}
