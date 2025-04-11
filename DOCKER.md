@@ -23,7 +23,7 @@ docker compose up --build
 
 This command will:
 - Build all required containers
-- Download necessary AI models (nomic-embed-text and llama3.2)
+- Download necessary AI models (nomic-embed-text, llama3.2, and llama3.2-vision)
 - Initialize the PostgreSQL database with pgvector
 - Start all services
 
@@ -59,15 +59,20 @@ The default `morphik.toml` is configured for Docker and includes:
 host = "0.0.0.0"  # Important: Use 0.0.0.0 for Docker
 port = 8000
 
+[registered_models]
+# Ollama models for docker configuration
+ollama_llama = { model_name = "ollama_chat/llama3.2", api_base = "http://ollama:11434" }
+ollama_embedding = { model_name = "ollama/nomic-embed-text", api_base = "http://ollama:11434" }
+
 [completion]
-provider = "ollama"
-model_name = "llama3.2"
-base_url = "http://ollama:11434"  # Use Docker service name
+model = "ollama_llama"
+default_max_tokens = "1000"
+default_temperature = 0.5
 
 [embedding]
-provider = "ollama"
-model_name = "nomic-embed-text"
-base_url = "http://ollama:11434"  # Use Docker service name
+model = "ollama_embedding"
+dimensions = 768
+similarity_metric = "cosine"
 
 [database]
 provider = "postgres"
@@ -78,6 +83,10 @@ provider = "pgvector"
 [storage]
 provider = "local"
 storage_path = "/app/storage"
+
+[morphik]
+enable_colpali = true
+mode = "self_hosted"
 ```
 
 ### 3. Environment Variables
@@ -87,6 +96,7 @@ Create a `.env` file to customize these settings:
 ```bash
 JWT_SECRET_KEY=your-secure-key-here  # Important: Change in production
 OPENAI_API_KEY=sk-...                # Only if using OpenAI
+ANTHROPIC_API_KEY=sk-...             # Only if using Anthropic
 HOST=0.0.0.0                         # Leave as is for Docker
 PORT=8000                            # Change if needed
 ```
