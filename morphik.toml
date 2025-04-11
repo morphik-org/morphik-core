@@ -89,6 +89,7 @@ batch_size = 4096
 [morphik]
 enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"
+api_domain = "api.morphik.ai"  # API domain for cloud URIs
 
 [graph]
 model = "ollama_llama"
