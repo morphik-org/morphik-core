@@ -874,8 +874,6 @@ const MorphikUI = () => {
           messages: updatedMessages,
           end_user_id: endUserId.trim(),
           remember: rememberTurn, // Use the remember toggle state
-          temperature: queryOptions.temperature,
-          max_tokens: queryOptions.max_tokens,
           ...options
         })
       });
