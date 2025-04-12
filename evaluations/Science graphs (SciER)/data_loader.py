@@ -1,6 +1,4 @@
 import json
-import os
-from data_structures import Dataset
 
 
 def load_jsonl(jsonl_path: str) -> list:
