@@ -792,6 +792,8 @@ class GraphService:
         relationships = []
         # List to collect all extracted entities for resolution
         all_entities = []
+        # Track all initial entities with their labels to fix relationship mapping
+        initial_entities = []
 
         # Collect all chunk sources from documents.
         chunk_sources = [
@@ -817,6 +819,9 @@ class GraphService:
                 chunk_entities, chunk_relationships = await self.extract_entities_from_text(
                     chunk.content, chunk.document_id, chunk.chunk_number, extraction_overrides
                 )
+                
+                # Store all initially extracted entities to track their IDs
+                initial_entities.extend(chunk_entities)
 
                 # Add entities to the collection, avoiding duplicates based on exact label match
                 for entity in chunk_entities:
@@ -863,6 +868,9 @@ class GraphService:
                 )
                 raise
 
+        # Build a mapping from entity ID to label for ALL initially extracted entities
+        original_entity_id_to_label = {entity.id: entity.label for entity in initial_entities}
+
         # Check if entity resolution is enabled in settings
         settings = get_settings()
 
@@ -903,37 +911,62 @@ class GraphService:
             # Update relationships to use canonical entity labels
             updated_relationships = []
 
-            # Create an entity index by ID for efficient lookups
-            entity_by_id = {entity.id: entity for entity in all_entities}
-
+            # Remap relationships using original entity ID to label mapping
+            remapped_count = 0
+            skipped_count = 0
+            
             for relationship in relationships:
-                # Lookup entities by ID directly from the index
-                source_entity = entity_by_id.get(relationship.source_id)
-                target_entity = entity_by_id.get(relationship.target_id)
-
-                if source_entity and target_entity:
-                    # Get canonical labels
-                    source_canonical = entity_mapping.get(source_entity.label, source_entity.label)
-                    target_canonical = entity_mapping.get(target_entity.label, target_entity.label)
-                    # Get canonical entities
-                    canonical_source = resolved_entities_dict.get(source_canonical)
-                    canonical_target = resolved_entities_dict.get(target_canonical)
-                    if canonical_source and canonical_target:
-                        # Update relationship to point to canonical entities
-                        relationship.source_id = canonical_source.id
-                        relationship.target_id = canonical_target.id
-                        updated_relationships.append(relationship)
-                    else:
-                        # Skip relationships that can't be properly mapped
-                        logger.warning(
-                            "Skipping relationship between '%s' and '%s' - canonical entities not found",
-                            source_entity.label,
-                            target_entity.label,
-                        )
-                else:
-                    # Keep relationship as is if we can't find the entities
+                # Use original_entity_id_to_label to get the labels for relationship endpoints
+                original_source_label = original_entity_id_to_label.get(relationship.source_id)
+                original_target_label = original_entity_id_to_label.get(relationship.target_id)
+                
+                if not original_source_label or not original_target_label:
+                    logger.warning(
+                        f"Skipping relationship with type '{relationship.type}' - could not find original entity labels"
+                    )
+                    skipped_count += 1
+                    continue
+                
+                # Find canonical labels using the mapping from the resolver
+                source_canonical = entity_mapping.get(original_source_label, original_source_label)
+                target_canonical = entity_mapping.get(original_target_label, original_target_label)
+                
+                # Find the final unique Entity objects using the canonical labels
+                canonical_source = resolved_entities_dict.get(source_canonical)
+                canonical_target = resolved_entities_dict.get(target_canonical)
+                
+                if canonical_source and canonical_target:
+                    # Successfully found the final entities, update the relationship's IDs
+                    relationship.source_id = canonical_source.id
+                    relationship.target_id = canonical_target.id
                     updated_relationships.append(relationship)
-            return resolved_entities_dict, updated_relationships
+                    remapped_count += 1
+                else:
+                    # Could not map to final entities, log and skip
+                    logger.warning(
+                        f"Skipping relationship between '{original_source_label}' and '{original_target_label}' - "
+                        f"canonical entities not found after resolution"
+                    )
+                    skipped_count += 1
+            
+            logger.info(f"Remapped {remapped_count} relationships, skipped {skipped_count} relationships")
+            
+            # Deduplicate relationships (same source, target, type)
+            final_relationships_map = {}
+            for rel in updated_relationships:
+                key = (rel.source_id, rel.target_id, rel.type)
+                if key not in final_relationships_map:
+                    final_relationships_map[key] = rel
+                else:
+                    # Merge sources into the existing relationship
+                    existing_rel = final_relationships_map[key]
+                    self._merge_relationship_sources(existing_rel, rel)
+            
+            final_relationships = list(final_relationships_map.values())
+            logger.info(f"Deduplicated to {len(final_relationships)} unique relationships")
+            
+            return resolved_entities_dict, final_relationships
+            
         # If no entity resolution occurred, return original entities and relationships
         return entities, relationships
 
@@ -997,9 +1030,9 @@ class GraphService:
         system_message = {
             "role": "system",
             "content": (
-                "You are an entity extraction assistant. Extract entities and their relationships from text precisely and thoroughly. "
-                "For entities, include entity label and type (PERSON, ORGANIZATION, LOCATION, CONCEPT, etc.). "
-                "For relationships, use a simple format with source, target, and relationship fields. "
+                "You are an entity extraction and relationship extraction assistant. Extract entities and their relationships from text precisely and thoroughly, extract as many entities and relationships as possible. "
+                "For entities, include entity label and type (some examples: PERSON, ORGANIZATION, LOCATION, CONCEPT, etc.). If the user has given examples, use those, these are just suggestions"
+                "For relationships, use a simple format with source, target, and relationship fields. Be very through, there are many relationships that are not obvious"
                 "IMPORTANT: The source and target fields must be simple strings representing entity labels. For example: "
                 "if you extract entities 'Entity A' and 'Entity B', a relationship would have source: 'Entity A', target: 'Entity B', relationship: 'relates to'. "
                 "Respond directly in json format, without any additional text or explanations. "
