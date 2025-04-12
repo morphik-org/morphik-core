@@ -134,6 +134,170 @@ class GraphService:
             # Store a new graph
             return await self.db.store_graph(graph)
             
+    async def _prepare_conversation_text(self, conversation_segment: List[Dict]) -> str:
+        """Concatenate text from conversation segment into a single string.
+        
+        Args:
+            conversation_segment: List of conversation messages
+            
+        Returns:
+            Concatenated conversation text
+        """
+        conversation_text = ""
+        for i, message in enumerate(conversation_segment):
+            role = message.get("role", "unknown")
+            content = message.get("content", "")
+            conversation_text += f"{role.capitalize()}: {content}\n\n"
+        
+        return conversation_text
+        
+    async def _extract_conversation_entities(
+        self, 
+        conversation_text: str,
+        doc_id: str,
+        prompt_overrides: Optional[EntityExtractionPromptOverride] = None
+    ) -> Tuple[List[Entity], List[Relationship]]:
+        """Extract entities and relationships from conversation text.
+        
+        Args:
+            conversation_text: The concatenated conversation text
+            doc_id: Document ID for the conversation
+            prompt_overrides: Optional prompt customizations
+            
+        Returns:
+            Tuple of (entities, relationships)
+            
+        Raises:
+            Exception: If entity extraction fails
+        """
+        logger.info("MEMORY_UPDATE: Starting entity extraction from conversation")
+        # Use 0 as chunk number for conversation text
+        entities, relationships = await self.extract_entities_from_text(
+            content=conversation_text,
+            doc_id=doc_id,
+            chunk_number=0,
+            prompt_overrides=prompt_overrides
+        )
+        
+        logger.info(f"MEMORY_UPDATE: Extracted {len(entities)} entities and {len(relationships)} relationships from conversation")
+        # Log a few extracted entities for debugging
+        if entities:
+            sample_entities = entities[:min(3, len(entities))]
+            logger.info(f"MEMORY_UPDATE: Sample entities: {', '.join(e.label for e in sample_entities)}")
+            
+        return entities, relationships
+        
+    async def _update_existing_graph(
+        self,
+        existing_graph: Graph,
+        entities: List[Entity],
+        relationships: List[Relationship],
+        developer_auth: AuthContext,
+        end_user_id: str
+    ) -> bool:
+        """Update existing user knowledge graph with new entities and relationships.
+        
+        Args:
+            existing_graph: The existing graph to update
+            entities: New entities to merge
+            relationships: New relationships to merge
+            developer_auth: Developer authentication context
+            end_user_id: End user ID
+            
+        Returns:
+            Whether the update was successful
+        """
+        logger.info(f"MEMORY_UPDATE: Updating existing UKG for end_user_id={end_user_id}")
+        logger.info(f"MEMORY_UPDATE: Existing UKG has {len(existing_graph.entities)} entities and {len(existing_graph.relationships)} relationships")
+        
+        # Create a mapping of existing entities by label for merging
+        existing_entities_dict = {entity.label: entity for entity in existing_graph.entities}
+        
+        # Create a dictionary of new entities
+        new_entities_dict = {entity.label: entity for entity in entities}
+        
+        # Merge entities
+        merged_entities = self._merge_entities(existing_entities_dict, new_entities_dict)
+        logger.info(f"MEMORY_UPDATE: After merging, UKG will have {len(merged_entities)} entities")
+        
+        # Create a mapping of entity labels to IDs for new relationships
+        entity_id_map = {entity.label: entity.id for entity in merged_entities.values()}
+        
+        # Create a reverse mapping for entity IDs to labels
+        entity_id_to_label = {entity.id: label for label, entity in new_entities_dict.items()}
+        
+        # Update relationships with entity IDs from merged entities
+        for rel in relationships:
+            # Look up entity labels using the reverse mapping
+            source_label = entity_id_to_label.get(rel.source_id)
+            target_label = entity_id_to_label.get(rel.target_id)
+            
+            if source_label in entity_id_map and target_label in entity_id_map:
+                # Update relationship to use existing entity IDs
+                rel.source_id = entity_id_map[source_label]
+                rel.target_id = entity_id_map[target_label]
+        
+        # Merge relationships 
+        merged_relationships = self._merge_relationships(
+            existing_graph.relationships, 
+            relationships, 
+            new_entities_dict, 
+            entity_id_map
+        )
+        logger.info(f"MEMORY_UPDATE: After merging, UKG will have {len(merged_relationships)} relationships")
+        
+        # Update the graph with merged entities and relationships
+        existing_graph.entities = list(merged_entities.values())
+        existing_graph.relationships = merged_relationships
+        existing_graph.updated_at = datetime.now(timezone.utc)
+        
+        # Store the updated graph
+        result = await self._store_or_update_ukg(developer_auth, end_user_id, existing_graph)
+        logger.info(f"MEMORY_UPDATE: Stored updated UKG for end_user_id={end_user_id}, result={result}")
+        return result
+        
+    async def _create_new_graph(
+        self,
+        entities: List[Entity],
+        relationships: List[Relationship],
+        doc_id: str,
+        developer_auth: AuthContext,
+        end_user_id: str
+    ) -> bool:
+        """Create a new user knowledge graph.
+        
+        Args:
+            entities: Extracted entities
+            relationships: Extracted relationships
+            doc_id: Document ID for the conversation
+            developer_auth: Developer authentication context
+            end_user_id: End user ID
+            
+        Returns:
+            Whether the creation was successful
+        """
+        logger.info(f"MEMORY_UPDATE: Creating new UKG for end_user_id={end_user_id}")
+        
+        new_graph = Graph(
+            name="temp_name",  # Will be replaced by UKG naming convention
+            entities=entities,
+            relationships=relationships,
+            document_ids=[doc_id],
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            metadata={"source": "conversation_memory"}
+        )
+        
+        # Store the new graph
+        result = await self._store_or_update_ukg(developer_auth, end_user_id, new_graph)
+        logger.info(f"MEMORY_UPDATE: Created and stored new UKG for end_user_id={end_user_id}, result={result}")
+        
+        # Log UKG name for debugging
+        ukg_name = self._generate_ukg_name(developer_auth.entity_id, end_user_id)
+        logger.info(f"MEMORY_UPDATE: Created UKG with name: {ukg_name}")
+        
+        return result
+        
     async def process_memory_update(
         self, 
         developer_auth: AuthContext, 
@@ -165,11 +329,7 @@ class GraphService:
             logger.info(f"MEMORY_UPDATE: Existing UKG found: {existing_graph is not None}")
             
             # Concatenate text from conversation segment
-            conversation_text = ""
-            for i, message in enumerate(conversation_segment):
-                role = message.get("role", "unknown")
-                content = message.get("content", "")
-                conversation_text += f"{role.capitalize()}: {content}\n\n"
+            conversation_text = await self._prepare_conversation_text(conversation_segment)
             
             if not conversation_text.strip():
                 logger.warning(f"MEMORY_UPDATE: Empty conversation text for end_user_id={end_user_id}")
@@ -180,97 +340,33 @@ class GraphService:
                 
             # Extract entities and relationships from conversation text
             try:
-                logger.info(f"MEMORY_UPDATE: Starting entity extraction from conversation")
-                # Use 0 as chunk number for conversation text
-                entities, relationships = await self.extract_entities_from_text(
-                    content=conversation_text,
-                    doc_id=doc_id,
-                    chunk_number=0,
-                    prompt_overrides=prompt_overrides.entity_extraction if prompt_overrides else None
+                entity_extraction_overrides = prompt_overrides.entity_extraction if prompt_overrides else None
+                entities, relationships = await self._extract_conversation_entities(
+                    conversation_text, 
+                    doc_id, 
+                    entity_extraction_overrides
                 )
-                
-                logger.info(f"MEMORY_UPDATE: Extracted {len(entities)} entities and {len(relationships)} relationships from conversation")
-                # Log a few extracted entities for debugging
-                if entities:
-                    sample_entities = entities[:min(3, len(entities))]
-                    logger.info(f"MEMORY_UPDATE: Sample entities: {', '.join(e.label for e in sample_entities)}")
             except Exception as e:
                 logger.error(f"MEMORY_UPDATE: Entity extraction failed: {str(e)}")
                 return False
             
+            # Update existing graph or create a new one
             if existing_graph:
-                # Update existing UKG with new entities and relationships
-                logger.info(f"MEMORY_UPDATE: Updating existing UKG for end_user_id={end_user_id}")
-                logger.info(f"MEMORY_UPDATE: Existing UKG has {len(existing_graph.entities)} entities and {len(existing_graph.relationships)} relationships")
-                
-                # Create a mapping of existing entities by label for merging
-                existing_entities_dict = {entity.label: entity for entity in existing_graph.entities}
-                
-                # Create a dictionary of new entities
-                new_entities_dict = {entity.label: entity for entity in entities}
-                
-                # Merge entities
-                merged_entities = self._merge_entities(existing_entities_dict, new_entities_dict)
-                logger.info(f"MEMORY_UPDATE: After merging, UKG will have {len(merged_entities)} entities")
-                
-                # Create a mapping of entity labels to IDs for new relationships
-                entity_id_map = {entity.label: entity.id for entity in merged_entities.values()}
-                
-                # Create a reverse mapping for entity IDs to labels
-                entity_id_to_label = {entity.id: label for label, entity in new_entities_dict.items()}
-                
-                # Update relationships with entity IDs from merged entities
-                for rel in relationships:
-                    # Look up entity labels using the reverse mapping
-                    source_label = entity_id_to_label.get(rel.source_id)
-                    target_label = entity_id_to_label.get(rel.target_id)
-                    
-                    if source_label in entity_id_map and target_label in entity_id_map:
-                        # Update relationship to use existing entity IDs
-                        rel.source_id = entity_id_map[source_label]
-                        rel.target_id = entity_id_map[target_label]
-                
-                # Merge relationships 
-                merged_relationships = self._merge_relationships(
-                    existing_graph.relationships, 
-                    relationships, 
-                    new_entities_dict, 
-                    entity_id_map
+                return await self._update_existing_graph(
+                    existing_graph,
+                    entities,
+                    relationships,
+                    developer_auth,
+                    end_user_id
                 )
-                logger.info(f"MEMORY_UPDATE: After merging, UKG will have {len(merged_relationships)} relationships")
-                
-                # Update the graph with merged entities and relationships
-                existing_graph.entities = list(merged_entities.values())
-                existing_graph.relationships = merged_relationships
-                existing_graph.updated_at = datetime.now(timezone.utc)
-                
-                # Store the updated graph
-                result = await self._store_or_update_ukg(developer_auth, end_user_id, existing_graph)
-                logger.info(f"MEMORY_UPDATE: Stored updated UKG for end_user_id={end_user_id}, result={result}")
-                return result
             else:
-                # Create a new graph
-                logger.info(f"MEMORY_UPDATE: Creating new UKG for end_user_id={end_user_id}")
-                
-                new_graph = Graph(
-                    name="temp_name",  # Will be replaced by UKG naming convention
-                    entities=entities,
-                    relationships=relationships,
-                    document_ids=[doc_id],
-                    created_at=datetime.now(timezone.utc),
-                    updated_at=datetime.now(timezone.utc),
-                    metadata={"source": "conversation_memory"}
+                return await self._create_new_graph(
+                    entities,
+                    relationships,
+                    doc_id,
+                    developer_auth,
+                    end_user_id
                 )
-                
-                # Store the new graph
-                result = await self._store_or_update_ukg(developer_auth, end_user_id, new_graph)
-                logger.info(f"MEMORY_UPDATE: Created and stored new UKG for end_user_id={end_user_id}, result={result}")
-                
-                # Log UKG name for debugging
-                ukg_name = self._generate_ukg_name(developer_auth.entity_id, end_user_id)
-                logger.info(f"MEMORY_UPDATE: Created UKG with name: {ukg_name}")
-                
-                return result
                 
         except Exception as e:
             logger.error(f"MEMORY_UPDATE: Error processing memory update: {str(e)}", exc_info=True)

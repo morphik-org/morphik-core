@@ -56,13 +56,13 @@ class ChatCompletionRequest(BaseModel):
         default=4, gt=0, description="Number of chunks to retrieve"
     )
     temperature: Optional[float] = Field(
-        None, description="Temperature for completion generation"
+        None, description="Temperature for completion generation", ge=0, le=2
     )
     max_tokens: Optional[int] = Field(
         None, description="Maximum tokens for completion generation"
     )
     use_colpali: Optional[bool] = Field(
-        None, description="Whether to use multi-vector embedding"
+        None, description="Whether to use multi-vector embeddings (ColPali style embeddings)"
     )
 
 

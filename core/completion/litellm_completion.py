@@ -35,29 +35,24 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             f"Initialized LiteLLM completion model with model_key={model_key}, config={self.model_config}"
         )
 
-    async def complete(self, request: CompletionRequest) -> CompletionResponse:
+    def _create_system_message(self) -> dict:
+        """Create the system message for the LLM."""
+        return {
+            "role": "system",
+            "content": "You are a helpful assistant. Use the provided context to answer questions accurately.",
+        }
+
+    def _process_context_chunks(self, context_chunks: list) -> tuple[list, list, str]:
         """
-        Generate completion using LiteLLM.
-
-        Args:
-            request: CompletionRequest object containing query, context, and parameters
-
+        Process context chunks and handle images.
+        
         Returns:
-            CompletionResponse object with the generated text and usage statistics
+            Tuple of (context_text, image_urls, formatted_context)
         """
-        # Process context chunks and handle images
-        messages = [
-            {
-                "role": "system",
-                "content": "You are a helpful assistant. Use the provided context to answer questions accurately.",
-            }
-        ]
-
-        # Build user message content
         context_text = []
         image_urls = []
 
-        for chunk in request.context_chunks:
+        for chunk in context_chunks:
             if chunk.startswith("data:image/"):
                 # Handle image data URI
                 image_urls.append(chunk)
@@ -67,8 +62,10 @@ class LiteLLMCompletionModel(BaseCompletionModel):
                 context_text.append(chunk)
 
         context = "\n" + "\n\n".join(context_text) + "\n\n"
-
-        # Create message content based on the template and available resources
+        return context_text, image_urls, context
+        
+    def _format_user_content(self, request: CompletionRequest, context_text: list, context: str) -> str:
+        """Format user content based on the template and available resources."""
         if request.prompt_template:
             # Use custom prompt template with placeholders for context and query
             formatted_text = request.prompt_template.format(
@@ -76,13 +73,15 @@ class LiteLLMCompletionModel(BaseCompletionModel):
                 question=request.query,
                 query=request.query,  # Alternative name for the query
             )
-            user_content = formatted_text
+            return formatted_text
         elif context_text:
-            user_content = f"Context: {context} Question: {request.query}"
+            return f"Context: {context} Question: {request.query}"
         else:
-            user_content = request.query
+            return request.query
 
-        # Add text content
+    def _prepare_user_message(self, user_content: str, image_urls: list) -> dict:
+        """Prepare the user message with text and images if supported."""
+        # Default text-only message
         user_message = {"role": "user", "content": user_content}
 
         # Add images if the model supports vision capabilities
@@ -100,9 +99,10 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             for img_url in image_urls[:3]:
                 user_message["content"].append({"type": "image_url", "image_url": {"url": img_url}})
 
-        messages.append(user_message)
+        return user_message
 
-        # Prepare the completion request parameters
+    def _prepare_model_params(self, messages: list, request: CompletionRequest) -> dict:
+        """Prepare the parameters for the LiteLLM call."""
         model_params = {
             "model": self.model_config["model_name"],
             "messages": messages,
@@ -115,11 +115,11 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         for key, value in self.model_config.items():
             if key not in ["model_name", "vision"]:  # Skip these as we've already handled them
                 model_params[key] = value
+                
+        return model_params
 
-        # Call LiteLLM
-        logger.debug(f"Calling LiteLLM with params: {model_params}")
-        
-        # Log the actual messages being sent to the LLM for debugging
+    def _log_messages(self, messages: list) -> None:
+        """Log the details of messages being sent to the LLM."""
         logger.info(f"Sending {len(messages)} messages to LLM")
         for i, msg in enumerate(messages, 1):
             if isinstance(msg.get("content", ""), str):
@@ -127,10 +127,9 @@ class LiteLLMCompletionModel(BaseCompletionModel):
                 logger.info(f"Message {i} - Role: {msg.get('role')}, Content: {content_preview}")
             elif isinstance(msg.get("content", ""), list):
                 logger.info(f"Message {i} - Role: {msg.get('role')}, Content: [complex structured content with {len(msg.get('content', []))} items]")
-        
-        response = await litellm.acompletion(**model_params)
 
-        # Format response to match CompletionResponse
+    def _format_response(self, response) -> CompletionResponse:
+        """Format the LiteLLM response to a CompletionResponse object."""
         return CompletionResponse(
             completion=response.choices[0].message.content,
             usage={
@@ -140,3 +139,41 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             },
             finish_reason=response.choices[0].finish_reason,
         )
+
+    async def complete(self, request: CompletionRequest) -> CompletionResponse:
+        """
+        Generate completion using LiteLLM.
+
+        Args:
+            request: CompletionRequest object containing query, context, and parameters
+
+        Returns:
+            CompletionResponse object with the generated text and usage statistics
+        """
+        # Initialize messages with system message
+        messages = [self._create_system_message()]
+
+        # Process context chunks and extract images
+        context_text, image_urls, context = self._process_context_chunks(request.context_chunks)
+        
+        # Format user content
+        user_content = self._format_user_content(request, context_text, context)
+        
+        # Prepare user message with text and possibly images
+        user_message = self._prepare_user_message(user_content, image_urls)
+        
+        # Add user message to messages list
+        messages.append(user_message)
+
+        # Prepare model parameters for the API call
+        model_params = self._prepare_model_params(messages, request)
+        
+        # Log the parameters and messages
+        logger.debug(f"Calling LiteLLM with params: {model_params}")
+        self._log_messages(messages)
+        
+        # Make the API call
+        response = await litellm.acompletion(**model_params)
+
+        # Format and return the response
+        return self._format_response(response)

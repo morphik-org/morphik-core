@@ -246,7 +246,7 @@ async def test_ingest_text_document_with_metadata(client: AsyncClient, content: 
 
     response = await client.post(
         "/ingest/text",
-        json={"content": content, "metadata": metadata},
+        json={"content": content, "filename": "example", "metadata": metadata, "use_colpali": False, "rules": []},
         headers=headers,
     )
 
