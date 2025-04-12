@@ -1107,9 +1107,8 @@ def main():
         max_workers=args.max_workers,
     )
 
-    # Save results
-    model_suffix = f"{args.model_name}_openai"
-    results_dir = save_results(results, model_suffix, run_id)
+    # Save results using the input graph name as requested
+    results_dir = save_results(results, f"{args.graph_name}_result", run_id)
     print(f"\nEvaluation complete! Results saved to {results_dir}")
 
 

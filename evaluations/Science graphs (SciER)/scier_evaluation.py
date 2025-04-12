@@ -281,7 +281,7 @@ def main():
     graph_name = f"scier_{model_name}_{run_id}"
     print(f"\nGraph creation complete! Created graph: {graph_name}")
     print(
-        f"To evaluate this graph, run: python scier_evaluation_openai.py --graph-name {graph_name}"
+        f"To evaluate this graph, run: python evaluate_result.py --graph-name {graph_name}"
     )
 
 
