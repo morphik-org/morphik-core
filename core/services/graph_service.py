@@ -719,7 +719,7 @@ class GraphService:
             "role": "system",
             "content": (
                 "You are an entity extraction and relationship extraction assistant. Extract entities and their relationships from text precisely and thoroughly, extract as many entities and relationships as possible. "
-                "For entities, include entity label and type (some examples: PERSON, ORGANIZATION, LOCATION, CONCEPT, etc.). If the user has given examples, pls those those, these are just suggestions"
+                "For entities, include entity label and type (some examples: PERSON, ORGANIZATION, LOCATION, CONCEPT, etc.). If the user has given examples, use those, these are just suggestions"
                 "For relationships, use a simple format with source, target, and relationship fields. Be very through, there are many relationships that are not obvious"
                 "IMPORTANT: The source and target fields must be simple strings representing entity labels. For example: "
                 "if you extract entities 'Entity A' and 'Entity B', a relationship would have source: 'Entity A', target: 'Entity B', relationship: 'relates to'. "

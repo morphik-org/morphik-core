@@ -10,6 +10,8 @@ The evaluation workflow is split into two parts:
 
 This separation allows you to test different models by changing the configuration in `morphik.toml` between runs.
 
+The evaluation uses the SciER test dataset which can be found at [https://github.com/edzq/SciER/blob/main/SciER/LLM/test.jsonl](https://github.com/edzq/SciER/blob/main/SciER/LLM/test.jsonl).
+
 ## Setup
 
 1. Make sure you have a local Morphik server running
