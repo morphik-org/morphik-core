@@ -299,11 +299,11 @@ class PostgresDatabase(BaseDatabase):
                 # Build access filter
                 access_filter = self._build_access_filter(auth)
                 system_metadata_filter = self._build_system_metadata_filter(system_filters)
-
+                filename = filename.replace('\'', '\'\'')
                 # Construct where clauses
                 where_clauses = [
                     f"({access_filter})",
-                    f"filename = '{filename.replace('\'', '\'\'')}'"  # Escape single quotes
+                    f"filename = '{filename}'"  # Escape single quotes
                 ]
                 
                 if system_metadata_filter:
