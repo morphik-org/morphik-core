@@ -382,11 +382,6 @@ class DocumentService:
         from core.config import get_settings
         settings = get_settings()
         
-        if settings.MODE == "cloud" and auth.user_id:
-            # Check limits before proceeding
-            from core.api import check_and_increment_limits
-            await check_and_increment_limits(auth, "ingest", 1)
-        
         doc = Document(
             content_type="text/plain",
             filename=filename,
@@ -400,6 +395,12 @@ class DocumentService:
             },
         )
         logger.debug(f"Created text document record with ID {doc.external_id}")
+
+        if settings.MODE == "cloud" and auth.user_id:
+            # Check limits before proceeding
+            from core.api import check_and_increment_limits
+            num_pages = int(len(content)/(4*630)) # 
+            await check_and_increment_limits(auth, "ingest", num_pages, doc.external_id)
 
         # Apply rules if provided
         if rules:
@@ -472,7 +473,6 @@ class DocumentService:
         if settings.MODE == "cloud" and auth.user_id:
             # Check limits before proceeding with parsing
             from core.api import check_and_increment_limits
-            await check_and_increment_limits(auth, "ingest", 1)
             await check_and_increment_limits(auth, "storage_file", 1)
             await check_and_increment_limits(auth, "storage_size", file_size)
             
@@ -525,6 +525,12 @@ class DocumentService:
             },
             additional_metadata=additional_metadata,
         )
+
+        if settings.MODE == "cloud" and auth.user_id:
+            # Check limits before proceeding with parsing
+            from core.api import check_and_increment_limits
+            num_pages = int(len(text)/(4*630)) # 
+            await check_and_increment_limits(auth, "ingest", num_pages, doc.external_id)
 
         # Store full content
         doc.system_metadata["content"] = text
