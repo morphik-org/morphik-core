@@ -42,6 +42,8 @@ import os
 logger = logging.getLogger(__name__)
 IMAGE = {im.mime for im in IMAGE}
 
+CHARS_PER_TOKEN = 4
+TOKENS_PER_PAGE = 630
 
 class DocumentService:
     def __init__(
@@ -399,7 +401,7 @@ class DocumentService:
         if settings.MODE == "cloud" and auth.user_id:
             # Check limits before proceeding
             from core.api import check_and_increment_limits
-            num_pages = int(len(content)/(4*630)) # 
+            num_pages = int(len(content)/(CHARS_PER_TOKEN*TOKENS_PER_PAGE)) # 
             await check_and_increment_limits(auth, "ingest", num_pages, doc.external_id)
 
         # Apply rules if provided
@@ -529,7 +531,7 @@ class DocumentService:
         if settings.MODE == "cloud" and auth.user_id:
             # Check limits before proceeding with parsing
             from core.api import check_and_increment_limits
-            num_pages = int(len(text)/(4*630)) # 
+            num_pages = int(len(text)/(CHARS_PER_TOKEN*TOKENS_PER_PAGE)) # 
             await check_and_increment_limits(auth, "ingest", num_pages, doc.external_id)
 
         # Store full content
