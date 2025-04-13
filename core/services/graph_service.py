@@ -68,6 +68,7 @@ class GraphService:
         additional_filters: Optional[Dict[str, Any]] = None,
         additional_documents: Optional[List[str]] = None,
         prompt_overrides: Optional[GraphPromptOverrides] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
     ) -> Graph:
         """Update an existing graph with new documents.
 
@@ -81,6 +82,7 @@ class GraphService:
             additional_filters: Optional additional metadata filters to determine which new documents to include
             additional_documents: Optional list of specific additional document IDs to include
             prompt_overrides: Optional GraphPromptOverrides with customizations for prompts
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id) to determine which documents to include
 
         Returns:
             Graph: The updated graph
@@ -99,7 +101,7 @@ class GraphService:
 
         # Find new documents to process
         document_ids = await self._get_new_document_ids(
-            auth, existing_graph, additional_filters, additional_documents
+            auth, existing_graph, additional_filters, additional_documents, system_filters
         )
 
         if not document_ids and not explicit_doc_ids:
@@ -123,7 +125,7 @@ class GraphService:
 
         # Batch retrieve all documents in a single call
         document_objects = await document_service.batch_retrieve_documents(
-            all_ids_to_retrieve, auth
+            all_ids_to_retrieve, auth, system_filters=system_filters
         )
 
         # Process explicit documents if needed
@@ -150,6 +152,7 @@ class GraphService:
                     if doc_id not in {d.external_id for d in document_objects}
                 ],
                 auth,
+                system_filters=system_filters
             )
             logger.info(f"Additional filtered documents to include: {len(filtered_docs)}")
             document_objects.extend(filtered_docs)
@@ -190,23 +193,25 @@ class GraphService:
         existing_graph: Graph,
         additional_filters: Optional[Dict[str, Any]] = None,
         additional_documents: Optional[List[str]] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
     ) -> Set[str]:
         """Get IDs of new documents to add to the graph."""
         # Initialize with explicitly specified documents, ensuring it's a set
         document_ids = set(additional_documents or [])
 
         # Process documents matching additional filters
-        if additional_filters:
-            filtered_docs = await self.db.get_documents(auth, filters=additional_filters)
+        if additional_filters or system_filters:
+            filtered_docs = await self.db.get_documents(auth, filters=additional_filters, system_filters=system_filters)
             filter_doc_ids = {doc.external_id for doc in filtered_docs}
-            logger.info(f"Found {len(filter_doc_ids)} documents matching additional filters")
+            logger.info(f"Found {len(filter_doc_ids)} documents matching additional filters and system filters")
             document_ids.update(filter_doc_ids)
 
         # Process documents matching the original filters
         if existing_graph.filters:
-            filtered_docs = await self.db.get_documents(auth, filters=existing_graph.filters)
+            # Original filters shouldn't include system filters, as we're applying them separately
+            filtered_docs = await self.db.get_documents(auth, filters=existing_graph.filters, system_filters=system_filters)
             orig_filter_doc_ids = {doc.external_id for doc in filtered_docs}
-            logger.info(f"Found {len(orig_filter_doc_ids)} documents matching original filters")
+            logger.info(f"Found {len(orig_filter_doc_ids)} documents matching original filters and system filters")
             document_ids.update(orig_filter_doc_ids)
 
         # Get only the document IDs that are not already in the graph
@@ -384,6 +389,7 @@ class GraphService:
         filters: Optional[Dict[str, Any]] = None,
         documents: Optional[List[str]] = None,
         prompt_overrides: Optional[GraphPromptOverrides] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
     ) -> Graph:
         """Create a graph from documents.
 
@@ -397,6 +403,7 @@ class GraphService:
             filters: Optional metadata filters to determine which documents to include
             documents: Optional list of specific document IDs to include
             prompt_overrides: Optional GraphPromptOverrides with customizations for prompts
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id) to determine which documents to include
 
         Returns:
             Graph: The created graph
@@ -408,8 +415,8 @@ class GraphService:
         document_ids = set(documents or [])
 
         # If filters were provided, get matching documents
-        if filters:
-            filtered_docs = await self.db.get_documents(auth, filters=filters)
+        if filters or system_filters:
+            filtered_docs = await self.db.get_documents(auth, filters=filters, system_filters=system_filters)
             document_ids.update(doc.external_id for doc in filtered_docs)
 
         if not document_ids:
@@ -434,6 +441,13 @@ class GraphService:
                 "admins": [auth.entity_id],
             },
         )
+        
+        # Add folder_name and end_user_id to system_metadata if provided
+        if system_filters:
+            if "folder_name" in system_filters:
+                graph.system_metadata["folder_name"] = system_filters["folder_name"]
+            if "end_user_id" in system_filters:
+                graph.system_metadata["end_user_id"] = system_filters["end_user_id"]
 
         # Extract entities and relationships
         entities, relationships = await self._process_documents_for_entities(
@@ -901,8 +915,16 @@ class GraphService:
 
         # Validation is now handled by type annotations
 
-        # Get the knowledge graph
-        graph = await self.db.get_graph(graph_name, auth)
+        # Get the knowledge graph with system filters
+        system_filters = None
+        if folder_name or end_user_id:
+            system_filters = {}
+            if folder_name:
+                system_filters["folder_name"] = folder_name
+            if end_user_id:
+                system_filters["end_user_id"] = end_user_id
+        
+        graph = await self.db.get_graph(graph_name, auth, system_filters=system_filters)
         if not graph:
             logger.warning(f"Graph '{graph_name}' not found or not accessible")
             # Fall back to standard retrieval if graph not found

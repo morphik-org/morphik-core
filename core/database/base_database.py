@@ -26,7 +26,7 @@ class BaseDatabase(ABC):
         pass
         
     @abstractmethod
-    async def get_document_by_filename(self, filename: str, auth: AuthContext) -> Optional[Document]:
+    async def get_document_by_filename(self, filename: str, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> Optional[Document]:
         """
         Retrieve document metadata by filename if user has access.
         If multiple documents have the same filename, returns the most recently updated one.
@@ -34,6 +34,7 @@ class BaseDatabase(ABC):
         Args:
             filename: The filename to search for
             auth: Authentication context
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id)
             
         Returns:
             Document if found and accessible, None otherwise
@@ -142,12 +143,13 @@ class BaseDatabase(ABC):
         pass
 
     @abstractmethod
-    async def get_graph(self, name: str, auth: AuthContext) -> Optional[Graph]:
+    async def get_graph(self, name: str, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> Optional[Graph]:
         """Get a graph by name.
 
         Args:
             name: Name of the graph
             auth: Authentication context
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id)
 
         Returns:
             Optional[Graph]: Graph if found and accessible, None otherwise
@@ -155,11 +157,12 @@ class BaseDatabase(ABC):
         pass
 
     @abstractmethod
-    async def list_graphs(self, auth: AuthContext) -> List[Graph]:
+    async def list_graphs(self, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> List[Graph]:
         """List all graphs the user has access to.
 
         Args:
             auth: Authentication context
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id)
 
         Returns:
             List[Graph]: List of graphs

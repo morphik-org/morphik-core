@@ -51,6 +51,7 @@ class GraphModel(Base):
     entities = Column(JSONB, default=list)
     relationships = Column(JSONB, default=list)
     graph_metadata = Column(JSONB, default=dict)  # Renamed from 'metadata' to avoid conflict
+    system_metadata = Column(JSONB, default=dict)  # For folder_name and end_user_id
     document_ids = Column(JSONB, default=list)
     filters = Column(JSONB, nullable=True)
     created_at = Column(String)  # ISO format string
@@ -63,6 +64,7 @@ class GraphModel(Base):
         Index("idx_graph_name", "name"),
         Index("idx_graph_owner", "owner", postgresql_using="gin"),
         Index("idx_graph_access_control", "access_control", postgresql_using="gin"),
+        Index("idx_graph_system_metadata", "system_metadata", postgresql_using="gin"),
     )
 
 
@@ -140,18 +142,66 @@ class PostgresDatabase(BaseDatabase):
                     )
                     logger.info("Added storage_files column to documents table")
                     
-                # Create indexes for folder_name and end_user_id in system_metadata
+                # Create indexes for folder_name and end_user_id in system_metadata for documents
                 await conn.execute(
                     text(
                         """
                     CREATE INDEX IF NOT EXISTS idx_system_metadata_folder_name
                     ON documents ((system_metadata->>'folder_name'));
-                        
+                    """
+                    )
+                )
+                
+                await conn.execute(
+                    text(
+                        """
                     CREATE INDEX IF NOT EXISTS idx_system_metadata_end_user_id
                     ON documents ((system_metadata->>'end_user_id'));
                     """
                     )
                 )
+                
+                # Check if system_metadata column exists in graphs table
+                result = await conn.execute(
+                    text(
+                        """
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'graphs' AND column_name = 'system_metadata'
+                    """
+                    )
+                )
+                if not result.first():
+                    # Add system_metadata column to graphs table
+                    await conn.execute(
+                        text(
+                            """
+                        ALTER TABLE graphs 
+                        ADD COLUMN IF NOT EXISTS system_metadata JSONB DEFAULT '{}'::jsonb
+                        """
+                        )
+                    )
+                    logger.info("Added system_metadata column to graphs table")
+                
+                # Create indexes for folder_name and end_user_id in system_metadata for graphs
+                await conn.execute(
+                    text(
+                        """
+                    CREATE INDEX IF NOT EXISTS idx_graph_system_metadata_folder_name
+                    ON graphs ((system_metadata->>'folder_name'));
+                    """
+                    )
+                )
+                
+                await conn.execute(
+                    text(
+                        """
+                    CREATE INDEX IF NOT EXISTS idx_graph_system_metadata_end_user_id
+                    ON graphs ((system_metadata->>'end_user_id'));
+                    """
+                    )
+                )
+                
                 logger.info("Created indexes for folder_name and end_user_id in system_metadata")
 
             logger.info("PostgreSQL tables and indexes created successfully")
@@ -235,24 +285,42 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error retrieving document metadata: {str(e)}")
             return None
             
-    async def get_document_by_filename(self, filename: str, auth: AuthContext) -> Optional[Document]:
+    async def get_document_by_filename(self, filename: str, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> Optional[Document]:
         """Retrieve document metadata by filename if user has access.
         If multiple documents have the same filename, returns the most recently updated one.
+        
+        Args:
+            filename: The filename to search for
+            auth: Authentication context
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id)
         """
         try:
             async with self.async_session() as session:
                 # Build access filter
                 access_filter = self._build_access_filter(auth)
+                system_metadata_filter = self._build_system_metadata_filter(system_filters)
 
-                # Query document
+                # Construct where clauses
+                where_clauses = [
+                    f"({access_filter})",
+                    f"filename = '{filename.replace('\'', '\'\'')}'"  # Escape single quotes
+                ]
+                
+                if system_metadata_filter:
+                    where_clauses.append(f"({system_metadata_filter})")
+                    
+                final_where_clause = " AND ".join(where_clauses)
+
+                # Query document with system filters
                 query = (
                     select(DocumentModel)
-                    .where(DocumentModel.filename == filename)
-                    .where(text(f"({access_filter})"))
+                    .where(text(final_where_clause))
                     # Order by updated_at in system_metadata to get the most recent document
                     .order_by(text("system_metadata->>'updated_at' DESC"))
                 )
 
+                logger.debug(f"Querying document by filename with system filters: {system_filters}")
+                
                 result = await session.execute(query)
                 doc_model = result.scalar_one_or_none()
 
@@ -406,9 +474,23 @@ class PostgresDatabase(BaseDatabase):
         try:
             if not await self.check_access(document_id, auth, "write"):
                 return False
+                
+            # Get existing document to preserve system_metadata
+            existing_doc = await self.get_document(document_id, auth)
+            if not existing_doc:
+                return False
 
             # Update system metadata
             updates.setdefault("system_metadata", {})
+            
+            # Preserve folder_name and end_user_id if not explicitly overridden
+            if existing_doc.system_metadata:
+                if "folder_name" in existing_doc.system_metadata and "folder_name" not in updates["system_metadata"]:
+                    updates["system_metadata"]["folder_name"] = existing_doc.system_metadata["folder_name"]
+                
+                if "end_user_id" in existing_doc.system_metadata and "end_user_id" not in updates["system_metadata"]:
+                    updates["system_metadata"]["end_user_id"] = existing_doc.system_metadata["end_user_id"]
+            
             updates["system_metadata"]["updated_at"] = datetime.now(UTC)
 
             # Serialize datetime objects to ISO format strings
@@ -680,12 +762,13 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error storing graph: {str(e)}")
             return False
 
-    async def get_graph(self, name: str, auth: AuthContext) -> Optional[Graph]:
+    async def get_graph(self, name: str, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> Optional[Graph]:
         """Get a graph by name.
 
         Args:
             name: Name of the graph
             auth: Authentication context
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id)
 
         Returns:
             Optional[Graph]: Graph if found and accessible, None otherwise
@@ -699,7 +782,8 @@ class PostgresDatabase(BaseDatabase):
                 # Build access filter
                 access_filter = self._build_access_filter(auth)
 
-                # Query graph
+                # We need to check if the documents in the graph match the system filters
+                # First get the graph without system filters
                 query = (
                     select(GraphModel)
                     .where(GraphModel.name == name)
@@ -710,6 +794,32 @@ class PostgresDatabase(BaseDatabase):
                 graph_model = result.scalar_one_or_none()
 
                 if graph_model:
+                    # If system filters are provided, we need to filter the document_ids
+                    document_ids = graph_model.document_ids
+                    
+                    if system_filters and document_ids:
+                        # Apply system_filters to document_ids
+                        system_metadata_filter = self._build_system_metadata_filter(system_filters)
+                        
+                        if system_metadata_filter:
+                            # Get document IDs with system filters
+                            doc_id_placeholders = ", ".join([f"'{doc_id}'" for doc_id in document_ids])
+                            filter_query = f"""
+                                SELECT external_id FROM documents 
+                                WHERE external_id IN ({doc_id_placeholders})
+                                AND ({system_metadata_filter})
+                            """
+                            
+                            filter_result = await session.execute(text(filter_query))
+                            filtered_doc_ids = [row[0] for row in filter_result.all()]
+                            
+                            # If no documents match system filters, return None
+                            if not filtered_doc_ids:
+                                return None
+                            
+                            # Update document_ids with filtered results
+                            document_ids = filtered_doc_ids
+                    
                     # Convert to Graph model
                     graph_dict = {
                         "id": graph_model.id,
@@ -717,7 +827,8 @@ class PostgresDatabase(BaseDatabase):
                         "entities": graph_model.entities,
                         "relationships": graph_model.relationships,
                         "metadata": graph_model.graph_metadata,  # Reference the renamed column
-                        "document_ids": graph_model.document_ids,
+                        "system_metadata": graph_model.system_metadata or {},  # Include system_metadata
+                        "document_ids": document_ids,  # Use possibly filtered document_ids
                         "filters": graph_model.filters,
                         "created_at": graph_model.created_at,
                         "updated_at": graph_model.updated_at,
@@ -732,11 +843,12 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error retrieving graph: {str(e)}")
             return None
 
-    async def list_graphs(self, auth: AuthContext) -> List[Graph]:
+    async def list_graphs(self, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> List[Graph]:
         """List all graphs the user has access to.
 
         Args:
             auth: Authentication context
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id)
 
         Returns:
             List[Graph]: List of graphs
@@ -755,23 +867,66 @@ class PostgresDatabase(BaseDatabase):
 
                 result = await session.execute(query)
                 graph_models = result.scalars().all()
-
-                return [
-                    Graph(
-                        id=graph.id,
-                        name=graph.name,
-                        entities=graph.entities,
-                        relationships=graph.relationships,
-                        metadata=graph.graph_metadata,  # Reference the renamed column
-                        document_ids=graph.document_ids,
-                        filters=graph.filters,
-                        created_at=graph.created_at,
-                        updated_at=graph.updated_at,
-                        owner=graph.owner,
-                        access_control=graph.access_control,
-                    )
-                    for graph in graph_models
-                ]
+                
+                graphs = []
+                
+                # If system filters are provided, we need to filter each graph's document_ids
+                if system_filters:
+                    system_metadata_filter = self._build_system_metadata_filter(system_filters)
+                    
+                    for graph_model in graph_models:
+                        document_ids = graph_model.document_ids
+                        
+                        if document_ids and system_metadata_filter:
+                            # Get document IDs with system filters
+                            doc_id_placeholders = ", ".join([f"'{doc_id}'" for doc_id in document_ids])
+                            filter_query = f"""
+                                SELECT external_id FROM documents 
+                                WHERE external_id IN ({doc_id_placeholders})
+                                AND ({system_metadata_filter})
+                            """
+                            
+                            filter_result = await session.execute(text(filter_query))
+                            filtered_doc_ids = [row[0] for row in filter_result.all()]
+                            
+                            # Only include graphs that have documents matching the system filters
+                            if filtered_doc_ids:
+                                graph = Graph(
+                                    id=graph_model.id,
+                                    name=graph_model.name,
+                                    entities=graph_model.entities,
+                                    relationships=graph_model.relationships,
+                                    metadata=graph_model.graph_metadata,  # Reference the renamed column
+                                    system_metadata=graph_model.system_metadata or {},  # Include system_metadata
+                                    document_ids=filtered_doc_ids,  # Use filtered document_ids
+                                    filters=graph_model.filters,
+                                    created_at=graph_model.created_at,
+                                    updated_at=graph_model.updated_at,
+                                    owner=graph_model.owner,
+                                    access_control=graph_model.access_control,
+                                )
+                                graphs.append(graph)
+                else:
+                    # No system filters, include all graphs
+                    graphs = [
+                        Graph(
+                            id=graph.id,
+                            name=graph.name,
+                            entities=graph.entities,
+                            relationships=graph.relationships,
+                            metadata=graph.graph_metadata,  # Reference the renamed column
+                            system_metadata=graph.system_metadata or {},  # Include system_metadata
+                            document_ids=graph.document_ids,
+                            filters=graph.filters,
+                            created_at=graph.created_at,
+                            updated_at=graph.updated_at,
+                            owner=graph.owner,
+                            access_control=graph.access_control,
+                        )
+                        for graph in graph_models
+                    ]
+                
+                return graphs
 
         except Exception as e:
             logger.error(f"Error listing graphs: {str(e)}")

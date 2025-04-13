@@ -762,7 +762,13 @@ class DocumentService:
         chunks: List[Chunk],
         embeddings: List[List[float]],
     ) -> List[DocumentChunk]:
-        """Helper to create chunk objects"""
+        """Helper to create chunk objects
+        
+        Note: folder_name and end_user_id are not needed in chunk metadata because:
+        1. Filtering by these values happens at the document level in find_authorized_and_filtered_documents
+        2. Vector search is only performed on already authorized and filtered documents
+        3. This approach is more efficient as it reduces the size of chunk metadata
+        """
         return [
             c.to_document_chunk(chunk_number=i, embedding=embedding, document_id=doc_id)
             for i, (embedding, c) in enumerate(zip(embeddings, chunks))
@@ -1373,6 +1379,7 @@ class DocumentService:
         filters: Optional[Dict[str, Any]] = None,
         documents: Optional[List[str]] = None,
         prompt_overrides: Optional[GraphPromptOverrides] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
     ) -> Graph:
         """Create a graph from documents.
 
@@ -1384,6 +1391,8 @@ class DocumentService:
             auth: Authentication context
             filters: Optional metadata filters to determine which documents to include
             documents: Optional list of specific document IDs to include
+            prompt_overrides: Optional customizations for entity extraction and resolution prompts
+            system_filters: Optional system filters like folder_name and end_user_id for scoping
 
         Returns:
             Graph: The created graph
@@ -1396,6 +1405,7 @@ class DocumentService:
             filters=filters,
             documents=documents,
             prompt_overrides=prompt_overrides,
+            system_filters=system_filters,
         )
         
     async def update_graph(
@@ -1405,6 +1415,7 @@ class DocumentService:
         additional_filters: Optional[Dict[str, Any]] = None,
         additional_documents: Optional[List[str]] = None,
         prompt_overrides: Optional[GraphPromptOverrides] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
     ) -> Graph:
         """Update an existing graph with new documents.
         
@@ -1416,6 +1427,8 @@ class DocumentService:
             auth: Authentication context
             additional_filters: Optional additional metadata filters to determine which new documents to include
             additional_documents: Optional list of additional document IDs to include
+            prompt_overrides: Optional customizations for entity extraction and resolution prompts
+            system_filters: Optional system filters like folder_name and end_user_id for scoping
             
         Returns:
             Graph: The updated graph
@@ -1428,6 +1441,7 @@ class DocumentService:
             additional_filters=additional_filters,
             additional_documents=additional_documents,
             prompt_overrides=prompt_overrides,
+            system_filters=system_filters,
         )
 
     async def delete_document(self, document_id: str, auth: AuthContext) -> bool:

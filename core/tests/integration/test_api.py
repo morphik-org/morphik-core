@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 TEST_DATA_DIR = Path(__file__).parent / "test_data"
 JWT_SECRET = "your-secret-key-for-signing-tokens"
 TEST_USER_ID = "test_user"
-TEST_POSTGRES_URI = "postgresql+asyncpg://postgres:postgres@localhost:5432/databridge_test"
+TEST_POSTGRES_URI = "postgresql+asyncpg://morphik@localhost:5432/morphik_test"
 
 
 @pytest.fixture(scope="session")
@@ -254,6 +254,41 @@ async def test_ingest_text_document_with_metadata(client: AsyncClient, content: 
     data = response.json()
     assert "external_id" in data
     assert data["content_type"] == "text/plain"
+    
+    for key, value in (metadata or {}).items():
+        assert data["metadata"][key] == value
+
+    return data["external_id"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_text_document_folder_user(
+    client: AsyncClient, 
+    content: str = "Test content for document ingestion with folder and user scoping", 
+    metadata: dict = None, 
+    folder_name: str = "test_folder", 
+    end_user_id: str = "test_user@example.com"
+):
+    """Test ingesting a text document with folder and user scoping"""
+    headers = create_auth_header()
+
+    response = await client.post(
+        "/ingest/text",
+        json={
+            "content": content, 
+            "metadata": metadata or {}, 
+            "folder_name": folder_name,
+            "end_user_id": end_user_id
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "external_id" in data
+    assert data["content_type"] == "text/plain"
+    assert data["system_metadata"]["folder_name"] == folder_name
+    assert data["system_metadata"]["end_user_id"] == end_user_id
     
     for key, value in (metadata or {}).items():
         assert data["metadata"][key] == value
@@ -1518,8 +1553,8 @@ async def test_graph_with_folder_and_user_scope(client: AsyncClient):
     # Test user
     user_id = "graph_test_user@example.com"
     
-    # Ingest documents into folder with user scope
-    doc_id1 = await test_ingest_text_document(
+    # Ingest documents into folder with user scope using our helper function
+    doc_id1 = await test_ingest_text_document_folder_user(
         client,
         content="Tesla is an electric vehicle manufacturer. Elon Musk is the CEO of Tesla.",
         metadata={"graph_scope_test": True},
@@ -1527,7 +1562,7 @@ async def test_graph_with_folder_and_user_scope(client: AsyncClient):
         end_user_id=user_id
     )
     
-    doc_id2 = await test_ingest_text_document(
+    doc_id2 = await test_ingest_text_document_folder_user(
         client,
         content="SpaceX develops spacecraft and rockets. Elon Musk is also the CEO of SpaceX.",
         metadata={"graph_scope_test": True},
@@ -1593,7 +1628,7 @@ async def test_graph_with_folder_and_user_scope(client: AsyncClient):
     assert "neuralink" not in completion
     
     # Test updating the graph with folder and user scope
-    doc_id3 = await test_ingest_text_document(
+    doc_id3 = await test_ingest_text_document_folder_user(
         client,
         content="The Boring Company was founded by Elon Musk in 2016.",
         metadata={"graph_scope_test": True},
@@ -1956,36 +1991,34 @@ async def test_folder_scoping(client: AsyncClient):
     folder2_name = "test_folder_2"
     folder2_content = "This is different content in test folder 2."
     
-    # Ingest document into folder 1
-    response_folder1 = await client.post(
-        "/ingest/text",
-        json={
-            "content": folder1_content,
-            "filename": "folder1_doc.txt",
-            "metadata": {"folder_test": True},
-            "folder_name": folder1_name
-        },
-        headers=headers,
+    # Ingest document into folder 1 using our helper function
+    doc1_id = await test_ingest_text_document_folder_user(
+        client,
+        content=folder1_content,
+        metadata={"folder_test": True},
+        folder_name=folder1_name,
+        end_user_id=None
     )
     
-    assert response_folder1.status_code == 200
-    doc1 = response_folder1.json()
+    # Get the document to verify
+    response = await client.get(f"/documents/{doc1_id}", headers=headers)
+    assert response.status_code == 200
+    doc1 = response.json()
     assert doc1["system_metadata"]["folder_name"] == folder1_name
     
-    # Ingest document into folder 2
-    response_folder2 = await client.post(
-        "/ingest/text",
-        json={
-            "content": folder2_content,
-            "filename": "folder2_doc.txt",
-            "metadata": {"folder_test": True},
-            "folder_name": folder2_name
-        },
-        headers=headers,
+    # Ingest document into folder 2 using our helper function
+    doc2_id = await test_ingest_text_document_folder_user(
+        client,
+        content=folder2_content,
+        metadata={"folder_test": True},
+        folder_name=folder2_name,
+        end_user_id=None
     )
     
-    assert response_folder2.status_code == 200
-    doc2 = response_folder2.json()
+    # Get the document to verify
+    response = await client.get(f"/documents/{doc2_id}", headers=headers)
+    assert response.status_code == 200
+    doc2 = response.json()
     assert doc2["system_metadata"]["folder_name"] == folder2_name
     
     # Verify we can get documents by folder
@@ -1999,10 +2032,10 @@ async def test_folder_scoping(client: AsyncClient):
     assert response.status_code == 200
     folder1_docs = response.json()
     assert len(folder1_docs) == 1
-    assert folder1_docs[0]["external_id"] == doc1["external_id"]
+    assert folder1_docs[0]["external_id"] == doc1_id
     
     # Verify other folder's document isn't in results
-    assert not any(doc["external_id"] == doc2["external_id"] for doc in folder1_docs)
+    assert not any(doc["external_id"] == doc2_id for doc in folder1_docs)
     
     # Test querying with folder scope
     response = await client.post(
@@ -2036,7 +2069,7 @@ async def test_folder_scoping(client: AsyncClient):
     # Test document update with folder preservation
     updated_content = "This is updated content in test folder 1."
     response = await client.post(
-        f"/documents/{doc1['external_id']}/update_text",
+        f"/documents/{doc1_id}/update_text",
         json={
             "content": updated_content,
             "metadata": {"updated": True},
@@ -2051,7 +2084,7 @@ async def test_folder_scoping(client: AsyncClient):
     
     # Test moving document to different folder
     response = await client.post(
-        f"/documents/{doc1['external_id']}/update_metadata",
+        f"/documents/{doc1_id}/update_metadata",
         json={"moved": True},
         params={"folder_name": folder2_name},  # Moving to folder 2
         headers=headers,
@@ -2070,7 +2103,7 @@ async def test_folder_scoping(client: AsyncClient):
     
     assert response.status_code == 200
     folder2_docs = response.json()
-    assert any(doc["external_id"] == doc1["external_id"] for doc in folder2_docs)
+    assert any(doc["external_id"] == doc1_id for doc in folder2_docs)
 
 
 @pytest.mark.asyncio
@@ -2086,36 +2119,34 @@ async def test_user_scoping(client: AsyncClient):
     user2_id = "test_user_2@example.com"
     user2_content = "This is different content created by test user 2."
     
-    # Ingest document for user 1
-    response_user1 = await client.post(
-        "/ingest/text",
-        json={
-            "content": user1_content,
-            "filename": "user1_doc.txt",
-            "metadata": {"user_test": True},
-            "end_user_id": user1_id
-        },
-        headers=headers,
+    # Ingest document for user 1 using our helper function
+    doc1_id = await test_ingest_text_document_folder_user(
+        client,
+        content=user1_content,
+        metadata={"user_test": True},
+        folder_name=None,
+        end_user_id=user1_id
     )
     
-    assert response_user1.status_code == 200
-    doc1 = response_user1.json()
+    # Get the document to verify
+    response = await client.get(f"/documents/{doc1_id}", headers=headers)
+    assert response.status_code == 200
+    doc1 = response.json()
     assert doc1["system_metadata"]["end_user_id"] == user1_id
     
-    # Ingest document for user 2
-    response_user2 = await client.post(
-        "/ingest/text",
-        json={
-            "content": user2_content,
-            "filename": "user2_doc.txt",
-            "metadata": {"user_test": True},
-            "end_user_id": user2_id
-        },
-        headers=headers,
+    # Ingest document for user 2 using our helper function
+    doc2_id = await test_ingest_text_document_folder_user(
+        client,
+        content=user2_content,
+        metadata={"user_test": True},
+        folder_name=None,
+        end_user_id=user2_id
     )
     
-    assert response_user2.status_code == 200
-    doc2 = response_user2.json()
+    # Get the document to verify
+    response = await client.get(f"/documents/{doc2_id}", headers=headers)
+    assert response.status_code == 200
+    doc2 = response.json()
     assert doc2["system_metadata"]["end_user_id"] == user2_id
     
     # Verify we can get documents by user
@@ -2129,10 +2160,10 @@ async def test_user_scoping(client: AsyncClient):
     assert response.status_code == 200
     user1_docs = response.json()
     assert len(user1_docs) == 1
-    assert user1_docs[0]["external_id"] == doc1["external_id"]
+    assert user1_docs[0]["external_id"] == doc1_id
     
     # Verify other user's document isn't in results
-    assert not any(doc["external_id"] == doc2["external_id"] for doc in user1_docs)
+    assert not any(doc["external_id"] == doc2_id for doc in user1_docs)
     
     # Test querying with user scope
     response = await client.post(
@@ -2151,7 +2182,7 @@ async def test_user_scoping(client: AsyncClient):
     # Test updating document with user preservation
     updated_content = "This is updated content by test user 1."
     response = await client.post(
-        f"/documents/{doc1['external_id']}/update_text",
+        f"/documents/{doc1_id}/update_text",
         json={
             "content": updated_content,
             "metadata": {"updated": True},
@@ -2177,41 +2208,37 @@ async def test_combined_folder_and_user_scoping(client: AsyncClient):
     user1_id = "combined_test_user_1@example.com"
     user2_id = "combined_test_user_2@example.com"
     
-    # Ingest document for user 1 in folder
+    # Ingest document for user 1 in folder using our new helper function
     user1_content = "This is content by user 1 in the combined test folder."
-    response_user1 = await client.post(
-        "/ingest/text",
-        json={
-            "content": user1_content,
-            "filename": "user1_folder_doc.txt",
-            "metadata": {"combined_test": True},
-            "folder_name": folder_name,
-            "end_user_id": user1_id
-        },
-        headers=headers,
+    doc1_id = await test_ingest_text_document_folder_user(
+        client,
+        content=user1_content,
+        metadata={"combined_test": True},
+        folder_name=folder_name,
+        end_user_id=user1_id
     )
     
-    assert response_user1.status_code == 200
-    doc1 = response_user1.json()
+    # Get the document to verify
+    response = await client.get(f"/documents/{doc1_id}", headers=headers)
+    assert response.status_code == 200
+    doc1 = response.json()
     assert doc1["system_metadata"]["folder_name"] == folder_name
     assert doc1["system_metadata"]["end_user_id"] == user1_id
     
-    # Ingest document for user 2 in folder
+    # Ingest document for user 2 in folder using our new helper function
     user2_content = "This is content by user 2 in the combined test folder."
-    response_user2 = await client.post(
-        "/ingest/text",
-        json={
-            "content": user2_content,
-            "filename": "user2_folder_doc.txt",
-            "metadata": {"combined_test": True},
-            "folder_name": folder_name,
-            "end_user_id": user2_id
-        },
-        headers=headers,
+    doc2_id = await test_ingest_text_document_folder_user(
+        client,
+        content=user2_content,
+        metadata={"combined_test": True},
+        folder_name=folder_name,
+        end_user_id=user2_id
     )
     
-    assert response_user2.status_code == 200
-    doc2 = response_user2.json()
+    # Get the document to verify
+    response = await client.get(f"/documents/{doc2_id}", headers=headers)
+    assert response.status_code == 200
+    doc2 = response.json()
     assert doc2["system_metadata"]["folder_name"] == folder_name
     assert doc2["system_metadata"]["end_user_id"] == user2_id
     
@@ -2238,7 +2265,7 @@ async def test_combined_folder_and_user_scoping(client: AsyncClient):
     assert response.status_code == 200
     user1_folder_docs = response.json()
     assert len(user1_folder_docs) == 1
-    assert user1_folder_docs[0]["external_id"] == doc1["external_id"]
+    assert user1_folder_docs[0]["external_id"] == doc1_id
     
     # Test querying with combined scope
     response = await client.post(
@@ -2283,52 +2310,48 @@ async def test_system_metadata_filter_behavior(client: AsyncClient):
     
     # Document with folder only
     folder_only_content = "This document has only folder in system metadata."
-    folder_only_response = await client.post(
-        "/ingest/text",
-        json={
-            "content": folder_only_content,
-            "filename": "folder_only.txt",
-            "metadata": {"filter_test": True},
-            "folder_name": "test_filter_folder"
-        },
-        headers=headers,
+    folder_only_id = await test_ingest_text_document_folder_user(
+        client,
+        content=folder_only_content,
+        metadata={"filter_test": True},
+        folder_name="test_filter_folder",
+        end_user_id=None  # Only folder, no user
     )
     
-    assert folder_only_response.status_code == 200
-    folder_only_doc = folder_only_response.json()
+    # Get the document to verify
+    response = await client.get(f"/documents/{folder_only_id}", headers=headers)
+    assert response.status_code == 200
+    folder_only_doc = response.json()
     
     # Document with user only
     user_only_content = "This document has only user in system metadata."
-    user_only_response = await client.post(
-        "/ingest/text",
-        json={
-            "content": user_only_content,
-            "filename": "user_only.txt",
-            "metadata": {"filter_test": True},
-            "end_user_id": "test_filter_user@example.com"
-        },
-        headers=headers,
+    user_only_id = await test_ingest_text_document_folder_user(
+        client,
+        content=user_only_content,
+        metadata={"filter_test": True},
+        folder_name=None,  # No folder, only user
+        end_user_id="test_filter_user@example.com"
     )
     
-    assert user_only_response.status_code == 200
-    user_only_doc = user_only_response.json()
+    # Get the document to verify
+    response = await client.get(f"/documents/{user_only_id}", headers=headers)
+    assert response.status_code == 200
+    user_only_doc = response.json()
     
     # Document with both folder and user
     combined_content = "This document has both folder and user in system metadata."
-    combined_response = await client.post(
-        "/ingest/text",
-        json={
-            "content": combined_content,
-            "filename": "combined.txt",
-            "metadata": {"filter_test": True},
-            "folder_name": "test_filter_folder",
-            "end_user_id": "test_filter_user@example.com"
-        },
-        headers=headers,
+    combined_id = await test_ingest_text_document_folder_user(
+        client,
+        content=combined_content,
+        metadata={"filter_test": True},
+        folder_name="test_filter_folder",
+        end_user_id="test_filter_user@example.com"
     )
     
-    assert combined_response.status_code == 200
-    combined_doc = combined_response.json()
+    # Get the document to verify
+    response = await client.get(f"/documents/{combined_id}", headers=headers)
+    assert response.status_code == 200
+    combined_doc = response.json()
     
     # Test queries with different filter combinations
     
@@ -2343,9 +2366,9 @@ async def test_system_metadata_filter_behavior(client: AsyncClient):
     assert response.status_code == 200
     folder_filtered_docs = response.json()
     folder_doc_ids = [doc["external_id"] for doc in folder_filtered_docs]
-    assert folder_only_doc["external_id"] in folder_doc_ids
-    assert combined_doc["external_id"] in folder_doc_ids
-    assert user_only_doc["external_id"] not in folder_doc_ids
+    assert folder_only_id in folder_doc_ids
+    assert combined_id in folder_doc_ids
+    assert user_only_id not in folder_doc_ids
     
     # Filter by user only
     response = await client.post(
@@ -2358,9 +2381,9 @@ async def test_system_metadata_filter_behavior(client: AsyncClient):
     assert response.status_code == 200
     user_filtered_docs = response.json()
     user_doc_ids = [doc["external_id"] for doc in user_filtered_docs]
-    assert user_only_doc["external_id"] in user_doc_ids
-    assert combined_doc["external_id"] in user_doc_ids
-    assert folder_only_doc["external_id"] not in user_doc_ids
+    assert user_only_id in user_doc_ids
+    assert combined_id in user_doc_ids
+    assert folder_only_id not in user_doc_ids
     
     # Filter by both folder and user
     response = await client.post(
@@ -2377,9 +2400,9 @@ async def test_system_metadata_filter_behavior(client: AsyncClient):
     combined_filtered_docs = response.json()
     combined_doc_ids = [doc["external_id"] for doc in combined_filtered_docs]
     assert len(combined_filtered_docs) == 1
-    assert combined_doc["external_id"] in combined_doc_ids
-    assert folder_only_doc["external_id"] not in combined_doc_ids
-    assert user_only_doc["external_id"] not in combined_doc_ids
+    assert combined_id in combined_doc_ids
+    assert folder_only_id not in combined_doc_ids
+    assert user_only_id not in combined_doc_ids
     
     # Test with chunk retrieval
     response = await client.post(

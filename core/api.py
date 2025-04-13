@@ -301,6 +301,8 @@ async def ingest_text(
             - rules: Optional list of rules. Each rule should be either:
                    - MetadataExtractionRule: {"type": "metadata_extraction", "schema": {...}}
                    - NaturalLanguageRule: {"type": "natural_language", "prompt": "..."}
+            - folder_name: Optional folder to scope the document to
+            - end_user_id: Optional end-user ID to scope the document to
         auth: Authentication context
 
     Returns:
@@ -315,6 +317,8 @@ async def ingest_text(
                 "metadata": request.metadata,
                 "rules": request.rules,
                 "use_colpali": request.use_colpali,
+                "folder_name": request.folder_name,
+                "end_user_id": request.end_user_id,
             },
         ):
             return await document_service.ingest_text(
@@ -324,6 +328,8 @@ async def ingest_text(
                 rules=request.rules,
                 use_colpali=request.use_colpali,
                 auth=auth,
+                folder_name=request.folder_name,
+                end_user_id=request.end_user_id,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -336,6 +342,8 @@ async def ingest_file(
     rules: str = Form("[]"),
     auth: AuthContext = Depends(verify_token),
     use_colpali: Optional[bool] = None,
+    folder_name: Optional[str] = Form(None),
+    end_user_id: Optional[str] = Form(None),
 ) -> Document:
     """
     Ingest a file document.
@@ -347,6 +355,9 @@ async def ingest_file(
                - MetadataExtractionRule: {"type": "metadata_extraction", "schema": {...}}
                - NaturalLanguageRule: {"type": "natural_language", "prompt": "..."}
         auth: Authentication context
+        use_colpali: Whether to use ColPali embedding model
+        folder_name: Optional folder to scope the document to
+        end_user_id: Optional end-user ID to scope the document to
 
     Returns:
         Document: Metadata of ingested document
@@ -365,15 +376,20 @@ async def ingest_file(
                 "metadata": metadata_dict,
                 "rules": rules_list,
                 "use_colpali": use_colpali,
+                "folder_name": folder_name,
+                "end_user_id": end_user_id,
             },
         ):
             logger.debug(f"API: Ingesting file with use_colpali: {use_colpali}")
+            
             return await document_service.ingest_file(
                 file=file,
                 metadata=metadata_dict,
                 auth=auth,
                 rules=rules_list,
                 use_colpali=use_colpali,
+                folder_name=folder_name,
+                end_user_id=end_user_id,
             )
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
@@ -388,6 +404,8 @@ async def batch_ingest_files(
     rules: str = Form("[]"),
     use_colpali: Optional[bool] = Form(None),
     parallel: bool = Form(True),
+    folder_name: Optional[str] = Form(None),
+    end_user_id: Optional[str] = Form(None),
     auth: AuthContext = Depends(verify_token),
 ) -> BatchIngestResponse:
     """
@@ -401,6 +419,8 @@ async def batch_ingest_files(
                - A list of rule lists, one per file
         use_colpali: Whether to use ColPali-style embedding
         parallel: Whether to process files in parallel
+        folder_name: Optional folder to scope the documents to
+        end_user_id: Optional end-user ID to scope the documents to
         auth: Authentication context
 
     Returns:
@@ -438,6 +458,8 @@ async def batch_ingest_files(
     documents = []
     errors = []
 
+    # We'll pass folder_name and end_user_id directly to the ingest_file functions
+
     async with telemetry.track_operation(
         operation_type="batch_ingest",
         user_id=auth.entity_id,
@@ -445,6 +467,8 @@ async def batch_ingest_files(
             "file_count": len(files),
             "metadata_type": "list" if isinstance(metadata_value, list) else "single",
             "rules_type": "per_file" if isinstance(rules_list, list) and rules_list and isinstance(rules_list[0], list) else "shared",
+            "folder_name": folder_name,
+            "end_user_id": end_user_id,
         },
     ):
         if parallel:
@@ -457,7 +481,9 @@ async def batch_ingest_files(
                     metadata=metadata_item,
                     auth=auth,
                     rules=file_rules,
-                    use_colpali=use_colpali
+                    use_colpali=use_colpali,
+                    folder_name=folder_name,
+                    end_user_id=end_user_id
                 )
                 tasks.append(task)
             
@@ -481,7 +507,9 @@ async def batch_ingest_files(
                         metadata=metadata_item,
                         auth=auth,
                         rules=file_rules,
-                        use_colpali=use_colpali
+                        use_colpali=use_colpali,
+                        folder_name=folder_name,
+                        end_user_id=end_user_id
                     )
                     documents.append(doc)
                 except Exception as e:
@@ -495,7 +523,24 @@ async def batch_ingest_files(
 
 @app.post("/retrieve/chunks", response_model=List[ChunkResult])
 async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(verify_token)):
-    """Retrieve relevant chunks."""
+    """
+    Retrieve relevant chunks.
+    
+    Args:
+        request: RetrieveRequest containing:
+            - query: Search query text
+            - filters: Optional metadata filters
+            - k: Number of results (default: 4)
+            - min_score: Minimum similarity threshold (default: 0.0)
+            - use_reranking: Whether to use reranking
+            - use_colpali: Whether to use ColPali-style embedding model
+            - folder_name: Optional folder to scope the search to
+            - end_user_id: Optional end-user ID to scope the search to
+        auth: Authentication context
+        
+    Returns:
+        List[ChunkResult]: List of relevant chunks
+    """
     try:
         async with telemetry.track_operation(
             operation_type="retrieve_chunks",
@@ -505,6 +550,8 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
                 "min_score": request.min_score,
                 "use_reranking": request.use_reranking,
                 "use_colpali": request.use_colpali,
+                "folder_name": request.folder_name,
+                "end_user_id": request.end_user_id,
             },
         ):
             return await document_service.retrieve_chunks(
@@ -515,6 +562,8 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
                 request.min_score,
                 request.use_reranking,
                 request.use_colpali,
+                request.folder_name,
+                request.end_user_id,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -522,7 +571,24 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
 
 @app.post("/retrieve/docs", response_model=List[DocumentResult])
 async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depends(verify_token)):
-    """Retrieve relevant documents."""
+    """
+    Retrieve relevant documents.
+    
+    Args:
+        request: RetrieveRequest containing:
+            - query: Search query text
+            - filters: Optional metadata filters
+            - k: Number of results (default: 4)
+            - min_score: Minimum similarity threshold (default: 0.0)
+            - use_reranking: Whether to use reranking
+            - use_colpali: Whether to use ColPali-style embedding model
+            - folder_name: Optional folder to scope the search to
+            - end_user_id: Optional end-user ID to scope the search to
+        auth: Authentication context
+        
+    Returns:
+        List[DocumentResult]: List of relevant documents
+    """
     try:
         async with telemetry.track_operation(
             operation_type="retrieve_docs",
@@ -532,6 +598,8 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
                 "min_score": request.min_score,
                 "use_reranking": request.use_reranking,
                 "use_colpali": request.use_colpali,
+                "folder_name": request.folder_name,
+                "end_user_id": request.end_user_id,
             },
         ):
             return await document_service.retrieve_docs(
@@ -542,39 +610,99 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
                 request.min_score,
                 request.use_reranking,
                 request.use_colpali,
+                request.folder_name,
+                request.end_user_id,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
 
 @app.post("/batch/documents", response_model=List[Document])
-async def batch_get_documents(document_ids: List[str], auth: AuthContext = Depends(verify_token)):
-    """Retrieve multiple documents by their IDs in a single batch operation."""
+async def batch_get_documents(
+    request: Dict[str, Any],
+    auth: AuthContext = Depends(verify_token)
+):
+    """
+    Retrieve multiple documents by their IDs in a single batch operation.
+    
+    Args:
+        request: Dictionary containing:
+            - document_ids: List of document IDs to retrieve
+            - folder_name: Optional folder to scope the operation to
+            - end_user_id: Optional end-user ID to scope the operation to
+        auth: Authentication context
+        
+    Returns:
+        List[Document]: List of documents matching the IDs
+    """
     try:
+        # Extract document_ids from request
+        document_ids = request.get("document_ids", [])
+        folder_name = request.get("folder_name")
+        end_user_id = request.get("end_user_id")
+        
+        if not document_ids:
+            return []
+            
         async with telemetry.track_operation(
             operation_type="batch_get_documents",
             user_id=auth.entity_id,
             metadata={
                 "document_count": len(document_ids),
+                "folder_name": folder_name,
+                "end_user_id": end_user_id,
             },
         ):
-            return await document_service.batch_retrieve_documents(document_ids, auth)
+            return await document_service.batch_retrieve_documents(document_ids, auth, folder_name, end_user_id)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
 
 @app.post("/batch/chunks", response_model=List[ChunkResult])
-async def batch_get_chunks(chunk_ids: List[ChunkSource], auth: AuthContext = Depends(verify_token)):
-    """Retrieve specific chunks by their document ID and chunk number in a single batch operation."""
+async def batch_get_chunks(
+    request: Dict[str, Any],
+    auth: AuthContext = Depends(verify_token)
+):
+    """
+    Retrieve specific chunks by their document ID and chunk number in a single batch operation.
+    
+    Args:
+        request: Dictionary containing:
+            - sources: List of ChunkSource objects (with document_id and chunk_number)
+            - folder_name: Optional folder to scope the operation to
+            - end_user_id: Optional end-user ID to scope the operation to
+        auth: Authentication context
+        
+    Returns:
+        List[ChunkResult]: List of chunk results
+    """
     try:
+        # Extract sources from request
+        sources = request.get("sources", [])
+        folder_name = request.get("folder_name")
+        end_user_id = request.get("end_user_id")
+        
+        if not sources:
+            return []
+            
         async with telemetry.track_operation(
             operation_type="batch_get_chunks",
             user_id=auth.entity_id,
             metadata={
-                "chunk_count": len(chunk_ids),
+                "chunk_count": len(sources),
+                "folder_name": folder_name,
+                "end_user_id": end_user_id,
             },
         ):
-            return await document_service.batch_retrieve_chunks(chunk_ids, auth)
+            # Convert sources to ChunkSource objects if needed
+            chunk_sources = []
+            for source in sources:
+                if isinstance(source, dict):
+                    chunk_sources.append(ChunkSource(**source))
+                else:
+                    chunk_sources.append(source)
+                    
+            return await document_service.batch_retrieve_chunks(chunk_sources, auth, folder_name, end_user_id)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
@@ -583,10 +711,32 @@ async def batch_get_chunks(chunk_ids: List[ChunkSource], auth: AuthContext = Dep
 async def query_completion(
     request: CompletionQueryRequest, auth: AuthContext = Depends(verify_token)
 ):
-    """Generate completion using relevant chunks as context.
+    """
+    Generate completion using relevant chunks as context.
     
     When graph_name is provided, the query will leverage the knowledge graph 
     to enhance retrieval by finding relevant entities and their connected documents.
+    
+    Args:
+        request: CompletionQueryRequest containing:
+            - query: Query text
+            - filters: Optional metadata filters
+            - k: Number of chunks to use as context (default: 4)
+            - min_score: Minimum similarity threshold (default: 0.0)
+            - max_tokens: Maximum tokens in completion
+            - temperature: Model temperature
+            - use_reranking: Whether to use reranking
+            - use_colpali: Whether to use ColPali-style embedding model
+            - graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
+            - hop_depth: Number of relationship hops to traverse in the graph (1-3)
+            - include_paths: Whether to include relationship paths in the response
+            - prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
+            - folder_name: Optional folder to scope the operation to
+            - end_user_id: Optional end-user ID to scope the operation to
+        auth: Authentication context
+        
+    Returns:
+        CompletionResponse: Generated completion
     """
     try:
         # Validate prompt overrides before proceeding
@@ -611,6 +761,8 @@ async def query_completion(
                 "graph_name": request.graph_name,
                 "hop_depth": request.hop_depth,
                 "include_paths": request.include_paths,
+                "folder_name": request.folder_name,
+                "end_user_id": request.end_user_id,
             },
         ):
             return await document_service.query(
@@ -627,6 +779,8 @@ async def query_completion(
                 request.hop_depth,
                 request.include_paths,
                 request.prompt_overrides,
+                request.folder_name,
+                request.end_user_id,
             )
     except ValueError as e:
         validate_prompt_overrides_with_http_exception(operation_type="query", error=e)
@@ -640,9 +794,31 @@ async def list_documents(
     skip: int = 0,
     limit: int = 10000,
     filters: Optional[Dict[str, Any]] = None,
+    folder_name: Optional[str] = None,
+    end_user_id: Optional[str] = None,
 ):
-    """List accessible documents."""
-    return await document_service.db.get_documents(auth, skip, limit, filters)
+    """
+    List accessible documents.
+    
+    Args:
+        auth: Authentication context
+        skip: Number of documents to skip
+        limit: Maximum number of documents to return
+        filters: Optional metadata filters
+        folder_name: Optional folder to scope the operation to
+        end_user_id: Optional end-user ID to scope the operation to
+        
+    Returns:
+        List[Document]: List of accessible documents
+    """
+    # Create system filters for folder and user scoping
+    system_filters = {}
+    if folder_name:
+        system_filters["folder_name"] = folder_name
+    if end_user_id:
+        system_filters["end_user_id"] = end_user_id
+        
+    return await document_service.db.get_documents(auth, skip, limit, filters, system_filters)
 
 
 @app.get("/documents/{document_id}", response_model=Document)
@@ -691,10 +867,33 @@ async def delete_document(document_id: str, auth: AuthContext = Depends(verify_t
 
 
 @app.get("/documents/filename/{filename}", response_model=Document)
-async def get_document_by_filename(filename: str, auth: AuthContext = Depends(verify_token)):
-    """Get document by filename."""
+async def get_document_by_filename(
+    filename: str, 
+    auth: AuthContext = Depends(verify_token),
+    folder_name: Optional[str] = None,
+    end_user_id: Optional[str] = None,
+):
+    """
+    Get document by filename.
+    
+    Args:
+        filename: Filename of the document to retrieve
+        auth: Authentication context
+        folder_name: Optional folder to scope the operation to
+        end_user_id: Optional end-user ID to scope the operation to
+        
+    Returns:
+        Document: Document metadata if found and accessible
+    """
     try:
-        doc = await document_service.db.get_document_by_filename(filename, auth)
+        # Create system filters for folder and user scoping
+        system_filters = {}
+        if folder_name:
+            system_filters["folder_name"] = folder_name
+        if end_user_id:
+            system_filters["end_user_id"] = end_user_id
+            
+        doc = await document_service.db.get_document_by_filename(filename, auth, system_filters)
         logger.debug(f"Found document by filename: {doc}")
         if not doc:
             raise HTTPException(status_code=404, detail=f"Document with filename '{filename}' not found")
@@ -1062,6 +1261,9 @@ async def create_graph(
             - name: Name of the graph to create
             - filters: Optional metadata filters to determine which documents to include
             - documents: Optional list of specific document IDs to include
+            - prompt_overrides: Optional customizations for entity extraction and resolution prompts
+            - folder_name: Optional folder to scope the operation to
+            - end_user_id: Optional end-user ID to scope the operation to
         auth: Authentication context
 
     Returns:
@@ -1084,14 +1286,24 @@ async def create_graph(
                 "name": request.name,
                 "filters": request.filters,
                 "documents": request.documents,
+                "folder_name": request.folder_name,
+                "end_user_id": request.end_user_id,
             },
         ):
+            # Create system filters for folder and user scoping
+            system_filters = {}
+            if request.folder_name:
+                system_filters["folder_name"] = request.folder_name
+            if request.end_user_id:
+                system_filters["end_user_id"] = request.end_user_id
+                
             return await document_service.create_graph(
                 name=request.name,
                 auth=auth,
                 filters=request.filters,
                 documents=request.documents,
                 prompt_overrides=request.prompt_overrides,
+                system_filters=system_filters,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -1103,6 +1315,8 @@ async def create_graph(
 async def get_graph(
     name: str,
     auth: AuthContext = Depends(verify_token),
+    folder_name: Optional[str] = None,
+    end_user_id: Optional[str] = None,
 ) -> Graph:
     """
     Get a graph by name.
@@ -1112,6 +1326,8 @@ async def get_graph(
     Args:
         name: Name of the graph to retrieve
         auth: Authentication context
+        folder_name: Optional folder to scope the operation to
+        end_user_id: Optional end-user ID to scope the operation to
 
     Returns:
         Graph: The requested graph object
@@ -1120,9 +1336,20 @@ async def get_graph(
         async with telemetry.track_operation(
             operation_type="get_graph",
             user_id=auth.entity_id,
-            metadata={"name": name},
+            metadata={
+                "name": name,
+                "folder_name": folder_name,
+                "end_user_id": end_user_id
+            },
         ):
-            graph = await document_service.db.get_graph(name, auth)
+            # Create system filters for folder and user scoping
+            system_filters = {}
+            if folder_name:
+                system_filters["folder_name"] = folder_name
+            if end_user_id:
+                system_filters["end_user_id"] = end_user_id
+                
+            graph = await document_service.db.get_graph(name, auth, system_filters)
             if not graph:
                 raise HTTPException(status_code=404, detail=f"Graph '{name}' not found")
             return graph
@@ -1135,6 +1362,8 @@ async def get_graph(
 @app.get("/graphs", response_model=List[Graph])
 async def list_graphs(
     auth: AuthContext = Depends(verify_token),
+    folder_name: Optional[str] = None,
+    end_user_id: Optional[str] = None,
 ) -> List[Graph]:
     """
     List all graphs the user has access to.
@@ -1143,6 +1372,8 @@ async def list_graphs(
 
     Args:
         auth: Authentication context
+        folder_name: Optional folder to scope the operation to
+        end_user_id: Optional end-user ID to scope the operation to
 
     Returns:
         List[Graph]: List of graph objects
@@ -1151,8 +1382,19 @@ async def list_graphs(
         async with telemetry.track_operation(
             operation_type="list_graphs",
             user_id=auth.entity_id,
+            metadata={
+                "folder_name": folder_name,
+                "end_user_id": end_user_id
+            },
         ):
-            return await document_service.db.list_graphs(auth)
+            # Create system filters for folder and user scoping
+            system_filters = {}
+            if folder_name:
+                system_filters["folder_name"] = folder_name
+            if end_user_id:
+                system_filters["end_user_id"] = end_user_id
+                
+            return await document_service.db.list_graphs(auth, system_filters)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
@@ -1177,6 +1419,9 @@ async def update_graph(
         request: UpdateGraphRequest containing:
             - additional_filters: Optional additional metadata filters to determine which new documents to include
             - additional_documents: Optional list of additional document IDs to include
+            - prompt_overrides: Optional customizations for entity extraction and resolution prompts
+            - folder_name: Optional folder to scope the operation to
+            - end_user_id: Optional end-user ID to scope the operation to
         auth: Authentication context
 
     Returns:
@@ -1194,14 +1439,24 @@ async def update_graph(
                 "name": name,
                 "additional_filters": request.additional_filters,
                 "additional_documents": request.additional_documents,
+                "folder_name": request.folder_name,
+                "end_user_id": request.end_user_id,
             },
         ):
+            # Create system filters for folder and user scoping
+            system_filters = {}
+            if request.folder_name:
+                system_filters["folder_name"] = request.folder_name
+            if request.end_user_id:
+                system_filters["end_user_id"] = request.end_user_id
+                
             return await document_service.update_graph(
                 name=name,
                 auth=auth,
                 additional_filters=request.additional_filters,
                 additional_documents=request.additional_documents,
                 prompt_overrides=request.prompt_overrides,
+                system_filters=system_filters,
             )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
