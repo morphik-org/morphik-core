@@ -18,6 +18,7 @@ class UserService:
         """Initialize the UserService."""
         self.settings = get_settings()
         self.db = UserLimitsDatabase(uri=self.settings.POSTGRES_URI)
+        self.db.initialize()
 
     async def initialize(self) -> bool:
         """Initialize database tables."""
@@ -192,6 +193,8 @@ class UserService:
                 # Only import stripe if we're in cloud mode and need it
                 import os
                 import stripe
+                from dotenv import load_dotenv
+                load_dotenv(override=True)
                 
                 # Get Stripe API key from environment variable
                 stripe_api_key = os.environ.get("STRIPE_API_KEY")

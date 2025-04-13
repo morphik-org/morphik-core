@@ -134,6 +134,15 @@ async def initialize_vector_store():
         else:
             logger.error("Multivector store initialization failed")
 
+@app.on_event("startup")
+async def initialize_user_limits_database():
+    """Initialize user service on application startup."""
+    logger.info("Initializing user service...")
+    if settings.MODE == "cloud":
+        from core.database.user_limits_db import UserLimitsDatabase
+        user_limits_db = UserLimitsDatabase(uri=settings.POSTGRES_URI)
+        await user_limits_db.initialize()
+
 # Initialize vector store
 match settings.VECTOR_STORE_PROVIDER:
     case "mongodb":
