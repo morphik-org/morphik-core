@@ -93,6 +93,8 @@ class DocumentService:
         min_score: float = 0.0,
         use_reranking: Optional[bool] = None,
         use_colpali: Optional[bool] = None,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None,
     ) -> List[ChunkResult]:
         """Retrieve relevant chunks."""
         settings = get_settings()
@@ -104,7 +106,14 @@ class DocumentService:
         logger.info("Generated query embedding")
 
         # Find authorized documents
-        doc_ids = await self.db.find_authorized_and_filtered_documents(auth, filters)
+        # Build system filters for folder_name and end_user_id
+        system_filters = {}
+        if folder_name:
+            system_filters["folder_name"] = folder_name
+        if end_user_id:
+            system_filters["end_user_id"] = end_user_id
+            
+        doc_ids = await self.db.find_authorized_and_filtered_documents(auth, filters, system_filters)
         if not doc_ids:
             logger.info("No authorized documents found")
             return []
@@ -192,11 +201,13 @@ class DocumentService:
         min_score: float = 0.0,
         use_reranking: Optional[bool] = None,
         use_colpali: Optional[bool] = None,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None,
     ) -> List[DocumentResult]:
         """Retrieve relevant documents."""
         # Get chunks first
         chunks = await self.retrieve_chunks(
-            query, auth, filters, k, min_score, use_reranking, use_colpali
+            query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, end_user_id
         )
         # Convert to document results
         results = await self._create_document_results(auth, chunks)
@@ -207,7 +218,9 @@ class DocumentService:
     async def batch_retrieve_documents(
         self,
         document_ids: List[str],
-        auth: AuthContext
+        auth: AuthContext,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None
     ) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
@@ -222,15 +235,24 @@ class DocumentService:
         if not document_ids:
             return []
             
+        # Build system filters for folder_name and end_user_id
+        system_filters = {}
+        if folder_name:
+            system_filters["folder_name"] = folder_name
+        if end_user_id:
+            system_filters["end_user_id"] = end_user_id
+            
         # Use the database's batch retrieval method
-        documents = await self.db.get_documents_by_id(document_ids, auth)
+        documents = await self.db.get_documents_by_id(document_ids, auth, system_filters)
         logger.info(f"Batch retrieved {len(documents)} documents out of {len(document_ids)} requested")
         return documents
         
     async def batch_retrieve_chunks(
         self,
         chunk_ids: List[ChunkSource],
-        auth: AuthContext
+        auth: AuthContext,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None
     ) -> List[ChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation.
@@ -249,7 +271,7 @@ class DocumentService:
         doc_ids = list({source.document_id for source in chunk_ids})
         
         # Find authorized documents in a single query
-        authorized_docs = await self.batch_retrieve_documents(doc_ids, auth)
+        authorized_docs = await self.batch_retrieve_documents(doc_ids, auth, folder_name, end_user_id)
         authorized_doc_ids = {doc.external_id for doc in authorized_docs}
         
         # Filter sources to only include authorized documents
@@ -290,6 +312,8 @@ class DocumentService:
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional["QueryPromptOverrides"] = None,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None,
     ) -> CompletionResponse:
         """Generate completion using relevant chunks as context.
         
@@ -331,7 +355,7 @@ class DocumentService:
         
         # Standard retrieval without graph
         chunks = await self.retrieve_chunks(
-            query, auth, filters, k, min_score, use_reranking, use_colpali
+            query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, end_user_id
         )
         documents = await self._create_document_results(auth, chunks)
 
@@ -372,6 +396,8 @@ class DocumentService:
         auth: AuthContext = None,
         rules: Optional[List[str]] = None,
         use_colpali: Optional[bool] = None,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None,
     ) -> Document:
         """Ingest a text document."""
         if "write" not in auth.permissions:
@@ -399,6 +425,12 @@ class DocumentService:
                 "user_id": [auth.user_id] if auth.user_id else [],  # Add user_id to access control for filtering (as a list)
             },
         )
+        
+        # Add folder_name and end_user_id to system_metadata if provided
+        if folder_name:
+            doc.system_metadata["folder_name"] = folder_name
+        if end_user_id:
+            doc.system_metadata["end_user_id"] = end_user_id
         logger.debug(f"Created text document record with ID {doc.external_id}")
 
         # Apply rules if provided
@@ -456,6 +488,8 @@ class DocumentService:
         auth: AuthContext,
         rules: Optional[List[str]] = None,
         use_colpali: Optional[bool] = None,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None,
     ) -> Document:
         """Ingest a file document."""
         if "write" not in auth.permissions:
@@ -525,6 +559,12 @@ class DocumentService:
             },
             additional_metadata=additional_metadata,
         )
+        
+        # Add folder_name and end_user_id to system_metadata if provided
+        if folder_name:
+            doc.system_metadata["folder_name"] = folder_name
+        if end_user_id:
+            doc.system_metadata["end_user_id"] = end_user_id
 
         # Store full content
         doc.system_metadata["content"] = text

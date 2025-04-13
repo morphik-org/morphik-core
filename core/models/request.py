@@ -23,6 +23,8 @@ class RetrieveRequest(BaseModel):
     include_paths: Optional[bool] = Field(
         False, description="Whether to include relationship paths in the response"
     )
+    folder_name: Optional[str] = Field(None, description="Optional folder scope for the operation")
+    end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
 
 
 class CompletionQueryRequest(RetrieveRequest):
@@ -44,6 +46,8 @@ class IngestTextRequest(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     rules: List[Dict[str, Any]] = Field(default_factory=list)
     use_colpali: Optional[bool] = None
+    folder_name: Optional[str] = Field(None, description="Optional folder scope for the operation")
+    end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
 
 
 class CreateGraphRequest(BaseModel):
@@ -66,6 +70,8 @@ class CreateGraphRequest(BaseModel):
             }
         }}
     )
+    folder_name: Optional[str] = Field(None, description="Optional folder scope for the operation")
+    end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
 
 
 class UpdateGraphRequest(BaseModel):
@@ -81,6 +87,8 @@ class UpdateGraphRequest(BaseModel):
         None,
         description="Optional customizations for entity extraction and resolution prompts"
     )
+    folder_name: Optional[str] = Field(None, description="Optional folder scope for the operation")
+    end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
 
 
 class BatchIngestResponse(BaseModel):

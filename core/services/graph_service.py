@@ -868,6 +868,8 @@ class GraphService:
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional[QueryPromptOverrides] = None,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None,
     ) -> CompletionResponse:
         """Generate completion using knowledge graph-enhanced retrieval.
 
@@ -915,12 +917,14 @@ class GraphService:
                 use_reranking=use_reranking,
                 use_colpali=use_colpali,
                 graph_name=None,
+                folder_name=folder_name,
+                end_user_id=end_user_id,
             )
 
         # Parallel approach
         # 1. Standard vector search
         vector_chunks = await document_service.retrieve_chunks(
-            query, auth, filters, k, min_score, use_reranking, use_colpali
+            query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, end_user_id
         )
         logger.info(f"Vector search retrieved {len(vector_chunks)} chunks")
 
@@ -1015,6 +1019,8 @@ class GraphService:
             auth,
             graph_name,
             prompt_overrides,
+            folder_name=folder_name,
+            end_user_id=end_user_id,
         )
 
         return completion_response
@@ -1330,6 +1336,8 @@ class GraphService:
         auth: Optional[AuthContext] = None,
         graph_name: Optional[str] = None,
         prompt_overrides: Optional[QueryPromptOverrides] = None,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None,
     ) -> CompletionResponse:
         """Generate completion using the retrieved chunks and optional path information."""
         if not chunks:
@@ -1370,6 +1378,8 @@ class GraphService:
             max_tokens=max_tokens,
             temperature=temperature,
             prompt_template=custom_prompt_template,
+            folder_name=folder_name,
+            end_user_id=end_user_id,
         )
 
         # Get completion from model

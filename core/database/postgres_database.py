@@ -139,6 +139,20 @@ class PostgresDatabase(BaseDatabase):
                         )
                     )
                     logger.info("Added storage_files column to documents table")
+                    
+                # Create indexes for folder_name and end_user_id in system_metadata
+                await conn.execute(
+                    text(
+                        """
+                    CREATE INDEX IF NOT EXISTS idx_system_metadata_folder_name
+                    ON documents ((system_metadata->>'folder_name'));
+                        
+                    CREATE INDEX IF NOT EXISTS idx_system_metadata_end_user_id
+                    ON documents ((system_metadata->>'end_user_id'));
+                    """
+                    )
+                )
+                logger.info("Created indexes for folder_name and end_user_id in system_metadata")
 
             logger.info("PostgreSQL tables and indexes created successfully")
             self._initialized = True
@@ -264,14 +278,16 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error retrieving document metadata by filename: {str(e)}")
             return None
             
-    async def get_documents_by_id(self, document_ids: List[str], auth: AuthContext) -> List[Document]:
+    async def get_documents_by_id(self, document_ids: List[str], auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
         Only returns documents the user has access to.
+        Can filter by system metadata fields like folder_name and end_user_id.
         
         Args:
             document_ids: List of document IDs to retrieve
             auth: Authentication context
+            system_filters: Optional filters for system metadata fields
             
         Returns:
             List of Document objects that were found and user has access to
@@ -283,13 +299,21 @@ class PostgresDatabase(BaseDatabase):
             async with self.async_session() as session:
                 # Build access filter
                 access_filter = self._build_access_filter(auth)
+                system_metadata_filter = self._build_system_metadata_filter(system_filters)
                 
-                # Query documents with both document IDs and access check in a single query
-                query = (
-                    select(DocumentModel)
-                    .where(DocumentModel.external_id.in_(document_ids))
-                    .where(text(f"({access_filter})"))
-                )
+                # Construct where clauses
+                where_clauses = [
+                    f"({access_filter})",
+                    f"external_id IN ({', '.join([f'\'{doc_id}\'' for doc_id in document_ids])})"
+                ]
+                
+                if system_metadata_filter:
+                    where_clauses.append(f"({system_metadata_filter})")
+                    
+                final_where_clause = " AND ".join(where_clauses)
+                
+                # Query documents with document IDs, access check, and system filters in a single query
+                query = select(DocumentModel).where(text(final_where_clause))
                 
                 logger.info(f"Batch retrieving {len(document_ids)} documents with a single query")
                 
@@ -328,6 +352,7 @@ class PostgresDatabase(BaseDatabase):
         skip: int = 0,
         limit: int = 10000,
         filters: Optional[Dict[str, Any]] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
     ) -> List[Document]:
         """List documents the user has access to."""
         try:
@@ -335,10 +360,18 @@ class PostgresDatabase(BaseDatabase):
                 # Build query
                 access_filter = self._build_access_filter(auth)
                 metadata_filter = self._build_metadata_filter(filters)
+                system_metadata_filter = self._build_system_metadata_filter(system_filters)
 
-                query = select(DocumentModel).where(text(f"({access_filter})"))
+                where_clauses = [f"({access_filter})"]
+                
                 if metadata_filter:
-                    query = query.where(text(metadata_filter))
+                    where_clauses.append(f"({metadata_filter})")
+                    
+                if system_metadata_filter:
+                    where_clauses.append(f"({system_metadata_filter})")
+                    
+                final_where_clause = " AND ".join(where_clauses)
+                query = select(DocumentModel).where(text(final_where_clause))
 
                 query = query.offset(skip).limit(limit)
 
@@ -421,7 +454,7 @@ class PostgresDatabase(BaseDatabase):
             return False
 
     async def find_authorized_and_filtered_documents(
-        self, auth: AuthContext, filters: Optional[Dict[str, Any]] = None
+        self, auth: AuthContext, filters: Optional[Dict[str, Any]] = None, system_filters: Optional[Dict[str, Any]] = None
     ) -> List[str]:
         """Find document IDs matching filters and access permissions."""
         try:
@@ -429,14 +462,24 @@ class PostgresDatabase(BaseDatabase):
                 # Build query
                 access_filter = self._build_access_filter(auth)
                 metadata_filter = self._build_metadata_filter(filters)
+                system_metadata_filter = self._build_system_metadata_filter(system_filters)
 
                 logger.debug(f"Access filter: {access_filter}")
                 logger.debug(f"Metadata filter: {metadata_filter}")
+                logger.debug(f"System metadata filter: {system_metadata_filter}")
                 logger.debug(f"Original filters: {filters}")
+                logger.debug(f"System filters: {system_filters}")
 
-                query = select(DocumentModel.external_id).where(text(f"({access_filter})"))
+                where_clauses = [f"({access_filter})"]
+                
                 if metadata_filter:
-                    query = query.where(text(metadata_filter))
+                    where_clauses.append(f"({metadata_filter})")
+                    
+                if system_metadata_filter:
+                    where_clauses.append(f"({system_metadata_filter})")
+                    
+                final_where_clause = " AND ".join(where_clauses)
+                query = select(DocumentModel.external_id).where(text(final_where_clause))
 
                 logger.debug(f"Final query: {query}")
 
@@ -525,6 +568,25 @@ class PostgresDatabase(BaseDatabase):
             filter_conditions.append(f"doc_metadata->>'{key}' = '{value}'")
 
         return " AND ".join(filter_conditions)
+        
+    def _build_system_metadata_filter(self, system_filters: Optional[Dict[str, Any]]) -> str:
+        """Build PostgreSQL filter for system metadata."""
+        if not system_filters:
+            return ""
+            
+        conditions = []
+        for key, value in system_filters.items():
+            if value is None:
+                continue
+                
+            if isinstance(value, str):
+                # Replace single quotes with double single quotes to escape them
+                escaped_value = value.replace("'", "''")
+                conditions.append(f"system_metadata->>'{key}' = '{escaped_value}'")
+            else:
+                conditions.append(f"system_metadata->>'{key}' = '{value}'")
+                
+        return " AND ".join(conditions)
 
     async def store_cache_metadata(self, name: str, metadata: Dict[str, Any]) -> bool:
         """Store metadata for a cache in PostgreSQL.

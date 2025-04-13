@@ -44,6 +44,8 @@ class Document(BaseModel):
             "created_at": datetime.now(UTC),
             "updated_at": datetime.now(UTC),
             "version": 1,
+            "folder_name": None,
+            "end_user_id": None,
         }
     )
     """metadata such as creation date etc."""
