@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 TEST_DATA_DIR = Path(__file__).parent / "test_data"
 JWT_SECRET = "your-secret-key-for-signing-tokens"
 TEST_USER_ID = "test_user"
-TEST_POSTGRES_URI = "postgresql+asyncpg://postgres:postgres@localhost:5432/databridge_test"
+TEST_POSTGRES_URI = "postgresql+asyncpg://postgres:postgres@localhost:5432/morphik_test"
 
 
 @pytest.fixture(scope="session")

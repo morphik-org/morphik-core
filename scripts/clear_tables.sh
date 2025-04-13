@@ -8,7 +8,7 @@ if [ "$#" -ne 1 ] || { [ "$1" != "docker" ] && [ "$1" != "local" ]; }; then
 fi
 
 ENV=$1
-echo "Clearing all tables in the databridge database for $ENV environment..."
+echo "Clearing all tables in the morphik database for $ENV environment..."
 
 # SQL command to truncate all tables
 TRUNCATE_CMD="
@@ -32,7 +32,7 @@ if [ "$ENV" = "docker" ]; then
     fi
 
     # Execute the command in docker container
-    if ! docker exec -it $POSTGRES_CONTAINER psql -U databridge -d databridge -c "$TRUNCATE_CMD"; then
+    if ! docker exec -it $POSTGRES_CONTAINER psql -U morphik -d morphik -c "$TRUNCATE_CMD"; then
         echo "Error: Failed to clear tables in docker environment"
         exit 1
     fi
