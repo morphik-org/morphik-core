@@ -27,7 +27,7 @@ class StorageFileInfo(BaseModel):
     
     
 class Document(BaseModel):
-    """Represents a document stored in MongoDB documents collection"""
+    """Represents a document stored in the database documents collection"""
 
     external_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     owner: Dict[str, str]

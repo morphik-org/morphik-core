@@ -46,7 +46,7 @@ Built for scale and performance, Morphik can handle millions of documents while 
 - 🧩 **Extensible Architecture**
   - Support for custom parsers and embedding models
   - Multiple storage backends (S3, local)
-  - Vector store integrations (PostgreSQL/pgvector, MongoDB)
+  - Vector store integration with PostgreSQL/pgvector
 
 ## Quick Start
 
@@ -162,7 +162,7 @@ for chunk in chunks:
 | **Knowledge Graphs** | ✅ Automated extraction & enhanced retrieval | ❌ | ❌ | ❌ |
 | **Rules Engine** | ✅ Natural language rules & schema definition | ❌ | ❌ | Limited |
 | **Caching** | ✅ Persistent KV-caching with selective updates | ❌ | ❌ | Limited |
-| **Scalability** | ✅ Millions of documents with PostgreSQL/MongoDB | ✅ | ✅ | Limited |
+| **Scalability** | ✅ Millions of documents with PostgreSQL | ✅ | ✅ | Limited |
 | **Video Content** | ✅ Native video parsing & transcription | ❌ | ❌ | ❌ |
 | **Deployment Options** | ✅ Self-hosted, cloud, or hybrid | Varies | Varies | Limited |
 | **Open Source** | ✅ MIT License | Varies | Varies | Varies |
@@ -176,7 +176,7 @@ for chunk in chunks:
 
 - **Schema-like Rules for Unstructured Data**: Define rules to extract consistent metadata from unstructured content, bringing database-like queryability to any document format.
 
-- **Enterprise-grade Scalability**: Built on proven database technologies (PostgreSQL/MongoDB) that can scale to millions of documents while maintaining sub-second retrieval times.
+- **Enterprise-grade Scalability**: Built on proven PostgreSQL database technology that can scale to millions of documents while maintaining sub-second retrieval times.
 
 ## Documentation
 

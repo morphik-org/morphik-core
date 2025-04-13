@@ -351,6 +351,8 @@ class DocumentService:
                 hop_depth=hop_depth,
                 include_paths=include_paths,
                 prompt_overrides=prompt_overrides,
+                folder_name=folder_name,
+                end_user_id=end_user_id
             )
         
         # Standard retrieval without graph

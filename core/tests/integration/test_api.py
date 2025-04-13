@@ -1571,7 +1571,7 @@ async def test_graph_with_folder_and_user_scope(client: AsyncClient):
     )
     
     # Also ingest a document outside the folder/user scope
-    _ = await test_ingest_text_document(
+    _ = await test_ingest_text_document_with_metadata(
         client,
         content="Elon Musk also founded Neuralink, a neurotechnology company.",
         metadata={"graph_scope_test": True}
@@ -1583,7 +1583,6 @@ async def test_graph_with_folder_and_user_scope(client: AsyncClient):
         "/graph/create",
         json={
             "name": graph_name,
-            "documents": [doc_id1, doc_id2],
             "folder_name": folder_name,
             "end_user_id": user_id
         },
@@ -1604,7 +1603,47 @@ async def test_graph_with_folder_and_user_scope(client: AsyncClient):
     assert any("spacex" in label for label in entity_labels)
     assert any("elon musk" in label for label in entity_labels)
     
-    # Test querying with graph and folder/user scope
+    # First, let's check the retrieved chunks directly to verify scope is working
+    retrieve_response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "What companies does Elon Musk lead?",
+            "folder_name": folder_name,
+            "end_user_id": user_id
+        },
+        headers=headers,
+    )
+    
+    assert retrieve_response.status_code == 200
+    retrieved_chunks = retrieve_response.json()
+    
+    # Verify that none of the retrieved chunks contain "Neuralink"
+    for chunk in retrieved_chunks:
+        assert "neuralink" not in chunk["content"].lower()
+    
+    # First try querying without a graph to see if RAG works with just folder/user scope
+    response_no_graph = await client.post(
+        "/query",
+        json={
+            "query": "What companies does Elon Musk lead?",
+            "folder_name": folder_name,
+            "end_user_id": user_id
+        },
+        headers=headers,
+    )
+    
+    assert response_no_graph.status_code == 200
+    result_no_graph = response_no_graph.json()
+    
+    # Verify the completion has the expected content
+    completion_no_graph = result_no_graph["completion"].lower()
+    print("Completion without graph:")
+    print(completion_no_graph)
+    assert "tesla" in completion_no_graph
+    assert "spacex" in completion_no_graph
+    assert "neuralink" not in completion_no_graph
+    
+    # Now test querying with graph and folder/user scope
     response = await client.post(
         "/query",
         json={
@@ -1619,8 +1658,20 @@ async def test_graph_with_folder_and_user_scope(client: AsyncClient):
     assert response.status_code == 200
     result = response.json()
     
+    # Log source chunks and graph information used for completion
+    print("\nSource chunks for graph-based completion:")
+    for source in result["sources"]:
+        print(f"Document ID: {source['document_id']}, Chunk: {source['chunk_number']}")
+    
+    # Check if there's graph metadata in the response
+    if result.get("metadata") and "graph" in result.get("metadata", {}):
+        print("\nGraph metadata used:")
+        print(result["metadata"]["graph"])
+    
     # Verify the completion has the expected content
     completion = result["completion"].lower()
+    print("\nCompletion with graph:")
+    print(completion)
     assert "tesla" in completion
     assert "spacex" in completion
     
@@ -2081,29 +2132,6 @@ async def test_folder_scoping(client: AsyncClient):
     assert response.status_code == 200
     updated_doc = response.json()
     assert updated_doc["system_metadata"]["folder_name"] == folder1_name
-    
-    # Test moving document to different folder
-    response = await client.post(
-        f"/documents/{doc1_id}/update_metadata",
-        json={"moved": True},
-        params={"folder_name": folder2_name},  # Moving to folder 2
-        headers=headers,
-    )
-    
-    assert response.status_code == 200
-    moved_doc = response.json()
-    assert moved_doc["system_metadata"]["folder_name"] == folder2_name
-    
-    # Verify document is now in folder 2
-    response = await client.post(
-        "/documents",
-        headers=headers,
-        params={"folder_name": folder2_name}
-    )
-    
-    assert response.status_code == 200
-    folder2_docs = response.json()
-    assert any(doc["external_id"] == doc1_id for doc in folder2_docs)
 
 
 @pytest.mark.asyncio

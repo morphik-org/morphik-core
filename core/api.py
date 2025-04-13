@@ -20,9 +20,7 @@ from core.parser.morphik_parser import MorphikParser
 from core.services.document_service import DocumentService
 from core.services.telemetry import TelemetryService
 from core.config import get_settings
-from core.database.mongo_database import MongoDatabase
 from core.database.postgres_database import PostgresDatabase
-from core.vector_store.mongo_vector_store import MongoDBAtlasVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.storage.s3_storage import S3Storage
@@ -77,21 +75,9 @@ app.add_middleware(
 settings = get_settings()
 
 # Initialize database
-match settings.DATABASE_PROVIDER:
-    case "postgres":
-        if not settings.POSTGRES_URI:
-            raise ValueError("PostgreSQL URI is required for PostgreSQL database")
-        database = PostgresDatabase(uri=settings.POSTGRES_URI)
-    case "mongodb":
-        if not settings.MONGODB_URI:
-            raise ValueError("MongoDB URI is required for MongoDB database")
-        database = MongoDatabase(
-            uri=settings.MONGODB_URI,
-            db_name=settings.DATABRIDGE_DB,
-            collection_name=settings.DOCUMENTS_COLLECTION,
-        )
-    case _:
-        raise ValueError(f"Unsupported database provider: {settings.DATABASE_PROVIDER}")
+if not settings.POSTGRES_URI:
+    raise ValueError("PostgreSQL URI is required for PostgreSQL database")
+database = PostgresDatabase(uri=settings.POSTGRES_URI)
 
 
 @app.on_event("startup")
@@ -135,24 +121,13 @@ async def initialize_vector_store():
             logger.error("Multivector store initialization failed")
 
 # Initialize vector store
-match settings.VECTOR_STORE_PROVIDER:
-    case "mongodb":
-        vector_store = MongoDBAtlasVectorStore(
-            uri=settings.MONGODB_URI,
-            database_name=settings.DATABRIDGE_DB,
-            collection_name=settings.CHUNKS_COLLECTION,
-            index_name=settings.VECTOR_INDEX_NAME,
-        )
-    case "pgvector":
-        if not settings.POSTGRES_URI:
-            raise ValueError("PostgreSQL URI is required for pgvector store")
-        from core.vector_store.pgvector_store import PGVectorStore
+if not settings.POSTGRES_URI:
+    raise ValueError("PostgreSQL URI is required for pgvector store")
+from core.vector_store.pgvector_store import PGVectorStore
 
-        vector_store = PGVectorStore(
-            uri=settings.POSTGRES_URI,
-        )
-    case _:
-        raise ValueError(f"Unsupported vector store provider: {settings.VECTOR_STORE_PROVIDER}")
+vector_store = PGVectorStore(
+    uri=settings.POSTGRES_URI,
+)
 
 # Initialize storage
 match settings.STORAGE_PROVIDER:

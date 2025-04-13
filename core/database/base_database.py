@@ -42,14 +42,16 @@ class BaseDatabase(ABC):
         pass
         
     @abstractmethod
-    async def get_documents_by_id(self, document_ids: List[str], auth: AuthContext) -> List[Document]:
+    async def get_documents_by_id(self, document_ids: List[str], auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
         Only returns documents the user has access to.
+        Can filter by system metadata fields like folder_name and end_user_id.
         
         Args:
             document_ids: List of document IDs to retrieve
             auth: Authentication context
+            system_filters: Optional filters for system metadata fields
             
         Returns:
             List of Document objects that were found and user has access to
@@ -63,10 +65,21 @@ class BaseDatabase(ABC):
         skip: int = 0,
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
     ) -> List[Document]:
         """
         List documents the user has access to.
         Supports pagination and filtering.
+        
+        Args:
+            auth: Authentication context
+            skip: Number of documents to skip (for pagination)
+            limit: Maximum number of documents to return
+            filters: Optional metadata filters
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id)
+        
+        Returns:
+            List of documents matching the criteria
         """
         pass
 
@@ -90,9 +103,18 @@ class BaseDatabase(ABC):
 
     @abstractmethod
     async def find_authorized_and_filtered_documents(
-        self, auth: AuthContext, filters: Optional[Dict[str, Any]] = None
+        self, auth: AuthContext, filters: Optional[Dict[str, Any]] = None, system_filters: Optional[Dict[str, Any]] = None
     ) -> List[str]:
-        """Find document IDs matching filters that user has access to."""
+        """Find document IDs matching filters that user has access to.
+        
+        Args:
+            auth: Authentication context
+            filters: Optional metadata filters
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id)
+            
+        Returns:
+            List of document IDs matching the criteria
+        """
         pass
 
     @abstractmethod
