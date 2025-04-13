@@ -370,9 +370,10 @@ class PostgresDatabase(BaseDatabase):
                 system_metadata_filter = self._build_system_metadata_filter(system_filters)
                 
                 # Construct where clauses
+                document_ids_linked = ', '.join([('\'' + doc_id + '\'') for doc_id in document_ids])
                 where_clauses = [
                     f"({access_filter})",
-                    f"external_id IN ({', '.join([('\'' + doc_id + '\'') for doc_id in document_ids])})"
+                    f"external_id IN ({document_ids_linked})"
                 ]
                 
                 if system_metadata_filter:
