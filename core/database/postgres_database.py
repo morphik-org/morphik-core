@@ -372,7 +372,7 @@ class PostgresDatabase(BaseDatabase):
                 # Construct where clauses
                 where_clauses = [
                     f"({access_filter})",
-                    f"external_id IN ({', '.join([f'\'{doc_id}\'' for doc_id in document_ids])})"
+                    f"external_id IN ({', '.join([('\'' + doc_id + '\'') for doc_id in document_ids])})"
                 ]
                 
                 if system_metadata_filter:
