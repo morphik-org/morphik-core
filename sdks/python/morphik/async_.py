@@ -22,7 +22,7 @@ from .models import (
     EntityResolutionPromptOverride,
     QueryPromptOverride,
     GraphPromptOverrides,
-    QueryPromptOverrides
+    QueryPromptOverrides,
 )
 from .rules import Rule
 from ._internal import _MorphikClientLogic, FinalChunkResult, RuleOrDict
@@ -55,38 +55,36 @@ class AsyncCache:
         return CompletionResponse(**response)
 
 
-
-
 class AsyncFolder:
     """
     A folder that allows operations to be scoped to a specific folder.
-    
+
     Args:
         client: The AsyncMorphik client instance
         name: The name of the folder
     """
-    
+
     def __init__(self, client: "AsyncMorphik", name: str):
         self._client = client
         self._name = name
-        
+
     @property
     def name(self) -> str:
         """Returns the folder name."""
         return self._name
-        
+
     def signin(self, end_user_id: str) -> "AsyncUserScope":
         """
         Returns an AsyncUserScope object scoped to this folder and the end user.
-        
+
         Args:
             end_user_id: The ID of the end user
-            
+
         Returns:
             AsyncUserScope: A user scope scoped to this folder and the end user
         """
         return AsyncUserScope(client=self._client, end_user_id=end_user_id, folder_name=self._name)
-        
+
     async def ingest_text(
         self,
         content: str,
@@ -104,7 +102,7 @@ class AsyncFolder:
             metadata: Optional metadata dictionary
             rules: Optional list of rules to apply during ingestion
             use_colpali: Whether to use ColPali-style embedding model
-            
+
         Returns:
             Document: Metadata of the ingested document
         """
@@ -116,7 +114,7 @@ class AsyncFolder:
         doc = self._client._logic._parse_document_response(response)
         doc._client = self._client
         return doc
-        
+
     async def ingest_file(
         self,
         file: Union[str, bytes, BinaryIO, Path],
@@ -138,36 +136,24 @@ class AsyncFolder:
         Returns:
             Document: Metadata of the ingested document
         """
-        # Handle different file input types
-        if isinstance(file, (str, Path)):
-            file_path = Path(file)
-            if not file_path.exists():
-                raise ValueError(f"File not found: {file}")
-            filename = file_path.name if filename is None else filename
-            with open(file_path, "rb") as f:
-                content = f.read()
-                file_obj = BytesIO(content)
-        elif isinstance(file, bytes):
-            if filename is None:
-                raise ValueError("filename is required when ingesting bytes")
-            file_obj = BytesIO(file)
-        else:
-            if filename is None:
-                raise ValueError("filename is required when ingesting file object")
-            file_obj = file
+        # Process file input
+        file_obj, filename = self._client._logic._prepare_file_for_upload(file, filename)
 
         try:
             # Prepare multipart form data
             files = {"file": (filename, file_obj)}
 
-            # Add metadata and rules
-            data = {
-                "metadata": json.dumps(metadata or {}),
-                "rules": json.dumps([self._client._convert_rule(r) for r in (rules or [])]),
-                "folder_name": self._name  # Add folder name here
-            }
+            # Create form data
+            form_data = self._client._logic._prepare_ingest_file_form_data(
+                metadata, rules, self._name, None
+            )
 
-            response = await self._client._request("POST", "ingest/file", data=data, files=files)
+            response = await self._client._request(
+                "POST",
+                f"ingest/file?use_colpali={str(use_colpali).lower()}",
+                data=form_data,
+                files=files,
+            )
             doc = self._client._logic._parse_document_response(response)
             doc._client = self._client
             return doc
@@ -175,7 +161,7 @@ class AsyncFolder:
             # Close file if we opened it
             if isinstance(file, (str, Path)):
                 file_obj.close()
-                
+
     async def ingest_files(
         self,
         files: List[Union[str, bytes, BinaryIO, Path]],
@@ -198,45 +184,26 @@ class AsyncFolder:
             List[Document]: List of ingested documents
         """
         # Convert files to format expected by API
-        file_objects = []
-        for file in files:
-            if isinstance(file, (str, Path)):
-                path = Path(file)
-                file_objects.append(("files", (path.name, open(path, "rb"))))
-            elif isinstance(file, bytes):
-                file_objects.append(("files", ("file.bin", file)))
-            else:
-                file_objects.append(("files", (getattr(file, "name", "file.bin"), file)))
+        file_objects = self._client._logic._prepare_files_for_upload(files)
 
         try:
-            # Prepare request data
-            # Convert rules appropriately
-            if rules:
-                if all(isinstance(r, list) for r in rules):
-                    # List of lists - per-file rules
-                    converted_rules = [[self._client._convert_rule(r) for r in rule_list] for rule_list in rules]
-                else:
-                    # Flat list - shared rules for all files
-                    converted_rules = [self._client._convert_rule(r) for r in rules]
-            else:
-                converted_rules = []
+            # Prepare form data
+            data = self._client._logic._prepare_ingest_files_form_data(
+                metadata, rules, use_colpali, parallel, self._name, None
+            )
 
-            data = {
-                "metadata": json.dumps(metadata or {}),
-                "rules": json.dumps(converted_rules),
-                "use_colpali": str(use_colpali).lower() if use_colpali is not None else None,
-                "parallel": str(parallel).lower(),
-                "folder_name": self._name  # Add folder name here
-            }
+            response = await self._client._request(
+                "POST", "ingest/files", data=data, files=file_objects
+            )
 
-            response = await self._client._request("POST", "ingest/files", data=data, files=file_objects)
-            
             if response.get("errors"):
                 # Log errors but don't raise exception
                 for error in response["errors"]:
                     logger.error(f"Failed to ingest {error['filename']}: {error['error']}")
-            
-            docs = [self._client._logic._parse_document_response(doc) for doc in response["documents"]]
+
+            docs = [
+                self._client._logic._parse_document_response(doc) for doc in response["documents"]
+            ]
             for doc in docs:
                 doc._client = self._client
             return docs
@@ -245,7 +212,7 @@ class AsyncFolder:
             for _, (_, file_obj) in file_objects:
                 if isinstance(file_obj, (IOBase, BytesIO)) and not file_obj.closed:
                     file_obj.close()
-                    
+
     async def ingest_directory(
         self,
         directory: Union[str, Path],
@@ -283,19 +250,15 @@ class AsyncFolder:
 
         # Filter out directories
         files = [f for f in files if f.is_file()]
-        
+
         if not files:
             return []
 
         # Use ingest_files with collected paths
         return await self.ingest_files(
-            files=files,
-            metadata=metadata,
-            rules=rules,
-            use_colpali=use_colpali,
-            parallel=parallel
+            files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
         )
-        
+
     async def retrieve_chunks(
         self,
         query: str,
@@ -313,7 +276,7 @@ class AsyncFolder:
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
-            
+
         Returns:
             List[FinalChunkResult]: List of relevant chunks
         """
@@ -322,7 +285,7 @@ class AsyncFolder:
         )
         response = await self._client._request("POST", "retrieve/chunks", data=payload)
         return self._client._logic._parse_chunk_result_list_response(response)
-        
+
     async def retrieve_docs(
         self,
         query: str,
@@ -340,7 +303,7 @@ class AsyncFolder:
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
-            
+
         Returns:
             List[DocumentResult]: List of relevant documents
         """
@@ -349,7 +312,7 @@ class AsyncFolder:
         )
         response = await self._client._request("POST", "retrieve/docs", data=payload)
         return self._client._logic._parse_document_result_list_response(response)
-        
+
     async def query(
         self,
         query: str,
@@ -379,18 +342,28 @@ class AsyncFolder:
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
-            
+
         Returns:
             CompletionResponse: Generated completion
         """
         payload = self._client._logic._prepare_query_request(
-            query, filters, k, min_score, max_tokens, temperature,
-            use_colpali, graph_name, hop_depth, include_paths,
-            prompt_overrides, self._name, None
+            query,
+            filters,
+            k,
+            min_score,
+            max_tokens,
+            temperature,
+            use_colpali,
+            graph_name,
+            hop_depth,
+            include_paths,
+            prompt_overrides,
+            self._name,
+            None,
         )
         response = await self._client._request("POST", "query", data=payload)
         return self._client._logic._parse_completion_response(response)
-        
+
     async def list_documents(
         self, skip: int = 0, limit: int = 100, filters: Optional[Dict[str, Any]] = None
     ) -> List[Document]:
@@ -405,44 +378,50 @@ class AsyncFolder:
         Returns:
             List[Document]: List of documents
         """
-        params, data = self._client._logic._prepare_list_documents_request(skip, limit, filters, self._name, None)
+        params, data = self._client._logic._prepare_list_documents_request(
+            skip, limit, filters, self._name, None
+        )
         response = await self._client._request("POST", "documents", data=data, params=params)
         docs = self._client._logic._parse_document_list_response(response)
         for doc in docs:
             doc._client = self._client
         return docs
-        
+
     async def batch_get_documents(self, document_ids: List[str]) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation within this folder.
-        
+
         Args:
             document_ids: List of document IDs to retrieve
-            
+
         Returns:
             List[Document]: List of document metadata for found documents
         """
-        request = self._client._logic._prepare_batch_get_documents_request(document_ids, self._name, None)
+        request = self._client._logic._prepare_batch_get_documents_request(
+            document_ids, self._name, None
+        )
         response = await self._client._request("POST", "batch/documents", data=request)
         docs = self._client._logic._parse_document_list_response(response)
         for doc in docs:
             doc._client = self._client
         return docs
-        
-    async def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
+
+    async def batch_get_chunks(
+        self, sources: List[Union[ChunkSource, Dict[str, Any]]]
+    ) -> List[FinalChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation within this folder.
-        
+
         Args:
             sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
-            
+
         Returns:
             List[FinalChunkResult]: List of chunk results
         """
         request = self._client._logic._prepare_batch_get_chunks_request(sources, self._name, None)
         response = await self._client._request("POST", "batch/chunks", data=request)
         return self._client._logic._parse_chunk_result_list_response(response)
-        
+
     async def create_graph(
         self,
         name: str,
@@ -467,7 +446,7 @@ class AsyncFolder:
         )
         response = await self._client._request("POST", "graph/create", data=request)
         return self._client._logic._parse_graph_response(response)
-        
+
     async def update_graph(
         self,
         name: str,
@@ -477,13 +456,13 @@ class AsyncFolder:
     ) -> Graph:
         """
         Update an existing graph with new documents from this folder.
-        
+
         Args:
             name: Name of the graph to update
             additional_filters: Optional additional metadata filters to determine which new documents to include
             additional_documents: Optional list of additional document IDs to include
             prompt_overrides: Optional customizations for entity extraction and resolution prompts
-            
+
         Returns:
             Graph: The updated graph
         """
@@ -492,27 +471,26 @@ class AsyncFolder:
         )
         response = await self._client._request("POST", f"graph/{name}/update", data=request)
         return self._client._logic._parse_graph_response(response)
-        
+
     async def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
         """
         Delete a document by its filename within this folder.
-        
+
         Args:
             filename: Filename of the document to delete
-            
+
         Returns:
             Dict[str, str]: Deletion status
         """
         # Get the document by filename with folder scope
-        request = {
-            "filename": filename,
-            "folder_name": self._name
-        }
-        
+        request = {"filename": filename, "folder_name": self._name}
+
         # First get the document ID
-        response = await self._client._request("GET", f"documents/filename/{filename}", params={"folder_name": self._name})
+        response = await self._client._request(
+            "GET", f"documents/filename/{filename}", params={"folder_name": self._name}
+        )
         doc = self._client._logic._parse_document_response(response)
-        
+
         # Then delete by ID
         return await self._client.delete_document(doc.external_id)
 
@@ -520,28 +498,28 @@ class AsyncFolder:
 class AsyncUserScope:
     """
     A user scope that allows operations to be scoped to a specific end user and optionally a folder.
-    
+
     Args:
         client: The AsyncMorphik client instance
         end_user_id: The ID of the end user
         folder_name: Optional folder name to further scope operations
     """
-    
+
     def __init__(self, client: "AsyncMorphik", end_user_id: str, folder_name: Optional[str] = None):
         self._client = client
         self._end_user_id = end_user_id
         self._folder_name = folder_name
-        
+
     @property
     def end_user_id(self) -> str:
         """Returns the end user ID."""
         return self._end_user_id
-        
+
     @property
     def folder_name(self) -> Optional[str]:
         """Returns the folder name if any."""
         return self._folder_name
-        
+
     async def ingest_text(
         self,
         content: str,
@@ -559,20 +537,25 @@ class AsyncUserScope:
             metadata: Optional metadata dictionary
             rules: Optional list of rules to apply during ingestion
             use_colpali: Whether to use ColPali-style embedding model
-            
+
         Returns:
             Document: Metadata of the ingested document
         """
         rules_list = [self._client._convert_rule(r) for r in (rules or [])]
         payload = self._client._logic._prepare_ingest_text_request(
-            content, filename, metadata, rules_list, use_colpali, 
-            self._folder_name, self._end_user_id
+            content,
+            filename,
+            metadata,
+            rules_list,
+            use_colpali,
+            self._folder_name,
+            self._end_user_id,
         )
         response = await self._client._request("POST", "ingest/text", data=payload)
         doc = self._client._logic._parse_document_response(response)
         doc._client = self._client
         return doc
-        
+
     async def ingest_file(
         self,
         file: Union[str, bytes, BinaryIO, Path],
@@ -620,9 +603,9 @@ class AsyncUserScope:
             data = {
                 "metadata": json.dumps(metadata or {}),
                 "rules": json.dumps([self._client._convert_rule(r) for r in (rules or [])]),
-                "end_user_id": self._end_user_id  # Add end user ID here
+                "end_user_id": self._end_user_id,  # Add end user ID here
             }
-            
+
             # Add folder name if scoped to a folder
             if self._folder_name:
                 data["folder_name"] = self._folder_name
@@ -635,7 +618,7 @@ class AsyncUserScope:
             # Close file if we opened it
             if isinstance(file, (str, Path)):
                 file_obj.close()
-                
+
     async def ingest_files(
         self,
         files: List[Union[str, bytes, BinaryIO, Path]],
@@ -674,7 +657,9 @@ class AsyncUserScope:
             if rules:
                 if all(isinstance(r, list) for r in rules):
                     # List of lists - per-file rules
-                    converted_rules = [[self._client._convert_rule(r) for r in rule_list] for rule_list in rules]
+                    converted_rules = [
+                        [self._client._convert_rule(r) for r in rule_list] for rule_list in rules
+                    ]
                 else:
                     # Flat list - shared rules for all files
                     converted_rules = [self._client._convert_rule(r) for r in rules]
@@ -686,21 +671,25 @@ class AsyncUserScope:
                 "rules": json.dumps(converted_rules),
                 "use_colpali": str(use_colpali).lower() if use_colpali is not None else None,
                 "parallel": str(parallel).lower(),
-                "end_user_id": self._end_user_id  # Add end user ID here
+                "end_user_id": self._end_user_id,  # Add end user ID here
             }
-            
+
             # Add folder name if scoped to a folder
             if self._folder_name:
                 data["folder_name"] = self._folder_name
 
-            response = await self._client._request("POST", "ingest/files", data=data, files=file_objects)
-            
+            response = await self._client._request(
+                "POST", "ingest/files", data=data, files=file_objects
+            )
+
             if response.get("errors"):
                 # Log errors but don't raise exception
                 for error in response["errors"]:
                     logger.error(f"Failed to ingest {error['filename']}: {error['error']}")
-            
-            docs = [self._client._logic._parse_document_response(doc) for doc in response["documents"]]
+
+            docs = [
+                self._client._logic._parse_document_response(doc) for doc in response["documents"]
+            ]
             for doc in docs:
                 doc._client = self._client
             return docs
@@ -709,7 +698,7 @@ class AsyncUserScope:
             for _, (_, file_obj) in file_objects:
                 if isinstance(file_obj, (IOBase, BytesIO)) and not file_obj.closed:
                     file_obj.close()
-                    
+
     async def ingest_directory(
         self,
         directory: Union[str, Path],
@@ -747,19 +736,15 @@ class AsyncUserScope:
 
         # Filter out directories
         files = [f for f in files if f.is_file()]
-        
+
         if not files:
             return []
 
         # Use ingest_files with collected paths
         return await self.ingest_files(
-            files=files,
-            metadata=metadata,
-            rules=rules,
-            use_colpali=use_colpali,
-            parallel=parallel
+            files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
         )
-        
+
     async def retrieve_chunks(
         self,
         query: str,
@@ -777,7 +762,7 @@ class AsyncUserScope:
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
-            
+
         Returns:
             List[FinalChunkResult]: List of relevant chunks
         """
@@ -786,7 +771,7 @@ class AsyncUserScope:
         )
         response = await self._client._request("POST", "retrieve/chunks", data=payload)
         return self._client._logic._parse_chunk_result_list_response(response)
-        
+
     async def retrieve_docs(
         self,
         query: str,
@@ -804,7 +789,7 @@ class AsyncUserScope:
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
-            
+
         Returns:
             List[DocumentResult]: List of relevant documents
         """
@@ -813,7 +798,7 @@ class AsyncUserScope:
         )
         response = await self._client._request("POST", "retrieve/docs", data=payload)
         return self._client._logic._parse_document_result_list_response(response)
-        
+
     async def query(
         self,
         query: str,
@@ -843,18 +828,28 @@ class AsyncUserScope:
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
-            
+
         Returns:
             CompletionResponse: Generated completion
         """
         payload = self._client._logic._prepare_query_request(
-            query, filters, k, min_score, max_tokens, temperature,
-            use_colpali, graph_name, hop_depth, include_paths,
-            prompt_overrides, self._folder_name, self._end_user_id
+            query,
+            filters,
+            k,
+            min_score,
+            max_tokens,
+            temperature,
+            use_colpali,
+            graph_name,
+            hop_depth,
+            include_paths,
+            prompt_overrides,
+            self._folder_name,
+            self._end_user_id,
         )
         response = await self._client._request("POST", "query", data=payload)
         return self._client._logic._parse_completion_response(response)
-        
+
     async def list_documents(
         self, skip: int = 0, limit: int = 100, filters: Optional[Dict[str, Any]] = None
     ) -> List[Document]:
@@ -869,44 +864,52 @@ class AsyncUserScope:
         Returns:
             List[Document]: List of documents
         """
-        params, data = self._client._logic._prepare_list_documents_request(skip, limit, filters, self._folder_name, self._end_user_id)
+        params, data = self._client._logic._prepare_list_documents_request(
+            skip, limit, filters, self._folder_name, self._end_user_id
+        )
         response = await self._client._request("POST", "documents", data=data, params=params)
         docs = self._client._logic._parse_document_list_response(response)
         for doc in docs:
             doc._client = self._client
         return docs
-        
+
     async def batch_get_documents(self, document_ids: List[str]) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation for this end user.
-        
+
         Args:
             document_ids: List of document IDs to retrieve
-            
+
         Returns:
             List[Document]: List of document metadata for found documents
         """
-        request = self._client._logic._prepare_batch_get_documents_request(document_ids, self._folder_name, self._end_user_id)
+        request = self._client._logic._prepare_batch_get_documents_request(
+            document_ids, self._folder_name, self._end_user_id
+        )
         response = await self._client._request("POST", "batch/documents", data=request)
         docs = self._client._logic._parse_document_list_response(response)
         for doc in docs:
             doc._client = self._client
         return docs
-        
-    async def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
+
+    async def batch_get_chunks(
+        self, sources: List[Union[ChunkSource, Dict[str, Any]]]
+    ) -> List[FinalChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation for this end user.
-        
+
         Args:
             sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
-            
+
         Returns:
             List[FinalChunkResult]: List of chunk results
         """
-        request = self._client._logic._prepare_batch_get_chunks_request(sources, self._folder_name, self._end_user_id)
+        request = self._client._logic._prepare_batch_get_chunks_request(
+            sources, self._folder_name, self._end_user_id
+        )
         response = await self._client._request("POST", "batch/chunks", data=request)
         return self._client._logic._parse_chunk_result_list_response(response)
-        
+
     async def create_graph(
         self,
         name: str,
@@ -931,7 +934,7 @@ class AsyncUserScope:
         )
         response = await self._client._request("POST", "graph/create", data=request)
         return self._client._logic._parse_graph_response(response)
-        
+
     async def update_graph(
         self,
         name: str,
@@ -941,45 +944,50 @@ class AsyncUserScope:
     ) -> Graph:
         """
         Update an existing graph with new documents for this end user.
-        
+
         Args:
             name: Name of the graph to update
             additional_filters: Optional additional metadata filters to determine which new documents to include
             additional_documents: Optional list of additional document IDs to include
             prompt_overrides: Optional customizations for entity extraction and resolution prompts
-            
+
         Returns:
             Graph: The updated graph
         """
         request = self._client._logic._prepare_update_graph_request(
-            name, additional_filters, additional_documents, prompt_overrides, self._folder_name, self._end_user_id
+            name,
+            additional_filters,
+            additional_documents,
+            prompt_overrides,
+            self._folder_name,
+            self._end_user_id,
         )
         response = await self._client._request("POST", f"graph/{name}/update", data=request)
         return self._client._logic._parse_graph_response(response)
-        
+
     async def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
         """
         Delete a document by its filename for this end user.
-        
+
         Args:
             filename: Filename of the document to delete
-            
+
         Returns:
             Dict[str, str]: Deletion status
         """
         # Build parameters for the filename lookup
-        params = {
-            "end_user_id": self._end_user_id
-        }
-        
+        params = {"end_user_id": self._end_user_id}
+
         # Add folder name if scoped to a folder
         if self._folder_name:
             params["folder_name"] = self._folder_name
-        
+
         # First get the document ID
-        response = await self._client._request("GET", f"documents/filename/{filename}", params=params)
+        response = await self._client._request(
+            "GET", f"documents/filename/{filename}", params=params
+        )
         doc = self._client._logic._parse_document_response(response)
-        
+
         # Then delete by ID
         return await self._client.delete_document(doc.external_id)
 
@@ -1011,7 +1019,7 @@ class AsyncMorphik:
         self._client = httpx.AsyncClient(
             timeout=self._logic._timeout,
             verify=not self._logic._is_local,
-            http2=False if self._logic._is_local else True
+            http2=False if self._logic._is_local else True,
         )
 
     async def _request(
@@ -1051,38 +1059,38 @@ class AsyncMorphik:
     def _convert_rule(self, rule: RuleOrDict) -> Dict[str, Any]:
         """Convert a rule to a dictionary format"""
         return self._logic._convert_rule(rule)
-        
+
     def create_folder(self, name: str) -> AsyncFolder:
         """
         Create a folder to scope operations.
-        
+
         Args:
             name: The name of the folder
-            
+
         Returns:
             AsyncFolder: A folder object for scoped operations
         """
         return AsyncFolder(self, name)
-        
+
     def get_folder(self, name: str) -> AsyncFolder:
         """
         Get a folder by name to scope operations.
-        
+
         Args:
             name: The name of the folder
-            
+
         Returns:
             AsyncFolder: A folder object for scoped operations
         """
         return AsyncFolder(self, name)
-        
+
     def signin(self, end_user_id: str) -> AsyncUserScope:
         """
         Sign in as an end user to scope operations.
-        
+
         Args:
             end_user_id: The ID of the end user
-            
+
         Returns:
             AsyncUserScope: A user scope object for scoped operations
         """
@@ -1143,37 +1151,28 @@ class AsyncMorphik:
     async def ingest_file(
         self,
         file: Union[str, bytes, BinaryIO, Path],
-        filename: str,
+        filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
         use_colpali: bool = True,
     ) -> Document:
         """Ingest a file document into Morphik."""
-        # Handle different file input types
-        if isinstance(file, (str, Path)):
-            file_path = Path(file)
-            if not file_path.exists():
-                raise ValueError(f"File not found: {file}")
-            with open(file_path, "rb") as f:
-                content = f.read()
-                file_obj = BytesIO(content)
-        elif isinstance(file, bytes):
-            file_obj = BytesIO(file)
-        else:
-            file_obj = file
+        # Process file input
+        file_obj, filename = self._logic._prepare_file_for_upload(file, filename)
 
         try:
             # Prepare multipart form data
             files = {"file": (filename, file_obj)}
 
-            # Add metadata and rules
-            data = {
-                "metadata": json.dumps(metadata or {}),
-                "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
-                "use_colpali": json.dumps(use_colpali),
-            }
+            # Create form data
+            form_data = self._logic._prepare_ingest_file_form_data(metadata, rules, None, None)
 
-            response = await self._request("POST", "ingest/file", data=data, files=files)
+            response = await self._request(
+                "POST",
+                f"ingest/file?use_colpali={str(use_colpali).lower()}",
+                data=form_data,
+                files=files,
+            )
             doc = self._logic._parse_document_response(response)
             doc._client = self
             return doc
@@ -1207,43 +1206,21 @@ class AsyncMorphik:
             ValueError: If metadata list length doesn't match files length
         """
         # Convert files to format expected by API
-        file_objects = []
-        for file in files:
-            if isinstance(file, (str, Path)):
-                path = Path(file)
-                file_objects.append(("files", (path.name, open(path, "rb"))))
-            elif isinstance(file, bytes):
-                file_objects.append(("files", ("file.bin", file)))
-            else:
-                file_objects.append(("files", (getattr(file, "name", "file.bin"), file)))
+        file_objects = self._logic._prepare_files_for_upload(files)
 
         try:
-            # Prepare request data
-            # Convert rules appropriately based on whether it's a flat list or list of lists
-            if rules:
-                if all(isinstance(r, list) for r in rules):
-                    # List of lists - per-file rules
-                    converted_rules = [[self._convert_rule(r) for r in rule_list] for rule_list in rules]
-                else:
-                    # Flat list - shared rules for all files
-                    converted_rules = [self._convert_rule(r) for r in rules]
-            else:
-                converted_rules = []
-
-            data = {
-                "metadata": json.dumps(metadata or {}),
-                "rules": json.dumps(converted_rules),
-                "use_colpali": str(use_colpali).lower() if use_colpali is not None else None,
-                "parallel": str(parallel).lower(),
-            }
+            # Prepare form data
+            data = self._logic._prepare_ingest_files_form_data(
+                metadata, rules, use_colpali, parallel, None, None
+            )
 
             response = await self._request("POST", "ingest/files", data=data, files=file_objects)
-            
+
             if response.get("errors"):
                 # Log errors but don't raise exception
                 for error in response["errors"]:
                     logger.error(f"Failed to ingest {error['filename']}: {error['error']}")
-            
+
             # Parse the documents from the response
             docs = [self._logic._parse_document_response(doc) for doc in response["documents"]]
             for doc in docs:
@@ -1295,17 +1272,13 @@ class AsyncMorphik:
 
         # Filter out directories
         files = [f for f in files if f.is_file()]
-        
+
         if not files:
             return []
 
         # Use ingest_files with collected paths
         return await self.ingest_files(
-            files=files,
-            metadata=metadata,
-            rules=rules,
-            use_colpali=use_colpali,
-            parallel=parallel
+            files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
         )
 
     async def retrieve_chunks(
@@ -1417,7 +1390,7 @@ class AsyncMorphik:
                 filters={"department": "research"},
                 temperature=0.7
             )
-            
+
             # Knowledge graph enhanced query
             response = await db.query(
                 "How does product X relate to customer segment Y?",
@@ -1425,7 +1398,7 @@ class AsyncMorphik:
                 hop_depth=2,
                 include_paths=True
             )
-            
+
             # With prompt customization
             from morphik.models import QueryPromptOverride, QueryPromptOverrides
             response = await db.query(
@@ -1436,7 +1409,7 @@ class AsyncMorphik:
                     )
                 )
             )
-            
+
             # Or using a dictionary
             response = await db.query(
                 "What are the key findings?",
@@ -1446,9 +1419,9 @@ class AsyncMorphik:
                     }
                 }
             )
-            
+
             print(response.completion)
-            
+
             # If include_paths=True, you can inspect the graph paths
             if response.metadata and "graph" in response.metadata:
                 for path in response.metadata["graph"]["paths"]:
@@ -1456,9 +1429,19 @@ class AsyncMorphik:
             ```
         """
         payload = self._logic._prepare_query_request(
-            query, filters, k, min_score, max_tokens, temperature,
-            use_colpali, graph_name, hop_depth, include_paths,
-            prompt_overrides, None, None
+            query,
+            filters,
+            k,
+            min_score,
+            max_tokens,
+            temperature,
+            use_colpali,
+            graph_name,
+            hop_depth,
+            include_paths,
+            prompt_overrides,
+            None,
+            None,
         )
         response = await self._request("POST", "query", data=payload)
         return self._logic._parse_completion_response(response)
@@ -1513,7 +1496,7 @@ class AsyncMorphik:
         doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
-        
+
     async def get_document_by_filename(self, filename: str) -> Document:
         """
         Get document metadata by filename.
@@ -1535,7 +1518,7 @@ class AsyncMorphik:
         doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
-        
+
     async def update_document_with_text(
         self,
         document_id: str,
@@ -1548,7 +1531,7 @@ class AsyncMorphik:
     ) -> Document:
         """
         Update a document with new text content using the specified strategy.
-        
+
         Args:
             document_id: ID of the document to update
             content: The new content to add
@@ -1557,10 +1540,10 @@ class AsyncMorphik:
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
             use_colpali: Whether to use multi-vector embedding
-            
+
         Returns:
             Document: Updated document metadata
-            
+
         Example:
             ```python
             # Add new content to an existing document
@@ -1582,22 +1565,19 @@ class AsyncMorphik:
             rules=[self._convert_rule(r) for r in (rules or [])],
             use_colpali=use_colpali if use_colpali is not None else True,
         )
-        
+
         params = {}
         if update_strategy != "add":
             params["update_strategy"] = update_strategy
-            
+
         response = await self._request(
-            "POST", 
-            f"documents/{document_id}/update_text", 
-            data=request.model_dump(),
-            params=params
+            "POST", f"documents/{document_id}/update_text", data=request.model_dump(), params=params
         )
-        
+
         doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
-        
+
     async def update_document_with_file(
         self,
         document_id: str,
@@ -1610,7 +1590,7 @@ class AsyncMorphik:
     ) -> Document:
         """
         Update a document with content from a file using the specified strategy.
-        
+
         Args:
             document_id: ID of the document to update
             file: File to add (path string, bytes, file object, or Path)
@@ -1619,10 +1599,10 @@ class AsyncMorphik:
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
             use_colpali: Whether to use multi-vector embedding
-            
+
         Returns:
             Document: Updated document metadata
-            
+
         Example:
             ```python
             # Add content from a file to an existing document
@@ -1652,26 +1632,26 @@ class AsyncMorphik:
             if filename is None:
                 raise ValueError("filename is required when updating with file object")
             file_obj = file
-            
+
         try:
             # Prepare multipart form data
             files = {"file": (filename, file_obj)}
-            
+
             # Convert metadata and rules to JSON strings
             form_data = {
                 "metadata": json.dumps(metadata or {}),
                 "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
                 "update_strategy": update_strategy,
             }
-            
+
             if use_colpali is not None:
                 form_data["use_colpali"] = str(use_colpali).lower()
-                
+
             # Use the dedicated file update endpoint
             response = await self._request(
                 "POST", f"documents/{document_id}/update_file", data=form_data, files=files
             )
-            
+
             doc = self._logic._parse_document_response(response)
             doc._client = self
             return doc
@@ -1679,7 +1659,7 @@ class AsyncMorphik:
             # Close file if we opened it
             if isinstance(file, (str, Path)):
                 file_obj.close()
-    
+
     async def update_document_metadata(
         self,
         document_id: str,
@@ -1687,14 +1667,14 @@ class AsyncMorphik:
     ) -> Document:
         """
         Update a document's metadata only.
-        
+
         Args:
             document_id: ID of the document to update
             metadata: Metadata to update
-            
+
         Returns:
             Document: Updated document metadata
-            
+
         Example:
             ```python
             # Update just the metadata of a document
@@ -1706,11 +1686,13 @@ class AsyncMorphik:
             ```
         """
         # Use the dedicated metadata update endpoint
-        response = await self._request("POST", f"documents/{document_id}/update_metadata", data=metadata)
+        response = await self._request(
+            "POST", f"documents/{document_id}/update_metadata", data=metadata
+        )
         doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
-        
+
     async def update_document_by_filename_with_text(
         self,
         filename: str,
@@ -1751,7 +1733,7 @@ class AsyncMorphik:
         """
         # First get the document by filename to obtain its ID
         doc = await self.get_document_by_filename(filename)
-        
+
         # Then use the regular update_document_with_text endpoint with the document ID
         return await self.update_document_with_text(
             document_id=doc.external_id,
@@ -1760,9 +1742,9 @@ class AsyncMorphik:
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali
+            use_colpali=use_colpali,
         )
-        
+
     async def update_document_by_filename_with_file(
         self,
         filename: str,
@@ -1802,7 +1784,7 @@ class AsyncMorphik:
         """
         # First get the document by filename to obtain its ID
         doc = await self.get_document_by_filename(filename)
-        
+
         # Then use the regular update_document_with_file endpoint with the document ID
         return await self.update_document_with_file(
             document_id=doc.external_id,
@@ -1811,9 +1793,9 @@ class AsyncMorphik:
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali
+            use_colpali=use_colpali,
         )
-                
+
     async def update_document_by_filename_metadata(
         self,
         filename: str,
@@ -1822,15 +1804,15 @@ class AsyncMorphik:
     ) -> Document:
         """
         Update a document's metadata using filename to identify the document.
-        
+
         Args:
             filename: Filename of the document to update
             metadata: Metadata to update
             new_filename: Optional new filename to assign to the document
-            
+
         Returns:
             Document: Updated document metadata
-            
+
         Example:
             ```python
             # Update just the metadata of a document identified by filename
@@ -1844,44 +1826,44 @@ class AsyncMorphik:
         """
         # First get the document by filename to obtain its ID
         doc = await self.get_document_by_filename(filename)
-        
+
         # Update the metadata
         result = await self.update_document_metadata(
             document_id=doc.external_id,
             metadata=metadata,
         )
-        
+
         # If new_filename is provided, update the filename as well
         if new_filename:
             # Create a request that retains the just-updated metadata but also changes filename
             combined_metadata = result.metadata.copy()
-            
+
             # Update the document again with filename change and the same metadata
             response = await self._request(
-                "POST", 
-                f"documents/{doc.external_id}/update_text", 
+                "POST",
+                f"documents/{doc.external_id}/update_text",
                 data={
-                    "content": "", 
+                    "content": "",
                     "filename": new_filename,
                     "metadata": combined_metadata,
-                    "rules": []
-                }
+                    "rules": [],
+                },
             )
             result = self._logic._parse_document_response(response)
             result._client = self
-            
+
         return result
-    
+
     async def batch_get_documents(self, document_ids: List[str]) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
-        
+
         Args:
             document_ids: List of document IDs to retrieve
-            
+
         Returns:
             List[Document]: List of document metadata for found documents
-            
+
         Example:
             ```python
             docs = await db.batch_get_documents(["doc_123", "doc_456", "doc_789"])
@@ -1895,17 +1877,19 @@ class AsyncMorphik:
         for doc in docs:
             doc._client = self
         return docs
-        
-    async def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
+
+    async def batch_get_chunks(
+        self, sources: List[Union[ChunkSource, Dict[str, Any]]]
+    ) -> List[FinalChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation.
-        
+
         Args:
             sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
-            
+
         Returns:
             List[FinalChunkResult]: List of chunk results
-            
+
         Example:
             ```python
             # Using dictionaries
@@ -1913,14 +1897,14 @@ class AsyncMorphik:
                 {"document_id": "doc_123", "chunk_number": 0},
                 {"document_id": "doc_456", "chunk_number": 2}
             ]
-            
+
             # Or using ChunkSource objects
             from morphik.models import ChunkSource
             sources = [
                 ChunkSource(document_id="doc_123", chunk_number=0),
                 ChunkSource(document_id="doc_456", chunk_number=2)
             ]
-            
+
             chunks = await db.batch_get_chunks(sources)
             for chunk in chunks:
                 print(f"Chunk from {chunk.document_id}, number {chunk.chunk_number}: {chunk.content[:50]}...")
@@ -2030,11 +2014,11 @@ class AsyncMorphik:
                 name="custom_graph",
                 documents=["doc1", "doc2", "doc3"]
             )
-            
+
             # With custom entity extraction examples
             from morphik.models import EntityExtractionPromptOverride, EntityExtractionExample, GraphPromptOverrides
             graph = await db.create_graph(
-                name="medical_graph", 
+                name="medical_graph",
                 filters={"category": "medical"},
                 prompt_overrides=GraphPromptOverrides(
                     entity_extraction=EntityExtractionPromptOverride(
@@ -2133,7 +2117,7 @@ class AsyncMorphik:
                     entity_resolution=EntityResolutionPromptOverride(
                         examples=[
                             EntityResolutionExample(
-                                canonical="Machine Learning", 
+                                canonical="Machine Learning",
                                 variants=["ML", "machine learning", "AI/ML"]
                             )
                         ]
@@ -2147,22 +2131,22 @@ class AsyncMorphik:
         )
         response = await self._request("POST", f"graph/{name}/update", data=request)
         return self._logic._parse_graph_response(response)
-        
+
     async def delete_document(self, document_id: str) -> Dict[str, str]:
         """
         Delete a document and all its associated data.
-        
+
         This method deletes a document and all its associated data, including:
         - Document metadata
         - Document content in storage
         - Document chunks and embeddings in vector store
-        
+
         Args:
             document_id: ID of the document to delete
-            
+
         Returns:
             Dict[str, str]: Deletion status
-            
+
         Example:
             ```python
             # Delete a document
@@ -2172,20 +2156,20 @@ class AsyncMorphik:
         """
         response = await self._request("DELETE", f"documents/{document_id}")
         return response
-        
+
     async def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
         """
         Delete a document by its filename.
-        
+
         This is a convenience method that first retrieves the document ID by filename
         and then deletes the document by ID.
-        
+
         Args:
             filename: Filename of the document to delete
-            
+
         Returns:
             Dict[str, str]: Deletion status
-            
+
         Example:
             ```python
             # Delete a document by filename
@@ -2195,7 +2179,7 @@ class AsyncMorphik:
         """
         # First get the document by filename to obtain its ID
         doc = await self.get_document_by_filename(filename)
-        
+
         # Then delete the document by ID
         return await self.delete_document(doc.external_id)
 

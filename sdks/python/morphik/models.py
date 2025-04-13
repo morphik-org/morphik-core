@@ -21,10 +21,10 @@ class Document(BaseModel):
         default_factory=dict, description="Access control information"
     )
     chunk_ids: List[str] = Field(default_factory=list, description="IDs of document chunks")
-    
+
     # Client reference for update methods
     _client = None
-    
+
     def update_with_text(
         self,
         content: str,
@@ -36,7 +36,7 @@ class Document(BaseModel):
     ) -> "Document":
         """
         Update this document with new text content using the specified strategy.
-        
+
         Args:
             content: The new content to add
             filename: Optional new filename for the document
@@ -44,13 +44,15 @@ class Document(BaseModel):
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
             use_colpali: Whether to use multi-vector embedding
-            
+
         Returns:
             Document: Updated document metadata
         """
         if self._client is None:
-            raise ValueError("Document instance not connected to a client. Use a document returned from a Morphik client method.")
-            
+            raise ValueError(
+                "Document instance not connected to a client. Use a document returned from a Morphik client method."
+            )
+
         return self._client.update_document_with_text(
             document_id=self.external_id,
             content=content,
@@ -58,9 +60,9 @@ class Document(BaseModel):
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali
+            use_colpali=use_colpali,
         )
-        
+
     def update_with_file(
         self,
         file: "Union[str, bytes, BinaryIO, Path]",
@@ -72,7 +74,7 @@ class Document(BaseModel):
     ) -> "Document":
         """
         Update this document with content from a file using the specified strategy.
-        
+
         Args:
             file: File to add (path string, bytes, file object, or Path)
             filename: Name of the file
@@ -80,13 +82,15 @@ class Document(BaseModel):
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
             use_colpali: Whether to use multi-vector embedding
-            
+
         Returns:
             Document: Updated document metadata
         """
         if self._client is None:
-            raise ValueError("Document instance not connected to a client. Use a document returned from a Morphik client method.")
-            
+            raise ValueError(
+                "Document instance not connected to a client. Use a document returned from a Morphik client method."
+            )
+
         return self._client.update_document_with_file(
             document_id=self.external_id,
             file=file,
@@ -94,28 +98,29 @@ class Document(BaseModel):
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali
+            use_colpali=use_colpali,
         )
-        
+
     def update_metadata(
         self,
         metadata: Dict[str, Any],
     ) -> "Document":
         """
         Update this document's metadata only.
-        
+
         Args:
             metadata: Metadata to update
-            
+
         Returns:
             Document: Updated document metadata
         """
         if self._client is None:
-            raise ValueError("Document instance not connected to a client. Use a document returned from a Morphik client method.")
-            
+            raise ValueError(
+                "Document instance not connected to a client. Use a document returned from a Morphik client method."
+            )
+
         return self._client.update_document_metadata(
-            document_id=self.external_id,
-            metadata=metadata
+            document_id=self.external_id, metadata=metadata
         )
 
 
@@ -159,7 +164,7 @@ class DocumentResult(BaseModel):
 
 class ChunkSource(BaseModel):
     """Source information for a chunk used in completion"""
-    
+
     document_id: str = Field(..., description="ID of the source document")
     chunk_number: int = Field(..., description="Chunk number within the document")
     score: Optional[float] = Field(None, description="Relevance score")
@@ -194,7 +199,9 @@ class Entity(BaseModel):
     type: str = Field(..., description="Entity type")
     properties: Dict[str, Any] = Field(default_factory=dict, description="Entity properties")
     document_ids: List[str] = Field(default_factory=list, description="Source document IDs")
-    chunk_sources: Dict[str, List[int]] = Field(default_factory=dict, description="Source chunk numbers by document ID")
+    chunk_sources: Dict[str, List[int]] = Field(
+        default_factory=dict, description="Source chunk numbers by document ID"
+    )
 
     def __hash__(self):
         return hash(self.id)
@@ -213,7 +220,9 @@ class Relationship(BaseModel):
     target_id: str = Field(..., description="Target entity ID")
     type: str = Field(..., description="Relationship type")
     document_ids: List[str] = Field(default_factory=list, description="Source document IDs")
-    chunk_sources: Dict[str, List[int]] = Field(default_factory=dict, description="Source chunk numbers by document ID")
+    chunk_sources: Dict[str, List[int]] = Field(
+        default_factory=dict, description="Source chunk numbers by document ID"
+    )
 
     def __hash__(self):
         return hash(self.id)
@@ -230,10 +239,14 @@ class Graph(BaseModel):
     id: str = Field(..., description="Unique graph identifier")
     name: str = Field(..., description="Graph name")
     entities: List[Entity] = Field(default_factory=list, description="Entities in the graph")
-    relationships: List[Relationship] = Field(default_factory=list, description="Relationships in the graph")
+    relationships: List[Relationship] = Field(
+        default_factory=list, description="Relationships in the graph"
+    )
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Graph metadata")
     document_ids: List[str] = Field(default_factory=list, description="Source document IDs")
-    filters: Optional[Dict[str, Any]] = Field(None, description="Document filters used to create the graph")
+    filters: Optional[Dict[str, Any]] = Field(
+        None, description="Document filters used to create the graph"
+    )
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
     owner: Dict[str, str] = Field(default_factory=dict, description="Graph owner information")
