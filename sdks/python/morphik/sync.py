@@ -1,12 +1,11 @@
-import base64
-from io import BytesIO, IOBase
-import io
-from PIL.Image import Image as PILImage
-from PIL import Image
 import json
 import logging
+from io import BytesIO, IOBase
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, BinaryIO
+
+from PIL import Image
+from PIL.Image import Image as PILImage
 
 import httpx
 
@@ -407,7 +406,7 @@ class Folder:
         request = {"document_ids": document_ids, "folder_name": self._name}
 
         response = self._client._request("POST", "batch/documents", data=request)
-        docs = [self._logic._parse_document_response(doc) for doc in response]
+        docs = [self._client._logic._parse_document_response(doc) for doc in response]
         for doc in docs:
             doc._client = self._client
         return docs
@@ -929,7 +928,7 @@ class UserScope:
 
         response = self._client._request("POST", f"documents", data=filters or {}, params=params)
 
-        docs = [self._logic._parse_document_response(doc) for doc in response]
+        docs = [self._client._logic._parse_document_response(doc) for doc in response]
         for doc in docs:
             doc._client = self._client
         return docs
@@ -951,7 +950,7 @@ class UserScope:
             request["folder_name"] = self._folder_name
 
         response = self._client._request("POST", "batch/documents", data=request)
-        docs = [self._logic._parse_document_response(doc) for doc in response]
+        docs = [self._client._logic._parse_document_response(doc) for doc in response]
         for doc in docs:
             doc._client = self._client
         return docs

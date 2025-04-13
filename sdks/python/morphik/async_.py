@@ -1,6 +1,6 @@
-from io import BytesIO, IOBase
 import json
 import logging
+from io import BytesIO, IOBase
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, BinaryIO
 
@@ -9,18 +9,12 @@ from PIL.Image import Image as PILImage
 
 from .models import (
     Document,
-    ChunkResult,
     DocumentResult,
     CompletionResponse,
     IngestTextRequest,
     ChunkSource,
     Graph,
     # Prompt override models
-    EntityExtractionExample,
-    EntityResolutionExample,
-    EntityExtractionPromptOverride,
-    EntityResolutionPromptOverride,
-    QueryPromptOverride,
     GraphPromptOverrides,
     QueryPromptOverrides,
 )
@@ -1222,7 +1216,7 @@ class AsyncMorphik:
                     logger.error(f"Failed to ingest {error['filename']}: {error['error']}")
 
             # Parse the documents from the response
-            docs = [self._logic._parse_document_response(doc) for doc in response["documents"]]
+            docs = [self._client._logic._parse_document_response(doc) for doc in response["documents"]]
             for doc in docs:
                 doc._client = self
             return docs

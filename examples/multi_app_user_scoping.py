@@ -8,7 +8,7 @@ load_dotenv()
 # Connect to Morphik
 db = Morphik(os.getenv("MORPHIK_URI"), timeout=10000, is_local=True)
 
-print("========== Folder Scoping Example ==========")
+print("========== Customer Support Example ==========")
 # Create a folder for application data
 app_folder = db.create_folder("customer-support")
 print(f"Created folder: {app_folder.name}")
@@ -80,14 +80,3 @@ folder_user_response = folder_user.query(
 )
 print("\nFolder User Query Results:")
 print(folder_user_response.completion)
-
-# Update a document with user scope in folder context
-updated_doc = folder_user.update_document_with_text(
-    document_id=folder_doc.external_id,
-    content="\nUpdate: Issue confirmed in Chrome version 120. Working on a fix.",
-    update_strategy="add",
-    metadata={"status": "in-progress"}
-)
-print(f"\nUser updated document in folder. New status: {updated_doc.metadata.get('status')}")
-
-print("\nExample complete! Successfully demonstrated folder and user scoping")
