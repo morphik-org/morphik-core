@@ -134,6 +134,15 @@ async def initialize_vector_store():
         else:
             logger.error("Multivector store initialization failed")
 
+@app.on_event("startup")
+async def initialize_user_limits_database():
+    """Initialize user service on application startup."""
+    logger.info("Initializing user service...")
+    if settings.MODE == "cloud":
+        from core.database.user_limits_db import UserLimitsDatabase
+        user_limits_db = UserLimitsDatabase(uri=settings.POSTGRES_URI)
+        await user_limits_db.initialize()
+
 # Initialize vector store
 match settings.VECTOR_STORE_PROVIDER:
     case "mongodb":
@@ -1319,74 +1328,4 @@ async def generate_cloud_uri(
         raise
     except Exception as e:
         logger.error(f"Error generating cloud URI: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/user/upgrade", include_in_schema=True)
-async def upgrade_user_tier(
-    user_id: str,
-    tier: str,
-    custom_limits: Optional[Dict[str, Any]] = None,
-    authorization: str = Header(None),
-) -> Dict[str, Any]:
-    """Upgrade a user to a higher tier."""
-    try:
-        # Verify admin authorization
-        if not authorization:
-            raise HTTPException(
-                status_code=401,
-                detail="Missing authorization header",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        if not authorization.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Invalid authorization header")
-            
-        token = authorization[7:]  # Remove "Bearer "
-        
-        try:
-            # Decode token
-            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-            
-            # Only allow admins to upgrade users
-            if "admin" not in payload.get("permissions", []):
-                raise HTTPException(
-                    status_code=403,
-                    detail="Admin permission required"
-                )
-        except jwt.InvalidTokenError as e:
-            raise HTTPException(status_code=401, detail=str(e))
-        
-        # Validate tier
-        from core.models.tiers import AccountTier
-        try:
-            account_tier = AccountTier(tier)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid tier: {tier}")
-        
-        # Upgrade user
-        from core.services.user_service import UserService
-        user_service = UserService()
-        
-        # Initialize user service
-        await user_service.initialize()
-        
-        # Update user tier
-        success = await user_service.update_user_tier(user_id, tier, custom_limits)
-        
-        if not success:
-            raise HTTPException(
-                status_code=404,
-                detail="User not found or upgrade failed"
-            )
-        
-        return {
-            "user_id": user_id,
-            "tier": tier,
-            "message": f"User upgraded to {tier} tier"
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error upgrading user tier: {e}")
         raise HTTPException(status_code=500, detail=str(e))
