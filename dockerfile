@@ -99,15 +99,15 @@ storage_path = "/app/storage"\n\
 \n\
 [vector_store]\n\
 provider = "pgvector"\n\
-' > /app/databridge.toml.default
+' > /app/morphik.toml.default
 
 # Create startup script
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
 # Copy default config if none exists\n\
-if [ ! -f /app/databridge.toml ]; then\n\
-    cp /app/databridge.toml.default /app/databridge.toml\n\
+if [ ! -f /app/morphik.toml ]; then\n\
+    cp /app/morphik.toml.default /app/morphik.toml\n\
 fi\n\
 \n\
 # Function to check PostgreSQL\n\
@@ -116,7 +116,7 @@ check_postgres() {\n\
         echo "Waiting for PostgreSQL..."\n\
         max_retries=30\n\
         retries=0\n\
-        until PGPASSWORD=$PGPASSWORD pg_isready -h postgres -U databridge -d databridge; do\n\
+        until PGPASSWORD=$PGPASSWORD pg_isready -h postgres -U morphik -d morphik; do\n\
             retries=$((retries + 1))\n\
             if [ $retries -eq $max_retries ]; then\n\
                 echo "Error: PostgreSQL did not become ready in time"\n\
@@ -128,7 +128,7 @@ check_postgres() {\n\
         echo "PostgreSQL is ready!"\n\
         \n\
         # Verify database connection\n\
-        if ! PGPASSWORD=$PGPASSWORD psql -h postgres -U databridge -d databridge -c "SELECT 1" > /dev/null 2>&1; then\n\
+        if ! PGPASSWORD=$PGPASSWORD psql -h postgres -U morphik -d morphik -c "SELECT 1" > /dev/null 2>&1; then\n\
             echo "Error: Could not connect to PostgreSQL database"\n\
             exit 1\n\
         fi\n\
@@ -148,9 +148,9 @@ COPY core ./core
 COPY README.md LICENSE ./
 
 # Labels for the image
-LABEL org.opencontainers.image.title="DataBridge Core"
-LABEL org.opencontainers.image.description="DataBridge Core - A powerful document processing and retrieval system"
-LABEL org.opencontainers.image.source="https://github.com/yourusername/databridge"
+LABEL org.opencontainers.image.title="Morphik Core"
+LABEL org.opencontainers.image.description="Morphik Core - A powerful document processing and retrieval system"
+LABEL org.opencontainers.image.source="https://github.com/yourusername/morphik"
 LABEL org.opencontainers.image.version="1.0.0"
 LABEL org.opencontainers.image.licenses="MIT"
 
