@@ -9,15 +9,12 @@ import boto3
 import botocore
 import tomli  # for reading toml files
 from dotenv import find_dotenv, load_dotenv
-from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure, OperationFailure
-from pymongo.operations import SearchIndexModel
 
 # Force reload of environment variables
 load_dotenv(find_dotenv(), override=True)
 
 # Set up argument parser
-parser = argparse.ArgumentParser(description="Setup S3 bucket and MongoDB collections")
+parser = argparse.ArgumentParser(description="Setup S3 bucket")
 parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 parser.add_argument("--quiet", action="store_true", help="Only show warning and error logs")
 args = parser.parse_args()
@@ -47,16 +44,6 @@ with open(config_path, "rb") as f:
 # Extract configuration values
 STORAGE_PROVIDER = CONFIG["storage"]["provider"]
 DATABASE_PROVIDER = CONFIG["database"]["provider"]
-
-# MongoDB specific config
-if "mongodb" in CONFIG["database"]:
-    DATABASE_NAME = CONFIG["database"]["mongodb"]["database_name"]
-    DOCUMENTS_COLLECTION = "documents"
-    CHUNKS_COLLECTION = "document_chunks"
-    if "mongodb" in CONFIG["vector_store"]:
-        VECTOR_DIMENSIONS = CONFIG["embedding"]["dimensions"]
-        VECTOR_INDEX_NAME = "vector_index"
-        SIMILARITY_METRIC = CONFIG["embedding"]["similarity_metric"]
 
 # Extract storage-specific configuration
 if STORAGE_PROVIDER == "aws-s3":
@@ -117,69 +104,6 @@ def bucket_exists(s3_client, bucket_name):
         # raise e
 
 
-def setup_mongodb():
-    """
-    Set up MongoDB database, documents collection, and vector index on documents_chunk collection.
-    """
-    # Load MongoDB URI from .env file
-    mongo_uri = os.getenv("MONGODB_URI")
-    if not mongo_uri:
-        raise ValueError("MONGODB_URI not found in .env file.")
-
-    try:
-        # Connect to MongoDB
-        client = MongoClient(mongo_uri)
-        client.admin.command("ping")  # Check connection
-        LOGGER.info("Connected to MongoDB successfully.")
-
-        # Create or access the database
-        db = client[DATABASE_NAME]
-        LOGGER.info(f"Database '{DATABASE_NAME}' ready.")
-
-        # Create 'documents' collection
-        if DOCUMENTS_COLLECTION not in db.list_collection_names():
-            db.create_collection(DOCUMENTS_COLLECTION)
-            LOGGER.info(f"Collection '{DOCUMENTS_COLLECTION}' created.")
-        else:
-            LOGGER.info(f"Collection '{DOCUMENTS_COLLECTION}' already exists.")
-
-        # Create 'documents_chunk' collection with vector index
-        if CHUNKS_COLLECTION not in db.list_collection_names():
-            db.create_collection(CHUNKS_COLLECTION)
-            LOGGER.info(f"Collection '{CHUNKS_COLLECTION}' created.")
-        else:
-            LOGGER.info(f"Collection '{CHUNKS_COLLECTION}' already exists.")
-
-        vector_index_definition = {
-            "fields": [
-                {
-                    "numDimensions": VECTOR_DIMENSIONS,
-                    "path": "embedding",
-                    "similarity": SIMILARITY_METRIC,
-                    "type": "vector",
-                },
-                {"path": "document_id", "type": "filter"},
-            ]
-        }
-        vector_index = SearchIndexModel(
-            name=VECTOR_INDEX_NAME,
-            definition=vector_index_definition,
-            type="vectorSearch",
-        )
-        db[CHUNKS_COLLECTION].create_search_index(model=vector_index)
-        LOGGER.info("Vector index 'vector_index' created on 'documents_chunk' collection.")
-
-    except ConnectionFailure:
-        LOGGER.error("Failed to connect to MongoDB. Check your MongoDB URI and network connection.")
-    except OperationFailure as e:
-        LOGGER.error(f"MongoDB operation failed: {e}")
-    except Exception as e:
-        LOGGER.error(f"Unexpected error: {e}")
-    finally:
-        client.close()
-        LOGGER.info("MongoDB connection closed.")
-
-
 def setup():
     # Setup S3 if configured
     if STORAGE_PROVIDER == "aws-s3":
@@ -188,16 +112,11 @@ def setup():
         LOGGER.info("S3 bucket setup completed.")
 
     # Setup database based on provider
-    match DATABASE_PROVIDER:
-        case "mongodb":
-            LOGGER.info("Setting up MongoDB...")
-            setup_mongodb()
-            LOGGER.info("MongoDB setup completed.")
-        case "postgres":
-            LOGGER.info("Postgres is setup on database intialization - nothing to do here!")
-        case _:
-            LOGGER.error(f"Unsupported database provider: {DATABASE_PROVIDER}")
-            raise ValueError(f"Unsupported database provider: {DATABASE_PROVIDER}")
+    if DATABASE_PROVIDER != "postgres":
+        LOGGER.error(f"Unsupported database provider: {DATABASE_PROVIDER}")
+        raise ValueError(f"Unsupported database provider: {DATABASE_PROVIDER}")
+        
+    LOGGER.info("Postgres is setup on database initialization - nothing to do here!")
 
     LOGGER.info("Setup completed successfully. Feel free to start the server now!")
 

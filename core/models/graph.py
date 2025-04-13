@@ -50,6 +50,14 @@ class Graph(BaseModel):
     entities: List[Entity] = Field(default_factory=list)
     relationships: List[Relationship] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    system_metadata: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+            "folder_name": None,
+            "end_user_id": None,
+        }
+    )
     document_ids: List[str] = Field(default_factory=list)
     filters: Optional[Dict[str, Any]] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

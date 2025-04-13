@@ -13,7 +13,6 @@ class Settings(BaseSettings):
     # Environment variables
     JWT_SECRET_KEY: str
     POSTGRES_URI: Optional[str] = None
-    MONGODB_URI: Optional[str] = None
     UNSTRUCTURED_API_KEY: Optional[str] = None
     AWS_ACCESS_KEY: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
@@ -42,9 +41,8 @@ class Settings(BaseSettings):
     
 
     # Database configuration
-    DATABASE_PROVIDER: Literal["postgres", "mongodb"]
+    DATABASE_PROVIDER: Literal["postgres"]
     DATABASE_NAME: Optional[str] = None
-    DOCUMENTS_COLLECTION: Optional[str] = None
 
     # Embedding configuration
     EMBEDDING_PROVIDER: Literal["litellm"] = "litellm"
@@ -85,9 +83,8 @@ class Settings(BaseSettings):
     S3_BUCKET: Optional[str] = None
 
     # Vector store configuration
-    VECTOR_STORE_PROVIDER: Literal["pgvector", "mongodb"]
+    VECTOR_STORE_PROVIDER: Literal["pgvector"]
     VECTOR_STORE_DATABASE_NAME: Optional[str] = None
-    VECTOR_STORE_COLLECTION_NAME: Optional[str] = None
 
     # Colpali configuration
     ENABLE_COLPALI: bool
@@ -164,24 +161,17 @@ def get_settings() -> Settings:
 
     # load database config
     database_config = {"DATABASE_PROVIDER": config["database"]["provider"]}
-    match database_config["DATABASE_PROVIDER"]:
-        case "mongodb":
-            database_config.update(
-                {
-                    "DATABASE_NAME": config["database"]["database_name"],
-                    "COLLECTION_NAME": config["database"]["collection_name"],
-                }
-            )
-        case "postgres" if "POSTGRES_URI" in os.environ:
-            database_config.update({"POSTGRES_URI": os.environ["POSTGRES_URI"]})
-        case "postgres":
-            msg = em.format(
-                missing_value="POSTGRES_URI", field="database.provider", value="postgres"
-            )
-            raise ValueError(msg)
-        case _:
-            prov = database_config["DATABASE_PROVIDER"]
-            raise ValueError(f"Unknown database provider selected: '{prov}'")
+    if database_config["DATABASE_PROVIDER"] != "postgres":
+        prov = database_config["DATABASE_PROVIDER"]
+        raise ValueError(f"Unknown database provider selected: '{prov}'")
+        
+    if "POSTGRES_URI" in os.environ:
+        database_config.update({"POSTGRES_URI": os.environ["POSTGRES_URI"]})
+    else:
+        msg = em.format(
+            missing_value="POSTGRES_URI", field="database.provider", value="postgres"
+        )
+        raise ValueError(msg)
 
     # load embedding config
     embedding_config = {
@@ -251,23 +241,15 @@ def get_settings() -> Settings:
 
     # load vector store config
     vector_store_config = {"VECTOR_STORE_PROVIDER": config["vector_store"]["provider"]}
-    match vector_store_config["VECTOR_STORE_PROVIDER"]:
-        case "mongodb":
-            vector_store_config.update(
-                {
-                    "VECTOR_STORE_DATABASE_NAME": config["vector_store"]["database_name"],
-                    "VECTOR_STORE_COLLECTION_NAME": config["vector_store"]["collection_name"],
-                }
-            )
-        case "pgvector":
-            if "POSTGRES_URI" not in os.environ:
-                msg = em.format(
-                    missing_value="POSTGRES_URI", field="vector_store.provider", value="pgvector"
-                )
-                raise ValueError(msg)
-        case _:
-            prov = vector_store_config["VECTOR_STORE_PROVIDER"]
-            raise ValueError(f"Unknown vector store provider selected: '{prov}'")
+    if vector_store_config["VECTOR_STORE_PROVIDER"] != "pgvector":
+        prov = vector_store_config["VECTOR_STORE_PROVIDER"]
+        raise ValueError(f"Unknown vector store provider selected: '{prov}'")
+        
+    if "POSTGRES_URI" not in os.environ:
+        msg = em.format(
+            missing_value="POSTGRES_URI", field="vector_store.provider", value="pgvector"
+        )
+        raise ValueError(msg)
 
     # load rules config
     rules_config = {

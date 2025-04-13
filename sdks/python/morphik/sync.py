@@ -1,41 +1,29 @@
-import base64
-from io import BytesIO, IOBase
-import io
-from PIL.Image import Image as PILImage
-from PIL import Image
 import json
 import logging
+from io import BytesIO, IOBase
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, BinaryIO
-from urllib.parse import urlparse
 
-import jwt
-from pydantic import BaseModel, Field
-import requests
+from PIL import Image
+from PIL.Image import Image as PILImage
+
+import httpx
 
 from .models import (
-    Document, 
-    ChunkResult, 
-    DocumentResult, 
-    CompletionResponse, 
-    IngestTextRequest, 
+    Document,
+    DocumentResult,
+    CompletionResponse,
+    IngestTextRequest,
     ChunkSource,
     Graph,
     # Prompt override models
-    EntityExtractionExample,
-    EntityResolutionExample,
-    EntityExtractionPromptOverride,
-    EntityResolutionPromptOverride,
-    QueryPromptOverride,
     GraphPromptOverrides,
-    QueryPromptOverrides
+    QueryPromptOverrides,
 )
 from .rules import Rule
+from ._internal import _MorphikClientLogic, FinalChunkResult, RuleOrDict
 
 logger = logging.getLogger(__name__)
-
-# Type alias for rules
-RuleOrDict = Union[Rule, Dict[str, Any]]
 
 
 class Cache:
@@ -63,18 +51,1038 @@ class Cache:
         return CompletionResponse(**response)
 
 
-class FinalChunkResult(BaseModel):
-    content: str | PILImage = Field(..., description="Chunk content")
-    score: float = Field(..., description="Relevance score")
-    document_id: str = Field(..., description="Parent document ID")
-    chunk_number: int = Field(..., description="Chunk sequence number")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Document metadata")
-    content_type: str = Field(..., description="Content type")
-    filename: Optional[str] = Field(None, description="Original filename")
-    download_url: Optional[str] = Field(None, description="URL to download full document")
+class Folder:
+    """
+    A folder that allows operations to be scoped to a specific folder.
 
-    class Config:
-        arbitrary_types_allowed = True
+    Args:
+        client: The Morphik client instance
+        name: The name of the folder
+    """
+
+    def __init__(self, client: "Morphik", name: str):
+        self._client = client
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        """Returns the folder name."""
+        return self._name
+
+    def signin(self, end_user_id: str) -> "UserScope":
+        """
+        Returns a UserScope object scoped to this folder and the end user.
+
+        Args:
+            end_user_id: The ID of the end user
+
+        Returns:
+            UserScope: A user scope scoped to this folder and the end user
+        """
+        return UserScope(client=self._client, end_user_id=end_user_id, folder_name=self._name)
+
+    def ingest_text(
+        self,
+        content: str,
+        filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List[RuleOrDict]] = None,
+        use_colpali: bool = True,
+    ) -> Document:
+        """
+        Ingest a text document into Morphik within this folder.
+
+        Args:
+            content: Text content to ingest
+            filename: Optional file name
+            metadata: Optional metadata dictionary
+            rules: Optional list of rules to apply during ingestion
+            use_colpali: Whether to use ColPali-style embedding model
+
+        Returns:
+            Document: Metadata of the ingested document
+        """
+        rules_list = [self._client._convert_rule(r) for r in (rules or [])]
+        payload = self._client._logic._prepare_ingest_text_request(
+            content, filename, metadata, rules_list, use_colpali, self._name, None
+        )
+        response = self._client._request("POST", "ingest/text", data=payload)
+        doc = self._client._logic._parse_document_response(response)
+        doc._client = self._client
+        return doc
+
+    def ingest_file(
+        self,
+        file: Union[str, bytes, BinaryIO, Path],
+        filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List[RuleOrDict]] = None,
+        use_colpali: bool = True,
+    ) -> Document:
+        """
+        Ingest a file document into Morphik within this folder.
+
+        Args:
+            file: File to ingest (path string, bytes, file object, or Path)
+            filename: Name of the file
+            metadata: Optional metadata dictionary
+            rules: Optional list of rules to apply during ingestion
+            use_colpali: Whether to use ColPali-style embedding model
+
+        Returns:
+            Document: Metadata of the ingested document
+        """
+        # Process file input
+        file_obj, filename = self._client._logic._prepare_file_for_upload(file, filename)
+
+        try:
+            # Prepare multipart form data
+            files = {"file": (filename, file_obj)}
+
+            # Create form data
+            form_data = self._client._logic._prepare_ingest_file_form_data(
+                metadata, rules, self._name, None
+            )
+
+            response = self._client._request(
+                "POST",
+                f"ingest/file?use_colpali={str(use_colpali).lower()}",
+                data=form_data,
+                files=files,
+            )
+            doc = self._client._logic._parse_document_response(response)
+            doc._client = self._client
+            return doc
+        finally:
+            # Close file if we opened it
+            if isinstance(file, (str, Path)):
+                file_obj.close()
+
+    def ingest_files(
+        self,
+        files: List[Union[str, bytes, BinaryIO, Path]],
+        metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
+        rules: Optional[List[RuleOrDict]] = None,
+        use_colpali: bool = True,
+        parallel: bool = True,
+    ) -> List[Document]:
+        """
+        Ingest multiple files into Morphik within this folder.
+
+        Args:
+            files: List of files to ingest
+            metadata: Optional metadata
+            rules: Optional list of rules to apply
+            use_colpali: Whether to use ColPali-style embedding
+            parallel: Whether to process files in parallel
+
+        Returns:
+            List[Document]: List of ingested documents
+        """
+        # Convert files to format expected by API
+        file_objects = self._client._logic._prepare_files_for_upload(files)
+
+        try:
+            # Prepare form data
+            data = self._client._logic._prepare_ingest_files_form_data(
+                metadata, rules, use_colpali, parallel, self._name, None
+            )
+
+            response = self._client._request("POST", "ingest/files", data=data, files=file_objects)
+
+            if response.get("errors"):
+                # Log errors but don't raise exception
+                for error in response["errors"]:
+                    logger.error(f"Failed to ingest {error['filename']}: {error['error']}")
+
+            docs = [
+                self._client._logic._parse_document_response(doc) for doc in response["documents"]
+            ]
+            for doc in docs:
+                doc._client = self._client
+            return docs
+        finally:
+            # Clean up file objects
+            for _, (_, file_obj) in file_objects:
+                if isinstance(file_obj, (IOBase, BytesIO)) and not file_obj.closed:
+                    file_obj.close()
+
+    def ingest_directory(
+        self,
+        directory: Union[str, Path],
+        recursive: bool = False,
+        pattern: str = "*",
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List[RuleOrDict]] = None,
+        use_colpali: bool = True,
+        parallel: bool = True,
+    ) -> List[Document]:
+        """
+        Ingest all files in a directory into Morphik within this folder.
+
+        Args:
+            directory: Path to directory containing files to ingest
+            recursive: Whether to recursively process subdirectories
+            pattern: Optional glob pattern to filter files
+            metadata: Optional metadata dictionary to apply to all files
+            rules: Optional list of rules to apply
+            use_colpali: Whether to use ColPali-style embedding
+            parallel: Whether to process files in parallel
+
+        Returns:
+            List[Document]: List of ingested documents
+        """
+        directory = Path(directory)
+        if not directory.is_dir():
+            raise ValueError(f"Directory not found: {directory}")
+
+        # Collect all files matching pattern
+        if recursive:
+            files = list(directory.rglob(pattern))
+        else:
+            files = list(directory.glob(pattern))
+
+        # Filter out directories
+        files = [f for f in files if f.is_file()]
+
+        if not files:
+            return []
+
+        # Use ingest_files with collected paths
+        return self.ingest_files(
+            files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
+        )
+
+    def retrieve_chunks(
+        self,
+        query: str,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 4,
+        min_score: float = 0.0,
+        use_colpali: bool = True,
+    ) -> List[FinalChunkResult]:
+        """
+        Retrieve relevant chunks within this folder.
+
+        Args:
+            query: Search query text
+            filters: Optional metadata filters
+            k: Number of results (default: 4)
+            min_score: Minimum similarity threshold (default: 0.0)
+            use_colpali: Whether to use ColPali-style embedding model
+
+        Returns:
+            List[FinalChunkResult]: List of relevant chunks
+        """
+        request = {
+            "query": query,
+            "filters": filters,
+            "k": k,
+            "min_score": min_score,
+            "use_colpali": use_colpali,
+            "folder_name": self._name,  # Add folder name here
+        }
+
+        response = self._client._request("POST", "retrieve/chunks", request)
+        return self._client._logic._parse_chunk_result_list_response(response)
+
+    def retrieve_docs(
+        self,
+        query: str,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 4,
+        min_score: float = 0.0,
+        use_colpali: bool = True,
+    ) -> List[DocumentResult]:
+        """
+        Retrieve relevant documents within this folder.
+
+        Args:
+            query: Search query text
+            filters: Optional metadata filters
+            k: Number of results (default: 4)
+            min_score: Minimum similarity threshold (default: 0.0)
+            use_colpali: Whether to use ColPali-style embedding model
+
+        Returns:
+            List[DocumentResult]: List of relevant documents
+        """
+        request = {
+            "query": query,
+            "filters": filters,
+            "k": k,
+            "min_score": min_score,
+            "use_colpali": use_colpali,
+            "folder_name": self._name,  # Add folder name here
+        }
+
+        response = self._client._request("POST", "retrieve/docs", request)
+        return self._client._logic._parse_document_result_list_response(response)
+
+    def query(
+        self,
+        query: str,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 4,
+        min_score: float = 0.0,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        use_colpali: bool = True,
+        graph_name: Optional[str] = None,
+        hop_depth: int = 1,
+        include_paths: bool = False,
+        prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
+    ) -> CompletionResponse:
+        """
+        Generate completion using relevant chunks as context within this folder.
+
+        Args:
+            query: Query text
+            filters: Optional metadata filters
+            k: Number of chunks to use as context (default: 4)
+            min_score: Minimum similarity threshold (default: 0.0)
+            max_tokens: Maximum tokens in completion
+            temperature: Model temperature
+            use_colpali: Whether to use ColPali-style embedding model
+            graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
+            hop_depth: Number of relationship hops to traverse in the graph (1-3)
+            include_paths: Whether to include relationship paths in the response
+            prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
+
+        Returns:
+            CompletionResponse: Generated completion
+        """
+        payload = self._client._logic._prepare_query_request(
+            query,
+            filters,
+            k,
+            min_score,
+            max_tokens,
+            temperature,
+            use_colpali,
+            graph_name,
+            hop_depth,
+            include_paths,
+            prompt_overrides,
+            self._name,
+            None,
+        )
+        response = self._client._request("POST", "query", data=payload)
+        return self._client._logic._parse_completion_response(response)
+
+    def list_documents(
+        self, skip: int = 0, limit: int = 100, filters: Optional[Dict[str, Any]] = None
+    ) -> List[Document]:
+        """
+        List accessible documents within this folder.
+
+        Args:
+            skip: Number of documents to skip
+            limit: Maximum number of documents to return
+            filters: Optional filters
+
+        Returns:
+            List[Document]: List of documents
+        """
+        params, data = self._client._logic._prepare_list_documents_request(
+            skip, limit, filters, self._name, None
+        )
+        response = self._client._request("POST", "documents", data=data, params=params)
+        docs = self._client._logic._parse_document_list_response(response)
+        for doc in docs:
+            doc._client = self._client
+        return docs
+
+    def batch_get_documents(self, document_ids: List[str]) -> List[Document]:
+        """
+        Retrieve multiple documents by their IDs in a single batch operation within this folder.
+
+        Args:
+            document_ids: List of document IDs to retrieve
+
+        Returns:
+            List[Document]: List of document metadata for found documents
+        """
+        request = {"document_ids": document_ids, "folder_name": self._name}
+
+        response = self._client._request("POST", "batch/documents", data=request)
+        docs = [self._client._logic._parse_document_response(doc) for doc in response]
+        for doc in docs:
+            doc._client = self._client
+        return docs
+
+    def batch_get_chunks(
+        self, sources: List[Union[ChunkSource, Dict[str, Any]]]
+    ) -> List[FinalChunkResult]:
+        """
+        Retrieve specific chunks by their document ID and chunk number in a single batch operation within this folder.
+
+        Args:
+            sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
+
+        Returns:
+            List[FinalChunkResult]: List of chunk results
+        """
+        # Convert to list of dictionaries if needed
+        source_dicts = []
+        for source in sources:
+            if isinstance(source, dict):
+                source_dicts.append(source)
+            else:
+                source_dicts.append(source.model_dump())
+
+        # Add folder_name to request
+        request = {"sources": source_dicts, "folder_name": self._name}
+
+        response = self._client._request("POST", "batch/chunks", data=request)
+        return self._client._logic._parse_chunk_result_list_response(response)
+
+    def create_graph(
+        self,
+        name: str,
+        filters: Optional[Dict[str, Any]] = None,
+        documents: Optional[List[str]] = None,
+        prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
+    ) -> Graph:
+        """
+        Create a graph from documents within this folder.
+
+        Args:
+            name: Name of the graph to create
+            filters: Optional metadata filters to determine which documents to include
+            documents: Optional list of specific document IDs to include
+            prompt_overrides: Optional customizations for entity extraction and resolution prompts
+
+        Returns:
+            Graph: The created graph object
+        """
+        # Convert prompt_overrides to dict if it's a model
+        if prompt_overrides and isinstance(prompt_overrides, GraphPromptOverrides):
+            prompt_overrides = prompt_overrides.model_dump(exclude_none=True)
+
+        request = {
+            "name": name,
+            "filters": filters,
+            "documents": documents,
+            "prompt_overrides": prompt_overrides,
+            "folder_name": self._name,  # Add folder name here
+        }
+
+        response = self._client._request("POST", "graph/create", request)
+        return self._client._logic._parse_graph_response(response)
+
+    def update_graph(
+        self,
+        name: str,
+        additional_filters: Optional[Dict[str, Any]] = None,
+        additional_documents: Optional[List[str]] = None,
+        prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
+    ) -> Graph:
+        """
+        Update an existing graph with new documents from this folder.
+
+        Args:
+            name: Name of the graph to update
+            additional_filters: Optional additional metadata filters to determine which new documents to include
+            additional_documents: Optional list of additional document IDs to include
+            prompt_overrides: Optional customizations for entity extraction and resolution prompts
+
+        Returns:
+            Graph: The updated graph
+        """
+        # Convert prompt_overrides to dict if it's a model
+        if prompt_overrides and isinstance(prompt_overrides, GraphPromptOverrides):
+            prompt_overrides = prompt_overrides.model_dump(exclude_none=True)
+
+        request = {
+            "additional_filters": additional_filters,
+            "additional_documents": additional_documents,
+            "prompt_overrides": prompt_overrides,
+            "folder_name": self._name,  # Add folder name here
+        }
+
+        response = self._client._request("POST", f"graph/{name}/update", request)
+        return self._client._logic._parse_graph_response(response)
+
+    def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
+        """
+        Delete a document by its filename within this folder.
+
+        Args:
+            filename: Filename of the document to delete
+
+        Returns:
+            Dict[str, str]: Deletion status
+        """
+        # Get the document by filename with folder scope
+        request = {"filename": filename, "folder_name": self._name}
+
+        # First get the document ID
+        response = self._client._request(
+            "GET", f"documents/filename/{filename}", params={"folder_name": self._name}
+        )
+        doc = self._client._logic._parse_document_response(response)
+
+        # Then delete by ID
+        return self._client.delete_document(doc.external_id)
+
+
+class UserScope:
+    """
+    A user scope that allows operations to be scoped to a specific end user and optionally a folder.
+
+    Args:
+        client: The Morphik client instance
+        end_user_id: The ID of the end user
+        folder_name: Optional folder name to further scope operations
+    """
+
+    def __init__(self, client: "Morphik", end_user_id: str, folder_name: Optional[str] = None):
+        self._client = client
+        self._end_user_id = end_user_id
+        self._folder_name = folder_name
+
+    @property
+    def end_user_id(self) -> str:
+        """Returns the end user ID."""
+        return self._end_user_id
+
+    @property
+    def folder_name(self) -> Optional[str]:
+        """Returns the folder name if any."""
+        return self._folder_name
+
+    def ingest_text(
+        self,
+        content: str,
+        filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List[RuleOrDict]] = None,
+        use_colpali: bool = True,
+    ) -> Document:
+        """
+        Ingest a text document into Morphik as this end user.
+
+        Args:
+            content: Text content to ingest
+            filename: Optional file name
+            metadata: Optional metadata dictionary
+            rules: Optional list of rules to apply during ingestion
+            use_colpali: Whether to use ColPali-style embedding model
+
+        Returns:
+            Document: Metadata of the ingested document
+        """
+        rules_list = [self._client._convert_rule(r) for r in (rules or [])]
+        payload = self._client._logic._prepare_ingest_text_request(
+            content,
+            filename,
+            metadata,
+            rules_list,
+            use_colpali,
+            self._folder_name,
+            self._end_user_id,
+        )
+        response = self._client._request("POST", "ingest/text", data=payload)
+        doc = self._client._logic._parse_document_response(response)
+        doc._client = self._client
+        return doc
+
+    def ingest_file(
+        self,
+        file: Union[str, bytes, BinaryIO, Path],
+        filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List[RuleOrDict]] = None,
+        use_colpali: bool = True,
+    ) -> Document:
+        """
+        Ingest a file document into Morphik as this end user.
+
+        Args:
+            file: File to ingest (path string, bytes, file object, or Path)
+            filename: Name of the file
+            metadata: Optional metadata dictionary
+            rules: Optional list of rules to apply during ingestion
+            use_colpali: Whether to use ColPali-style embedding model
+
+        Returns:
+            Document: Metadata of the ingested document
+        """
+        # Handle different file input types
+        if isinstance(file, (str, Path)):
+            file_path = Path(file)
+            if not file_path.exists():
+                raise ValueError(f"File not found: {file}")
+            filename = file_path.name if filename is None else filename
+            with open(file_path, "rb") as f:
+                content = f.read()
+                file_obj = BytesIO(content)
+        elif isinstance(file, bytes):
+            if filename is None:
+                raise ValueError("filename is required when ingesting bytes")
+            file_obj = BytesIO(file)
+        else:
+            if filename is None:
+                raise ValueError("filename is required when ingesting file object")
+            file_obj = file
+
+        try:
+            # Prepare multipart form data
+            files = {"file": (filename, file_obj)}
+
+            # Add metadata and rules
+            form_data = {
+                "metadata": json.dumps(metadata or {}),
+                "rules": json.dumps([self._client._convert_rule(r) for r in (rules or [])]),
+                "end_user_id": self._end_user_id,  # Add end user ID here
+            }
+
+            # Add folder name if scoped to a folder
+            if self._folder_name:
+                form_data["folder_name"] = self._folder_name
+
+            response = self._client._request(
+                "POST",
+                f"ingest/file?use_colpali={str(use_colpali).lower()}",
+                data=form_data,
+                files=files,
+            )
+            doc = self._client._logic._parse_document_response(response)
+            doc._client = self._client
+            return doc
+        finally:
+            # Close file if we opened it
+            if isinstance(file, (str, Path)):
+                file_obj.close()
+
+    def ingest_files(
+        self,
+        files: List[Union[str, bytes, BinaryIO, Path]],
+        metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
+        rules: Optional[List[RuleOrDict]] = None,
+        use_colpali: bool = True,
+        parallel: bool = True,
+    ) -> List[Document]:
+        """
+        Ingest multiple files into Morphik as this end user.
+
+        Args:
+            files: List of files to ingest
+            metadata: Optional metadata
+            rules: Optional list of rules to apply
+            use_colpali: Whether to use ColPali-style embedding
+            parallel: Whether to process files in parallel
+
+        Returns:
+            List[Document]: List of ingested documents
+        """
+        # Convert files to format expected by API
+        file_objects = []
+        for file in files:
+            if isinstance(file, (str, Path)):
+                path = Path(file)
+                file_objects.append(("files", (path.name, open(path, "rb"))))
+            elif isinstance(file, bytes):
+                file_objects.append(("files", ("file.bin", file)))
+            else:
+                file_objects.append(("files", (getattr(file, "name", "file.bin"), file)))
+
+        try:
+            # Prepare request data
+            # Convert rules appropriately
+            if rules:
+                if all(isinstance(r, list) for r in rules):
+                    # List of lists - per-file rules
+                    converted_rules = [
+                        [self._client._convert_rule(r) for r in rule_list] for rule_list in rules
+                    ]
+                else:
+                    # Flat list - shared rules for all files
+                    converted_rules = [self._client._convert_rule(r) for r in rules]
+            else:
+                converted_rules = []
+
+            data = {
+                "metadata": json.dumps(metadata or {}),
+                "rules": json.dumps(converted_rules),
+                "use_colpali": str(use_colpali).lower() if use_colpali is not None else None,
+                "parallel": str(parallel).lower(),
+                "end_user_id": self._end_user_id,  # Add end user ID here
+            }
+
+            # Add folder name if scoped to a folder
+            if self._folder_name:
+                data["folder_name"] = self._folder_name
+
+            response = self._client._request("POST", "ingest/files", data=data, files=file_objects)
+
+            if response.get("errors"):
+                # Log errors but don't raise exception
+                for error in response["errors"]:
+                    logger.error(f"Failed to ingest {error['filename']}: {error['error']}")
+
+            docs = [
+                self._client._logic._parse_document_response(doc) for doc in response["documents"]
+            ]
+            for doc in docs:
+                doc._client = self._client
+            return docs
+        finally:
+            # Clean up file objects
+            for _, (_, file_obj) in file_objects:
+                if isinstance(file_obj, (IOBase, BytesIO)) and not file_obj.closed:
+                    file_obj.close()
+
+    def ingest_directory(
+        self,
+        directory: Union[str, Path],
+        recursive: bool = False,
+        pattern: str = "*",
+        metadata: Optional[Dict[str, Any]] = None,
+        rules: Optional[List[RuleOrDict]] = None,
+        use_colpali: bool = True,
+        parallel: bool = True,
+    ) -> List[Document]:
+        """
+        Ingest all files in a directory into Morphik as this end user.
+
+        Args:
+            directory: Path to directory containing files to ingest
+            recursive: Whether to recursively process subdirectories
+            pattern: Optional glob pattern to filter files
+            metadata: Optional metadata dictionary to apply to all files
+            rules: Optional list of rules to apply
+            use_colpali: Whether to use ColPali-style embedding
+            parallel: Whether to process files in parallel
+
+        Returns:
+            List[Document]: List of ingested documents
+        """
+        directory = Path(directory)
+        if not directory.is_dir():
+            raise ValueError(f"Directory not found: {directory}")
+
+        # Collect all files matching pattern
+        if recursive:
+            files = list(directory.rglob(pattern))
+        else:
+            files = list(directory.glob(pattern))
+
+        # Filter out directories
+        files = [f for f in files if f.is_file()]
+
+        if not files:
+            return []
+
+        # Use ingest_files with collected paths
+        return self.ingest_files(
+            files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
+        )
+
+    def retrieve_chunks(
+        self,
+        query: str,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 4,
+        min_score: float = 0.0,
+        use_colpali: bool = True,
+    ) -> List[FinalChunkResult]:
+        """
+        Retrieve relevant chunks as this end user.
+
+        Args:
+            query: Search query text
+            filters: Optional metadata filters
+            k: Number of results (default: 4)
+            min_score: Minimum similarity threshold (default: 0.0)
+            use_colpali: Whether to use ColPali-style embedding model
+
+        Returns:
+            List[FinalChunkResult]: List of relevant chunks
+        """
+        request = {
+            "query": query,
+            "filters": filters,
+            "k": k,
+            "min_score": min_score,
+            "use_colpali": use_colpali,
+            "end_user_id": self._end_user_id,  # Add end user ID here
+        }
+
+        # Add folder name if scoped to a folder
+        if self._folder_name:
+            request["folder_name"] = self._folder_name
+
+        response = self._client._request("POST", "retrieve/chunks", request)
+        return self._client._logic._parse_chunk_result_list_response(response)
+
+    def retrieve_docs(
+        self,
+        query: str,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 4,
+        min_score: float = 0.0,
+        use_colpali: bool = True,
+    ) -> List[DocumentResult]:
+        """
+        Retrieve relevant documents as this end user.
+
+        Args:
+            query: Search query text
+            filters: Optional metadata filters
+            k: Number of results (default: 4)
+            min_score: Minimum similarity threshold (default: 0.0)
+            use_colpali: Whether to use ColPali-style embedding model
+
+        Returns:
+            List[DocumentResult]: List of relevant documents
+        """
+        request = {
+            "query": query,
+            "filters": filters,
+            "k": k,
+            "min_score": min_score,
+            "use_colpali": use_colpali,
+            "end_user_id": self._end_user_id,  # Add end user ID here
+        }
+
+        # Add folder name if scoped to a folder
+        if self._folder_name:
+            request["folder_name"] = self._folder_name
+
+        response = self._client._request("POST", "retrieve/docs", request)
+        return self._client._logic._parse_document_result_list_response(response)
+
+    def query(
+        self,
+        query: str,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 4,
+        min_score: float = 0.0,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        use_colpali: bool = True,
+        graph_name: Optional[str] = None,
+        hop_depth: int = 1,
+        include_paths: bool = False,
+        prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
+    ) -> CompletionResponse:
+        """
+        Generate completion using relevant chunks as context as this end user.
+
+        Args:
+            query: Query text
+            filters: Optional metadata filters
+            k: Number of chunks to use as context (default: 4)
+            min_score: Minimum similarity threshold (default: 0.0)
+            max_tokens: Maximum tokens in completion
+            temperature: Model temperature
+            use_colpali: Whether to use ColPali-style embedding model
+            graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
+            hop_depth: Number of relationship hops to traverse in the graph (1-3)
+            include_paths: Whether to include relationship paths in the response
+            prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
+
+        Returns:
+            CompletionResponse: Generated completion
+        """
+        payload = self._client._logic._prepare_query_request(
+            query,
+            filters,
+            k,
+            min_score,
+            max_tokens,
+            temperature,
+            use_colpali,
+            graph_name,
+            hop_depth,
+            include_paths,
+            prompt_overrides,
+            self._folder_name,
+            self._end_user_id,
+        )
+        response = self._client._request("POST", "query", data=payload)
+        return self._client._logic._parse_completion_response(response)
+
+    def list_documents(
+        self, skip: int = 0, limit: int = 100, filters: Optional[Dict[str, Any]] = None
+    ) -> List[Document]:
+        """
+        List accessible documents for this end user.
+
+        Args:
+            skip: Number of documents to skip
+            limit: Maximum number of documents to return
+            filters: Optional filters
+
+        Returns:
+            List[Document]: List of documents
+        """
+        # Add end_user_id and folder_name to params
+        params = {"skip": skip, "limit": limit, "end_user_id": self._end_user_id}
+
+        # Add folder name if scoped to a folder
+        if self._folder_name:
+            params["folder_name"] = self._folder_name
+
+        response = self._client._request("POST", f"documents", data=filters or {}, params=params)
+
+        docs = [self._client._logic._parse_document_response(doc) for doc in response]
+        for doc in docs:
+            doc._client = self._client
+        return docs
+
+    def batch_get_documents(self, document_ids: List[str]) -> List[Document]:
+        """
+        Retrieve multiple documents by their IDs in a single batch operation for this end user.
+
+        Args:
+            document_ids: List of document IDs to retrieve
+
+        Returns:
+            List[Document]: List of document metadata for found documents
+        """
+        request = {"document_ids": document_ids, "end_user_id": self._end_user_id}
+
+        # Add folder name if scoped to a folder
+        if self._folder_name:
+            request["folder_name"] = self._folder_name
+
+        response = self._client._request("POST", "batch/documents", data=request)
+        docs = [self._client._logic._parse_document_response(doc) for doc in response]
+        for doc in docs:
+            doc._client = self._client
+        return docs
+
+    def batch_get_chunks(
+        self, sources: List[Union[ChunkSource, Dict[str, Any]]]
+    ) -> List[FinalChunkResult]:
+        """
+        Retrieve specific chunks by their document ID and chunk number in a single batch operation for this end user.
+
+        Args:
+            sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
+
+        Returns:
+            List[FinalChunkResult]: List of chunk results
+        """
+        # Convert to list of dictionaries if needed
+        source_dicts = []
+        for source in sources:
+            if isinstance(source, dict):
+                source_dicts.append(source)
+            else:
+                source_dicts.append(source.model_dump())
+
+        # Add end_user_id and folder_name to request
+        request = {"sources": source_dicts, "end_user_id": self._end_user_id}
+
+        # Add folder name if scoped to a folder
+        if self._folder_name:
+            request["folder_name"] = self._folder_name
+
+        response = self._client._request("POST", "batch/chunks", data=request)
+        return self._client._logic._parse_chunk_result_list_response(response)
+
+    def create_graph(
+        self,
+        name: str,
+        filters: Optional[Dict[str, Any]] = None,
+        documents: Optional[List[str]] = None,
+        prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
+    ) -> Graph:
+        """
+        Create a graph from documents for this end user.
+
+        Args:
+            name: Name of the graph to create
+            filters: Optional metadata filters to determine which documents to include
+            documents: Optional list of specific document IDs to include
+            prompt_overrides: Optional customizations for entity extraction and resolution prompts
+
+        Returns:
+            Graph: The created graph object
+        """
+        # Convert prompt_overrides to dict if it's a model
+        if prompt_overrides and isinstance(prompt_overrides, GraphPromptOverrides):
+            prompt_overrides = prompt_overrides.model_dump(exclude_none=True)
+
+        request = {
+            "name": name,
+            "filters": filters,
+            "documents": documents,
+            "prompt_overrides": prompt_overrides,
+            "end_user_id": self._end_user_id,  # Add end user ID here
+        }
+
+        # Add folder name if scoped to a folder
+        if self._folder_name:
+            request["folder_name"] = self._folder_name
+
+        response = self._client._request("POST", "graph/create", request)
+        return self._client._logic._parse_graph_response(response)
+
+    def update_graph(
+        self,
+        name: str,
+        additional_filters: Optional[Dict[str, Any]] = None,
+        additional_documents: Optional[List[str]] = None,
+        prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
+    ) -> Graph:
+        """
+        Update an existing graph with new documents for this end user.
+
+        Args:
+            name: Name of the graph to update
+            additional_filters: Optional additional metadata filters to determine which new documents to include
+            additional_documents: Optional list of additional document IDs to include
+            prompt_overrides: Optional customizations for entity extraction and resolution prompts
+
+        Returns:
+            Graph: The updated graph
+        """
+        # Convert prompt_overrides to dict if it's a model
+        if prompt_overrides and isinstance(prompt_overrides, GraphPromptOverrides):
+            prompt_overrides = prompt_overrides.model_dump(exclude_none=True)
+
+        request = {
+            "additional_filters": additional_filters,
+            "additional_documents": additional_documents,
+            "prompt_overrides": prompt_overrides,
+            "end_user_id": self._end_user_id,  # Add end user ID here
+        }
+
+        # Add folder name if scoped to a folder
+        if self._folder_name:
+            request["folder_name"] = self._folder_name
+
+        response = self._client._request("POST", f"graph/{name}/update", request)
+        return self._client._logic._parse_graph_response(response)
+
+    def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
+        """
+        Delete a document by its filename for this end user.
+
+        Args:
+            filename: Filename of the document to delete
+
+        Returns:
+            Dict[str, str]: Deletion status
+        """
+        # Build parameters for the filename lookup
+        params = {"end_user_id": self._end_user_id}
+
+        # Add folder name if scoped to a folder
+        if self._folder_name:
+            params["folder_name"] = self._folder_name
+
+        # First get the document ID
+        response = self._client._request("GET", f"documents/filename/{filename}", params=params)
+        doc = self._client._logic._parse_document_response(response)
+
+        # Then delete by ID
+        return self._client.delete_document(doc.external_id)
 
 
 class Morphik:
@@ -98,33 +1106,8 @@ class Morphik:
     """
 
     def __init__(self, uri: Optional[str] = None, timeout: int = 30, is_local: bool = False):
-        self._timeout = timeout
-        self._session = requests.Session()
-        if is_local:
-            self._session.verify = False  # Disable SSL for localhost
-        self._is_local = is_local
-
-        if uri:
-            self._setup_auth(uri)
-        else:
-            self._base_url = "http://localhost:8000"
-            self._auth_token = None
-
-    def _setup_auth(self, uri: str) -> None:
-        """Setup authentication from URI"""
-        parsed = urlparse(uri)
-        if not parsed.netloc:
-            raise ValueError("Invalid URI format")
-
-        # Split host and auth parts
-        auth, host = parsed.netloc.split("@")
-        _, self._auth_token = auth.split(":")
-
-        # Set base URL
-        self._base_url = f"{'http' if self._is_local else 'https'}://{host}"
-
-        # Basic token validation
-        jwt.decode(self._auth_token, options={"verify_signature": False})
+        self._logic = _MorphikClientLogic(uri, timeout, is_local)
+        self._client = httpx.Client(timeout=self._logic._timeout, verify=not self._logic._is_local)
 
     def _request(
         self,
@@ -135,25 +1118,25 @@ class Morphik:
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Make HTTP request"""
-        headers = {}
-        if self._auth_token:  # Only add auth header if we have a token
-            headers["Authorization"] = f"Bearer {self._auth_token}"
+        url = self._logic._get_url(endpoint)
+        headers = self._logic._get_headers()
+        if self._logic._auth_token:  # Only add auth header if we have a token
+            headers["Authorization"] = f"Bearer {self._logic._auth_token}"
 
         # Configure request data based on type
         if files:
             # Multipart form data for files
             request_data = {"files": files, "data": data}
-            # Don't set Content-Type, let requests handle it
+            # Don't set Content-Type, let httpx handle it
         else:
             # JSON for everything else
             headers["Content-Type"] = "application/json"
             request_data = {"json": data}
 
-        response = self._session.request(
+        response = self._client.request(
             method,
-            f"{self._base_url}/{endpoint.lstrip('/')}",
+            url,
             headers=headers,
-            timeout=self._timeout,
             params=params,
             **request_data,
         )
@@ -162,9 +1145,43 @@ class Morphik:
 
     def _convert_rule(self, rule: RuleOrDict) -> Dict[str, Any]:
         """Convert a rule to a dictionary format"""
-        if hasattr(rule, "to_dict"):
-            return rule.to_dict()
-        return rule
+        return self._logic._convert_rule(rule)
+
+    def create_folder(self, name: str) -> Folder:
+        """
+        Create a folder to scope operations.
+
+        Args:
+            name: The name of the folder
+
+        Returns:
+            Folder: A folder object for scoped operations
+        """
+        return Folder(self, name)
+
+    def get_folder(self, name: str) -> Folder:
+        """
+        Get a folder by name to scope operations.
+
+        Args:
+            name: The name of the folder
+
+        Returns:
+            Folder: A folder object for scoped operations
+        """
+        return Folder(self, name)
+
+    def signin(self, end_user_id: str) -> UserScope:
+        """
+        Sign in as an end user to scope operations.
+
+        Args:
+            end_user_id: The ID of the end user
+
+        Returns:
+            UserScope: A user scope object for scoped operations
+        """
+        return UserScope(self, end_user_id)
 
     def ingest_text(
         self,
@@ -209,15 +1226,12 @@ class Morphik:
             )
             ```
         """
-        request = IngestTextRequest(
-            content=content,
-            filename=filename,
-            metadata=metadata or {},
-            rules=[self._convert_rule(r) for r in (rules or [])],
-            use_colpali=use_colpali,
+        rules_list = [self._convert_rule(r) for r in (rules or [])]
+        payload = self._logic._prepare_ingest_text_request(
+            content, filename, metadata, rules_list, use_colpali, None, None
         )
-        response = self._request("POST", "ingest/text", data=request.model_dump())
-        doc = Document(**response)
+        response = self._request("POST", "ingest/text", data=payload)
+        doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
 
@@ -266,38 +1280,23 @@ class Morphik:
             )
             ```
         """
-        # Handle different file input types
-        if isinstance(file, (str, Path)):
-            file_path = Path(file)
-            if not file_path.exists():
-                raise ValueError(f"File not found: {file}")
-            filename = file_path.name if filename is None else filename
-            with open(file_path, "rb") as f:
-                content = f.read()
-                file_obj = BytesIO(content)
-        elif isinstance(file, bytes):
-            if filename is None:
-                raise ValueError("filename is required when ingesting bytes")
-            file_obj = BytesIO(file)
-        else:
-            if filename is None:
-                raise ValueError("filename is required when ingesting file object")
-            file_obj = file
+        # Process file input
+        file_obj, filename = self._logic._prepare_file_for_upload(file, filename)
 
         try:
             # Prepare multipart form data
             files = {"file": (filename, file_obj)}
 
-            # Add metadata and rules
-            form_data = {
-                "metadata": json.dumps(metadata or {}),
-                "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
-            }
+            # Create form data
+            form_data = self._logic._prepare_ingest_file_form_data(metadata, rules, None, None)
 
             response = self._request(
-                "POST", f"ingest/file?use_colpali={str(use_colpali).lower()}", data=form_data, files=files
+                "POST",
+                f"ingest/file?use_colpali={str(use_colpali).lower()}",
+                data=form_data,
+                files=files,
             )
-            doc = Document(**response)
+            doc = self._logic._parse_document_response(response)
             doc._client = self
             return doc
         finally:
@@ -330,44 +1329,22 @@ class Morphik:
             ValueError: If metadata list length doesn't match files length
         """
         # Convert files to format expected by API
-        file_objects = []
-        for file in files:
-            if isinstance(file, (str, Path)):
-                path = Path(file)
-                file_objects.append(("files", (path.name, open(path, "rb"))))
-            elif isinstance(file, bytes):
-                file_objects.append(("files", ("file.bin", file)))
-            else:
-                file_objects.append(("files", (getattr(file, "name", "file.bin"), file)))
+        file_objects = self._logic._prepare_files_for_upload(files)
 
         try:
-            # Prepare request data
-            # Convert rules appropriately based on whether it's a flat list or list of lists
-            if rules:
-                if all(isinstance(r, list) for r in rules):
-                    # List of lists - per-file rules
-                    converted_rules = [[self._convert_rule(r) for r in rule_list] for rule_list in rules]
-                else:
-                    # Flat list - shared rules for all files
-                    converted_rules = [self._convert_rule(r) for r in rules]
-            else:
-                converted_rules = []
-
-            data = {
-                "metadata": json.dumps(metadata or {}),
-                "rules": json.dumps(converted_rules),
-                "use_colpali": str(use_colpali).lower() if use_colpali is not None else None,
-                "parallel": str(parallel).lower(),
-            }
+            # Prepare form data
+            data = self._logic._prepare_ingest_files_form_data(
+                metadata, rules, use_colpali, parallel, None, None
+            )
 
             response = self._request("POST", "ingest/files", data=data, files=file_objects)
-            
+
             if response.get("errors"):
                 # Log errors but don't raise exception
                 for error in response["errors"]:
                     logger.error(f"Failed to ingest {error['filename']}: {error['error']}")
-            
-            docs = [Document(**doc) for doc in response["documents"]]
+
+            docs = [self._logic._parse_document_response(doc) for doc in response["documents"]]
             for doc in docs:
                 doc._client = self
             return docs
@@ -417,17 +1394,13 @@ class Morphik:
 
         # Filter out directories
         files = [f for f in files if f.is_file()]
-        
+
         if not files:
             return []
 
         # Use ingest_files with collected paths
         return self.ingest_files(
-            files=files,
-            metadata=metadata,
-            rules=rules,
-            use_colpali=use_colpali,
-            parallel=parallel
+            files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
         )
 
     def retrieve_chunks(
@@ -458,52 +1431,11 @@ class Morphik:
             )
             ```
         """
-        request = {
-            "query": query,
-            "filters": filters,
-            "k": k,
-            "min_score": min_score,
-            "use_colpali": use_colpali,
-        }
-
-        response = self._request("POST", "retrieve/chunks", request)
-        chunks = [ChunkResult(**r) for r in response]
-
-        final_chunks = []
-
-        for chunk in chunks:
-            if chunk.metadata.get("is_image"):
-                try:
-                    # Handle data URI format "data:image/png;base64,..."
-                    content = chunk.content
-                    if content.startswith("data:"):
-                        # Extract the base64 part after the comma
-                        content = content.split(",", 1)[1]
-
-                    # Now decode the base64 string
-                    image_bytes = base64.b64decode(content)
-                    content = Image.open(io.BytesIO(image_bytes))
-                except Exception as e:
-                    print(f"Error processing image: {str(e)}")
-                    # Fall back to using the content as text
-                    print(chunk.content)
-            else:
-                content = chunk.content
-
-            final_chunks.append(
-                FinalChunkResult(
-                    content=content,
-                    score=chunk.score,
-                    document_id=chunk.document_id,
-                    chunk_number=chunk.chunk_number,
-                    metadata=chunk.metadata,
-                    content_type=chunk.content_type,
-                    filename=chunk.filename,
-                    download_url=chunk.download_url,
-                )
-            )
-
-        return final_chunks
+        payload = self._logic._prepare_retrieve_chunks_request(
+            query, filters, k, min_score, use_colpali, None, None
+        )
+        response = self._request("POST", "retrieve/chunks", data=payload)
+        return self._logic._parse_chunk_result_list_response(response)
 
     def retrieve_docs(
         self,
@@ -533,16 +1465,11 @@ class Morphik:
             )
             ```
         """
-        request = {
-            "query": query,
-            "filters": filters,
-            "k": k,
-            "min_score": min_score,
-            "use_colpali": use_colpali,
-        }
-
-        response = self._request("POST", "retrieve/docs", request)
-        return [DocumentResult(**r) for r in response]
+        payload = self._logic._prepare_retrieve_docs_request(
+            query, filters, k, min_score, use_colpali, None, None
+        )
+        response = self._request("POST", "retrieve/docs", data=payload)
+        return self._logic._parse_document_result_list_response(response)
 
     def query(
         self,
@@ -585,7 +1512,7 @@ class Morphik:
                 filters={"department": "research"},
                 temperature=0.7
             )
-            
+
             # Knowledge graph enhanced query
             response = db.query(
                 "How does product X relate to customer segment Y?",
@@ -593,7 +1520,7 @@ class Morphik:
                 hop_depth=2,
                 include_paths=True
             )
-            
+
             # With prompt customization
             from morphik.models import QueryPromptOverride, QueryPromptOverrides
             response = db.query(
@@ -604,7 +1531,7 @@ class Morphik:
                     )
                 )
             )
-            
+
             # Or using a dictionary
             response = db.query(
                 "What are the key findings?",
@@ -614,35 +1541,32 @@ class Morphik:
                     }
                 }
             )
-            
+
             print(response.completion)
-            
+
             # If include_paths=True, you can inspect the graph paths
             if response.metadata and "graph" in response.metadata:
                 for path in response.metadata["graph"]["paths"]:
                     print(" -> ".join(path))
             ```
         """
-        # Convert prompt_overrides to dict if it's a model
-        if prompt_overrides and isinstance(prompt_overrides, QueryPromptOverrides):
-            prompt_overrides = prompt_overrides.model_dump(exclude_none=True)
-            
-        request = {
-            "query": query,
-            "filters": filters,
-            "k": k,
-            "min_score": min_score,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "use_colpali": use_colpali,
-            "graph_name": graph_name,
-            "hop_depth": hop_depth,
-            "include_paths": include_paths,
-            "prompt_overrides": prompt_overrides,
-        }
-
-        response = self._request("POST", "query", request)
-        return CompletionResponse(**response)
+        payload = self._logic._prepare_query_request(
+            query,
+            filters,
+            k,
+            min_score,
+            max_tokens,
+            temperature,
+            use_colpali,
+            graph_name,
+            hop_depth,
+            include_paths,
+            prompt_overrides,
+            None,
+            None,
+        )
+        response = self._request("POST", "query", data=payload)
+        return self._logic._parse_completion_response(response)
 
     def list_documents(
         self, skip: int = 0, limit: int = 100, filters: Optional[Dict[str, Any]] = None
@@ -667,9 +1591,9 @@ class Morphik:
             next_page = db.list_documents(skip=10, limit=10, filters={"department": "research"})
             ```
         """
-        # Use query params for pagination and POST body for filters
-        response = self._request("POST", f"documents?skip={skip}&limit={limit}", data=filters or {})
-        docs = [Document(**doc) for doc in response]
+        params, data = self._logic._prepare_list_documents_request(skip, limit, filters, None, None)
+        response = self._request("POST", "documents", data=data, params=params)
+        docs = self._logic._parse_document_list_response(response)
         for doc in docs:
             doc._client = self
         return docs
@@ -691,10 +1615,10 @@ class Morphik:
             ```
         """
         response = self._request("GET", f"documents/{document_id}")
-        doc = Document(**response)
+        doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
-        
+
     def get_document_by_filename(self, filename: str) -> Document:
         """
         Get document metadata by filename.
@@ -713,10 +1637,10 @@ class Morphik:
             ```
         """
         response = self._request("GET", f"documents/filename/{filename}")
-        doc = Document(**response)
+        doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
-        
+
     def update_document_with_text(
         self,
         document_id: str,
@@ -763,19 +1687,16 @@ class Morphik:
             rules=[self._convert_rule(r) for r in (rules or [])],
             use_colpali=use_colpali if use_colpali is not None else True,
         )
-        
+
         params = {}
         if update_strategy != "add":
             params["update_strategy"] = update_strategy
-            
+
         response = self._request(
-            "POST", 
-            f"documents/{document_id}/update_text", 
-            data=request.model_dump(),
-            params=params
+            "POST", f"documents/{document_id}/update_text", data=request.model_dump(), params=params
         )
-        
-        doc = Document(**response)
+
+        doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
 
@@ -833,34 +1754,34 @@ class Morphik:
             if filename is None:
                 raise ValueError("filename is required when updating with file object")
             file_obj = file
-            
+
         try:
             # Prepare multipart form data
             files = {"file": (filename, file_obj)}
-            
+
             # Convert metadata and rules to JSON strings
             form_data = {
                 "metadata": json.dumps(metadata or {}),
                 "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
                 "update_strategy": update_strategy,
             }
-            
+
             if use_colpali is not None:
                 form_data["use_colpali"] = str(use_colpali).lower()
-                
+
             # Use the dedicated file update endpoint
             response = self._request(
                 "POST", f"documents/{document_id}/update_file", data=form_data, files=files
             )
-            
-            doc = Document(**response)
+
+            doc = self._logic._parse_document_response(response)
             doc._client = self
             return doc
         finally:
             # Close file if we opened it
             if isinstance(file, (str, Path)):
                 file_obj.close()
-    
+
     def update_document_metadata(
         self,
         document_id: str,
@@ -868,14 +1789,14 @@ class Morphik:
     ) -> Document:
         """
         Update a document's metadata only.
-        
+
         Args:
             document_id: ID of the document to update
             metadata: Metadata to update
-            
+
         Returns:
             Document: Updated document metadata
-            
+
         Example:
             ```python
             # Update just the metadata of a document
@@ -888,10 +1809,10 @@ class Morphik:
         """
         # Use the dedicated metadata update endpoint
         response = self._request("POST", f"documents/{document_id}/update_metadata", data=metadata)
-        doc = Document(**response)
+        doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
-        
+
     def update_document_by_filename_with_text(
         self,
         filename: str,
@@ -932,7 +1853,7 @@ class Morphik:
         """
         # First get the document by filename to obtain its ID
         doc = self.get_document_by_filename(filename)
-        
+
         # Then use the regular update_document_with_text endpoint with the document ID
         return self.update_document_with_text(
             document_id=doc.external_id,
@@ -941,9 +1862,9 @@ class Morphik:
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali
+            use_colpali=use_colpali,
         )
-        
+
     def update_document_by_filename_with_file(
         self,
         filename: str,
@@ -983,7 +1904,7 @@ class Morphik:
         """
         # First get the document by filename to obtain its ID
         doc = self.get_document_by_filename(filename)
-        
+
         # Then use the regular update_document_with_file endpoint with the document ID
         return self.update_document_with_file(
             document_id=doc.external_id,
@@ -992,9 +1913,9 @@ class Morphik:
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali
+            use_colpali=use_colpali,
         )
-                
+
     def update_document_by_filename_metadata(
         self,
         filename: str,
@@ -1003,15 +1924,15 @@ class Morphik:
     ) -> Document:
         """
         Update a document's metadata using filename to identify the document.
-        
+
         Args:
             filename: Filename of the document to update
             metadata: Metadata to update
             new_filename: Optional new filename to assign to the document
-            
+
         Returns:
             Document: Updated document metadata
-            
+
         Example:
             ```python
             # Update just the metadata of a document identified by filename
@@ -1025,44 +1946,44 @@ class Morphik:
         """
         # First get the document by filename to obtain its ID
         doc = self.get_document_by_filename(filename)
-        
+
         # Update the metadata
         result = self.update_document_metadata(
             document_id=doc.external_id,
             metadata=metadata,
         )
-        
+
         # If new_filename is provided, update the filename as well
         if new_filename:
             # Create a request that retains the just-updated metadata but also changes filename
             combined_metadata = result.metadata.copy()
-            
+
             # Update the document again with filename change and the same metadata
             response = self._request(
-                "POST", 
-                f"documents/{doc.external_id}/update_text", 
+                "POST",
+                f"documents/{doc.external_id}/update_text",
                 data={
-                    "content": "", 
+                    "content": "",
                     "filename": new_filename,
                     "metadata": combined_metadata,
-                    "rules": []
-                }
+                    "rules": [],
+                },
             )
-            result = Document(**response)
+            result = self._logic._parse_document_response(response)
             result._client = self
-            
+
         return result
-        
+
     def batch_get_documents(self, document_ids: List[str]) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
-        
+
         Args:
             document_ids: List of document IDs to retrieve
-            
+
         Returns:
             List[Document]: List of document metadata for found documents
-            
+
         Example:
             ```python
             docs = db.batch_get_documents(["doc_123", "doc_456", "doc_789"])
@@ -1071,21 +1992,23 @@ class Morphik:
             ```
         """
         response = self._request("POST", "batch/documents", data=document_ids)
-        docs = [Document(**doc) for doc in response]
+        docs = self._logic._parse_document_list_response(response)
         for doc in docs:
             doc._client = self
         return docs
-        
-    def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
+
+    def batch_get_chunks(
+        self, sources: List[Union[ChunkSource, Dict[str, Any]]]
+    ) -> List[FinalChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation.
-        
+
         Args:
             sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
-            
+
         Returns:
             List[FinalChunkResult]: List of chunk results
-            
+
         Example:
             ```python
             # Using dictionaries
@@ -1093,14 +2016,14 @@ class Morphik:
                 {"document_id": "doc_123", "chunk_number": 0},
                 {"document_id": "doc_456", "chunk_number": 2}
             ]
-            
+
             # Or using ChunkSource objects
             from morphik.models import ChunkSource
             sources = [
                 ChunkSource(document_id="doc_123", chunk_number=0),
                 ChunkSource(document_id="doc_456", chunk_number=2)
             ]
-            
+
             chunks = db.batch_get_chunks(sources)
             for chunk in chunks:
                 print(f"Chunk from {chunk.document_id}, number {chunk.chunk_number}: {chunk.content[:50]}...")
@@ -1113,44 +2036,9 @@ class Morphik:
                 source_dicts.append(source)
             else:
                 source_dicts.append(source.model_dump())
-                
+
         response = self._request("POST", "batch/chunks", data=source_dicts)
-        chunks = [ChunkResult(**r) for r in response]
-        
-        final_chunks = []
-        for chunk in chunks:
-            if chunk.metadata.get("is_image"):
-                try:
-                    # Handle data URI format "data:image/png;base64,..."
-                    content = chunk.content
-                    if content.startswith("data:"):
-                        # Extract the base64 part after the comma
-                        content = content.split(",", 1)[1]
-
-                    # Now decode the base64 string
-                    image_bytes = base64.b64decode(content)
-                    content = Image.open(io.BytesIO(image_bytes))
-                except Exception as e:
-                    print(f"Error processing image: {str(e)}")
-                    # Fall back to using the content as text
-                    content = chunk.content
-            else:
-                content = chunk.content
-
-            final_chunks.append(
-                FinalChunkResult(
-                    content=content,
-                    score=chunk.score,
-                    document_id=chunk.document_id,
-                    chunk_number=chunk.chunk_number,
-                    metadata=chunk.metadata,
-                    content_type=chunk.content_type,
-                    filename=chunk.filename,
-                    download_url=chunk.download_url,
-                )
-            )
-            
-        return final_chunks
+        return self._logic._parse_chunk_result_list_response(response)
 
     def create_cache(
         self,
@@ -1252,11 +2140,11 @@ class Morphik:
                 name="custom_graph",
                 documents=["doc1", "doc2", "doc3"]
             )
-            
+
             # With custom entity extraction examples
             from morphik.models import EntityExtractionPromptOverride, EntityExtractionExample, GraphPromptOverrides
             graph = db.create_graph(
-                name="medical_graph", 
+                name="medical_graph",
                 filters={"category": "medical"},
                 prompt_overrides=GraphPromptOverrides(
                     entity_extraction=EntityExtractionPromptOverride(
@@ -1272,7 +2160,7 @@ class Morphik:
         # Convert prompt_overrides to dict if it's a model
         if prompt_overrides and isinstance(prompt_overrides, GraphPromptOverrides):
             prompt_overrides = prompt_overrides.model_dump(exclude_none=True)
-            
+
         request = {
             "name": name,
             "filters": filters,
@@ -1281,8 +2169,8 @@ class Morphik:
         }
 
         response = self._request("POST", "graph/create", request)
-        return Graph(**response)
-        
+        return self._logic._parse_graph_response(response)
+
     def get_graph(self, name: str) -> Graph:
         """
         Get a graph by name.
@@ -1301,7 +2189,7 @@ class Morphik:
             ```
         """
         response = self._request("GET", f"graph/{name}")
-        return Graph(**response)
+        return self._logic._parse_graph_response(response)
 
     def list_graphs(self) -> List[Graph]:
         """
@@ -1319,8 +2207,8 @@ class Morphik:
             ```
         """
         response = self._request("GET", "graphs")
-        return [Graph(**graph) for graph in response]
-        
+        return self._logic._parse_graph_list_response(response)
+
     def update_graph(
         self,
         name: str,
@@ -1330,20 +2218,20 @@ class Morphik:
     ) -> Graph:
         """
         Update an existing graph with new documents.
-        
+
         This method processes additional documents matching the original or new filters,
         extracts entities and relationships, and updates the graph with new information.
-        
+
         Args:
             name: Name of the graph to update
             additional_filters: Optional additional metadata filters to determine which new documents to include
             additional_documents: Optional list of additional document IDs to include
             prompt_overrides: Optional customizations for entity extraction and resolution prompts
                 Either a GraphPromptOverrides object or a dictionary with the same structure
-            
+
         Returns:
             Graph: The updated graph
-            
+
         Example:
             ```python
             # Update a graph with new documents
@@ -1353,7 +2241,7 @@ class Morphik:
                 additional_documents=["doc4", "doc5"]
             )
             print(f"Graph now has {len(updated_graph.entities)} entities")
-            
+
             # With entity resolution examples
             from morphik.models import EntityResolutionPromptOverride, EntityResolutionExample, GraphPromptOverrides
             updated_graph = db.update_graph(
@@ -1363,7 +2251,7 @@ class Morphik:
                     entity_resolution=EntityResolutionPromptOverride(
                         examples=[
                             EntityResolutionExample(
-                                canonical="Machine Learning", 
+                                canonical="Machine Learning",
                                 variants=["ML", "machine learning", "AI/ML"]
                             )
                         ]
@@ -1375,7 +2263,7 @@ class Morphik:
         # Convert prompt_overrides to dict if it's a model
         if prompt_overrides and isinstance(prompt_overrides, GraphPromptOverrides):
             prompt_overrides = prompt_overrides.model_dump(exclude_none=True)
-            
+
         request = {
             "additional_filters": additional_filters,
             "additional_documents": additional_documents,
@@ -1383,23 +2271,23 @@ class Morphik:
         }
 
         response = self._request("POST", f"graph/{name}/update", request)
-        return Graph(**response)
-        
+        return self._logic._parse_graph_response(response)
+
     def delete_document(self, document_id: str) -> Dict[str, str]:
         """
         Delete a document and all its associated data.
-        
+
         This method deletes a document and all its associated data, including:
         - Document metadata
         - Document content in storage
         - Document chunks and embeddings in vector store
-        
+
         Args:
             document_id: ID of the document to delete
-            
+
         Returns:
             Dict[str, str]: Deletion status
-            
+
         Example:
             ```python
             # Delete a document
@@ -1409,20 +2297,20 @@ class Morphik:
         """
         response = self._request("DELETE", f"documents/{document_id}")
         return response
-        
+
     def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
         """
         Delete a document by its filename.
-        
+
         This is a convenience method that first retrieves the document ID by filename
         and then deletes the document by ID.
-        
+
         Args:
             filename: Filename of the document to delete
-            
+
         Returns:
             Dict[str, str]: Deletion status
-            
+
         Example:
             ```python
             # Delete a document by filename
@@ -1432,13 +2320,13 @@ class Morphik:
         """
         # First get the document by filename to obtain its ID
         doc = self.get_document_by_filename(filename)
-        
+
         # Then delete the document by ID
         return self.delete_document(doc.external_id)
 
     def close(self):
-        """Close the HTTP session"""
-        self._session.close()
+        """Close the HTTP client"""
+        self._client.close()
 
     def __enter__(self):
         return self

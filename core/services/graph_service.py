@@ -68,6 +68,7 @@ class GraphService:
         additional_filters: Optional[Dict[str, Any]] = None,
         additional_documents: Optional[List[str]] = None,
         prompt_overrides: Optional[GraphPromptOverrides] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
     ) -> Graph:
         """Update an existing graph with new documents.
 
@@ -81,10 +82,15 @@ class GraphService:
             additional_filters: Optional additional metadata filters to determine which new documents to include
             additional_documents: Optional list of specific additional document IDs to include
             prompt_overrides: Optional GraphPromptOverrides with customizations for prompts
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id) to determine which documents to include
 
         Returns:
             Graph: The updated graph
         """
+        # Initialize system_filters if None
+        if system_filters is None:
+            system_filters = {}
+            
         if "write" not in auth.permissions:
             raise PermissionError("User does not have write permission")
 
@@ -99,7 +105,7 @@ class GraphService:
 
         # Find new documents to process
         document_ids = await self._get_new_document_ids(
-            auth, existing_graph, additional_filters, additional_documents
+            auth, existing_graph, additional_filters, additional_documents, system_filters
         )
 
         if not document_ids and not explicit_doc_ids:
@@ -123,7 +129,7 @@ class GraphService:
 
         # Batch retrieve all documents in a single call
         document_objects = await document_service.batch_retrieve_documents(
-            all_ids_to_retrieve, auth
+            all_ids_to_retrieve, auth, system_filters.get("folder_name", None), system_filters.get("end_user_id", None)
         )
 
         # Process explicit documents if needed
@@ -150,6 +156,8 @@ class GraphService:
                     if doc_id not in {d.external_id for d in document_objects}
                 ],
                 auth,
+                system_filters.get("folder_name", None), 
+                system_filters.get("end_user_id", None)
             )
             logger.info(f"Additional filtered documents to include: {len(filtered_docs)}")
             document_objects.extend(filtered_docs)
@@ -190,23 +198,28 @@ class GraphService:
         existing_graph: Graph,
         additional_filters: Optional[Dict[str, Any]] = None,
         additional_documents: Optional[List[str]] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
     ) -> Set[str]:
         """Get IDs of new documents to add to the graph."""
+        # Initialize system_filters if None
+        if system_filters is None:
+            system_filters = {}
         # Initialize with explicitly specified documents, ensuring it's a set
         document_ids = set(additional_documents or [])
 
         # Process documents matching additional filters
-        if additional_filters:
-            filtered_docs = await self.db.get_documents(auth, filters=additional_filters)
+        if additional_filters or system_filters:
+            filtered_docs = await self.db.get_documents(auth, filters=additional_filters, system_filters=system_filters)
             filter_doc_ids = {doc.external_id for doc in filtered_docs}
-            logger.info(f"Found {len(filter_doc_ids)} documents matching additional filters")
+            logger.info(f"Found {len(filter_doc_ids)} documents matching additional filters and system filters")
             document_ids.update(filter_doc_ids)
 
         # Process documents matching the original filters
         if existing_graph.filters:
-            filtered_docs = await self.db.get_documents(auth, filters=existing_graph.filters)
+            # Original filters shouldn't include system filters, as we're applying them separately
+            filtered_docs = await self.db.get_documents(auth, filters=existing_graph.filters, system_filters=system_filters)
             orig_filter_doc_ids = {doc.external_id for doc in filtered_docs}
-            logger.info(f"Found {len(orig_filter_doc_ids)} documents matching original filters")
+            logger.info(f"Found {len(orig_filter_doc_ids)} documents matching original filters and system filters")
             document_ids.update(orig_filter_doc_ids)
 
         # Get only the document IDs that are not already in the graph
@@ -384,6 +397,7 @@ class GraphService:
         filters: Optional[Dict[str, Any]] = None,
         documents: Optional[List[str]] = None,
         prompt_overrides: Optional[GraphPromptOverrides] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
     ) -> Graph:
         """Create a graph from documents.
 
@@ -397,10 +411,15 @@ class GraphService:
             filters: Optional metadata filters to determine which documents to include
             documents: Optional list of specific document IDs to include
             prompt_overrides: Optional GraphPromptOverrides with customizations for prompts
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id) to determine which documents to include
 
         Returns:
             Graph: The created graph
         """
+        # Initialize system_filters if None
+        if system_filters is None:
+            system_filters = {}
+            
         if "write" not in auth.permissions:
             raise PermissionError("User does not have write permission")
 
@@ -408,15 +427,28 @@ class GraphService:
         document_ids = set(documents or [])
 
         # If filters were provided, get matching documents
-        if filters:
-            filtered_docs = await self.db.get_documents(auth, filters=filters)
+        if filters or system_filters:
+            filtered_docs = await self.db.get_documents(auth, filters=filters, system_filters=system_filters)
             document_ids.update(doc.external_id for doc in filtered_docs)
 
         if not document_ids:
             raise ValueError("No documents found matching criteria")
 
+        # Convert system_filters for document retrieval
+        folder_name = system_filters.get("folder_name") if system_filters else None
+        end_user_id = system_filters.get("end_user_id") if system_filters else None
+        
         # Batch retrieve documents for authorization check
-        document_objects = await document_service.batch_retrieve_documents(list(document_ids), auth)
+        document_objects = await document_service.batch_retrieve_documents(
+            list(document_ids), 
+            auth, 
+            folder_name, 
+            end_user_id
+        )
+        
+        # Log for debugging
+        logger.info(f"Graph creation with folder_name={folder_name}, end_user_id={end_user_id}")
+        logger.info(f"Documents retrieved: {len(document_objects)} out of {len(document_ids)} requested")
         if not document_objects:
             raise ValueError("No authorized documents found matching criteria")
 
@@ -434,6 +466,13 @@ class GraphService:
                 "admins": [auth.entity_id],
             },
         )
+        
+        # Add folder_name and end_user_id to system_metadata if provided
+        if system_filters:
+            if "folder_name" in system_filters:
+                graph.system_metadata["folder_name"] = system_filters["folder_name"]
+            if "end_user_id" in system_filters:
+                graph.system_metadata["end_user_id"] = system_filters["end_user_id"]
 
         # Extract entities and relationships
         entities, relationships = await self._process_documents_for_entities(
@@ -868,6 +907,8 @@ class GraphService:
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional[QueryPromptOverrides] = None,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None,
     ) -> CompletionResponse:
         """Generate completion using knowledge graph-enhanced retrieval.
 
@@ -899,8 +940,15 @@ class GraphService:
 
         # Validation is now handled by type annotations
 
-        # Get the knowledge graph
-        graph = await self.db.get_graph(graph_name, auth)
+        # Build system filters for scoping
+        system_filters = {}
+        if folder_name:
+            system_filters["folder_name"] = folder_name
+        if end_user_id:
+            system_filters["end_user_id"] = end_user_id
+        
+        logger.info(f"Querying graph with system_filters: {system_filters}")
+        graph = await self.db.get_graph(graph_name, auth, system_filters=system_filters)
         if not graph:
             logger.warning(f"Graph '{graph_name}' not found or not accessible")
             # Fall back to standard retrieval if graph not found
@@ -915,12 +963,14 @@ class GraphService:
                 use_reranking=use_reranking,
                 use_colpali=use_colpali,
                 graph_name=None,
+                folder_name=folder_name,
+                end_user_id=end_user_id,
             )
 
         # Parallel approach
         # 1. Standard vector search
         vector_chunks = await document_service.retrieve_chunks(
-            query, auth, filters, k, min_score, use_reranking, use_colpali
+            query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, end_user_id
         )
         logger.info(f"Vector search retrieved {len(vector_chunks)} chunks")
 
@@ -990,7 +1040,7 @@ class GraphService:
 
         # Get specific chunks containing these entities
         graph_chunks = await self._retrieve_entity_chunks(
-            expanded_entities, auth, filters, document_service
+            expanded_entities, auth, filters, document_service, folder_name, end_user_id
         )
         logger.info(f"Retrieved {len(graph_chunks)} chunks containing relevant entities")
 
@@ -1015,6 +1065,8 @@ class GraphService:
             auth,
             graph_name,
             prompt_overrides,
+            folder_name=folder_name,
+            end_user_id=end_user_id,
         )
 
         return completion_response
@@ -1143,8 +1195,13 @@ class GraphService:
         auth: AuthContext,
         filters: Optional[Dict[str, Any]],
         document_service,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None,
     ) -> List[ChunkResult]:
         """Retrieve chunks containing the specified entities."""
+        # Initialize filters if None
+        if filters is None:
+            filters = {}
         if not entities:
             return []
 
@@ -1158,9 +1215,9 @@ class GraphService:
 
         # Get unique document IDs for authorization check
         doc_ids = {doc_id for doc_id, _ in entity_chunk_sources}
-
-        # Check document authorization
-        documents = await document_service.batch_retrieve_documents(list(doc_ids), auth)
+        
+        # Check document authorization with system filters
+        documents = await document_service.batch_retrieve_documents(list(doc_ids), auth, folder_name, end_user_id)
 
         # Apply filters if needed
         authorized_doc_ids = {
@@ -1178,7 +1235,7 @@ class GraphService:
 
         # Retrieve and return chunks if we have any valid sources
         return (
-            await document_service.batch_retrieve_chunks(chunk_sources, auth)
+            await document_service.batch_retrieve_chunks(chunk_sources, auth, folder_name=folder_name, end_user_id=end_user_id)
             if chunk_sources
             else []
         )
@@ -1198,7 +1255,7 @@ class GraphService:
             chunk.score = min(1.0, (getattr(chunk, "score", 0.7) or 0.7) * 1.05)
 
             # Keep the higher-scored version
-            if chunk_key not in all_chunks or chunk.score > all_chunks[chunk_key].score:
+            if chunk_key not in all_chunks or chunk.score > (getattr(all_chunks.get(chunk_key), "score", 0) or 0):
                 all_chunks[chunk_key] = chunk
 
         # Convert to list, sort by score, and return top k
@@ -1330,6 +1387,8 @@ class GraphService:
         auth: Optional[AuthContext] = None,
         graph_name: Optional[str] = None,
         prompt_overrides: Optional[QueryPromptOverrides] = None,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None,
     ) -> CompletionResponse:
         """Generate completion using the retrieved chunks and optional path information."""
         if not chunks:
@@ -1370,6 +1429,8 @@ class GraphService:
             max_tokens=max_tokens,
             temperature=temperature,
             prompt_template=custom_prompt_template,
+            folder_name=folder_name,
+            end_user_id=end_user_id,
         )
 
         # Get completion from model
@@ -1387,6 +1448,7 @@ class GraphService:
 
         # Include graph metadata if paths were requested
         if include_paths:
+            # Initialize metadata if it doesn't exist
             if not hasattr(response, "metadata") or response.metadata is None:
                 response.metadata = {}
 

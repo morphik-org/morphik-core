@@ -27,7 +27,7 @@ class StorageFileInfo(BaseModel):
     
     
 class Document(BaseModel):
-    """Represents a document stored in MongoDB documents collection"""
+    """Represents a document stored in the database documents collection"""
 
     external_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     owner: Dict[str, str]
@@ -44,6 +44,8 @@ class Document(BaseModel):
             "created_at": datetime.now(UTC),
             "updated_at": datetime.now(UTC),
             "version": 1,
+            "folder_name": None,
+            "end_user_id": None,
         }
     )
     """metadata such as creation date etc."""
