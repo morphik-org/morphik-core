@@ -95,7 +95,8 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             }
 
             # Add up to 3 images
-            for img_url in image_urls[:3]:
+            NUM_IMAGES = min(3, len(image_urls))
+            for img_url in image_urls[:NUM_IMAGES]:
                 user_message["content"].append({"type": "image_url", "image_url": {"url": img_url}})
 
         messages.append(user_message)

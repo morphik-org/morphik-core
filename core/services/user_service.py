@@ -18,7 +18,6 @@ class UserService:
         """Initialize the UserService."""
         self.settings = get_settings()
         self.db = UserLimitsDatabase(uri=self.settings.POSTGRES_URI)
-        self.db.initialize()
 
     async def initialize(self) -> bool:
         """Initialize database tables."""
