@@ -100,7 +100,7 @@ class _MorphikClientLogic:
         filename: Optional[str],
         metadata: Optional[Dict[str, Any]],
         rules: Optional[List[RuleOrDict]],
-        use_colpali: bool,
+        embed_as_image: bool,
         folder_name: Optional[str],
         end_user_id: Optional[str],
     ) -> Dict[str, Any]:
@@ -111,7 +111,7 @@ class _MorphikClientLogic:
             "filename": filename,
             "metadata": metadata or {},
             "rules": rules_dict,
-            "use_colpali": use_colpali,
+            "embed_as_image": embed_as_image,
         }
         if folder_name:
             payload["folder_name"] = folder_name
@@ -189,7 +189,7 @@ class _MorphikClientLogic:
         self,
         metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]],
         rules: Optional[List[RuleOrDict]],
-        use_colpali: bool,
+        embed_as_image: bool,
         parallel: bool,
         folder_name: Optional[str],
         end_user_id: Optional[str],
@@ -211,7 +211,7 @@ class _MorphikClientLogic:
         data = {
             "metadata": json.dumps(metadata or {}),
             "rules": json.dumps(converted_rules),
-            "use_colpali": str(use_colpali).lower() if use_colpali is not None else None,
+            "embed_as_image": str(embed_as_image).lower() if embed_as_image is not None else None,
             "parallel": str(parallel).lower(),
         }
 
@@ -230,7 +230,7 @@ class _MorphikClientLogic:
         min_score: float,
         max_tokens: Optional[int],
         temperature: Optional[float],
-        use_colpali: bool,
+        embed_as_image: bool,
         graph_name: Optional[str],
         hop_depth: int,
         include_paths: bool,
@@ -246,7 +246,7 @@ class _MorphikClientLogic:
             "min_score": min_score,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "use_colpali": use_colpali,
+            "embed_as_image": embed_as_image,
             "graph_name": graph_name,
             "hop_depth": hop_depth,
             "include_paths": include_paths,
@@ -265,7 +265,7 @@ class _MorphikClientLogic:
         filters: Optional[Dict[str, Any]],
         k: int,
         min_score: float,
-        use_colpali: bool,
+        embed_as_image: bool,
         folder_name: Optional[str],
         end_user_id: Optional[str],
     ) -> Dict[str, Any]:
@@ -275,7 +275,7 @@ class _MorphikClientLogic:
             "filters": filters,
             "k": k,
             "min_score": min_score,
-            "use_colpali": use_colpali,
+            "embed_as_image": embed_as_image,
         }
         if folder_name:
             request["folder_name"] = folder_name
@@ -289,7 +289,7 @@ class _MorphikClientLogic:
         filters: Optional[Dict[str, Any]],
         k: int,
         min_score: float,
-        use_colpali: bool,
+        embed_as_image: bool,
         folder_name: Optional[str],
         end_user_id: Optional[str],
     ) -> Dict[str, Any]:
@@ -299,7 +299,7 @@ class _MorphikClientLogic:
             "filters": filters,
             "k": k,
             "min_score": min_score,
-            "use_colpali": use_colpali,
+            "embed_as_image": embed_as_image,
         }
         if folder_name:
             request["folder_name"] = folder_name
@@ -422,7 +422,7 @@ class _MorphikClientLogic:
         metadata: Optional[Dict[str, Any]],
         rules: Optional[List],
         update_strategy: str,
-        use_colpali: Optional[bool],
+        embed_as_image: Optional[bool],
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Prepare request for update_document_with_text endpoint"""
         request = IngestTextRequest(
@@ -430,7 +430,7 @@ class _MorphikClientLogic:
             filename=filename,
             metadata=metadata or {},
             rules=[self._convert_rule(r) for r in (rules or [])],
-            use_colpali=use_colpali if use_colpali is not None else True,
+            embed_as_image=embed_as_image if embed_as_image is not None else True,
         )
 
         params = {}

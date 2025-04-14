@@ -87,7 +87,7 @@ class Folder:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> Document:
         """
         Ingest a text document into Morphik within this folder.
@@ -97,14 +97,14 @@ class Folder:
             filename: Optional file name
             metadata: Optional metadata dictionary
             rules: Optional list of rules to apply during ingestion
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             Document: Metadata of the ingested document
         """
         rules_list = [self._client._convert_rule(r) for r in (rules or [])]
         payload = self._client._logic._prepare_ingest_text_request(
-            content, filename, metadata, rules_list, use_colpali, self._name, None
+            content, filename, metadata, rules_list, embed_as_image, self._name, None
         )
         response = self._client._request("POST", "ingest/text", data=payload)
         doc = self._client._logic._parse_document_response(response)
@@ -117,7 +117,7 @@ class Folder:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> Document:
         """
         Ingest a file document into Morphik within this folder.
@@ -127,7 +127,7 @@ class Folder:
             filename: Name of the file
             metadata: Optional metadata dictionary
             rules: Optional list of rules to apply during ingestion
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             Document: Metadata of the ingested document
@@ -146,7 +146,7 @@ class Folder:
 
             response = self._client._request(
                 "POST",
-                f"ingest/file?use_colpali={str(use_colpali).lower()}",
+                f"ingest/file?embed_as_image={str(embed_as_image).lower()}",
                 data=form_data,
                 files=files,
             )
@@ -163,7 +163,7 @@ class Folder:
         files: List[Union[str, bytes, BinaryIO, Path]],
         metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         parallel: bool = True,
     ) -> List[Document]:
         """
@@ -173,7 +173,7 @@ class Folder:
             files: List of files to ingest
             metadata: Optional metadata
             rules: Optional list of rules to apply
-            use_colpali: Whether to use ColPali-style embedding
+            embed_as_image: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
         Returns:
@@ -185,7 +185,7 @@ class Folder:
         try:
             # Prepare form data
             data = self._client._logic._prepare_ingest_files_form_data(
-                metadata, rules, use_colpali, parallel, self._name, None
+                metadata, rules, embed_as_image, parallel, self._name, None
             )
 
             response = self._client._request("POST", "ingest/files", data=data, files=file_objects)
@@ -214,7 +214,7 @@ class Folder:
         pattern: str = "*",
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         parallel: bool = True,
     ) -> List[Document]:
         """
@@ -226,7 +226,7 @@ class Folder:
             pattern: Optional glob pattern to filter files
             metadata: Optional metadata dictionary to apply to all files
             rules: Optional list of rules to apply
-            use_colpali: Whether to use ColPali-style embedding
+            embed_as_image: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
         Returns:
@@ -250,7 +250,7 @@ class Folder:
 
         # Use ingest_files with collected paths
         return self.ingest_files(
-            files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
+            files=files, metadata=metadata, rules=rules, embed_as_image=embed_as_image, parallel=parallel
         )
 
     def retrieve_chunks(
@@ -259,7 +259,7 @@ class Folder:
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks within this folder.
@@ -269,7 +269,7 @@ class Folder:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
@@ -279,7 +279,7 @@ class Folder:
             "filters": filters,
             "k": k,
             "min_score": min_score,
-            "use_colpali": use_colpali,
+            "embed_as_image": embed_as_image,
             "folder_name": self._name,  # Add folder name here
         }
 
@@ -292,7 +292,7 @@ class Folder:
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents within this folder.
@@ -302,7 +302,7 @@ class Folder:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             List[DocumentResult]: List of relevant documents
@@ -312,7 +312,7 @@ class Folder:
             "filters": filters,
             "k": k,
             "min_score": min_score,
-            "use_colpali": use_colpali,
+            "embed_as_image": embed_as_image,
             "folder_name": self._name,  # Add folder name here
         }
 
@@ -327,7 +327,7 @@ class Folder:
         min_score: float = 0.0,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         graph_name: Optional[str] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
@@ -343,7 +343,7 @@ class Folder:
             min_score: Minimum similarity threshold (default: 0.0)
             max_tokens: Maximum tokens in completion
             temperature: Model temperature
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
@@ -359,7 +359,7 @@ class Folder:
             min_score,
             max_tokens,
             temperature,
-            use_colpali,
+            embed_as_image,
             graph_name,
             hop_depth,
             include_paths,
@@ -558,7 +558,7 @@ class UserScope:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> Document:
         """
         Ingest a text document into Morphik as this end user.
@@ -568,7 +568,7 @@ class UserScope:
             filename: Optional file name
             metadata: Optional metadata dictionary
             rules: Optional list of rules to apply during ingestion
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             Document: Metadata of the ingested document
@@ -579,7 +579,7 @@ class UserScope:
             filename,
             metadata,
             rules_list,
-            use_colpali,
+            embed_as_image,
             self._folder_name,
             self._end_user_id,
         )
@@ -594,7 +594,7 @@ class UserScope:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> Document:
         """
         Ingest a file document into Morphik as this end user.
@@ -604,7 +604,7 @@ class UserScope:
             filename: Name of the file
             metadata: Optional metadata dictionary
             rules: Optional list of rules to apply during ingestion
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             Document: Metadata of the ingested document
@@ -644,7 +644,7 @@ class UserScope:
 
             response = self._client._request(
                 "POST",
-                f"ingest/file?use_colpali={str(use_colpali).lower()}",
+                f"ingest/file?embed_as_image={str(embed_as_image).lower()}",
                 data=form_data,
                 files=files,
             )
@@ -661,7 +661,7 @@ class UserScope:
         files: List[Union[str, bytes, BinaryIO, Path]],
         metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         parallel: bool = True,
     ) -> List[Document]:
         """
@@ -671,7 +671,7 @@ class UserScope:
             files: List of files to ingest
             metadata: Optional metadata
             rules: Optional list of rules to apply
-            use_colpali: Whether to use ColPali-style embedding
+            embed_as_image: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
         Returns:
@@ -706,7 +706,7 @@ class UserScope:
             data = {
                 "metadata": json.dumps(metadata or {}),
                 "rules": json.dumps(converted_rules),
-                "use_colpali": str(use_colpali).lower() if use_colpali is not None else None,
+                "embed_as_image": str(embed_as_image).lower() if embed_as_image is not None else None,
                 "parallel": str(parallel).lower(),
                 "end_user_id": self._end_user_id,  # Add end user ID here
             }
@@ -741,7 +741,7 @@ class UserScope:
         pattern: str = "*",
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         parallel: bool = True,
     ) -> List[Document]:
         """
@@ -753,7 +753,7 @@ class UserScope:
             pattern: Optional glob pattern to filter files
             metadata: Optional metadata dictionary to apply to all files
             rules: Optional list of rules to apply
-            use_colpali: Whether to use ColPali-style embedding
+            embed_as_image: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
         Returns:
@@ -777,7 +777,7 @@ class UserScope:
 
         # Use ingest_files with collected paths
         return self.ingest_files(
-            files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
+            files=files, metadata=metadata, rules=rules, embed_as_image=embed_as_image, parallel=parallel
         )
 
     def retrieve_chunks(
@@ -786,7 +786,7 @@ class UserScope:
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks as this end user.
@@ -796,7 +796,7 @@ class UserScope:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
@@ -806,7 +806,7 @@ class UserScope:
             "filters": filters,
             "k": k,
             "min_score": min_score,
-            "use_colpali": use_colpali,
+            "embed_as_image": embed_as_image,
             "end_user_id": self._end_user_id,  # Add end user ID here
         }
 
@@ -823,7 +823,7 @@ class UserScope:
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents as this end user.
@@ -833,7 +833,7 @@ class UserScope:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             List[DocumentResult]: List of relevant documents
@@ -843,7 +843,7 @@ class UserScope:
             "filters": filters,
             "k": k,
             "min_score": min_score,
-            "use_colpali": use_colpali,
+            "embed_as_image": embed_as_image,
             "end_user_id": self._end_user_id,  # Add end user ID here
         }
 
@@ -862,7 +862,7 @@ class UserScope:
         min_score: float = 0.0,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         graph_name: Optional[str] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
@@ -878,7 +878,7 @@ class UserScope:
             min_score: Minimum similarity threshold (default: 0.0)
             max_tokens: Maximum tokens in completion
             temperature: Model temperature
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
@@ -894,7 +894,7 @@ class UserScope:
             min_score,
             max_tokens,
             temperature,
-            use_colpali,
+            embed_as_image,
             graph_name,
             hop_depth,
             include_paths,
@@ -1189,7 +1189,7 @@ class Morphik:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> Document:
         """
         Ingest a text document into Morphik.
@@ -1200,7 +1200,7 @@ class Morphik:
             rules: Optional list of rules to apply during ingestion. Can be:
                   - MetadataExtractionRule: Extract metadata using a schema
                   - NaturalLanguageRule: Transform content using natural language
-            use_colpali: Whether to use ColPali-style embedding model to ingest the text (slower, but significantly better retrieval accuracy for text and images)
+            embed_as_image: Whether to use ColPali-style embedding model to ingest the text (slower, but significantly better retrieval accuracy for text and images)
         Returns:
             Document: Metadata of the ingested document
 
@@ -1228,7 +1228,7 @@ class Morphik:
         """
         rules_list = [self._convert_rule(r) for r in (rules or [])]
         payload = self._logic._prepare_ingest_text_request(
-            content, filename, metadata, rules_list, use_colpali, None, None
+            content, filename, metadata, rules_list, embed_as_image, None, None
         )
         response = self._request("POST", "ingest/text", data=payload)
         doc = self._logic._parse_document_response(response)
@@ -1241,7 +1241,7 @@ class Morphik:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> Document:
         """
         Ingest a file document into Morphik.
@@ -1253,7 +1253,7 @@ class Morphik:
             rules: Optional list of rules to apply during ingestion. Can be:
                   - MetadataExtractionRule: Extract metadata using a schema
                   - NaturalLanguageRule: Transform content using natural language
-            use_colpali: Whether to use ColPali-style embedding model to ingest the file (slower, but significantly better retrieval accuracy for images)
+            embed_as_image: Whether to use ColPali-style embedding model to ingest the file (slower, but significantly better retrieval accuracy for images)
 
         Returns:
             Document: Metadata of the ingested document
@@ -1276,7 +1276,7 @@ class Morphik:
                     MetadataExtractionRule(schema=DocumentInfo),
                     NaturalLanguageRule(prompt="Extract key points only")
                 ], # Optional
-                use_colpali=True, # Optional
+                embed_as_image=True, # Optional
             )
             ```
         """
@@ -1292,7 +1292,7 @@ class Morphik:
 
             response = self._request(
                 "POST",
-                f"ingest/file?use_colpali={str(use_colpali).lower()}",
+                f"ingest/file?embed_as_image={str(embed_as_image).lower()}",
                 data=form_data,
                 files=files,
             )
@@ -1309,7 +1309,7 @@ class Morphik:
         files: List[Union[str, bytes, BinaryIO, Path]],
         metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         parallel: bool = True,
     ) -> List[Document]:
         """
@@ -1319,7 +1319,7 @@ class Morphik:
             files: List of files to ingest (path strings, bytes, file objects, or Paths)
             metadata: Optional metadata (single dict for all files or list of dicts)
             rules: Optional list of rules to apply
-            use_colpali: Whether to use ColPali-style embedding
+            embed_as_image: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
         Returns:
@@ -1334,7 +1334,7 @@ class Morphik:
         try:
             # Prepare form data
             data = self._logic._prepare_ingest_files_form_data(
-                metadata, rules, use_colpali, parallel, None, None
+                metadata, rules, embed_as_image, parallel, None, None
             )
 
             response = self._request("POST", "ingest/files", data=data, files=file_objects)
@@ -1361,7 +1361,7 @@ class Morphik:
         pattern: str = "*",
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         parallel: bool = True,
     ) -> List[Document]:
         """
@@ -1373,7 +1373,7 @@ class Morphik:
             pattern: Optional glob pattern to filter files (e.g. "*.pdf")
             metadata: Optional metadata dictionary to apply to all files
             rules: Optional list of rules to apply
-            use_colpali: Whether to use ColPali-style embedding
+            embed_as_image: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
         Returns:
@@ -1400,7 +1400,7 @@ class Morphik:
 
         # Use ingest_files with collected paths
         return self.ingest_files(
-            files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
+            files=files, metadata=metadata, rules=rules, embed_as_image=embed_as_image, parallel=parallel
         )
 
     def retrieve_chunks(
@@ -1409,7 +1409,7 @@ class Morphik:
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks.
@@ -1419,7 +1419,7 @@ class Morphik:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model to retrieve the chunks (only works for documents ingested with `use_colpali=True`)
+            embed_as_image: Whether to use ColPali-style embedding model to retrieve the chunks (only works for documents ingested with `embed_as_image=True`)
         Returns:
             List[ChunkResult]
 
@@ -1432,7 +1432,7 @@ class Morphik:
             ```
         """
         payload = self._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, None, None
+            query, filters, k, min_score, embed_as_image, None, None
         )
         response = self._request("POST", "retrieve/chunks", data=payload)
         return self._logic._parse_chunk_result_list_response(response)
@@ -1443,7 +1443,7 @@ class Morphik:
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents.
@@ -1453,7 +1453,7 @@ class Morphik:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model to retrieve the documents (only works for documents ingested with `use_colpali=True`)
+            embed_as_image: Whether to use ColPali-style embedding model to retrieve the documents (only works for documents ingested with `embed_as_image=True`)
         Returns:
             List[DocumentResult]
 
@@ -1466,7 +1466,7 @@ class Morphik:
             ```
         """
         payload = self._logic._prepare_retrieve_docs_request(
-            query, filters, k, min_score, use_colpali, None, None
+            query, filters, k, min_score, embed_as_image, None, None
         )
         response = self._request("POST", "retrieve/docs", data=payload)
         return self._logic._parse_document_result_list_response(response)
@@ -1479,7 +1479,7 @@ class Morphik:
         min_score: float = 0.0,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         graph_name: Optional[str] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
@@ -1495,7 +1495,7 @@ class Morphik:
             min_score: Minimum similarity threshold (default: 0.0)
             max_tokens: Maximum tokens in completion
             temperature: Model temperature
-            use_colpali: Whether to use ColPali-style embedding model to generate the completion (only works for documents ingested with `use_colpali=True`)
+            embed_as_image: Whether to use ColPali-style embedding model to generate the completion (only works for documents ingested with `embed_as_image=True`)
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
@@ -1557,7 +1557,7 @@ class Morphik:
             min_score,
             max_tokens,
             temperature,
-            use_colpali,
+            embed_as_image,
             graph_name,
             hop_depth,
             include_paths,
@@ -1649,7 +1649,7 @@ class Morphik:
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
     ) -> Document:
         """
         Update a document with new text content using the specified strategy.
@@ -1661,7 +1661,7 @@ class Morphik:
             metadata: Additional metadata to update (optional)
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
 
         Returns:
             Document: Updated document metadata
@@ -1685,7 +1685,7 @@ class Morphik:
             filename=filename,
             metadata=metadata or {},
             rules=[self._convert_rule(r) for r in (rules or [])],
-            use_colpali=use_colpali if use_colpali is not None else True,
+            embed_as_image=embed_as_image if embed_as_image is not None else True,
         )
 
         params = {}
@@ -1708,7 +1708,7 @@ class Morphik:
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
     ) -> Document:
         """
         Update a document with content from a file using the specified strategy.
@@ -1720,7 +1720,7 @@ class Morphik:
             metadata: Additional metadata to update (optional)
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
 
         Returns:
             Document: Updated document metadata
@@ -1766,8 +1766,8 @@ class Morphik:
                 "update_strategy": update_strategy,
             }
 
-            if use_colpali is not None:
-                form_data["use_colpali"] = str(use_colpali).lower()
+            if embed_as_image is not None:
+                form_data["embed_as_image"] = str(embed_as_image).lower()
 
             # Use the dedicated file update endpoint
             response = self._request(
@@ -1821,7 +1821,7 @@ class Morphik:
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
     ) -> Document:
         """
         Update a document identified by filename with new text content using the specified strategy.
@@ -1833,7 +1833,7 @@ class Morphik:
             metadata: Additional metadata to update (optional)
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
 
         Returns:
             Document: Updated document metadata
@@ -1862,7 +1862,7 @@ class Morphik:
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali,
+            embed_as_image=embed_as_image,
         )
 
     def update_document_by_filename_with_file(
@@ -1873,7 +1873,7 @@ class Morphik:
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
     ) -> Document:
         """
         Update a document identified by filename with content from a file using the specified strategy.
@@ -1885,7 +1885,7 @@ class Morphik:
             metadata: Additional metadata to update (optional)
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
 
         Returns:
             Document: Updated document metadata
@@ -1913,7 +1913,7 @@ class Morphik:
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali,
+            embed_as_image=embed_as_image,
         )
 
     def update_document_by_filename_metadata(

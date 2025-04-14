@@ -94,7 +94,7 @@ class DocumentService:
         k: int = 5,
         min_score: float = 0.0,
         use_reranking: Optional[bool] = None,
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
         folder_name: Optional[str] = None,
         end_user_id: Optional[str] = None,
     ) -> List[ChunkResult]:
@@ -104,7 +104,7 @@ class DocumentService:
 
         # Get embedding for query
         query_embedding_regular = await self.embedding_model.embed_for_query(query)
-        query_embedding_multivector = await self.colpali_embedding_model.embed_for_query(query) if (use_colpali and self.colpali_embedding_model) else None
+        query_embedding_multivector = await self.colpali_embedding_model.embed_for_query(query) if (embed_as_image and self.colpali_embedding_model) else None
         logger.info("Generated query embedding")
 
         # Find authorized documents
@@ -122,7 +122,7 @@ class DocumentService:
         logger.info(f"Found {len(doc_ids)} authorized documents")
 
 
-        search_multi = use_colpali and self.colpali_vector_store and query_embedding_multivector is not None
+        search_multi = embed_as_image and self.colpali_vector_store and query_embedding_multivector is not None
         should_rerank = should_rerank and (not search_multi) # colpali has a different re-ranking method
 
         # Search chunks with vector similarity
@@ -137,7 +137,7 @@ class DocumentService:
         )
 
         logger.debug(f"Found {len(chunks)} similar chunks via regular embedding")
-        if use_colpali:
+        if embed_as_image:
             logger.debug(f"Found {len(chunks_multivector)} similar chunks via multivector embedding since we are also using colpali")
 
         # Rerank chunks using the reranker if enabled and available
@@ -202,14 +202,14 @@ class DocumentService:
         k: int = 5,
         min_score: float = 0.0,
         use_reranking: Optional[bool] = None,
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
         folder_name: Optional[str] = None,
         end_user_id: Optional[str] = None,
     ) -> List[DocumentResult]:
         """Retrieve relevant documents."""
         # Get chunks first
         chunks = await self.retrieve_chunks(
-            query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, end_user_id
+            query, auth, filters, k, min_score, use_reranking, embed_as_image, folder_name, end_user_id
         )
         # Convert to document results
         results = await self._create_document_results(auth, chunks)
@@ -309,7 +309,7 @@ class DocumentService:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         use_reranking: Optional[bool] = None,
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
         graph_name: Optional[str] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
@@ -331,7 +331,7 @@ class DocumentService:
             max_tokens: Maximum tokens for completion
             temperature: Temperature for completion
             use_reranking: Whether to use reranking
-            use_colpali: Whether to use colpali embedding
+            embed_as_image: Whether to use colpali embedding
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
@@ -349,7 +349,7 @@ class DocumentService:
                 max_tokens=max_tokens,
                 temperature=temperature,
                 use_reranking=use_reranking,
-                use_colpali=use_colpali,
+                embed_as_image=embed_as_image,
                 hop_depth=hop_depth,
                 include_paths=include_paths,
                 prompt_overrides=prompt_overrides,
@@ -359,7 +359,7 @@ class DocumentService:
         
         # Standard retrieval without graph
         chunks = await self.retrieve_chunks(
-            query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, end_user_id
+            query, auth, filters, k, min_score, use_reranking, embed_as_image, folder_name, end_user_id
         )
         documents = await self._create_document_results(auth, chunks)
 
@@ -399,7 +399,7 @@ class DocumentService:
         metadata: Optional[Dict[str, Any]] = None,
         auth: AuthContext = None,
         rules: Optional[List[str]] = None,
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
         folder_name: Optional[str] = None,
         end_user_id: Optional[str] = None,
     ) -> Document:
@@ -466,7 +466,7 @@ class DocumentService:
 
         chunk_objects_multivector = []
 
-        if use_colpali and self.colpali_embedding_model:
+        if embed_as_image and self.colpali_embedding_model:
             embeddings_multivector = await self.colpali_embedding_model.embed_for_ingestion(chunks)
             logger.info(
                 f"Generated {len(embeddings_multivector)} embeddings for multivector embedding"
@@ -481,7 +481,7 @@ class DocumentService:
         # Create and store chunk objects
 
         # Store everything
-        await self._store_chunks_and_doc(chunk_objects, doc, use_colpali, chunk_objects_multivector)
+        await self._store_chunks_and_doc(chunk_objects, doc, embed_as_image, chunk_objects_multivector)
         logger.debug(f"Successfully stored text document {doc.external_id}")
 
         return doc
@@ -492,7 +492,7 @@ class DocumentService:
         metadata: Dict[str, Any],
         auth: AuthContext,
         rules: Optional[List[str]] = None,
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
         folder_name: Optional[str] = None,
         end_user_id: Optional[str] = None,
     ) -> Document:
@@ -603,8 +603,8 @@ class DocumentService:
         logger.debug(f"Created {len(chunk_objects)} chunk objects")
 
         chunk_objects_multivector = []
-        logger.debug(f"use_colpali: {use_colpali}")
-        if use_colpali and self.colpali_embedding_model:
+        logger.debug(f"embed_as_image: {embed_as_image}")
+        if embed_as_image and self.colpali_embedding_model:
             chunks_multivector = self._create_chunks_multivector(
                 file_type, file_content_base64, file_content, chunks
             )
@@ -619,7 +619,7 @@ class DocumentService:
 
         # Store everything
         doc.chunk_ids = await self._store_chunks_and_doc(
-            chunk_objects, doc, use_colpali, chunk_objects_multivector
+            chunk_objects, doc, embed_as_image, chunk_objects_multivector
         )
         logger.debug(f"Successfully stored file document {doc.external_id}")
 
@@ -788,7 +788,7 @@ class DocumentService:
         self,
         chunk_objects: List[DocumentChunk],
         doc: Document,
-        use_colpali: bool = False,
+        embed_as_image: bool = False,
         chunk_objects_multivector: Optional[List[DocumentChunk]] = None,
         is_update: bool = False,
         auth: Optional[AuthContext] = None,
@@ -801,7 +801,7 @@ class DocumentService:
         logger.debug("Stored chunk embeddings in vector store")
         doc.chunk_ids = result
 
-        if use_colpali and self.colpali_vector_store and chunk_objects_multivector:
+        if embed_as_image and self.colpali_vector_store and chunk_objects_multivector:
             success, result_multivector = await self.colpali_vector_store.store_embeddings(
                 chunk_objects_multivector
             )
@@ -1009,7 +1009,7 @@ class DocumentService:
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
     ) -> Optional[Document]:
         """
         Update a document with new content and/or metadata using the specified strategy.
@@ -1023,7 +1023,7 @@ class DocumentService:
             metadata: Additional metadata to update
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document ('add' to append content)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
             
         Returns:
             Updated document if successful, None if failed
@@ -1074,12 +1074,12 @@ class DocumentService:
         
         # Handle colpali (multi-vector) embeddings if needed
         chunk_objects_multivector = await self._process_colpali_embeddings(
-            use_colpali, doc.external_id, chunks, file, file_type, file_content, file_content_base64
+            embed_as_image, doc.external_id, chunks, file, file_type, file_content, file_content_base64
         )
         
         # Store everything - this will replace existing chunks with new ones
         await self._store_chunks_and_doc(
-            chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
+            chunk_objects, doc, embed_as_image, chunk_objects_multivector, is_update=True, auth=auth
         )
         logger.info(f"Successfully updated document {doc.external_id}")
         
@@ -1340,7 +1340,7 @@ class DocumentService:
         
     async def _process_colpali_embeddings(
         self,
-        use_colpali: bool,
+        embed_as_image: bool,
         doc_id: str,
         chunks: List[Chunk],
         file: Optional[UploadFile],
@@ -1351,7 +1351,7 @@ class DocumentService:
         """Process colpali multi-vector embeddings if enabled."""
         chunk_objects_multivector = []
         
-        if not (use_colpali and self.colpali_embedding_model and self.colpali_vector_store):
+        if not (embed_as_image and self.colpali_embedding_model and self.colpali_vector_store):
             return chunk_objects_multivector
             
         # For file updates, we need special handling for images and PDFs

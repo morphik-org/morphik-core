@@ -51,7 +51,7 @@ interface SearchOptions {
   k: number;
   min_score: number;
   use_reranking: boolean;
-  use_colpali: boolean;
+  embed_as_image: boolean;
 }
 
 interface QueryOptions extends SearchOptions {
@@ -94,7 +94,7 @@ const MorphikUI = () => {
     k: 4,
     min_score: 0,
     use_reranking: false,
-    use_colpali: true
+    embed_as_image: true
   });
 
   // Advanced options for chat/query
@@ -104,7 +104,7 @@ const MorphikUI = () => {
     k: 4,
     min_score: 0,
     use_reranking: false,
-    use_colpali: true,
+    embed_as_image: true,
     max_tokens: 500,
     temperature: 0.7
   });
@@ -394,7 +394,7 @@ const MorphikUI = () => {
       formData.append('metadata', metadataRef);
       formData.append('rules', rulesRef);
       
-      const url = `${API_BASE_URL}/ingest/file${useColpaliRef ? '?use_colpali=true' : ''}`;
+      const url = `${API_BASE_URL}/ingest/file${useColpaliRef ? '?embed_as_image=true' : ''}`;
       
       // Non-blocking fetch
       fetch(url, {
@@ -498,7 +498,7 @@ const MorphikUI = () => {
       formData.append('rules', rulesRef);
       formData.append('parallel', 'true');
       if (useColpaliRef !== undefined) {
-        formData.append('use_colpali', useColpaliRef.toString());
+        formData.append('embed_as_image', useColpaliRef.toString());
       }
       
       // Non-blocking fetch
@@ -613,7 +613,7 @@ const MorphikUI = () => {
           content: textContentRef,
           metadata: JSON.parse(metadataRef || '{}'),
           rules: JSON.parse(rulesRef || '[]'),
-          use_colpali: useColpaliRef
+          embed_as_image: useColpaliRef
         })
       })
       .then(response => {
@@ -690,7 +690,7 @@ const MorphikUI = () => {
           k: searchOptions.k,
           min_score: searchOptions.min_score,
           use_reranking: searchOptions.use_reranking,
-          use_colpali: searchOptions.use_colpali
+          embed_as_image: searchOptions.embed_as_image
         })
       });
       
@@ -743,7 +743,7 @@ const MorphikUI = () => {
         k: queryOptions.k,
         min_score: queryOptions.min_score,
         use_reranking: queryOptions.use_reranking,
-        use_colpali: queryOptions.use_colpali,
+        embed_as_image: queryOptions.embed_as_image,
         max_tokens: queryOptions.max_tokens,
         temperature: queryOptions.temperature,
         graph_name: queryOptions.graph_name
@@ -1316,8 +1316,8 @@ const MorphikUI = () => {
                           <Label htmlFor="search-colpali">Use Colpali</Label>
                           <Switch 
                             id="search-colpali"
-                            checked={searchOptions.use_colpali}
-                            onCheckedChange={(checked) => updateSearchOption('use_colpali', checked)}
+                            checked={searchOptions.embed_as_image}
+                            onCheckedChange={(checked) => updateSearchOption('embed_as_image', checked)}
                           />
                         </div>
                       </div>
@@ -1512,8 +1512,8 @@ const MorphikUI = () => {
                             <Label htmlFor="query-colpali">Use Colpali</Label>
                             <Switch 
                               id="query-colpali"
-                              checked={queryOptions.use_colpali}
-                              onCheckedChange={(checked) => updateQueryOption('use_colpali', checked)}
+                              checked={queryOptions.embed_as_image}
+                              onCheckedChange={(checked) => updateQueryOption('embed_as_image', checked)}
                             />
                           </div>
                           

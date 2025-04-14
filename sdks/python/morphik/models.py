@@ -32,7 +32,7 @@ class Document(BaseModel):
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
     ) -> "Document":
         """
         Update this document with new text content using the specified strategy.
@@ -43,7 +43,7 @@ class Document(BaseModel):
             metadata: Additional metadata to update (optional)
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
 
         Returns:
             Document: Updated document metadata
@@ -60,7 +60,7 @@ class Document(BaseModel):
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali,
+            embed_as_image=embed_as_image,
         )
 
     def update_with_file(
@@ -70,7 +70,7 @@ class Document(BaseModel):
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
     ) -> "Document":
         """
         Update this document with content from a file using the specified strategy.
@@ -81,7 +81,7 @@ class Document(BaseModel):
             metadata: Additional metadata to update (optional)
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
 
         Returns:
             Document: Updated document metadata
@@ -98,7 +98,7 @@ class Document(BaseModel):
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali,
+            embed_as_image=embed_as_image,
         )
 
     def update_metadata(
@@ -188,7 +188,7 @@ class IngestTextRequest(BaseModel):
     filename: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     rules: List[Dict[str, Any]] = Field(default_factory=list)
-    use_colpali: bool = Field(default=False)
+    embed_as_image: bool = Field(default=False)
 
 
 class Entity(BaseModel):

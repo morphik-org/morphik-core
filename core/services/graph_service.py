@@ -903,7 +903,7 @@ class GraphService:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         use_reranking: Optional[bool] = None,
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional[QueryPromptOverrides] = None,
@@ -931,7 +931,7 @@ class GraphService:
             max_tokens: Maximum tokens for completion
             temperature: Temperature for completion
             use_reranking: Whether to use reranking
-            use_colpali: Whether to use colpali embedding
+            embed_as_image: Whether to use colpali embedding
             hop_depth: Number of relationship hops to traverse (1-3)
             include_paths: Whether to include relationship paths in response
             prompt_overrides: Optional QueryPromptOverrides with customizations for prompts
@@ -961,7 +961,7 @@ class GraphService:
                 max_tokens=max_tokens,
                 temperature=temperature,
                 use_reranking=use_reranking,
-                use_colpali=use_colpali,
+                embed_as_image=embed_as_image,
                 graph_name=None,
                 folder_name=folder_name,
                 end_user_id=end_user_id,
@@ -970,7 +970,7 @@ class GraphService:
         # Parallel approach
         # 1. Standard vector search
         vector_chunks = await document_service.retrieve_chunks(
-            query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, end_user_id
+            query, auth, filters, k, min_score, use_reranking, embed_as_image, folder_name, end_user_id
         )
         logger.info(f"Vector search retrieved {len(vector_chunks)} chunks")
 

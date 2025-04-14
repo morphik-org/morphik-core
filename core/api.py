@@ -300,7 +300,7 @@ async def ingest_text(
             metadata={
                 "metadata": request.metadata,
                 "rules": request.rules,
-                "use_colpali": request.use_colpali,
+                "embed_as_image": request.embed_as_image,
                 "folder_name": request.folder_name,
                 "end_user_id": request.end_user_id,
             },
@@ -310,7 +310,7 @@ async def ingest_text(
                 filename=request.filename,
                 metadata=request.metadata,
                 rules=request.rules,
-                use_colpali=request.use_colpali,
+                embed_as_image=request.embed_as_image,
                 auth=auth,
                 folder_name=request.folder_name,
                 end_user_id=request.end_user_id,
@@ -325,7 +325,7 @@ async def ingest_file(
     metadata: str = Form("{}"),
     rules: str = Form("[]"),
     auth: AuthContext = Depends(verify_token),
-    use_colpali: Optional[bool] = None,
+    embed_as_image: Optional[bool] = None,
     folder_name: Optional[str] = Form(None),
     end_user_id: Optional[str] = Form(None),
 ) -> Document:
@@ -339,7 +339,7 @@ async def ingest_file(
                - MetadataExtractionRule: {"type": "metadata_extraction", "schema": {...}}
                - NaturalLanguageRule: {"type": "natural_language", "prompt": "..."}
         auth: Authentication context
-        use_colpali: Whether to use ColPali embedding model
+        embed_as_image: Whether to use ColPali embedding model
         folder_name: Optional folder to scope the document to
         end_user_id: Optional end-user ID to scope the document to
 
@@ -349,7 +349,7 @@ async def ingest_file(
     try:
         metadata_dict = json.loads(metadata)
         rules_list = json.loads(rules)
-        use_colpali = bool(use_colpali)
+        embed_as_image = bool(embed_as_image)
 
         async with telemetry.track_operation(
             operation_type="ingest_file",
@@ -359,19 +359,19 @@ async def ingest_file(
                 "content_type": file.content_type,
                 "metadata": metadata_dict,
                 "rules": rules_list,
-                "use_colpali": use_colpali,
+                "embed_as_image": embed_as_image,
                 "folder_name": folder_name,
                 "end_user_id": end_user_id,
             },
         ):
-            logger.debug(f"API: Ingesting file with use_colpali: {use_colpali}")
+            logger.debug(f"API: Ingesting file with embed_as_image: {embed_as_image}")
             
             return await document_service.ingest_file(
                 file=file,
                 metadata=metadata_dict,
                 auth=auth,
                 rules=rules_list,
-                use_colpali=use_colpali,
+                embed_as_image=embed_as_image,
                 folder_name=folder_name,
                 end_user_id=end_user_id,
             )
@@ -386,7 +386,7 @@ async def batch_ingest_files(
     files: List[UploadFile] = File(...),
     metadata: str = Form("{}"),
     rules: str = Form("[]"),
-    use_colpali: Optional[bool] = Form(None),
+    embed_as_image: Optional[bool] = Form(None),
     parallel: bool = Form(True),
     folder_name: Optional[str] = Form(None),
     end_user_id: Optional[str] = Form(None),
@@ -401,7 +401,7 @@ async def batch_ingest_files(
         rules: JSON string of rules list. Can be either:
                - A single list of rules to apply to all files
                - A list of rule lists, one per file
-        use_colpali: Whether to use ColPali-style embedding
+        embed_as_image: Whether to use ColPali-style embedding
         parallel: Whether to process files in parallel
         folder_name: Optional folder to scope the documents to
         end_user_id: Optional end-user ID to scope the documents to
@@ -465,7 +465,7 @@ async def batch_ingest_files(
                     metadata=metadata_item,
                     auth=auth,
                     rules=file_rules,
-                    use_colpali=use_colpali,
+                    embed_as_image=embed_as_image,
                     folder_name=folder_name,
                     end_user_id=end_user_id
                 )
@@ -491,7 +491,7 @@ async def batch_ingest_files(
                         metadata=metadata_item,
                         auth=auth,
                         rules=file_rules,
-                        use_colpali=use_colpali,
+                        embed_as_image=embed_as_image,
                         folder_name=folder_name,
                         end_user_id=end_user_id
                     )
@@ -517,7 +517,7 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
             - k: Number of results (default: 4)
             - min_score: Minimum similarity threshold (default: 0.0)
             - use_reranking: Whether to use reranking
-            - use_colpali: Whether to use ColPali-style embedding model
+            - embed_as_image: Whether to use ColPali-style embedding model
             - folder_name: Optional folder to scope the search to
             - end_user_id: Optional end-user ID to scope the search to
         auth: Authentication context
@@ -533,7 +533,7 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
                 "k": request.k,
                 "min_score": request.min_score,
                 "use_reranking": request.use_reranking,
-                "use_colpali": request.use_colpali,
+                "embed_as_image": request.embed_as_image,
                 "folder_name": request.folder_name,
                 "end_user_id": request.end_user_id,
             },
@@ -545,7 +545,7 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
                 request.k,
                 request.min_score,
                 request.use_reranking,
-                request.use_colpali,
+                request.embed_as_image,
                 request.folder_name,
                 request.end_user_id,
             )
@@ -565,7 +565,7 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
             - k: Number of results (default: 4)
             - min_score: Minimum similarity threshold (default: 0.0)
             - use_reranking: Whether to use reranking
-            - use_colpali: Whether to use ColPali-style embedding model
+            - embed_as_image: Whether to use ColPali-style embedding model
             - folder_name: Optional folder to scope the search to
             - end_user_id: Optional end-user ID to scope the search to
         auth: Authentication context
@@ -581,7 +581,7 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
                 "k": request.k,
                 "min_score": request.min_score,
                 "use_reranking": request.use_reranking,
-                "use_colpali": request.use_colpali,
+                "embed_as_image": request.embed_as_image,
                 "folder_name": request.folder_name,
                 "end_user_id": request.end_user_id,
             },
@@ -593,7 +593,7 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
                 request.k,
                 request.min_score,
                 request.use_reranking,
-                request.use_colpali,
+                request.embed_as_image,
                 request.folder_name,
                 request.end_user_id,
             )
@@ -710,7 +710,7 @@ async def query_completion(
             - max_tokens: Maximum tokens in completion
             - temperature: Model temperature
             - use_reranking: Whether to use reranking
-            - use_colpali: Whether to use ColPali-style embedding model
+            - embed_as_image: Whether to use ColPali-style embedding model
             - graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             - hop_depth: Number of relationship hops to traverse in the graph (1-3)
             - include_paths: Whether to include relationship paths in the response
@@ -741,7 +741,7 @@ async def query_completion(
                 "max_tokens": request.max_tokens,
                 "temperature": request.temperature,
                 "use_reranking": request.use_reranking,
-                "use_colpali": request.use_colpali,
+                "embed_as_image": request.embed_as_image,
                 "graph_name": request.graph_name,
                 "hop_depth": request.hop_depth,
                 "include_paths": request.include_paths,
@@ -758,7 +758,7 @@ async def query_completion(
                 request.max_tokens,
                 request.temperature,
                 request.use_reranking,
-                request.use_colpali,
+                request.embed_as_image,
                 request.graph_name,
                 request.hop_depth,
                 request.include_paths,
@@ -912,7 +912,7 @@ async def update_document_text(
             metadata={
                 "document_id": document_id,
                 "update_strategy": update_strategy,
-                "use_colpali": request.use_colpali,
+                "embed_as_image": request.embed_as_image,
                 "has_filename": request.filename is not None,
             },
         ):
@@ -925,7 +925,7 @@ async def update_document_text(
                 metadata=request.metadata,
                 rules=request.rules,
                 update_strategy=update_strategy,
-                use_colpali=request.use_colpali,
+                embed_as_image=request.embed_as_image,
             )
 
             if not doc:
@@ -943,7 +943,7 @@ async def update_document_file(
     metadata: str = Form("{}"),
     rules: str = Form("[]"),
     update_strategy: str = Form("add"),
-    use_colpali: Optional[bool] = None,
+    embed_as_image: Optional[bool] = None,
     auth: AuthContext = Depends(verify_token)
 ):
     """
@@ -955,7 +955,7 @@ async def update_document_file(
         metadata: JSON string of metadata to merge with existing metadata
         rules: JSON string of rules to apply to the content
         update_strategy: Strategy for updating the document (default: 'add')
-        use_colpali: Whether to use multi-vector embedding
+        embed_as_image: Whether to use multi-vector embedding
 
     Returns:
         Document: Updated document metadata
@@ -972,7 +972,7 @@ async def update_document_file(
                 "filename": file.filename,
                 "content_type": file.content_type,
                 "update_strategy": update_strategy,
-                "use_colpali": use_colpali,
+                "embed_as_image": embed_as_image,
             },
         ):
             doc = await document_service.update_document(
@@ -984,7 +984,7 @@ async def update_document_file(
                 metadata=metadata_dict,
                 rules=rules_list,
                 update_strategy=update_strategy,
-                use_colpali=use_colpali,
+                embed_as_image=embed_as_image,
             )
 
             if not doc:
@@ -1030,7 +1030,7 @@ async def update_document_metadata(
                 metadata=metadata,
                 rules=[],
                 update_strategy="add",
-                use_colpali=None,
+                embed_as_image=None,
             )
 
             if not doc:

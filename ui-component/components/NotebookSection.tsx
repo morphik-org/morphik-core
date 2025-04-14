@@ -67,7 +67,7 @@ interface ChatOptions {
   k: number;
   min_score: number;
   use_reranking: boolean;
-  use_colpali: boolean;
+  embed_as_image: boolean;
   max_tokens: number;
   temperature: number;
   model_provider: 'openai' | 'claude' | 'ollama';
@@ -103,7 +103,7 @@ const NotebookSection: React.FC<NotebookSectionProps> = ({ apiBaseUrl }) => {
     k: 4,
     min_score: 0,
     use_reranking: false,
-    use_colpali: true,
+    embed_as_image: true,
     max_tokens: 500,
     temperature: 0.7,
     model_provider: 'openai',
@@ -777,7 +777,7 @@ ${content}
           k: chatOptions.k,
           min_score: chatOptions.min_score,
           use_reranking: chatOptions.use_reranking,
-          use_colpali: chatOptions.use_colpali,
+          embed_as_image: chatOptions.embed_as_image,
         })
       });
       
@@ -1345,7 +1345,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
           formData.append('metadata', JSON.stringify(metadataObj));
           formData.append('rules', rules);
           
-          const url = `${apiBaseUrl}/ingest/file${useColpali ? '?use_colpali=true' : ''}`;
+          const url = `${apiBaseUrl}/ingest/file${useColpali ? '?embed_as_image=true' : ''}`;
           
           // Use XMLHttpRequest to track upload progress
           const xhr = new XMLHttpRequest();
@@ -1531,7 +1531,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
               content: textContent,
               metadata: metadataObj,
               rules: JSON.parse(rules || '[]'),
-              use_colpali: useColpali
+              embed_as_image: useColpali
             })
           });
           
@@ -2638,11 +2638,11 @@ Given the context information and not prior knowledge, answer the question: ${ch
                           </div>
                           
                           <div className="flex items-center justify-between">
-                            <Label htmlFor="chat-colpali" className="text-xs">Use Colpali</Label>
+                            <Label htmlFor="chat-colpali" className="text-xs">Embed as Image</Label>
                             <Switch 
                               id="chat-colpali"
-                              checked={chatOptions.use_colpali}
-                              onCheckedChange={(checked) => updateChatOption('use_colpali', checked)}
+                              checked={chatOptions.embed_as_image}
+                              onCheckedChange={(checked) => updateChatOption('embed_as_image', checked)}
                               className="scale-75"
                             />
                           </div>

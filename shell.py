@@ -64,7 +64,7 @@ class DB:
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[Dict[str, Any]]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         as_object: bool = False,
     ) -> Union[dict, "Document"]:
         """
@@ -76,7 +76,7 @@ class DB:
             rules: Optional list of rule objects. Examples:
                   [{"type": "metadata_extraction", "schema": {"name": "string"}},
                    {"type": "natural_language", "prompt": "Remove PII"}]
-            use_colpali: Whether to use ColPali-style embedding model to ingest the text
+            embed_as_image: Whether to use ColPali-style embedding model to ingest the text
             as_object: If True, returns the Document object with update methods, otherwise returns a dict
 
         Returns:
@@ -90,7 +90,7 @@ class DB:
             ```
         """
         doc = self._client.ingest_text(
-            content, metadata=metadata or {}, rules=rules, use_colpali=use_colpali
+            content, metadata=metadata or {}, rules=rules, embed_as_image=embed_as_image
         )
         return doc if as_object else doc.model_dump()
 
@@ -100,7 +100,7 @@ class DB:
         filename: str = None,
         metadata: dict = None,
         rules: Optional[List[Dict[str, Any]]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         as_object: bool = False,
     ) -> Union[dict, "Document"]:
         """
@@ -113,7 +113,7 @@ class DB:
             rules: Optional list of rule objects. Examples:
                   [{"type": "metadata_extraction", "schema": {"title": "string"}},
                    {"type": "natural_language", "prompt": "Summarize"}]
-            use_colpali: Whether to use ColPali-style embedding model to ingest the file
+            embed_as_image: Whether to embed the file as an image by using ColPali-style embedding model to ingest the file
             as_object: If True, returns the Document object with update methods, otherwise returns a dict
 
         Returns:
@@ -133,7 +133,7 @@ class DB:
             filename=filename,
             metadata=metadata or {},
             rules=rules,
-            use_colpali=use_colpali,
+            embed_as_image=embed_as_image,
         )
         return doc if as_object else doc.model_dump()
 
@@ -142,7 +142,7 @@ class DB:
         files: List[str],
         metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
         rules: Optional[List[Dict[str, Any]]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         parallel: bool = True,
         as_objects: bool = False,
     ) -> List[Union[dict, "Document"]]:
@@ -155,7 +155,7 @@ class DB:
             rules: Optional list of rules. Can be either:
                    - A single list of rules to apply to all files
                    - A list of rule lists, one per file
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to embed the file as an image by using ColPali-style embedding model
             parallel: Whether to process files in parallel
             as_objects: If True, returns Document objects with update methods, otherwise returns dicts
 
@@ -189,7 +189,7 @@ class DB:
             files=file_paths,
             metadata=metadata,
             rules=rules,
-            use_colpali=use_colpali,
+            embed_as_image=embed_as_image,
             parallel=parallel,
         )
 
@@ -202,7 +202,7 @@ class DB:
         pattern: str = "*",
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[Dict[str, Any]]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         parallel: bool = True,
         as_objects: bool = False,
     ) -> List[Union[dict, "Document"]]:
@@ -217,7 +217,7 @@ class DB:
             rules: Optional list of rules. Can be either:
                    - A single list of rules to apply to all files
                    - A list of rule lists, one per file
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to embed the file as an image by using ColPali-style embedding model
             parallel: Whether to process files in parallel
             as_objects: If True, returns Document objects with update methods, otherwise returns dicts
 
@@ -245,7 +245,7 @@ class DB:
             pattern=pattern,
             metadata=metadata,
             rules=rules,
-            use_colpali=use_colpali,
+            embed_as_image=embed_as_image,
             parallel=parallel,
         )
 
@@ -257,7 +257,7 @@ class DB:
         filters: dict = None,
         k: int = 4,
         min_score: float = 0.0,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> list:
         """
         Search for relevant chunks
@@ -267,10 +267,10 @@ class DB:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model for retrieval
+            embed_as_image: Whether to use ColPali-style embedding model for retrieval
         """
         results = self._client.retrieve_chunks(
-            query, filters=filters or {}, k=k, min_score=min_score, use_colpali=use_colpali
+            query, filters=filters or {}, k=k, min_score=min_score, embed_as_image=embed_as_image
         )
         return [r.model_dump() for r in results]
 
@@ -280,7 +280,7 @@ class DB:
         filters: dict = None,
         k: int = 4,
         min_score: float = 0.0,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> list:
         """
         Retrieve relevant documents
@@ -290,10 +290,10 @@ class DB:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model for retrieval
+            embed_as_image: Whether to use ColPali-style embedding model for retrieval
         """
         results = self._client.retrieve_docs(
-            query, filters=filters or {}, k=k, min_score=min_score, use_colpali=use_colpali
+            query, filters=filters or {}, k=k, min_score=min_score, embed_as_image=embed_as_image
         )
         return [r.model_dump() for r in results]
 
@@ -305,7 +305,7 @@ class DB:
         min_score: float = 0.0,
         max_tokens: int = None,
         temperature: float = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         graph_name: str = None,
         hop_depth: int = 1,
         include_paths: bool = False,
@@ -321,7 +321,7 @@ class DB:
             min_score: Minimum similarity threshold (default: 0.0)
             max_tokens: Maximum tokens in completion
             temperature: Model temperature
-            use_colpali: Whether to use ColPali-style embedding model for retrieval
+            embed_as_image: Whether to use ColPali-style embedding model for retrieval
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
@@ -356,7 +356,7 @@ class DB:
             min_score=min_score,
             max_tokens=max_tokens,
             temperature=temperature,
-            use_colpali=use_colpali,
+            embed_as_image=embed_as_image,
             graph_name=graph_name,
             hop_depth=hop_depth,
             include_paths=include_paths,
@@ -434,7 +434,7 @@ class DB:
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: bool = None,
+        embed_as_image: bool = None,
     ) -> dict:
         """
         Update a document with new text content using the specified strategy.
@@ -445,7 +445,7 @@ class DB:
             metadata: Additional metadata to update (optional)
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
 
         Returns:
             Updated document metadata
@@ -456,7 +456,7 @@ class DB:
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali,
+            embed_as_image=embed_as_image,
         )
         return doc.model_dump()
 
@@ -468,7 +468,7 @@ class DB:
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: bool = None,
+        embed_as_image: bool = None,
     ) -> dict:
         """
         Update a document with content from a file using the specified strategy.
@@ -480,7 +480,7 @@ class DB:
             metadata: Additional metadata to update (optional)
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
 
         Returns:
             Updated document metadata
@@ -495,7 +495,7 @@ class DB:
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali,
+            embed_as_image=embed_as_image,
         )
         return doc.model_dump()
 
@@ -528,7 +528,7 @@ class DB:
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: bool = None,
+        embed_as_image: bool = None,
     ) -> dict:
         """
         Update a document identified by filename with new text content.
@@ -540,7 +540,7 @@ class DB:
             metadata: Additional metadata to update (optional)
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
 
         Returns:
             Updated document metadata
@@ -552,7 +552,7 @@ class DB:
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali,
+            embed_as_image=embed_as_image,
         )
         return doc.model_dump()
 
@@ -564,7 +564,7 @@ class DB:
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: bool = None,
+        embed_as_image: bool = None,
     ) -> dict:
         """
         Update a document identified by filename with content from a file.
@@ -576,7 +576,7 @@ class DB:
             metadata: Additional metadata to update (optional)
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
 
         Returns:
             Updated document metadata
@@ -591,7 +591,7 @@ class DB:
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali,
+            embed_as_image=embed_as_image,
         )
         return doc.model_dump()
 

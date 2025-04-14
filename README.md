@@ -86,7 +86,7 @@ doc = db.ingest_file("path/to/document.pdf",
                     metadata={"category": "research"})
 
 # Use ColPali for multi-modal documents (PDFs with images, charts, etc.)
-doc = db.ingest_file("path/to/report_with_charts.pdf", use_colpali=True)
+doc = db.ingest_file("path/to/report_with_charts.pdf", embed_as_image=True)
 
 # Apply natural language rules during ingestion
 rules = [
@@ -137,12 +137,12 @@ docs = db.batch_get_documents(["doc_id1", "doc_id2"])
 
 ```python
 # Ingest a PDF with charts and images
-db.ingest_file("report_with_charts.pdf", use_colpali=True)
+db.ingest_file("report_with_charts.pdf", embed_as_image=True)
 
 # Retrieve relevant chunks, including images
 chunks = db.retrieve_chunks(
     "Show me the Q2 revenue chart", 
-    use_colpali=True, 
+    embed_as_image=True, 
     k=3
 )
 

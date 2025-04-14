@@ -85,7 +85,7 @@ class AsyncFolder:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> Document:
         """
         Ingest a text document into Morphik within this folder.
@@ -95,14 +95,14 @@ class AsyncFolder:
             filename: Optional file name
             metadata: Optional metadata dictionary
             rules: Optional list of rules to apply during ingestion
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             Document: Metadata of the ingested document
         """
         rules_list = [self._client._convert_rule(r) for r in (rules or [])]
         payload = self._client._logic._prepare_ingest_text_request(
-            content, filename, metadata, rules_list, use_colpali, self._name, None
+            content, filename, metadata, rules_list, embed_as_image, self._name, None
         )
         response = await self._client._request("POST", "ingest/text", data=payload)
         doc = self._client._logic._parse_document_response(response)
@@ -115,7 +115,7 @@ class AsyncFolder:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> Document:
         """
         Ingest a file document into Morphik within this folder.
@@ -125,7 +125,7 @@ class AsyncFolder:
             filename: Name of the file
             metadata: Optional metadata dictionary
             rules: Optional list of rules to apply during ingestion
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             Document: Metadata of the ingested document
@@ -144,7 +144,7 @@ class AsyncFolder:
 
             response = await self._client._request(
                 "POST",
-                f"ingest/file?use_colpali={str(use_colpali).lower()}",
+                f"ingest/file?embed_as_image={str(embed_as_image).lower()}",
                 data=form_data,
                 files=files,
             )
@@ -161,7 +161,7 @@ class AsyncFolder:
         files: List[Union[str, bytes, BinaryIO, Path]],
         metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         parallel: bool = True,
     ) -> List[Document]:
         """
@@ -171,7 +171,7 @@ class AsyncFolder:
             files: List of files to ingest
             metadata: Optional metadata
             rules: Optional list of rules to apply
-            use_colpali: Whether to use ColPali-style embedding
+            embed_as_image: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
         Returns:
@@ -183,7 +183,7 @@ class AsyncFolder:
         try:
             # Prepare form data
             data = self._client._logic._prepare_ingest_files_form_data(
-                metadata, rules, use_colpali, parallel, self._name, None
+                metadata, rules, embed_as_image, parallel, self._name, None
             )
 
             response = await self._client._request(
@@ -214,7 +214,7 @@ class AsyncFolder:
         pattern: str = "*",
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         parallel: bool = True,
     ) -> List[Document]:
         """
@@ -226,7 +226,7 @@ class AsyncFolder:
             pattern: Optional glob pattern to filter files
             metadata: Optional metadata dictionary to apply to all files
             rules: Optional list of rules to apply
-            use_colpali: Whether to use ColPali-style embedding
+            embed_as_image: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
         Returns:
@@ -250,7 +250,7 @@ class AsyncFolder:
 
         # Use ingest_files with collected paths
         return await self.ingest_files(
-            files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
+            files=files, metadata=metadata, rules=rules, embed_as_image=embed_as_image, parallel=parallel
         )
 
     async def retrieve_chunks(
@@ -259,7 +259,7 @@ class AsyncFolder:
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks within this folder.
@@ -269,13 +269,13 @@ class AsyncFolder:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
         """
         payload = self._client._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, self._name, None
+            query, filters, k, min_score, embed_as_image, self._name, None
         )
         response = await self._client._request("POST", "retrieve/chunks", data=payload)
         return self._client._logic._parse_chunk_result_list_response(response)
@@ -286,7 +286,7 @@ class AsyncFolder:
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents within this folder.
@@ -296,13 +296,13 @@ class AsyncFolder:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             List[DocumentResult]: List of relevant documents
         """
         payload = self._client._logic._prepare_retrieve_docs_request(
-            query, filters, k, min_score, use_colpali, self._name, None
+            query, filters, k, min_score, embed_as_image, self._name, None
         )
         response = await self._client._request("POST", "retrieve/docs", data=payload)
         return self._client._logic._parse_document_result_list_response(response)
@@ -315,7 +315,7 @@ class AsyncFolder:
         min_score: float = 0.0,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         graph_name: Optional[str] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
@@ -331,7 +331,7 @@ class AsyncFolder:
             min_score: Minimum similarity threshold (default: 0.0)
             max_tokens: Maximum tokens in completion
             temperature: Model temperature
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
@@ -347,7 +347,7 @@ class AsyncFolder:
             min_score,
             max_tokens,
             temperature,
-            use_colpali,
+            embed_as_image,
             graph_name,
             hop_depth,
             include_paths,
@@ -520,7 +520,7 @@ class AsyncUserScope:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> Document:
         """
         Ingest a text document into Morphik as this end user.
@@ -530,7 +530,7 @@ class AsyncUserScope:
             filename: Optional file name
             metadata: Optional metadata dictionary
             rules: Optional list of rules to apply during ingestion
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             Document: Metadata of the ingested document
@@ -541,7 +541,7 @@ class AsyncUserScope:
             filename,
             metadata,
             rules_list,
-            use_colpali,
+            embed_as_image,
             self._folder_name,
             self._end_user_id,
         )
@@ -556,7 +556,7 @@ class AsyncUserScope:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> Document:
         """
         Ingest a file document into Morphik as this end user.
@@ -566,7 +566,7 @@ class AsyncUserScope:
             filename: Name of the file
             metadata: Optional metadata dictionary
             rules: Optional list of rules to apply during ingestion
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             Document: Metadata of the ingested document
@@ -618,7 +618,7 @@ class AsyncUserScope:
         files: List[Union[str, bytes, BinaryIO, Path]],
         metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         parallel: bool = True,
     ) -> List[Document]:
         """
@@ -628,7 +628,7 @@ class AsyncUserScope:
             files: List of files to ingest
             metadata: Optional metadata
             rules: Optional list of rules to apply
-            use_colpali: Whether to use ColPali-style embedding
+            embed_as_image: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
         Returns:
@@ -663,7 +663,7 @@ class AsyncUserScope:
             data = {
                 "metadata": json.dumps(metadata or {}),
                 "rules": json.dumps(converted_rules),
-                "use_colpali": str(use_colpali).lower() if use_colpali is not None else None,
+                "embed_as_image": str(embed_as_image).lower() if embed_as_image is not None else None,
                 "parallel": str(parallel).lower(),
                 "end_user_id": self._end_user_id,  # Add end user ID here
             }
@@ -700,7 +700,7 @@ class AsyncUserScope:
         pattern: str = "*",
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         parallel: bool = True,
     ) -> List[Document]:
         """
@@ -712,7 +712,7 @@ class AsyncUserScope:
             pattern: Optional glob pattern to filter files
             metadata: Optional metadata dictionary to apply to all files
             rules: Optional list of rules to apply
-            use_colpali: Whether to use ColPali-style embedding
+            embed_as_image: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
         Returns:
@@ -736,7 +736,7 @@ class AsyncUserScope:
 
         # Use ingest_files with collected paths
         return await self.ingest_files(
-            files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
+            files=files, metadata=metadata, rules=rules, embed_as_image=embed_as_image, parallel=parallel
         )
 
     async def retrieve_chunks(
@@ -745,7 +745,7 @@ class AsyncUserScope:
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks as this end user.
@@ -755,13 +755,13 @@ class AsyncUserScope:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
         """
         payload = self._client._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, self._folder_name, self._end_user_id
+            query, filters, k, min_score, embed_as_image, self._folder_name, self._end_user_id
         )
         response = await self._client._request("POST", "retrieve/chunks", data=payload)
         return self._client._logic._parse_chunk_result_list_response(response)
@@ -772,7 +772,7 @@ class AsyncUserScope:
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents as this end user.
@@ -782,13 +782,13 @@ class AsyncUserScope:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
 
         Returns:
             List[DocumentResult]: List of relevant documents
         """
         payload = self._client._logic._prepare_retrieve_docs_request(
-            query, filters, k, min_score, use_colpali, self._folder_name, self._end_user_id
+            query, filters, k, min_score, embed_as_image, self._folder_name, self._end_user_id
         )
         response = await self._client._request("POST", "retrieve/docs", data=payload)
         return self._client._logic._parse_document_result_list_response(response)
@@ -801,7 +801,7 @@ class AsyncUserScope:
         min_score: float = 0.0,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         graph_name: Optional[str] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
@@ -817,7 +817,7 @@ class AsyncUserScope:
             min_score: Minimum similarity threshold (default: 0.0)
             max_tokens: Maximum tokens in completion
             temperature: Model temperature
-            use_colpali: Whether to use ColPali-style embedding model
+            embed_as_image: Whether to use ColPali-style embedding model
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
@@ -833,7 +833,7 @@ class AsyncUserScope:
             min_score,
             max_tokens,
             temperature,
-            use_colpali,
+            embed_as_image,
             graph_name,
             hop_depth,
             include_paths,
@@ -1096,7 +1096,7 @@ class AsyncMorphik:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> Document:
         """
         Ingest a text document into Morphik.
@@ -1107,7 +1107,7 @@ class AsyncMorphik:
             rules: Optional list of rules to apply during ingestion. Can be:
                   - MetadataExtractionRule: Extract metadata using a schema
                   - NaturalLanguageRule: Transform content using natural language
-            use_colpali: Whether to use ColPali-style embedding model to ingest the text (slower, but significantly better retrieval accuracy for text and images)
+            embed_as_image: Whether to use ColPali-style embedding model to ingest the text (slower, but significantly better retrieval accuracy for text and images)
         Returns:
             Document: Metadata of the ingested document
 
@@ -1135,7 +1135,7 @@ class AsyncMorphik:
         """
         rules_list = [self._convert_rule(r) for r in (rules or [])]
         payload = self._logic._prepare_ingest_text_request(
-            content, filename, metadata, rules_list, use_colpali, None, None
+            content, filename, metadata, rules_list, embed_as_image, None, None
         )
         response = await self._request("POST", "ingest/text", data=payload)
         doc = self._logic._parse_document_response(response)
@@ -1148,7 +1148,7 @@ class AsyncMorphik:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> Document:
         """Ingest a file document into Morphik."""
         # Process file input
@@ -1163,7 +1163,7 @@ class AsyncMorphik:
 
             response = await self._request(
                 "POST",
-                f"ingest/file?use_colpali={str(use_colpali).lower()}",
+                f"ingest/file?embed_as_image={str(embed_as_image).lower()}",
                 data=form_data,
                 files=files,
             )
@@ -1180,7 +1180,7 @@ class AsyncMorphik:
         files: List[Union[str, bytes, BinaryIO, Path]],
         metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         parallel: bool = True,
     ) -> List[Document]:
         """
@@ -1190,7 +1190,7 @@ class AsyncMorphik:
             files: List of files to ingest (path strings, bytes, file objects, or Paths)
             metadata: Optional metadata (single dict for all files or list of dicts)
             rules: Optional list of rules to apply
-            use_colpali: Whether to use ColPali-style embedding
+            embed_as_image: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
         Returns:
@@ -1205,7 +1205,7 @@ class AsyncMorphik:
         try:
             # Prepare form data
             data = self._logic._prepare_ingest_files_form_data(
-                metadata, rules, use_colpali, parallel, None, None
+                metadata, rules, embed_as_image, parallel, None, None
             )
 
             response = await self._request("POST", "ingest/files", data=data, files=file_objects)
@@ -1233,7 +1233,7 @@ class AsyncMorphik:
         pattern: str = "*",
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List[RuleOrDict]] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         parallel: bool = True,
     ) -> List[Document]:
         """
@@ -1245,7 +1245,7 @@ class AsyncMorphik:
             pattern: Optional glob pattern to filter files (e.g. "*.pdf")
             metadata: Optional metadata dictionary to apply to all files
             rules: Optional list of rules to apply
-            use_colpali: Whether to use ColPali-style embedding
+            embed_as_image: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
         Returns:
@@ -1272,7 +1272,7 @@ class AsyncMorphik:
 
         # Use ingest_files with collected paths
         return await self.ingest_files(
-            files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
+            files=files, metadata=metadata, rules=rules, embed_as_image=embed_as_image, parallel=parallel
         )
 
     async def retrieve_chunks(
@@ -1281,7 +1281,7 @@ class AsyncMorphik:
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> List[FinalChunkResult]:
         """
         Search for relevant chunks.
@@ -1291,7 +1291,7 @@ class AsyncMorphik:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model to retrieve chunks (only works for documents ingested with `use_colpali=True`)
+            embed_as_image: Whether to use ColPali-style embedding model to retrieve chunks (only works for documents ingested with `embed_as_image=True`)
         Returns:
             List[FinalChunkResult]
 
@@ -1304,7 +1304,7 @@ class AsyncMorphik:
             ```
         """
         payload = self._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, None, None
+            query, filters, k, min_score, embed_as_image, None, None
         )
         response = await self._request("POST", "retrieve/chunks", data=payload)
         return self._logic._parse_chunk_result_list_response(response)
@@ -1315,7 +1315,7 @@ class AsyncMorphik:
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents.
@@ -1325,7 +1325,7 @@ class AsyncMorphik:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model to retrieve documents (only works for documents ingested with `use_colpali=True`)
+            embed_as_image: Whether to use ColPali-style embedding model to retrieve documents (only works for documents ingested with `embed_as_image=True`)
         Returns:
             List[DocumentResult]
 
@@ -1338,7 +1338,7 @@ class AsyncMorphik:
             ```
         """
         payload = self._logic._prepare_retrieve_docs_request(
-            query, filters, k, min_score, use_colpali, None, None
+            query, filters, k, min_score, embed_as_image, None, None
         )
         response = await self._request("POST", "retrieve/docs", data=payload)
         return self._logic._parse_document_result_list_response(response)
@@ -1351,7 +1351,7 @@ class AsyncMorphik:
         min_score: float = 0.0,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
-        use_colpali: bool = True,
+        embed_as_image: bool = True,
         graph_name: Optional[str] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
@@ -1367,7 +1367,7 @@ class AsyncMorphik:
             min_score: Minimum similarity threshold (default: 0.0)
             max_tokens: Maximum tokens in completion
             temperature: Model temperature
-            use_colpali: Whether to use ColPali-style embedding model to generate the completion (only works for documents ingested with `use_colpali=True`)
+            embed_as_image: Whether to use ColPali-style embedding model to generate the completion (only works for documents ingested with `embed_as_image=True`)
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
@@ -1429,7 +1429,7 @@ class AsyncMorphik:
             min_score,
             max_tokens,
             temperature,
-            use_colpali,
+            embed_as_image,
             graph_name,
             hop_depth,
             include_paths,
@@ -1521,7 +1521,7 @@ class AsyncMorphik:
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
     ) -> Document:
         """
         Update a document with new text content using the specified strategy.
@@ -1533,7 +1533,7 @@ class AsyncMorphik:
             metadata: Additional metadata to update (optional)
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
 
         Returns:
             Document: Updated document metadata
@@ -1557,7 +1557,7 @@ class AsyncMorphik:
             filename=filename,
             metadata=metadata or {},
             rules=[self._convert_rule(r) for r in (rules or [])],
-            use_colpali=use_colpali if use_colpali is not None else True,
+            embed_as_image=embed_as_image if embed_as_image is not None else True,
         )
 
         params = {}
@@ -1580,7 +1580,7 @@ class AsyncMorphik:
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
     ) -> Document:
         """
         Update a document with content from a file using the specified strategy.
@@ -1592,7 +1592,7 @@ class AsyncMorphik:
             metadata: Additional metadata to update (optional)
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
 
         Returns:
             Document: Updated document metadata
@@ -1638,8 +1638,8 @@ class AsyncMorphik:
                 "update_strategy": update_strategy,
             }
 
-            if use_colpali is not None:
-                form_data["use_colpali"] = str(use_colpali).lower()
+            if embed_as_image is not None:
+                form_data["embed_as_image"] = str(embed_as_image).lower()
 
             # Use the dedicated file update endpoint
             response = await self._request(
@@ -1695,7 +1695,7 @@ class AsyncMorphik:
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
     ) -> Document:
         """
         Update a document identified by filename with new text content using the specified strategy.
@@ -1707,7 +1707,7 @@ class AsyncMorphik:
             metadata: Additional metadata to update (optional)
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
 
         Returns:
             Document: Updated document metadata
@@ -1736,7 +1736,7 @@ class AsyncMorphik:
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali,
+            embed_as_image=embed_as_image,
         )
 
     async def update_document_by_filename_with_file(
@@ -1747,7 +1747,7 @@ class AsyncMorphik:
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
         update_strategy: str = "add",
-        use_colpali: Optional[bool] = None,
+        embed_as_image: Optional[bool] = None,
     ) -> Document:
         """
         Update a document identified by filename with content from a file using the specified strategy.
@@ -1759,7 +1759,7 @@ class AsyncMorphik:
             metadata: Additional metadata to update (optional)
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
-            use_colpali: Whether to use multi-vector embedding
+            embed_as_image: Whether to use multi-vector embedding
 
         Returns:
             Document: Updated document metadata
@@ -1787,7 +1787,7 @@ class AsyncMorphik:
             metadata=metadata,
             rules=rules,
             update_strategy=update_strategy,
-            use_colpali=use_colpali,
+            embed_as_image=embed_as_image,
         )
 
     async def update_document_by_filename_metadata(

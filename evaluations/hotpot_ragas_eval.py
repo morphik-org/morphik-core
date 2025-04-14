@@ -90,7 +90,7 @@ def process_with_morphik(dataset, run_id=None):
                     "item_index": i,
                     "evaluation_run_id": run_id  # Add run_id to metadata
                 },
-                use_colpali=False
+                embed_as_image=False
             ).external_id
 
             # Query Morphik for the answer with concise prompt override
@@ -101,7 +101,7 @@ def process_with_morphik(dataset, run_id=None):
             }
             response = db.query(
                 question, 
-                use_colpali=False, 
+                embed_as_image=False, 
                 k=10, 
                 filters={"evaluation_run_id": run_id},
                 prompt_overrides=prompt_override

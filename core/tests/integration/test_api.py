@@ -226,7 +226,7 @@ async def test_ingest_text_document(
 
     response = await client.post(
         "/ingest/text",
-        json={"content": content, "metadata": {"test": True, "type": "text"}, "use_colpali": True},
+        json={"content": content, "metadata": {"test": True, "type": "text"}, "embed_as_image": True},
         headers=headers,
     )
 
@@ -313,7 +313,7 @@ async def test_ingest_pdf(client: AsyncClient):
         response = await client.post(
             "/ingest/file",
             files={"file": (pdf_path.name, f, content_type)},
-            data={"metadata": json.dumps({"test": True, "type": "pdf"}), "use_colpali": True},
+            data={"metadata": json.dumps({"test": True, "type": "pdf"}), "embed_as_image": True},
             headers=headers,
         )
 
@@ -534,7 +534,7 @@ async def test_update_document_with_text(client: AsyncClient):
         json={
             "content": update_content,
             "metadata": {"updated": True, "version": "2.0"},
-            "use_colpali": True
+            "embed_as_image": True
         },
         headers=headers,
     )
@@ -674,7 +674,7 @@ async def test_update_document_with_rules(client: AsyncClient):
             "content": update_content,
             "metadata": {"contains_pii": False},
             "rules": [rule],
-            "use_colpali": True
+            "embed_as_image": True
         },
         headers=headers,
     )
@@ -872,7 +872,7 @@ async def test_retrieve_chunks(client: AsyncClient):
             "k": 1,
             "min_score": 0.0,
             "filters": {"external_id": doc_id},  # Add filter for specific document
-            "use_colpali": True,
+            "embed_as_image": True,
         },
         headers=headers,
     )
@@ -904,7 +904,7 @@ async def test_retrieve_docs(client: AsyncClient):
         json={
             "query": "Headaches, dehydration",
             "filters": {"test": True, "external_id": doc_id},  # Add filter for specific document
-            "use_colpali": True,
+            "embed_as_image": True,
         },
         headers=headers,
     )
@@ -1000,7 +1000,7 @@ async def test_retrieve_chunks_default_reranking(client: AsyncClient):
             "k": 2,
             "min_score": 0.0,
             # Not specifying use_reranking - should use default from config
-            "use_colpali": True,
+            "embed_as_image": True,
         },
         headers=headers,
     )
@@ -1032,7 +1032,7 @@ async def test_retrieve_chunks_explicit_reranking(client: AsyncClient):
             "k": 2,
             "min_score": 0.0,
             "use_reranking": True,
-            "use_colpali": True,
+            "embed_as_image": True,
         },
         headers=headers,
     )
@@ -1064,7 +1064,7 @@ async def test_retrieve_chunks_disabled_reranking(client: AsyncClient):
             "k": 2,
             "min_score": 0.0,
             "use_reranking": False,
-            "use_colpali": True,
+            "embed_as_image": True,
         },
         headers=headers,
     )
@@ -1098,7 +1098,7 @@ async def test_reranking_affects_results(client: AsyncClient):
             "k": 3,
             "min_score": 0.0,
             "use_reranking": False,
-            "use_colpali": True,
+            "embed_as_image": True,
         },
         headers=headers,
     )
@@ -1111,7 +1111,7 @@ async def test_reranking_affects_results(client: AsyncClient):
             "k": 3,
             "min_score": 0.0,
             "use_reranking": True,
-            "use_colpali": True,
+            "embed_as_image": True,
         },
         headers=headers,
     )
@@ -1753,7 +1753,7 @@ async def test_batch_ingest_with_shared_metadata(
         data={
             "metadata": json.dumps(metadata),
             "rules": json.dumps([]),
-            "use_colpali": "true",
+            "embed_as_image": "true",
             "parallel": "true",
         },
         headers=headers,
@@ -1794,7 +1794,7 @@ async def test_batch_ingest_with_individual_metadata(
         data={
             "metadata": json.dumps(metadata),
             "rules": json.dumps([]),
-            "use_colpali": "true",
+            "embed_as_image": "true",
             "parallel": "true",
         },
         headers=headers,
@@ -1834,7 +1834,7 @@ async def test_batch_ingest_metadata_validation(
         data={
             "metadata": json.dumps(metadata),
             "rules": json.dumps([]),
-            "use_colpali": "true",
+            "embed_as_image": "true",
             "parallel": "true",
         },
         headers=headers,
@@ -1863,7 +1863,7 @@ async def test_batch_ingest_sequential(
         data={
             "metadata": json.dumps(metadata),
             "rules": json.dumps([]),
-            "use_colpali": "true",
+            "embed_as_image": "true",
             "parallel": "false",  # Process sequentially
         },
         headers=headers,
@@ -1895,7 +1895,7 @@ async def test_batch_ingest_with_rules(
         data={
             "metadata": json.dumps({}),
             "rules": json.dumps(shared_rules),
-            "use_colpali": "true",
+            "embed_as_image": "true",
             "parallel": "true",
         },
         headers=headers,
@@ -1918,7 +1918,7 @@ async def test_batch_ingest_with_rules(
         data={
             "metadata": json.dumps({}),
             "rules": json.dumps(per_file_rules),
-            "use_colpali": "true",
+            "embed_as_image": "true",
             "parallel": "true",
         },
         headers=headers,
@@ -1950,7 +1950,7 @@ async def test_batch_ingest_rules_validation(
         data={
             "metadata": json.dumps({}),
             "rules": invalid_rules,
-            "use_colpali": "true",
+            "embed_as_image": "true",
             "parallel": "true",
         },
         headers=headers,
@@ -1970,7 +1970,7 @@ async def test_batch_ingest_rules_validation(
         data={
             "metadata": json.dumps({}),
             "rules": json.dumps(per_file_rules),
-            "use_colpali": "true",
+            "embed_as_image": "true",
             "parallel": "true",
         },
         headers=headers,
@@ -1999,7 +1999,7 @@ async def test_batch_ingest_sequential_vs_parallel(
         data={
             "metadata": json.dumps({}),
             "rules": json.dumps([]),
-            "use_colpali": "true",
+            "embed_as_image": "true",
             "parallel": "true",
         },
         headers=headers,
@@ -2017,7 +2017,7 @@ async def test_batch_ingest_sequential_vs_parallel(
         data={
             "metadata": json.dumps({}),
             "rules": json.dumps([]),
-            "use_colpali": "true",
+            "embed_as_image": "true",
             "parallel": "false",
         },
         headers=headers,

@@ -13,7 +13,7 @@ class RetrieveRequest(BaseModel):
     k: int = Field(default=4, gt=0)
     min_score: float = Field(default=0.0)
     use_reranking: Optional[bool] = None  # If None, use default from config
-    use_colpali: Optional[bool] = None
+    embed_as_image: Optional[bool] = None
     graph_name: Optional[str] = Field(
         None, description="Name of the graph to use for knowledge graph-enhanced retrieval"
     )
@@ -45,7 +45,7 @@ class IngestTextRequest(BaseModel):
     filename: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     rules: List[Dict[str, Any]] = Field(default_factory=list)
-    use_colpali: Optional[bool] = None
+    embed_as_image: Optional[bool] = None
     folder_name: Optional[str] = Field(None, description="Optional folder scope for the operation")
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
 
