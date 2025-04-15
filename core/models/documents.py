@@ -16,6 +16,13 @@ class QueryReturnType(str, Enum):
     DOCUMENTS = "documents"
 
 
+class DocumentStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class StorageFileInfo(BaseModel):
     """Information about a file stored in storage"""
     bucket: str
@@ -55,6 +62,10 @@ class Document(BaseModel):
         default_factory=lambda: {"readers": [], "writers": [], "admins": []}
     )
     chunk_ids: List[str] = Field(default_factory=list)
+    status: DocumentStatus = Field(default=DocumentStatus.PENDING)
+    """Status of document processing"""
+    error_message: Optional[str] = None
+    """Error message if processing failed"""
 
     def __hash__(self):
         return hash(self.external_id)

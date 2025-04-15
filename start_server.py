@@ -140,6 +140,7 @@ def main():
         port=settings.PORT,
         loop="asyncio",
         log_level=args.log,
+        workers=4,
         # reload=settings.RELOAD
     )
 

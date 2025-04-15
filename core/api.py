@@ -4,7 +4,7 @@ from datetime import datetime, UTC, timedelta
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile, File
+from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 import jwt
 import logging
@@ -12,7 +12,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.limits_utils import check_and_increment_limits
 from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, UpdateGraphRequest, BatchIngestResponse
 from core.models.completion import ChunkSource, CompletionResponse
-from core.models.documents import Document, DocumentResult, ChunkResult
+from core.models.documents import Document, DocumentResult, ChunkResult, DocumentStatus
 from core.models.graph import Graph
 from core.models.auth import AuthContext, EntityType
 from core.models.prompts import validate_prompt_overrides_with_http_exception
@@ -272,6 +272,7 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:
 @app.post("/ingest/text", response_model=Document)
 async def ingest_text(
     request: IngestTextRequest,
+    background_tasks: BackgroundTasks,
     auth: AuthContext = Depends(verify_token),
 ) -> Document:
     """
@@ -287,12 +288,16 @@ async def ingest_text(
                    - NaturalLanguageRule: {"type": "natural_language", "prompt": "..."}
             - folder_name: Optional folder to scope the document to
             - end_user_id: Optional end-user ID to scope the document to
+        background_tasks: FastAPI BackgroundTasks for async processing
         auth: Authentication context
 
     Returns:
-        Document: Metadata of ingested document
+        Document: Initial document metadata with PENDING status
     """
     try:
+        # Import here to avoid circular imports
+        from core.services.background_tasks import process_text_document
+        
         async with telemetry.track_operation(
             operation_type="ingest_text",
             user_id=auth.entity_id,
@@ -303,25 +308,76 @@ async def ingest_text(
                 "use_colpali": request.use_colpali,
                 "folder_name": request.folder_name,
                 "end_user_id": request.end_user_id,
+                "background": True,
             },
         ):
-            return await document_service.ingest_text(
-                content=request.content,
+            # Check permissions first
+            if "write" not in auth.permissions:
+                raise PermissionError("User does not have write permission")
+                
+            # Check ingest limits if in cloud mode
+            from core.config import get_settings
+            settings = get_settings()
+            
+            # Create a document with pending status
+            from core.models.documents import Document, DocumentStatus
+            from datetime import datetime, UTC
+            
+            doc = Document(
+                content_type="text/plain",
                 filename=request.filename,
-                metadata=request.metadata,
+                metadata=request.metadata or {},
+                owner={"type": auth.entity_type, "id": auth.entity_id},
+                access_control={
+                    "readers": [auth.entity_id],
+                    "writers": [auth.entity_id],
+                    "admins": [auth.entity_id],
+                    "user_id": [auth.user_id] if auth.user_id else [],
+                },
+                status=DocumentStatus.PENDING,
+            )
+            
+            # Add folder_name and end_user_id to system_metadata if provided
+            if request.folder_name:
+                doc.system_metadata["folder_name"] = request.folder_name
+            if request.end_user_id:
+                doc.system_metadata["end_user_id"] = request.end_user_id
+                
+            # Store initial document
+            if not await document_service.db.store_document(doc):
+                raise Exception("Failed to store initial document metadata")
+                
+            # Check limits before proceeding
+            if settings.MODE == "cloud" and auth.user_id:
+                from core.api import check_and_increment_limits
+                num_pages = int(len(request.content)/(CHARS_PER_TOKEN*TOKENS_PER_PAGE))
+                await check_and_increment_limits(auth, "ingest", num_pages, doc.external_id)
+            
+            # Add background task for processing
+            background_tasks.add_task(
+                process_text_document,
+                document_service=document_service,
+                document_id=doc.external_id,
+                content=request.content,
+                auth=auth,
                 rules=request.rules,
                 use_colpali=request.use_colpali,
-                auth=auth,
                 folder_name=request.folder_name,
                 end_user_id=request.end_user_id,
             )
+            
+            return doc
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error in ingest_text: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/ingest/file", response_model=Document)
 async def ingest_file(
     file: UploadFile,
+    background_tasks: BackgroundTasks,
     metadata: str = Form("{}"),
     rules: str = Form("[]"),
     auth: AuthContext = Depends(verify_token),
@@ -334,6 +390,7 @@ async def ingest_file(
 
     Args:
         file: File to ingest
+        background_tasks: FastAPI BackgroundTasks for async processing
         metadata: JSON string of metadata
         rules: JSON string of rules list. Each rule should be either:
                - MetadataExtractionRule: {"type": "metadata_extraction", "schema": {...}}
@@ -344,12 +401,16 @@ async def ingest_file(
         end_user_id: Optional end-user ID to scope the document to
 
     Returns:
-        Document: Metadata of ingested document
+        Document: Initial document metadata with PENDING status
     """
     try:
+        # Import here to avoid circular imports
+        from core.services.background_tasks import process_file_document
+        from core.models.documents import Document, DocumentStatus
+        
         metadata_dict = json.loads(metadata)
         rules_list = json.loads(rules)
-        use_colpali = bool(use_colpali)
+        use_colpali = bool(use_colpali) if use_colpali is not None else None
 
         async with telemetry.track_operation(
             operation_type="ingest_file",
@@ -362,12 +423,68 @@ async def ingest_file(
                 "use_colpali": use_colpali,
                 "folder_name": folder_name,
                 "end_user_id": end_user_id,
+                "background": True,
             },
         ):
             logger.debug(f"API: Ingesting file with use_colpali: {use_colpali}")
             
-            return await document_service.ingest_file(
-                file=file,
+            # Check permissions first
+            if "write" not in auth.permissions:
+                raise PermissionError("User does not have write permission")
+            
+            # Check file size limits
+            file_size = 0
+            file.file.seek(0, 2)  # Seek to end of file
+            file_size = file.file.tell()  # Get current position (file size)
+            file.file.seek(0)  # Reset file position
+            
+            # Create a document with pending status
+            doc = Document(
+                content_type=file.content_type or "application/octet-stream",
+                filename=file.filename,
+                metadata=metadata_dict,
+                owner={"type": auth.entity_type, "id": auth.entity_id},
+                access_control={
+                    "readers": [auth.entity_id],
+                    "writers": [auth.entity_id],
+                    "admins": [auth.entity_id],
+                    "user_id": [auth.user_id] if auth.user_id else [],
+                },
+                status=DocumentStatus.PENDING,
+            )
+            
+            # Add folder_name and end_user_id to system_metadata if provided
+            if folder_name:
+                doc.system_metadata["folder_name"] = folder_name
+            if end_user_id:
+                doc.system_metadata["end_user_id"] = end_user_id
+                
+            # Store initial document
+            if not await document_service.db.store_document(doc):
+                raise Exception("Failed to store initial document metadata")
+                
+            # Check limits before proceeding
+            from core.config import get_settings
+            settings = get_settings()
+            
+            if settings.MODE == "cloud" and auth.user_id:
+                from core.api import check_and_increment_limits
+                await check_and_increment_limits(auth, "storage_file", 1)
+                await check_and_increment_limits(auth, "storage_size", file_size)
+            
+            # Read file content before spawning background task
+            # This is necessary because the file handle won't be available after the request ends
+            file_content = await file.read()
+            file.file.seek(0)  # Reset position for potential future use
+            
+            # Add background task for processing
+            background_tasks.add_task(
+                process_file_document,
+                document_service=document_service,
+                document_id=doc.external_id,
+                file_content=file_content,
+                filename=file.filename,
+                content_type=file.content_type or "application/octet-stream",
                 metadata=metadata_dict,
                 auth=auth,
                 rules=rules_list,
@@ -375,14 +492,20 @@ async def ingest_file(
                 folder_name=folder_name,
                 end_user_id=end_user_id,
             )
+            
+            return doc
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error in ingest_file: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/ingest/files", response_model=BatchIngestResponse)
 async def batch_ingest_files(
+    background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...),
     metadata: str = Form("{}"),
     rules: str = Form("[]"),
@@ -396,6 +519,7 @@ async def batch_ingest_files(
     Batch ingest multiple files.
     
     Args:
+        background_tasks: FastAPI BackgroundTasks for async processing
         files: List of files to ingest
         metadata: JSON string of metadata (either a single dict or list of dicts)
         rules: JSON string of rules list. Can be either:
@@ -409,8 +533,8 @@ async def batch_ingest_files(
 
     Returns:
         BatchIngestResponse containing:
-            - documents: List of successfully ingested documents
-            - errors: List of errors encountered during ingestion
+            - documents: List of document metadata with PENDING status
+            - errors: List of errors encountered during initial setup
     """
     if not files:
         raise HTTPException(
@@ -419,8 +543,13 @@ async def batch_ingest_files(
         )
 
     try:
+        # Import here to avoid circular imports
+        from core.services.background_tasks import process_file_document
+        from core.models.documents import Document, DocumentStatus
+        
         metadata_value = json.loads(metadata)
         rules_list = json.loads(rules)
+        use_colpali = bool(use_colpali) if use_colpali is not None else None
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
 
@@ -442,7 +571,9 @@ async def batch_ingest_files(
     documents = []
     errors = []
 
-    # We'll pass folder_name and end_user_id directly to the ingest_file functions
+    # Check permission first
+    if "write" not in auth.permissions:
+        raise PermissionError("User does not have write permission")
 
     async with telemetry.track_operation(
         operation_type="batch_ingest",
@@ -453,54 +584,73 @@ async def batch_ingest_files(
             "rules_type": "per_file" if isinstance(rules_list, list) and rules_list and isinstance(rules_list[0], list) else "shared",
             "folder_name": folder_name,
             "end_user_id": end_user_id,
+            "background": True,
         },
     ):
-        if parallel:
-            tasks = []
-            for i, file in enumerate(files):
+        # Process each file to create initial document entries
+        for i, file in enumerate(files):
+            try:
                 metadata_item = metadata_value[i] if isinstance(metadata_value, list) else metadata_value
                 file_rules = rules_list[i] if isinstance(rules_list, list) and rules_list and isinstance(rules_list[0], list) else rules_list
-                task = document_service.ingest_file(
-                    file=file,
+                
+                # Create a document with pending status
+                doc = Document(
+                    content_type=file.content_type or "application/octet-stream",
+                    filename=file.filename,
+                    metadata=metadata_item,
+                    owner={"type": auth.entity_type, "id": auth.entity_id},
+                    access_control={
+                        "readers": [auth.entity_id],
+                        "writers": [auth.entity_id],
+                        "admins": [auth.entity_id],
+                        "user_id": [auth.user_id] if auth.user_id else [],
+                    },
+                    status=DocumentStatus.PENDING,
+                )
+                
+                # Add folder_name and end_user_id to system_metadata if provided
+                if folder_name:
+                    doc.system_metadata["folder_name"] = folder_name
+                if end_user_id:
+                    doc.system_metadata["end_user_id"] = end_user_id
+                    
+                # Store initial document
+                if not await document_service.db.store_document(doc):
+                    raise Exception(f"Failed to store initial document metadata for {file.filename}")
+                
+                # Check file size limits
+                file.file.seek(0, 2)  # Seek to end of file
+                file_size = file.file.tell()  # Get current position (file size)
+                file.file.seek(0)  # Reset file position
+                
+                # Read file content before spawning background task
+                file_content = await file.read()
+                file.file.seek(0)  # Reset position for potential future use
+                
+                # Add task for background processing - don't await
+                background_tasks.add_task(
+                    process_file_document,
+                    document_service=document_service,
+                    document_id=doc.external_id,
+                    file_content=file_content,
+                    filename=file.filename,
+                    content_type=file.content_type or "application/octet-stream",
                     metadata=metadata_item,
                     auth=auth,
                     rules=file_rules,
                     use_colpali=use_colpali,
                     folder_name=folder_name,
-                    end_user_id=end_user_id
+                    end_user_id=end_user_id,
                 )
-                tasks.append(task)
-            
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    errors.append({
-                        "filename": files[i].filename,
-                        "error": str(result)
-                    })
-                else:
-                    documents.append(result)
-        else:
-            for i, file in enumerate(files):
-                try:
-                    metadata_item = metadata_value[i] if isinstance(metadata_value, list) else metadata_value
-                    file_rules = rules_list[i] if isinstance(rules_list, list) and rules_list and isinstance(rules_list[0], list) else rules_list
-                    doc = await document_service.ingest_file(
-                        file=file,
-                        metadata=metadata_item,
-                        auth=auth,
-                        rules=file_rules,
-                        use_colpali=use_colpali,
-                        folder_name=folder_name,
-                        end_user_id=end_user_id
-                    )
-                    documents.append(doc)
-                except Exception as e:
-                    errors.append({
-                        "filename": file.filename,
-                        "error": str(e)
-                    })
+                
+                documents.append(doc)
+                
+            except Exception as e:
+                logger.error(f"Error setting up background task for file {file.filename}: {str(e)}")
+                errors.append({
+                    "filename": file.filename,
+                    "error": str(e)
+                })
 
     return BatchIngestResponse(documents=documents, errors=errors)
 
@@ -817,6 +967,41 @@ async def get_document(document_id: str, auth: AuthContext = Depends(verify_toke
     except HTTPException as e:
         logger.error(f"Error getting document: {e}")
         raise e
+        
+        
+@app.get("/documents/{document_id}/status")
+async def get_document_status(document_id: str, auth: AuthContext = Depends(verify_token)):
+    """
+    Get the current status of a document.
+    
+    Returns the document's current processing status, which can be:
+    - pending: Document is queued for processing
+    - processing: Document is currently being processed
+    - completed: Document has been fully processed and is ready for use
+    - failed: Document processing failed with an error
+    
+    If the status is 'failed', an error_message will be included with details.
+    """
+    try:
+        doc = await document_service.db.get_document(document_id, auth)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+            
+        response = {
+            "document_id": doc.external_id,
+            "status": doc.status,
+            "filename": doc.filename,
+            "content_type": doc.content_type,
+        }
+        
+        # Include error message if processing failed
+        if doc.status == DocumentStatus.FAILED and doc.error_message:
+            response["error_message"] = doc.error_message
+            
+        return response
+    except Exception as e:
+        logger.error(f"Error getting document status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.delete("/documents/{document_id}")

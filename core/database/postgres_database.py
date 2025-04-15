@@ -32,6 +32,8 @@ class DocumentModel(Base):
     access_control = Column(JSONB, default=dict)
     chunk_ids = Column(JSONB, default=list)
     storage_files = Column(JSONB, default=list)
+    status = Column(String, default="pending")
+    error_message = Column(String, nullable=True)
 
     # Create indexes
     __table_args__ = (
@@ -137,6 +139,48 @@ class PostgresDatabase(BaseDatabase):
                             """
                         ALTER TABLE documents 
                         ADD COLUMN IF NOT EXISTS storage_files JSONB DEFAULT '[]'::jsonb
+                        """
+                        )
+                    )
+                
+                # Check if status column exists
+                result = await conn.execute(
+                    text(
+                        """
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'documents' AND column_name = 'status'
+                    """
+                    )
+                )
+                if not result.first():
+                    # Add status column to documents table
+                    await conn.execute(
+                        text(
+                            """
+                        ALTER TABLE documents 
+                        ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'pending'
+                        """
+                        )
+                    )
+                
+                # Check if error_message column exists
+                result = await conn.execute(
+                    text(
+                        """
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'documents' AND column_name = 'error_message'
+                    """
+                    )
+                )
+                if not result.first():
+                    # Add error_message column to documents table
+                    await conn.execute(
+                        text(
+                            """
+                        ALTER TABLE documents 
+                        ADD COLUMN IF NOT EXISTS error_message VARCHAR DEFAULT NULL
                         """
                         )
                     )
@@ -277,6 +321,8 @@ class PostgresDatabase(BaseDatabase):
                         "access_control": doc_model.access_control,
                         "chunk_ids": doc_model.chunk_ids,
                         "storage_files": doc_model.storage_files or [],
+                        "status": doc_model.status,
+                        "error_message": doc_model.error_message,
                     }
                     return Document(**doc_dict)
                 return None
@@ -338,6 +384,8 @@ class PostgresDatabase(BaseDatabase):
                         "access_control": doc_model.access_control,
                         "chunk_ids": doc_model.chunk_ids,
                         "storage_files": doc_model.storage_files or [],
+                        "status": doc_model.status,
+                        "error_message": doc_model.error_message,
                     }
                     return Document(**doc_dict)
                 return None
@@ -405,6 +453,8 @@ class PostgresDatabase(BaseDatabase):
                         "access_control": doc_model.access_control,
                         "chunk_ids": doc_model.chunk_ids,
                         "storage_files": doc_model.storage_files or [],
+                        "status": doc_model.status,
+                        "error_message": doc_model.error_message,
                     }
                     documents.append(Document(**doc_dict))
                 
@@ -460,6 +510,8 @@ class PostgresDatabase(BaseDatabase):
                         access_control=doc.access_control,
                         chunk_ids=doc.chunk_ids,
                         storage_files=doc.storage_files or [],
+                        status=doc.status,
+                        error_message=doc.error_message,
                     )
                     for doc in doc_models
                 ]
