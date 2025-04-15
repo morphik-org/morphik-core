@@ -4,7 +4,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { FileText, Search, MessageSquare, ChevronLeft, ChevronRight, Network, Book, Copy, Check } from "lucide-react"
+import { FileText, Search, MessageSquare, ChevronLeft, ChevronRight, Network, Copy, Check } from "lucide-react"
 import { ModeToggle } from "@/components/mode-toggle"
 import { Input } from "@/components/ui/input"
 
@@ -145,7 +145,16 @@ export function Sidebar({
                       onClick={() => {
                         if (connectionUri) {
                           navigator.clipboard.writeText(connectionUri);
-                          alert('Connection URI copied to clipboard');
+                          // Use the showAlert helper instead of native alert
+                          const event = new CustomEvent('morphik:alert', {
+                            detail: {
+                              type: 'success',
+                              title: 'Copied!',
+                              message: 'Connection URI copied to clipboard',
+                              duration: 3000,
+                            },
+                          });
+                          window.dispatchEvent(event);
                         }
                       }}
                       title="Copy connection URI"
@@ -263,17 +272,6 @@ export function Sidebar({
             {!isCollapsed && <span className="ml-2">Chat</span>}
           </Button>
           
-          <Button
-            variant={activeSection === "notebooks" ? "secondary" : "ghost"}
-            className={cn(
-              "w-full justify-start",
-              isCollapsed && "justify-center"
-            )}
-            onClick={() => onSectionChange("notebooks")}
-          >
-            <Book className="h-4 w-4" />
-            {!isCollapsed && <span className="ml-2">Notebooks</span>}
-          </Button>
           
           <Button
             variant={activeSection === "graphs" ? "secondary" : "ghost"}

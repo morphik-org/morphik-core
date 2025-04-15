@@ -1,5 +1,14 @@
 // Common types used across multiple components
 
+export interface MorphikUIProps {
+  connectionUri?: string;
+  apiBaseUrl?: string;
+  isReadOnlyUri?: boolean; // Controls whether the URI can be edited
+  onUriChange?: (uri: string) => void; // Callback when URI is changed
+  onBackClick?: () => void; // Callback when back button is clicked
+  appName?: string; // Name of the app to display in UI
+}
+
 export interface Document {
   external_id: string;
   filename?: string;

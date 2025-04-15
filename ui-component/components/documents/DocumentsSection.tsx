@@ -156,22 +156,28 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
     fetchDocument(document.external_id);
   };
   
-  // Handle document deletion
+  // Helper function for document deletion API call
+  const deleteDocumentApi = async (documentId: string) => {
+    const response = await fetch(`${effectiveApiUrl}/documents/${documentId}`, {
+      method: 'DELETE',
+      headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to delete document: ${response.statusText}`);
+    }
+    
+    return response;
+  };
+
+  // Handle single document deletion
   const handleDeleteDocument = async (documentId: string) => {
     try {
       setLoading(true);
       
       console.log('DocumentsSection: Deleting document:', documentId);
-      console.log('DocumentsSection: API URL:', effectiveApiUrl);
       
-      const response = await fetch(`${effectiveApiUrl}/documents/${documentId}`, {
-        method: 'DELETE',
-        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to delete document: ${response.statusText}`);
-      }
+      await deleteDocumentApi(documentId);
       
       // Clear selected document if it was the one deleted
       if (selectedDocument?.external_id === documentId) {
@@ -194,6 +200,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
         title: 'Delete Failed',
         duration: 5000
       });
+      
+      // Also remove the progress alert if there was an error
+      removeAlert('delete-multiple-progress');
     } finally {
       setLoading(false);
     }
@@ -215,16 +224,10 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
       });
       
       console.log('DocumentsSection: Deleting multiple documents:', selectedDocuments);
-      console.log('DocumentsSection: API URL:', effectiveApiUrl);
       
-      // Perform deletions sequentially
+      // Perform deletions in parallel
       const results = await Promise.all(
-        selectedDocuments.map(docId =>
-          fetch(`${effectiveApiUrl}/documents/${docId}`, {
-            method: 'DELETE',
-            headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
-          })
-        )
+        selectedDocuments.map(docId => deleteDocumentApi(docId))
       );
       
       // Check if any deletion failed
@@ -264,6 +267,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
         title: 'Delete Failed',
         duration: 5000
       });
+      
+      // Also remove the progress alert if there was an error
+      removeAlert('delete-multiple-progress');
     } finally {
       setLoading(false);
     }

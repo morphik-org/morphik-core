@@ -1,4 +1,4 @@
-# Morphik UI Component
+# @morphik/ui
 
 A modern React-based UI for Morphik, built with Next.js and Tailwind CSS. This component provides a user-friendly interface for:
 - Document management and uploads
@@ -6,26 +6,54 @@ A modern React-based UI for Morphik, built with Next.js and Tailwind CSS. This c
 - Real-time document processing feedback
 - Query testing and prototyping
 
+## Installation
+
+```bash
+npm install @morphik/ui
+```
+
+## Usage
+
+```jsx
+import { MorphikUI } from '@morphik/ui';
+
+export default function YourApp() {
+  return (
+    <MorphikUI 
+      connectionUri="your-connection-uri" 
+      apiBaseUrl="http://your-api-base-url" 
+      isReadOnlyUri={false}
+      onUriChange={(uri) => console.log('URI changed:', uri)}
+    />
+  );
+}
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `connectionUri` | `string` | `undefined` | Connection URI for Morphik API |
+| `apiBaseUrl` | `string` | `"http://localhost:8000"` | Base URL for API requests |
+| `isReadOnlyUri` | `boolean` | `false` | Controls whether the URI can be edited |
+| `onUriChange` | `(uri: string) => void` | `undefined` | Callback when URI is changed |
+
 ## Prerequisites
 
 - Node.js 18 or later
 - npm or yarn package manager
 - A running Morphik server
 
-## Quick Start
+## Development Quick Start
 
 1. Install dependencies:
 ```bash
 npm install
-# or
-yarn install
 ```
 
 2. Start the development server:
 ```bash
 npm run dev
-# or
-yarn dev
 ```
 
 3. Open [http://localhost:3000](http://localhost:3000) in your browser
