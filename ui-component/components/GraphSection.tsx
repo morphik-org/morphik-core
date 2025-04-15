@@ -55,6 +55,7 @@ interface Relationship {
 
 interface GraphSectionProps {
   apiBaseUrl: string;
+  onSelectGraph?: (graphName: string | undefined) => void;
 }
 
 // Map entity types to colors
@@ -69,7 +70,7 @@ const entityTypeColors: Record<string, string> = {
   'default': '#6b7280'   // Gray
 };
 
-const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl }) => {
+const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph }) => {
   // State variables
   const [graphs, setGraphs] = useState<Graph[]>([]);
   const [selectedGraph, setSelectedGraph] = useState<Graph | null>(null);
@@ -170,6 +171,11 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl }) => {
       
       const data = await response.json();
       setSelectedGraph(data);
+      
+      // Call the callback if provided
+      if (onSelectGraph) {
+        onSelectGraph(graphName);
+      }
       
       // Change to visualize tab if we're not on the list tab
       if (activeTab !== 'list' && activeTab !== 'create') {
