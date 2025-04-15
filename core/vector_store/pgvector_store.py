@@ -190,7 +190,16 @@ class PGVectorStore(BaseVectorStore):
                     current_dim = result.scalar()
                     
                     if (current_dim + 4) != dimensions:
-                        logger.info(f"Vector dimensions changed from {current_dim} to {dimensions}, recreating table")
+                        logger.warning(f"Vector dimensions changed from {current_dim} to {dimensions}. This requires recreating tables and will delete all existing vector data.")
+                        
+                        # Ask for explicit user confirmation
+                        user_input = input(f"WARNING: Embedding dimensions changed from {current_dim} to {dimensions}. This will DELETE ALL existing vector data. Type 'yes' to continue: ")
+                        
+                        if user_input.lower() != "yes":
+                            logger.info("User aborted table recreation due to dimension change")
+                            raise ValueError("Operation aborted by user. Vector dimension change requires recreating tables.")
+                        
+                        logger.info("User confirmed table recreation")
                         
                         # Drop existing vector index if it exists
                         await conn.execute(text("DROP INDEX IF EXISTS vector_idx;"))
