@@ -246,7 +246,7 @@ async def test_ingest_text_document_with_metadata(client: AsyncClient, content: 
 
     response = await client.post(
         "/ingest/text",
-        json={"content": content, "metadata": metadata},
+        json={"content": content, "filename": "example", "metadata": metadata, "use_colpali": False, "rules": []},
         headers=headers,
     )
 
@@ -2667,7 +2667,7 @@ async def test_update_graph(client: AsyncClient):
     # Verify updated graph structure
     assert updated_graph["name"] == graph_name
     assert len(updated_graph["document_ids"]) == 4
-    assert all(doc_id in updated_graph["document_ids"] for doc_id in [doc_id1, doc_id2, doc_id3, doc_id4])
+    assert all([doc_id in updated_graph["document_ids"] for doc_id in [doc_id1, doc_id2, doc_id3, doc_id4]])
     
     # Verify new entities and relationships were added
     assert len(updated_graph["entities"]) > len(initial_graph["entities"])
@@ -2675,8 +2675,8 @@ async def test_update_graph(client: AsyncClient):
     
     # Verify specific new entities were extracted
     entity_labels = [entity["label"].lower() for entity in updated_graph["entities"]]
-    assert any("starship" in label for label in entity_labels)
-    assert any("gwynne shotwell" in label for label in entity_labels)
+    assert any(["starship" in label for label in entity_labels])
+    assert any(["gwynne shotwell" in label for label in entity_labels])
     
     # Test updating with filters
     # Create a document with specific metadata
@@ -2717,7 +2717,7 @@ async def test_update_graph(client: AsyncClient):
     
     # Verify the new entity was added
     new_entity_labels = [entity["label"].lower() for entity in filter_updated_graph["entities"]]
-    assert any("falcon 9" in label for label in new_entity_labels)
+    assert any(["falcon 9" in label for label in new_entity_labels])
     
     # Test updating with both documents and filters
     doc_id6 = await test_ingest_text_document(
@@ -2751,8 +2751,8 @@ async def test_update_graph(client: AsyncClient):
     
     # Verify new entities
     final_entity_labels = [entity["label"].lower() for entity in combined_updated_graph["entities"]]
-    assert any("cybertruck" in label for label in final_entity_labels)
-    assert any("starlink" in label for label in final_entity_labels)
+    assert any(["cybertruck" in label for label in final_entity_labels])
+    assert any(["starlink" in label for label in final_entity_labels])
     
     # Test querying with the updated graph
     query_response = await client.post(
