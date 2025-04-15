@@ -49,6 +49,94 @@ class AsyncCache:
         return CompletionResponse(**response)
 
 
+class AsyncSmartQueryBuilder:
+    """
+    Builder for creating smart queries that can be executed to retrieve document IDs.
+    
+    Args:
+        client: The AsyncMorphik client
+        folder_name: Optional folder scope
+        end_user_id: Optional end user scope
+    """
+    
+    def __init__(
+        self, 
+        client: "AsyncMorphik", 
+        folder_name: Optional[str] = None, 
+        end_user_id: Optional[str] = None
+    ):
+        self._client = client
+        self._folder_name = folder_name
+        self._end_user_id = end_user_id
+        self._filter_predicate = None
+        self._sort_by = []
+        self._limit = None
+        
+    def filter(self, predicate: str) -> "AsyncSmartQueryBuilder":
+        """
+        Add a natural language filter to the query.
+        
+        Args:
+            predicate: Natural language filter predicate like "show me only PDF files" or "documents created after January 2023"
+            
+        Returns:
+            Self for method chaining
+        """
+        self._filter_predicate = predicate
+        return self
+        
+    def sort(self, comparator: str, order: str = "ASC") -> "AsyncSmartQueryBuilder":
+        """
+        Add a natural language sort to the query.
+        
+        Args:
+            comparator: Natural language sort description like "by creation date" or "by relevance to AI"
+            order: Sort order, either "ASC" (ascending) or "DESC" (descending)
+            
+        Returns:
+            Self for method chaining
+        """
+        if order not in ["ASC", "DESC"]:
+            raise ValueError("Order must be either 'ASC' or 'DESC'")
+            
+        self._sort_by.append({"comparator": comparator, "order": order})
+        return self
+        
+    def limit(self, count: int) -> "AsyncSmartQueryBuilder":
+        """
+        Set a limit on the number of results returned.
+        
+        Args:
+            count: Maximum number of results to return
+            
+        Returns:
+            Self for method chaining
+        """
+        if count <= 0:
+            raise ValueError("Limit must be a positive number")
+            
+        self._limit = count
+        return self
+        
+    async def execute(self) -> List[str]:
+        """
+        Execute the smart query and return document IDs that match the criteria.
+        
+        Returns:
+            List of document IDs
+        """
+        request = self._client._logic._prepare_smart_query_request(
+            filter_predicate=self._filter_predicate,
+            sort_by=self._sort_by,
+            limit=self._limit,
+            folder_name=self._folder_name,
+            end_user_id=self._end_user_id
+        )
+        
+        response = await self._client._request("POST", "smart_query", data=request)
+        return response
+
+
 class AsyncFolder:
     """
     A folder that allows operations to be scoped to a specific folder.
@@ -78,6 +166,53 @@ class AsyncFolder:
             AsyncUserScope: A user scope scoped to this folder and the end user
         """
         return AsyncUserScope(client=self._client, end_user_id=end_user_id, folder_name=self._name)
+        
+        
+    def filter(self, predicate: str) -> AsyncSmartQueryBuilder:
+        """
+        Start a smart query with a filter.
+        
+        Args:
+            predicate: Natural language filter predicate like "show me only PDF files"
+            
+        Returns:
+            AsyncSmartQueryBuilder: A builder for continuing the query
+            
+        Example:
+            ```python
+            # Get PDF documents sorted by creation date
+            folder = db.get_folder("research")
+            docs = await folder.filter("only PDF documents") \
+                .sort("by creation date", "DESC") \
+                .execute()
+            ```
+        """
+        return AsyncSmartQueryBuilder(self._client, folder_name=self._name).filter(predicate)
+        
+    def sort(self, comparator: str, order: str = "ASC") -> AsyncSmartQueryBuilder:
+        """
+        Start a smart query with a sort.
+        
+        Args:
+            comparator: Natural language sort description
+            order: Sort order, either "ASC" or "DESC"
+            
+        Returns:
+            AsyncSmartQueryBuilder: A builder for continuing the query
+        """
+        return AsyncSmartQueryBuilder(self._client, folder_name=self._name).sort(comparator, order)
+        
+    def limit(self, count: int) -> AsyncSmartQueryBuilder:
+        """
+        Start a smart query with a limit.
+        
+        Args:
+            count: Maximum number of results to return
+            
+        Returns:
+            AsyncSmartQueryBuilder: A builder for continuing the query
+        """
+        return AsyncSmartQueryBuilder(self._client, folder_name=self._name).limit(count)
 
     async def ingest_text(
         self,
@@ -513,6 +648,53 @@ class AsyncUserScope:
     def folder_name(self) -> Optional[str]:
         """Returns the folder name if any."""
         return self._folder_name
+        
+        
+    def filter(self, predicate: str) -> AsyncSmartQueryBuilder:
+        """
+        Start a smart query with a filter.
+        
+        Args:
+            predicate: Natural language filter predicate like "show me only PDF files"
+            
+        Returns:
+            AsyncSmartQueryBuilder: A builder for continuing the query
+            
+        Example:
+            ```python
+            # Get PDF documents sorted by creation date for a specific user
+            user_scope = db.signin("user123")
+            docs = await user_scope.filter("only PDF documents") \
+                .sort("by creation date", "DESC") \
+                .execute()
+            ```
+        """
+        return AsyncSmartQueryBuilder(self._client, folder_name=self._folder_name, end_user_id=self._end_user_id).filter(predicate)
+        
+    def sort(self, comparator: str, order: str = "ASC") -> AsyncSmartQueryBuilder:
+        """
+        Start a smart query with a sort.
+        
+        Args:
+            comparator: Natural language sort description
+            order: Sort order, either "ASC" or "DESC"
+            
+        Returns:
+            AsyncSmartQueryBuilder: A builder for continuing the query
+        """
+        return AsyncSmartQueryBuilder(self._client, folder_name=self._folder_name, end_user_id=self._end_user_id).sort(comparator, order)
+        
+    def limit(self, count: int) -> AsyncSmartQueryBuilder:
+        """
+        Start a smart query with a limit.
+        
+        Args:
+            count: Maximum number of results to return
+            
+        Returns:
+            AsyncSmartQueryBuilder: A builder for continuing the query
+        """
+        return AsyncSmartQueryBuilder(self._client, folder_name=self._folder_name, end_user_id=self._end_user_id).limit(count)
 
     async def ingest_text(
         self,
@@ -1089,6 +1271,52 @@ class AsyncMorphik:
             AsyncUserScope: A user scope object for scoped operations
         """
         return AsyncUserScope(self, end_user_id)
+        
+        
+    def filter(self, predicate: str) -> AsyncSmartQueryBuilder:
+        """
+        Start a smart query with a filter.
+        
+        Args:
+            predicate: Natural language filter predicate like "show me only PDF files"
+            
+        Returns:
+            AsyncSmartQueryBuilder: A builder for continuing the query
+            
+        Example:
+            ```python
+            # Get PDF documents sorted by creation date
+            docs = await db.filter("only PDF documents") \
+                .sort("by creation date", "DESC") \
+                .execute()
+            ```
+        """
+        return AsyncSmartQueryBuilder(self).filter(predicate)
+        
+    def sort(self, comparator: str, order: str = "ASC") -> AsyncSmartQueryBuilder:
+        """
+        Start a smart query with a sort.
+        
+        Args:
+            comparator: Natural language sort description
+            order: Sort order, either "ASC" or "DESC"
+            
+        Returns:
+            AsyncSmartQueryBuilder: A builder for continuing the query
+        """
+        return AsyncSmartQueryBuilder(self).sort(comparator, order)
+        
+    def limit(self, count: int) -> AsyncSmartQueryBuilder:
+        """
+        Start a smart query with a limit.
+        
+        Args:
+            count: Maximum number of results to return
+            
+        Returns:
+            AsyncSmartQueryBuilder: A builder for continuing the query
+        """
+        return AsyncSmartQueryBuilder(self).limit(count)
 
     async def ingest_text(
         self,

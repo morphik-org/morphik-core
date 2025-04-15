@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Literal, Optional, Any
 from pydantic import BaseModel, Field
 
 from core.models.documents import Document
@@ -103,3 +103,18 @@ class GenerateUriRequest(BaseModel):
     name: str = Field(..., description="Name of the application")
     user_id: str = Field(..., description="ID of the user who owns the app")
     expiry_days: int = Field(default=30, description="Number of days until the token expires")
+
+class SortOperation(BaseModel):
+    comparator: str
+    order: Literal["ASC", "DESC"] = "ASC"
+    
+class FilterOperation(BaseModel):
+    predicate: str
+
+class SmartQueryRequest(BaseModel):
+    """Request model for smart query"""
+    filter: Optional[FilterOperation] = Field(default_factory= lambda: FilterOperation(predicate=""))
+    sort_by: Optional[List[SortOperation]] = Field(default_factory=list)
+    limit: Optional[int] = None
+    folder_name: Optional[str] = Field(None, description="Optional folder scope for the operation")
+    end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")

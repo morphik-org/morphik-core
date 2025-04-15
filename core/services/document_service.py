@@ -32,6 +32,8 @@ from core.cache.base_cache_factory import BaseCacheFactory
 from core.services.rules_processor import RulesProcessor
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.vector_store.multi_vector_store import MultiVectorStore
+from core.models.request import SmartQueryRequest, SortOperation, FilterOperation
+from core.models.completion import ChunkSource
 import filetype
 from filetype.types import IMAGE  # , DOCUMENT, document
 import pdf2image
@@ -391,6 +393,69 @@ class DocumentService:
         response.sources = sources
         
         return response
+
+
+    async def smart_query(
+        self,
+        request: SmartQueryRequest,
+        auth: AuthContext,
+    ):
+        """
+        Execute a natural language smart query with filters and sorts on document chunks.
+        
+        This endpoint allows users to filter and sort document chunks using natural language 
+        expressions. Users can specify filters like "show me only images" or "documents created
+        after January 2023", and sort options like "sort by relevance" or "sort by date in 
+        descending order".
+        
+        Examples:
+            - Filter: "show me only PDF documents"
+            - Sort: "sort by filename"
+        
+        Args:
+            request: The smart query request containing:
+                - filters: List of natural language filter predicates
+                - sort_by: List of natural language sort comparators with order (ASC/DESC)
+                - limit: Optional maximum number of results to return
+                - folder_name: Optional folder scope for the operation
+                - end_user_id: Optional end-user scope for the operation
+            auth: Authentication context with user permissions
+            
+        Returns:
+            List of chunk results after applying filters, sorts, and limits
+        """
+        if "read" not in auth.permissions:
+            logger.error(f"User {auth.entity_id} does not have read permission")
+            raise PermissionError("User does not have read permission")
+            
+        # Find authorized documents with system filters for folder and end-user
+        system_filters = {}
+        if request.folder_name:
+            system_filters["folder_name"] = request.folder_name
+        if request.end_user_id:
+            system_filters["end_user_id"] = request.end_user_id
+        
+        # Get document IDs that the user can access
+        doc_ids = await self.db.find_authorized_and_filtered_documents(auth, {}, system_filters)
+        if not doc_ids:
+            logger.info("No authorized documents found")
+            return []
+        
+        logger.info(f"Found {len(doc_ids)} authorized documents")
+        
+        # Get all documents with their chunks
+        # This uses existing functionality to get document metadata and chunk data
+        documents = await self.batch_retrieve_documents(doc_ids, auth, request.folder_name, request.end_user_id)
+        
+        # Import and use the QueryExecutor
+        from core.smart_query_engine.query_execution import QueryExecutor
+        executor = QueryExecutor()
+        
+        # Execute the query
+        results = await executor.execute_query(request, documents)
+        logger.info(f"Smart query returned {len(results)} results")
+        
+        return results
 
     async def ingest_text(
         self,

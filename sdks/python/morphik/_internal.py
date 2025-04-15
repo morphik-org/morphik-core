@@ -505,3 +505,31 @@ class _MorphikClientLogic:
     def _parse_graph_list_response(self, response_json: List[Dict[str, Any]]) -> List[Graph]:
         """Parse graph list response"""
         return [Graph(**graph) for graph in response_json]
+        
+    def _prepare_smart_query_request(
+        self,
+        filter_predicate: Optional[str] = None,
+        sort_by: Optional[List[Dict[str, str]]] = None,
+        limit: Optional[int] = None,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Prepare a SmartQueryRequest"""
+        request = {}
+        
+        if filter_predicate:
+            request["filter"] = {"predicate": filter_predicate}
+            
+        if sort_by:
+            request["sort_by"] = sort_by
+            
+        if limit is not None:
+            request["limit"] = limit
+            
+        if folder_name:
+            request["folder_name"] = folder_name
+            
+        if end_user_id:
+            request["end_user_id"] = end_user_id
+            
+        return request

@@ -10,7 +10,7 @@ import jwt
 import logging
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.limits_utils import check_and_increment_limits
-from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, UpdateGraphRequest, BatchIngestResponse
+from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, SmartQueryRequest, UpdateGraphRequest, BatchIngestResponse
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.graph import Graph
@@ -768,6 +768,44 @@ async def query_completion(
             )
     except ValueError as e:
         validate_prompt_overrides_with_http_exception(operation_type="query", error=e)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.post("/smart_query", response_model=List[str])
+async def smart_query(request: SmartQueryRequest, auth: AuthContext = Depends(verify_token)):
+    """
+    Execute a natural language smart query with filters and sorts on documents.
+    
+    This endpoint allows filtering and sorting documents using natural language expressions.
+    It provides a flexible way to query your knowledge base using expressions like 
+    "show me only PDF documents" or "sort by creation date in descending order".
+    
+    Args:
+        request: SmartQueryRequest containing:
+            - filter: Optional natural language filter predicate (e.g., "documents about AI")
+            - sort_by: Optional list of sort operations with comparators and direction
+            - limit: Optional maximum number of results to return
+            - folder_name: Optional folder to scope the operation to
+            - end_user_id: Optional end-user ID to scope the operation to
+        auth: Authentication context
+        
+    Returns:
+        List[str]: List of document IDs after applying filters, sorts, and limits
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="smart_query",
+            user_id=auth.entity_id,
+            metadata={
+                "folder_name": request.folder_name,
+                "end_user_id": request.end_user_id,
+                "filter": request.filter.model_dump() if request.filter else None,
+                "sort_by": [sort_.model_dump() for sort_ in request.sort_by],
+                "limit": request.limit,
+            },
+        ):
+            return await document_service.smart_query(request, auth)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 

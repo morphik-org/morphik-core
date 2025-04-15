@@ -95,6 +95,9 @@ provider = "pgvector"
 model = "ollama_llama"
 batch_size = 4096
 
+[smart_query]
+model = "ollama_llama"
+
 [morphik]
 enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"

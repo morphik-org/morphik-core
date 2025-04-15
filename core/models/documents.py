@@ -43,6 +43,7 @@ class Document(BaseModel):
         default_factory=lambda: {
             "created_at": datetime.now(UTC),
             "updated_at": datetime.now(UTC),
+            "content": "",
             "version": 1,
             "folder_name": None,
             "end_user_id": None,
