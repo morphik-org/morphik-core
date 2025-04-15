@@ -1,5 +1,7 @@
 import asyncio
 import json
+import base64
+import uuid
 from datetime import datetime, UTC, timedelta
 from pathlib import Path
 import sys
@@ -8,6 +10,7 @@ from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile, F
 from fastapi.middleware.cors import CORSMiddleware
 import jwt
 import logging
+import arq
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.limits_utils import check_and_increment_limits
 from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, UpdateGraphRequest, BatchIngestResponse
@@ -79,6 +82,8 @@ if not settings.POSTGRES_URI:
     raise ValueError("PostgreSQL URI is required for PostgreSQL database")
 database = PostgresDatabase(uri=settings.POSTGRES_URI)
 
+# Redis settings already imported at top of file
+
 
 @app.on_event("startup")
 async def initialize_database():
@@ -128,6 +133,43 @@ async def initialize_user_limits_database():
         from core.database.user_limits_db import UserLimitsDatabase
         user_limits_db = UserLimitsDatabase(uri=settings.POSTGRES_URI)
         await user_limits_db.initialize()
+
+@app.on_event("startup")
+async def initialize_redis_pool():
+    """Initialize the Redis connection pool for background tasks."""
+    global redis_pool
+    logger.info("Initializing Redis connection pool...")
+    
+    # Get Redis settings from configuration
+    redis_host = settings.REDIS_HOST
+    redis_port = settings.REDIS_PORT
+    
+    # Log the Redis connection details
+    logger.info(f"Connecting to Redis at {redis_host}:{redis_port}")
+    
+    # Create Redis pool
+    try:
+        redis_settings = arq.connections.RedisSettings(
+            host=redis_host,
+            port=redis_port,
+            # Additional Redis connection settings can be added here as needed
+        )
+        redis_pool = await arq.create_pool(redis_settings)
+        logger.info("Redis connection pool initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize Redis connection pool: {str(e)}")
+        # Don't raise the exception - this allows the API to start without Redis
+        # but the /ingest/file endpoint will fail if Redis is not available
+
+@app.on_event("shutdown")
+async def close_redis_pool():
+    """Close the Redis connection pool on application shutdown."""
+    global redis_pool
+    if redis_pool:
+        logger.info("Closing Redis connection pool...")
+        redis_pool.close()
+        await redis_pool.wait_closed()
+        logger.info("Redis connection pool closed")
 
 # Initialize vector store
 if not settings.POSTGRES_URI:
@@ -319,7 +361,14 @@ async def ingest_text(
         raise HTTPException(status_code=403, detail=str(e))
 
 
-@app.post("/ingest/file", response_model=Document)
+# Redis pool for background tasks
+redis_pool = None
+
+def get_redis_pool():
+    """Get the global Redis connection pool for background tasks."""
+    return redis_pool
+
+@app.post("/ingest/file", response_model=Dict[str, Any])
 async def ingest_file(
     file: UploadFile,
     metadata: str = Form("{}"),
@@ -328,9 +377,10 @@ async def ingest_file(
     use_colpali: Optional[bool] = None,
     folder_name: Optional[str] = Form(None),
     end_user_id: Optional[str] = Form(None),
-) -> Document:
+    redis: arq.ArqRedis = Depends(get_redis_pool),
+) -> Dict[str, Any]:
     """
-    Ingest a file document.
+    Ingest a file document asynchronously.
 
     Args:
         file: File to ingest
@@ -342,17 +392,23 @@ async def ingest_file(
         use_colpali: Whether to use ColPali embedding model
         folder_name: Optional folder to scope the document to
         end_user_id: Optional end-user ID to scope the document to
+        redis: Redis connection pool for background tasks
 
     Returns:
-        Document: Metadata of ingested document
+        Dict with job status, filename, and job ID
     """
     try:
+        # Parse metadata and rules
         metadata_dict = json.loads(metadata)
         rules_list = json.loads(rules)
         use_colpali = bool(use_colpali)
+        
+        # Ensure user has write permission
+        if "write" not in auth.permissions:
+            raise PermissionError("User does not have write permission")
 
         async with telemetry.track_operation(
-            operation_type="ingest_file",
+            operation_type="queue_ingest_file",
             user_id=auth.entity_id,
             metadata={
                 "filename": file.filename,
@@ -364,21 +420,65 @@ async def ingest_file(
                 "end_user_id": end_user_id,
             },
         ):
-            logger.debug(f"API: Ingesting file with use_colpali: {use_colpali}")
+            logger.debug(f"API: Queueing file ingestion with use_colpali: {use_colpali}")
             
-            return await document_service.ingest_file(
-                file=file,
-                metadata=metadata_dict,
-                auth=auth,
-                rules=rules_list,
+            # Read file content
+            file_content = await file.read()
+            
+            # Generate a unique key for the file
+            file_key = f"ingest_uploads/{uuid.uuid4()}/{file.filename}"
+            
+            # Store the file in the configured storage
+            file_content_base64 = base64.b64encode(file_content).decode()
+            bucket, stored_key = await storage.upload_from_base64(
+                file_content_base64, 
+                file_key, 
+                file.content_type
+            )
+            logger.debug(f"Stored file in bucket {bucket} with key {stored_key}")
+            
+            # Convert auth context to a dictionary for serialization
+            auth_dict = {
+                "entity_type": auth.entity_type.value,
+                "entity_id": auth.entity_id,
+                "app_id": auth.app_id,
+                "permissions": list(auth.permissions),
+                "user_id": auth.user_id
+            }
+            
+            # Enqueue the background job
+            job = await redis.enqueue_job(
+                'process_ingestion_job',
+                file_key=stored_key,
+                bucket=bucket,
+                original_filename=file.filename,
+                content_type=file.content_type,
+                metadata_json=metadata,
+                auth_dict=auth_dict,
+                rules_list=rules_list,
                 use_colpali=use_colpali,
                 folder_name=folder_name,
-                end_user_id=end_user_id,
+                end_user_id=end_user_id
             )
+            
+            logger.info(f"File ingestion job queued with ID: {job.job_id}")
+            
+            # Return job information
+            return {
+                "status": "queued",
+                "filename": file.filename,
+                "job_id": job.job_id,
+                "content_type": file.content_type,
+                "timestamp": datetime.now(UTC).isoformat()
+            }
+            
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error queueing file ingestion: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error queueing file ingestion: {str(e)}")
 
 
 @app.post("/ingest/files", response_model=BatchIngestResponse)
