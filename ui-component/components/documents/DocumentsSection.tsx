@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Upload } from 'lucide-react';
 import { showAlert, removeAlert } from '@/components/ui/alert-system';
@@ -12,10 +12,21 @@ import { Document } from '@/components/types';
 
 interface DocumentsSectionProps {
   apiBaseUrl: string;
-  authToken: string;
+  authToken: string | null;
 }
 
 const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authToken }) => {
+  // Ensure apiBaseUrl is correctly formatted, especially for localhost
+  const effectiveApiUrl = React.useMemo(() => {
+    console.log('DocumentsSection: Input apiBaseUrl:', apiBaseUrl);
+    // Check if it's a localhost URL and ensure it has the right format
+    if (apiBaseUrl.includes('localhost') || apiBaseUrl.includes('127.0.0.1')) {
+      if (!apiBaseUrl.includes('http')) {
+        return `http://${apiBaseUrl}`;
+      }
+    }
+    return apiBaseUrl;
+  }, [apiBaseUrl]);
   // State for documents
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
@@ -34,25 +45,30 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
     resetUploadDialog
   } = uploadDialogState;
 
-  // Headers for API requests
-  const headers = {
-    'Authorization': authToken
-  };
+  // Headers for API requests - ensure this updates when props change
+  const headers = React.useMemo(() => {
+    return {
+      'Authorization': authToken ? `Bearer ${authToken}` : ''
+    };
+  }, [authToken]);
 
   // Fetch all documents
-  const fetchDocuments = async () => {
+  const fetchDocuments = useCallback(async () => {
     try {
       // Only set loading state for initial load, not for refreshes
       if (documents.length === 0) {
         setLoading(true);
       }
       
+      console.log('DocumentsSection: Sending request to:', `${effectiveApiUrl}/documents`);
+      console.log('DocumentsSection: Headers:', JSON.stringify(headers));
+      
       // Use non-blocking fetch
-      fetch(`${apiBaseUrl}/documents`, {
+      fetch(`${effectiveApiUrl}/documents`, {
         method: 'POST',
         headers: {
-          ...headers,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
         },
         body: JSON.stringify({})
       })
@@ -84,20 +100,29 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
       });
       setLoading(false);
     }
-  };
+  }, [effectiveApiUrl, authToken, headers, documents.length]);
 
-  // Fetch documents on component mount
+  // Fetch documents when auth token or API URL changes (but not when fetchDocuments changes)
   useEffect(() => {
-    fetchDocuments();
+    if (authToken || effectiveApiUrl.includes('localhost')) {
+      console.log('DocumentsSection: Fetching documents on auth/API change');
+      
+      // Clear current documents and reset state
+      setDocuments([]);
+      setSelectedDocument(null);
+      fetchDocuments();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authToken, effectiveApiUrl]);
 
   // Fetch a specific document by ID
   const fetchDocument = async (documentId: string) => {
     try {
+      console.log('DocumentsSection: Fetching document detail from:', `${effectiveApiUrl}/documents/${documentId}`);
+      
       // Use non-blocking fetch to avoid locking the UI
-      fetch(`${apiBaseUrl}/documents/${documentId}`, {
-        headers
+      fetch(`${effectiveApiUrl}/documents/${documentId}`, {
+        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
       })
       .then(response => {
         if (!response.ok) {
@@ -136,9 +161,12 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
     try {
       setLoading(true);
       
-      const response = await fetch(`${apiBaseUrl}/documents/${documentId}`, {
+      console.log('DocumentsSection: Deleting document:', documentId);
+      console.log('DocumentsSection: API URL:', effectiveApiUrl);
+      
+      const response = await fetch(`${effectiveApiUrl}/documents/${documentId}`, {
         method: 'DELETE',
-        headers
+        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
       });
       
       if (!response.ok) {
@@ -186,12 +214,15 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
         id: alertId
       });
       
+      console.log('DocumentsSection: Deleting multiple documents:', selectedDocuments);
+      console.log('DocumentsSection: API URL:', effectiveApiUrl);
+      
       // Perform deletions sequentially
       const results = await Promise.all(
         selectedDocuments.map(docId =>
-          fetch(`${apiBaseUrl}/documents/${docId}`, {
+          fetch(`${effectiveApiUrl}/documents/${docId}`, {
             method: 'DELETE',
-            headers
+            headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
           })
         )
       );
@@ -291,13 +322,13 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
       formData.append('metadata', metadataRef);
       formData.append('rules', rulesRef);
       
-      const url = `${apiBaseUrl}/ingest/file${useColpaliRef ? '?use_colpali=true' : ''}`;
+      const url = `${effectiveApiUrl}/ingest/file${useColpaliRef ? '?use_colpali=true' : ''}`;
       
       // Non-blocking fetch
       fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': authToken
+          'Authorization': authToken ? `Bearer ${authToken}` : ''
         },
         body: formData
       })
@@ -394,10 +425,10 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
       }
       
       // Non-blocking fetch
-      fetch(`${apiBaseUrl}/ingest/files`, {
+      fetch(`${effectiveApiUrl}/ingest/files`, {
         method: 'POST',
         headers: {
-          'Authorization': authToken
+          'Authorization': authToken ? `Bearer ${authToken}` : ''
         },
         body: formData
       })
@@ -490,10 +521,10 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
     
     try {
       // Non-blocking fetch
-      fetch(`${apiBaseUrl}/ingest/text`, {
+      fetch(`${effectiveApiUrl}/ingest/text`, {
         method: 'POST',
         headers: {
-          'Authorization': authToken,
+          'Authorization': authToken ? `Bearer ${authToken}` : '',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -553,7 +584,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
 
   return (
     <div className="flex-1 flex flex-col h-full">
-      <div className="flex justify-between items-center bg-white py-3 mb-4">
+      <div className="flex justify-between items-center py-3 mb-4">
         <div className="flex items-center gap-4">
           <div>
             <h2 className="text-2xl font-bold leading-tight">Your Documents</h2>
@@ -583,8 +614,8 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
       {documents.length === 0 && !loading ? (
         <div className="text-center py-8 border border-dashed rounded-lg flex-1 flex items-center justify-center">
           <div>
-            <Upload className="mx-auto h-12 w-12 mb-2 text-gray-400" />
-            <p className="text-gray-500">No documents found. Upload your first document.</p>
+            <Upload className="mx-auto h-12 w-12 mb-2 text-muted-foreground" />
+            <p className="text-muted-foreground">No documents found. Upload your first document.</p>
           </div>
         </div>
       ) : (

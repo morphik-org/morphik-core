@@ -26,6 +26,9 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Progress } from '@/components/ui/progress';
+import { Checkbox } from '@/components/ui/checkbox';
 // Removed unused accordion imports
 import OpenAI from 'openai';
 // Import OpenAI types for chat completions
@@ -1647,7 +1650,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
   const renderContent = (content: string, contentType: string) => {
     if (contentType.startsWith('image/') || content.startsWith('data:image/')) {
       return (
-        <div className="flex justify-center p-4 bg-gray-100 rounded-md">
+        <div className="flex justify-center p-4 bg-muted rounded-md">
           { /* eslint-disable-next-line @next/next/no-img-element */ }
           <img 
             src={content} 
@@ -1658,7 +1661,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
       );
     } else {
       return (
-        <div className="bg-gray-50 p-4 rounded-md whitespace-pre-wrap font-mono text-sm">
+        <div className="bg-muted p-4 rounded-md whitespace-pre-wrap font-mono text-sm">
           {content}
         </div>
       );
@@ -1695,7 +1698,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
               </div>
               <button
                 type="button"
-                className="ml-4 text-gray-400 hover:text-gray-700"
+                className="ml-4 text-muted-foreground hover:text-foreground"
                 onClick={() => setToasts(toasts.filter(t => t.id !== toast.id))}
               >
                 ×
@@ -1750,11 +1753,11 @@ Given the context information and not prior knowledge, answer the question: ${ch
                 value={ollamaUrl}
                 onChange={(e) => setOllamaUrl(e.target.value)}
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 No API key needed for Ollama. Just ensure Ollama is running locally.
                 <br />
                 <strong>Note:</strong> You may need to start Ollama with CORS allowed: <br />
-                <code className="bg-gray-100 px-1 py-0.5 text-xs rounded">OLLAMA_ORIGINS=http://localhost:3000 ollama serve</code>
+                <code className="bg-muted px-1 py-0.5 text-xs rounded">OLLAMA_ORIGINS=http://localhost:3000 ollama serve</code>
               </p>
             </div>
           </div>
@@ -1801,18 +1804,16 @@ Given the context information and not prior knowledge, answer the question: ${ch
                       </Badge>
                     </div>
                     
-                    <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
-                      <div
-                        className={`h-2.5 rounded-full ${
-                          task.status === 'completed' ? 'bg-green-600' :
-                          task.status === 'error' ? 'bg-red-600' :
-                          'bg-blue-600'
-                        }`}
-                        style={{ width: `${task.progress}%` }}
-                      ></div>
-                    </div>
+                    <Progress 
+                      value={task.progress} 
+                      className={`mb-2 ${
+                        task.status === 'completed' ? 'bg-green-100 dark:bg-green-950/30 [&>div]:bg-green-600' :
+                        task.status === 'error' ? 'bg-red-100 dark:bg-red-950/30 [&>div]:bg-red-600' :
+                        'bg-blue-100 dark:bg-blue-950/30 [&>div]:bg-blue-600'
+                      }`}
+                    />
                     
-                    <div className="flex justify-between text-xs text-gray-500">
+                    <div className="flex justify-between text-xs text-muted-foreground">
                       <div>
                         {task.progress}%
                       </div>
@@ -1865,7 +1866,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
               </Button>
             )}
           </div>
-          <p className="text-gray-600">
+          <p className="text-muted-foreground">
             Create notebooks to organize your documents and chat with AI about specific topics.
           </p>
         </div>
@@ -1941,7 +1942,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
               
               {/* Create new notebook card */}
               <Card 
-                className="cursor-pointer border-dashed border-2 border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-blue-300 hover:-translate-y-1 transition-all duration-300 flex flex-col items-center justify-center"
+                className="cursor-pointer border-dashed border-2 border-gray-300 bg-muted/50 hover:bg-muted hover:border-blue-300 hover:-translate-y-1 transition-all duration-300 flex flex-col items-center justify-center"
                 onClick={() => setShowCreateDialog(true)}
               >
                 <div className="py-8 flex flex-col items-center">
@@ -1949,7 +1950,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
                     <Plus className="h-6 w-6 text-blue-500" />
                   </div>
                   <p className="font-medium">Create New Notebook</p>
-                  <p className="text-sm text-gray-500 mt-1">Add a new collection</p>
+                  <p className="text-sm text-muted-foreground mt-1">Add a new collection</p>
                 </div>
               </Card>
             </div>
@@ -2112,7 +2113,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
                           onChange={(e) => setMetadata(e.target.value)}
                           rows={3}
                         />
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-muted-foreground mt-1">
                           The notebook name is automatically included in metadata.
                         </p>
                       </div>
@@ -2166,8 +2167,8 @@ Given the context information and not prior knowledge, answer the question: ${ch
                   </div>
                 ) : notebookDocuments.length === 0 ? (
                   <div className="text-center p-8 border-2 border-dashed rounded-lg">
-                    <FileText className="mx-auto h-12 w-12 mb-3 text-gray-400" />
-                    <p className="text-gray-500 mb-3">No documents in this notebook yet.</p>
+                    <FileText className="mx-auto h-12 w-12 mb-3 text-muted-foreground" />
+                    <p className="text-muted-foreground mb-3">No documents in this notebook yet.</p>
                     <div className="flex justify-center gap-3">
                       <Button onClick={() => setShowUploadDialog(true)}>
                         <Plus className="h-4 w-4 mr-1" />
@@ -2187,7 +2188,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
                     />
                     
                     <div className="border rounded-md">
-                      <div className="grid grid-cols-12 bg-gray-100 p-3 font-medium border-b">
+                      <div className="grid grid-cols-12 bg-muted p-3 font-medium border-b">
                         <div className="col-span-5">Filename</div>
                         <div className="col-span-3">Type</div>
                         <div className="col-span-3">ID</div>
@@ -2263,11 +2264,11 @@ Given the context information and not prior knowledge, answer the question: ${ch
                       (doc.filename && doc.filename.toLowerCase().includes(documentFilter.toLowerCase()))
                     ).length === 0 ? (
                     <div className="text-center p-8 border-2 border-dashed rounded-lg">
-                      <p className="text-gray-500">No additional documents available to add.</p>
+                      <p className="text-muted-foreground">No additional documents available to add.</p>
                     </div>
                   ) : (
                     <div className="border rounded-md">
-                      <div className="grid grid-cols-12 bg-gray-100 p-3 font-medium border-b">
+                      <div className="grid grid-cols-12 bg-muted p-3 font-medium border-b">
                         <div className="col-span-1"></div>
                         <div className="col-span-7">Filename</div>
                         <div className="col-span-2">Type</div>
@@ -2283,21 +2284,19 @@ Given the context information and not prior knowledge, answer the question: ${ch
                           .map(doc => (
                             <div 
                               key={doc.external_id} 
-                              className="grid grid-cols-12 p-3 items-center hover:bg-gray-50"
+                              className="grid grid-cols-12 p-3 items-center hover:bg-muted/50"
                             >
                               <div className="col-span-1 flex justify-center">
-                                <input
-                                  type="checkbox"
+                                <Checkbox
                                   id={`doc-${doc.external_id}`}
                                   checked={documentsToAdd.includes(doc.external_id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
                                       setDocumentsToAdd([...documentsToAdd, doc.external_id]);
                                     } else {
                                       setDocumentsToAdd(documentsToAdd.filter(id => id !== doc.external_id));
                                     }
                                   }}
-                                  className="h-4 w-4"
                                 />
                               </div>
                               <label htmlFor={`doc-${doc.external_id}`} className="col-span-7 cursor-pointer truncate">
@@ -2322,7 +2321,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
             <div className="flex justify-end mt-6">
               <Dialog>
                 <DialogTrigger asChild>
-                  <Button variant="outline" className="border-red-500 text-red-500 hover:bg-red-50">
+                  <Button variant="outline" className="border-red-500 text-red-500 hover:bg-red-100 dark:hover:bg-red-950/30">
                     <Trash className="mr-2 h-4 w-4" />
                     Delete Notebook
                   </Button>
@@ -2336,7 +2335,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
                   </DialogHeader>
                   <div className="py-3">
                     <p className="font-medium">Notebook: {selectedNotebook.name}</p>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                       This notebook contains {notebookDocuments.length} document{notebookDocuments.length !== 1 ? 's' : ''}.
                     </p>
                   </div>
@@ -2344,7 +2343,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
                     <Button variant="outline" onClick={() => (document.querySelector('[data-state="open"] button[data-state="closed"]') as HTMLElement)?.click()}>Cancel</Button>
                     <Button 
                       variant="outline" 
-                      className="border-red-500 text-red-500 hover:bg-red-50"
+                      className="border-red-500 text-red-500 hover:bg-red-100 dark:hover:bg-red-950/30"
                       onClick={handleDeleteNotebook}
                       disabled={loading}
                     >
@@ -2401,7 +2400,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
             </div>
             
             {/* Chat interface */}
-            <div className="h-[calc(100vh-12rem)] flex flex-col bg-white rounded-lg border shadow-sm">
+            <div className="h-[calc(100vh-12rem)] flex flex-col rounded-lg border shadow-sm">
               <div className="flex-grow flex overflow-hidden">
                 {/* Chat window - larger now */}
                 <div className="flex-grow flex flex-col overflow-hidden p-4">
@@ -2418,7 +2417,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
                                 className={`max-w-[80%] p-4 rounded-lg ${
                                   message.role === 'user' 
                                     ? 'bg-primary text-primary-foreground' 
-                                    : 'bg-gray-100'
+                                    : 'bg-muted'
                                 }`}
                               >
                                 <div className="whitespace-pre-wrap">{message.content}</div>
@@ -2429,7 +2428,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
                             {message.role === 'assistant' && index === chatMessages.length - 1 && chatResults.length > 0 && (
                               <div className="ml-2 mt-3">
                                 <details className="group">
-                                  <summary className="text-sm text-gray-500 mb-2 cursor-pointer hover:text-gray-700 flex items-center justify-between list-none">
+                                  <summary className="text-sm text-muted-foreground mb-2 cursor-pointer hover:text-foreground flex items-center justify-between list-none">
                                     <div className="flex items-center gap-1">
                                       <Info className="h-3.5 w-3.5" />
                                       <span>Sources ({chatResults.length})</span>
@@ -2442,7 +2441,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
                                         key={`source-${idx}`}
                                         variant="outline"
                                         size="sm"
-                                        className="flex items-center gap-1 text-xs hover:bg-blue-50 hover:border-blue-300 transition-colors"
+                                        className="flex items-center gap-1 text-xs hover:bg-blue-50 dark:hover:bg-blue-950/30 hover:border-blue-300 transition-colors"
                                         onClick={() => {
                                           setSelectedSource(result);
                                           setShowSourceDetail(true);
@@ -2467,10 +2466,10 @@ Given the context information and not prior knowledge, answer the question: ${ch
                         <div className="text-center p-8 max-w-md">
                           <MessageSquare className="mx-auto h-12 w-12 mb-4 text-blue-500 opacity-80" />
                           <h3 className="text-xl font-medium mb-2">Chat with {selectedNotebook.name}</h3>
-                          <p className="text-gray-500 mb-6">
+                          <p className="text-muted-foreground mb-6">
                             Ask questions about the documents in this notebook to get AI-powered answers based on their content.
                           </p>
-                          <div className="text-sm text-gray-600 bg-gray-50 p-4 rounded-lg">
+                          <div className="text-sm text-muted-foreground bg-muted p-4 rounded-lg">
                             <p className="font-medium mb-2">Try asking:</p>
                             <ul className="list-disc list-inside space-y-1">
                               <li>Summarize the main points in these documents</li>
@@ -2508,13 +2507,13 @@ Given the context information and not prior knowledge, answer the question: ${ch
                     </div>
                     
                     <div className="flex justify-between items-center mt-2">
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-muted-foreground">
                         Press Enter to send, Shift+Enter for a new line
                       </p>
                       
                       <button
                         type="button" 
-                        className="flex items-center text-xs text-gray-600 hover:text-gray-900"
+                        className="flex items-center text-xs text-muted-foreground hover:text-foreground"
                         onClick={() => setShowChatAdvanced(!showChatAdvanced)}
                       >
                         <Settings className="mr-1 h-3 w-3" />
@@ -2525,7 +2524,7 @@ Given the context information and not prior knowledge, answer the question: ${ch
                     
                     {/* Collapsible advanced options */}
                     {showChatAdvanced && (
-                      <div className="mt-3 p-3 border rounded-md bg-gray-50 text-sm">
+                      <div className="mt-3 p-3 border rounded-md bg-muted text-sm">
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <Label htmlFor="model-provider" className="text-xs block mb-1">
@@ -2586,26 +2585,29 @@ Given the context information and not prior knowledge, answer the question: ${ch
                               />
                             ) : (
                               <div className="space-y-2">
-                                <select
-                                  id="model"
-                                  className="w-full p-1 text-xs border rounded-md h-8"
+                                <Select
                                   value={chatOptions.model}
-                                  onChange={(e) => updateChatOption('model', e.target.value)}
+                                  onValueChange={(value) => updateChatOption('model', value)}
                                 >
-                                  {chatOptions.model_provider === 'openai' ? (
-                                    openaiModels.map(model => (
-                                      <option key={model.id} value={model.id}>
-                                        {model.name}
-                                      </option>
-                                    ))
-                                  ) : (
-                                    claudeModels.map(model => (
-                                      <option key={model.id} value={model.id}>
-                                        {model.name}
-                                      </option>
-                                    ))
-                                  )}
-                                </select>
+                                  <SelectTrigger className="w-full h-8 text-xs" id="model">
+                                    <SelectValue placeholder="Select a model" />
+                                  </SelectTrigger>
+                                  <SelectContent className="text-xs">
+                                    {chatOptions.model_provider === 'openai' ? (
+                                      openaiModels.map(model => (
+                                        <SelectItem key={model.id} value={model.id}>
+                                          {model.name}
+                                        </SelectItem>
+                                      ))
+                                    ) : (
+                                      claudeModels.map(model => (
+                                        <SelectItem key={model.id} value={model.id}>
+                                          {model.name}
+                                        </SelectItem>
+                                      ))
+                                    )}
+                                  </SelectContent>
+                                </Select>
                                 
                                 {/* Custom model input field shown when "other" is selected */}
                                 {chatOptions.model === 'other' && (
@@ -2704,28 +2706,28 @@ Given the context information and not prior knowledge, answer the question: ${ch
                 <div className="space-y-4">
                   {selectedSource && (
                     <>
-                      <div className="bg-gray-50 p-3 rounded-md max-h-[400px] overflow-auto">
+                      <div className="bg-muted p-3 rounded-md max-h-[400px] overflow-auto">
                         {renderContent(selectedSource.content, selectedSource.content_type)}
                       </div>
                       
                       <div className="text-sm">
                         <p className="font-medium mb-1">Metadata:</p>
-                        <pre className="bg-gray-50 p-2 rounded text-xs overflow-x-auto">
+                        <pre className="bg-muted p-2 rounded text-xs overflow-x-auto">
                           {JSON.stringify(selectedSource.metadata, null, 2)}
                         </pre>
                       </div>
                       
                       <div className="grid grid-cols-3 gap-2 mt-2">
-                        <div className="bg-gray-50 p-2 rounded border flex flex-col items-center">
-                          <span className="text-xs text-gray-500">Relevance Score</span>
+                        <div className="bg-muted p-2 rounded border flex flex-col items-center">
+                          <span className="text-xs text-muted-foreground">Relevance Score</span>
                           <span className="font-medium text-sm">{selectedSource.score.toFixed(3)}</span>
                         </div>
-                        <div className="bg-gray-50 p-2 rounded border flex flex-col items-center">
-                          <span className="text-xs text-gray-500">Chunk #</span>
+                        <div className="bg-muted p-2 rounded border flex flex-col items-center">
+                          <span className="text-xs text-muted-foreground">Chunk #</span>
                           <span className="font-medium text-sm">{selectedSource.chunk_number}</span>
                         </div>
-                        <div className="bg-gray-50 p-2 rounded border flex flex-col items-center overflow-hidden">
-                          <span className="text-xs text-gray-500">Document ID</span>
+                        <div className="bg-muted p-2 rounded border flex flex-col items-center overflow-hidden">
+                          <span className="text-xs text-muted-foreground">Document ID</span>
                           <span className="font-mono text-xs truncate w-full text-center">{selectedSource.document_id.substring(0, 10)}...</span>
                         </div>
                       </div>

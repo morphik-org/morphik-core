@@ -1,20 +1,20 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MessageSquare } from 'lucide-react';
 import { showAlert } from '@/components/ui/alert-system';
-import ChatOptionsPanel from './ChatOptionsPanel';
+import ChatOptionsDialog from './ChatOptionsDialog';
 import ChatMessageComponent from './ChatMessage';
 
 import { ChatMessage, QueryOptions } from '@/components/types';
 
 interface ChatSectionProps {
   apiBaseUrl: string;
-  authToken: string;
+  authToken: string | null;
 }
 
 const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
@@ -42,9 +42,13 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
   };
 
   // Fetch available graphs for dropdown
-  const fetchGraphs = async () => {
+  const fetchGraphs = useCallback(async () => {
     try {
-      const response = await fetch(`${apiBaseUrl}/graphs`);
+      const response = await fetch(`${apiBaseUrl}/graphs`, {
+        headers: {
+          'Authorization': authToken ? `Bearer ${authToken}` : ''
+        }
+      });
       if (!response.ok) {
         throw new Error(`Failed to fetch graphs: ${response.statusText}`);
       }
@@ -53,13 +57,17 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
     } catch (err) {
       console.error('Error fetching available graphs:', err);
     }
-  };
+  }, [apiBaseUrl, authToken]);
 
-  // Fetch graphs on component mount
+  // Fetch graphs when auth token or API URL changes
   useEffect(() => {
-    fetchGraphs();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (authToken) {
+      console.log('ChatSection: Fetching graphs with new auth token');
+      // Clear current messages when auth changes
+      setChatMessages([]);
+      fetchGraphs();
+    }
+  }, [authToken, apiBaseUrl, fetchGraphs]);
 
   // Handle chat
   const handleChat = async () => {
@@ -93,7 +101,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
       const response = await fetch(`${apiBaseUrl}/query`, {
         method: 'POST',
         headers: {
-          'Authorization': authToken,
+          'Authorization': authToken ? `Bearer ${authToken}` : '',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -146,7 +154,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
             </div>
           ) : (
             <div className="h-full flex items-center justify-center">
-              <div className="text-center text-gray-500">
+              <div className="text-center text-muted-foreground">
                 <MessageSquare className="mx-auto h-12 w-12 mb-2" />
                 <p>Start a conversation about your documents</p>
               </div>
@@ -174,18 +182,20 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
               </Button>
             </div>
             
-            <ChatOptionsPanel
-              showChatAdvanced={showChatAdvanced}
-              setShowChatAdvanced={setShowChatAdvanced}
-              queryOptions={queryOptions}
-              updateQueryOption={updateQueryOption}
-              availableGraphs={availableGraphs}
-            />
+            <div className="flex justify-between items-center mt-2">
+              <p className="text-xs text-muted-foreground">
+                Press Enter to send, Shift+Enter for a new line
+              </p>
+              
+              <ChatOptionsDialog
+                showChatAdvanced={showChatAdvanced}
+                setShowChatAdvanced={setShowChatAdvanced}
+                queryOptions={queryOptions}
+                updateQueryOption={updateQueryOption}
+                availableGraphs={availableGraphs}
+              />
+            </div>
           </div>
-          
-          <p className="text-xs text-gray-500 mt-2">
-            Press Enter to send, Shift+Enter for a new line
-          </p>
         </div>
       </CardContent>
     </Card>

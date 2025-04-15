@@ -24,7 +24,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
   if (!selectedDocument) {
     return (
       <div className="h-[calc(100vh-200px)] flex items-center justify-center p-8 border border-dashed rounded-lg">
-        <div className="text-center text-gray-500">
+        <div className="text-center text-muted-foreground">
           <Info className="mx-auto h-12 w-12 mb-2" />
           <p>Select a document to view details</p>
         </div>
@@ -34,7 +34,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
 
   return (
     <div className="border rounded-lg">
-      <div className="bg-gray-50 px-4 py-3 border-b sticky top-0">
+      <div className="bg-muted px-4 py-3 border-b sticky top-0">
         <h3 className="text-lg font-semibold">Document Details</h3>
       </div>
       
@@ -59,7 +59,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
             <AccordionItem value="metadata">
               <AccordionTrigger>Metadata</AccordionTrigger>
               <AccordionContent>
-                <pre className="bg-gray-50 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap">
+                <pre className="bg-muted p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap">
                   {JSON.stringify(selectedDocument.metadata, null, 2)}
                 </pre>
               </AccordionContent>
@@ -68,7 +68,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
             <AccordionItem value="system-metadata">
               <AccordionTrigger>System Metadata</AccordionTrigger>
               <AccordionContent>
-                <pre className="bg-gray-50 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap">
+                <pre className="bg-muted p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap">
                   {JSON.stringify(selectedDocument.system_metadata, null, 2)}
                 </pre>
               </AccordionContent>
@@ -77,7 +77,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
             <AccordionItem value="additional-metadata">
               <AccordionTrigger>Additional Metadata</AccordionTrigger>
               <AccordionContent>
-                <pre className="bg-gray-50 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap">
+                <pre className="bg-muted p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap">
                   {JSON.stringify(selectedDocument.additional_metadata, null, 2)}
                 </pre>
               </AccordionContent>
@@ -87,7 +87,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
           <div className="pt-4 border-t mt-4">
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="w-full border-red-500 text-red-500 hover:bg-red-50">
+                <Button variant="outline" size="sm" className="w-full border-red-500 text-red-500 hover:bg-red-100 dark:hover:bg-red-950">
                   Delete Document
                 </Button>
               </DialogTrigger>
@@ -100,13 +100,13 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
                 </DialogHeader>
                 <div className="py-3">
                   <p className="font-medium">Document: {selectedDocument.filename || selectedDocument.external_id}</p>
-                  <p className="text-sm text-gray-500 mt-1">ID: {selectedDocument.external_id}</p>
+                  <p className="text-sm text-muted-foreground mt-1">ID: {selectedDocument.external_id}</p>
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => (document.querySelector('[data-state="open"] button[data-state="closed"]') as HTMLElement)?.click()}>Cancel</Button>
                   <Button 
                     variant="outline" 
-                    className="border-red-500 text-red-500 hover:bg-red-50"
+                    className="border-red-500 text-red-500 hover:bg-red-100 dark:hover:bg-red-950"
                     onClick={() => handleDeleteDocument(selectedDocument.external_id)}
                     disabled={loading}
                   >

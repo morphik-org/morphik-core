@@ -56,6 +56,7 @@ interface Relationship {
 interface GraphSectionProps {
   apiBaseUrl: string;
   onSelectGraph?: (graphName: string | undefined) => void;
+  authToken?: string | null;
 }
 
 // Map entity types to colors
@@ -70,7 +71,21 @@ const entityTypeColors: Record<string, string> = {
   'default': '#6b7280'   // Gray
 };
 
-const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph }) => {
+const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, authToken }) => {
+  // Create auth headers for API requests if auth token is available
+  const createHeaders = useCallback((contentType?: string): HeadersInit => {
+    const headers: HeadersInit = {};
+    
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    
+    if (contentType) {
+      headers['Content-Type'] = contentType;
+    }
+    
+    return headers;
+  }, [authToken]);
   // State variables
   const [graphs, setGraphs] = useState<Graph[]>([]);
   const [selectedGraph, setSelectedGraph] = useState<Graph | null>(null);
@@ -137,7 +152,8 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph }
   const fetchGraphs = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${apiBaseUrl}/graphs`);
+      const headers = createHeaders();
+      const response = await fetch(`${apiBaseUrl}/graphs`, { headers });
       
       if (!response.ok) {
         throw new Error(`Failed to fetch graphs: ${response.statusText}`);
@@ -152,7 +168,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph }
     } finally {
       setLoading(false);
     }
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, createHeaders]);
 
   // Fetch graphs on component mount
   useEffect(() => {
@@ -163,7 +179,11 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph }
   const fetchGraph = async (graphName: string) => {
     try {
       setLoading(true);
-      const response = await fetch(`${apiBaseUrl}/graph/${encodeURIComponent(graphName)}`);
+      const headers = createHeaders();
+      const response = await fetch(
+        `${apiBaseUrl}/graph/${encodeURIComponent(graphName)}`,
+        { headers }
+      );
       
       if (!response.ok) {
         throw new Error(`Failed to fetch graph: ${response.statusText}`);
@@ -217,11 +237,10 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph }
         throw new Error('Invalid JSON in filters field');
       }
       
+      const headers = createHeaders('application/json');
       const response = await fetch(`${apiBaseUrl}/graph/create`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           name: graphName,
           filters: Object.keys(parsedFilters).length > 0 ? parsedFilters : undefined,
@@ -276,11 +295,10 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph }
         throw new Error('Invalid JSON in additional filters field');
       }
       
+      const headers = createHeaders('application/json');
       const response = await fetch(`${apiBaseUrl}/graph/${encodeURIComponent(selectedGraph.name)}/update`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           additional_filters: Object.keys(parsedFilters).length > 0 ? parsedFilters : undefined,
           additional_documents: additionalDocuments.length > 0 ? additionalDocuments : undefined,
@@ -341,9 +359,9 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph }
       return (
         <div className="flex items-center justify-center h-[900px] border rounded-md">
           <div className="text-center p-8">
-            <Network className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+            <Network className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
             <h3 className="text-lg font-medium mb-2">No Graph Selected</h3>
-            <p className="text-gray-500">
+            <p className="text-muted-foreground">
               Select a graph from the list to visualize it here.
             </p>
           </div>
@@ -408,7 +426,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph }
             </div>
           )}
         </div>
-        <p className="text-gray-600">
+        <p className="text-muted-foreground">
           Knowledge graphs represent relationships between entities extracted from your documents. 
           Use them to enhance your queries with structured information and improve retrieval quality.
         </p>
@@ -441,8 +459,8 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph }
                 </div>
               ) : graphs.length === 0 ? (
                 <div className="text-center p-8 border-2 border-dashed rounded-lg">
-                  <Network className="mx-auto h-12 w-12 mb-3 text-gray-400" />
-                  <p className="text-gray-500 mb-3">No graphs available.</p>
+                  <Network className="mx-auto h-12 w-12 mb-3 text-muted-foreground" />
+                  <p className="text-muted-foreground mb-3">No graphs available.</p>
                   <Button onClick={() => setActiveTab('create')} variant="default">
                     <Plus className="mr-2 h-4 w-4" />
                     Create Your First Graph
@@ -485,7 +503,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph }
                               <Badge variant="outline">+{Array.from(new Set(graph.entities.map(e => e.type))).length - 5} more</Badge>
                             )}
                           </div>
-                          <div className="mt-3 text-sm text-gray-500">
+                          <div className="mt-3 text-sm text-muted-foreground">
                             {graph.document_ids.length} document{graph.document_ids.length !== 1 ? 's' : ''}
                           </div>
                         </CardContent>
@@ -510,25 +528,25 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph }
                   <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                     <h4 className="font-medium text-blue-700 dark:text-blue-300 mb-1">Documents</h4>
                     <div className="text-2xl font-bold">{selectedGraph.document_ids.length}</div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">source documents</div>
+                    <div className="text-sm text-muted-foreground">source documents</div>
                   </div>
                   
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-lg">
                     <h4 className="font-medium text-emerald-700 dark:text-emerald-300 mb-1">Entities</h4>
                     <div className="text-2xl font-bold">{selectedGraph.entities.length}</div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">unique elements</div>
+                    <div className="text-sm text-muted-foreground">unique elements</div>
                   </div>
                   
                   <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg">
                     <h4 className="font-medium text-amber-700 dark:text-amber-300 mb-1">Relationships</h4>
                     <div className="text-2xl font-bold">{selectedGraph.relationships.length}</div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">connections</div>
+                    <div className="text-sm text-muted-foreground">connections</div>
                   </div>
                   
                   <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
                     <h4 className="font-medium text-purple-700 dark:text-purple-300 mb-1">Created</h4>
                     <div className="text-xl font-bold">{new Date(selectedGraph.created_at).toLocaleDateString()}</div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="text-sm text-muted-foreground">
                       {new Date(selectedGraph.created_at).toLocaleTimeString()}
                     </div>
                   </div>
@@ -746,8 +764,8 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph }
                 </div>
               ) : (
                 <div className="text-center p-8 border-2 border-dashed rounded-lg">
-                  <Network className="mx-auto h-12 w-12 mb-3 text-gray-400" />
-                  <p className="text-gray-500 mb-3">Please select a graph to update.</p>
+                  <Network className="mx-auto h-12 w-12 mb-3 text-muted-foreground" />
+                  <p className="text-muted-foreground mb-3">Please select a graph to update.</p>
                 </div>
               )}
             </CardContent>

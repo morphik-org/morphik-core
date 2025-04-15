@@ -17,7 +17,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
   const renderContent = (content: string, contentType: string) => {
     if (contentType.startsWith('image/')) {
       return (
-        <div className="flex justify-center p-4 bg-gray-100 rounded-md">
+        <div className="flex justify-center p-4 bg-muted rounded-md">
           <Image 
             src={content} 
             alt="Document content" 
@@ -29,7 +29,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
       );
     } else if (content.startsWith('data:image/png;base64,') || content.startsWith('data:image/jpeg;base64,')) {
       return (
-        <div className="flex justify-center p-4 bg-gray-100 rounded-md">
+        <div className="flex justify-center p-4 bg-muted rounded-md">
           <Image 
             src={content} 
             alt="Base64 image content" 
@@ -41,7 +41,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
       );
     } else {
       return (
-        <div className="bg-gray-50 p-4 rounded-md whitespace-pre-wrap font-mono text-sm">
+        <div className="bg-muted p-4 rounded-md whitespace-pre-wrap font-mono text-sm">
           {content}
         </div>
       );
@@ -72,7 +72,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
           <AccordionItem value="metadata">
             <AccordionTrigger className="text-sm">Metadata</AccordionTrigger>
             <AccordionContent>
-              <pre className="bg-gray-50 p-2 rounded text-xs overflow-x-auto">
+              <pre className="bg-muted p-2 rounded text-xs overflow-x-auto">
                 {JSON.stringify(result.metadata, null, 2)}
               </pre>
             </AccordionContent>

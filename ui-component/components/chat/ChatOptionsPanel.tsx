@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Settings, ChevronUp, ChevronDown } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 import { QueryOptions } from '@/components/types';
 
@@ -28,7 +29,7 @@ const ChatOptionsPanel: React.FC<ChatOptionsPanelProps> = ({
     <div>
       <button
         type="button" 
-        className="flex items-center text-sm text-gray-600 hover:text-gray-900"
+        className="flex items-center text-sm text-muted-foreground hover:text-foreground"
         onClick={() => setShowChatAdvanced(!showChatAdvanced)}
       >
         <Settings className="mr-1 h-4 w-4" />
@@ -37,7 +38,7 @@ const ChatOptionsPanel: React.FC<ChatOptionsPanelProps> = ({
       </button>
       
       {showChatAdvanced && (
-        <div className="mt-3 p-4 border rounded-md bg-gray-50">
+        <div className="mt-3 p-4 border rounded-md bg-muted">
           <div className="space-y-4">
             <div>
               <Label htmlFor="query-filters" className="block mb-2">Filters (JSON)</Label>
@@ -127,20 +128,23 @@ const ChatOptionsPanel: React.FC<ChatOptionsPanelProps> = ({
 
             <div>
               <Label htmlFor="graphName" className="block mb-2">Knowledge Graph</Label>
-              <select
-                id="graphName"
-                className="w-full p-2 border rounded-md dark:bg-gray-800"
-                value={queryOptions.graph_name || ''}
-                onChange={(e) => updateQueryOption('graph_name', e.target.value || undefined)}
+              <Select 
+                value={queryOptions.graph_name || "__none__"} 
+                onValueChange={(value) => updateQueryOption('graph_name', value === "__none__" ? undefined : value)}
               >
-                <option value="">None (Standard RAG)</option>
-                {availableGraphs.map(graphName => (
-                  <option key={graphName} value={graphName}>
-                    {graphName}
-                  </option>
-                ))}
-              </select>
-              <p className="text-sm text-gray-500">
+                <SelectTrigger className="w-full" id="graphName">
+                  <SelectValue placeholder="Select a knowledge graph" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None (Standard RAG)</SelectItem>
+                  {availableGraphs.map(graphName => (
+                    <SelectItem key={graphName} value={graphName}>
+                      {graphName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">
                 Select a knowledge graph to enhance your query with structured relationships
               </p>
             </div>

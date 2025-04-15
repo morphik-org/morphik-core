@@ -34,7 +34,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
 
   return (
     <div className="border rounded-md">
-      <div className="bg-gray-100 border-b p-3 font-medium sticky top-0">
+      <div className="bg-muted border-b p-3 font-medium sticky top-0">
         <div className="grid grid-cols-12">
           <div className="col-span-1 flex items-center justify-center">
             <Checkbox
@@ -61,7 +61,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
           <div 
             key={doc.external_id}
             onClick={() => handleDocumentClick(doc)}
-            className="grid grid-cols-12 p-3 cursor-pointer hover:bg-gray-50 border-b"
+            className="grid grid-cols-12 p-3 cursor-pointer hover:bg-muted/50 border-b"
           >
             <div className="col-span-1 flex items-center justify-center">
               <Checkbox 

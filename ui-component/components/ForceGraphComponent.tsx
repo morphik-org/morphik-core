@@ -223,7 +223,7 @@ const ForceGraphComponent: React.FC<ForceGraphComponentProps> = ({
             <div class="flex items-center justify-center h-full">
               <div class="text-center p-4">
                 <h3 class="text-lg font-medium mb-2">Graph Visualization Error</h3>
-                <p class="text-sm text-gray-500">
+                <p class="text-sm text-muted-foreground">
                   There was an error initializing the graph visualization.
                 </p>
               </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,7 @@ import { SearchResult, SearchOptions } from '@/components/types';
 
 interface SearchSectionProps {
   apiBaseUrl: string;
-  authToken: string;
+  authToken: string | null;
 }
 
 const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) => {
@@ -37,6 +37,12 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
       [key]: value
     }));
   };
+  
+  // Reset search results when auth token or API URL changes
+  useEffect(() => {
+    console.log('SearchSection: Token or API URL changed, resetting results');
+    setSearchResults([]);
+  }, [authToken, apiBaseUrl]);
 
   // Handle search
   const handleSearch = async () => {
@@ -54,7 +60,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
       const response = await fetch(`${apiBaseUrl}/retrieve/chunks`, {
         method: 'POST',
         headers: {
-          'Authorization': authToken,
+          'Authorization': authToken ? `Bearer ${authToken}` : '',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -142,8 +148,8 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
             </div>
           ) : (
             <div className="text-center py-16 border border-dashed rounded-lg">
-              <Search className="mx-auto h-12 w-12 mb-2 text-gray-400" />
-              <p className="text-gray-500">
+              <Search className="mx-auto h-12 w-12 mb-2 text-muted-foreground" />
+              <p className="text-muted-foreground">
                 {searchQuery.trim() ? 'No results found. Try a different query.' : 'Enter a query to search your documents.'}
               </p>
             </div>
