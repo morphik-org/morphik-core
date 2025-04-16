@@ -445,6 +445,15 @@ async def ingest_file(
             success = await database.store_document(doc)
             if not success:
                 raise Exception("Failed to store document metadata")
+                
+            # If folder_name is provided, ensure the folder exists and add document to it
+            if folder_name:
+                try:
+                    await document_service._ensure_folder_exists(folder_name, doc.external_id, auth)
+                    logger.debug(f"Ensured folder '{folder_name}' exists and contains document {doc.external_id}")
+                except Exception as e:
+                    # Log error but don't raise - we want document ingestion to continue even if folder operation fails
+                    logger.error(f"Error ensuring folder exists: {e}")
             
             # Read file content
             file_content = await file.read()
@@ -629,6 +638,15 @@ async def batch_ingest_files(
                 success = await database.store_document(doc)
                 if not success:
                     raise Exception(f"Failed to store document metadata for {file.filename}")
+                
+                # If folder_name is provided, ensure the folder exists and add document to it
+                if folder_name:
+                    try:
+                        await document_service._ensure_folder_exists(folder_name, doc.external_id, auth)
+                        logger.debug(f"Ensured folder '{folder_name}' exists and contains document {doc.external_id}")
+                    except Exception as e:
+                        # Log error but don't raise - we want document ingestion to continue even if folder operation fails
+                        logger.error(f"Error ensuring folder exists: {e}")
                 
                 # Read file content
                 file_content = await file.read()
