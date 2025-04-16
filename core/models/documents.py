@@ -46,6 +46,7 @@ class Document(BaseModel):
             "version": 1,
             "folder_name": None,
             "end_user_id": None,
+            "status": "processing",  # Status can be: processing, completed, failed
         }
     )
     """metadata such as creation date etc."""

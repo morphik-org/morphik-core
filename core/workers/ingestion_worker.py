@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 async def process_ingestion_job(
     ctx: Dict[str, Any],
+    document_id: str,
     file_key: str,
     bucket: str,
     original_filename: str,
@@ -70,7 +71,7 @@ async def process_ingestion_job(
         )
         
         # Get document service from the context
-        document_service = ctx['document_service']
+        document_service : DocumentService = ctx['document_service']
         
         # 3. Download the file from storage
         logger.info(f"Downloading file from {bucket}/{file_key}")
@@ -96,33 +97,50 @@ async def process_ingestion_job(
                 text = modified_text
                 logger.info("Updated text with modified content from rules")
         
-        # 6. Create document object
-        doc = Document(
-            content_type=content_type,
-            filename=original_filename,
-            metadata=metadata,
-            owner={"type": auth.entity_type, "id": auth.entity_id},
-            access_control={
-                "readers": [auth.entity_id],
-                "writers": [auth.entity_id],
-                "admins": [auth.entity_id],
-                "user_id": [auth.user_id] if auth.user_id else [],
-            },
-            additional_metadata=additional_metadata,
-        )
+        # 6. Retrieve the existing document
+        logger.debug(f"Retrieving document with ID: {document_id}")
+        logger.debug(f"Auth context: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}")
+        doc = await document_service.db.get_document(document_id, auth)
+        
+        if not doc:
+            logger.error(f"Document {document_id} not found in database")
+            logger.error(f"Details - file: {original_filename}, content_type: {content_type}, bucket: {bucket}, key: {file_key}")
+            logger.error(f"Auth: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}")
+            # Try to get all accessible documents to debug
+            try:
+                all_docs = await document_service.db.get_documents(auth, 0, 100)
+                logger.debug(f"User has access to {len(all_docs)} documents: {[d.external_id for d in all_docs]}")
+            except Exception as list_err:
+                logger.error(f"Failed to list user documents: {str(list_err)}")
+            
+            raise ValueError(f"Document {document_id} not found in database")
+            
+        # Prepare updates for the document
+        updates = {
+            "metadata": metadata,
+            "additional_metadata": additional_metadata,
+            "system_metadata": {**doc.system_metadata, "content": text}
+        }
         
         # Add folder_name and end_user_id to system_metadata if provided
         if folder_name:
-            doc.system_metadata["folder_name"] = folder_name
+            updates["system_metadata"]["folder_name"] = folder_name
         if end_user_id:
-            doc.system_metadata["end_user_id"] = end_user_id
+            updates["system_metadata"]["end_user_id"] = end_user_id
         
-        # Store full content
-        doc.system_metadata["content"] = text
+        # Update the document in the database
+        success = await document_service.db.update_document(
+            document_id=document_id,
+            updates=updates,
+            auth=auth
+        )
         
-        # The file is already stored, just set the storage info
-        doc.storage_info = {"bucket": bucket, "key": file_key}
-        logger.debug(f"File already stored in bucket `{bucket}` with key `{file_key}`")
+        if not success:
+            raise ValueError(f"Failed to update document {document_id}")
+        
+        # Refresh document object with updated data
+        doc = await document_service.db.get_document(document_id, auth)
+        logger.debug(f"Updated document in database with parsed content")
         
         # 7. Split text into chunks
         chunks = await document_service.parser.split_text(text)
@@ -162,16 +180,22 @@ async def process_ingestion_job(
                 doc.external_id, chunks_multivector, colpali_embeddings
             )
         
-        # 11. Store chunks and document
-        doc.chunk_ids = await document_service._store_chunks_and_doc(
-            chunk_objects, doc, use_colpali, chunk_objects_multivector
-        )
-        logger.debug(f"Successfully stored file document {doc.external_id}")
+        # Update document status to completed before storing
+        doc.system_metadata["status"] = "completed"
+        doc.system_metadata["updated_at"] = datetime.now(UTC)
         
-        # 12. Log successful completion
+        # 11. Store chunks and update document with is_update=True
+        chunk_ids = await document_service._store_chunks_and_doc(
+            chunk_objects, doc, use_colpali, chunk_objects_multivector,
+            is_update=True, auth=auth
+        )
+            
+        logger.debug(f"Successfully completed processing for document {doc.external_id}")
+        
+        # 13. Log successful completion
         logger.info(f"Successfully completed ingestion for {original_filename}, document ID: {doc.external_id}")
         
-        # 13. Return document ID
+        # 14. Return document ID
         return {
             "document_id": doc.external_id,
             "status": "completed",
@@ -182,6 +206,43 @@ async def process_ingestion_job(
             
     except Exception as e:
         logger.error(f"Error processing ingestion job for file {original_filename}: {str(e)}")
+        
+        # Update document status to failed if the document exists
+        try:
+            # Create AuthContext for database operations
+            auth_context = AuthContext(
+                entity_type=EntityType(auth_dict.get("entity_type", "unknown")),
+                entity_id=auth_dict.get("entity_id", ""),
+                app_id=auth_dict.get("app_id"),
+                permissions=set(auth_dict.get("permissions", ["read"])),
+                user_id=auth_dict.get("user_id", auth_dict.get("entity_id", ""))
+            )
+            
+            # Get database from context
+            database = ctx.get('database')
+            
+            if database:
+                # Try to get the document
+                doc = await database.get_document(document_id, auth_context)
+                
+                if doc:
+                    # Update the document status to failed
+                    await database.update_document(
+                        document_id=document_id,
+                        updates={
+                            "system_metadata": {
+                                **doc.system_metadata,
+                                "status": "failed",
+                                "error": str(e),
+                                "updated_at": datetime.now(UTC)
+                            }
+                        },
+                        auth=auth_context
+                    )
+                    logger.info(f"Updated document {document_id} status to failed")
+        except Exception as inner_e:
+            logger.error(f"Failed to update document status: {str(inner_e)}")
+        
         # Return error information
         return {
             "status": "failed",

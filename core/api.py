@@ -13,7 +13,7 @@ import logging
 import arq
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.limits_utils import check_and_increment_limits
-from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, UpdateGraphRequest, BatchIngestResponse
+from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, UpdateGraphRequest, BatchIngestResponse, BatchIngestJobResponse
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.graph import Graph
@@ -368,7 +368,7 @@ def get_redis_pool():
     """Get the global Redis connection pool for background tasks."""
     return redis_pool
 
-@app.post("/ingest/file", response_model=Dict[str, Any])
+@app.post("/ingest/file", response_model=Document)
 async def ingest_file(
     file: UploadFile,
     metadata: str = Form("{}"),
@@ -378,7 +378,7 @@ async def ingest_file(
     folder_name: Optional[str] = Form(None),
     end_user_id: Optional[str] = Form(None),
     redis: arq.ArqRedis = Depends(get_redis_pool),
-) -> Dict[str, Any]:
+) -> Document:
     """
     Ingest a file document asynchronously.
 
@@ -395,7 +395,7 @@ async def ingest_file(
         redis: Redis connection pool for background tasks
 
     Returns:
-        Dict with job status, filename, and job ID
+        Document with processing status that can be used to check progress
     """
     try:
         # Parse metadata and rules
@@ -422,6 +422,35 @@ async def ingest_file(
         ):
             logger.debug(f"API: Queueing file ingestion with use_colpali: {use_colpali}")
             
+            # Create a document with processing status
+            doc = Document(
+                content_type=file.content_type,
+                filename=file.filename,
+                metadata=metadata_dict,
+                owner={"type": auth.entity_type, "id": auth.entity_id},
+                access_control={
+                    "readers": [auth.entity_id],
+                    "writers": [auth.entity_id],
+                    "admins": [auth.entity_id],
+                    "user_id": [auth.user_id] if auth.user_id else [],
+                },
+                system_metadata={"status": "processing"}
+            )
+            
+            # Add folder_name and end_user_id to system_metadata if provided
+            if folder_name:
+                doc.system_metadata["folder_name"] = folder_name
+            if end_user_id:
+                doc.system_metadata["end_user_id"] = end_user_id
+                
+            # Set processing status
+            doc.system_metadata["status"] = "processing"
+            
+            # Store the document in the database
+            success = await database.store_document(doc)
+            if not success:
+                raise Exception("Failed to store document metadata")
+            
             # Read file content
             file_content = await file.read()
             
@@ -437,6 +466,14 @@ async def ingest_file(
             )
             logger.debug(f"Stored file in bucket {bucket} with key {stored_key}")
             
+            # Update document with storage info
+            doc.storage_info = {"bucket": bucket, "key": stored_key}
+            await database.update_document(
+                document_id=doc.external_id,
+                updates={"storage_info": doc.storage_info},
+                auth=auth
+            )
+            
             # Convert auth context to a dictionary for serialization
             auth_dict = {
                 "entity_type": auth.entity_type.value,
@@ -449,6 +486,7 @@ async def ingest_file(
             # Enqueue the background job
             job = await redis.enqueue_job(
                 'process_ingestion_job',
+                document_id=doc.external_id,
                 file_key=stored_key,
                 bucket=bucket,
                 original_filename=file.filename,
@@ -461,16 +499,10 @@ async def ingest_file(
                 end_user_id=end_user_id
             )
             
-            logger.info(f"File ingestion job queued with ID: {job.job_id}")
+            logger.info(f"File ingestion job queued with ID: {job.job_id} for document: {doc.external_id}")
             
-            # Return job information
-            return {
-                "status": "queued",
-                "filename": file.filename,
-                "job_id": job.job_id,
-                "content_type": file.content_type,
-                "timestamp": datetime.now(UTC).isoformat()
-            }
+            # Return the document with processing status
+            return doc
             
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
@@ -481,19 +513,19 @@ async def ingest_file(
         raise HTTPException(status_code=500, detail=f"Error queueing file ingestion: {str(e)}")
 
 
-@app.post("/ingest/files", response_model=BatchIngestResponse)
+@app.post("/ingest/files", response_model=BatchIngestJobResponse)
 async def batch_ingest_files(
     files: List[UploadFile] = File(...),
     metadata: str = Form("{}"),
     rules: str = Form("[]"),
     use_colpali: Optional[bool] = Form(None),
-    parallel: bool = Form(True),
     folder_name: Optional[str] = Form(None),
     end_user_id: Optional[str] = Form(None),
     auth: AuthContext = Depends(verify_token),
-) -> BatchIngestResponse:
+    redis: arq.ArqRedis = Depends(get_redis_pool),
+) -> BatchIngestJobResponse:
     """
-    Batch ingest multiple files.
+    Batch ingest multiple files using the task queue.
     
     Args:
         files: List of files to ingest
@@ -502,15 +534,16 @@ async def batch_ingest_files(
                - A single list of rules to apply to all files
                - A list of rule lists, one per file
         use_colpali: Whether to use ColPali-style embedding
-        parallel: Whether to process files in parallel
         folder_name: Optional folder to scope the documents to
         end_user_id: Optional end-user ID to scope the documents to
         auth: Authentication context
+        redis: Redis connection pool for background tasks
 
     Returns:
-        BatchIngestResponse containing:
-            - documents: List of successfully ingested documents
-            - errors: List of errors encountered during ingestion
+        BatchIngestJobResponse containing:
+            - status: Status of the batch operation
+            - documents: List of created documents with processing status
+            - timestamp: ISO-formatted timestamp
     """
     if not files:
         raise HTTPException(
@@ -521,8 +554,15 @@ async def batch_ingest_files(
     try:
         metadata_value = json.loads(metadata)
         rules_list = json.loads(rules)
+        use_colpali = bool(use_colpali)
+        
+        # Ensure user has write permission
+        if "write" not in auth.permissions:
+            raise PermissionError("User does not have write permission")
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
     # Validate metadata if it's a list
     if isinstance(metadata_value, list) and len(metadata_value) != len(files):
@@ -539,13 +579,19 @@ async def batch_ingest_files(
                 detail=f"Number of rule lists ({len(rules_list)}) must match number of files ({len(files)})"
             )
 
-    documents = []
-    errors = []
+    # Convert auth context to a dictionary for serialization
+    auth_dict = {
+        "entity_type": auth.entity_type.value,
+        "entity_id": auth.entity_id,
+        "app_id": auth.app_id,
+        "permissions": list(auth.permissions),
+        "user_id": auth.user_id
+    }
 
-    # We'll pass folder_name and end_user_id directly to the ingest_file functions
+    created_documents = []
 
     async with telemetry.track_operation(
-        operation_type="batch_ingest",
+        operation_type="queue_batch_ingest",
         user_id=auth.entity_id,
         metadata={
             "file_count": len(files),
@@ -555,54 +601,99 @@ async def batch_ingest_files(
             "end_user_id": end_user_id,
         },
     ):
-        if parallel:
-            tasks = []
+        try:
             for i, file in enumerate(files):
+                # Get the metadata and rules for this file
                 metadata_item = metadata_value[i] if isinstance(metadata_value, list) else metadata_value
                 file_rules = rules_list[i] if isinstance(rules_list, list) and rules_list and isinstance(rules_list[0], list) else rules_list
-                task = document_service.ingest_file(
-                    file=file,
+                
+                # Create a document with processing status
+                doc = Document(
+                    content_type=file.content_type,
+                    filename=file.filename,
                     metadata=metadata_item,
-                    auth=auth,
-                    rules=file_rules,
+                    owner={"type": auth.entity_type, "id": auth.entity_id},
+                    access_control={
+                        "readers": [auth.entity_id],
+                        "writers": [auth.entity_id],
+                        "admins": [auth.entity_id],
+                        "user_id": [auth.user_id] if auth.user_id else [],
+                    },
+                )
+                
+                # Add folder_name and end_user_id to system_metadata if provided
+                if folder_name:
+                    doc.system_metadata["folder_name"] = folder_name
+                if end_user_id:
+                    doc.system_metadata["end_user_id"] = end_user_id
+                    
+                # Set processing status
+                doc.system_metadata["status"] = "processing"
+                
+                # Store the document in the database
+                success = await database.store_document(doc)
+                if not success:
+                    raise Exception(f"Failed to store document metadata for {file.filename}")
+                
+                # Read file content
+                file_content = await file.read()
+                
+                # Generate a unique key for the file
+                file_key = f"ingest_uploads/{uuid.uuid4()}/{file.filename}"
+                
+                # Store the file in the configured storage
+                file_content_base64 = base64.b64encode(file_content).decode()
+                bucket, stored_key = await storage.upload_from_base64(
+                    file_content_base64, 
+                    file_key, 
+                    file.content_type
+                )
+                logger.debug(f"Stored file in bucket {bucket} with key {stored_key}")
+                
+                # Update document with storage info
+                doc.storage_info = {"bucket": bucket, "key": stored_key}
+                await database.update_document(
+                    document_id=doc.external_id,
+                    updates={"storage_info": doc.storage_info},
+                    auth=auth
+                )
+                
+                # Convert metadata to JSON string for job
+                metadata_json = json.dumps(metadata_item)
+                
+                # Enqueue the background job
+                job = await redis.enqueue_job(
+                    'process_ingestion_job',
+                    document_id=doc.external_id,
+                    file_key=stored_key,
+                    bucket=bucket,
+                    original_filename=file.filename,
+                    content_type=file.content_type,
+                    metadata_json=metadata_json,
+                    auth_dict=auth_dict,
+                    rules_list=file_rules,
                     use_colpali=use_colpali,
                     folder_name=folder_name,
                     end_user_id=end_user_id
                 )
-                tasks.append(task)
+                
+                logger.info(f"File ingestion job queued with ID: {job.job_id} for document: {doc.external_id}")
+                
+                # Add document to the list
+                created_documents.append(doc)
+                
+            # Return information about created documents
+            return BatchIngestJobResponse(
+                status="processing",
+                documents=created_documents,
+                timestamp=datetime.now(UTC).isoformat()
+            )
             
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    errors.append({
-                        "filename": files[i].filename,
-                        "error": str(result)
-                    })
-                else:
-                    documents.append(result)
-        else:
-            for i, file in enumerate(files):
-                try:
-                    metadata_item = metadata_value[i] if isinstance(metadata_value, list) else metadata_value
-                    file_rules = rules_list[i] if isinstance(rules_list, list) and rules_list and isinstance(rules_list[0], list) else rules_list
-                    doc = await document_service.ingest_file(
-                        file=file,
-                        metadata=metadata_item,
-                        auth=auth,
-                        rules=file_rules,
-                        use_colpali=use_colpali,
-                        folder_name=folder_name,
-                        end_user_id=end_user_id
-                    )
-                    documents.append(doc)
-                except Exception as e:
-                    errors.append({
-                        "filename": file.filename,
-                        "error": str(e)
-                    })
+        except Exception as e:
+            logger.error(f"Error queueing batch file ingestion: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error queueing batch file ingestion: {str(e)}")
 
-    return BatchIngestResponse(documents=documents, errors=errors)
+
 
 
 @app.post("/retrieve/chunks", response_model=List[ChunkResult])
@@ -917,6 +1008,45 @@ async def get_document(document_id: str, auth: AuthContext = Depends(verify_toke
     except HTTPException as e:
         logger.error(f"Error getting document: {e}")
         raise e
+        
+@app.get("/documents/{document_id}/status", response_model=Dict[str, Any])
+async def get_document_status(document_id: str, auth: AuthContext = Depends(verify_token)):
+    """
+    Get the processing status of a document.
+    
+    Args:
+        document_id: ID of the document to check
+        auth: Authentication context
+        
+    Returns:
+        Dict containing status information for the document
+    """
+    try:
+        doc = await document_service.db.get_document(document_id, auth)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+            
+        # Extract status information
+        status = doc.system_metadata.get("status", "unknown")
+        
+        response = {
+            "document_id": doc.external_id,
+            "status": status,
+            "filename": doc.filename,
+            "created_at": doc.system_metadata.get("created_at"),
+            "updated_at": doc.system_metadata.get("updated_at"),
+        }
+        
+        # Add error information if failed
+        if status == "failed":
+            response["error"] = doc.system_metadata.get("error", "Unknown error")
+            
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting document status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting document status: {str(e)}")
 
 
 @app.delete("/documents/{document_id}")
