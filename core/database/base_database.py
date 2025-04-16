@@ -4,6 +4,7 @@ from typing import List, Optional, Dict, Any
 from ..models.documents import Document
 from ..models.auth import AuthContext
 from ..models.graph import Graph
+from ..models.folders import Folder
 
 
 class BaseDatabase(ABC):
@@ -197,6 +198,84 @@ class BaseDatabase(ABC):
 
         Args:
             graph: Graph to update
+
+        Returns:
+            bool: Whether the operation was successful
+        """
+        pass
+        
+    @abstractmethod
+    async def create_folder(self, folder: Folder) -> bool:
+        """Create a new folder.
+
+        Args:
+            folder: Folder to create
+
+        Returns:
+            bool: Whether the operation was successful
+        """
+        pass
+        
+    @abstractmethod
+    async def get_folder(self, folder_id: str, auth: AuthContext) -> Optional[Folder]:
+        """Get a folder by ID.
+
+        Args:
+            folder_id: ID of the folder
+            auth: Authentication context
+
+        Returns:
+            Optional[Folder]: Folder if found and accessible, None otherwise
+        """
+        pass
+        
+    @abstractmethod
+    async def get_folder_by_name(self, name: str, auth: AuthContext) -> Optional[Folder]:
+        """Get a folder by name.
+
+        Args:
+            name: Name of the folder
+            auth: Authentication context
+
+        Returns:
+            Optional[Folder]: Folder if found and accessible, None otherwise
+        """
+        pass
+        
+    @abstractmethod
+    async def list_folders(self, auth: AuthContext) -> List[Folder]:
+        """List all folders the user has access to.
+
+        Args:
+            auth: Authentication context
+
+        Returns:
+            List[Folder]: List of folders
+        """
+        pass
+        
+    @abstractmethod
+    async def add_document_to_folder(self, folder_id: str, document_id: str, auth: AuthContext) -> bool:
+        """Add a document to a folder.
+
+        Args:
+            folder_id: ID of the folder
+            document_id: ID of the document
+            auth: Authentication context
+
+        Returns:
+            bool: Whether the operation was successful
+        """
+        pass
+        
+    @abstractmethod
+    async def remove_document_from_folder(self, folder_id: str, document_id: str, auth: AuthContext) -> bool:
+        """Remove a document from a folder.
+
+        Args:
+            folder_id: ID of the folder
+            document_id: ID of the document
+            auth: Authentication context
 
         Returns:
             bool: Whether the operation was successful

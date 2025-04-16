@@ -15,6 +15,7 @@ from core.models.documents import (
 )
 from ..models.auth import AuthContext
 from ..models.graph import Graph
+from ..models.folders import Folder
 from colpali_engine.models import ColIdefics3, ColIdefics3Processor
 from core.services.graph_service import GraphService
 from core.database.base_database import BaseDatabase
@@ -46,6 +47,47 @@ CHARS_PER_TOKEN = 4
 TOKENS_PER_PAGE = 630
 
 class DocumentService:
+    async def _ensure_folder_exists(self, folder_name: str, document_id: str, auth: AuthContext) -> Optional[Folder]:
+        """
+        Check if a folder exists, if not create it. Also adds the document to the folder.
+        
+        Args:
+            folder_name: Name of the folder
+            document_id: ID of the document to add to the folder
+            auth: Authentication context
+            
+        Returns:
+            Folder object if found or created, None on error
+        """
+        try:
+            # First check if the folder already exists
+            folder = await self.db.get_folder_by_name(folder_name, auth)
+            if folder:
+                # Add document to existing folder
+                if document_id not in folder.document_ids:
+                    success = await self.db.add_document_to_folder(folder.id, document_id, auth)
+                    if not success:
+                        logger.warning(f"Failed to add document {document_id} to existing folder {folder.name}")
+                return folder  # Folder already exists
+                
+            # Create a new folder
+            folder = Folder(
+                name=folder_name,
+                owner={
+                    "type": auth.entity_type.value,
+                    "id": auth.entity_id,
+                },
+                document_ids=[document_id],  # Add document_id to the new folder
+            )
+            
+            await self.db.create_folder(folder)
+            return folder
+            
+        except Exception as e:
+            # Log error but don't raise - we want document ingestion to continue even if folder creation fails
+            logger.error(f"Error ensuring folder exists: {e}")
+            return None
+    
     def __init__(
         self,
         database: BaseDatabase,
@@ -428,6 +470,10 @@ class DocumentService:
         # Add folder_name and end_user_id to system_metadata if provided
         if folder_name:
             doc.system_metadata["folder_name"] = folder_name
+            
+            # Check if the folder exists, if not create it
+            await self._ensure_folder_exists(folder_name, doc.external_id, auth)
+            
         if end_user_id:
             doc.system_metadata["end_user_id"] = end_user_id
         logger.debug(f"Created text document record with ID {doc.external_id}")
@@ -567,6 +613,10 @@ class DocumentService:
         # Add folder_name and end_user_id to system_metadata if provided
         if folder_name:
             doc.system_metadata["folder_name"] = folder_name
+            
+            # Check if the folder exists, if not create it
+            await self._ensure_folder_exists(folder_name, doc.external_id, auth)
+            
         if end_user_id:
             doc.system_metadata["end_user_id"] = end_user_id
 

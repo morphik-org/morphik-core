@@ -16,6 +16,7 @@ from .models import (
     IngestTextRequest,
     ChunkSource,
     Graph,
+    FolderInfo,
     # Prompt override models
     GraphPromptOverrides,
     QueryPromptOverrides,
@@ -58,16 +59,42 @@ class Folder:
     Args:
         client: The Morphik client instance
         name: The name of the folder
+        folder_id: Optional folder ID (if already known)
     """
 
-    def __init__(self, client: "Morphik", name: str):
+    def __init__(self, client: "Morphik", name: str, folder_id: Optional[str] = None):
         self._client = client
         self._name = name
+        self._id = folder_id
 
     @property
     def name(self) -> str:
         """Returns the folder name."""
         return self._name
+        
+    @property
+    def id(self) -> Optional[str]:
+        """Returns the folder ID if available."""
+        return self._id
+        
+    def get_info(self) -> "FolderInfo":
+        """
+        Get detailed information about this folder.
+        
+        Returns:
+            FolderInfo: Detailed folder information
+        """
+        if not self._id:
+            # If we don't have the ID, find the folder by name first
+            folders = self._client.list_folders()
+            for folder in folders:
+                if folder.name == self._name:
+                    self._id = folder.id
+                    return folder
+            raise ValueError(f"Folder '{self._name}' not found")
+        
+        return self._client.get_folder(self._id)
+        
 
     def signin(self, end_user_id: str) -> "UserScope":
         """
@@ -1147,19 +1174,30 @@ class Morphik:
         """Convert a rule to a dictionary format"""
         return self._logic._convert_rule(rule)
 
-    def create_folder(self, name: str) -> Folder:
+    def create_folder(self, name: str, description: Optional[str] = None) -> Folder:
         """
         Create a folder to scope operations.
 
         Args:
             name: The name of the folder
+            description: Optional description for the folder
 
         Returns:
-            Folder: A folder object for scoped operations
+            Folder: A folder object ready for scoped operations
         """
-        return Folder(self, name)
-
-    def get_folder(self, name: str) -> Folder:
+        payload = {
+            "name": name
+        }
+        if description:
+            payload["description"] = description
+            
+        response = self._request("POST", "folders", data=payload)
+        folder_info = FolderInfo(**response)
+        
+        # Return a usable Folder object with the ID from the response
+        return Folder(self, name, folder_id=folder_info.id)
+    
+    def get_folder_by_name(self, name: str) -> Folder:
         """
         Get a folder by name to scope operations.
 
@@ -1170,6 +1208,67 @@ class Morphik:
             Folder: A folder object for scoped operations
         """
         return Folder(self, name)
+        
+    def get_folder(self, folder_id: str) -> FolderInfo:
+        """
+        Get detailed information about a folder by ID.
+
+        Args:
+            folder_id: ID of the folder
+
+        Returns:
+            FolderInfo: Folder information
+        """
+        response = self._request("GET", f"folders/{folder_id}")
+        return FolderInfo(**response)
+        
+    def list_folders(self) -> List[FolderInfo]:
+        """
+        List all folders the user has access to.
+
+        Returns:
+            List[FolderInfo]: List of folder information
+        """
+        response = self._request("GET", "folders")
+        return [FolderInfo(**folder) for folder in response]
+        
+    def get_folders(self) -> List[Folder]:
+        """
+        List all folders the user has access to as Folder objects.
+        
+        Returns:
+            List[Folder]: List of Folder objects ready for operations
+        """
+        folder_infos = self.list_folders()
+        return [Folder(self, info.name, info.id) for info in folder_infos]
+        
+    def add_document_to_folder(self, folder_id: str, document_id: str) -> Dict[str, str]:
+        """
+        Add a document to a folder.
+
+        Args:
+            folder_id: ID of the folder
+            document_id: ID of the document
+
+        Returns:
+            Dict[str, str]: Success status
+        """
+        response = self._request("POST", f"folders/{folder_id}/documents/{document_id}")
+        return response
+        
+    def remove_document_from_folder(self, folder_id: str, document_id: str) -> Dict[str, str]:
+        """
+        Remove a document from a folder.
+
+        Args:
+            folder_id: ID of the folder
+            document_id: ID of the document
+
+        Returns:
+            Dict[str, str]: Success status
+        """
+        response = self._request("DELETE", f"folders/{folder_id}/documents/{document_id}")
+        return response
 
     def signin(self, end_user_id: str) -> UserScope:
         """

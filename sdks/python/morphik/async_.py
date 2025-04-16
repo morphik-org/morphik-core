@@ -14,6 +14,7 @@ from .models import (
     IngestTextRequest,
     ChunkSource,
     Graph,
+    FolderInfo,
     # Prompt override models
     GraphPromptOverrides,
     QueryPromptOverrides,
@@ -56,16 +57,42 @@ class AsyncFolder:
     Args:
         client: The AsyncMorphik client instance
         name: The name of the folder
+        folder_id: Optional folder ID (if already known)
     """
 
-    def __init__(self, client: "AsyncMorphik", name: str):
+    def __init__(self, client: "AsyncMorphik", name: str, folder_id: Optional[str] = None):
         self._client = client
         self._name = name
+        self._id = folder_id
 
     @property
     def name(self) -> str:
         """Returns the folder name."""
         return self._name
+        
+    @property
+    def id(self) -> Optional[str]:
+        """Returns the folder ID if available."""
+        return self._id
+        
+    async def get_info(self) -> "FolderInfo":
+        """
+        Get detailed information about this folder.
+        
+        Returns:
+            FolderInfo: Detailed folder information
+        """
+        if not self._id:
+            # If we don't have the ID, find the folder by name first
+            folders = await self._client.list_folders()
+            for folder in folders:
+                if folder.name == self._name:
+                    self._id = folder.id
+                    return folder
+            raise ValueError(f"Folder '{self._name}' not found")
+        
+        return await self._client.get_folder(self._id)
+        
 
     def signin(self, end_user_id: str) -> "AsyncUserScope":
         """
@@ -1054,19 +1081,30 @@ class AsyncMorphik:
         """Convert a rule to a dictionary format"""
         return self._logic._convert_rule(rule)
 
-    def create_folder(self, name: str) -> AsyncFolder:
+    async def create_folder(self, name: str, description: Optional[str] = None) -> AsyncFolder:
         """
         Create a folder to scope operations.
 
         Args:
             name: The name of the folder
+            description: Optional description for the folder
 
         Returns:
-            AsyncFolder: A folder object for scoped operations
+            AsyncFolder: A folder object ready for scoped operations
         """
-        return AsyncFolder(self, name)
-
-    def get_folder(self, name: str) -> AsyncFolder:
+        payload = {
+            "name": name
+        }
+        if description:
+            payload["description"] = description
+            
+        response = await self._request("POST", "folders", data=payload)
+        folder_info = FolderInfo(**response)
+        
+        # Return a usable AsyncFolder object with the ID from the response
+        return AsyncFolder(self, name, folder_id=folder_info.id)
+    
+    def get_folder_by_name(self, name: str) -> AsyncFolder:
         """
         Get a folder by name to scope operations.
 
@@ -1077,6 +1115,67 @@ class AsyncMorphik:
             AsyncFolder: A folder object for scoped operations
         """
         return AsyncFolder(self, name)
+        
+    async def get_folder(self, folder_id: str) -> FolderInfo:
+        """
+        Get detailed information about a folder by ID.
+
+        Args:
+            folder_id: ID of the folder
+
+        Returns:
+            FolderInfo: Folder information
+        """
+        response = await self._request("GET", f"folders/{folder_id}")
+        return FolderInfo(**response)
+        
+    async def list_folders(self) -> List[FolderInfo]:
+        """
+        List all folders the user has access to.
+
+        Returns:
+            List[FolderInfo]: List of folder information
+        """
+        response = await self._request("GET", "folders")
+        return [FolderInfo(**folder) for folder in response]
+        
+    async def get_folders(self) -> List[AsyncFolder]:
+        """
+        List all folders the user has access to as AsyncFolder objects.
+        
+        Returns:
+            List[AsyncFolder]: List of AsyncFolder objects ready for operations
+        """
+        folder_infos = await self.list_folders()
+        return [AsyncFolder(self, info.name, info.id) for info in folder_infos]
+        
+    async def add_document_to_folder(self, folder_id: str, document_id: str) -> Dict[str, str]:
+        """
+        Add a document to a folder.
+
+        Args:
+            folder_id: ID of the folder
+            document_id: ID of the document
+
+        Returns:
+            Dict[str, str]: Success status
+        """
+        response = await self._request("POST", f"folders/{folder_id}/documents/{document_id}")
+        return response
+        
+    async def remove_document_from_folder(self, folder_id: str, document_id: str) -> Dict[str, str]:
+        """
+        Remove a document from a folder.
+
+        Args:
+            folder_id: ID of the folder
+            document_id: ID of the document
+
+        Returns:
+            Dict[str, str]: Success status
+        """
+        response = await self._request("DELETE", f"folders/{folder_id}/documents/{document_id}")
+        return response
 
     def signin(self, end_user_id: str) -> AsyncUserScope:
         """

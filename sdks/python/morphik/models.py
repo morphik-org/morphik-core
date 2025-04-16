@@ -411,3 +411,19 @@ class QueryPromptOverrides(BaseModel):
         None,
         description="Overrides for query prompts - controls response generation style, format, and tone",
     )
+
+
+class FolderInfo(BaseModel):
+    """Folder metadata model"""
+
+    id: str = Field(..., description="Unique folder identifier")
+    name: str = Field(..., description="Folder name")
+    description: Optional[str] = Field(None, description="Folder description")
+    owner: Dict[str, str] = Field(..., description="Owner information")
+    document_ids: List[str] = Field(default_factory=list, description="IDs of documents in the folder")
+    system_metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="System-managed metadata"
+    )
+    access_control: Dict[str, List[str]] = Field(
+        default_factory=dict, description="Access control information"
+    )
