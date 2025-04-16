@@ -50,7 +50,7 @@ services:
       
   worker:
     build: .
-    command: python run_worker.py
+    command: arq core.workers.ingestion_worker.WorkerSettings
     environment:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
       - POSTGRES_URI=postgresql+asyncpg://morphik:morphik@postgres:5432/morphik
