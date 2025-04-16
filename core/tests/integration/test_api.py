@@ -817,6 +817,346 @@ async def test_file_versioning_with_add_strategy(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_folder_api_operations(client: AsyncClient):
+    """Test folder API operations (create, list, get, add/remove documents)."""
+    headers = create_auth_header()
+    
+    # Create a new folder
+    folder_name = "Test API Folder"
+    folder_description = "This is a test folder created via API"
+    
+    response = await client.post(
+        "/folders",
+        json={
+            "name": folder_name,
+            "description": folder_description
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    folder = response.json()
+    assert "id" in folder
+    assert folder["name"] == folder_name
+    assert folder["description"] == folder_description
+    
+    folder_id = folder["id"]
+    
+    # Create a document to add to the folder
+    doc_content = "This is a test document for folder API testing."
+    doc_id = await test_ingest_text_document(client, content=doc_content)
+    
+    # Add document to folder
+    response = await client.post(
+        f"/folders/{folder_id}/documents/{doc_id}",
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert result["status"] == "success"
+    
+    # Get folder to verify document was added
+    response = await client.get(
+        f"/folders/{folder_id}",
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    folder = response.json()
+    assert doc_id in folder["document_ids"]
+    
+    # List all folders
+    response = await client.get(
+        "/folders",
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    folders = response.json()
+    assert len(folders) > 0
+    assert any(f["id"] == folder_id for f in folders)
+    
+    # Remove document from folder
+    response = await client.delete(
+        f"/folders/{folder_id}/documents/{doc_id}",
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert result["status"] == "success"
+    
+    # Get folder again to verify document was removed
+    response = await client.get(
+        f"/folders/{folder_id}",
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    folder = response.json()
+    assert doc_id not in folder["document_ids"]
+    
+    # Verify document still exists in the system
+    doc_response = await client.get(
+        f"/documents/{doc_id}",
+        headers=headers,
+    )
+    assert doc_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_folder_search_operations(client: AsyncClient):
+    """Test search operations with folder scoping using the folder API."""
+    headers = create_auth_header()
+    
+    # Create two test folders
+    folder1_name = "Search Test Folder 1"
+    response = await client.post(
+        "/folders",
+        json={"name": folder1_name},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    folder1_id = response.json()["id"]
+    
+    folder2_name = "Search Test Folder 2"
+    response = await client.post(
+        "/folders",
+        json={"name": folder2_name},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    folder2_id = response.json()["id"]
+    
+    # Create documents with distinctive content for each folder
+    doc1_content = "This document contains unique information about apples and bananas."
+    doc1_id = await test_ingest_text_document(client, content=doc1_content)
+    
+    doc2_content = "This document has specific details about oranges and grapefruits."
+    doc2_id = await test_ingest_text_document(client, content=doc2_content)
+    
+    # Add documents to respective folders
+    await client.post(
+        f"/folders/{folder1_id}/documents/{doc1_id}",
+        headers=headers,
+    )
+    
+    await client.post(
+        f"/folders/{folder2_id}/documents/{doc2_id}",
+        headers=headers,
+    )
+    
+    # Test searching within folder1
+    response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "fruit",
+            "folder_name": folder1_name
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    chunks = response.json()
+    assert len(chunks) > 0
+    assert all("apple" in chunk["content"].lower() or "banana" in chunk["content"].lower() for chunk in chunks)
+    assert not any("orange" in chunk["content"].lower() or "grapefruit" in chunk["content"].lower() for chunk in chunks)
+    
+    # Test searching within folder2
+    response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": "fruit",
+            "folder_name": folder2_name
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    chunks = response.json()
+    assert len(chunks) > 0
+    assert all("orange" in chunk["content"].lower() or "grapefruit" in chunk["content"].lower() for chunk in chunks)
+    assert not any("apple" in chunk["content"].lower() or "banana" in chunk["content"].lower() for chunk in chunks)
+    
+    # Test querying with folder scope
+    response = await client.post(
+        "/query",
+        json={
+            "query": "What fruits are mentioned?",
+            "folder_name": folder1_name
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert "completion" in result
+    # Apples and bananas should be mentioned, not oranges or grapefruits
+    apples_bananas_mentioned = "apple" in result["completion"].lower() or "banana" in result["completion"].lower()
+    oranges_grapefruits_not_mentioned = "orange" not in result["completion"].lower() and "grapefruit" not in result["completion"].lower()
+    assert apples_bananas_mentioned and oranges_grapefruits_not_mentioned
+
+
+@pytest.mark.asyncio
+async def test_auto_folder_creation_on_ingest(client: AsyncClient):
+    """Test automatic folder creation when ingesting with a non-existent folder name."""
+    headers = create_auth_header()
+    
+    # Generate a unique folder name that doesn't exist yet
+    import uuid
+    new_folder_name = f"Auto Created Folder {uuid.uuid4()}"
+    
+    # First verify the folder doesn't exist
+    response = await client.get(
+        "/folders",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    initial_folders = response.json()
+    assert not any(folder["name"] == new_folder_name for folder in initial_folders)
+    
+    # Ingest a document specifying the non-existent folder name
+    doc_content = "This is a test document for automatic folder creation."
+    
+    response = await client.post(
+        "/ingest/text",
+        json={
+            "content": doc_content,
+            "metadata": {"auto_folder_test": True},
+            "folder_name": new_folder_name
+        },
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    doc = response.json()
+    doc_id = doc["external_id"]
+    assert doc["system_metadata"]["folder_name"] == new_folder_name
+    
+    # List folders and verify the new folder was automatically created
+    response = await client.get(
+        "/folders",
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    folders = response.json()
+    matching_folders = [f for f in folders if f["name"] == new_folder_name]
+    assert len(matching_folders) == 1
+    auto_created_folder = matching_folders[0]
+    
+    # Get the folder details
+    folder_id = auto_created_folder["id"]
+    response = await client.get(
+        f"/folders/{folder_id}",
+        headers=headers,
+    )
+    
+    assert response.status_code == 200
+    folder_details = response.json()
+    
+    # Verify our document is in the folder
+    assert doc_id in folder_details["document_ids"]
+    
+    # Verify retrieving documents with the folder_name parameter works
+    response = await client.post(
+        "/documents",
+        json={"auto_folder_test": True},
+        headers=headers,
+        params={"folder_name": new_folder_name}
+    )
+    
+    assert response.status_code == 200
+    folder_docs = response.json()
+    assert len(folder_docs) == 1
+    assert folder_docs[0]["external_id"] == doc_id
+
+
+@pytest.mark.asyncio
+async def test_folder_api_error_cases(client: AsyncClient):
+    """Test error cases for folder API operations."""
+    headers = create_auth_header()
+    
+    # Test getting non-existent folder
+    non_existent_id = "folder_does_not_exist"
+    response = await client.get(
+        f"/folders/{non_existent_id}",
+        headers=headers,
+    )
+    assert response.status_code == 404
+    
+    # Create a folder for further tests
+    folder_name = "Error Test Folder"
+    create_response = await client.post(
+        "/folders",
+        json={"name": folder_name},
+        headers=headers,
+    )
+    assert create_response.status_code == 200
+    folder_id = create_response.json()["id"]
+    
+    # Test adding non-existent document to folder
+    response = await client.post(
+        f"/folders/{folder_id}/documents/non_existent_doc_id",
+        headers=headers,
+    )
+    assert response.status_code in [404, 500]  # Either not found or operation failed
+    
+    # Create a document to test with
+    doc_id = await test_ingest_text_document(client, content="Test document for folder error tests")
+    
+    # Test adding document to non-existent folder
+    response = await client.post(
+        f"/folders/non_existent_folder_id/documents/{doc_id}",
+        headers=headers,
+    )
+    assert response.status_code in [404, 500]  # Either not found or operation failed
+    
+    # Test removing non-existent document from folder
+    response = await client.delete(
+        f"/folders/{folder_id}/documents/non_existent_doc_id",
+        headers=headers,
+    )
+    assert response.status_code in [404, 500]  # Either not found or operation failed
+    
+    # Add document to folder first so we can test duplicate operations
+    await client.post(
+        f"/folders/{folder_id}/documents/{doc_id}",
+        headers=headers,
+    )
+    
+    # Test adding same document to folder twice (should be idempotent)
+    response = await client.post(
+        f"/folders/{folder_id}/documents/{doc_id}",
+        headers=headers,
+    )
+    assert response.status_code == 200  # Should succeed with idempotent behavior
+    
+    # Test creating folder with same name (should be idempotent per user)
+    response = await client.post(
+        "/folders",
+        json={"name": folder_name},
+        headers=headers,
+    )
+    assert response.status_code == 200  # Should succeed with idempotent behavior
+    
+    # Test removing document that's not in folder (should be idempotent)
+    # First remove it
+    await client.delete(
+        f"/folders/{folder_id}/documents/{doc_id}",
+        headers=headers,
+    )
+    
+    # Then try to remove it again
+    response = await client.delete(
+        f"/folders/{folder_id}/documents/{doc_id}",
+        headers=headers,
+    )
+    assert response.status_code == 200  # Should succeed with idempotent behavior
+
+
+@pytest.mark.asyncio
 async def test_update_document_error_cases(client: AsyncClient):
     """Test error cases for document updates"""
     headers = create_auth_header()

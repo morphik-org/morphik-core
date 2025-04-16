@@ -19,6 +19,7 @@ from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.graph import Graph
 from core.models.auth import AuthContext, EntityType
 from core.models.prompts import validate_prompt_overrides_with_http_exception
+from core.models.folders import Folder, FolderCreate
 from core.parser.morphik_parser import MorphikParser
 from core.services.document_service import DocumentService
 from core.services.telemetry import TelemetryService
@@ -444,6 +445,15 @@ async def ingest_file(
             success = await database.store_document(doc)
             if not success:
                 raise Exception("Failed to store document metadata")
+                
+            # If folder_name is provided, ensure the folder exists and add document to it
+            if folder_name:
+                try:
+                    await document_service._ensure_folder_exists(folder_name, doc.external_id, auth)
+                    logger.debug(f"Ensured folder '{folder_name}' exists and contains document {doc.external_id}")
+                except Exception as e:
+                    # Log error but don't raise - we want document ingestion to continue even if folder operation fails
+                    logger.error(f"Error ensuring folder exists: {e}")
             
             # Read file content
             file_content = await file.read()
@@ -628,6 +638,15 @@ async def batch_ingest_files(
                 success = await database.store_document(doc)
                 if not success:
                     raise Exception(f"Failed to store document metadata for {file.filename}")
+                
+                # If folder_name is provided, ensure the folder exists and add document to it
+                if folder_name:
+                    try:
+                        await document_service._ensure_folder_exists(folder_name, doc.external_id, auth)
+                        logger.debug(f"Ensured folder '{folder_name}' exists and contains document {doc.external_id}")
+                    except Exception as e:
+                        # Log error but don't raise - we want document ingestion to continue even if folder operation fails
+                        logger.error(f"Error ensuring folder exists: {e}")
                 
                 # Read file content
                 file_content = await file.read()
@@ -1516,6 +1535,199 @@ async def create_graph(
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         validate_prompt_overrides_with_http_exception(operation_type="graph", error=e)
+
+
+@app.post("/folders", response_model=Folder)
+async def create_folder(
+    folder_create: FolderCreate,
+    auth: AuthContext = Depends(verify_token),
+) -> Folder:
+    """
+    Create a new folder.
+    
+    Args:
+        folder_create: Folder creation request containing name and optional description
+        auth: Authentication context
+        
+    Returns:
+        Folder: Created folder
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="create_folder",
+            user_id=auth.entity_id,
+            metadata={
+                "name": folder_create.name,
+            },
+        ):
+            # Create a folder object with explicit ID
+            import uuid
+            folder_id = str(uuid.uuid4())
+            logger.info(f"Creating folder with ID: {folder_id}, auth.user_id: {auth.user_id}")
+            
+            # Set up access control with user_id
+            access_control = {
+                "readers": [auth.entity_id],
+                "writers": [auth.entity_id],
+                "admins": [auth.entity_id],
+            }
+            
+            if auth.user_id:
+                access_control["user_id"] = [auth.user_id]
+                logger.info(f"Adding user_id {auth.user_id} to folder access control")
+            
+            folder = Folder(
+                id=folder_id,
+                name=folder_create.name,
+                description=folder_create.description,
+                owner={
+                    "type": auth.entity_type.value, 
+                    "id": auth.entity_id,
+                },
+                access_control=access_control,
+            )
+            
+            # Store in database
+            success = await document_service.db.create_folder(folder)
+            
+            if not success:
+                raise HTTPException(status_code=500, detail="Failed to create folder")
+                
+            return folder
+    except Exception as e:
+        logger.error(f"Error creating folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+@app.get("/folders", response_model=List[Folder])
+async def list_folders(
+    auth: AuthContext = Depends(verify_token),
+) -> List[Folder]:
+    """
+    List all folders the user has access to.
+    
+    Args:
+        auth: Authentication context
+        
+    Returns:
+        List[Folder]: List of folders
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="list_folders",
+            user_id=auth.entity_id,
+        ):
+            folders = await document_service.db.list_folders(auth)
+            return folders
+    except Exception as e:
+        logger.error(f"Error listing folders: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+@app.get("/folders/{folder_id}", response_model=Folder)
+async def get_folder(
+    folder_id: str,
+    auth: AuthContext = Depends(verify_token),
+) -> Folder:
+    """
+    Get a folder by ID.
+    
+    Args:
+        folder_id: ID of the folder
+        auth: Authentication context
+        
+    Returns:
+        Folder: Folder if found and accessible
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="get_folder",
+            user_id=auth.entity_id,
+            metadata={
+                "folder_id": folder_id,
+            },
+        ):
+            folder = await document_service.db.get_folder(folder_id, auth)
+            
+            if not folder:
+                raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
+                
+            return folder
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+@app.post("/folders/{folder_id}/documents/{document_id}")
+async def add_document_to_folder(
+    folder_id: str,
+    document_id: str,
+    auth: AuthContext = Depends(verify_token),
+):
+    """
+    Add a document to a folder.
+    
+    Args:
+        folder_id: ID of the folder
+        document_id: ID of the document
+        auth: Authentication context
+        
+    Returns:
+        Success status
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="add_document_to_folder",
+            user_id=auth.entity_id,
+            metadata={
+                "folder_id": folder_id,
+                "document_id": document_id,
+            },
+        ):
+            success = await document_service.db.add_document_to_folder(folder_id, document_id, auth)
+            
+            if not success:
+                raise HTTPException(status_code=500, detail="Failed to add document to folder")
+                
+            return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Error adding document to folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+@app.delete("/folders/{folder_id}/documents/{document_id}")
+async def remove_document_from_folder(
+    folder_id: str,
+    document_id: str,
+    auth: AuthContext = Depends(verify_token),
+):
+    """
+    Remove a document from a folder.
+    
+    Args:
+        folder_id: ID of the folder
+        document_id: ID of the document
+        auth: Authentication context
+        
+    Returns:
+        Success status
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="remove_document_from_folder",
+            user_id=auth.entity_id,
+            metadata={
+                "folder_id": folder_id,
+                "document_id": document_id,
+            },
+        ):
+            success = await document_service.db.remove_document_from_folder(folder_id, document_id, auth)
+            
+            if not success:
+                raise HTTPException(status_code=500, detail="Failed to remove document from folder")
+                
+            return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Error removing document from folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/graph/{name}", response_model=Graph)

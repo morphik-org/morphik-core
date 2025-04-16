@@ -10,7 +10,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 from .base_database import BaseDatabase
 from ..models.documents import Document
 from ..models.auth import AuthContext
-from ..models.graph import Graph, Entity, Relationship
+from ..models.graph import Graph
+from ..models.folders import Folder
 
 logger = logging.getLogger(__name__)
 Base = declarative_base()
@@ -65,6 +66,27 @@ class GraphModel(Base):
         Index("idx_graph_owner", "owner", postgresql_using="gin"),
         Index("idx_graph_access_control", "access_control", postgresql_using="gin"),
         Index("idx_graph_system_metadata", "system_metadata", postgresql_using="gin"),
+    )
+
+
+class FolderModel(Base):
+    """SQLAlchemy model for folder data."""
+
+    __tablename__ = "folders"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, index=True)
+    description = Column(String, nullable=True)
+    owner = Column(JSONB)
+    document_ids = Column(JSONB, default=list)
+    system_metadata = Column(JSONB, default=dict)
+    access_control = Column(JSONB, default=dict)
+
+    # Create indexes
+    __table_args__ = (
+        Index("idx_folder_name", "name"),
+        Index("idx_folder_owner", "owner", postgresql_using="gin"),
+        Index("idx_folder_access_control", "access_control", postgresql_using="gin"),
     )
 
 
@@ -151,6 +173,28 @@ class PostgresDatabase(BaseDatabase):
                     """
                     )
                 )
+                
+                # Create folders table if it doesn't exist
+                await conn.execute(
+                    text(
+                        """
+                    CREATE TABLE IF NOT EXISTS folders (
+                        id TEXT PRIMARY KEY,
+                        name TEXT,
+                        description TEXT,
+                        owner JSONB,
+                        document_ids JSONB DEFAULT '[]',
+                        system_metadata JSONB DEFAULT '{}',
+                        access_control JSONB DEFAULT '{}'
+                    );
+                    """
+                    )
+                )
+                
+                # Create indexes for folders table
+                await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_name ON folders (name);"))
+                await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_owner ON folders USING gin (owner);"))
+                await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_access_control ON folders USING gin (access_control);"))
                 
                 await conn.execute(
                     text(
@@ -984,3 +1028,358 @@ class PostgresDatabase(BaseDatabase):
         except Exception as e:
             logger.error(f"Error updating graph: {str(e)}")
             return False
+            
+    async def create_folder(self, folder: Folder) -> bool:
+        """Create a new folder."""
+        try:
+            async with self.async_session() as session:
+                folder_dict = folder.model_dump()
+                
+                # Convert datetime objects to strings for JSON serialization
+                folder_dict = _serialize_datetime(folder_dict)
+                
+                # Check if a folder with this name already exists for this owner
+                # Use only the type/id format
+                stmt = text(
+                    """
+                    SELECT id FROM folders
+                    WHERE name = :name
+                    AND owner->>'id' = :entity_id 
+                    AND owner->>'type' = :entity_type
+                    """
+                ).bindparams(
+                    name=folder.name,
+                    entity_id=folder.owner["id"],
+                    entity_type=folder.owner["type"]
+                )
+                
+                result = await session.execute(stmt)
+                existing_folder = result.scalar_one_or_none()
+                
+                if existing_folder:
+                    logger.info(f"Folder '{folder.name}' already exists with ID {existing_folder}, not creating a duplicate")
+                    # Update the provided folder's ID to match the existing one 
+                    # so the caller gets the correct ID
+                    folder.id = existing_folder
+                    return True
+                
+                # Create a new folder model
+                access_control = folder_dict.get("access_control", {})
+                
+                # Log access control to debug any issues
+                if "user_id" in access_control:
+                    logger.info(f"Storing folder with user_id: {access_control['user_id']}")
+                else:
+                    logger.info("No user_id found in folder access_control")
+                
+                folder_model = FolderModel(
+                    id=folder.id,
+                    name=folder.name,
+                    description=folder.description,
+                    owner=folder_dict["owner"],
+                    document_ids=folder_dict.get("document_ids", []),
+                    system_metadata=folder_dict.get("system_metadata", {}),
+                    access_control=access_control
+                )
+                
+                session.add(folder_model)
+                await session.commit()
+                
+                logger.info(f"Created new folder '{folder.name}' with ID {folder.id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error creating folder: {e}")
+            return False
+    
+    async def get_folder(self, folder_id: str, auth: AuthContext) -> Optional[Folder]:
+        """Get a folder by ID."""
+        try:
+            async with self.async_session() as session:
+                # Get the folder
+                logger.info(f"Getting folder with ID: {folder_id}")
+                result = await session.execute(
+                    select(FolderModel).where(FolderModel.id == folder_id)
+                )
+                folder_model = result.scalar_one_or_none()
+                
+                if not folder_model:
+                    logger.error(f"Folder with ID {folder_id} not found in database")
+                    return None
+                
+                # Convert to Folder object
+                folder_dict = {
+                    "id": folder_model.id,
+                    "name": folder_model.name,
+                    "description": folder_model.description,
+                    "owner": folder_model.owner,
+                    "document_ids": folder_model.document_ids,
+                    "system_metadata": folder_model.system_metadata,
+                    "access_control": folder_model.access_control
+                }
+                
+                folder = Folder(**folder_dict)
+                
+                # Check if the user has access to the folder
+                if not self._check_folder_access(folder, auth, "read"):
+                    return None
+                    
+                return folder
+                
+        except Exception as e:
+            logger.error(f"Error getting folder: {e}")
+            return None
+    
+    async def get_folder_by_name(self, name: str, auth: AuthContext) -> Optional[Folder]:
+        """Get a folder by name."""
+        try:
+            async with self.async_session() as session:
+                # First try to get a folder owned by this entity
+                if auth.entity_type and auth.entity_id:
+                    stmt = text(
+                        """
+                        SELECT * FROM folders
+                        WHERE name = :name
+                        AND (owner->>'entity_id' = :entity_id)
+                        AND (owner->>'entity_type' = :entity_type)
+                        """
+                    ).bindparams(
+                        name=name,
+                        entity_id=auth.entity_id,
+                        entity_type=auth.entity_type.value
+                    )
+                    
+                    result = await session.execute(stmt)
+                    folder_row = result.fetchone()
+                    
+                    if folder_row:
+                        # Convert to Folder object
+                        folder_dict = {
+                            "id": folder_row.id,
+                            "name": folder_row.name,
+                            "description": folder_row.description,
+                            "owner": folder_row.owner,
+                            "document_ids": folder_row.document_ids,
+                            "system_metadata": folder_row.system_metadata,
+                            "access_control": folder_row.access_control
+                        }
+                        
+                        return Folder(**folder_dict)
+                
+                # If not found, try to find any accessible folder with that name
+                result = await session.execute(
+                    select(FolderModel).where(FolderModel.name == name)
+                )
+                folder_models = result.scalars().all()
+                
+                for folder_model in folder_models:
+                    # Convert to Folder object
+                    folder_dict = {
+                        "id": folder_model.id,
+                        "name": folder_model.name,
+                        "description": folder_model.description,
+                        "owner": folder_model.owner,
+                        "document_ids": folder_model.document_ids,
+                        "system_metadata": folder_model.system_metadata,
+                        "access_control": folder_model.access_control
+                    }
+                    
+                    folder = Folder(**folder_dict)
+                    
+                    # Check if the user has access to the folder
+                    if self._check_folder_access(folder, auth, "read"):
+                        return folder
+                
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error getting folder by name: {e}")
+            return None
+    
+    async def list_folders(self, auth: AuthContext) -> List[Folder]:
+        """List all folders the user has access to."""
+        try:
+            folders = []
+            
+            async with self.async_session() as session:
+                # Get all folders
+                result = await session.execute(select(FolderModel))
+                folder_models = result.scalars().all()
+                
+                for folder_model in folder_models:
+                    # Convert to Folder object
+                    folder_dict = {
+                        "id": folder_model.id,
+                        "name": folder_model.name,
+                        "description": folder_model.description,
+                        "owner": folder_model.owner,
+                        "document_ids": folder_model.document_ids,
+                        "system_metadata": folder_model.system_metadata,
+                        "access_control": folder_model.access_control
+                    }
+                    
+                    folder = Folder(**folder_dict)
+                    
+                    # Check if the user has access to the folder
+                    if self._check_folder_access(folder, auth, "read"):
+                        folders.append(folder)
+                
+                return folders
+                
+        except Exception as e:
+            logger.error(f"Error listing folders: {e}")
+            return []
+    
+    async def add_document_to_folder(self, folder_id: str, document_id: str, auth: AuthContext) -> bool:
+        """Add a document to a folder."""
+        try:
+            # First, check if the user has access to the folder
+            folder = await self.get_folder(folder_id, auth)
+            if not folder:
+                logger.error(f"Folder {folder_id} not found or user does not have access")
+                return False
+                
+            # Check if user has write access to the folder
+            if not self._check_folder_access(folder, auth, "write"):
+                logger.error(f"User does not have write access to folder {folder_id}")
+                return False
+                
+            # Check if the document exists and user has access
+            document = await self.get_document(document_id, auth)
+            if not document:
+                logger.error(f"Document {document_id} not found or user does not have access")
+                return False
+            
+            # Check if the document is already in the folder
+            if document_id in folder.document_ids:
+                logger.info(f"Document {document_id} is already in folder {folder_id}")
+                return True
+            
+            # Add the document to the folder
+            async with self.async_session() as session:
+                # Add document_id to document_ids array
+                new_document_ids = folder.document_ids + [document_id]
+                
+                folder_model = await session.get(FolderModel, folder_id)
+                if not folder_model:
+                    logger.error(f"Folder {folder_id} not found in database")
+                    return False
+                    
+                folder_model.document_ids = new_document_ids
+                
+                # Also update the document's system_metadata to include the folder_name
+                folder_name_json = json.dumps(folder.name)
+                stmt = text(
+                    f"""
+                    UPDATE documents 
+                    SET system_metadata = jsonb_set(system_metadata, '{{folder_name}}', '{folder_name_json}'::jsonb)
+                    WHERE external_id = :document_id
+                    """
+                ).bindparams(
+                    document_id=document_id
+                )
+                
+                await session.execute(stmt)
+                await session.commit()
+                
+                logger.info(f"Added document {document_id} to folder {folder_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error adding document to folder: {e}")
+            return False
+    
+    async def remove_document_from_folder(self, folder_id: str, document_id: str, auth: AuthContext) -> bool:
+        """Remove a document from a folder."""
+        try:
+            # First, check if the user has access to the folder
+            folder = await self.get_folder(folder_id, auth)
+            if not folder:
+                logger.error(f"Folder {folder_id} not found or user does not have access")
+                return False
+                
+            # Check if user has write access to the folder
+            if not self._check_folder_access(folder, auth, "write"):
+                logger.error(f"User does not have write access to folder {folder_id}")
+                return False
+            
+            # Check if the document is in the folder
+            if document_id not in folder.document_ids:
+                logger.info(f"Document {document_id} is not in folder {folder_id}")
+                return True
+            
+            # Remove the document from the folder
+            async with self.async_session() as session:
+                # Remove document_id from document_ids array
+                new_document_ids = [doc_id for doc_id in folder.document_ids if doc_id != document_id]
+                
+                folder_model = await session.get(FolderModel, folder_id)
+                if not folder_model:
+                    logger.error(f"Folder {folder_id} not found in database")
+                    return False
+                    
+                folder_model.document_ids = new_document_ids
+                
+                # Also update the document's system_metadata to remove the folder_name
+                stmt = text(
+                    f"""
+                    UPDATE documents 
+                    SET system_metadata = jsonb_set(system_metadata, '{{folder_name}}', 'null'::jsonb)
+                    WHERE external_id = :document_id
+                    """
+                ).bindparams(
+                    document_id=document_id
+                )
+                
+                await session.execute(stmt)
+                await session.commit()
+                
+                logger.info(f"Removed document {document_id} from folder {folder_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error removing document from folder: {e}")
+            return False
+    
+    def _check_folder_access(self, folder: Folder, auth: AuthContext, permission: str = "read") -> bool:
+        """Check if the user has the required permission for the folder."""
+        # Admin always has access
+        if "admin" in auth.permissions:
+            return True
+            
+        # Check if folder is owned by the user
+        if (auth.entity_type and auth.entity_id and 
+            folder.owner.get("type") == auth.entity_type.value and 
+            folder.owner.get("id") == auth.entity_id):
+            
+            # In cloud mode, also verify user_id if present
+            if auth.user_id:
+                from core.config import get_settings
+                settings = get_settings()
+                
+                if settings.MODE == "cloud":
+                    folder_user_ids = folder.access_control.get("user_id", [])
+                    if auth.user_id not in folder_user_ids:
+                        return False
+            return True
+            
+        # Check access control lists
+        access_control = folder.access_control or {}
+        
+        if permission == "read":
+            readers = access_control.get("readers", [])
+            if f"{auth.entity_type.value}:{auth.entity_id}" in readers:
+                return True
+                
+        if permission == "write":
+            writers = access_control.get("writers", [])
+            if f"{auth.entity_type.value}:{auth.entity_id}" in writers:
+                return True
+                
+        # For admin permission, check admins list
+        if permission == "admin":
+            admins = access_control.get("admins", [])
+            if f"{auth.entity_type.value}:{auth.entity_id}" in admins:
+                return True
+                
+        return False
