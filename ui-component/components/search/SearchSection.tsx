@@ -10,7 +10,7 @@ import { showAlert } from '@/components/ui/alert-system';
 import SearchOptionsDialog from './SearchOptionsDialog';
 import SearchResultCard from './SearchResultCard';
 
-import { SearchResult, SearchOptions } from '@/components/types';
+import { SearchResult, SearchOptions, Folder } from '@/components/types';
 
 interface SearchSectionProps {
   apiBaseUrl: string;
@@ -22,6 +22,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [showSearchAdvanced, setShowSearchAdvanced] = useState(false);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [searchOptions, setSearchOptions] = useState<SearchOptions>({
     filters: '{}',
     k: 4,
@@ -38,10 +39,32 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
     }));
   };
   
-  // Reset search results when auth token or API URL changes
+  // Fetch folders and reset search results when auth token or API URL changes
   useEffect(() => {
     console.log('SearchSection: Token or API URL changed, resetting results');
     setSearchResults([]);
+    
+    // Fetch available folders
+    const fetchFolders = async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/folders`, {
+          headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
+        });
+        
+        if (response.ok) {
+          const folderData = await response.json();
+          setFolders(folderData);
+        } else {
+          console.error('Failed to fetch folders', response.statusText);
+        }
+      } catch (error) {
+        console.error('Error fetching folders:', error);
+      }
+    };
+    
+    if (authToken || apiBaseUrl.includes('localhost')) {
+      fetchFolders();
+    }
   }, [authToken, apiBaseUrl]);
 
   // Handle search
@@ -129,6 +152,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
               setShowSearchAdvanced={setShowSearchAdvanced}
               searchOptions={searchOptions}
               updateSearchOption={updateSearchOption}
+              folders={folders}
             />
           </div>
         </div>

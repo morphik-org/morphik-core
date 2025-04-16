@@ -18,6 +18,18 @@ export interface Document {
   additional_metadata: Record<string, unknown>;
 }
 
+export interface Folder {
+  id: string;
+  name: string;
+  description?: string;
+  owner: string;
+  document_ids: string[];
+  system_metadata: Record<string, unknown>;
+  access_control?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface SearchResult {
   document_id: string;
   chunk_number: number;
@@ -39,6 +51,7 @@ export interface SearchOptions {
   min_score: number;
   use_reranking: boolean;
   use_colpali: boolean;
+  folder_name?: string;
 }
 
 export interface QueryOptions extends SearchOptions {

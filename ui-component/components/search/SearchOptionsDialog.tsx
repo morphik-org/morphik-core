@@ -8,21 +8,24 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Settings } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-import { SearchOptions } from '@/components/types';
+import { SearchOptions, Folder } from '@/components/types';
 
 interface SearchOptionsDialogProps {
   showSearchAdvanced: boolean;
   setShowSearchAdvanced: (show: boolean) => void;
   searchOptions: SearchOptions;
   updateSearchOption: <K extends keyof SearchOptions>(key: K, value: SearchOptions[K]) => void;
+  folders: Folder[];
 }
 
 const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
   showSearchAdvanced,
   setShowSearchAdvanced,
   searchOptions,
-  updateSearchOption
+  updateSearchOption,
+  folders
 }) => {
   return (
     <Dialog open={showSearchAdvanced} onOpenChange={setShowSearchAdvanced}>
@@ -96,6 +99,29 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
               checked={searchOptions.use_colpali}
               onCheckedChange={(checked) => updateSearchOption('use_colpali', checked)}
             />
+          </div>
+
+          <div>
+            <Label htmlFor="folderName" className="block mb-2">Scope to Folder</Label>
+            <Select 
+              value={searchOptions.folder_name || "__none__"} 
+              onValueChange={(value) => updateSearchOption('folder_name', value === "__none__" ? undefined : value)}
+            >
+              <SelectTrigger className="w-full" id="folderName">
+                <SelectValue placeholder="Select a folder" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">All Folders</SelectItem>
+                {folders.map(folder => (
+                  <SelectItem key={folder.name} value={folder.name}>
+                    {folder.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground mt-1">
+              Limit search results to documents within a specific folder
+            </p>
           </div>
         </div>
         

@@ -245,7 +245,7 @@ export function Sidebar({
             onClick={() => onSectionChange("documents")}
           >
             <FileText className="h-4 w-4" />
-            {!isCollapsed && <span className="ml-2">Documents</span>}
+            {!isCollapsed && <span className="ml-2">Folders</span>}
           </Button>
           
           <Button
