@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     # API configuration
     API_DOMAIN: str = "api.morphik.ai"
     
+    # Redis configuration
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    
     # Telemetry configuration
     TELEMETRY_ENABLED: bool = True
     HONEYCOMB_ENABLED: bool = True
@@ -268,6 +272,14 @@ def get_settings() -> Settings:
         "MODE": config["morphik"].get("mode", "cloud"),  # Default to "cloud" mode
         "API_DOMAIN": config["morphik"].get("api_domain", "api.morphik.ai"),  # Default API domain
     }
+    
+    # load redis config
+    redis_config = {}
+    if "redis" in config:
+        redis_config = {
+            "REDIS_HOST": config["redis"].get("host", "localhost"),
+            "REDIS_PORT": int(config["redis"].get("port", 6379)),
+        }
 
     # load graph config
     graph_config = {
@@ -309,6 +321,7 @@ def get_settings() -> Settings:
         vector_store_config,
         rules_config,
         morphik_config,
+        redis_config,
         graph_config,
         telemetry_config,
         openai_config,

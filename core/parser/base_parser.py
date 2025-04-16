@@ -8,7 +8,7 @@ class BaseParser(ABC):
 
     @abstractmethod
     async def parse_file_to_text(
-        self, file: bytes, content_type: str, filename: str
+        self, file: bytes, filename: str
     ) -> Tuple[Dict[str, Any], str]:
         """
         Parse file content into text.

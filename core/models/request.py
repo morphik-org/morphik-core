@@ -95,6 +95,12 @@ class BatchIngestResponse(BaseModel):
     """Response model for batch ingestion"""
     documents: List[Document]
     errors: List[Dict[str, str]]
+    
+class BatchIngestJobResponse(BaseModel):
+    """Response model for batch ingestion jobs"""
+    status: str = Field(..., description="Status of the batch operation")
+    documents: List[Document] = Field(..., description="List of created documents with processing status")
+    timestamp: str = Field(..., description="ISO-formatted timestamp")
 
 
 class GenerateUriRequest(BaseModel):

@@ -340,3 +340,4 @@ zlib-state==0.1.9
 zstandard==0.23.0
 litellm==1.65.4.post1
 instructor==1.7.9
+arq==0.25.0
