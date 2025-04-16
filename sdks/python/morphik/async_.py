@@ -75,12 +75,12 @@ class AsyncFolder:
         """Returns the folder ID if available."""
         return self._id
         
-    async def get_info(self) -> "FolderInfo":
+    async def get_info(self) -> Dict[str, Any]:
         """
         Get detailed information about this folder.
         
         Returns:
-            FolderInfo: Detailed folder information
+            Dict[str, Any]: Detailed folder information
         """
         if not self._id:
             # If we don't have the ID, find the folder by name first
@@ -88,10 +88,11 @@ class AsyncFolder:
             for folder in folders:
                 if folder.name == self._name:
                     self._id = folder.id
-                    return folder
-            raise ValueError(f"Folder '{self._name}' not found")
+                    break
+            if not self._id:
+                raise ValueError(f"Folder '{self._name}' not found")
         
-        return await self._client.get_folder(self._id)
+        return await self._client._request("GET", f"folders/{self._id}")
         
 
     def signin(self, end_user_id: str) -> "AsyncUserScope":
@@ -1116,38 +1117,28 @@ class AsyncMorphik:
         """
         return AsyncFolder(self, name)
         
-    async def get_folder(self, folder_id: str) -> FolderInfo:
+    async def get_folder(self, folder_id: str) -> AsyncFolder:
         """
-        Get detailed information about a folder by ID.
+        Get a folder by ID.
 
         Args:
             folder_id: ID of the folder
 
         Returns:
-            FolderInfo: Folder information
+            AsyncFolder: A folder object for scoped operations
         """
         response = await self._request("GET", f"folders/{folder_id}")
-        return FolderInfo(**response)
+        return AsyncFolder(self, response["name"], folder_id)
         
-    async def list_folders(self) -> List[FolderInfo]:
-        """
-        List all folders the user has access to.
-
-        Returns:
-            List[FolderInfo]: List of folder information
-        """
-        response = await self._request("GET", "folders")
-        return [FolderInfo(**folder) for folder in response]
-        
-    async def get_folders(self) -> List[AsyncFolder]:
+    async def list_folders(self) -> List[AsyncFolder]:
         """
         List all folders the user has access to as AsyncFolder objects.
-        
+
         Returns:
             List[AsyncFolder]: List of AsyncFolder objects ready for operations
         """
-        folder_infos = await self.list_folders()
-        return [AsyncFolder(self, info.name, info.id) for info in folder_infos]
+        response = await self._request("GET", "folders")
+        return [AsyncFolder(self, folder["name"], folder["id"]) for folder in response]
         
     async def add_document_to_folder(self, folder_id: str, document_id: str) -> Dict[str, str]:
         """

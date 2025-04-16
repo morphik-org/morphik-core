@@ -77,12 +77,12 @@ class Folder:
         """Returns the folder ID if available."""
         return self._id
         
-    def get_info(self) -> "FolderInfo":
+    def get_info(self) -> Dict[str, Any]:
         """
         Get detailed information about this folder.
         
         Returns:
-            FolderInfo: Detailed folder information
+            Dict[str, Any]: Detailed folder information
         """
         if not self._id:
             # If we don't have the ID, find the folder by name first
@@ -90,10 +90,11 @@ class Folder:
             for folder in folders:
                 if folder.name == self._name:
                     self._id = folder.id
-                    return folder
-            raise ValueError(f"Folder '{self._name}' not found")
+                    break
+            if not self._id:
+                raise ValueError(f"Folder '{self._name}' not found")
         
-        return self._client.get_folder(self._id)
+        return self._client._request("GET", f"folders/{self._id}")
         
 
     def signin(self, end_user_id: str) -> "UserScope":
@@ -1209,38 +1210,28 @@ class Morphik:
         """
         return Folder(self, name)
         
-    def get_folder(self, folder_id: str) -> FolderInfo:
+    def get_folder(self, folder_id: str) -> Folder:
         """
-        Get detailed information about a folder by ID.
+        Get a folder by ID.
 
         Args:
             folder_id: ID of the folder
 
         Returns:
-            FolderInfo: Folder information
+            Folder: A folder object for scoped operations
         """
         response = self._request("GET", f"folders/{folder_id}")
-        return FolderInfo(**response)
-        
-    def list_folders(self) -> List[FolderInfo]:
-        """
-        List all folders the user has access to.
+        return Folder(self, response["name"], folder_id)
 
-        Returns:
-            List[FolderInfo]: List of folder information
-        """
-        response = self._request("GET", "folders")
-        return [FolderInfo(**folder) for folder in response]
-        
-    def get_folders(self) -> List[Folder]:
+    def list_folders(self) -> List[Folder]:
         """
         List all folders the user has access to as Folder objects.
         
         Returns:
             List[Folder]: List of Folder objects ready for operations
         """
-        folder_infos = self.list_folders()
-        return [Folder(self, info.name, info.id) for info in folder_infos]
+        folder_infos = self._request("GET", "folders")
+        return [Folder(self, info["name"], info["id"]) for info in folder_infos]
         
     def add_document_to_folder(self, folder_id: str, document_id: str) -> Dict[str, str]:
         """
