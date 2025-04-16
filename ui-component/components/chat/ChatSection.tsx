@@ -10,7 +10,7 @@ import { showAlert } from '@/components/ui/alert-system';
 import ChatOptionsDialog from './ChatOptionsDialog';
 import ChatMessageComponent from './ChatMessage';
 
-import { ChatMessage, QueryOptions } from '@/components/types';
+import { ChatMessage, QueryOptions, Folder } from '@/components/types';
 
 interface ChatSectionProps {
   apiBaseUrl: string;
@@ -23,6 +23,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
   const [loading, setLoading] = useState(false);
   const [showChatAdvanced, setShowChatAdvanced] = useState(false);
   const [availableGraphs, setAvailableGraphs] = useState<string[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [queryOptions, setQueryOptions] = useState<QueryOptions>({
     filters: '{}',
     k: 4,
@@ -59,13 +60,35 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
     }
   }, [apiBaseUrl, authToken]);
 
-  // Fetch graphs when auth token or API URL changes
+  // Fetch graphs and folders when auth token or API URL changes
   useEffect(() => {
     if (authToken) {
-      console.log('ChatSection: Fetching graphs with new auth token');
+      console.log('ChatSection: Fetching data with new auth token');
       // Clear current messages when auth changes
       setChatMessages([]);
       fetchGraphs();
+      
+      // Fetch available folders for dropdown
+      const fetchFolders = async () => {
+        try {
+          const response = await fetch(`${apiBaseUrl}/folders`, {
+            headers: {
+              'Authorization': authToken ? `Bearer ${authToken}` : ''
+            }
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Failed to fetch folders: ${response.statusText}`);
+          }
+          
+          const foldersData = await response.json();
+          setFolders(foldersData);
+        } catch (err) {
+          console.error('Error fetching folders:', err);
+        }
+      };
+      
+      fetchFolders();
     }
   }, [authToken, apiBaseUrl, fetchGraphs]);
 
@@ -86,7 +109,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
       const userMessage: ChatMessage = { role: 'user', content: chatQuery };
       setChatMessages(prev => [...prev, userMessage]);
       
-      // Prepare options with graph_name if it exists
+      // Prepare options with graph_name and folder_name if they exist
       const options = {
         filters: JSON.parse(queryOptions.filters || '{}'),
         k: queryOptions.k,
@@ -95,7 +118,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
         use_colpali: queryOptions.use_colpali,
         max_tokens: queryOptions.max_tokens,
         temperature: queryOptions.temperature,
-        graph_name: queryOptions.graph_name
+        graph_name: queryOptions.graph_name,
+        folder_name: queryOptions.folder_name
       };
       
       const response = await fetch(`${apiBaseUrl}/query`, {
@@ -193,6 +217,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
                 queryOptions={queryOptions}
                 updateQueryOption={updateQueryOption}
                 availableGraphs={availableGraphs}
+                folders={folders}
               />
             </div>
           </div>

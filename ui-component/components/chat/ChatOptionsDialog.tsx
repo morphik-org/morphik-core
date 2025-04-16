@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Settings } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-import { QueryOptions } from '@/components/types';
+import { QueryOptions, Folder } from '@/components/types';
 
 interface ChatOptionsDialogProps {
   showChatAdvanced: boolean;
@@ -18,6 +18,7 @@ interface ChatOptionsDialogProps {
   queryOptions: QueryOptions;
   updateQueryOption: <K extends keyof QueryOptions>(key: K, value: QueryOptions[K]) => void;
   availableGraphs: string[];
+  folders: Folder[];
 }
 
 const ChatOptionsDialog: React.FC<ChatOptionsDialogProps> = ({
@@ -25,7 +26,8 @@ const ChatOptionsDialog: React.FC<ChatOptionsDialogProps> = ({
   setShowChatAdvanced,
   queryOptions,
   updateQueryOption,
-  availableGraphs
+  availableGraphs,
+  folders
 }) => {
   return (
     <Dialog open={showChatAdvanced} onOpenChange={setShowChatAdvanced}>
@@ -150,6 +152,29 @@ const ChatOptionsDialog: React.FC<ChatOptionsDialogProps> = ({
             </Select>
             <p className="text-sm text-muted-foreground mt-1">
               Select a knowledge graph to enhance your query with structured relationships
+            </p>
+          </div>
+
+          <div>
+            <Label htmlFor="folderName" className="block mb-2">Scope to Folder</Label>
+            <Select 
+              value={queryOptions.folder_name || "__none__"} 
+              onValueChange={(value) => updateQueryOption('folder_name', value === "__none__" ? undefined : value)}
+            >
+              <SelectTrigger className="w-full" id="folderName">
+                <SelectValue placeholder="Select a folder" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">All Folders</SelectItem>
+                {folders.map(folder => (
+                  <SelectItem key={folder.name} value={folder.name}>
+                    {folder.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground mt-1">
+              Limit chat results to documents within a specific folder
             </p>
           </div>
         </div>
