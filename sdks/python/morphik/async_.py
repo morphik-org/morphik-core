@@ -1580,6 +1580,76 @@ class AsyncMorphik:
         doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
+        
+    async def get_document_status(self, document_id: str) -> Dict[str, Any]:
+        """
+        Get the current processing status of a document.
+        
+        Args:
+            document_id: ID of the document to check
+            
+        Returns:
+            Dict[str, Any]: Status information including current status, potential errors, and other metadata
+            
+        Example:
+            ```python
+            status = await db.get_document_status("doc_123")
+            if status["status"] == "completed":
+                print("Document processing complete")
+            elif status["status"] == "failed":
+                print(f"Processing failed: {status['error']}")
+            else:
+                print("Document still processing...")
+            ```
+        """
+        response = await self._request("GET", f"documents/{document_id}/status")
+        return response
+    
+    async def wait_for_document_completion(self, document_id: str, timeout_seconds=300, check_interval_seconds=2) -> Document:
+        """
+        Wait for a document's processing to complete.
+        
+        Args:
+            document_id: ID of the document to wait for
+            timeout_seconds: Maximum time to wait for completion (default: 300 seconds)
+            check_interval_seconds: Time between status checks (default: 2 seconds)
+            
+        Returns:
+            Document: Updated document with the latest status
+            
+        Raises:
+            TimeoutError: If processing doesn't complete within the timeout period
+            ValueError: If processing fails with an error
+            
+        Example:
+            ```python
+            # Upload a file and wait for processing to complete
+            doc = await db.ingest_file("large_document.pdf")
+            try:
+                completed_doc = await db.wait_for_document_completion(doc.external_id)
+                print(f"Processing complete! Document has {len(completed_doc.chunk_ids)} chunks")
+            except TimeoutError:
+                print("Processing is taking too long")
+            except ValueError as e:
+                print(f"Processing failed: {e}")
+            ```
+        """
+        import asyncio
+        start_time = asyncio.get_event_loop().time()
+        
+        while (asyncio.get_event_loop().time() - start_time) < timeout_seconds:
+            status = await self.get_document_status(document_id)
+            
+            if status["status"] == "completed":
+                # Get the full document now that it's complete
+                return await self.get_document(document_id)
+            elif status["status"] == "failed":
+                raise ValueError(f"Document processing failed: {status.get('error', 'Unknown error')}")
+            
+            # Wait before checking again
+            await asyncio.sleep(check_interval_seconds)
+        
+        raise TimeoutError(f"Document processing did not complete within {timeout_seconds} seconds")
 
     async def get_document_by_filename(self, filename: str) -> Document:
         """

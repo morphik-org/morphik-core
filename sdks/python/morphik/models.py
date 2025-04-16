@@ -24,6 +24,60 @@ class Document(BaseModel):
 
     # Client reference for update methods
     _client = None
+    
+    @property
+    def status(self) -> Dict[str, Any]:
+        """Get the latest processing status of the document from the API.
+
+        Returns:
+            Dict[str, Any]: Status information including current status, potential errors, and other metadata
+        """
+        if self._client is None:
+            raise ValueError(
+                "Document instance not connected to a client. Use a document returned from a Morphik client method."
+            )
+        return self._client.get_document_status(self.external_id)
+    
+    @property
+    def is_processing(self) -> bool:
+        """Check if the document is still being processed."""
+        return self.status.get("status") == "processing"
+    
+    @property
+    def is_ingested(self) -> bool:
+        """Check if the document has completed processing."""
+        return self.status.get("status") == "completed"
+    
+    @property
+    def is_failed(self) -> bool:
+        """Check if document processing has failed."""
+        return self.status.get("status") == "failed"
+    
+    @property
+    def error(self) -> Optional[str]:
+        """Get the error message if processing failed."""
+        status_info = self.status
+        return status_info.get("error") if status_info.get("status") == "failed" else None
+    
+    def wait_for_completion(self, timeout_seconds=300, check_interval_seconds=2):
+        """Wait for document processing to complete.
+        
+        Args:
+            timeout_seconds: Maximum time to wait for completion (default: 300 seconds)
+            check_interval_seconds: Time between status checks (default: 2 seconds)
+            
+        Returns:
+            Document: Updated document with the latest status
+            
+        Raises:
+            TimeoutError: If processing doesn't complete within the timeout period
+            ValueError: If processing fails with an error
+        """
+        if self._client is None:
+            raise ValueError(
+                "Document instance not connected to a client. Use a document returned from a Morphik client method."
+            )
+        return self._client.wait_for_document_completion(self.external_id, timeout_seconds, check_interval_seconds)
 
     def update_with_text(
         self,

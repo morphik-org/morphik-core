@@ -26,6 +26,8 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - LOG_LEVEL=DEBUG
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     volumes:
       - ./storage:/app/storage
       - ./logs:/app/logs
@@ -33,6 +35,8 @@ services:
       - huggingface_cache:/root/.cache/huggingface
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       config-check:
         condition: service_completed_successfully
@@ -43,6 +47,51 @@ services:
       - morphik-network
     env_file:
       - .env
+      
+  worker:
+    build: .
+    command: arq core.workers.ingestion_worker.WorkerSettings
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
+      - POSTGRES_URI=postgresql+asyncpg://morphik:morphik@postgres:5432/morphik
+      - PGPASSWORD=morphik
+      - LOG_LEVEL=DEBUG
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+      - ./morphik.toml:/app/morphik.toml
+      - huggingface_cache:/root/.cache/huggingface
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      config-check:
+        condition: service_completed_successfully
+      ollama:
+        condition: service_started
+        required: false
+    networks:
+      - morphik-network
+    env_file:
+      - .env
+      
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - morphik-network
 
   postgres:
     build:
@@ -87,4 +136,5 @@ networks:
 volumes:
   postgres_data:
   ollama_data:
-  huggingface_cache: 
+  huggingface_cache:
+  redis_data:
