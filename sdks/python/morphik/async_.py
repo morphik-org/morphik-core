@@ -172,9 +172,10 @@ class AsyncFolder:
 
             response = await self._client._request(
                 "POST",
-                f"ingest/file?use_colpali={str(use_colpali).lower()}",
+                "ingest/file",
                 data=form_data,
                 files=files,
+                params={"use_colpali": str(use_colpali).lower()},
             )
             doc = self._client._logic._parse_document_response(response)
             doc._client = self._client
@@ -215,7 +216,11 @@ class AsyncFolder:
             )
 
             response = await self._client._request(
-                "POST", "ingest/files", data=data, files=file_objects
+                "POST", 
+                "ingest/files", 
+                data=data, 
+                files=file_objects,
+                params={"use_colpali": str(use_colpali).lower()},
             )
 
             if response.get("errors"):
@@ -419,9 +424,10 @@ class AsyncFolder:
         Returns:
             List[Document]: List of document metadata for found documents
         """
-        request = self._client._logic._prepare_batch_get_documents_request(
-            document_ids, self._name, None
-        )
+        # API expects a dict with document_ids key
+        request = {"document_ids": document_ids}
+        if self._name:
+            request["folder_name"] = self._name
         response = await self._client._request("POST", "batch/documents", data=request)
         docs = self._client._logic._parse_document_list_response(response)
         for doc in docs:
@@ -701,7 +707,11 @@ class AsyncUserScope:
                 data["folder_name"] = self._folder_name
 
             response = await self._client._request(
-                "POST", "ingest/files", data=data, files=file_objects
+                "POST", 
+                "ingest/files", 
+                data=data, 
+                files=file_objects,
+                params={"use_colpali": str(use_colpali).lower()},
             )
 
             if response.get("errors"):
@@ -905,9 +915,12 @@ class AsyncUserScope:
         Returns:
             List[Document]: List of document metadata for found documents
         """
-        request = self._client._logic._prepare_batch_get_documents_request(
-            document_ids, self._folder_name, self._end_user_id
-        )
+        # API expects a dict with document_ids key
+        request = {"document_ids": document_ids}
+        if self._end_user_id:
+            request["end_user_id"] = self._end_user_id
+        if self._folder_name:
+            request["folder_name"] = self._folder_name
         response = await self._client._request("POST", "batch/documents", data=request)
         docs = self._client._logic._parse_document_list_response(response)
         for doc in docs:
@@ -1060,9 +1073,15 @@ class AsyncMorphik:
 
         # Configure request data based on type
         if files:
-            # Multipart form data for files
-            request_data = {"files": files, "data": data}
-            # Don't set Content-Type, let httpx handle it
+            # When uploading files, we need to make sure not to set Content-Type
+            # Remove Content-Type if it exists - httpx will set the correct multipart boundary
+            if "Content-Type" in headers:
+                del headers["Content-Type"]
+                
+            # For file uploads with form data, use form data (not json)
+            request_data = {"files": files}
+            if data:
+                request_data["data"] = data
         else:
             # JSON for everything else
             headers["Content-Type"] = "application/json"
@@ -1253,9 +1272,10 @@ class AsyncMorphik:
 
             response = await self._request(
                 "POST",
-                f"ingest/file?use_colpali={str(use_colpali).lower()}",
+                "ingest/file",
                 data=form_data,
                 files=files,
+                params={"use_colpali": str(use_colpali).lower()},
             )
             doc = self._logic._parse_document_response(response)
             doc._client = self
@@ -1298,7 +1318,13 @@ class AsyncMorphik:
                 metadata, rules, use_colpali, parallel, None, None
             )
 
-            response = await self._request("POST", "ingest/files", data=data, files=file_objects)
+            response = await self._request(
+                "POST", 
+                "ingest/files", 
+                data=data, 
+                files=file_objects,
+                params={"use_colpali": str(use_colpali).lower()},
+            )
 
             if response.get("errors"):
                 # Log errors but don't raise exception
@@ -1306,7 +1332,7 @@ class AsyncMorphik:
                     logger.error(f"Failed to ingest {error['filename']}: {error['error']}")
 
             # Parse the documents from the response
-            docs = [self._client._logic._parse_document_response(doc) for doc in response["documents"]]
+            docs = [self._logic._parse_document_response(doc) for doc in response["documents"]]
             for doc in docs:
                 doc._client = self
             return docs
@@ -2025,7 +2051,8 @@ class AsyncMorphik:
                 print(f"Document {doc.external_id}: {doc.metadata.get('title')}")
             ```
         """
-        request = self._logic._prepare_batch_get_documents_request(document_ids, None, None)
+        # API expects a dict with document_ids key, not a direct list
+        request = {"document_ids": document_ids}
         response = await self._request("POST", "batch/documents", data=request)
         docs = self._logic._parse_document_list_response(response)
         for doc in docs:

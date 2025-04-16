@@ -1,0 +1,11 @@
+This is a sample text file for testing the Morphik SDK.
+
+It contains information about artificial intelligence and machine learning.
+Large language models like Claude can process and understand natural language.
+
+These models are trained on vast amounts of text data and can generate
+human-like responses to various prompts and questions.
+
+The field of AI has seen rapid advancement in recent years, with models
+becoming increasingly capable of understanding context and generating
+coherent, relevant text.

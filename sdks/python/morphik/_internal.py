@@ -211,7 +211,7 @@ class _MorphikClientLogic:
         data = {
             "metadata": json.dumps(metadata or {}),
             "rules": json.dumps(converted_rules),
-            "use_colpali": str(use_colpali).lower() if use_colpali is not None else None,
+            # use_colpali is a query parameter, not a form field
             "parallel": str(parallel).lower(),
         }
 

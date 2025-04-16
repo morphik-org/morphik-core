@@ -1,0 +1,17 @@
+Retrieval Augmented Generation (RAG) combines the power of large language
+models with external knowledge retrieval systems.
+
+In a RAG system, when a query is received:
+1. Relevant documents are retrieved from a knowledge base
+2. These documents are provided as context to the language model
+3. The model generates a response informed by both its trained knowledge
+   and the retrieved information
+
+RAG has several advantages:
+- More accurate responses with up-to-date information
+- Ability to cite sources for generated content
+- Reduced hallucinations compared to standalone LLMs
+- More controllable knowledge base
+
+This approach is now widely used in enterprise AI applications where
+accuracy and source attribution are critical.
