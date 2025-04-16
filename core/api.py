@@ -13,7 +13,7 @@ import logging
 import arq
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.limits_utils import check_and_increment_limits
-from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, UpdateGraphRequest, BatchIngestResponse, BatchIngestJobResponse
+from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, UpdateGraphRequest, BatchIngestResponse
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.graph import Graph
@@ -147,19 +147,13 @@ async def initialize_redis_pool():
     # Log the Redis connection details
     logger.info(f"Connecting to Redis at {redis_host}:{redis_port}")
     
-    # Create Redis pool
-    try:
-        redis_settings = arq.connections.RedisSettings(
-            host=redis_host,
-            port=redis_port,
-            # Additional Redis connection settings can be added here as needed
-        )
-        redis_pool = await arq.create_pool(redis_settings)
-        logger.info("Redis connection pool initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize Redis connection pool: {str(e)}")
-        # Don't raise the exception - this allows the API to start without Redis
-        # but the /ingest/file endpoint will fail if Redis is not available
+    redis_settings = arq.connections.RedisSettings(
+        host=redis_host,
+        port=redis_port,
+    )
+
+    redis_pool = await arq.create_pool(redis_settings)
+    logger.info("Redis connection pool initialized successfully")
 
 @app.on_event("shutdown")
 async def close_redis_pool():
@@ -513,17 +507,18 @@ async def ingest_file(
         raise HTTPException(status_code=500, detail=f"Error queueing file ingestion: {str(e)}")
 
 
-@app.post("/ingest/files", response_model=BatchIngestJobResponse)
+@app.post("/ingest/files", response_model=BatchIngestResponse)
 async def batch_ingest_files(
     files: List[UploadFile] = File(...),
     metadata: str = Form("{}"),
     rules: str = Form("[]"),
     use_colpali: Optional[bool] = Form(None),
+    parallel: Optional[bool] = Form(True),
     folder_name: Optional[str] = Form(None),
     end_user_id: Optional[str] = Form(None),
     auth: AuthContext = Depends(verify_token),
     redis: arq.ArqRedis = Depends(get_redis_pool),
-) -> BatchIngestJobResponse:
+) -> BatchIngestResponse:
     """
     Batch ingest multiple files using the task queue.
     
@@ -540,10 +535,9 @@ async def batch_ingest_files(
         redis: Redis connection pool for background tasks
 
     Returns:
-        BatchIngestJobResponse containing:
-            - status: Status of the batch operation
+        BatchIngestResponse containing:
             - documents: List of created documents with processing status
-            - timestamp: ISO-formatted timestamp
+            - errors: List of errors that occurred during the batch operation
     """
     if not files:
         raise HTTPException(
@@ -683,10 +677,9 @@ async def batch_ingest_files(
                 created_documents.append(doc)
                 
             # Return information about created documents
-            return BatchIngestJobResponse(
-                status="processing",
+            return BatchIngestResponse(
                 documents=created_documents,
-                timestamp=datetime.now(UTC).isoformat()
+                errors=[]
             )
             
         except Exception as e:

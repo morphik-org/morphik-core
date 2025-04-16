@@ -485,7 +485,8 @@ class DocumentService:
         logger.debug(f"Successfully stored text document {doc.external_id}")
 
         return doc
-
+    
+    # TODO: check if it's unused. if so, remove it.
     async def ingest_file(
         self,
         file: UploadFile,
