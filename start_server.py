@@ -8,12 +8,40 @@ import subprocess
 import signal
 import os
 import atexit
+import socket
+import time
 from dotenv import load_dotenv
 from core.config import get_settings
 from core.logging_config import setup_logging
 
 # Global variable to store the worker process
 worker_process = None
+
+def wait_for_redis(host="localhost", port=6379, timeout=20):
+    """
+    Wait for Redis to become available.
+    
+    Args:
+        host: Redis host address
+        port: Redis port number
+        timeout: Maximum time to wait in seconds
+        
+    Returns:
+        True if Redis becomes available within the timeout, False otherwise
+    """
+    logging.info(f"Waiting for Redis to be available at {host}:{port}...")
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout:
+        try:
+            with socket.create_connection((host, port), timeout=1):
+                logging.info("Redis is accepting connections.")
+                return True
+        except (OSError, socket.error):
+            logging.debug(f"Redis not available yet, retrying... ({int(time.monotonic() - t0)}s elapsed)")
+            time.sleep(0.3)
+    
+    logging.error(f"Redis not reachable after {timeout}s")
+    return False
 
 def check_and_start_redis():
     """Check if the Redis container is running, start if necessary."""
@@ -265,6 +293,13 @@ def main():
 
     # Load settings (this will validate all required env vars)
     settings = get_settings()
+    
+    # Wait for Redis to be available (using environment variables or defaults)
+    redis_host = os.environ.get("REDIS_HOST", "127.0.0.1")
+    redis_port = int(os.environ.get("REDIS_PORT", "6379"))
+    if not wait_for_redis(host=redis_host, port=redis_port):
+        logging.error("Cannot start server without Redis. Please ensure Redis is running.")
+        sys.exit(1)
 
     # Start ARQ worker in the background
     start_arq_worker()
