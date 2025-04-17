@@ -196,6 +196,39 @@ const DocumentList: React.FC<DocumentListProps> = ({
   const [showAddColumnDialog, setShowAddColumnDialog] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
 
+  // Get unique metadata fields from all documents
+  const existingMetadataFields = React.useMemo(() => {
+    const fields = new Set<string>();
+    documents.forEach(doc => {
+      if (doc.metadata) {
+        Object.keys(doc.metadata).forEach(key => fields.add(key));
+      }
+    });
+    return Array.from(fields);
+  }, [documents]);
+
+  // Combine existing metadata fields with custom columns
+  const allColumns = React.useMemo(() => {
+    const metadataColumns: CustomColumn[] = existingMetadataFields.map(field => ({
+      name: field,
+      description: `Extracted ${field}`,
+      _type: 'string' // Default to string type for existing metadata
+    }));
+    
+    // Merge with custom columns, preferring custom column definitions if they exist
+    const mergedColumns = [...metadataColumns];
+    customColumns.forEach(customCol => {
+      const existingIndex = mergedColumns.findIndex(col => col.name === customCol.name);
+      if (existingIndex >= 0) {
+        mergedColumns[existingIndex] = customCol;
+      } else {
+        mergedColumns.push(customCol);
+      }
+    });
+    
+    return mergedColumns;
+  }, [existingMetadataFields, customColumns]);
+
   const handleAddColumn = (column: CustomColumn) => {
     setCustomColumns([...customColumns, column]);
   };
@@ -272,11 +305,10 @@ const DocumentList: React.FC<DocumentListProps> = ({
     }
   };
 
-  // Create a component for the header to reuse across all return statements
   const DocumentListHeader = () => (
     <div className="bg-muted border-b font-medium sticky top-0 z-10 relative">
       <div className="grid items-center w-full" style={{ 
-        gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px 140px ${customColumns.map(() => '140px').join(' ')}` 
+        gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px ${allColumns.map(() => '140px').join(' ')}` 
       }}>
         <div className="flex items-center justify-center p-3">
           <Checkbox
@@ -309,12 +341,10 @@ const DocumentList: React.FC<DocumentListProps> = ({
             </div>
           </div>
         </div>
-        <div className="text-sm font-semibold p-3">ID</div>
-        {customColumns.map((column) => (
+        {allColumns.map((column) => (
           <div key={column.name} className="text-sm font-semibold p-3">
             <div className="group relative inline-flex items-center">
               {column.name}
-              {/* <span className="ml-1 text-xs text-muted-foreground">({column._type})</span> */}
               <span className="ml-1 text-muted-foreground cursor-help">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
@@ -373,7 +403,6 @@ const DocumentList: React.FC<DocumentListProps> = ({
   return (
     <div className="border rounded-md overflow-hidden shadow-sm w-full">
       <DocumentListHeader />
-
       <ScrollArea className="h-[calc(100vh-220px)]">
         {documents.map((doc) => (
           <div 
@@ -385,7 +414,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
                 : 'hover:bg-muted/70'
             }`}
             style={{ 
-              gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px 140px ${customColumns.map(() => '140px').join(' ')}` 
+              gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px ${allColumns.map(() => '140px').join(' ')}` 
             }}
           >
             <div className="flex items-center justify-center p-3">
@@ -428,12 +457,10 @@ const DocumentList: React.FC<DocumentListProps> = ({
                 </div>
               )}
             </div>
-            <div className="font-mono text-xs opacity-80 p-3">
-              {doc.external_id.substring(0, 10)}...
-            </div>
-            {customColumns.map((column) => (
-              <div key={column.name} className="p-3">
-                {/* Empty cell for custom column */}
+            {/* Render metadata values for each column */}
+            {allColumns.map((column) => (
+              <div key={column.name} className="p-3 truncate" title={String(doc.metadata?.[column.name] ?? '')}>
+                {String(doc.metadata?.[column.name] ?? '-')}
               </div>
             ))}
           </div>
