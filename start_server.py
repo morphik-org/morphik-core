@@ -44,7 +44,16 @@ def wait_for_redis(host="localhost", port=6379, timeout=20):
     return False
 
 def check_and_start_redis():
-    """Check if the Redis container is running, start if necessary."""
+    """Check if the Redis service is available (via Docker or directly), and start the Docker container if necessary."""
+    redis_host = "localhost"  # or use any custom host if required
+    redis_port = 6379
+    
+    # Try to connect directly to Redis
+    if wait_for_redis(host=redis_host, port=redis_port):
+        logging.info("Redis is already running and available.")
+        return  # Return early if Redis is available
+
+    # If not available, check if the Docker container is running or stopped
     try:
         # Check if container exists and is running
         check_running_cmd = ["docker", "ps", "-q", "-f", "name=morphik-redis"]
@@ -78,6 +87,7 @@ def check_and_start_redis():
     except FileNotFoundError:
         logging.error("Docker command not found. Please ensure Docker is installed and in PATH.")
         sys.exit(1)
+
 
 
 def start_arq_worker():
