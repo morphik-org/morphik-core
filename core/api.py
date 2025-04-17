@@ -2141,38 +2141,36 @@ async def set_folder_rule(
                                         schema=rule_request.schema
                                     )
                                     
-                                    # Apply the rule
-                                    try:
-                                        extracted_metadata, _ = await rule.apply(doc_content)
-                                        logger.info(f"Successfully extracted metadata: {extracted_metadata}")
-                                    except Exception as rule_apply_error:
-                                        logger.error(f"Error applying rule: {rule_apply_error}")
-                                        logger.error(f"Will try a fallback approach for metadata extraction")
-                                        
-                                        # Fallback to direct extraction with a simpler prompt
-                                        from core.completion.litellm_completion import LiteLLMCompletionModel
-                                        fallback_prompt = f"""Extract the department name from this document:
+                                    # Apply the rule with retries
+                                    max_retries = 3
+                                    base_delay = 1  # seconds
+                                    extracted_metadata = None
+                                    last_error = None
 
-{doc_content[:2000]}  # Limit to first 2000 chars for prompt
-
-What US government department issued this document? Respond with ONLY the department name.
-"""
-                                        model_config = settings.REGISTERED_MODELS.get(settings.RULES_MODEL, {})
-                                        model = model_config.get("model_name", settings.COMPLETION_MODEL)
-                                        
-                                        fallback_completion = await completion_model.generate(
-                                            fallback_prompt,
-                                            max_tokens=50,
-                                            temperature=0
-                                        )
-                                        
-                                        department = fallback_completion.choices[0].message.content.strip()
-                                        logger.info(f"Fallback extraction returned department: {department}")
-                                        
-                                        # Create extracted metadata dictionary
-                                        extracted_metadata = {"Department": department}
+                                    for retry_count in range(max_retries):
+                                        try:
+                                            if retry_count > 0:
+                                                # Exponential backoff
+                                                delay = base_delay * (2 ** (retry_count - 1))
+                                                logger.info(f"Retry {retry_count}/{max_retries} after {delay}s delay")
+                                                await asyncio.sleep(delay)
+                                            
+                                            extracted_metadata, _ = await rule.apply(doc_content)
+                                            logger.info(f"Successfully extracted metadata on attempt {retry_count + 1}: {extracted_metadata}")
+                                            break  # Success, exit retry loop
+                                            
+                                        except Exception as rule_apply_error:
+                                            last_error = rule_apply_error
+                                            logger.warning(f"Metadata extraction attempt {retry_count + 1} failed: {rule_apply_error}")
+                                            if retry_count == max_retries - 1:  # Last attempt
+                                                logger.error(f"All {max_retries} metadata extraction attempts failed")
+                                                processing_results["errors"].append({
+                                                    "document_id": doc.external_id,
+                                                    "error": f"Failed to extract metadata after {max_retries} attempts: {str(last_error)}"
+                                                })
+                                                continue  # Skip to next document
                                     
-                                    # Update document metadata
+                                    # Update document metadata if extraction succeeded
                                     if extracted_metadata:
                                         # Merge new metadata with existing
                                         doc.metadata.update(extracted_metadata)
