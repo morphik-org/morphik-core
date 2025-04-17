@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Info, Folder as FolderIcon } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import { Document, Folder } from '@/components/types';
@@ -136,7 +136,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
           <div>
             <h3 className="font-medium mb-1">Folder</h3>
             <div className="flex items-center gap-2">
-              <FolderIcon className="h-4 w-4 text-muted-foreground" />
+              <img src="/icons/folder-icon.png" alt="Folder" className="w-4 h-4" />
               <Select
                 value={currentFolder || "_none"}
                 onValueChange={(value) => handleMoveToFolder(value === "_none" ? null : value)}
