@@ -1306,6 +1306,32 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         </div>
       )}
 
+      {/* Render the FolderList with header at all times when selectedFolder is not null */}
+      {selectedFolder !== null && (
+        <FolderList
+          folders={folders}
+          selectedFolder={selectedFolder}
+          setSelectedFolder={setSelectedFolder}
+          apiBaseUrl={effectiveApiUrl}
+          authToken={authToken}
+          refreshFolders={fetchFolders}
+          loading={foldersLoading}
+          refreshAction={handleRefresh}
+          selectedDocuments={selectedDocuments}
+          handleDeleteMultipleDocuments={handleDeleteMultipleDocuments}
+          uploadDialogComponent={
+            <UploadDialog
+              showUploadDialog={showUploadDialog}
+              setShowUploadDialog={setShowUploadDialog}
+              loading={loading}
+              onFileUpload={handleFileUpload}
+              onBatchFileUpload={handleBatchFileUpload}
+              onTextUpload={handleTextUpload}
+            />
+          }
+        />
+      )}
+      
       {documents.length === 0 && !loading && folders.length === 0 && !foldersLoading ? (
         <div className="text-center py-8 border border-dashed rounded-lg flex-1 flex items-center justify-center">
           <div>
@@ -1328,7 +1354,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
             <p className="text-muted-foreground">Loading documents...</p>
           </div>
         </div>
-      ) : (
+      ) : selectedFolder === null ? (
         <div className="flex flex-col gap-4 flex-1">
           <FolderList
             folders={folders}
@@ -1352,43 +1378,41 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               />
             }
           />
+        </div>
+      ) : (
+        <div className="flex flex-col md:flex-row gap-4 flex-1">
+          <div className={cn(
+            "w-full transition-all duration-300",
+            selectedDocument ? "md:w-2/3" : "md:w-full"
+          )}>
+            <DocumentList
+              documents={documents}
+              selectedDocument={selectedDocument}
+              selectedDocuments={selectedDocuments}
+              handleDocumentClick={handleDocumentClick}
+              handleCheckboxChange={handleCheckboxChange}
+              getSelectAllState={getSelectAllState}
+              setSelectedDocuments={setSelectedDocuments}
+              loading={loading}
+              apiBaseUrl={effectiveApiUrl}
+              authToken={authToken}
+              selectedFolder={selectedFolder}
+            />
+          </div>
           
-          {selectedFolder !== null && (
-            <div className="flex flex-col md:flex-row gap-4 flex-1">
-              <div className={cn(
-                "w-full transition-all duration-300",
-                selectedDocument ? "md:w-2/3" : "md:w-full"
-              )}>
-                <DocumentList
-                  documents={documents}
-                  selectedDocument={selectedDocument}
-                  selectedDocuments={selectedDocuments}
-                  handleDocumentClick={handleDocumentClick}
-                  handleCheckboxChange={handleCheckboxChange}
-                  getSelectAllState={getSelectAllState}
-                  setSelectedDocuments={setSelectedDocuments}
-                  loading={loading}
-                  apiBaseUrl={effectiveApiUrl}
-                  authToken={authToken}
-                  selectedFolder={selectedFolder}
-                />
-              </div>
-              
-              {selectedDocument && (
-                <div className="w-full md:w-1/3 animate-in slide-in-from-right duration-300">
-                  <DocumentDetail
-                    selectedDocument={selectedDocument}
-                    handleDeleteDocument={handleDeleteDocument}
-                    folders={folders}
-                    apiBaseUrl={effectiveApiUrl}
-                    authToken={authToken}
-                    refreshDocuments={fetchDocuments}
-                    refreshFolders={fetchFolders}
-                    loading={loading}
-                    onClose={() => setSelectedDocument(null)}
-                  />
-                </div>
-              )}
+          {selectedDocument && (
+            <div className="w-full md:w-1/3 animate-in slide-in-from-right duration-300">
+              <DocumentDetail
+                selectedDocument={selectedDocument}
+                handleDeleteDocument={handleDeleteDocument}
+                folders={folders}
+                apiBaseUrl={effectiveApiUrl}
+                authToken={authToken}
+                refreshDocuments={fetchDocuments}
+                refreshFolders={fetchFolders}
+                loading={loading}
+                onClose={() => setSelectedDocument(null)}
+              />
             </div>
           )}
         </div>

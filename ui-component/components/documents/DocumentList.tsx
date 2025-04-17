@@ -151,42 +151,49 @@ const DocumentList: React.FC<DocumentListProps> = ({
     }
   };
 
-  if (loading && !documents.length) {
-    return (
-      <div className="border rounded-md overflow-hidden shadow-sm p-8">
-        <div className="flex flex-col items-center justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
-          <p className="text-muted-foreground">Loading documents...</p>
+  // Create a component for the header to reuse across all return statements
+  const DocumentListHeader = () => (
+    <div className="bg-muted border-b font-medium sticky top-0 z-10 relative">
+      <div className="grid items-center w-full" style={{ 
+        gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px 140px ${customColumns.map(() => '140px').join(' ')}` 
+      }}>
+        <div className="flex items-center justify-center p-3">
+          <Checkbox
+            id="select-all-documents"
+            checked={getSelectAllState()}
+            onCheckedChange={(checked) => {
+              if (checked) {
+                setSelectedDocuments(documents.map(doc => doc.external_id));
+              } else {
+                setSelectedDocuments([]);
+              }
+            }}
+            aria-label="Select all documents"
+          />
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="border rounded-md overflow-hidden shadow-sm w-full">
-      <div className="bg-muted border-b font-medium sticky top-0 z-10 relative">
-        <div className="grid items-center w-full" style={{ 
-          gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px 140px ${customColumns.map(() => '140px').join(' ')}` 
-        }}>
-          <div className="flex items-center justify-center p-3">
-            <Checkbox
-              id="select-all-documents"
-              checked={getSelectAllState()}
-              onCheckedChange={(checked) => {
-                if (checked) {
-                  setSelectedDocuments(documents.map(doc => doc.external_id));
-                } else {
-                  setSelectedDocuments([]);
-                }
-              }}
-              aria-label="Select all documents"
-            />
+        <div className="text-sm font-semibold p-3">Filename</div>
+        <div className="text-sm font-semibold p-3">Type</div>
+        <div className="text-sm font-semibold p-3">
+          <div className="group relative inline-flex items-center">
+            Status
+            <span className="ml-1 text-muted-foreground cursor-help">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+            </span>
+            <div className="absolute left-0 top-6 hidden group-hover:block bg-background border text-foreground text-xs p-3 rounded-md w-64 z-[100] shadow-lg">
+              Documents with "Processing" status are queryable, but visual features like direct visual context will only be available after processing completes.
+            </div>
           </div>
-          <div className="text-sm font-semibold p-3">Filename</div>
-          <div className="text-sm font-semibold p-3">Type</div>
-          <div className="text-sm font-semibold p-3">
+        </div>
+        <div className="text-sm font-semibold p-3">ID</div>
+        {customColumns.map((column) => (
+          <div key={column.name} className="text-sm font-semibold p-3">
             <div className="group relative inline-flex items-center">
-              Status
+              {column.name}
+              {/* <span className="ml-1 text-xs text-muted-foreground">({column._type})</span> */}
               <span className="ml-1 text-muted-foreground cursor-help">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
@@ -195,123 +202,124 @@ const DocumentList: React.FC<DocumentListProps> = ({
                 </svg>
               </span>
               <div className="absolute left-0 top-6 hidden group-hover:block bg-background border text-foreground text-xs p-3 rounded-md w-64 z-[100] shadow-lg">
-                Documents with "Processing" status are queryable, but visual features like direct visual context will only be available after processing completes.
+                <p>{column.description}</p>
+                <p className="mt-1 font-medium">Type: {column._type}</p>
+                {column.schema && (
+                  <p className="mt-1 text-xs">Schema provided</p>
+                )}
               </div>
             </div>
           </div>
-          <div className="text-sm font-semibold p-3">ID</div>
-          {customColumns.map((column) => (
-            <div key={column.name} className="text-sm font-semibold p-3">
-              <div className="group relative inline-flex items-center">
-                {column.name}
-                {/* <span className="ml-1 text-xs text-muted-foreground">({column._type})</span> */}
-                <span className="ml-1 text-muted-foreground cursor-help">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="16" x2="12" y2="12"></line>
-                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                  </svg>
-                </span>
-                <div className="absolute left-0 top-6 hidden group-hover:block bg-background border text-foreground text-xs p-3 rounded-md w-64 z-[100] shadow-lg">
-                  <p>{column.description}</p>
-                  <p className="mt-1 font-medium">Type: {column._type}</p>
-                  {column.schema && (
-                    <p className="mt-1 text-xs">Schema provided</p>
-                  )}
+        ))}
+      </div>
+      
+      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+        <Dialog open={showAddColumnDialog} onOpenChange={setShowAddColumnDialog}>
+          <DialogTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full" title="Add column">
+              <Plus className="h-4 w-4" />
+              <span className="sr-only">Add column</span>
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add Custom Column</DialogTitle>
+              <DialogDescription>
+                Add a new column and specify its type and description.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <label htmlFor="column-name" className="text-sm font-medium">Column Name</label>
+                <Input
+                  id="column-name"
+                  placeholder="e.g. Author, Category, etc."
+                  value={newColumnName}
+                  onChange={(e) => setNewColumnName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="column-type" className="text-sm font-medium">Type</label>
+                <Select 
+                  value={newColumnType} 
+                  onValueChange={(value) => setNewColumnType(value as ColumnType)}
+                >
+                  <SelectTrigger id="column-type">
+                    <SelectValue placeholder="Select data type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="string">String</SelectItem>
+                    <SelectItem value="int">Integer</SelectItem>
+                    <SelectItem value="float">Float</SelectItem>
+                    <SelectItem value="bool">Boolean</SelectItem>
+                    <SelectItem value="Date">Date</SelectItem>
+                    <SelectItem value="json">JSON</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {newColumnType === 'json' && (
+                <div className="space-y-2">
+                  <label htmlFor="column-schema" className="text-sm font-medium">JSON Schema</label>
+                  <div className="flex items-center space-x-2">
+                    <Input
+                      id="column-schema-file"
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={handleSchemaFileChange}
+                    />
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => document.getElementById('column-schema-file')?.click()}
+                      className="flex items-center gap-2"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Upload Schema
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      {newColumnSchema ? 'Schema loaded' : 'No schema uploaded'}
+                    </span>
+                  </div>
                 </div>
+              )}
+              <div className="space-y-2">
+                <label htmlFor="column-description" className="text-sm font-medium">Description</label>
+                <Textarea
+                  id="column-description"
+                  placeholder="Describe in natural language what information this column should contain..."
+                  value={newColumnDescription}
+                  onChange={(e) => setNewColumnDescription(e.target.value)}
+                />
               </div>
             </div>
-          ))}
-        </div>
-        
-        <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-          <Dialog open={showAddColumnDialog} onOpenChange={setShowAddColumnDialog}>
-            <DialogTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full" title="Add column">
-                <Plus className="h-4 w-4" />
-                <span className="sr-only">Add column</span>
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add Custom Column</DialogTitle>
-                <DialogDescription>
-                  Add a new column and specify its type and description.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <label htmlFor="column-name" className="text-sm font-medium">Column Name</label>
-                  <Input
-                    id="column-name"
-                    placeholder="e.g. Author, Category, etc."
-                    value={newColumnName}
-                    onChange={(e) => setNewColumnName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="column-type" className="text-sm font-medium">Type</label>
-                  <Select 
-                    value={newColumnType} 
-                    onValueChange={(value) => setNewColumnType(value as ColumnType)}
-                  >
-                    <SelectTrigger id="column-type">
-                      <SelectValue placeholder="Select data type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="string">String</SelectItem>
-                      <SelectItem value="int">Integer</SelectItem>
-                      <SelectItem value="float">Float</SelectItem>
-                      <SelectItem value="bool">Boolean</SelectItem>
-                      <SelectItem value="Date">Date</SelectItem>
-                      <SelectItem value="json">JSON</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {newColumnType === 'json' && (
-                  <div className="space-y-2">
-                    <label htmlFor="column-schema" className="text-sm font-medium">JSON Schema</label>
-                    <div className="flex items-center space-x-2">
-                      <Input
-                        id="column-schema-file"
-                        type="file"
-                        accept=".json"
-                        className="hidden"
-                        onChange={handleSchemaFileChange}
-                      />
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        onClick={() => document.getElementById('column-schema-file')?.click()}
-                        className="flex items-center gap-2"
-                      >
-                        <Upload className="h-4 w-4" />
-                        Upload Schema
-                      </Button>
-                      <span className="text-sm text-muted-foreground">
-                        {newColumnSchema ? 'Schema loaded' : 'No schema uploaded'}
-                      </span>
-                    </div>
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <label htmlFor="column-description" className="text-sm font-medium">Description</label>
-                  <Textarea
-                    id="column-description"
-                    placeholder="Describe in natural language what information this column should contain..."
-                    value={newColumnDescription}
-                    onChange={(e) => setNewColumnDescription(e.target.value)}
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowAddColumnDialog(false)}>Cancel</Button>
-                <Button onClick={handleAddColumn}>Add Column</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAddColumnDialog(false)}>Cancel</Button>
+              <Button onClick={handleAddColumn}>Add Column</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </div>
+  );
+
+  if (loading && !documents.length) {
+    return (
+      <div className="border rounded-md overflow-hidden shadow-sm w-full">
+        <DocumentListHeader />
+        <div className="p-8">
+          <div className="flex flex-col items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
+            <p className="text-muted-foreground">Loading documents...</p>
+          </div>
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="border rounded-md overflow-hidden shadow-sm w-full">
+      <DocumentListHeader />
 
       <ScrollArea className="h-[calc(100vh-220px)]">
         {documents.map((doc) => (
