@@ -74,14 +74,28 @@ class MetadataExtractionRule(BaseRule):
         # Create the dynamic model
         DynamicMetadataModel = create_model("DynamicMetadataModel", **field_definitions)
 
+        # Create a more explicit instruction that clearly shows expected output format
+        schema_descriptions = []
+        for field_name, field_config in self.schema.items():
+            field_type = field_config.get("type", "string") if isinstance(field_config, dict) else "string"
+            description = field_config.get("description", "No description") if isinstance(field_config, dict) else field_config
+            schema_descriptions.append(f"- {field_name}: {description} (type: {field_type})")
+        
+        schema_text = "\n".join(schema_descriptions)
+
         prompt = f"""
         Extract metadata from the following text according to this schema:
-        {self.schema}
-
+        
+        {schema_text}
+        
         Text to extract from:
         {content}
-
-        Extract all relevant information that matches the schema.
+        
+        Follow these guidelines:
+        1. Extract all requested information as simple strings, numbers, or booleans (not as objects or nested structures)
+        2. If information is not present, indicate this with null instead of making something up
+        3. Answer directly with the requested information - don't include explanations or reasoning
+        4. Be concise but accurate in your extractions
         """
 
         # Get the model configuration from registered_models
@@ -93,7 +107,7 @@ class MetadataExtractionRule(BaseRule):
 
         system_message = {
             "role": "system",
-            "content": "You are a metadata extraction assistant. Extract structured metadata from text precisely following the provided schema.",
+            "content": "You are a metadata extraction assistant. Extract structured metadata from text precisely following the provided schema. Always return the metadata as direct values (strings, numbers, booleans), not as objects with additional properties.",
         }
 
         user_message = {"role": "user", "content": prompt}

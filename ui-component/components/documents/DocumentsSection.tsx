@@ -1187,160 +1187,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     }
   };
 
-  // Title based on selected folder
-  const sectionTitle = selectedFolder === null 
-    ? "Folders" 
-    : selectedFolder === "all" 
-      ? "All Documents" 
-      : `Folder: ${selectedFolder}`;
-
-  return (
-    <div className="flex-1 flex flex-col h-full">
-      <div className="flex justify-between items-center py-3 mb-4">
-        <div className="flex items-center gap-4">
-          <div>
-            <h2 className="text-2xl font-bold leading-tight">{sectionTitle}</h2>
-            <p className="text-muted-foreground">Manage your uploaded documents and view their metadata.</p>
-          </div>
-          {selectedDocuments.length > 0 && (
-            <Button 
-              variant="outline" 
-              onClick={handleDeleteMultipleDocuments} 
-              disabled={loading}
-              className="border-red-500 text-red-500 hover:bg-red-50 ml-4"
-            >
-              Delete {selectedDocuments.length} selected
-            </Button>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => {
-              console.log("Manual refresh triggered");
-              // Show a loading indicator
-              showAlert("Refreshing documents and folders...", {
-                type: 'info',
-                duration: 1500
-              });
-              
-              // First clear folder data to force a clean refresh
-              setLoading(true);
-              setFolders([]);
-              
-              // Create a new function to perform a truly fresh fetch
-              const performFreshFetch = async () => {
-                try {
-                  // First get fresh folder data from the server
-                  const folderResponse = await fetch(`${effectiveApiUrl}/folders`, {
-                    method: 'GET',
-                    headers: {
-                      ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-                    }
-                  });
-                  
-                  if (!folderResponse.ok) {
-                    throw new Error(`Failed to fetch folders: ${folderResponse.statusText}`);
-                  }
-                  
-                  // Get the fresh folder data
-                  const freshFolders = await folderResponse.json();
-                  console.log(`Refresh: Fetched ${freshFolders.length} folders with fresh data`);
-                  
-                  // Update folders state with fresh data
-                  setFolders(freshFolders);
-                  
-                  // Use our helper function to refresh documents with fresh folder data
-                  await refreshDocuments(freshFolders);
-                  
-                  // Show success message
-                  showAlert("Refresh completed successfully", {
-                    type: 'success',
-                    duration: 1500
-                  });
-                } catch (error) {
-                  console.error("Error during refresh:", error);
-                  showAlert(`Error refreshing: ${error instanceof Error ? error.message : 'Unknown error'}`, {
-                    type: 'error',
-                    duration: 3000
-                  });
-                } finally {
-                  setLoading(false);
-                }
-              };
-              
-              // Execute the fresh fetch
-              performFreshFetch();
-            }}
-            disabled={loading}
-            className="flex items-center"
-            title="Refresh documents"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
-              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
-              <path d="M21 3v5h-5"></path>
-              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
-              <path d="M8 16H3v5"></path>
-            </svg>
-            Refresh
-          </Button>
-          <UploadDialog
-            showUploadDialog={showUploadDialog}
-            setShowUploadDialog={setShowUploadDialog}
-            loading={loading}
-            onFileUpload={handleFileUpload}
-            onBatchFileUpload={handleBatchFileUpload}
-            onTextUpload={handleTextUpload}
-          />
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-4 flex-1">
-        <FolderList
-          folders={folders}
-          selectedFolder={selectedFolder}
-          setSelectedFolder={setSelectedFolder}
-          apiBaseUrl={effectiveApiUrl}
-          authToken={authToken}
-          refreshFolders={fetchFolders}
-          loading={foldersLoading}
-        />
-        
-        {selectedFolder !== null ? (
-          documents.length === 0 && !loading ? (
-            <div className="text-center py-8 border border-dashed rounded-lg flex-1 flex items-center justify-center">
-              <div>
-                <Upload className="mx-auto h-12 w-12 mb-2 text-muted-foreground" />
-                <p className="text-muted-foreground">No documents found in this folder. Upload a document.</p>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col md:flex-row gap-4 flex-1">
-              <div className="w-full md:w-2/3">
-                <DocumentList
-                  documents={documents}
-                  selectedDocument={selectedDocument}
-                  selectedDocuments={selectedDocuments}
-                  handleDocumentClick={handleDocumentClick}
-                  handleCheckboxChange={handleCheckboxChange}
-                  getSelectAllState={getSelectAllState}
-                  setSelectedDocuments={setSelectedDocuments}
-                  loading={loading}
-                />
-              </div>
-              
-              <div className="w-full md:w-1/3">
-                <DocumentDetail
-                  selectedDocument={selectedDocument}
-                  handleDeleteDocument={handleDeleteDocument}
-                  folders={folders}
-                  apiBaseUrl={effectiveApiUrl}
-                  authToken={authToken}
-                  refreshDocuments={fetchDocuments}
-                  refreshFolders={fetchFolders}
-                  loading={loading}
-                />
-              </div>
   // Function to trigger refresh
   const handleRefresh = () => {
     console.log("Manual refresh triggered");
@@ -1398,6 +1244,13 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     // Execute the fresh fetch
     performFreshFetch();
   };
+
+  // Title based on selected folder
+  const sectionTitle = selectedFolder === null 
+    ? "Folders" 
+    : selectedFolder === "all" 
+      ? "All Documents" 
+      : `Folder: ${selectedFolder}`;
 
   return (
     <div 
@@ -1562,9 +1415,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 onClose={() => setSelectedDocument(null)}
               />
             </div>
-          )
-        ) : null}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

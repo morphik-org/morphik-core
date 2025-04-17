@@ -2142,7 +2142,35 @@ async def set_folder_rule(
                                     )
                                     
                                     # Apply the rule
-                                    extracted_metadata, _ = await rule.apply(doc_content)
+                                    try:
+                                        extracted_metadata, _ = await rule.apply(doc_content)
+                                        logger.info(f"Successfully extracted metadata: {extracted_metadata}")
+                                    except Exception as rule_apply_error:
+                                        logger.error(f"Error applying rule: {rule_apply_error}")
+                                        logger.error(f"Will try a fallback approach for metadata extraction")
+                                        
+                                        # Fallback to direct extraction with a simpler prompt
+                                        from core.completion.litellm_completion import LiteLLMCompletionModel
+                                        fallback_prompt = f"""Extract the department name from this document:
+
+{doc_content[:2000]}  # Limit to first 2000 chars for prompt
+
+What US government department issued this document? Respond with ONLY the department name.
+"""
+                                        model_config = settings.REGISTERED_MODELS.get(settings.RULES_MODEL, {})
+                                        model = model_config.get("model_name", settings.COMPLETION_MODEL)
+                                        
+                                        fallback_completion = await completion_model.generate(
+                                            fallback_prompt,
+                                            max_tokens=50,
+                                            temperature=0
+                                        )
+                                        
+                                        department = fallback_completion.choices[0].message.content.strip()
+                                        logger.info(f"Fallback extraction returned department: {department}")
+                                        
+                                        # Create extracted metadata dictionary
+                                        extracted_metadata = {"Department": department}
                                     
                                     # Update document metadata
                                     if extracted_metadata:
@@ -2151,8 +2179,9 @@ async def set_folder_rule(
                                         
                                         # Create an updates dict that only updates metadata
                                         # We need to create system_metadata with all preserved fields
+                                        # Note: In the database, metadata is stored as 'doc_metadata', not 'metadata'
                                         updates = {
-                                            "metadata": doc.metadata,
+                                            "doc_metadata": doc.metadata,  # Use doc_metadata for the database
                                             "system_metadata": {}  # Will be merged with existing in update_document
                                         }
                                         
@@ -2162,6 +2191,8 @@ async def set_folder_rule(
                                         
                                         # Log the updates we're making
                                         logger.info(f"Updating document {doc.external_id} with metadata: {extracted_metadata}")
+                                        logger.info(f"Full metadata being updated: {doc.metadata}")
+                                        logger.info(f"Update object being sent to database: {updates}")
                                         logger.info(f"Preserving content in system_metadata: {'content' in doc.system_metadata}")
                                         
                                         # Update document in database

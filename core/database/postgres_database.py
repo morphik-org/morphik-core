@@ -602,9 +602,21 @@ class PostgresDatabase(BaseDatabase):
                 doc_model = result.scalar_one_or_none()
 
                 if doc_model:
+                    # Log what we're updating
+                    logger.info(f"Document update: updating fields {list(updates.keys())}")
+                    
+                    # Special handling for metadata/doc_metadata conversion
+                    if "metadata" in updates and "doc_metadata" not in updates:
+                        logger.info("Converting 'metadata' to 'doc_metadata' for database update")
+                        updates["doc_metadata"] = updates.pop("metadata")
+                    
+                    # Set all attributes
                     for key, value in updates.items():
+                        logger.info(f"Setting document attribute {key} = {value}")
                         setattr(doc_model, key, value)
+                        
                     await session.commit()
+                    logger.info(f"Document {document_id} updated successfully")
                     return True
                 return False
 
