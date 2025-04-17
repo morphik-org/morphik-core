@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     # Database configuration
     DATABASE_PROVIDER: Literal["postgres"]
     DATABASE_NAME: Optional[str] = None
+    # Database connection pool settings
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 30
+    DB_POOL_RECYCLE: int = 3600
+    DB_POOL_TIMEOUT: int = 10
+    DB_POOL_PRE_PING: bool = True
+    DB_MAX_RETRIES: int = 3
+    DB_RETRY_DELAY: float = 1.0
 
     # Embedding configuration
     EMBEDDING_PROVIDER: Literal["litellm"] = "litellm"
@@ -164,7 +172,18 @@ def get_settings() -> Settings:
     completion_config["COMPLETION_MODEL"] = config["completion"]["model"]
 
     # load database config
-    database_config = {"DATABASE_PROVIDER": config["database"]["provider"]}
+    database_config = {
+        "DATABASE_PROVIDER": config["database"]["provider"],
+        "DATABASE_NAME": config["database"].get("name", None),
+        # Add database connection pool settings
+        "DB_POOL_SIZE": config["database"].get("pool_size", 20),
+        "DB_MAX_OVERFLOW": config["database"].get("max_overflow", 30),
+        "DB_POOL_RECYCLE": config["database"].get("pool_recycle", 3600),
+        "DB_POOL_TIMEOUT": config["database"].get("pool_timeout", 10),
+        "DB_POOL_PRE_PING": config["database"].get("pool_pre_ping", True),
+        "DB_MAX_RETRIES": config["database"].get("max_retries", 3),
+        "DB_RETRY_DELAY": config["database"].get("retry_delay", 1.0),
+    }
     if database_config["DATABASE_PROVIDER"] != "postgres":
         prov = database_config["DATABASE_PROVIDER"]
         raise ValueError(f"Unknown database provider selected: '{prov}'")

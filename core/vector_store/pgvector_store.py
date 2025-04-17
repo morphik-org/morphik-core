@@ -83,15 +83,41 @@ class PGVectorStore(BaseVectorStore):
             max_retries: Maximum number of connection retry attempts
             retry_delay: Delay in seconds between retry attempts
         """
+        # Load settings from config
+        from core.config import get_settings
+        settings = get_settings()
+        
+        # Get database pool settings from config with defaults
+        pool_size = getattr(settings, "DB_POOL_SIZE", 20)
+        max_overflow = getattr(settings, "DB_MAX_OVERFLOW", 30)
+        pool_recycle = getattr(settings, "DB_POOL_RECYCLE", 3600)
+        pool_timeout = getattr(settings, "DB_POOL_TIMEOUT", 10)
+        pool_pre_ping = getattr(settings, "DB_POOL_PRE_PING", True)
+        
         # Use the URI exactly as provided without any modifications
         # This ensures compatibility with Supabase and other PostgreSQL providers
-        logger.info(f"Initializing database engine with provided URI")
+        logger.info(f"Initializing vector store database engine with pool size={pool_size}, "
+                   f"max_overflow={max_overflow}, pool_recycle={pool_recycle}s")
         
-        # Create the engine with the URI as is
-        self.engine = create_async_engine(uri)
+        # Create the engine with the URI as is and improved connection pool settings
+        self.engine = create_async_engine(
+            uri,
+            # Prevent connection timeouts by keeping connections alive
+            pool_pre_ping=pool_pre_ping,
+            # Increase pool size to handle concurrent operations
+            pool_size=pool_size,
+            # Maximum overflow connections allowed beyond pool_size
+            max_overflow=max_overflow,
+            # Keep connections in the pool for up to 60 minutes
+            pool_recycle=pool_recycle,
+            # Time to wait for a connection from the pool (10 seconds)
+            pool_timeout=pool_timeout,
+            # Echo SQL for debugging (set to False in production)
+            echo=False,
+        )
         
         # Log success
-        logger.info("Created database engine successfully")
+        logger.info("Created vector store database engine successfully")
         self.async_session = sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
         self.max_retries = max_retries
         self.retry_delay = retry_delay

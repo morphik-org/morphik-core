@@ -39,6 +39,7 @@ import pdf2image
 from PIL.Image import Image
 import tempfile
 import os
+import asyncio
 
 logger = logging.getLogger(__name__)
 IMAGE = {im.mime for im in IMAGE}
@@ -845,42 +846,120 @@ class DocumentService:
         auth: Optional[AuthContext] = None,
     ) -> List[str]:
         """Helper to store chunks and document"""
-        # Store chunks in vector store
-        success, result = await self.vector_store.store_embeddings(chunk_objects)
-        if not success:
-            raise Exception("Failed to store chunk embeddings")
+        # Add retry logic for vector store operations
+        max_retries = 3
+        retry_delay = 1.0
+        
+        # Store chunks in vector store with retry
+        attempt = 0
+        success = False
+        result = None
+        
+        while attempt < max_retries and not success:
+            try:
+                success, result = await self.vector_store.store_embeddings(chunk_objects)
+                if not success:
+                    raise Exception("Failed to store chunk embeddings")
+                break
+            except Exception as e:
+                attempt += 1
+                error_msg = str(e)
+                if "connection was closed" in error_msg or "ConnectionDoesNotExistError" in error_msg:
+                    if attempt < max_retries:
+                        logger.warning(f"Database connection error during embeddings storage (attempt {attempt}/{max_retries}): {error_msg}. Retrying in {retry_delay}s...")
+                        await asyncio.sleep(retry_delay)
+                        # Increase delay for next retry (exponential backoff)
+                        retry_delay *= 2
+                    else:
+                        logger.error(f"All database connection attempts failed after {max_retries} retries: {error_msg}")
+                        raise Exception("Failed to store chunk embeddings after multiple retries")
+                else:
+                    # For other exceptions, don't retry
+                    logger.error(f"Error storing embeddings: {error_msg}")
+                    raise
+        
         logger.debug("Stored chunk embeddings in vector store")
         doc.chunk_ids = result
 
         if use_colpali and self.colpali_vector_store and chunk_objects_multivector:
-            success, result_multivector = await self.colpali_vector_store.store_embeddings(
-                chunk_objects_multivector
-            )
-            if not success:
-                raise Exception("Failed to store multivector chunk embeddings")
+            # Reset retry variables for colpali storage
+            attempt = 0
+            retry_delay = 1.0
+            success = False
+            result_multivector = None
+            
+            while attempt < max_retries and not success:
+                try:
+                    success, result_multivector = await self.colpali_vector_store.store_embeddings(
+                        chunk_objects_multivector
+                    )
+                    if not success:
+                        raise Exception("Failed to store multivector chunk embeddings")
+                    break
+                except Exception as e:
+                    attempt += 1
+                    error_msg = str(e)
+                    if "connection was closed" in error_msg or "ConnectionDoesNotExistError" in error_msg:
+                        if attempt < max_retries:
+                            logger.warning(f"Database connection error during colpali embeddings storage (attempt {attempt}/{max_retries}): {error_msg}. Retrying in {retry_delay}s...")
+                            await asyncio.sleep(retry_delay)
+                            # Increase delay for next retry (exponential backoff)
+                            retry_delay *= 2
+                        else:
+                            logger.error(f"All colpali database connection attempts failed after {max_retries} retries: {error_msg}")
+                            raise Exception("Failed to store multivector chunk embeddings after multiple retries")
+                    else:
+                        # For other exceptions, don't retry
+                        logger.error(f"Error storing colpali embeddings: {error_msg}")
+                        raise
+            
             logger.debug("Stored multivector chunk embeddings in vector store")
             doc.chunk_ids += result_multivector
 
-        # Store document metadata
-        if is_update and auth:
-            # For updates, use update_document
-            updates = {
-                "chunk_ids": doc.chunk_ids,
-                "metadata": doc.metadata,
-                "system_metadata": doc.system_metadata,
-                "filename": doc.filename,
-                "content_type": doc.content_type,
-                "storage_info": doc.storage_info,
-            }
-            if not await self.db.update_document(doc.external_id, updates, auth):
-                raise Exception("Failed to update document metadata")
-            logger.debug("Updated document metadata in database")
-        else:
-            # For new documents, use store_document
-            if not await self.db.store_document(doc):
-                raise Exception("Failed to store document metadata")
-            logger.debug("Stored document metadata in database")
-            
+        # Store document metadata with retry
+        attempt = 0
+        retry_delay = 1.0
+        success = False
+        
+        while attempt < max_retries and not success:
+            try:
+                if is_update and auth:
+                    # For updates, use update_document
+                    updates = {
+                        "chunk_ids": doc.chunk_ids,
+                        "metadata": doc.metadata,
+                        "system_metadata": doc.system_metadata,
+                        "filename": doc.filename,
+                        "content_type": doc.content_type,
+                        "storage_info": doc.storage_info,
+                    }
+                    success = await self.db.update_document(doc.external_id, updates, auth)
+                    if not success:
+                        raise Exception("Failed to update document metadata")
+                else:
+                    # For new documents, use store_document
+                    success = await self.db.store_document(doc)
+                    if not success:
+                        raise Exception("Failed to store document metadata")
+                break
+            except Exception as e:
+                attempt += 1
+                error_msg = str(e)
+                if "connection was closed" in error_msg or "ConnectionDoesNotExistError" in error_msg:
+                    if attempt < max_retries:
+                        logger.warning(f"Database connection error during document metadata storage (attempt {attempt}/{max_retries}): {error_msg}. Retrying in {retry_delay}s...")
+                        await asyncio.sleep(retry_delay)
+                        # Increase delay for next retry (exponential backoff)
+                        retry_delay *= 2
+                    else:
+                        logger.error(f"All database connection attempts failed after {max_retries} retries: {error_msg}")
+                        raise Exception("Failed to store document metadata after multiple retries")
+                else:
+                    # For other exceptions, don't retry
+                    logger.error(f"Error storing document metadata: {error_msg}")
+                    raise
+        
+        logger.debug("Stored document metadata in database")
         logger.debug(f"Chunk IDs stored: {doc.chunk_ids}")
         return doc.chunk_ids
 

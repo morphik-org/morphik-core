@@ -287,10 +287,13 @@ class MultiVectorStore(BaseVectorStore):
 
         params = [binary_query_embeddings]
 
-        # Add document filter if needed
+        # Add document filter if needed with proper parameterization
         if doc_ids:
-            doc_ids_str = "', '".join(doc_ids)
-            query += f" WHERE document_id IN ('{doc_ids_str}')"
+            # Use placeholders for each document ID
+            placeholders = ', '.join(['%s'] * len(doc_ids))
+            query += f" WHERE document_id IN ({placeholders})"
+            # Add document IDs to params
+            params.extend(doc_ids)
 
         # Add ordering and limit
         query += " ORDER BY similarity DESC LIMIT %s"

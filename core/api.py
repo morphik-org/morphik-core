@@ -396,7 +396,9 @@ async def ingest_file(
         # Parse metadata and rules
         metadata_dict = json.loads(metadata)
         rules_list = json.loads(rules)
-        use_colpali = bool(use_colpali)
+        # Fix bool conversion: ensure string "false" is properly converted to False
+        def str2bool(v): return v if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}
+        use_colpali = str2bool(use_colpali)
         
         # Ensure user has write permission
         if "write" not in auth.permissions:
@@ -422,7 +424,7 @@ async def ingest_file(
                 content_type=file.content_type,
                 filename=file.filename,
                 metadata=metadata_dict,
-                owner={"type": auth.entity_type, "id": auth.entity_id},
+                owner={"type": auth.entity_type.value, "id": auth.entity_id},
                 access_control={
                     "readers": [auth.entity_id],
                     "writers": [auth.entity_id],
@@ -558,7 +560,9 @@ async def batch_ingest_files(
     try:
         metadata_value = json.loads(metadata)
         rules_list = json.loads(rules)
-        use_colpali = bool(use_colpali)
+        # Fix bool conversion: ensure string "false" is properly converted to False
+        def str2bool(v): return str(v).lower() in {"true", "1", "yes"}
+        use_colpali = str2bool(use_colpali)
         
         # Ensure user has write permission
         if "write" not in auth.permissions:
@@ -616,7 +620,7 @@ async def batch_ingest_files(
                     content_type=file.content_type,
                     filename=file.filename,
                     metadata=metadata_item,
-                    owner={"type": auth.entity_type, "id": auth.entity_id},
+                    owner={"type": auth.entity_type.value, "id": auth.entity_id},
                     access_control={
                         "readers": [auth.entity_id],
                         "writers": [auth.entity_id],
