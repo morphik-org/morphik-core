@@ -21,6 +21,7 @@ class Folder(BaseModel):
     access_control: Dict[str, List[str]] = Field(
         default_factory=lambda: {"readers": [], "writers": [], "admins": []}
     )
+    rules: List[Dict[str, Any]] = Field(default_factory=list)
 
     def __hash__(self):
         return hash(self.id)

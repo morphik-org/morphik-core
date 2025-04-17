@@ -81,6 +81,7 @@ class FolderModel(Base):
     document_ids = Column(JSONB, default=list)
     system_metadata = Column(JSONB, default=dict)
     access_control = Column(JSONB, default=dict)
+    rules = Column(JSONB, default=list)
 
     # Create indexes
     __table_args__ = (
@@ -219,6 +220,28 @@ class PostgresDatabase(BaseDatabase):
                     """
                     )
                 )
+                
+                # Add rules column to folders table if it doesn't exist
+                result = await conn.execute(
+                    text(
+                        """
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'folders' AND column_name = 'rules'
+                    """
+                    )
+                )
+                if not result.first():
+                    # Add rules column to folders table
+                    await conn.execute(
+                        text(
+                            """
+                        ALTER TABLE folders 
+                        ADD COLUMN IF NOT EXISTS rules JSONB DEFAULT '[]'::jsonb
+                        """
+                        )
+                    )
+                    logger.info("Added rules column to folders table")
                 
                 # Create indexes for folders table
                 await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_name ON folders (name);"))
@@ -557,14 +580,16 @@ class PostgresDatabase(BaseDatabase):
             # Update system metadata
             updates.setdefault("system_metadata", {})
             
-            # Preserve folder_name and end_user_id if not explicitly overridden
-            if existing_doc.system_metadata:
-                if "folder_name" in existing_doc.system_metadata and "folder_name" not in updates["system_metadata"]:
-                    updates["system_metadata"]["folder_name"] = existing_doc.system_metadata["folder_name"]
-                
-                if "end_user_id" in existing_doc.system_metadata and "end_user_id" not in updates["system_metadata"]:
-                    updates["system_metadata"]["end_user_id"] = existing_doc.system_metadata["end_user_id"]
+            # Preserve important system_metadata fields if not explicitly overridden
+            important_fields = ["folder_name", "end_user_id", "content", "status", "created_at"]
             
+            if existing_doc.system_metadata:
+                for field in important_fields:
+                    if field in existing_doc.system_metadata and field not in updates["system_metadata"]:
+                        updates["system_metadata"][field] = existing_doc.system_metadata[field]
+                        logger.debug(f"Preserving system_metadata[{field}] during document update")
+            
+            # Always update the updated_at timestamp
             updates["system_metadata"]["updated_at"] = datetime.now(UTC)
 
             # Serialize datetime objects to ISO format strings
@@ -1108,7 +1133,8 @@ class PostgresDatabase(BaseDatabase):
                     owner=folder_dict["owner"],
                     document_ids=folder_dict.get("document_ids", []),
                     system_metadata=folder_dict.get("system_metadata", {}),
-                    access_control=access_control
+                    access_control=access_control,
+                    rules=folder_dict.get("rules", [])
                 )
                 
                 session.add(folder_model)
@@ -1144,7 +1170,8 @@ class PostgresDatabase(BaseDatabase):
                     "owner": folder_model.owner,
                     "document_ids": folder_model.document_ids,
                     "system_metadata": folder_model.system_metadata,
-                    "access_control": folder_model.access_control
+                    "access_control": folder_model.access_control,
+                    "rules": folder_model.rules
                 }
                 
                 folder = Folder(**folder_dict)
@@ -1190,7 +1217,8 @@ class PostgresDatabase(BaseDatabase):
                             "owner": folder_row.owner,
                             "document_ids": folder_row.document_ids,
                             "system_metadata": folder_row.system_metadata,
-                            "access_control": folder_row.access_control
+                            "access_control": folder_row.access_control,
+                            "rules": folder_row.rules
                         }
                         
                         return Folder(**folder_dict)
@@ -1210,7 +1238,8 @@ class PostgresDatabase(BaseDatabase):
                         "owner": folder_model.owner,
                         "document_ids": folder_model.document_ids,
                         "system_metadata": folder_model.system_metadata,
-                        "access_control": folder_model.access_control
+                        "access_control": folder_model.access_control,
+                        "rules": folder_model.rules
                     }
                     
                     folder = Folder(**folder_dict)
@@ -1244,7 +1273,8 @@ class PostgresDatabase(BaseDatabase):
                         "owner": folder_model.owner,
                         "document_ids": folder_model.document_ids,
                         "system_metadata": folder_model.system_metadata,
-                        "access_control": folder_model.access_control
+                        "access_control": folder_model.access_control,
+                        "rules": folder_model.rules
                     }
                     
                     folder = Folder(**folder_dict)

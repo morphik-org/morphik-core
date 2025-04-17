@@ -5,7 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Wand2, Upload } from 'lucide-react';
@@ -22,6 +22,11 @@ interface CustomColumn {
   schema?: string;
 }
 
+interface MetadataExtractionRule {
+  type: "metadata_extraction";
+  schema: Record<string, any>;
+}
+
 interface DocumentListProps {
   documents: Document[];
   selectedDocument: Document | null;
@@ -35,6 +40,144 @@ interface DocumentListProps {
   authToken: string | null;
   selectedFolder?: string | null;
 }
+
+// Create a separate Column Dialog component to isolate its state
+const AddColumnDialog = ({ 
+  isOpen, 
+  onClose,
+  onAddColumn
+}: { 
+  isOpen: boolean; 
+  onClose: () => void;
+  onAddColumn: (column: CustomColumn) => void;
+}) => {
+  const [localColumnName, setLocalColumnName] = useState('');
+  const [localColumnDescription, setLocalColumnDescription] = useState('');
+  const [localColumnType, setLocalColumnType] = useState<ColumnType>('string');
+  const [localColumnSchema, setLocalColumnSchema] = useState<string>('');
+
+  const handleLocalSchemaFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setLocalColumnSchema(event.target?.result as string);
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (localColumnName.trim()) {
+      const column: CustomColumn = {
+        name: localColumnName.trim(),
+        description: localColumnDescription.trim(),
+        _type: localColumnType
+      };
+      
+      if (localColumnType === 'json' && localColumnSchema) {
+        column.schema = localColumnSchema;
+      }
+      
+      onAddColumn(column);
+      
+      // Reset form values
+      setLocalColumnName('');
+      setLocalColumnDescription('');
+      setLocalColumnType('string');
+      setLocalColumnSchema('');
+      
+      // Close the dialog
+      onClose();
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Add Custom Column</DialogTitle>
+            <DialogDescription>
+              Add a new column and specify its type and description.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label htmlFor="column-name" className="text-sm font-medium">Column Name</label>
+              <Input
+                id="column-name"
+                placeholder="e.g. Author, Category, etc."
+                value={localColumnName}
+                onChange={(e) => setLocalColumnName(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="column-type" className="text-sm font-medium">Type</label>
+              <Select 
+                value={localColumnType} 
+                onValueChange={(value) => setLocalColumnType(value as ColumnType)}
+              >
+                <SelectTrigger id="column-type">
+                  <SelectValue placeholder="Select data type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="string">String</SelectItem>
+                  <SelectItem value="int">Integer</SelectItem>
+                  <SelectItem value="float">Float</SelectItem>
+                  <SelectItem value="bool">Boolean</SelectItem>
+                  <SelectItem value="Date">Date</SelectItem>
+                  <SelectItem value="json">JSON</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {localColumnType === 'json' && (
+              <div className="space-y-2">
+                <label htmlFor="column-schema" className="text-sm font-medium">JSON Schema</label>
+                <div className="flex items-center space-x-2">
+                  <Input
+                    id="column-schema-file"
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={handleLocalSchemaFileChange}
+                  />
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => document.getElementById('column-schema-file')?.click()}
+                    className="flex items-center gap-2"
+                  >
+                    <Upload className="h-4 w-4" />
+                    Upload Schema
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    {localColumnSchema ? 'Schema loaded' : 'No schema uploaded'}
+                  </span>
+                </div>
+              </div>
+            )}
+            <div className="space-y-2">
+              <label htmlFor="column-description" className="text-sm font-medium">Description</label>
+              <Textarea
+                id="column-description"
+                placeholder="Describe in natural language what information this column should contain..."
+                value={localColumnDescription}
+                onChange={(e) => setLocalColumnDescription(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit">Add Column</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
 
 const DocumentList: React.FC<DocumentListProps> = ({
   documents,
@@ -51,42 +194,10 @@ const DocumentList: React.FC<DocumentListProps> = ({
 }) => {
   const [customColumns, setCustomColumns] = useState<CustomColumn[]>([]);
   const [showAddColumnDialog, setShowAddColumnDialog] = useState(false);
-  const [newColumnName, setNewColumnName] = useState('');
-  const [newColumnDescription, setNewColumnDescription] = useState('');
-  const [newColumnType, setNewColumnType] = useState<ColumnType>('string');
-  const [newColumnSchema, setNewColumnSchema] = useState<string>('');
   const [isExtracting, setIsExtracting] = useState(false);
 
-  const handleAddColumn = () => {
-    if (newColumnName.trim()) {
-      const column: CustomColumn = {
-        name: newColumnName.trim(),
-        description: newColumnDescription.trim(),
-        _type: newColumnType
-      };
-      
-      if (newColumnType === 'json' && newColumnSchema) {
-        column.schema = newColumnSchema;
-      }
-      
-      setCustomColumns([...customColumns, column]);
-      setNewColumnName('');
-      setNewColumnDescription('');
-      setNewColumnType('string');
-      setNewColumnSchema('');
-      setShowAddColumnDialog(false);
-    }
-  };
-
-  const handleSchemaFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setNewColumnSchema(event.target?.result as string);
-      };
-      reader.readAsText(file);
-    }
+  const handleAddColumn = (column: CustomColumn) => {
+    setCustomColumns([...customColumns, column]);
   };
 
   // Handle data extraction
@@ -117,35 +228,45 @@ const DocumentList: React.FC<DocumentListProps> = ({
         throw new Error(`Folder "${selectedFolder}" not found`);
       }
       
-      // Now make the extraction request
-      const extractResponse = await fetch(`${apiBaseUrl}/folders/${currentFolder.id}/extract`, {
+      // Convert columns to metadata extraction rule
+      const rule: MetadataExtractionRule = {
+        type: "metadata_extraction",
+        schema: Object.fromEntries(
+          customColumns.map(col => [
+            col.name,
+            {
+              type: col._type,
+              description: col.description,
+              ...(col.schema ? { schema: JSON.parse(col.schema) } : {})
+            }
+          ])
+        )
+      };
+      
+      // Set the rule
+      const setRuleResponse = await fetch(`${apiBaseUrl}/folders/${currentFolder.id}/set_rule`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
         },
         body: JSON.stringify({
-          columns: customColumns.map(col => ({
-            name: col.name,
-            description: col.description,
-            _type: col._type,
-            schema: col.schema
-          }))
+          rules: [rule]
         })
       });
       
-      if (!extractResponse.ok) {
-        throw new Error(`Extraction failed: ${extractResponse.statusText}`);
+      if (!setRuleResponse.ok) {
+        throw new Error(`Failed to set rule: ${setRuleResponse.statusText}`);
       }
       
-      const result = await extractResponse.json();
-      console.log("Extraction request successful:", result);
+      const result = await setRuleResponse.json();
+      console.log("Rule set successfully:", result);
       
-      // Show success message or update UI as needed
-      alert("Extraction request submitted successfully!");
+      // Show success message
+      alert("Extraction rule set successfully!");
     } catch (error) {
-      console.error("Error during extraction:", error);
-      alert(`Extraction failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("Error setting extraction rule:", error);
+      alert(`Failed to set extraction rule: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsExtracting(false);
     }
@@ -214,91 +335,23 @@ const DocumentList: React.FC<DocumentListProps> = ({
       </div>
       
       <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-        <Dialog open={showAddColumnDialog} onOpenChange={setShowAddColumnDialog}>
-          <DialogTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full" title="Add column">
-              <Plus className="h-4 w-4" />
-              <span className="sr-only">Add column</span>
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Custom Column</DialogTitle>
-              <DialogDescription>
-                Add a new column and specify its type and description.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <label htmlFor="column-name" className="text-sm font-medium">Column Name</label>
-                <Input
-                  id="column-name"
-                  placeholder="e.g. Author, Category, etc."
-                  value={newColumnName}
-                  onChange={(e) => setNewColumnName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="column-type" className="text-sm font-medium">Type</label>
-                <Select 
-                  value={newColumnType} 
-                  onValueChange={(value) => setNewColumnType(value as ColumnType)}
-                >
-                  <SelectTrigger id="column-type">
-                    <SelectValue placeholder="Select data type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="string">String</SelectItem>
-                    <SelectItem value="int">Integer</SelectItem>
-                    <SelectItem value="float">Float</SelectItem>
-                    <SelectItem value="bool">Boolean</SelectItem>
-                    <SelectItem value="Date">Date</SelectItem>
-                    <SelectItem value="json">JSON</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {newColumnType === 'json' && (
-                <div className="space-y-2">
-                  <label htmlFor="column-schema" className="text-sm font-medium">JSON Schema</label>
-                  <div className="flex items-center space-x-2">
-                    <Input
-                      id="column-schema-file"
-                      type="file"
-                      accept=".json"
-                      className="hidden"
-                      onChange={handleSchemaFileChange}
-                    />
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      onClick={() => document.getElementById('column-schema-file')?.click()}
-                      className="flex items-center gap-2"
-                    >
-                      <Upload className="h-4 w-4" />
-                      Upload Schema
-                    </Button>
-                    <span className="text-sm text-muted-foreground">
-                      {newColumnSchema ? 'Schema loaded' : 'No schema uploaded'}
-                    </span>
-                  </div>
-                </div>
-              )}
-              <div className="space-y-2">
-                <label htmlFor="column-description" className="text-sm font-medium">Description</label>
-                <Textarea
-                  id="column-description"
-                  placeholder="Describe in natural language what information this column should contain..."
-                  value={newColumnDescription}
-                  onChange={(e) => setNewColumnDescription(e.target.value)}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowAddColumnDialog(false)}>Cancel</Button>
-              <Button onClick={handleAddColumn}>Add Column</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          className="h-6 w-6 rounded-full" 
+          title="Add column"
+          onClick={() => setShowAddColumnDialog(true)}
+        >
+          <Plus className="h-4 w-4" />
+          <span className="sr-only">Add column</span>
+        </Button>
+        
+        {/* Render the dialog separately */}
+        <AddColumnDialog 
+          isOpen={showAddColumnDialog}
+          onClose={() => setShowAddColumnDialog(false)}
+          onAddColumn={handleAddColumn}
+        />
       </div>
     </div>
   );
