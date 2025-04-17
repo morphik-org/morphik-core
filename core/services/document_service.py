@@ -39,6 +39,7 @@ import pdf2image
 from PIL.Image import Image
 import tempfile
 import os
+import asyncio
 
 logger = logging.getLogger(__name__)
 IMAGE = {im.mime for im in IMAGE}
@@ -845,43 +846,175 @@ class DocumentService:
         auth: Optional[AuthContext] = None,
     ) -> List[str]:
         """Helper to store chunks and document"""
-        # Store chunks in vector store
-        success, result = await self.vector_store.store_embeddings(chunk_objects)
-        if not success:
-            raise Exception("Failed to store chunk embeddings")
-        logger.debug("Stored chunk embeddings in vector store")
+        logger.info(f"[TRACE-DB] _store_chunks_and_doc called for document {doc.external_id} with {len(chunk_objects)} chunks")
+        # Add retry logic for vector store operations
+        max_retries = 3
+        retry_delay = 1.0
+        
+        # Store chunks in vector store with retry
+        attempt = 0
+        success = False
+        result = None
+        
+        while attempt < max_retries and not success:
+            try:
+                logger.info(f"[TRACE-DB] Attempt {attempt+1}/{max_retries} to store embeddings for document {doc.external_id}")
+                success, result = await self.vector_store.store_embeddings(chunk_objects)
+                if not success:
+                    logger.error(f"[TRACE-DB] Failed to store embeddings on attempt {attempt+1} for document {doc.external_id} - vector store returned success=False")
+                    raise Exception(f"Failed to store chunk embeddings for document {doc.external_id}")
+                logger.info(f"[TRACE-DB] Successfully stored {len(result)} embeddings for document {doc.external_id}")
+                break
+            except Exception as e:
+                attempt += 1
+                error_msg = str(e)
+                logger.error(f"[TRACE-DB] Exception during vector store operation on attempt {attempt} for document {doc.external_id}: {error_msg}")
+                
+                # Check connection error specifics
+                if "connection was closed" in error_msg or "ConnectionDoesNotExistError" in error_msg:
+                    if attempt < max_retries:
+                        logger.warning(f"[TRACE-DB] Database connection error during embeddings storage (attempt {attempt}/{max_retries}) for document {doc.external_id}: {error_msg}. Retrying in {retry_delay}s...")
+                        await asyncio.sleep(retry_delay)
+                        # Increase delay for next retry (exponential backoff)
+                        retry_delay *= 2
+                    else:
+                        logger.error(f"[TRACE-DB] All database connection attempts failed after {max_retries} retries for document {doc.external_id}: {error_msg}")
+                        # Log pool stats if available
+                        try:
+                            if hasattr(self.vector_store, 'engine') and hasattr(self.vector_store.engine, '_pool'):
+                                pool = self.vector_store.engine._pool
+                                logger.error(f"[TRACE-DB] Pool stats for vector store: size={pool.size}, overflow={pool.overflow}, checkedin={pool.checkedin}, checkedout={pool.checkedout}")
+                        except Exception as pool_err:
+                            logger.error(f"[TRACE-DB] Error getting pool stats: {str(pool_err)}")
+                        
+                        raise Exception(f"Failed to store chunk embeddings after multiple retries for document {doc.external_id}")
+                else:
+                    # For other exceptions, don't retry
+                    logger.error(f"[TRACE-DB] Non-connection error storing embeddings for document {doc.external_id}: {error_msg}")
+                    # Log the full traceback
+                    import traceback
+                    logger.error(f"[TRACE-DB] Full error traceback: {traceback.format_exc()}")
+                    raise
+        
+        logger.debug(f"[TRACE-DB] Stored chunk embeddings in vector store for document {doc.external_id}")
         doc.chunk_ids = result
 
         if use_colpali and self.colpali_vector_store and chunk_objects_multivector:
-            success, result_multivector = await self.colpali_vector_store.store_embeddings(
-                chunk_objects_multivector
-            )
-            if not success:
-                raise Exception("Failed to store multivector chunk embeddings")
-            logger.debug("Stored multivector chunk embeddings in vector store")
+            logger.info(f"[TRACE-DB] Starting colpali vector storage for document {doc.external_id} with {len(chunk_objects_multivector)} chunks")
+            # Reset retry variables for colpali storage
+            attempt = 0
+            retry_delay = 1.0
+            success = False
+            result_multivector = None
+            
+            while attempt < max_retries and not success:
+                try:
+                    logger.info(f"[TRACE-DB] Attempt {attempt+1}/{max_retries} to store colpali embeddings for document {doc.external_id}")
+                    success, result_multivector = await self.colpali_vector_store.store_embeddings(
+                        chunk_objects_multivector
+                    )
+                    if not success:
+                        logger.error(f"[TRACE-DB] Failed to store colpali embeddings on attempt {attempt+1} for document {doc.external_id} - vector store returned success=False")
+                        raise Exception(f"Failed to store multivector chunk embeddings for document {doc.external_id}")
+                    logger.info(f"[TRACE-DB] Successfully stored {len(result_multivector)} colpali embeddings for document {doc.external_id}")
+                    break
+                except Exception as e:
+                    attempt += 1
+                    error_msg = str(e)
+                    logger.error(f"[TRACE-DB] Exception during colpali vector store operation on attempt {attempt} for document {doc.external_id}: {error_msg}")
+                    
+                    if "connection was closed" in error_msg or "ConnectionDoesNotExistError" in error_msg:
+                        if attempt < max_retries:
+                            logger.warning(f"[TRACE-DB] Database connection error during colpali embeddings storage (attempt {attempt}/{max_retries}) for document {doc.external_id}: {error_msg}. Retrying in {retry_delay}s...")
+                            await asyncio.sleep(retry_delay)
+                            # Increase delay for next retry (exponential backoff)
+                            retry_delay *= 2
+                        else:
+                            logger.error(f"[TRACE-DB] All colpali database connection attempts failed after {max_retries} retries for document {doc.external_id}: {error_msg}")
+                            # Log pool stats if available
+                            try:
+                                if hasattr(self.colpali_vector_store, 'engine') and hasattr(self.colpali_vector_store.engine, '_pool'):
+                                    pool = self.colpali_vector_store.engine._pool
+                                    logger.error(f"[TRACE-DB] Pool stats for colpali vector store: size={pool.size}, overflow={pool.overflow}, checkedin={pool.checkedin}, checkedout={pool.checkedout}")
+                            except Exception as pool_err:
+                                logger.error(f"[TRACE-DB] Error getting colpali pool stats: {str(pool_err)}")
+                            
+                            raise Exception(f"Failed to store multivector chunk embeddings after multiple retries for document {doc.external_id}")
+                    else:
+                        # For other exceptions, don't retry
+                        logger.error(f"[TRACE-DB] Non-connection error storing colpali embeddings for document {doc.external_id}: {error_msg}")
+                        # Log the full traceback
+                        import traceback
+                        logger.error(f"[TRACE-DB] Full error traceback: {traceback.format_exc()}")
+                        raise
+            
+            logger.debug(f"[TRACE-DB] Stored multivector chunk embeddings in colpali vector store for document {doc.external_id}")
             doc.chunk_ids += result_multivector
 
-        # Store document metadata
-        if is_update and auth:
-            # For updates, use update_document
-            updates = {
-                "chunk_ids": doc.chunk_ids,
-                "metadata": doc.metadata,
-                "system_metadata": doc.system_metadata,
-                "filename": doc.filename,
-                "content_type": doc.content_type,
-                "storage_info": doc.storage_info,
-            }
-            if not await self.db.update_document(doc.external_id, updates, auth):
-                raise Exception("Failed to update document metadata")
-            logger.debug("Updated document metadata in database")
-        else:
-            # For new documents, use store_document
-            if not await self.db.store_document(doc):
-                raise Exception("Failed to store document metadata")
-            logger.debug("Stored document metadata in database")
-            
-        logger.debug(f"Chunk IDs stored: {doc.chunk_ids}")
+        # Store document metadata with retry
+        attempt = 0
+        retry_delay = 1.0
+        success = False
+        
+        logger.info(f"[TRACE-DB] Starting document metadata storage for document {doc.external_id}")
+        while attempt < max_retries and not success:
+            try:
+                if is_update and auth:
+                    # For updates, use update_document
+                    updates = {
+                        "chunk_ids": doc.chunk_ids,
+                        "metadata": doc.metadata,
+                        "system_metadata": doc.system_metadata,
+                        "filename": doc.filename,
+                        "content_type": doc.content_type,
+                        "storage_info": doc.storage_info,
+                    }
+                    logger.info(f"[TRACE-DB] Attempt {attempt+1}/{max_retries} to update document metadata for document {doc.external_id}")
+                    success = await self.db.update_document(doc.external_id, updates, auth)
+                    if not success:
+                        logger.error(f"[TRACE-DB] Failed to update document metadata on attempt {attempt+1} for document {doc.external_id} - database returned success=False")
+                        raise Exception(f"Failed to update document metadata for document {doc.external_id}")
+                else:
+                    # For new documents, use store_document
+                    logger.info(f"[TRACE-DB] Attempt {attempt+1}/{max_retries} to store new document metadata for document {doc.external_id}")
+                    success = await self.db.store_document(doc)
+                    if not success:
+                        logger.error(f"[TRACE-DB] Failed to store document metadata on attempt {attempt+1} for document {doc.external_id} - database returned success=False")
+                        raise Exception(f"Failed to store document metadata for document {doc.external_id}")
+                logger.info(f"[TRACE-DB] Successfully stored/updated metadata for document {doc.external_id}")
+                break
+            except Exception as e:
+                attempt += 1
+                error_msg = str(e)
+                logger.error(f"[TRACE-DB] Exception during document metadata storage on attempt {attempt} for document {doc.external_id}: {error_msg}")
+                
+                if "connection was closed" in error_msg or "ConnectionDoesNotExistError" in error_msg:
+                    if attempt < max_retries:
+                        logger.warning(f"[TRACE-DB] Database connection error during document metadata storage (attempt {attempt}/{max_retries}) for document {doc.external_id}: {error_msg}. Retrying in {retry_delay}s...")
+                        await asyncio.sleep(retry_delay)
+                        # Increase delay for next retry (exponential backoff)
+                        retry_delay *= 2
+                    else:
+                        logger.error(f"[TRACE-DB] All database connection attempts failed after {max_retries} retries for document {doc.external_id}: {error_msg}")
+                        # Log pool stats if available
+                        try:
+                            if hasattr(self.db, 'engine') and hasattr(self.db.engine, '_pool'):
+                                pool = self.db.engine._pool
+                                logger.error(f"[TRACE-DB] Pool stats for database: size={pool.size}, overflow={pool.overflow}, checkedin={pool.checkedin}, checkedout={pool.checkedout}")
+                        except Exception as pool_err:
+                            logger.error(f"[TRACE-DB] Error getting database pool stats: {str(pool_err)}")
+                        
+                        raise Exception(f"Failed to store document metadata after multiple retries for document {doc.external_id}")
+                else:
+                    # For other exceptions, don't retry
+                    logger.error(f"[TRACE-DB] Non-connection error storing document metadata for document {doc.external_id}: {error_msg}")
+                    # Log the full traceback
+                    import traceback
+                    logger.error(f"[TRACE-DB] Full error traceback: {traceback.format_exc()}")
+                    raise
+        
+        logger.debug(f"[TRACE-DB] Successfully stored document metadata in database for document {doc.external_id}")
+        logger.debug(f"[TRACE-DB] Chunk IDs stored for document {doc.external_id}: {doc.chunk_ids}")
         return doc.chunk_ids
 
     async def _create_chunk_results(

@@ -83,15 +83,41 @@ class PGVectorStore(BaseVectorStore):
             max_retries: Maximum number of connection retry attempts
             retry_delay: Delay in seconds between retry attempts
         """
+        # Load settings from config
+        from core.config import get_settings
+        settings = get_settings()
+        
+        # Get database pool settings from config with defaults
+        pool_size = getattr(settings, "DB_POOL_SIZE", 20)
+        max_overflow = getattr(settings, "DB_MAX_OVERFLOW", 30)
+        pool_recycle = getattr(settings, "DB_POOL_RECYCLE", 3600)
+        pool_timeout = getattr(settings, "DB_POOL_TIMEOUT", 10)
+        pool_pre_ping = getattr(settings, "DB_POOL_PRE_PING", True)
+        
         # Use the URI exactly as provided without any modifications
         # This ensures compatibility with Supabase and other PostgreSQL providers
-        logger.info(f"Initializing database engine with provided URI")
+        logger.info(f"Initializing vector store database engine with pool size={pool_size}, "
+                   f"max_overflow={max_overflow}, pool_recycle={pool_recycle}s")
         
-        # Create the engine with the URI as is
-        self.engine = create_async_engine(uri)
+        # Create the engine with the URI as is and improved connection pool settings
+        self.engine = create_async_engine(
+            uri,
+            # Prevent connection timeouts by keeping connections alive
+            pool_pre_ping=pool_pre_ping,
+            # Increase pool size to handle concurrent operations
+            pool_size=pool_size,
+            # Maximum overflow connections allowed beyond pool_size
+            max_overflow=max_overflow,
+            # Keep connections in the pool for up to 60 minutes
+            pool_recycle=pool_recycle,
+            # Time to wait for a connection from the pool (10 seconds)
+            pool_timeout=pool_timeout,
+            # Echo SQL for debugging (set to False in production)
+            echo=False,
+        )
         
         # Log success
-        logger.info("Created database engine successfully")
+        logger.info("Created vector store database engine successfully")
         self.async_session = sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
         self.max_retries = max_retries
         self.retry_delay = retry_delay
@@ -283,15 +309,20 @@ class PGVectorStore(BaseVectorStore):
             if not chunks:
                 return True, []
 
+            logger.info(f"[TRACE-DB] Attempting to store {len(chunks)} embeddings for document {chunks[0].document_id if chunks else 'unknown'}")
+            logger.info(f"[TRACE-DB] Session acquisition starting for store_embeddings - {chunks[0].document_id if chunks else 'unknown'}")
+            
             async with self.get_session_with_retry() as session:
+                logger.info(f"[TRACE-DB] Successfully acquired session for store_embeddings - {chunks[0].document_id if chunks else 'unknown'}")
                 stored_ids = []
                 for chunk in chunks:
                     if not chunk.embedding:
                         logger.error(
-                            f"Missing embedding for chunk {chunk.document_id}-{chunk.chunk_number}"
+                            f"[TRACE-DB] Missing embedding for chunk {chunk.document_id}-{chunk.chunk_number}"
                         )
                         continue
 
+                    logger.info(f"[TRACE-DB] Creating vector_embedding for chunk {chunk.document_id}-{chunk.chunk_number}")
                     vector_embedding = VectorEmbedding(
                         document_id=chunk.document_id,
                         chunk_number=chunk.chunk_number,
@@ -302,11 +333,24 @@ class PGVectorStore(BaseVectorStore):
                     session.add(vector_embedding)
                     stored_ids.append(f"{chunk.document_id}-{chunk.chunk_number}")
 
-                await session.commit()
+                logger.info(f"[TRACE-DB] Committing {len(stored_ids)} embeddings to database for doc {chunks[0].document_id if chunks else 'unknown'}")
+                try:
+                    await session.commit()
+                    logger.info(f"[TRACE-DB] Successfully committed {len(stored_ids)} embeddings for doc {chunks[0].document_id if chunks else 'unknown'}")
+                except Exception as commit_error:
+                    logger.error(f"[TRACE-DB] Failed to commit embeddings for doc {chunks[0].document_id if chunks else 'unknown'}: {str(commit_error)}")
+                    # Log the full traceback
+                    import traceback
+                    logger.error(f"[TRACE-DB] Full commit error traceback: {traceback.format_exc()}")
+                    raise
+                
                 return len(stored_ids) > 0, stored_ids
 
         except Exception as e:
-            logger.error(f"Error storing embeddings: {str(e)}")
+            # Log the full traceback
+            import traceback
+            logger.error(f"[TRACE-DB] Error storing embeddings: {str(e)}")
+            logger.error(f"[TRACE-DB] Full error traceback: {traceback.format_exc()}")
             return False, []
 
     async def query_similar(

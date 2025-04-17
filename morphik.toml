@@ -53,6 +53,14 @@ default_temperature = 0.5
 
 [database]
 provider = "postgres"
+# Connection pool settings
+pool_size = 20           # Maximum number of connections in the pool
+max_overflow = 30        # Maximum number of connections that can be created beyond pool_size
+pool_recycle = 3600      # Time in seconds after which a connection is recycled (1 hour)
+pool_timeout = 10        # Seconds to wait for a connection from the pool
+pool_pre_ping = true     # Check connection viability before using it from the pool
+max_retries = 3          # Number of retries for database operations
+retry_delay = 1.0        # Initial delay between retries in seconds
 
 [embedding]
 model = "ollama_embedding"  # Reference to registered model
