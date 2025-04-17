@@ -32,6 +32,7 @@ from core.storage.local_storage import LocalStorage
 from core.reranker.flag_reranker import FlagReranker
 from core.cache.llama_cache_factory import LlamaCacheFactory
 import tomli
+from pydantic import BaseModel
 
 # Initialize FastAPI app
 app = FastAPI(title="Morphik API")
@@ -1993,4 +1994,60 @@ async def generate_cloud_uri(
         raise
     except Exception as e:
         logger.error(f"Error generating cloud URI: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Add these classes before the extract_folder_data endpoint
+class ColumnDefinition(BaseModel):
+    """Model for column definition in data extraction"""
+    name: str
+    description: str
+    _type: str  # 'string', 'int', 'float', 'bool', 'Date', 'json'
+    schema: Optional[str] = None
+
+class ExtractFolderRequest(BaseModel):
+    """Request model for folder data extraction"""
+    columns: List[ColumnDefinition]
+
+@app.post("/folders/{folder_id}/extract")
+async def extract_folder_data(
+    folder_id: str,
+    request: ExtractFolderRequest,
+    auth: AuthContext = Depends(verify_token),
+):
+    """
+    Extract data from documents in a folder based on specified columns.
+    
+    Args:
+        folder_id: ID of the folder containing documents to extract from
+        request: ExtractFolderRequest containing columns with name, description, type, and optional schema
+        auth: Authentication context
+        
+    Returns:
+        Success status and extraction job ID
+    """
+    try:
+        async with telemetry.track_operation(
+            operation_type="extract_folder_data",
+            user_id=auth.entity_id,
+            metadata={
+                "folder_id": folder_id,
+                "column_count": len(request.columns),
+            },
+        ):
+            # Log received columns for debugging
+            logger.info(f"Received extraction request for folder {folder_id}")
+            logger.info(f"Columns to extract: {request.columns}")
+            
+            # For now, just return a success response
+            # In the future, this would start an extraction job
+            return {
+                "status": "accepted",
+                "message": "Extraction request received",
+                "folder_id": folder_id,
+                "columns": request.columns,
+                "job_id": str(uuid.uuid4())
+            }
+    except Exception as e:
+        logger.error(f"Error in folder extraction: {e}")
         raise HTTPException(status_code=500, detail=str(e))

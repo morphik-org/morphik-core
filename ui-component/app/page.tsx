@@ -2,7 +2,11 @@
 
 import React from 'react';
 import MorphikUI from '@/components/MorphikUI';
+import { useSearchParams } from 'next/navigation';
 
 export default function Home() {
-  return <MorphikUI />;
+  const searchParams = useSearchParams();
+  const folderParam = searchParams.get('folder');
+  
+  return <MorphikUI initialFolder={folderParam} />;
 }
