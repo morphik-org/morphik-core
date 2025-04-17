@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime, UTC
 from pathlib import Path
+import asyncio
 
 import arq
 from core.models.auth import AuthContext, EntityType
@@ -20,8 +21,57 @@ from core.services.document_service import DocumentService
 from core.services.telemetry import TelemetryService
 from core.services.rules_processor import RulesProcessor
 from core.config import get_settings
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
+
+async def get_document_with_retry(document_service, document_id, auth, max_retries=3, initial_delay=0.3):
+    """
+    Helper function to get a document with retries to handle race conditions.
+    
+    Args:
+        document_service: The document service instance
+        document_id: ID of the document to retrieve
+        auth: Authentication context
+        max_retries: Maximum number of retry attempts
+        initial_delay: Initial delay before first attempt in seconds
+        
+    Returns:
+        Document if found and accessible, None otherwise
+    """
+    attempt = 0
+    retry_delay = initial_delay
+    
+    # Add initial delay to allow transaction to commit
+    if initial_delay > 0:
+        await asyncio.sleep(initial_delay)
+    
+    while attempt < max_retries:
+        try:
+            doc = await document_service.db.get_document(document_id, auth)
+            if doc:
+                logger.debug(f"Successfully retrieved document {document_id} on attempt {attempt+1}")
+                return doc
+                
+            # Document not found but no exception raised
+            attempt += 1
+            if attempt < max_retries:
+                logger.warning(f"Document {document_id} not found on attempt {attempt}/{max_retries}. Retrying in {retry_delay}s...")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 1.5
+            
+        except Exception as e:
+            attempt += 1
+            error_msg = str(e)
+            if attempt < max_retries:
+                logger.warning(f"Error retrieving document on attempt {attempt}/{max_retries}: {error_msg}. Retrying in {retry_delay}s...")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 1.5
+            else:
+                logger.error(f"Failed to retrieve document after {max_retries} attempts: {error_msg}")
+                return None
+    
+    return None
 
 async def process_ingestion_job(
     ctx: Dict[str, Any],
@@ -100,10 +150,12 @@ async def process_ingestion_job(
         # 6. Retrieve the existing document
         logger.debug(f"Retrieving document with ID: {document_id}")
         logger.debug(f"Auth context: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}")
-        doc = await document_service.db.get_document(document_id, auth)
+        
+        # Use the retry helper function with initial delay to handle race conditions
+        doc = await get_document_with_retry(document_service, document_id, auth, max_retries=5, initial_delay=1.0)
         
         if not doc:
-            logger.error(f"Document {document_id} not found in database")
+            logger.error(f"Document {document_id} not found in database after multiple retries")
             logger.error(f"Details - file: {original_filename}, content_type: {content_type}, bucket: {bucket}, key: {file_key}")
             logger.error(f"Auth: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}")
             # Try to get all accessible documents to debug
@@ -113,7 +165,7 @@ async def process_ingestion_job(
             except Exception as list_err:
                 logger.error(f"Failed to list user documents: {str(list_err)}")
             
-            raise ValueError(f"Document {document_id} not found in database")
+            raise ValueError(f"Document {document_id} not found in database after multiple retries")
             
         # Prepare updates for the document
         updates = {
@@ -342,7 +394,13 @@ async def startup(ctx):
         logger.info("Initializing ColPali components...")
         colpali_embedding_model = ColpaliEmbeddingModel()
         colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI)
-        _ = colpali_vector_store.initialize()
+        # Properly await the initialization to ensure indexes are ready
+        # MultiVectorStore.initialize is synchronous, so we need to run it in a thread
+        success = await asyncio.to_thread(colpali_vector_store.initialize)
+        if success:
+            logger.info("ColPali vector store initialization successful")
+        else:
+            logger.error("ColPali vector store initialization failed")
     ctx['colpali_embedding_model'] = colpali_embedding_model
     ctx['colpali_vector_store'] = colpali_vector_store
     
@@ -390,6 +448,16 @@ async def shutdown(ctx):
         logger.info("Closing database connections...")
         await ctx['database'].engine.dispose()
     
+    # Close vector store connections if they exist
+    if 'vector_store' in ctx and hasattr(ctx['vector_store'], 'engine'):
+        logger.info("Closing vector store connections...")
+        await ctx['vector_store'].engine.dispose()
+    
+    # Close colpali vector store connections if they exist
+    if 'colpali_vector_store' in ctx and hasattr(ctx['colpali_vector_store'], 'engine'):
+        logger.info("Closing colpali vector store connections...")
+        await ctx['colpali_vector_store'].engine.dispose()
+    
     # Close any other open connections or resources that need cleanup
     logger.info("Worker shutdown complete.")
 
@@ -408,4 +476,48 @@ class WorkerSettings:
     # Other optional settings:
     # redis_settings = arq.connections.RedisSettings(host='localhost', port=6379)
     keep_result_ms = 24 * 60 * 60 * 1000  # Keep results for 24 hours (24 * 60 * 60 * 1000 ms)
-    max_jobs = 10  # Maximum number of jobs to run concurrently
+    max_jobs = 5  # Reduce concurrent jobs to prevent connection pool exhaustion
+    health_check_interval = 300  # Check worker health every 5 minutes instead of 30 seconds to reduce connection overhead
+    job_timeout = 3600  # 1 hour timeout for jobs
+    max_tries = 3  # Retry failed jobs up to 3 times
+    poll_delay = 0.5  # Poll delay to prevent excessive Redis queries
+    
+    # Log Redis and connection pool information for debugging
+    @staticmethod
+    async def health_check(ctx):
+        """Periodic health check to log connection status and job stats."""
+        database = ctx.get('database')
+        vector_store = ctx.get('vector_store')
+        job_stats = ctx.get('job_stats', {})
+        redis_info = await ctx['redis'].info()
+        
+        logger.info(f"Health check: Redis v{redis_info.get('redis_version', 'unknown')} "
+                   f"mem_usage={redis_info.get('used_memory_human', 'unknown')} "
+                   f"clients_connected={redis_info.get('connected_clients', 'unknown')} "
+                   f"db_keys={redis_info.get('db0', {}).get('keys', 0)}"
+        )
+        
+        # Log job statistics
+        logger.info(f"Job stats: completed={job_stats.get('complete', 0)} "
+                  f"failed={job_stats.get('failed', 0)} "
+                  f"retried={job_stats.get('retried', 0)} "
+                  f"ongoing={job_stats.get('ongoing', 0)} "
+                  f"queued={job_stats.get('queued', 0)}"
+        )
+        
+        # Test database connectivity
+        if database and hasattr(database, 'async_session'):
+            try:
+                async with database.async_session() as session:
+                    await session.execute(text("SELECT 1"))
+                    logger.debug("Database connection is healthy")
+            except Exception as e:
+                logger.error(f"Database connection test failed: {str(e)}")
+                
+        # Test vector store connectivity if available
+        if vector_store and hasattr(vector_store, 'async_session'):
+            try:
+                async with vector_store.get_session_with_retry() as session:
+                    logger.debug("Vector store connection is healthy")
+            except Exception as e:
+                logger.error(f"Vector store connection test failed: {str(e)}")

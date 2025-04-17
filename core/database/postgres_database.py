@@ -109,7 +109,36 @@ class PostgresDatabase(BaseDatabase):
         uri: str,
     ):
         """Initialize PostgreSQL connection for document storage."""
-        self.engine = create_async_engine(uri)
+        # Load settings from config
+        from core.config import get_settings
+        settings = get_settings()
+        
+        # Get database pool settings from config with defaults
+        pool_size = getattr(settings, "DB_POOL_SIZE", 20)
+        max_overflow = getattr(settings, "DB_MAX_OVERFLOW", 30)
+        pool_recycle = getattr(settings, "DB_POOL_RECYCLE", 3600)
+        pool_timeout = getattr(settings, "DB_POOL_TIMEOUT", 10)
+        pool_pre_ping = getattr(settings, "DB_POOL_PRE_PING", True)
+        
+        logger.info(f"Initializing PostgreSQL connection pool with size={pool_size}, "
+                   f"max_overflow={max_overflow}, pool_recycle={pool_recycle}s")
+        
+        # Create async engine with explicit pool settings
+        self.engine = create_async_engine(
+            uri,
+            # Prevent connection timeouts by keeping connections alive
+            pool_pre_ping=pool_pre_ping,
+            # Increase pool size to handle concurrent operations
+            pool_size=pool_size,
+            # Maximum overflow connections allowed beyond pool_size
+            max_overflow=max_overflow,
+            # Keep connections in the pool for up to 60 minutes
+            pool_recycle=pool_recycle,
+            # Time to wait for a connection from the pool (10 seconds)
+            pool_timeout=pool_timeout,
+            # Echo SQL for debugging (set to False in production)
+            echo=False,
+        )
         self.async_session = sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
         self._initialized = False
 
