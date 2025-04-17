@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     RULES_PROVIDER: Literal["litellm"] = "litellm"
     RULES_MODEL: str
     RULES_BATCH_SIZE: int = 4096
+    
+    # Smart Query configuration
+    SMART_QUERY_MODEL: str
 
     # Graph configuration
     GRAPH_PROVIDER: Literal["litellm"] = "litellm"
@@ -284,6 +287,14 @@ def get_settings() -> Settings:
     if "model" not in config["rules"]:
         raise ValueError("'model' is required in the rules configuration")
     rules_config["RULES_MODEL"] = config["rules"]["model"]
+    
+    # load smart query config
+    smart_query_config = {}
+    
+    # Set the model key for LiteLLM
+    if "model" not in config["smart_query"]:
+        raise ValueError("'model' is required in the smart query configuration")
+    smart_query_config["SMART_QUERY_MODEL"] = config["smart_query"]["model"]
 
     # load morphik config
     morphik_config = {
@@ -339,6 +350,7 @@ def get_settings() -> Settings:
         storage_config,
         vector_store_config,
         rules_config,
+        smart_query_config,
         morphik_config,
         redis_config,
         graph_config,
