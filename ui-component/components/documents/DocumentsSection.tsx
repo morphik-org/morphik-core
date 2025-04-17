@@ -691,7 +691,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
         }
       }
       
-      const url = `${effectiveApiUrl}/ingest/file${useColpaliRef ? '?use_colpali=true' : ''}`;
+      const url = `${effectiveApiUrl}/ingest/file?use_colpali=${useColpaliRef}`;
       
       // Non-blocking fetch
       fetch(url, {
@@ -840,12 +840,12 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
       
       formData.append('rules', rulesRef);
       formData.append('parallel', 'true');
-      if (useColpaliRef !== undefined) {
-        formData.append('use_colpali', useColpaliRef.toString());
-      }
+      
+      // Always set explicit use_colpali value
+      const url = `${effectiveApiUrl}/ingest/files?use_colpali=${useColpaliRef}`;
       
       // Non-blocking fetch
-      fetch(`${effectiveApiUrl}/ingest/files`, {
+      fetch(url, {
         method: 'POST',
         headers: {
           'Authorization': authToken ? `Bearer ${authToken}` : ''
@@ -996,8 +996,10 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
     resetUploadDialog();
     
     try {
-      // Non-blocking fetch
-      fetch(`${effectiveApiUrl}/ingest/text`, {
+      // Non-blocking fetch with explicit use_colpali parameter
+      const url = `${effectiveApiUrl}/ingest/text?use_colpali=${useColpaliRef}`;
+      
+      fetch(url, {
         method: 'POST',
         headers: {
           'Authorization': authToken ? `Bearer ${authToken}` : '',
@@ -1007,7 +1009,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
           content: textContentRef,
           metadata: metadataObj,
           rules: JSON.parse(rulesRef || '[]'),
-          use_colpali: useColpaliRef,
           folder_name: folderToUse
         })
       })
@@ -1207,26 +1208,26 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
         </div>
       </div>
 
-      {documents.length === 0 && !loading && folders.length === 0 && !foldersLoading ? (
-        <div className="text-center py-8 border border-dashed rounded-lg flex-1 flex items-center justify-center">
-          <div>
-            <Upload className="mx-auto h-12 w-12 mb-2 text-muted-foreground" />
-            <p className="text-muted-foreground">No documents found. Upload your first document.</p>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-4 flex-1">
-          <FolderList
-            folders={folders}
-            selectedFolder={selectedFolder}
-            setSelectedFolder={setSelectedFolder}
-            apiBaseUrl={effectiveApiUrl}
-            authToken={authToken}
-            refreshFolders={fetchFolders}
-            loading={foldersLoading}
-          />
-          
-          {selectedFolder !== null && (
+      <div className="flex flex-col gap-4 flex-1">
+        <FolderList
+          folders={folders}
+          selectedFolder={selectedFolder}
+          setSelectedFolder={setSelectedFolder}
+          apiBaseUrl={effectiveApiUrl}
+          authToken={authToken}
+          refreshFolders={fetchFolders}
+          loading={foldersLoading}
+        />
+        
+        {selectedFolder !== null ? (
+          documents.length === 0 && !loading ? (
+            <div className="text-center py-8 border border-dashed rounded-lg flex-1 flex items-center justify-center">
+              <div>
+                <Upload className="mx-auto h-12 w-12 mb-2 text-muted-foreground" />
+                <p className="text-muted-foreground">No documents found in this folder. Upload a document.</p>
+              </div>
+            </div>
+          ) : (
             <div className="flex flex-col md:flex-row gap-4 flex-1">
               <div className="w-full md:w-2/3">
                 <DocumentList
@@ -1254,9 +1255,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
                 />
               </div>
             </div>
-          )}
-        </div>
-      )}
+          )
+        ) : null}
+      </div>
     </div>
   );
 };

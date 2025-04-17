@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Upload } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 // Alert system is handled by the parent component
 
 interface UploadDialogProps {
@@ -183,13 +184,18 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
           </div>
           
           <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
+            <Checkbox
               id="useColpali"
               checked={useColpali}
-              onChange={(e) => setUseColpali(e.target.checked)}
+              onCheckedChange={(checked) => setUseColpali(checked === true)}
             />
-            <Label htmlFor="useColpali">Use Colpali</Label>
+            <Label 
+              htmlFor="useColpali" 
+              className="cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              onClick={() => setUseColpali(!useColpali)}
+            >
+              Use Colpali
+            </Label>
           </div>
         </div>
         
