@@ -60,8 +60,7 @@ async def process_ingestion_job(
     """
     try:
         # 1. Log the start of the job
-        logger.info(f"[TRACE-JOB] Starting ingestion job for file: {original_filename}, document_id: {document_id}")
-        logger.info(f"[TRACE-JOB] Job parameters: bucket={bucket}, key={file_key}, content_type={content_type}, use_colpali={use_colpali}, folder_name={folder_name}, end_user_id={end_user_id}")
+        logger.info(f"Starting ingestion job for file: {original_filename}")
         
         # 2. Deserialize metadata and auth
         metadata = json.loads(metadata_json) if metadata_json else {}
@@ -72,64 +71,37 @@ async def process_ingestion_job(
             permissions=set(auth_dict.get("permissions", ["read"])),
             user_id=auth_dict.get("user_id", auth_dict.get("entity_id", ""))
         )
-        logger.info(f"[TRACE-JOB] Auth context for document {document_id}: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}")
         
         # Get document service from the context
         document_service : DocumentService = ctx['document_service']
         
         # 3. Download the file from storage
-        logger.info(f"[TRACE-JOB] Downloading file from {bucket}/{file_key} for document {document_id}")
-        try:
-            file_content = await document_service.storage.download_file(bucket, file_key)
-            
-            # Ensure file_content is bytes
-            if hasattr(file_content, 'read'):
-                file_content = file_content.read()
-                
-            logger.info(f"[TRACE-JOB] Successfully downloaded file of size {len(file_content)} bytes for document {document_id}")
-        except Exception as download_err:
-            logger.error(f"[TRACE-JOB] Error downloading file {bucket}/{file_key} for document {document_id}: {str(download_err)}")
-            # Log the full traceback
-            import traceback
-            logger.error(f"[TRACE-JOB] File download error traceback: {traceback.format_exc()}")
-            raise
+        logger.info(f"Downloading file from {bucket}/{file_key}")
+        file_content = await document_service.storage.download_file(bucket, file_key)
+        
+        # Ensure file_content is bytes
+        if hasattr(file_content, 'read'):
+            file_content = file_content.read()
         
         # 4. Parse file to text
-        logger.info(f"[TRACE-JOB] Parsing file {original_filename} to text for document {document_id}")
-        try:
-            additional_metadata, text = await document_service.parser.parse_file_to_text(
-                file_content, original_filename
-            )
-            logger.info(f"[TRACE-JOB] Successfully parsed file into text of length {len(text)} for document {document_id}")
-        except Exception as parse_err:
-            logger.error(f"[TRACE-JOB] Error parsing file {original_filename} for document {document_id}: {str(parse_err)}")
-            # Log the full traceback
-            import traceback
-            logger.error(f"[TRACE-JOB] File parsing error traceback: {traceback.format_exc()}")
-            raise
+        additional_metadata, text = await document_service.parser.parse_file_to_text(
+            file_content, original_filename
+        )
+        logger.debug(f"Parsed file into text of length {len(text)}")
         
         # 5. Apply rules if provided
         if rules_list:
-            logger.info(f"[TRACE-JOB] Applying {len(rules_list)} rules to document {document_id}")
-            try:
-                rule_metadata, modified_text = await document_service.rules_processor.process_rules(text, rules_list)
-                # Update document metadata with extracted metadata from rules
-                metadata.update(rule_metadata)
-                
-                if modified_text:
-                    text = modified_text
-                    logger.info(f"[TRACE-JOB] Updated text with modified content from rules for document {document_id}")
-                else:
-                    logger.info(f"[TRACE-JOB] Rules applied but text was not modified for document {document_id}")
-            except Exception as rules_err:
-                logger.error(f"[TRACE-JOB] Error applying rules to document {document_id}: {str(rules_err)}")
-                # Log the full traceback
-                import traceback
-                logger.error(f"[TRACE-JOB] Rules processing error traceback: {traceback.format_exc()}")
-                raise
+            rule_metadata, modified_text = await document_service.rules_processor.process_rules(text, rules_list)
+            # Update document metadata with extracted metadata from rules
+            metadata.update(rule_metadata)
+            
+            if modified_text:
+                text = modified_text
+                logger.info("Updated text with modified content from rules")
         
         # 6. Retrieve the existing document
-        logger.info(f"[TRACE-JOB] Retrieving document metadata for document {document_id}")
+        logger.debug(f"Retrieving document with ID: {document_id}")
+        logger.debug(f"Auth context: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}")
         
         # Add retry logic for database operations
         max_retries = 3
@@ -139,55 +111,36 @@ async def process_ingestion_job(
         
         while attempt < max_retries:
             try:
-                logger.info(f"[TRACE-JOB] Document retrieval attempt {attempt+1}/{max_retries} for document {document_id}")
                 doc = await document_service.db.get_document(document_id, auth)
                 # If successful, break out of the retry loop
-                logger.info(f"[TRACE-JOB] Successfully retrieved document metadata for document {document_id}")
                 break
             except Exception as e:
                 attempt += 1
                 error_msg = str(e)
-                logger.error(f"[TRACE-JOB] Error retrieving document {document_id} on attempt {attempt}: {error_msg}")
-                
                 if "connection was closed" in error_msg or "ConnectionDoesNotExistError" in error_msg:
                     if attempt < max_retries:
-                        logger.warning(f"[TRACE-JOB] Database connection error during document retrieval (attempt {attempt}/{max_retries}) for document {document_id}: {error_msg}. Retrying in {retry_delay}s...")
+                        logger.warning(f"Database connection error (attempt {attempt}/{max_retries}): {error_msg}. Retrying in {retry_delay}s...")
                         await asyncio.sleep(retry_delay)
                         # Increase delay for next retry (exponential backoff)
                         retry_delay *= 2
                     else:
-                        logger.error(f"[TRACE-JOB] All database connection attempts failed after {max_retries} retries for document {document_id}")
-                        # Log the full traceback
-                        import traceback
-                        logger.error(f"[TRACE-JOB] Document retrieval error traceback: {traceback.format_exc()}")
-                        
-                        # Try to log database connection pool stats
-                        try:
-                            if hasattr(document_service.db, 'engine') and hasattr(document_service.db.engine, '_pool'):
-                                pool = document_service.db.engine._pool
-                                logger.error(f"[TRACE-JOB] Pool stats: size={pool.size}, overflow={pool.overflow}, checkedin={pool.checkedin}, checkedout={pool.checkedout}")
-                        except Exception as pool_err:
-                            logger.error(f"[TRACE-JOB] Error getting pool stats: {str(pool_err)}")
-                        
+                        logger.error(f"All database connection attempts failed after {max_retries} retries: {error_msg}")
                         raise
                 else:
                     # For other exceptions, don't retry
-                    logger.error(f"[TRACE-JOB] Error retrieving document {document_id}: {error_msg}")
-                    # Log the full traceback
-                    import traceback
-                    logger.error(f"[TRACE-JOB] Document retrieval error traceback: {traceback.format_exc()}")
+                    logger.error(f"Error retrieving document: {error_msg}")
                     raise
         
         if not doc:
-            logger.error(f"[TRACE-JOB] Document {document_id} not found in database")
-            logger.error(f"[TRACE-JOB] Details - file: {original_filename}, content_type: {content_type}, bucket: {bucket}, key: {file_key}")
-            logger.error(f"[TRACE-JOB] Auth: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}")
+            logger.error(f"Document {document_id} not found in database")
+            logger.error(f"Details - file: {original_filename}, content_type: {content_type}, bucket: {bucket}, key: {file_key}")
+            logger.error(f"Auth: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}")
             # Try to get all accessible documents to debug
             try:
                 all_docs = await document_service.db.get_documents(auth, 0, 100)
-                logger.debug(f"[TRACE-JOB] User has access to {len(all_docs)} documents: {[d.external_id for d in all_docs]}")
+                logger.debug(f"User has access to {len(all_docs)} documents: {[d.external_id for d in all_docs]}")
             except Exception as list_err:
-                logger.error(f"[TRACE-JOB] Failed to list user documents: {str(list_err)}")
+                logger.error(f"Failed to list user documents: {str(list_err)}")
             
             raise ValueError(f"Document {document_id} not found in database")
             
@@ -205,133 +158,71 @@ async def process_ingestion_job(
             updates["system_metadata"]["end_user_id"] = end_user_id
         
         # Update the document in the database
-        logger.info(f"[TRACE-JOB] Updating document metadata in database for document {document_id}")
-        try:
-            success = await document_service.db.update_document(
-                document_id=document_id,
-                updates=updates,
-                auth=auth
-            )
-            
-            if not success:
-                logger.error(f"[TRACE-JOB] Failed to update document {document_id} metadata in database")
-                raise ValueError(f"Failed to update document {document_id}")
-                
-            logger.info(f"[TRACE-JOB] Successfully updated document metadata in database for document {document_id}")
-        except Exception as update_err:
-            logger.error(f"[TRACE-JOB] Error updating document {document_id} metadata: {str(update_err)}")
-            # Log the full traceback
-            import traceback
-            logger.error(f"[TRACE-JOB] Document update error traceback: {traceback.format_exc()}")
-            raise
+        success = await document_service.db.update_document(
+            document_id=document_id,
+            updates=updates,
+            auth=auth
+        )
+        
+        if not success:
+            raise ValueError(f"Failed to update document {document_id}")
         
         # Refresh document object with updated data
-        try:
-            doc = await document_service.db.get_document(document_id, auth)
-            logger.info(f"[TRACE-JOB] Refreshed document object with updated data for document {document_id}")
-        except Exception as refresh_err:
-            logger.error(f"[TRACE-JOB] Error refreshing document {document_id} data: {str(refresh_err)}")
-            # Log the full traceback
-            import traceback
-            logger.error(f"[TRACE-JOB] Document refresh error traceback: {traceback.format_exc()}")
-            raise
+        doc = await document_service.db.get_document(document_id, auth)
+        logger.debug(f"Updated document in database with parsed content")
         
         # 7. Split text into chunks
-        logger.info(f"[TRACE-JOB] Splitting text into chunks for document {document_id}")
-        try:
-            chunks = await document_service.parser.split_text(text)
-            if not chunks:
-                logger.error(f"[TRACE-JOB] No content chunks extracted for document {document_id}")
-                raise ValueError("No content chunks extracted")
-            logger.info(f"[TRACE-JOB] Split processed text into {len(chunks)} chunks for document {document_id}")
-        except Exception as chunk_err:
-            logger.error(f"[TRACE-JOB] Error splitting text into chunks for document {document_id}: {str(chunk_err)}")
-            # Log the full traceback
-            import traceback
-            logger.error(f"[TRACE-JOB] Text chunking error traceback: {traceback.format_exc()}")
-            raise
+        chunks = await document_service.parser.split_text(text)
+        if not chunks:
+            raise ValueError("No content chunks extracted")
+        logger.debug(f"Split processed text into {len(chunks)} chunks")
         
         # 8. Generate embeddings for chunks
-        logger.info(f"[TRACE-JOB] Generating embeddings for {len(chunks)} chunks for document {document_id}")
-        try:
-            embeddings = await document_service.embedding_model.embed_for_ingestion(chunks)
-            logger.info(f"[TRACE-JOB] Generated {len(embeddings)} embeddings for document {document_id}")
-        except Exception as embed_err:
-            logger.error(f"[TRACE-JOB] Error generating embeddings for document {document_id}: {str(embed_err)}")
-            # Log the full traceback
-            import traceback
-            logger.error(f"[TRACE-JOB] Embedding generation error traceback: {traceback.format_exc()}")
-            raise
+        embeddings = await document_service.embedding_model.embed_for_ingestion(chunks)
+        logger.debug(f"Generated {len(embeddings)} embeddings")
         
         # 9. Create chunk objects
-        logger.info(f"[TRACE-JOB] Creating chunk objects for document {document_id}")
-        try:
-            chunk_objects = document_service._create_chunk_objects(doc.external_id, chunks, embeddings)
-            logger.info(f"[TRACE-JOB] Created {len(chunk_objects)} chunk objects for document {document_id}")
-        except Exception as chunk_obj_err:
-            logger.error(f"[TRACE-JOB] Error creating chunk objects for document {document_id}: {str(chunk_obj_err)}")
-            # Log the full traceback
-            import traceback
-            logger.error(f"[TRACE-JOB] Chunk objects creation error traceback: {traceback.format_exc()}")
-            raise
+        chunk_objects = document_service._create_chunk_objects(doc.external_id, chunks, embeddings)
+        logger.debug(f"Created {len(chunk_objects)} chunk objects")
         
         # 10. Handle ColPali embeddings if enabled
         chunk_objects_multivector = []
         if use_colpali and document_service.colpali_embedding_model and document_service.colpali_vector_store:
-            logger.info(f"[TRACE-JOB] Processing colpali embeddings for document {document_id}")
-            try:
-                import filetype
-                file_type = filetype.guess(file_content)
-                logger.info(f"[TRACE-JOB] File type detected as {file_type.mime if file_type else 'unknown'} for document {document_id}")
-                
-                # For ColPali we need the base64 encoding of the file
-                import base64
-                file_content_base64 = base64.b64encode(file_content).decode()
-                
-                chunks_multivector = document_service._create_chunks_multivector(
-                    file_type, file_content_base64, file_content, chunks
-                )
-                logger.info(f"[TRACE-JOB] Created {len(chunks_multivector)} chunks for multivector embedding for document {document_id}")
-                
-                colpali_embeddings = await document_service.colpali_embedding_model.embed_for_ingestion(
-                    chunks_multivector
-                )
-                logger.info(f"[TRACE-JOB] Generated {len(colpali_embeddings)} embeddings for multivector embedding for document {document_id}")
-                
-                chunk_objects_multivector = document_service._create_chunk_objects(
-                    doc.external_id, chunks_multivector, colpali_embeddings
-                )
-                logger.info(f"[TRACE-JOB] Created {len(chunk_objects_multivector)} colpali chunk objects for document {document_id}")
-            except Exception as colpali_err:
-                logger.error(f"[TRACE-JOB] Error processing colpali embeddings for document {document_id}: {str(colpali_err)}")
-                # Log the full traceback
-                import traceback
-                logger.error(f"[TRACE-JOB] Colpali processing error traceback: {traceback.format_exc()}")
-                raise
+            import filetype
+            file_type = filetype.guess(file_content)
+            
+            # For ColPali we need the base64 encoding of the file
+            import base64
+            file_content_base64 = base64.b64encode(file_content).decode()
+            
+            chunks_multivector = document_service._create_chunks_multivector(
+                file_type, file_content_base64, file_content, chunks
+            )
+            logger.debug(f"Created {len(chunks_multivector)} chunks for multivector embedding")
+            
+            colpali_embeddings = await document_service.colpali_embedding_model.embed_for_ingestion(
+                chunks_multivector
+            )
+            logger.debug(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
+            
+            chunk_objects_multivector = document_service._create_chunk_objects(
+                doc.external_id, chunks_multivector, colpali_embeddings
+            )
         
         # Update document status to completed before storing
         doc.system_metadata["status"] = "completed"
         doc.system_metadata["updated_at"] = datetime.now(UTC)
         
         # 11. Store chunks and update document with is_update=True
-        logger.info(f"[TRACE-JOB] Storing {len(chunk_objects)} chunks and updating document {document_id}")
-        try:
-            chunk_ids = await document_service._store_chunks_and_doc(
-                chunk_objects, doc, use_colpali, chunk_objects_multivector,
-                is_update=True, auth=auth
-            )
-            logger.info(f"[TRACE-JOB] Successfully stored {len(chunk_ids)} chunks for document {document_id}")
-        except Exception as store_err:
-            logger.error(f"[TRACE-JOB] Error storing chunks and document for document {document_id}: {str(store_err)}")
-            # Log the full traceback
-            import traceback
-            logger.error(f"[TRACE-JOB] Chunk storage error traceback: {traceback.format_exc()}")
-            raise
+        chunk_ids = await document_service._store_chunks_and_doc(
+            chunk_objects, doc, use_colpali, chunk_objects_multivector,
+            is_update=True, auth=auth
+        )
             
-        logger.info(f"[TRACE-JOB] Successfully completed processing for document {doc.external_id}")
+        logger.debug(f"Successfully completed processing for document {doc.external_id}")
         
         # 13. Log successful completion
-        logger.info(f"[TRACE-JOB] Successfully completed ingestion for {original_filename}, document ID: {doc.external_id}")
+        logger.info(f"Successfully completed ingestion for {original_filename}, document ID: {doc.external_id}")
         
         # 14. Return document ID
         return {
@@ -343,10 +234,7 @@ async def process_ingestion_job(
         }
             
     except Exception as e:
-        logger.error(f"[TRACE-JOB] Error processing ingestion job for file {original_filename}: {str(e)}")
-        # Log the full traceback
-        import traceback
-        logger.error(f"[TRACE-JOB] Complete ingestion job error traceback: {traceback.format_exc()}")
+        logger.error(f"Error processing ingestion job for file {original_filename}: {str(e)}")
         
         # Update document status to failed if the document exists
         try:
@@ -364,7 +252,6 @@ async def process_ingestion_job(
             
             if database:
                 # Try to get the document
-                logger.info(f"[TRACE-JOB] Updating document {document_id} status to 'failed' after error")
                 doc = await database.get_document(document_id, auth_context)
                 
                 if doc:
@@ -381,14 +268,9 @@ async def process_ingestion_job(
                         },
                         auth=auth_context
                     )
-                    logger.info(f"[TRACE-JOB] Successfully updated document {document_id} status to failed")
-                else:
-                    logger.error(f"[TRACE-JOB] Could not find document {document_id} to mark as failed")
+                    logger.info(f"Updated document {document_id} status to failed")
         except Exception as inner_e:
-            logger.error(f"[TRACE-JOB] Failed to update document status: {str(inner_e)}")
-            # Log the full traceback
-            import traceback
-            logger.error(f"[TRACE-JOB] Status update error traceback: {traceback.format_exc()}")
+            logger.error(f"Failed to update document status: {str(inner_e)}")
         
         # Return error information
         return {

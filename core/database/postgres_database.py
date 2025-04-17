@@ -320,95 +320,44 @@ class PostgresDatabase(BaseDatabase):
             return False
 
     async def get_document(self, document_id: str, auth: AuthContext) -> Optional[Document]:
-        """Get document metadata by ID, checking access permissions."""
-        # Ensure database is initialized
-        if not self._initialized:
-            await self.initialize()
-
-        logger.debug(f"[TRACE-DB] Getting document {document_id}")
+        """Retrieve document metadata by ID if user has access."""
         try:
-            # Start with a session establishment attempt
-            logger.info(f"[TRACE-DB] Starting session for get_document operation on document {document_id}")
             async with self.async_session() as session:
-                logger.info(f"[TRACE-DB] Session established for get_document on document {document_id}")
-                
-                # Build the access filter
+                # Build access filter
                 access_filter = self._build_access_filter(auth)
-                
-                # Execute the query with the access filter
-                try:
-                    logger.debug(f"[TRACE-DB] Executing query for document {document_id} with access filter: {access_filter}")
-                    result = await session.execute(
-                        select(DocumentModel)
-                        .where(DocumentModel.external_id == document_id)
-                        .where(text(f"({access_filter})"))
-                    )
-                    logger.info(f"[TRACE-DB] Query executed successfully for document {document_id}")
-                except Exception as query_err:
-                    logger.error(f"[TRACE-DB] Error executing query for document {document_id}: {str(query_err)}")
-                    # Log traceback for query errors
-                    import traceback
-                    logger.error(f"[TRACE-DB] Query error traceback: {traceback.format_exc()}")
-                    
-                    # Try to log pool stats
-                    try:
-                        if hasattr(self.engine, '_pool'):
-                            pool = self.engine._pool
-                            logger.error(f"[TRACE-DB] Pool stats during error: size={pool.size}, overflow={pool.overflow}, checkedin={pool.checkedin}, checkedout={pool.checkedout}")
-                    except Exception as pool_err:
-                        logger.error(f"[TRACE-DB] Error getting pool stats: {str(pool_err)}")
-                    
-                    raise
-                
-                # Process the result
-                doc_model = result.scalar_one_or_none()
-                
-                if not doc_model:
-                    logger.warning(f"[TRACE-DB] Document {document_id} not found or access denied")
-                    return None
-                
-                # Convert to Document model
-                try:
-                    logger.debug(f"[TRACE-DB] Converting document model to Document object for {document_id}")
-                    document = Document(
-                        external_id=doc_model.external_id,
-                        owner=doc_model.owner,
-                        content_type=doc_model.content_type,
-                        filename=doc_model.filename,
-                        metadata=doc_model.doc_metadata,
-                        storage_info=doc_model.storage_info,
-                        system_metadata=doc_model.system_metadata,
-                        additional_metadata=doc_model.additional_metadata,
-                        access_control=doc_model.access_control,
-                        chunk_ids=doc_model.chunk_ids,
-                        storage_files=doc_model.storage_files,
-                    )
-                    logger.info(f"[TRACE-DB] Successfully retrieved document {document_id}")
-                    return document
-                except Exception as conversion_err:
-                    logger.error(f"[TRACE-DB] Error converting document model to Document object for {document_id}: {str(conversion_err)}")
-                    raise
-        except Exception as e:
-            # Log detailed information about the exception
-            logger.error(f"[TRACE-DB] Error in get_document for {document_id}: {str(e)}")
-            
-            # Check if it's a connection error
-            error_str = str(e)
-            if "connection" in error_str.lower() or "ConnectionDoesNotExistError" in error_str:
-                logger.error(f"[TRACE-DB] Database connection error detected for document {document_id}")
-                # Try to log pool stats
-                try:
-                    if hasattr(self.engine, '_pool'):
-                        pool = self.engine._pool
-                        logger.error(f"[TRACE-DB] Connection pool stats at error: size={pool.size}, overflow={pool.overflow}, checkedin={pool.checkedin}, checkedout={pool.checkedout}")
-                except Exception:
-                    pass
-            
-            # Log the full traceback
-            import traceback
-            logger.error(f"[TRACE-DB] Full error traceback: {traceback.format_exc()}")
-            raise
 
+                # Query document
+                query = (
+                    select(DocumentModel)
+                    .where(DocumentModel.external_id == document_id)
+                    .where(text(f"({access_filter})"))
+                )
+
+                result = await session.execute(query)
+                doc_model = result.scalar_one_or_none()
+
+                if doc_model:
+                    # Convert doc_metadata back to metadata
+                    doc_dict = {
+                        "external_id": doc_model.external_id,
+                        "owner": doc_model.owner,
+                        "content_type": doc_model.content_type,
+                        "filename": doc_model.filename,
+                        "metadata": doc_model.doc_metadata,
+                        "storage_info": doc_model.storage_info,
+                        "system_metadata": doc_model.system_metadata,
+                        "additional_metadata": doc_model.additional_metadata,
+                        "access_control": doc_model.access_control,
+                        "chunk_ids": doc_model.chunk_ids,
+                        "storage_files": doc_model.storage_files or [],
+                    }
+                    return Document(**doc_dict)
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error retrieving document metadata: {str(e)}")
+            return None
+            
     async def get_document_by_filename(self, filename: str, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> Optional[Document]:
         """Retrieve document metadata by filename if user has access.
         If multiple documents have the same filename, returns the most recently updated one.
@@ -595,93 +544,47 @@ class PostgresDatabase(BaseDatabase):
     async def update_document(
         self, document_id: str, updates: Dict[str, Any], auth: AuthContext
     ) -> bool:
-        """Update document metadata."""
-        # Ensure database is initialized
-        if not self._initialized:
-            await self.initialize()
-
-        logger.debug(f"[TRACE-DB] Updating document {document_id}")
+        """Update document metadata if user has write access."""
         try:
-            # Start with a session establishment attempt
-            logger.info(f"[TRACE-DB] Starting session for update_document operation on document {document_id}")
+            if not await self.check_access(document_id, auth, "write"):
+                return False
+                
+            # Get existing document to preserve system_metadata
+            existing_doc = await self.get_document(document_id, auth)
+            if not existing_doc:
+                return False
+
+            # Update system metadata
+            updates.setdefault("system_metadata", {})
+            
+            # Preserve folder_name and end_user_id if not explicitly overridden
+            if existing_doc.system_metadata:
+                if "folder_name" in existing_doc.system_metadata and "folder_name" not in updates["system_metadata"]:
+                    updates["system_metadata"]["folder_name"] = existing_doc.system_metadata["folder_name"]
+                
+                if "end_user_id" in existing_doc.system_metadata and "end_user_id" not in updates["system_metadata"]:
+                    updates["system_metadata"]["end_user_id"] = existing_doc.system_metadata["end_user_id"]
+            
+            updates["system_metadata"]["updated_at"] = datetime.now(UTC)
+
+            # Serialize datetime objects to ISO format strings
+            updates = _serialize_datetime(updates)
+
             async with self.async_session() as session:
-                logger.info(f"[TRACE-DB] Session established for update_document on document {document_id}")
-                
-                # Build the access filter with write permission
-                access_filter = self._build_access_filter(auth, required_permission="write")
-                
-                try:
-                    # Check if document exists and user has access
-                    logger.debug(f"[TRACE-DB] Checking document access for update: {document_id} with filter: {access_filter}")
-                    check_query = (
-                        select(DocumentModel)
-                        .where(DocumentModel.external_id == document_id)
-                        .where(text(f"({access_filter})"))
-                    )
-                    
-                    result = await session.execute(check_query)
-                    doc_model = result.scalar_one_or_none()
-                    
-                    if not doc_model:
-                        logger.warning(f"[TRACE-DB] Document {document_id} not found or access denied for update")
-                        return False
-                    
-                    # Apply updates
-                    logger.debug(f"[TRACE-DB] Applying updates to document {document_id}: {list(updates.keys())}")
+                result = await session.execute(
+                    select(DocumentModel).where(DocumentModel.external_id == document_id)
+                )
+                doc_model = result.scalar_one_or_none()
+
+                if doc_model:
                     for key, value in updates.items():
-                        # Map Python model names to SQLAlchemy model names
-                        if key == "metadata":
-                            setattr(doc_model, "doc_metadata", value)
-                        else:
-                            setattr(doc_model, key, value)
-                    
-                    # Commit the changes
-                    logger.info(f"[TRACE-DB] Committing update to document {document_id}")
+                        setattr(doc_model, key, value)
                     await session.commit()
-                    logger.info(f"[TRACE-DB] Successfully updated document {document_id}")
                     return True
-                except Exception as query_err:
-                    logger.error(f"[TRACE-DB] Error during update operation for document {document_id}: {str(query_err)}")
-                    # Log pool stats
-                    try:
-                        if hasattr(self.engine, '_pool'):
-                            pool = self.engine._pool
-                            logger.error(f"[TRACE-DB] Pool stats during update error: size={pool.size}, overflow={pool.overflow}, checkedin={pool.checkedin}, checkedout={pool.checkedout}")
-                    except Exception:
-                        pass
-                    
-                    # Log complete traceback
-                    import traceback
-                    logger.error(f"[TRACE-DB] Update error traceback: {traceback.format_exc()}")
-                    
-                    # Rollback the transaction
-                    try:
-                        await session.rollback()
-                        logger.info(f"[TRACE-DB] Transaction rolled back for document {document_id}")
-                    except Exception as rollback_err:
-                        logger.error(f"[TRACE-DB] Error rolling back transaction: {str(rollback_err)}")
-                    
-                    raise
-                
+                return False
+
         except Exception as e:
-            # Log detailed information about the exception
-            logger.error(f"[TRACE-DB] Unhandled error in update_document for {document_id}: {str(e)}")
-            
-            # Check if it's a connection error
-            error_str = str(e)
-            if "connection" in error_str.lower() or "ConnectionDoesNotExistError" in error_str:
-                logger.error(f"[TRACE-DB] Database connection error detected during update for document {document_id}")
-                # Try to log pool stats
-                try:
-                    if hasattr(self.engine, '_pool'):
-                        pool = self.engine._pool
-                        logger.error(f"[TRACE-DB] Connection pool stats at error: size={pool.size}, overflow={pool.overflow}, checkedin={pool.checkedin}, checkedout={pool.checkedout}")
-                except Exception:
-                    pass
-            
-            # Log the full traceback
-            import traceback
-            logger.error(f"[TRACE-DB] Full error traceback: {traceback.format_exc()}")
+            logger.error(f"Error updating document metadata: {str(e)}")
             return False
 
     async def delete_document(self, document_id: str, auth: AuthContext) -> bool:

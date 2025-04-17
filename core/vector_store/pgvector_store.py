@@ -309,20 +309,15 @@ class PGVectorStore(BaseVectorStore):
             if not chunks:
                 return True, []
 
-            logger.info(f"[TRACE-DB] Attempting to store {len(chunks)} embeddings for document {chunks[0].document_id if chunks else 'unknown'}")
-            logger.info(f"[TRACE-DB] Session acquisition starting for store_embeddings - {chunks[0].document_id if chunks else 'unknown'}")
-            
             async with self.get_session_with_retry() as session:
-                logger.info(f"[TRACE-DB] Successfully acquired session for store_embeddings - {chunks[0].document_id if chunks else 'unknown'}")
                 stored_ids = []
                 for chunk in chunks:
                     if not chunk.embedding:
                         logger.error(
-                            f"[TRACE-DB] Missing embedding for chunk {chunk.document_id}-{chunk.chunk_number}"
+                            f"Missing embedding for chunk {chunk.document_id}-{chunk.chunk_number}"
                         )
                         continue
 
-                    logger.info(f"[TRACE-DB] Creating vector_embedding for chunk {chunk.document_id}-{chunk.chunk_number}")
                     vector_embedding = VectorEmbedding(
                         document_id=chunk.document_id,
                         chunk_number=chunk.chunk_number,
@@ -333,24 +328,11 @@ class PGVectorStore(BaseVectorStore):
                     session.add(vector_embedding)
                     stored_ids.append(f"{chunk.document_id}-{chunk.chunk_number}")
 
-                logger.info(f"[TRACE-DB] Committing {len(stored_ids)} embeddings to database for doc {chunks[0].document_id if chunks else 'unknown'}")
-                try:
-                    await session.commit()
-                    logger.info(f"[TRACE-DB] Successfully committed {len(stored_ids)} embeddings for doc {chunks[0].document_id if chunks else 'unknown'}")
-                except Exception as commit_error:
-                    logger.error(f"[TRACE-DB] Failed to commit embeddings for doc {chunks[0].document_id if chunks else 'unknown'}: {str(commit_error)}")
-                    # Log the full traceback
-                    import traceback
-                    logger.error(f"[TRACE-DB] Full commit error traceback: {traceback.format_exc()}")
-                    raise
-                
+                await session.commit()
                 return len(stored_ids) > 0, stored_ids
 
         except Exception as e:
-            # Log the full traceback
-            import traceback
-            logger.error(f"[TRACE-DB] Error storing embeddings: {str(e)}")
-            logger.error(f"[TRACE-DB] Full error traceback: {traceback.format_exc()}")
+            logger.error(f"Error storing embeddings: {str(e)}")
             return False, []
 
     async def query_similar(
