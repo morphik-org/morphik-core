@@ -13,7 +13,7 @@ import logging
 import arq
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from core.limits_utils import check_and_increment_limits
-from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, UpdateGraphRequest, BatchIngestResponse
+from core.models.request import GenerateUriRequest, RetrieveRequest, CompletionQueryRequest, IngestTextRequest, CreateGraphRequest, UpdateGraphRequest, BatchIngestResponse, SetFolderRuleRequest
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import Document, DocumentResult, ChunkResult
 from core.models.graph import Graph
@@ -2001,16 +2001,6 @@ async def generate_cloud_uri(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Add these classes before the extract_folder_data endpoint
-class MetadataExtractionRuleRequest(BaseModel):
-    """Request model for metadata extraction rule"""
-    type: str = "metadata_extraction"  # Only metadata_extraction supported for now
-    schema: Dict[str, Any]
-
-class SetFolderRuleRequest(BaseModel):
-    """Request model for setting folder rules"""
-    rules: List[MetadataExtractionRuleRequest]
-
 @app.post("/folders/{folder_id}/set_rule")
 async def set_folder_rule(
     folder_id: str,
@@ -2043,20 +2033,20 @@ async def set_folder_rule(
             },
         ):
             # Log detailed information about the rules
-            logger.info(f"Setting rules for folder {folder_id}")
-            logger.info(f"Number of rules: {len(request.rules)}")
+            logger.debug(f"Setting rules for folder {folder_id}")
+            logger.debug(f"Number of rules: {len(request.rules)}")
             
             for i, rule in enumerate(request.rules):
-                logger.info(f"\nRule {i + 1}:")
-                logger.info(f"Type: {rule.type}")
-                logger.info("Schema:")
+                logger.debug(f"\nRule {i + 1}:")
+                logger.debug(f"Type: {rule.type}")
+                logger.debug("Schema:")
                 for field_name, field_config in rule.schema.items():
-                    logger.info(f"  Field: {field_name}")
-                    logger.info(f"    Type: {field_config.get('type', 'unknown')}")
-                    logger.info(f"    Description: {field_config.get('description', 'No description')}")
+                    logger.debug(f"  Field: {field_name}")
+                    logger.debug(f"    Type: {field_config.get('type', 'unknown')}")
+                    logger.debug(f"    Description: {field_config.get('description', 'No description')}")
                     if 'schema' in field_config:
-                        logger.info(f"    Has JSON schema: Yes")
-                        logger.info(f"    Schema: {field_config['schema']}")
+                        logger.debug(f"    Has JSON schema: Yes")
+                        logger.debug(f"    Schema: {field_config['schema']}")
             
             # Get the folder
             folder = await document_service.db.get_folder(folder_id, auth)
