@@ -1394,6 +1394,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               handleCheckboxChange={handleCheckboxChange}
               getSelectAllState={getSelectAllState}
               setSelectedDocuments={setSelectedDocuments}
+              setDocuments={setDocuments}
               loading={loading}
               apiBaseUrl={effectiveApiUrl}
               authToken={authToken}

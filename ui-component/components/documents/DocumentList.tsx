@@ -10,8 +10,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Wand2, Upload } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { showAlert } from '@/components/ui/alert-system';
 
-import { Document } from '@/components/types';
+import { Document, Folder } from '@/components/types';
 
 type ColumnType = 'string' | 'int' | 'float' | 'bool' | 'Date' | 'json';
 
@@ -35,6 +36,7 @@ interface DocumentListProps {
   handleCheckboxChange: (checked: boolean | "indeterminate", docId: string) => void;
   getSelectAllState: () => boolean | "indeterminate";
   setSelectedDocuments: (docIds: string[]) => void;
+  setDocuments: (docs: Document[]) => void;
   loading: boolean;
   apiBaseUrl: string;
   authToken: string | null;
@@ -187,6 +189,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
   handleCheckboxChange,
   getSelectAllState,
   setSelectedDocuments,
+  setDocuments,
   loading,
   apiBaseUrl,
   authToken,
@@ -255,7 +258,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
       }
       
       const folders = await foldersResponse.json();
-      const currentFolder = folders.find((folder: any) => folder.name === selectedFolder);
+      const currentFolder = folders.find((folder: Folder) => folder.name === selectedFolder);
       
       if (!currentFolder) {
         throw new Error(`Folder "${selectedFolder}" not found`);
@@ -296,10 +299,110 @@ const DocumentList: React.FC<DocumentListProps> = ({
       console.log("Rule set successfully:", result);
       
       // Show success message
-      alert("Extraction rule set successfully!");
+      showAlert("Extraction rule set successfully!", {
+        type: 'success',
+        duration: 3000
+      });
+
+      // Force a fresh refresh after setting the rule
+      // This is a special function to ensure we get truly fresh data
+      const refreshAfterRule = async () => {
+        try {
+          console.log("Performing fresh refresh after setting extraction rule");
+          // Clear folder data to force a clean refresh
+          const folderResponse = await fetch(`${apiBaseUrl}/folders`, {
+            method: 'GET',
+            headers: {
+              ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+            }
+          });
+          
+          if (!folderResponse.ok) {
+            throw new Error(`Failed to fetch folders: ${folderResponse.statusText}`);
+          }
+          
+          const freshFolders = await folderResponse.json();
+          console.log(`Rule: Fetched ${freshFolders.length} folders with fresh data`);
+          
+          // Now fetch documents based on the current folder
+          if (selectedFolder && selectedFolder !== "all") {
+            // Find the folder by name
+            const targetFolder = freshFolders.find((folder: Folder) => folder.name === selectedFolder);
+            
+            if (targetFolder) {
+              console.log(`Rule: Found folder ${targetFolder.name} in fresh data`);
+              
+              // Get the document IDs from the folder
+              const documentIds = Array.isArray(targetFolder.document_ids) ? targetFolder.document_ids : [];
+              console.log(`Rule: Folder has ${documentIds.length} documents`);
+              
+              if (documentIds.length > 0) {
+                // Fetch document details for the IDs
+                const docResponse = await fetch(`${apiBaseUrl}/batch/documents`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+                  },
+                  body: JSON.stringify({
+                    document_ids: [...documentIds]
+                  })
+                });
+                
+                if (!docResponse.ok) {
+                  throw new Error(`Failed to fetch documents: ${docResponse.statusText}`);
+                }
+                
+                const freshDocs = await docResponse.json();
+                console.log(`Rule: Fetched ${freshDocs.length} document details`);
+                
+                // Update documents state
+                setDocuments(freshDocs);
+              } else {
+                // Empty folder
+                setDocuments([]);
+              }
+            } else {
+              console.log(`Rule: Selected folder ${selectedFolder} not found in fresh data`);
+              setDocuments([]);
+            }
+          } else {
+            // For "all" documents view, fetch all documents
+            const allDocsResponse = await fetch(`${apiBaseUrl}/documents`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+              },
+              body: JSON.stringify({})
+            });
+            
+            if (!allDocsResponse.ok) {
+              throw new Error(`Failed to fetch all documents: ${allDocsResponse.statusText}`);
+            }
+            
+            const allDocs = await allDocsResponse.json();
+            console.log(`Rule: Fetched ${allDocs.length} documents for "all" view`);
+            setDocuments(allDocs);
+          }
+        } catch (err) {
+          console.error('Error refreshing after setting rule:', err);
+          showAlert('Error refreshing data after setting rule', {
+            type: 'error',
+            duration: 3000
+          });
+        }
+      };
+      
+      // Execute the refresh
+      await refreshAfterRule();
     } catch (error) {
       console.error("Error setting extraction rule:", error);
-      alert(`Failed to set extraction rule: ${error instanceof Error ? error.message : String(error)}`);
+      showAlert(`Failed to set extraction rule: ${error instanceof Error ? error.message : String(error)}`, {
+        type: 'error',
+        title: 'Error',
+        duration: 5000
+      });
     } finally {
       setIsExtracting(false);
     }
