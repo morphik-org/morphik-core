@@ -45,7 +45,7 @@ def wait_for_redis(host="localhost", port=6379, timeout=20):
 
 def check_and_start_redis():
     """Check if the Redis service is available (via Docker or directly), and start the Docker container if necessary."""
-    redis_host = "localhost"  # or use any custom host if required
+    redis_host = os.environ.get("REDIS_HOST", "127.0.0.1")  # or use any custom host if required
     redis_port = 6379
     
     # Try to connect directly to Redis
