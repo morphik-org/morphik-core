@@ -25,6 +25,54 @@ from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
+async def get_document_with_retry(document_service, document_id, auth, max_retries=3, initial_delay=0.3):
+    """
+    Helper function to get a document with retries to handle race conditions.
+    
+    Args:
+        document_service: The document service instance
+        document_id: ID of the document to retrieve
+        auth: Authentication context
+        max_retries: Maximum number of retry attempts
+        initial_delay: Initial delay before first attempt in seconds
+        
+    Returns:
+        Document if found and accessible, None otherwise
+    """
+    attempt = 0
+    retry_delay = initial_delay
+    
+    # Add initial delay to allow transaction to commit
+    if initial_delay > 0:
+        await asyncio.sleep(initial_delay)
+    
+    while attempt < max_retries:
+        try:
+            doc = await document_service.db.get_document(document_id, auth)
+            if doc:
+                logger.debug(f"Successfully retrieved document {document_id} on attempt {attempt+1}")
+                return doc
+                
+            # Document not found but no exception raised
+            attempt += 1
+            if attempt < max_retries:
+                logger.warning(f"Document {document_id} not found on attempt {attempt}/{max_retries}. Retrying in {retry_delay}s...")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 1.5
+            
+        except Exception as e:
+            attempt += 1
+            error_msg = str(e)
+            if attempt < max_retries:
+                logger.warning(f"Error retrieving document on attempt {attempt}/{max_retries}: {error_msg}. Retrying in {retry_delay}s...")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 1.5
+            else:
+                logger.error(f"Failed to retrieve document after {max_retries} attempts: {error_msg}")
+                return None
+    
+    return None
+
 async def process_ingestion_job(
     ctx: Dict[str, Any],
     document_id: str,
@@ -103,36 +151,11 @@ async def process_ingestion_job(
         logger.debug(f"Retrieving document with ID: {document_id}")
         logger.debug(f"Auth context: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}")
         
-        # Add retry logic for database operations
-        max_retries = 3
-        retry_delay = 1.0
-        attempt = 0
-        doc = None
-        
-        while attempt < max_retries:
-            try:
-                doc = await document_service.db.get_document(document_id, auth)
-                # If successful, break out of the retry loop
-                break
-            except Exception as e:
-                attempt += 1
-                error_msg = str(e)
-                if "connection was closed" in error_msg or "ConnectionDoesNotExistError" in error_msg:
-                    if attempt < max_retries:
-                        logger.warning(f"Database connection error (attempt {attempt}/{max_retries}): {error_msg}. Retrying in {retry_delay}s...")
-                        await asyncio.sleep(retry_delay)
-                        # Increase delay for next retry (exponential backoff)
-                        retry_delay *= 2
-                    else:
-                        logger.error(f"All database connection attempts failed after {max_retries} retries: {error_msg}")
-                        raise
-                else:
-                    # For other exceptions, don't retry
-                    logger.error(f"Error retrieving document: {error_msg}")
-                    raise
+        # Use the retry helper function with initial delay to handle race conditions
+        doc = await get_document_with_retry(document_service, document_id, auth, max_retries=5, initial_delay=1.0)
         
         if not doc:
-            logger.error(f"Document {document_id} not found in database")
+            logger.error(f"Document {document_id} not found in database after multiple retries")
             logger.error(f"Details - file: {original_filename}, content_type: {content_type}, bucket: {bucket}, key: {file_key}")
             logger.error(f"Auth: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}")
             # Try to get all accessible documents to debug
@@ -142,7 +165,7 @@ async def process_ingestion_job(
             except Exception as list_err:
                 logger.error(f"Failed to list user documents: {str(list_err)}")
             
-            raise ValueError(f"Document {document_id} not found in database")
+            raise ValueError(f"Document {document_id} not found in database after multiple retries")
             
         # Prepare updates for the document
         updates = {
@@ -371,7 +394,13 @@ async def startup(ctx):
         logger.info("Initializing ColPali components...")
         colpali_embedding_model = ColpaliEmbeddingModel()
         colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI)
-        _ = colpali_vector_store.initialize()
+        # Properly await the initialization to ensure indexes are ready
+        # MultiVectorStore.initialize is synchronous, so we need to run it in a thread
+        success = await asyncio.to_thread(colpali_vector_store.initialize)
+        if success:
+            logger.info("ColPali vector store initialization successful")
+        else:
+            logger.error("ColPali vector store initialization failed")
     ctx['colpali_embedding_model'] = colpali_embedding_model
     ctx['colpali_vector_store'] = colpali_vector_store
     
@@ -448,7 +477,7 @@ class WorkerSettings:
     # redis_settings = arq.connections.RedisSettings(host='localhost', port=6379)
     keep_result_ms = 24 * 60 * 60 * 1000  # Keep results for 24 hours (24 * 60 * 60 * 1000 ms)
     max_jobs = 5  # Reduce concurrent jobs to prevent connection pool exhaustion
-    health_check_interval = 30  # Check worker health every 30 seconds
+    health_check_interval = 300  # Check worker health every 5 minutes instead of 30 seconds to reduce connection overhead
     job_timeout = 3600  # 1 hour timeout for jobs
     max_tries = 3  # Retry failed jobs up to 3 times
     poll_delay = 0.5  # Poll delay to prevent excessive Redis queries
