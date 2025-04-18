@@ -7,8 +7,9 @@ import { useSearchParams } from 'next/navigation';
 function HomeContent() {
   const searchParams = useSearchParams();
   const folderParam = searchParams.get('folder');
+  const sectionParam = searchParams.get('section');
   
-  return <MorphikUI initialFolder={folderParam} />;
+  return <MorphikUI initialFolder={folderParam} initialSection={sectionParam || undefined} />;
 }
 
 export default function Home() {

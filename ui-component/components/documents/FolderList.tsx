@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { PlusCircle, ArrowLeft } from 'lucide-react';
+import { PlusCircle, ArrowLeft, MessageSquare } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -131,15 +131,51 @@ const FolderList: React.FC<FolderListProps> = ({
               </h2>
             </div>
             
-            {/* Show delete button if documents are selected */}
-            {selectedDocuments.length > 0 && handleDeleteMultipleDocuments && (
-              <Button 
-                variant="outline" 
-                onClick={handleDeleteMultipleDocuments}
-                className="border-red-500 text-red-500 hover:bg-red-50 ml-4"
-              >
-                Delete {selectedDocuments.length} selected
-              </Button>
+            {/* Show action buttons if documents are selected */}
+            {selectedDocuments && selectedDocuments.length > 0 && (
+              <div className="flex gap-2 ml-4">
+                {/* Chat with selected button */}
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    // Build proper URL path
+                    let path = '/';
+                    if (typeof window !== 'undefined') {
+                      const currentPath = window.location.pathname;
+                      if (currentPath !== '/') {
+                        path = currentPath;
+                      }
+                    }
+                    
+                    // Create filter with external_id which is the correct field name
+                    const filter = JSON.stringify({ external_id: selectedDocuments });
+                    const filtersParam = encodeURIComponent(filter);
+                    
+                    // Navigate to chat with selected documents
+                    // Use window.location to force a full page reload
+                    if (typeof window !== 'undefined') {
+                      window.location.href = `${path}?section=chat&filters=${filtersParam}`;
+                    } else {
+                      router.push(`${path}?section=chat&filters=${filtersParam}`);
+                    }
+                  }}
+                  className="border-primary text-primary hover:bg-primary/10 flex items-center gap-1"
+                >
+                  <MessageSquare size={16} />
+                  Chat with {selectedDocuments.length} selected
+                </Button>
+                
+                {/* Delete button */}
+                {handleDeleteMultipleDocuments && (
+                  <Button 
+                    variant="outline" 
+                    onClick={handleDeleteMultipleDocuments}
+                    className="border-red-500 text-red-500 hover:bg-red-50"
+                  >
+                    Delete {selectedDocuments.length} selected
+                  </Button>
+                )}
+              </div>
             )}
           </div>
           

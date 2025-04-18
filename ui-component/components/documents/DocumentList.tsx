@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Wand2, Upload } from 'lucide-react';
+import { Plus, Wand2, Upload, Filter } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { showAlert } from '@/components/ui/alert-system';
 
@@ -42,6 +42,76 @@ interface DocumentListProps {
   authToken: string | null;
   selectedFolder?: string | null;
 }
+
+// Filter Dialog Component
+const FilterDialog = ({
+  isOpen,
+  onClose,
+  columns,
+  filterValues,
+  setFilterValues
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  columns: CustomColumn[];
+  filterValues: Record<string, string>;
+  setFilterValues: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+}) => {
+  const [localFilters, setLocalFilters] = useState<Record<string, string>>(filterValues);
+
+  const handleApplyFilters = () => {
+    setFilterValues(localFilters);
+    onClose();
+  };
+
+  const handleClearFilters = () => {
+    setLocalFilters({});
+    setFilterValues({});
+    onClose();
+  };
+
+  const handleFilterChange = (column: string, value: string) => {
+    setLocalFilters(prev => ({
+      ...prev,
+      [column]: value
+    }));
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogHeader>
+          <DialogTitle>Filter Documents</DialogTitle>
+          <DialogDescription>
+            Filter documents by their metadata values
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4 max-h-96 overflow-y-auto">
+          {columns.map(column => (
+            <div key={column.name} className="space-y-2">
+              <label htmlFor={`filter-${column.name}`} className="text-sm font-medium">{column.name}</label>
+              <Input
+                id={`filter-${column.name}`}
+                placeholder={`Filter by ${column.name}...`}
+                value={localFilters[column.name] || ''}
+                onChange={(e) => handleFilterChange(column.name, e.target.value)}
+              />
+            </div>
+          ))}
+        </div>
+        <DialogFooter className="flex justify-between">
+          <Button variant="outline" onClick={handleClearFilters}>
+            Clear Filters
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={handleApplyFilters}>Apply Filters</Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
 
 // Create a separate Column Dialog component to isolate its state
 const AddColumnDialog = ({ 
@@ -198,6 +268,9 @@ const DocumentList: React.FC<DocumentListProps> = ({
   const [customColumns, setCustomColumns] = useState<CustomColumn[]>([]);
   const [showAddColumnDialog, setShowAddColumnDialog] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
+  const [showFilterDialog, setShowFilterDialog] = useState(false);
+  const [filterValues, setFilterValues] = useState<Record<string, string>>({});
+  const [filteredDocuments, setFilteredDocuments] = useState<Document[]>([]);
 
   // Get unique metadata fields from all documents
   const existingMetadataFields = React.useMemo(() => {
@@ -209,6 +282,29 @@ const DocumentList: React.FC<DocumentListProps> = ({
     });
     return Array.from(fields);
   }, [documents]);
+  
+  // Apply filter logic
+  useEffect(() => {
+    if (Object.keys(filterValues).length === 0) {
+      setFilteredDocuments(documents);
+      return;
+    }
+    
+    const filtered = documents.filter(doc => {
+      // Check if document matches all filter criteria
+      return Object.entries(filterValues).every(([key, value]) => {
+        if (!value || value.trim() === '') return true; // Skip empty filters
+        
+        const docValue = doc.metadata?.[key];
+        if (docValue === undefined) return false;
+        
+        // String comparison (case-insensitive)
+        return String(docValue).toLowerCase().includes(value.toLowerCase());
+      });
+    });
+    
+    setFilteredDocuments(filtered);
+  }, [documents, filterValues]);
 
   // Combine existing metadata fields with custom columns
   const allColumns = React.useMemo(() => {
@@ -237,6 +333,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
   };
 
   // Handle data extraction
+
   const handleExtract = async () => {
     // First, find the folder object to get its ID
     if (!selectedFolder || customColumns.length === 0) {
@@ -408,46 +505,34 @@ const DocumentList: React.FC<DocumentListProps> = ({
     }
   };
 
-  const DocumentListHeader = () => (
-    <div className="bg-muted border-b font-medium sticky top-0 z-10 relative">
-      <div className="grid items-center w-full" style={{ 
-        gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px ${allColumns.map(() => '140px').join(' ')}` 
-      }}>
-        <div className="flex items-center justify-center p-3">
-          <Checkbox
-            id="select-all-documents"
-            checked={getSelectAllState()}
-            onCheckedChange={(checked) => {
-              if (checked) {
-                setSelectedDocuments(documents.map(doc => doc.external_id));
-              } else {
-                setSelectedDocuments([]);
-              }
-            }}
-            aria-label="Select all documents"
-          />
-        </div>
-        <div className="text-sm font-semibold p-3">Filename</div>
-        <div className="text-sm font-semibold p-3">Type</div>
-        <div className="text-sm font-semibold p-3">
-          <div className="group relative inline-flex items-center">
-            Status
-            <span className="ml-1 text-muted-foreground cursor-help">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="16" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12.01" y2="8"></line>
-              </svg>
-            </span>
-            <div className="absolute left-0 top-6 hidden group-hover:block bg-background border text-foreground text-xs p-3 rounded-md w-64 z-[100] shadow-lg">
-              Documents with &quot;Processing&quot; status are queryable, but visual features like direct visual context will only be available after processing completes.
-            </div>
+  // Calculate how many filters are currently active
+  const activeFilterCount = Object.values(filterValues).filter(v => v && v.trim() !== '').length;
+  
+  const DocumentListHeader = () => {
+    return (
+      <div className="bg-muted border-b font-medium sticky top-0 z-10 relative">
+        <div className="grid items-center w-full" style={{ 
+          gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px ${allColumns.map(() => '140px').join(' ')}` 
+        }}>
+          <div className="flex items-center justify-center p-3">
+            <Checkbox
+              id="select-all-documents"
+              checked={getSelectAllState()}
+              onCheckedChange={(checked) => {
+                if (checked) {
+                  setSelectedDocuments(documents.map(doc => doc.external_id));
+                } else {
+                  setSelectedDocuments([]);
+                }
+              }}
+              aria-label="Select all documents"
+            />
           </div>
-        </div>
-        {allColumns.map((column) => (
-          <div key={column.name} className="text-sm font-semibold p-3">
+          <div className="text-sm font-semibold p-3">Filename</div>
+          <div className="text-sm font-semibold p-3">Type</div>
+          <div className="text-sm font-semibold p-3">
             <div className="group relative inline-flex items-center">
-              {column.name}
+              Status
               <span className="ml-1 text-muted-foreground cursor-help">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
@@ -456,38 +541,50 @@ const DocumentList: React.FC<DocumentListProps> = ({
                 </svg>
               </span>
               <div className="absolute left-0 top-6 hidden group-hover:block bg-background border text-foreground text-xs p-3 rounded-md w-64 z-[100] shadow-lg">
-                <p>{column.description}</p>
-                <p className="mt-1 font-medium">Type: {column._type}</p>
-                {column.schema && (
-                  <p className="mt-1 text-xs">Schema provided</p>
-                )}
+                Documents with &quot;Processing&quot; status are queryable, but visual features like direct visual context will only be available after processing completes.
               </div>
             </div>
           </div>
-        ))}
-      </div>
-      
-      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          className="h-6 w-6 rounded-full" 
-          title="Add column"
-          onClick={() => setShowAddColumnDialog(true)}
-        >
-          <Plus className="h-4 w-4" />
-          <span className="sr-only">Add column</span>
-        </Button>
+          {allColumns.map((column) => (
+            <div key={column.name} className="text-sm font-semibold p-3">
+              <div className="group relative inline-flex items-center">
+                {column.name}
+                <span className="ml-1 text-muted-foreground cursor-help">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                  </svg>
+                </span>
+                <div className="absolute left-0 top-6 hidden group-hover:block bg-background border text-foreground text-xs p-3 rounded-md w-64 z-[100] shadow-lg">
+                  <p>{column.description}</p>
+                  <p className="mt-1 font-medium">Type: {column._type}</p>
+                  {column.schema && (
+                    <p className="mt-1 text-xs">Schema provided</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
         
-        {/* Render the dialog separately */}
+        {/* Render dialogs separately */}
         <AddColumnDialog 
           isOpen={showAddColumnDialog}
           onClose={() => setShowAddColumnDialog(false)}
           onAddColumn={handleAddColumn}
         />
+        
+        <FilterDialog
+          isOpen={showFilterDialog}
+          onClose={() => setShowFilterDialog(false)}
+          columns={allColumns}
+          filterValues={filterValues}
+          setFilterValues={setFilterValues}
+        />
       </div>
-    </div>
-  );
+    );
+  };
 
   if (loading && !documents.length) {
     return (
@@ -507,7 +604,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
     <div className="border rounded-md overflow-hidden shadow-sm w-full">
       <DocumentListHeader />
       <ScrollArea className="h-[calc(100vh-220px)]">
-        {documents.map((doc) => (
+        {filteredDocuments.map((doc) => (
           <div 
             key={doc.external_id}
             onClick={() => handleDocumentClick(doc)}
@@ -569,6 +666,24 @@ const DocumentList: React.FC<DocumentListProps> = ({
           </div>
         ))}
         
+        {filteredDocuments.length === 0 && documents.length > 0 && (
+          <div className="p-12 text-center flex flex-col items-center justify-center">
+            <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-4">
+              <Filter className="text-muted-foreground" />
+            </div>
+            <p className="text-muted-foreground">
+              No documents match the current filters.
+            </p>
+            <Button 
+              variant="link" 
+              className="mt-2" 
+              onClick={() => setFilterValues({})}
+            >
+              Clear all filters
+            </Button>
+          </div>
+        )}
+        
         {documents.length === 0 && (
           <div className="p-12 text-center flex flex-col items-center justify-center">
             <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-4">
@@ -588,18 +703,66 @@ const DocumentList: React.FC<DocumentListProps> = ({
         )}
       </ScrollArea>
       
-      {customColumns.length > 0 && (
-        <div className="border-t p-3 flex justify-end">
-          <Button 
-            className="gap-2" 
-            onClick={handleExtract}
-            disabled={isExtracting || !selectedFolder}
-          >
-            <Wand2 className="h-4 w-4" />
-            {isExtracting ? 'Processing...' : 'Extract'}
-          </Button>
+      <div className="border-t p-3 flex justify-between">
+        {/* Filter stats */}
+        <div className="flex items-center text-sm text-muted-foreground">
+          {Object.keys(filterValues).length > 0 ? (
+            <div className="flex items-center gap-1">
+              <Filter className="h-4 w-4" />
+              <span>
+                {filteredDocuments.length} of {documents.length} documents
+                {Object.keys(filterValues).length > 0 && (
+                  <Button variant="link" className="p-0 h-auto text-sm ml-1" onClick={() => setFilterValues({})}>
+                    Clear filters
+                  </Button>
+                )}
+              </span>
+            </div>
+          ) : null}
         </div>
-      )}
+        
+        {/* Action buttons */}
+        <div className="flex gap-2">
+          {/* Filter button */}
+          <Button 
+            variant={activeFilterCount > 0 ? "default" : "outline"}
+            size="sm" 
+            className="h-8 text-xs font-medium"
+            onClick={() => setShowFilterDialog(true)}
+          >
+            <Filter className="h-3.5 w-3.5 mr-0.5" />
+            Filter
+            {activeFilterCount > 0 && (
+              <span className="ml-1 h-4 w-4 bg-primary/20 text-primary text-[10px] flex items-center justify-center rounded-full">
+                {activeFilterCount}
+              </span>
+            )}
+          </Button>
+          
+          {/* Add column button */}
+          <Button 
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs font-medium"  
+            title="Add column"
+            onClick={() => setShowAddColumnDialog(true)}
+          >
+            <Plus className="h-3.5 w-3.5 mr-0.5" />
+            Column
+          </Button>
+          
+          {customColumns.length > 0 && selectedFolder && (
+            <Button 
+              className="gap-2" 
+              onClick={handleExtract}
+              disabled={isExtracting || !selectedFolder}
+            >
+              <Wand2 className="h-4 w-4" />
+              {isExtracting ? 'Processing...' : 'Extract'}
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

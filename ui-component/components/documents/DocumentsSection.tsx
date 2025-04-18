@@ -1326,14 +1326,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         />
       )}
       
-      {documents.length === 0 && !loading && folders.length === 0 && !foldersLoading ? (
-        <div className="text-center py-8 border border-dashed rounded-lg flex-1 flex items-center justify-center">
-          <div>
-            <Upload className="mx-auto h-12 w-12 mb-2 text-muted-foreground" />
-            <p className="text-muted-foreground">No documents found. Upload your first document.</p>
-          </div>
-        </div>
-      ) : selectedFolder && documents.length === 0 && !loading ? (
+      {selectedFolder && documents.length === 0 && !loading ? (
         <div className="text-center py-8 border border-dashed rounded-lg flex-1 flex items-center justify-center">
           <div>
             <Upload className="mx-auto h-12 w-12 mb-2 text-muted-foreground" />

@@ -171,8 +171,13 @@ async def process_ingestion_job(
             raise ValueError(f"Document {document_id} not found in database after multiple retries")
             
         # Prepare updates for the document
+        # Merge new metadata with existing metadata to preserve external_id
+        merged_metadata = {**doc.metadata, **metadata}
+        # Make sure external_id is preserved in the metadata
+        merged_metadata["external_id"] = doc.external_id
+        
         updates = {
-            "metadata": metadata,
+            "metadata": merged_metadata,
             "additional_metadata": additional_metadata,
             "system_metadata": {**doc.system_metadata, "content": text}
         }

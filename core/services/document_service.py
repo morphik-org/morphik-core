@@ -1409,6 +1409,9 @@ class DocumentService:
         # Update metadata if provided - additive but replacing existing keys
         if metadata:
             doc.metadata.update(metadata)
+            
+        # Ensure external_id is preserved in metadata
+        doc.metadata["external_id"] = doc.external_id
         
         # Increment version
         current_version = doc.system_metadata.get("version", 1)
