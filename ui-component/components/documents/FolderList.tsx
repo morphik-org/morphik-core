@@ -2,14 +2,14 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { PlusCircle, Folder as FolderIcon, File, ArrowLeft } from 'lucide-react';
+import { PlusCircle, ArrowLeft } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
-import { Card, CardContent } from '@/components/ui/card';
 import { Folder } from '@/components/types';
+import { useRouter, usePathname } from 'next/navigation';
+import Image from 'next/image';
 
 interface FolderListProps {
   folders: Folder[];
@@ -19,6 +19,12 @@ interface FolderListProps {
   authToken: string | null;
   refreshFolders: () => void;
   loading: boolean;
+  refreshAction?: () => void;
+  selectedDocuments?: string[];
+  handleDeleteMultipleDocuments?: () => void;
+  showUploadDialog?: boolean;
+  setShowUploadDialog?: (show: boolean) => void;
+  uploadDialogComponent?: React.ReactNode;
 }
 
 const FolderList: React.FC<FolderListProps> = ({
@@ -28,12 +34,30 @@ const FolderList: React.FC<FolderListProps> = ({
   apiBaseUrl,
   authToken,
   refreshFolders,
-  loading
+  loading,
+  refreshAction,
+  selectedDocuments = [],
+  handleDeleteMultipleDocuments,
+  uploadDialogComponent
 }) => {
+  const router = useRouter();
+  const pathname = usePathname();
   const [showNewFolderDialog, setShowNewFolderDialog] = React.useState(false);
   const [newFolderName, setNewFolderName] = React.useState('');
   const [newFolderDescription, setNewFolderDescription] = React.useState('');
   const [isCreatingFolder, setIsCreatingFolder] = React.useState(false);
+  
+  // Function to update both state and URL
+  const updateSelectedFolder = (folderName: string | null) => {
+    setSelectedFolder(folderName);
+    
+    // Update URL to reflect the selected folder
+    if (folderName) {
+      router.push(`${pathname}?folder=${encodeURIComponent(folderName)}`);
+    } else {
+      router.push(pathname);
+    }
+  };
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
@@ -73,7 +97,7 @@ const FolderList: React.FC<FolderListProps> = ({
       
       // Auto-select this newly created folder so user can immediately add files to it
       // This ensures we start with a clean empty folder view
-      setSelectedFolder(folderData.name);
+      updateSelectedFolder(folderData.name);
       
     } catch (error) {
       console.error('Error creating folder:', error);
@@ -86,28 +110,61 @@ const FolderList: React.FC<FolderListProps> = ({
   if (selectedFolder !== null) {
     return (
       <div className="mb-4">
-        <div className="flex items-center gap-2 mb-4">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="p-1 h-8 w-8" 
-            onClick={() => setSelectedFolder(null)}
-          >
-            <ArrowLeft size={16} />
-          </Button>
-          <h2 className="font-medium text-lg flex items-center">
-            {selectedFolder === "all" ? (
-              <>
-                <File className="h-5 w-5 mr-2" />
-                All Documents
-              </>
-            ) : (
-              <>
-                <FolderIcon className="h-5 w-5 mr-2" />
-                {selectedFolder}
-              </>
+        <div className="flex justify-between items-center py-2">
+          <div className="flex items-center gap-4">
+            <Button 
+              variant="ghost" 
+              size="icon"
+              className="rounded-full hover:bg-muted/50" 
+              onClick={() => updateSelectedFolder(null)}
+            >
+              <ArrowLeft size={18} />
+            </Button>
+            <div className="flex items-center">
+              {selectedFolder === "all" ? (
+                <span className="text-3xl mr-3" aria-hidden="true">📄</span>
+              ) : (
+                <Image src="/icons/folder-icon.png" alt="Folder" width={32} height={32} className="mr-3" />
+              )}
+              <h2 className="font-medium text-xl">
+                {selectedFolder === "all" ? "All Documents" : selectedFolder}
+              </h2>
+            </div>
+            
+            {/* Show delete button if documents are selected */}
+            {selectedDocuments.length > 0 && handleDeleteMultipleDocuments && (
+              <Button 
+                variant="outline" 
+                onClick={handleDeleteMultipleDocuments}
+                className="border-red-500 text-red-500 hover:bg-red-50 ml-4"
+              >
+                Delete {selectedDocuments.length} selected
+              </Button>
             )}
-          </h2>
+          </div>
+          
+          {/* Action buttons */}
+          <div className="flex items-center gap-2">
+            {refreshAction && (
+              <Button
+                variant="outline"
+                onClick={refreshAction}
+                className="flex items-center"
+                title="Refresh documents"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                  <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                  <path d="M21 3v5h-5"></path>
+                  <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+                  <path d="M8 16H3v5"></path>
+                </svg>
+                Refresh
+              </Button>
+            )}
+            
+            {/* Upload dialog component */}
+            {uploadDialogComponent}
+          </div>
         </div>
       </div>
     );
@@ -165,46 +222,44 @@ const FolderList: React.FC<FolderListProps> = ({
         </Dialog>
       </div>
       
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        <Card
-          className={cn(
-            "cursor-pointer hover:border-primary transition-colors",
-            "flex flex-col items-center justify-center h-24"
-          )}
-          onClick={() => setSelectedFolder("all")}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6 py-2">
+        <div 
+          className="cursor-pointer group flex flex-col items-center"
+          onClick={() => updateSelectedFolder("all")}
         >
-          <CardContent className="p-4 flex flex-col items-center justify-center">
-            <File className="h-10 w-10 mb-1" />
-            <span className="text-sm font-medium text-center">All Documents</span>
-          </CardContent>
-        </Card>
+          <div className="mb-2 group-hover:scale-110 transition-transform">
+            <span className="text-4xl" aria-hidden="true">📄</span>
+          </div>
+          <span className="text-sm font-medium text-center group-hover:text-primary transition-colors">All Documents</span>
+        </div>
         
         {folders.map((folder) => (
-          <Card
+          <div
             key={folder.name}
-            className={cn(
-              "cursor-pointer hover:border-primary transition-colors",
-              "flex flex-col items-center justify-center h-24"
-            )}
-            onClick={() => setSelectedFolder(folder.name)}
+            className="cursor-pointer group flex flex-col items-center"
+            onClick={() => updateSelectedFolder(folder.name)}
           >
-            <CardContent className="p-4 flex flex-col items-center justify-center">
-              <FolderIcon className="h-10 w-10 mb-1" />
-              <span className="text-sm font-medium truncate text-center w-full">{folder.name}</span>
-            </CardContent>
-          </Card>
+            <div className="mb-2 group-hover:scale-110 transition-transform">
+              <Image src="/icons/folder-icon.png" alt="Folder" width={64} height={64} />
+            </div>
+            <span className="text-sm font-medium truncate text-center w-full max-w-[100px] group-hover:text-primary transition-colors">{folder.name}</span>
+          </div>
         ))}
       </div>
       
       {folders.length === 0 && !loading && (
-        <div className="text-center p-8 text-sm text-muted-foreground">
-          No folders yet. Create one to organize your documents.
+        <div className="flex flex-col items-center justify-center p-8 mt-4">
+          <Image src="/icons/folder-icon.png" alt="Folder" width={80} height={80} className="opacity-50 mb-3" />
+          <p className="text-sm text-muted-foreground">No folders yet. Create one to organize your documents.</p>
         </div>
       )}
       
       {loading && folders.length === 0 && (
-        <div className="text-center p-8 text-sm text-muted-foreground">
-          Loading folders...
+        <div className="flex items-center justify-center p-8 mt-4">
+          <div className="flex items-center space-x-2">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+            <p className="text-sm text-muted-foreground">Loading folders...</p>
+          </div>
         </div>
       )}
     </div>

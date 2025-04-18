@@ -14,6 +14,8 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   connectionUri?: string
   isReadOnlyUri?: boolean
   onUriChange?: (uri: string) => void
+  isCollapsed?: boolean
+  setIsCollapsed?: (collapsed: boolean) => void
 }
 
 export function Sidebar({ 
@@ -23,11 +25,25 @@ export function Sidebar({
   connectionUri, 
   isReadOnlyUri = false,
   onUriChange,
+  isCollapsed: externalIsCollapsed,
+  setIsCollapsed: externalSetIsCollapsed,
   ...props 
 }: SidebarProps) {
-  const [isCollapsed, setIsCollapsed] = React.useState(false)
+  // Use internal state that syncs with external state if provided
+  const [internalIsCollapsed, setInternalIsCollapsed] = React.useState(false)
   const [editableUri, setEditableUri] = React.useState('')
   const [isEditingUri, setIsEditingUri] = React.useState(false)
+  
+  // Determine if sidebar is collapsed based on props or internal state
+  const isCollapsed = externalIsCollapsed !== undefined ? externalIsCollapsed : internalIsCollapsed
+  
+  // Toggle function that updates both internal and external state if provided
+  const toggleCollapsed = () => {
+    if (externalSetIsCollapsed) {
+      externalSetIsCollapsed(!isCollapsed)
+    }
+    setInternalIsCollapsed(!isCollapsed)
+  }
   
   // Initialize from localStorage or props
   React.useEffect(() => {
@@ -110,7 +126,7 @@ export function Sidebar({
             variant="ghost"
             size="icon"
             className="ml-auto"
-            onClick={() => setIsCollapsed(!isCollapsed)}
+            onClick={toggleCollapsed}
           >
             {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>

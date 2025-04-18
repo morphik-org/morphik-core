@@ -7,6 +7,7 @@ export interface MorphikUIProps {
   onUriChange?: (uri: string) => void; // Callback when URI is changed
   onBackClick?: () => void; // Callback when back button is clicked
   appName?: string; // Name of the app to display in UI
+  initialFolder?: string | null; // Initial folder to show
 }
 
 export interface Document {
