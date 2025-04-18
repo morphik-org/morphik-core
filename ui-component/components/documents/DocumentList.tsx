@@ -5,7 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Wand2, Upload } from 'lucide-react';
@@ -25,7 +25,7 @@ interface CustomColumn {
 
 interface MetadataExtractionRule {
   type: "metadata_extraction";
-  schema: Record<string, any>;
+  schema: Record<string, unknown>;
 }
 
 interface DocumentListProps {
@@ -440,7 +440,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
               </svg>
             </span>
             <div className="absolute left-0 top-6 hidden group-hover:block bg-background border text-foreground text-xs p-3 rounded-md w-64 z-[100] shadow-lg">
-              Documents with "Processing" status are queryable, but visual features like direct visual context will only be available after processing completes.
+              Documents with &quot;Processing&quot; status are queryable, but visual features like direct visual context will only be available after processing completes.
             </div>
           </div>
         </div>

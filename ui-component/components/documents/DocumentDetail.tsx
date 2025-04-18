@@ -8,6 +8,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Info } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import Image from 'next/image';
 
 import { Document, Folder } from '@/components/types';
 
@@ -136,7 +137,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
           <div>
             <h3 className="font-medium mb-1">Folder</h3>
             <div className="flex items-center gap-2">
-              <img src="/icons/folder-icon.png" alt="Folder" className="w-4 h-4" />
+              <Image src="/icons/folder-icon.png" alt="Folder" width={16} height={16} />
               <Select
                 value={currentFolder || "_none"}
                 onValueChange={(value) => handleMoveToFolder(value === "_none" ? null : value)}
