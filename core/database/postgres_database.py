@@ -580,14 +580,15 @@ class PostgresDatabase(BaseDatabase):
             # Update system metadata
             updates.setdefault("system_metadata", {})
             
-            # Preserve important system_metadata fields if not explicitly overridden
-            important_fields = ["folder_name", "end_user_id", "content", "status", "created_at"]
-            
+            # Merge with existing system_metadata instead of just preserving specific fields
             if existing_doc.system_metadata:
-                for field in important_fields:
-                    if field in existing_doc.system_metadata and field not in updates["system_metadata"]:
-                        updates["system_metadata"][field] = existing_doc.system_metadata[field]
-                        logger.debug(f"Preserving system_metadata[{field}] during document update")
+                # Start with existing system_metadata
+                merged_system_metadata = dict(existing_doc.system_metadata)
+                # Update with new values
+                merged_system_metadata.update(updates["system_metadata"])
+                # Replace with merged result
+                updates["system_metadata"] = merged_system_metadata
+                logger.debug(f"Merged system_metadata during document update, preserving existing fields")
             
             # Always update the updated_at timestamp
             updates["system_metadata"]["updated_at"] = datetime.now(UTC)
@@ -612,7 +613,7 @@ class PostgresDatabase(BaseDatabase):
                     
                     # Set all attributes
                     for key, value in updates.items():
-                        logger.info(f"Setting document attribute {key} = {value}")
+                        logger.debug(f"Setting document attribute {key} = {value}")
                         setattr(doc_model, key, value)
                         
                     await session.commit()
