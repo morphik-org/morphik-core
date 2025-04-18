@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Folder } from '@/components/types';
 import { useRouter, usePathname } from 'next/navigation';
+import Image from 'next/image';
 
 interface FolderListProps {
   folders: Folder[];
@@ -123,7 +124,7 @@ const FolderList: React.FC<FolderListProps> = ({
               {selectedFolder === "all" ? (
                 <span className="text-3xl mr-3" aria-hidden="true">📄</span>
               ) : (
-                <img src="/icons/folder-icon.png" alt="Folder" className="w-8 h-8 mr-3" />
+                <Image src="/icons/folder-icon.png" alt="Folder" width={32} height={32} className="mr-3" />
               )}
               <h2 className="font-medium text-xl">
                 {selectedFolder === "all" ? "All Documents" : selectedFolder}
@@ -239,7 +240,7 @@ const FolderList: React.FC<FolderListProps> = ({
             onClick={() => updateSelectedFolder(folder.name)}
           >
             <div className="mb-2 group-hover:scale-110 transition-transform">
-              <img src="/icons/folder-icon.png" alt="Folder" className="w-16 h-16" />
+              <Image src="/icons/folder-icon.png" alt="Folder" width={64} height={64} />
             </div>
             <span className="text-sm font-medium truncate text-center w-full max-w-[100px] group-hover:text-primary transition-colors">{folder.name}</span>
           </div>
@@ -248,7 +249,7 @@ const FolderList: React.FC<FolderListProps> = ({
       
       {folders.length === 0 && !loading && (
         <div className="flex flex-col items-center justify-center p-8 mt-4">
-          <img src="/icons/folder-icon.png" alt="Folder" className="w-20 h-20 opacity-50 mb-3" />
+          <Image src="/icons/folder-icon.png" alt="Folder" width={80} height={80} className="opacity-50 mb-3" />
           <p className="text-sm text-muted-foreground">No folders yet. Create one to organize your documents.</p>
         </div>
       )}

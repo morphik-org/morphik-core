@@ -1245,13 +1245,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     performFreshFetch();
   };
 
-  // Title based on selected folder
-  const sectionTitle = selectedFolder === null 
-    ? "Folders" 
-    : selectedFolder === "all" 
-      ? "All Documents" 
-      : `Folder: ${selectedFolder}`;
-
   return (
     <div 
       className={cn(
