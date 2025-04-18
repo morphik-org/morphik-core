@@ -2,13 +2,11 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { PlusCircle, Folder as FolderIcon, File, ArrowLeft } from 'lucide-react';
+import { PlusCircle, ArrowLeft } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
-import { Card, CardContent } from '@/components/ui/card';
 import { Folder } from '@/components/types';
 import { useRouter, usePathname } from 'next/navigation';
 
