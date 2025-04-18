@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 
 
 class ColpaliEmbeddingModel(BaseEmbeddingModel):
-    def __init__(self, model_name: str = "colqwen2.5-v0.2"):
+    def __init__(self, model_name: str = "vidore/colqwen2.5-v0.2"):
         device = (
             "mps"
             if torch.backends.mps.is_available()
             else "cuda" if torch.cuda.is_available() else "cpu"
         )
-        if model_name == "colqwen2.5-v0.2":
+        if model_name == "vidore/colqwen2.5-v0.2":
             self.model = ColQwen2_5.from_pretrained(
                 "vidore/colqwen2.5-v0.2",
                 torch_dtype=torch.bfloat16,
