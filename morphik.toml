@@ -109,7 +109,7 @@ mode = "self_hosted"  # "cloud" or "self_hosted"
 api_domain = "api.morphik.ai"  # API domain for cloud URIs
 
 [redis]
-host = "localhost"
+host = "redis"
 port = 6379
 
 [graph]
