@@ -22,7 +22,8 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
   isReadOnlyUri = false, // Default to editable URI
   onUriChange,
   onBackClick,
-  initialFolder = null
+  initialFolder = null,
+  initialSection = 'documents'
 }) => {
   // State to manage connectionUri internally if needed
   const [currentUri, setCurrentUri] = useState(connectionUri);
@@ -40,7 +41,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
       onUriChange(newUri);
     }
   };
-  const [activeSection, setActiveSection] = useState('documents');
+  const [activeSection, setActiveSection] = useState(initialSection);
   const [selectedGraphName, setSelectedGraphName] = useState<string | undefined>(undefined);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   

@@ -750,16 +750,36 @@ class PostgresDatabase(BaseDatabase):
 
         filter_conditions = []
         for key, value in filters.items():
-            # Convert boolean values to string 'true' or 'false'
-            if isinstance(value, bool):
-                value = str(value).lower()
-                
-            # Use proper SQL escaping for string values
-            if isinstance(value, str):
-                # Replace single quotes with double single quotes to escape them
-                value = value.replace("'", "''") 
-                
-            filter_conditions.append(f"doc_metadata->>'{key}' = '{value}'")
+            # Handle list of values (IN operator)
+            if isinstance(value, list):
+                if not value:  # Skip empty lists
+                    continue
+                    
+                # Build a list of properly escaped values
+                escaped_values = []
+                for item in value:
+                    if isinstance(item, bool):
+                        escaped_values.append(str(item).lower())
+                    elif isinstance(item, str):
+                        escaped_values.append(f"'{item.replace('\'', '\'\'')}'")
+                    else:
+                        escaped_values.append(f"'{item}'")
+                        
+                # Join with commas for IN clause
+                values_str = ", ".join(escaped_values)
+                filter_conditions.append(f"doc_metadata->>'{key}' IN ({values_str})")
+            else:
+                # Handle single value (equality)
+                # Convert boolean values to string 'true' or 'false'
+                if isinstance(value, bool):
+                    value = str(value).lower()
+                    
+                # Use proper SQL escaping for string values
+                if isinstance(value, str):
+                    # Replace single quotes with double single quotes to escape them
+                    value = value.replace("'", "''") 
+                    
+                filter_conditions.append(f"doc_metadata->>'{key}' = '{value}'")
 
         return " AND ".join(filter_conditions)
         
@@ -773,12 +793,34 @@ class PostgresDatabase(BaseDatabase):
             if value is None:
                 continue
                 
-            if isinstance(value, str):
-                # Replace single quotes with double single quotes to escape them
-                escaped_value = value.replace("'", "''")
-                conditions.append(f"system_metadata->>'{key}' = '{escaped_value}'")
+            # Handle list of values (IN operator)
+            if isinstance(value, list):
+                if not value:  # Skip empty lists
+                    continue
+                    
+                # Build a list of properly escaped values
+                escaped_values = []
+                for item in value:
+                    if isinstance(item, bool):
+                        escaped_values.append(str(item).lower())
+                    elif isinstance(item, str):
+                        escaped_values.append(f"'{item.replace('\'', '\'\'')}'")
+                    else:
+                        escaped_values.append(f"'{item}'")
+                        
+                # Join with commas for IN clause
+                values_str = ", ".join(escaped_values)
+                conditions.append(f"system_metadata->>'{key}' IN ({values_str})")
             else:
-                conditions.append(f"system_metadata->>'{key}' = '{value}'")
+                # Handle single value (equality)
+                if isinstance(value, str):
+                    # Replace single quotes with double single quotes to escape them
+                    escaped_value = value.replace("'", "''")
+                    conditions.append(f"system_metadata->>'{key}' = '{escaped_value}'")
+                elif isinstance(value, bool):
+                    conditions.append(f"system_metadata->>'{key}' = '{str(value).lower()}'")
+                else:
+                    conditions.append(f"system_metadata->>'{key}' = '{value}'")
                 
         return " AND ".join(conditions)
 

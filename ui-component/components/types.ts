@@ -8,6 +8,7 @@ export interface MorphikUIProps {
   onBackClick?: () => void; // Callback when back button is clicked
   appName?: string; // Name of the app to display in UI
   initialFolder?: string | null; // Initial folder to show
+  initialSection?: string; // Initial section to show (documents, search, chat, etc.)
 }
 
 export interface Document {

@@ -33,6 +33,76 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
     max_tokens: 500,
     temperature: 0.7
   });
+  
+  // Handle URL parameters for folder and filters
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const folderParam = params.get('folder');
+      const filtersParam = params.get('filters');
+      const documentIdsParam = params.get('document_ids');
+      
+      // Update folder if provided
+      if (folderParam) {
+        try {
+          const folderName = decodeURIComponent(folderParam);
+          if (folderName) {
+            console.log(`Setting folder from URL parameter: ${folderName}`);
+            updateQueryOption('folder_name', folderName);
+          }
+        } catch (error) {
+          console.error('Error parsing folder parameter:', error);
+        }
+      }
+      
+      // Handle document_ids (selected documents) parameter - for backward compatibility
+      if (documentIdsParam) {
+        try {
+          const documentIdsJson = decodeURIComponent(documentIdsParam);
+          const documentIds = JSON.parse(documentIdsJson);
+          
+          // Create a filter object with external_id filter (correct field name)
+          const filtersObj = { external_id: documentIds };
+          const validFiltersJson = JSON.stringify(filtersObj);
+          
+          console.log(`Setting document_ids filter from URL parameter:`, filtersObj);
+          updateQueryOption('filters', validFiltersJson);
+          
+          // Show the chat options panel
+          setShowChatAdvanced(true);
+        } catch (error) {
+          console.error('Error parsing document_ids parameter:', error);
+        }
+      }
+      // Handle general filters parameter
+      if (filtersParam) {
+        try {
+          const filtersJson = decodeURIComponent(filtersParam);
+          // Parse the JSON to confirm it's valid
+          const filtersObj = JSON.parse(filtersJson);
+          
+          console.log(`Setting filters from URL parameter:`, filtersObj);
+          
+          // Store the filters directly as a JSON string
+          updateQueryOption('filters', filtersJson);
+          
+          // Log a more helpful message about what's happening
+          if (filtersObj.external_id) {
+            console.log(`Chat will filter by ${Array.isArray(filtersObj.external_id) ? filtersObj.external_id.length : 1} document(s)`);
+          }
+        } catch (error) {
+          console.error('Error parsing filters parameter:', error);
+        }
+      }
+      
+      // If any relevant parameter was provided, show them in the chat options panel
+      if ((folderParam && folderParam.trim() !== '') || 
+          (filtersParam && filtersParam.trim() !== '') ||
+          (documentIdsParam && documentIdsParam.trim() !== '')) {
+        setShowChatAdvanced(true);
+      }
+    }
+  }, []);
 
   // Update query options
   const updateQueryOption = <K extends keyof QueryOptions>(key: K, value: QueryOptions[K]) => {
