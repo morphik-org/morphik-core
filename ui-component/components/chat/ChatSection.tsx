@@ -10,7 +10,7 @@ import { showAlert } from '@/components/ui/alert-system';
 import ChatOptionsDialog from './ChatOptionsDialog';
 import ChatMessageComponent from './ChatMessage';
 
-import { ChatMessage, QueryOptions, Folder } from '@/components/types';
+import { ChatMessage, QueryOptions, Folder, Source } from '@/components/types';
 
 interface ChatSectionProps {
   apiBaseUrl: string;
@@ -42,6 +42,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
       const filtersParam = params.get('filters');
       const documentIdsParam = params.get('document_ids');
       
+      let shouldShowChatOptions = false;
+      
       // Update folder if provided
       if (folderParam) {
         try {
@@ -49,6 +51,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
           if (folderName) {
             console.log(`Setting folder from URL parameter: ${folderName}`);
             updateQueryOption('folder_name', folderName);
+            shouldShowChatOptions = true;
           }
         } catch (error) {
           console.error('Error parsing folder parameter:', error);
@@ -67,9 +70,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
           
           console.log(`Setting document_ids filter from URL parameter:`, filtersObj);
           updateQueryOption('filters', validFiltersJson);
-          
-          // Show the chat options panel
-          setShowChatAdvanced(true);
+          shouldShowChatOptions = true;
         } catch (error) {
           console.error('Error parsing document_ids parameter:', error);
         }
@@ -85,6 +86,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
           
           // Store the filters directly as a JSON string
           updateQueryOption('filters', filtersJson);
+          shouldShowChatOptions = true;
           
           // Log a more helpful message about what's happening
           if (filtersObj.external_id) {
@@ -95,11 +97,15 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
         }
       }
       
-      // If any relevant parameter was provided, show them in the chat options panel
-      if ((folderParam && folderParam.trim() !== '') || 
-          (filtersParam && filtersParam.trim() !== '') ||
-          (documentIdsParam && documentIdsParam.trim() !== '')) {
+      // Only show the chat options panel on initial parameter load
+      if (shouldShowChatOptions) {
         setShowChatAdvanced(true);
+        
+        // Clear URL parameters after processing them to prevent modal from re-appearing on refresh
+        if (window.history.replaceState) {
+          const newUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, newUrl);
+        }
       }
     }
   }, []);
@@ -211,8 +217,59 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
       const data = await response.json();
       
       // Add assistant response to chat
-      const assistantMessage: ChatMessage = { role: 'assistant', content: data.completion };
+      const assistantMessage: ChatMessage = { 
+        role: 'assistant', 
+        content: data.completion,
+        sources: data.sources
+      };
       setChatMessages(prev => [...prev, assistantMessage]);
+      
+      // If sources are available, retrieve the full source content
+      if (data.sources && data.sources.length > 0) {
+        try {
+          // Fetch full source details
+          const sourcesResponse = await fetch(`${apiBaseUrl}/batch/chunks`, {
+            method: 'POST',
+            headers: {
+              'Authorization': authToken ? `Bearer ${authToken}` : '',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              sources: data.sources,
+              folder_name: queryOptions.folder_name
+            })
+          });
+          
+          if (sourcesResponse.ok) {
+            const sourcesData = await sourcesResponse.json();
+            
+            // Process source data
+            
+            // Update the message with detailed source information
+            const updatedMessage = { 
+              ...assistantMessage, 
+              sources: sourcesData.map((source: Source) => ({
+                document_id: source.document_id,
+                chunk_number: source.chunk_number,
+                score: source.score,
+                content: source.content,
+                content_type: source.content_type || 'text/plain',
+                filename: source.filename,
+                metadata: source.metadata,
+                download_url: source.download_url
+              }))
+            };
+            
+            // Update the message with detailed sources
+            setChatMessages(prev => prev.map((msg, idx) => 
+              idx === prev.length - 1 ? updatedMessage : msg
+            ));
+          }
+        } catch (err) {
+          console.error('Error fetching source details:', err);
+          // Continue with basic sources if detailed fetch fails
+        }
+      }
       setChatQuery(''); // Clear input
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -243,6 +300,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
                   key={index}
                   role={message.role}
                   content={message.content}
+                  sources={message.sources}
                 />
               ))}
             </div>

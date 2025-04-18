@@ -42,9 +42,21 @@ export interface SearchResult {
   metadata: Record<string, unknown>;
 }
 
+export interface Source {
+  document_id: string;
+  chunk_number: number;
+  score?: number;
+  filename?: string;
+  content?: string;
+  content_type?: string;
+  metadata?: Record<string, unknown>;
+  download_url?: string;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  sources?: Source[];
 }
 
 export interface SearchOptions {
