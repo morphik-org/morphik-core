@@ -42,6 +42,8 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
             self.processor: ColQwen2Processor = ColQwen2Processor.from_pretrained(
                 "vidore/colqwen2-v1.0"
             )
+        else:
+            raise ValueError(f"Unsupported model name: {model_name}. Please use 'vidore/colqwen2.5-v0.2' or 'vidore/colqwen2-v1.0'.")
 
     async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> List[np.ndarray]:
         if isinstance(chunks, Chunk):
