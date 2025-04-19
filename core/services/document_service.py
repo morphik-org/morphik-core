@@ -297,7 +297,8 @@ class DocumentService:
         chunk_ids: List[ChunkSource],
         auth: AuthContext,
         folder_name: Optional[str] = None,
-        end_user_id: Optional[str] = None
+        end_user_id: Optional[str] = None,
+        use_colpali: Optional[bool] = None
     ) -> List[ChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation.
@@ -305,6 +306,9 @@ class DocumentService:
         Args:
             chunk_ids: List of ChunkSource objects with document_id and chunk_number
             auth: Authentication context
+            folder_name: Optional folder to scope the operation to
+            end_user_id: Optional end-user ID to scope the operation to
+            use_colpali: Whether to use colpali multimodal features for image chunks
             
         Returns:
             List of ChunkResult objects
@@ -336,6 +340,32 @@ class DocumentService:
         
         # Retrieve the chunks from vector store in a single query
         chunks = await self.vector_store.get_chunks_by_id(chunk_identifiers)
+        
+        # Check if we should use colpali for image chunks
+        if use_colpali and self.colpali_vector_store:
+            logger.info("Trying to retrieve chunks from colpali vector store")
+            try:
+                # Also try to retrieve from the colpali vector store
+                colpali_chunks = await self.colpali_vector_store.get_chunks_by_id(chunk_identifiers)
+                
+                if colpali_chunks:
+                    # Create a dictionary of (doc_id, chunk_number) -> chunk for fast lookup
+                    chunk_dict = {(c.document_id, c.chunk_number): c for c in chunks}
+                    
+                    logger.debug(f"Found {len(colpali_chunks)} chunks in colpali store")
+                    for colpali_chunk in colpali_chunks:
+                        logger.debug(f"Found colpali chunk: doc={colpali_chunk.document_id}, chunk={colpali_chunk.chunk_number}")
+                        key = (colpali_chunk.document_id, colpali_chunk.chunk_number)
+                        # Replace chunks with colpali chunks when available
+                        chunk_dict[key] = colpali_chunk
+                    
+                    # Update chunks list with the combined/replaced chunks
+                    chunks = list(chunk_dict.values())
+                    logger.info(f"Enhanced {len(colpali_chunks)} chunks with colpali/multimodal data")
+                else:
+                    logger.warning("No chunks found in colpali vector store")
+            except Exception as e:
+                logger.error(f"Error retrieving chunks from colpali vector store: {e}", exc_info=True)
         
         # Convert to chunk results
         results = await self._create_chunk_results(auth, chunks)

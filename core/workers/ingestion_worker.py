@@ -217,8 +217,9 @@ async def process_ingestion_job(
         logger.debug(f"Created {len(chunk_objects)} chunk objects")
         
         # 10. Handle ColPali embeddings if enabled
+        using_colpali = use_colpali and document_service.colpali_embedding_model and document_service.colpali_vector_store
         chunk_objects_multivector = []
-        if use_colpali and document_service.colpali_embedding_model and document_service.colpali_vector_store:
+        if using_colpali:
             import filetype
             file_type = filetype.guess(file_content)
             
