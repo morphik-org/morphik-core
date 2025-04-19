@@ -8,18 +8,80 @@ import DocumentList from './DocumentList';
 import DocumentDetail from './DocumentDetail';
 import FolderList from './FolderList';
 import { UploadDialog, useUploadDialog } from './UploadDialog';
+import { cn } from '@/lib/utils';
 
 import { Document, Folder } from '@/components/types';
+
+// Custom hook for drag and drop functionality
+function useDragAndDrop({
+  onDrop,
+  disabled = false
+}: {
+  onDrop: (files: File[]) => void;
+  disabled?: boolean;
+}) {
+  const [isDragging, setIsDragging] = useState(false);
+  
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (disabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, [disabled]);
+  
+  const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (disabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, [disabled]);
+  
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (disabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, [disabled]);
+  
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (disabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      onDrop(files);
+    }
+  }, [disabled, onDrop]);
+  
+  return {
+    isDragging,
+    dragHandlers: {
+      onDragOver: handleDragOver,
+      onDragEnter: handleDragEnter,
+      onDragLeave: handleDragLeave,
+      onDrop: handleDrop
+    }
+  };
+}
 
 interface DocumentsSectionProps {
   apiBaseUrl: string;
   authToken: string | null;
+  initialFolder?: string | null;
+  setSidebarCollapsed?: (collapsed: boolean) => void;
 }
 
 // Debug render counter
 let renderCount = 0;
 
-const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authToken }) => {
+const DocumentsSection: React.FC<DocumentsSectionProps> = ({ 
+  apiBaseUrl, 
+  authToken, 
+  initialFolder = null,
+  setSidebarCollapsed
+}) => {
   // Increment render counter for debugging
   renderCount++;
   console.log(`DocumentsSection rendered: #${renderCount}`);
@@ -38,7 +100,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
   // State for documents and folders
   const [documents, setDocuments] = useState<Document[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(initialFolder);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -57,6 +119,17 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
     useColpali,
     resetUploadDialog
   } = uploadDialogState;
+  
+  // Initialize drag and drop
+  const { isDragging, dragHandlers } = useDragAndDrop({
+    onDrop: (files) => {
+      // Only allow drag and drop when inside a folder
+      if (selectedFolder && selectedFolder !== null) {
+        handleBatchFileUpload(files, true);
+      }
+    },
+    disabled: !selectedFolder || selectedFolder === null
+  });
 
   // No need for a separate header function, use authToken directly
 
@@ -356,6 +429,15 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
       console.error("Error refreshing documents:", error);
     }
   };
+
+  // Collapse sidebar when a folder is selected
+  useEffect(() => {
+    if (selectedFolder !== null && setSidebarCollapsed) {
+      setSidebarCollapsed(true);
+    } else if (setSidebarCollapsed) {
+      setSidebarCollapsed(false);
+    }
+  }, [selectedFolder, setSidebarCollapsed]);
 
   // Fetch documents when selected folder changes
   useEffect(() => {
@@ -790,7 +872,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
   };
 
   // Handle batch file upload
-  const handleBatchFileUpload = async (files: File[]) => {
+  const handleBatchFileUpload = async (files: File[], fromDragAndDrop: boolean = false) => {
     if (files.length === 0) {
       showAlert('Please select files to upload', {
         type: 'error',
@@ -799,8 +881,11 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
       return;
     }
 
-    // Close dialog and update upload count using alert system
-    setShowUploadDialog(false);
+    // Close dialog if it's open (but not if drag and drop)
+    if (!fromDragAndDrop) {
+      setShowUploadDialog(false);
+    }
+    
     const fileCount = files.length;
     const uploadId = 'batch-upload-progress';
     showAlert(`Uploading ${fileCount} files...`, {
@@ -809,14 +894,16 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
       id: uploadId
     });
     
-    // Save form data locally before resetting
+    // Save form data locally
     const batchFilesRef = [...files];
     const metadataRef = metadata;
     const rulesRef = rules;
     const useColpaliRef = useColpali;
     
-    // Reset form immediately
-    resetUploadDialog();
+    // Only reset form if not from drag and drop
+    if (!fromDragAndDrop) {
+      resetUploadDialog();
+    }
     
     try {      
       const formData = new FormData();
@@ -1100,115 +1187,121 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
     }
   };
 
-  // Title based on selected folder
-  const sectionTitle = selectedFolder === null 
-    ? "Folders" 
-    : selectedFolder === "all" 
-      ? "All Documents" 
-      : `Folder: ${selectedFolder}`;
+  // Function to trigger refresh
+  const handleRefresh = () => {
+    console.log("Manual refresh triggered");
+    // Show a loading indicator
+    showAlert("Refreshing documents and folders...", {
+      type: 'info',
+      duration: 1500
+    });
+    
+    // First clear folder data to force a clean refresh
+    setLoading(true);
+    setFolders([]);
+    
+    // Create a new function to perform a truly fresh fetch
+    const performFreshFetch = async () => {
+      try {
+        // First get fresh folder data from the server
+        const folderResponse = await fetch(`${effectiveApiUrl}/folders`, {
+          method: 'GET',
+          headers: {
+            ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+          }
+        });
+        
+        if (!folderResponse.ok) {
+          throw new Error(`Failed to fetch folders: ${folderResponse.statusText}`);
+        }
+        
+        // Get the fresh folder data
+        const freshFolders = await folderResponse.json();
+        console.log(`Refresh: Fetched ${freshFolders.length} folders with fresh data`);
+        
+        // Update folders state with fresh data
+        setFolders(freshFolders);
+        
+        // Use our helper function to refresh documents with fresh folder data
+        await refreshDocuments(freshFolders);
+        
+        // Show success message
+        showAlert("Refresh completed successfully", {
+          type: 'success',
+          duration: 1500
+        });
+      } catch (error) {
+        console.error("Error during refresh:", error);
+        showAlert(`Error refreshing: ${error instanceof Error ? error.message : 'Unknown error'}`, {
+          type: 'error',
+          duration: 3000
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    // Execute the fresh fetch
+    performFreshFetch();
+  };
 
   return (
-    <div className="flex-1 flex flex-col h-full">
-      <div className="flex justify-between items-center py-3 mb-4">
-        <div className="flex items-center gap-4">
+    <div 
+      className={cn(
+        "flex-1 flex flex-col h-full relative",
+        selectedFolder && isDragging ? "drag-active" : ""
+      )}
+      {...(selectedFolder ? dragHandlers : {})}
+    >
+      {/* Drag overlay - only visible when dragging files over the folder */}
+      {isDragging && selectedFolder && (
+        <div className="absolute inset-0 bg-primary/10 backdrop-blur-sm z-50 flex items-center justify-center rounded-lg border-2 border-dashed border-primary animate-pulse">
+          <div className="bg-background p-8 rounded-lg shadow-lg text-center">
+            <Upload className="h-12 w-12 mx-auto mb-4 text-primary" />
+            <h3 className="text-xl font-medium mb-2">Drop to Upload</h3>
+            <p className="text-muted-foreground">
+              Files will be added to {selectedFolder === "all" ? "your documents" : `folder "${selectedFolder}"`}
+            </p>
+          </div>
+        </div>
+      )}
+      {/* Hide the main header when viewing a specific folder - it will be merged with the FolderList header */}
+      {selectedFolder === null && (
+        <div className="flex justify-between items-center py-3 mb-4">
           <div>
-            <h2 className="text-2xl font-bold leading-tight">{sectionTitle}</h2>
+            <h2 className="text-2xl font-bold leading-tight">Folders</h2>
             <p className="text-muted-foreground">Manage your uploaded documents and view their metadata.</p>
           </div>
-          {selectedDocuments.length > 0 && (
-            <Button 
-              variant="outline" 
-              onClick={handleDeleteMultipleDocuments} 
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleRefresh}
               disabled={loading}
-              className="border-red-500 text-red-500 hover:bg-red-50 ml-4"
+              className="flex items-center"
+              title="Refresh folders"
             >
-              Delete {selectedDocuments.length} selected
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                <path d="M21 3v5h-5"></path>
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+                <path d="M8 16H3v5"></path>
+              </svg>
+              Refresh
             </Button>
-          )}
+            <UploadDialog
+              showUploadDialog={showUploadDialog}
+              setShowUploadDialog={setShowUploadDialog}
+              loading={loading}
+              onFileUpload={handleFileUpload}
+              onBatchFileUpload={handleBatchFileUpload}
+              onTextUpload={handleTextUpload}
+            />
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => {
-              console.log("Manual refresh triggered");
-              // Show a loading indicator
-              showAlert("Refreshing documents and folders...", {
-                type: 'info',
-                duration: 1500
-              });
-              
-              // First clear folder data to force a clean refresh
-              setLoading(true);
-              setFolders([]);
-              
-              // Create a new function to perform a truly fresh fetch
-              const performFreshFetch = async () => {
-                try {
-                  // First get fresh folder data from the server
-                  const folderResponse = await fetch(`${effectiveApiUrl}/folders`, {
-                    method: 'GET',
-                    headers: {
-                      ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-                    }
-                  });
-                  
-                  if (!folderResponse.ok) {
-                    throw new Error(`Failed to fetch folders: ${folderResponse.statusText}`);
-                  }
-                  
-                  // Get the fresh folder data
-                  const freshFolders = await folderResponse.json();
-                  console.log(`Refresh: Fetched ${freshFolders.length} folders with fresh data`);
-                  
-                  // Update folders state with fresh data
-                  setFolders(freshFolders);
-                  
-                  // Use our helper function to refresh documents with fresh folder data
-                  await refreshDocuments(freshFolders);
-                  
-                  // Show success message
-                  showAlert("Refresh completed successfully", {
-                    type: 'success',
-                    duration: 1500
-                  });
-                } catch (error) {
-                  console.error("Error during refresh:", error);
-                  showAlert(`Error refreshing: ${error instanceof Error ? error.message : 'Unknown error'}`, {
-                    type: 'error',
-                    duration: 3000
-                  });
-                } finally {
-                  setLoading(false);
-                }
-              };
-              
-              // Execute the fresh fetch
-              performFreshFetch();
-            }}
-            disabled={loading}
-            className="flex items-center"
-            title="Refresh documents"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
-              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
-              <path d="M21 3v5h-5"></path>
-              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
-              <path d="M8 16H3v5"></path>
-            </svg>
-            Refresh
-          </Button>
-          <UploadDialog
-            showUploadDialog={showUploadDialog}
-            setShowUploadDialog={setShowUploadDialog}
-            loading={loading}
-            onFileUpload={handleFileUpload}
-            onBatchFileUpload={handleBatchFileUpload}
-            onTextUpload={handleTextUpload}
-          />
-        </div>
-      </div>
+      )}
 
-      <div className="flex flex-col gap-4 flex-1">
+      {/* Render the FolderList with header at all times when selectedFolder is not null */}
+      {selectedFolder !== null && (
         <FolderList
           folders={folders}
           selectedFolder={selectedFolder}
@@ -1217,47 +1310,101 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({ apiBaseUrl, authTok
           authToken={authToken}
           refreshFolders={fetchFolders}
           loading={foldersLoading}
+          refreshAction={handleRefresh}
+          selectedDocuments={selectedDocuments}
+          handleDeleteMultipleDocuments={handleDeleteMultipleDocuments}
+          uploadDialogComponent={
+            <UploadDialog
+              showUploadDialog={showUploadDialog}
+              setShowUploadDialog={setShowUploadDialog}
+              loading={loading}
+              onFileUpload={handleFileUpload}
+              onBatchFileUpload={handleBatchFileUpload}
+              onTextUpload={handleTextUpload}
+            />
+          }
         />
-        
-        {selectedFolder !== null ? (
-          documents.length === 0 && !loading ? (
-            <div className="text-center py-8 border border-dashed rounded-lg flex-1 flex items-center justify-center">
-              <div>
-                <Upload className="mx-auto h-12 w-12 mb-2 text-muted-foreground" />
-                <p className="text-muted-foreground">No documents found in this folder. Upload a document.</p>
-              </div>
+      )}
+      
+      {selectedFolder && documents.length === 0 && !loading ? (
+        <div className="text-center py-8 border border-dashed rounded-lg flex-1 flex items-center justify-center">
+          <div>
+            <Upload className="mx-auto h-12 w-12 mb-2 text-muted-foreground" />
+            <p className="text-muted-foreground">Drag and drop files here to upload to this folder.</p>
+            <p className="text-xs text-muted-foreground mt-2">Or use the upload button in the top right.</p>
+          </div>
+        </div>
+      ) : selectedFolder && loading ? (
+        <div className="text-center py-8 flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
+            <p className="text-muted-foreground">Loading documents...</p>
+          </div>
+        </div>
+      ) : selectedFolder === null ? (
+        <div className="flex flex-col gap-4 flex-1">
+          <FolderList
+            folders={folders}
+            selectedFolder={selectedFolder}
+            setSelectedFolder={setSelectedFolder}
+            apiBaseUrl={effectiveApiUrl}
+            authToken={authToken}
+            refreshFolders={fetchFolders}
+            loading={foldersLoading}
+            refreshAction={handleRefresh}
+            selectedDocuments={selectedDocuments}
+            handleDeleteMultipleDocuments={handleDeleteMultipleDocuments}
+            uploadDialogComponent={
+              <UploadDialog
+                showUploadDialog={showUploadDialog}
+                setShowUploadDialog={setShowUploadDialog}
+                loading={loading}
+                onFileUpload={handleFileUpload}
+                onBatchFileUpload={handleBatchFileUpload}
+                onTextUpload={handleTextUpload}
+              />
+            }
+          />
+        </div>
+      ) : (
+        <div className="flex flex-col md:flex-row gap-4 flex-1">
+          <div className={cn(
+            "w-full transition-all duration-300",
+            selectedDocument ? "md:w-2/3" : "md:w-full"
+          )}>
+            <DocumentList
+              documents={documents}
+              selectedDocument={selectedDocument}
+              selectedDocuments={selectedDocuments}
+              handleDocumentClick={handleDocumentClick}
+              handleCheckboxChange={handleCheckboxChange}
+              getSelectAllState={getSelectAllState}
+              setSelectedDocuments={setSelectedDocuments}
+              setDocuments={setDocuments}
+              loading={loading}
+              apiBaseUrl={effectiveApiUrl}
+              authToken={authToken}
+              selectedFolder={selectedFolder}
+            />
+          </div>
+          
+          {selectedDocument && (
+            <div className="w-full md:w-1/3 animate-in slide-in-from-right duration-300">
+              <DocumentDetail
+                selectedDocument={selectedDocument}
+                handleDeleteDocument={handleDeleteDocument}
+                folders={folders}
+                apiBaseUrl={effectiveApiUrl}
+                authToken={authToken}
+                refreshDocuments={fetchDocuments}
+                refreshFolders={fetchFolders}
+                loading={loading}
+                onClose={() => setSelectedDocument(null)}
+              />
             </div>
-          ) : (
-            <div className="flex flex-col md:flex-row gap-4 flex-1">
-              <div className="w-full md:w-2/3">
-                <DocumentList
-                  documents={documents}
-                  selectedDocument={selectedDocument}
-                  selectedDocuments={selectedDocuments}
-                  handleDocumentClick={handleDocumentClick}
-                  handleCheckboxChange={handleCheckboxChange}
-                  getSelectAllState={getSelectAllState}
-                  setSelectedDocuments={setSelectedDocuments}
-                  loading={loading}
-                />
-              </div>
-              
-              <div className="w-full md:w-1/3">
-                <DocumentDetail
-                  selectedDocument={selectedDocument}
-                  handleDeleteDocument={handleDeleteDocument}
-                  folders={folders}
-                  apiBaseUrl={effectiveApiUrl}
-                  authToken={authToken}
-                  refreshDocuments={fetchDocuments}
-                  refreshFolders={fetchFolders}
-                  loading={loading}
-                />
-              </div>
-            </div>
-          )
-        ) : null}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

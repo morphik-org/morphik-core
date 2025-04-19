@@ -21,7 +21,9 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
   apiBaseUrl = DEFAULT_API_BASE_URL,
   isReadOnlyUri = false, // Default to editable URI
   onUriChange,
-  onBackClick
+  onBackClick,
+  initialFolder = null,
+  initialSection = 'documents'
 }) => {
   // State to manage connectionUri internally if needed
   const [currentUri, setCurrentUri] = useState(connectionUri);
@@ -39,8 +41,9 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
       onUriChange(newUri);
     }
   };
-  const [activeSection, setActiveSection] = useState('documents');
+  const [activeSection, setActiveSection] = useState(initialSection);
   const [selectedGraphName, setSelectedGraphName] = useState<string | undefined>(undefined);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
   // Extract auth token and API URL from connection URI if provided
   const authToken = currentUri ? extractTokenFromUri(currentUri) : null;
@@ -65,6 +68,8 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
           connectionUri={currentUri}
           isReadOnlyUri={isReadOnlyUri}
           onUriChange={handleUriChange}
+          isCollapsed={isSidebarCollapsed}
+          setIsCollapsed={setIsSidebarCollapsed}
         />
         
         <div className="flex-1 flex flex-col h-screen overflow-hidden">
@@ -88,7 +93,9 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
             {activeSection === 'documents' && (
               <DocumentsSection 
                 apiBaseUrl={effectiveApiBaseUrl} 
-                authToken={authToken} 
+                authToken={authToken}
+                initialFolder={initialFolder}
+                setSidebarCollapsed={setIsSidebarCollapsed}
               />
             )}
             

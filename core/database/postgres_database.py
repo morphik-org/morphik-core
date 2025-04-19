@@ -81,6 +81,7 @@ class FolderModel(Base):
     document_ids = Column(JSONB, default=list)
     system_metadata = Column(JSONB, default=dict)
     access_control = Column(JSONB, default=dict)
+    rules = Column(JSONB, default=list)
 
     # Create indexes
     __table_args__ = (
@@ -219,6 +220,28 @@ class PostgresDatabase(BaseDatabase):
                     """
                     )
                 )
+                
+                # Add rules column to folders table if it doesn't exist
+                result = await conn.execute(
+                    text(
+                        """
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'folders' AND column_name = 'rules'
+                    """
+                    )
+                )
+                if not result.first():
+                    # Add rules column to folders table
+                    await conn.execute(
+                        text(
+                            """
+                        ALTER TABLE folders 
+                        ADD COLUMN IF NOT EXISTS rules JSONB DEFAULT '[]'::jsonb
+                        """
+                        )
+                    )
+                    logger.info("Added rules column to folders table")
                 
                 # Create indexes for folders table
                 await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_name ON folders (name);"))
@@ -557,14 +580,17 @@ class PostgresDatabase(BaseDatabase):
             # Update system metadata
             updates.setdefault("system_metadata", {})
             
-            # Preserve folder_name and end_user_id if not explicitly overridden
+            # Merge with existing system_metadata instead of just preserving specific fields
             if existing_doc.system_metadata:
-                if "folder_name" in existing_doc.system_metadata and "folder_name" not in updates["system_metadata"]:
-                    updates["system_metadata"]["folder_name"] = existing_doc.system_metadata["folder_name"]
-                
-                if "end_user_id" in existing_doc.system_metadata and "end_user_id" not in updates["system_metadata"]:
-                    updates["system_metadata"]["end_user_id"] = existing_doc.system_metadata["end_user_id"]
+                # Start with existing system_metadata
+                merged_system_metadata = dict(existing_doc.system_metadata)
+                # Update with new values
+                merged_system_metadata.update(updates["system_metadata"])
+                # Replace with merged result
+                updates["system_metadata"] = merged_system_metadata
+                logger.debug(f"Merged system_metadata during document update, preserving existing fields")
             
+            # Always update the updated_at timestamp
             updates["system_metadata"]["updated_at"] = datetime.now(UTC)
 
             # Serialize datetime objects to ISO format strings
@@ -577,9 +603,21 @@ class PostgresDatabase(BaseDatabase):
                 doc_model = result.scalar_one_or_none()
 
                 if doc_model:
+                    # Log what we're updating
+                    logger.info(f"Document update: updating fields {list(updates.keys())}")
+                    
+                    # Special handling for metadata/doc_metadata conversion
+                    if "metadata" in updates and "doc_metadata" not in updates:
+                        logger.info("Converting 'metadata' to 'doc_metadata' for database update")
+                        updates["doc_metadata"] = updates.pop("metadata")
+                    
+                    # Set all attributes
                     for key, value in updates.items():
+                        logger.debug(f"Setting document attribute {key} = {value}")
                         setattr(doc_model, key, value)
+                        
                     await session.commit()
+                    logger.info(f"Document {document_id} updated successfully")
                     return True
                 return False
 
@@ -712,16 +750,36 @@ class PostgresDatabase(BaseDatabase):
 
         filter_conditions = []
         for key, value in filters.items():
-            # Convert boolean values to string 'true' or 'false'
-            if isinstance(value, bool):
-                value = str(value).lower()
-                
-            # Use proper SQL escaping for string values
-            if isinstance(value, str):
-                # Replace single quotes with double single quotes to escape them
-                value = value.replace("'", "''") 
-                
-            filter_conditions.append(f"doc_metadata->>'{key}' = '{value}'")
+            # Handle list of values (IN operator)
+            if isinstance(value, list):
+                if not value:  # Skip empty lists
+                    continue
+                    
+                # Build a list of properly escaped values
+                escaped_values = []
+                for item in value:
+                    if isinstance(item, bool):
+                        escaped_values.append(str(item).lower())
+                    elif isinstance(item, str):
+                        escaped_values.append(f"'{item.replace('\'', '\'\'')}'")
+                    else:
+                        escaped_values.append(f"'{item}'")
+                        
+                # Join with commas for IN clause
+                values_str = ", ".join(escaped_values)
+                filter_conditions.append(f"doc_metadata->>'{key}' IN ({values_str})")
+            else:
+                # Handle single value (equality)
+                # Convert boolean values to string 'true' or 'false'
+                if isinstance(value, bool):
+                    value = str(value).lower()
+                    
+                # Use proper SQL escaping for string values
+                if isinstance(value, str):
+                    # Replace single quotes with double single quotes to escape them
+                    value = value.replace("'", "''") 
+                    
+                filter_conditions.append(f"doc_metadata->>'{key}' = '{value}'")
 
         return " AND ".join(filter_conditions)
         
@@ -735,12 +793,34 @@ class PostgresDatabase(BaseDatabase):
             if value is None:
                 continue
                 
-            if isinstance(value, str):
-                # Replace single quotes with double single quotes to escape them
-                escaped_value = value.replace("'", "''")
-                conditions.append(f"system_metadata->>'{key}' = '{escaped_value}'")
+            # Handle list of values (IN operator)
+            if isinstance(value, list):
+                if not value:  # Skip empty lists
+                    continue
+                    
+                # Build a list of properly escaped values
+                escaped_values = []
+                for item in value:
+                    if isinstance(item, bool):
+                        escaped_values.append(str(item).lower())
+                    elif isinstance(item, str):
+                        escaped_values.append(f"'{item.replace('\'', '\'\'')}'")
+                    else:
+                        escaped_values.append(f"'{item}'")
+                        
+                # Join with commas for IN clause
+                values_str = ", ".join(escaped_values)
+                conditions.append(f"system_metadata->>'{key}' IN ({values_str})")
             else:
-                conditions.append(f"system_metadata->>'{key}' = '{value}'")
+                # Handle single value (equality)
+                if isinstance(value, str):
+                    # Replace single quotes with double single quotes to escape them
+                    escaped_value = value.replace("'", "''")
+                    conditions.append(f"system_metadata->>'{key}' = '{escaped_value}'")
+                elif isinstance(value, bool):
+                    conditions.append(f"system_metadata->>'{key}' = '{str(value).lower()}'")
+                else:
+                    conditions.append(f"system_metadata->>'{key}' = '{value}'")
                 
         return " AND ".join(conditions)
 
@@ -1108,7 +1188,8 @@ class PostgresDatabase(BaseDatabase):
                     owner=folder_dict["owner"],
                     document_ids=folder_dict.get("document_ids", []),
                     system_metadata=folder_dict.get("system_metadata", {}),
-                    access_control=access_control
+                    access_control=access_control,
+                    rules=folder_dict.get("rules", [])
                 )
                 
                 session.add(folder_model)
@@ -1144,7 +1225,8 @@ class PostgresDatabase(BaseDatabase):
                     "owner": folder_model.owner,
                     "document_ids": folder_model.document_ids,
                     "system_metadata": folder_model.system_metadata,
-                    "access_control": folder_model.access_control
+                    "access_control": folder_model.access_control,
+                    "rules": folder_model.rules
                 }
                 
                 folder = Folder(**folder_dict)
@@ -1190,7 +1272,8 @@ class PostgresDatabase(BaseDatabase):
                             "owner": folder_row.owner,
                             "document_ids": folder_row.document_ids,
                             "system_metadata": folder_row.system_metadata,
-                            "access_control": folder_row.access_control
+                            "access_control": folder_row.access_control,
+                            "rules": folder_row.rules
                         }
                         
                         return Folder(**folder_dict)
@@ -1210,7 +1293,8 @@ class PostgresDatabase(BaseDatabase):
                         "owner": folder_model.owner,
                         "document_ids": folder_model.document_ids,
                         "system_metadata": folder_model.system_metadata,
-                        "access_control": folder_model.access_control
+                        "access_control": folder_model.access_control,
+                        "rules": folder_model.rules
                     }
                     
                     folder = Folder(**folder_dict)
@@ -1244,7 +1328,8 @@ class PostgresDatabase(BaseDatabase):
                         "owner": folder_model.owner,
                         "document_ids": folder_model.document_ids,
                         "system_metadata": folder_model.system_metadata,
-                        "access_control": folder_model.access_control
+                        "access_control": folder_model.access_control,
+                        "rules": folder_model.rules
                     }
                     
                     folder = Folder(**folder_dict)

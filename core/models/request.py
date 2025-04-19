@@ -109,3 +109,14 @@ class GenerateUriRequest(BaseModel):
     name: str = Field(..., description="Name of the application")
     user_id: str = Field(..., description="ID of the user who owns the app")
     expiry_days: int = Field(default=30, description="Number of days until the token expires")
+
+
+# Add these classes before the extract_folder_data endpoint
+class MetadataExtractionRuleRequest(BaseModel):
+    """Request model for metadata extraction rule"""
+    type: str = "metadata_extraction"  # Only metadata_extraction supported for now
+    schema: Dict[str, Any]
+
+class SetFolderRuleRequest(BaseModel):
+    """Request model for setting folder rules"""
+    rules: List[MetadataExtractionRuleRequest]
