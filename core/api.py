@@ -880,6 +880,7 @@ async def batch_get_chunks(
         sources = request.get("sources", [])
         folder_name = request.get("folder_name")
         end_user_id = request.get("end_user_id")
+        use_colpali = request.get("use_colpali")
         
         if not sources:
             return []
@@ -891,6 +892,7 @@ async def batch_get_chunks(
                 "chunk_count": len(sources),
                 "folder_name": folder_name,
                 "end_user_id": end_user_id,
+                "use_colpali": use_colpali,
             },
         ):
             # Convert sources to ChunkSource objects if needed
@@ -901,7 +903,7 @@ async def batch_get_chunks(
                 else:
                     chunk_sources.append(source)
                     
-            return await document_service.batch_retrieve_chunks(chunk_sources, auth, folder_name, end_user_id)
+            return await document_service.batch_retrieve_chunks(chunk_sources, auth, folder_name, end_user_id, use_colpali)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 

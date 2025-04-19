@@ -2,7 +2,8 @@
 
 # Morphik Core
 
-**Note**: Morphik is launching a hosted service soon! Please sign up for the [waitlist](https://docs.google.com/forms/d/1gFoUKzECICugInLkRlAlgwrkRVorfNywAgkmcjmVGkE/edit).
+**Note**: For our hosted service: https://www.morphik.ai. 
+We also deploy our Morphik on prem or VPC, happy to chat: https://cal.com/adityavardhan-agrawal-x6jyhq/30min
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/morphik-org/morphik-core/tree/main?tab=License-1-ov-file#readme) [![PyPI - Version](https://img.shields.io/pypi/v/morphik)](https://pypi.org/project/morphik/) [![Discord](https://img.shields.io/discord/1336524712817332276?logo=discord&label=discord)](https://discord.gg/BwMtv3Zaju)
 
