@@ -473,8 +473,28 @@ async def ingest_file(
 
         # Update document with storage info
         doc.storage_info = {"bucket": bucket, "key": stored_key}
+            
+        # Initialize storage_files array with the first file
+        from core.models.documents import StorageFileInfo
+        from datetime import datetime, UTC
+        
+        # Create a StorageFileInfo for the initial file
+        initial_file_info = StorageFileInfo(
+            bucket=bucket,
+            key=stored_key,
+            version=1,
+            filename=file.filename,
+            content_type=file.content_type,
+            timestamp=datetime.now(UTC)
+        )
+        doc.storage_files = [initial_file_info]
+        
+        # Log storage files
+        logger.debug(f"Initial storage_files for {doc.external_id}: {doc.storage_files}")
+            
+            # Update both storage_info and storage_files
         await database.update_document(
-            document_id=doc.external_id, updates={"storage_info": doc.storage_info}, auth=auth
+            document_id=doc.external_id, updates={"storage_info": doc.storage_info, "storage_files": doc.storage_files}, auth=auth
         )
 
         # Convert auth context to a dictionary for serialization
