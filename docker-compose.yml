@@ -1,4 +1,5 @@
 version: '3.8'
+name: morphik
 
 x-ollama-check: &ollama-check
   # This command reads the toml file and checks if any provider is set to "ollama"
@@ -32,7 +33,7 @@ services:
       - ./storage:/app/storage
       - ./logs:/app/logs
       - ./morphik.toml:/app/morphik.toml
-      - huggingface_cache:/root/.cache/huggingface
+      - /mnt/data/hf-home:/root/.cache/huggingface
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,7 +63,7 @@ services:
       - ./storage:/app/storage
       - ./logs:/app/logs
       - ./morphik.toml:/app/morphik.toml
-      - huggingface_cache:/root/.cache/huggingface
+      - /mnt/data/hf-home:/root/.cache/huggingface
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,11 +80,11 @@ services:
       - .env
       
   redis:
-    image: redis:7-alpine
+    image: redis
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
+      - ./redis_data:/data
     command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -106,7 +107,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U morphik -d morphik"]
       interval: 10s
@@ -123,7 +124,7 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - ollama_data:/root/.ollama
+      - ./ollama_data:/root/.ollama
       - ./ollama-entrypoint.sh:/ollama-entrypoint.sh
     networks:
       - morphik-network
