@@ -37,3 +37,7 @@ ui-component/package-lock.json
 
 
 ui-component/notebook-storage/notebooks.json
+
+# avoid hack in git
+hack 
+*_data/

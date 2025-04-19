@@ -38,6 +38,9 @@ from pydantic import BaseModel
 app = FastAPI(title="Morphik API")
 logger = logging.getLogger(__name__)
 
+# Redis pool for background tasks
+redis_pool = None
+
 
 # Add health check endpoints
 @app.get("/health")
@@ -160,7 +163,7 @@ async def initialize_redis_pool():
         host=redis_host,
         port=redis_port,
     )
-
+    logger.info(f"Redis settings: {redis_settings}")
     redis_pool = await arq.create_pool(redis_settings)
     logger.info("Redis connection pool initialized successfully")
 
@@ -364,12 +367,10 @@ async def ingest_text(
         raise HTTPException(status_code=403, detail=str(e))
 
 
-# Redis pool for background tasks
-redis_pool = None
-
 def get_redis_pool():
     """Get the global Redis connection pool for background tasks."""
     return redis_pool
+
 
 @app.post("/ingest/file", response_model=Document)
 async def ingest_file(

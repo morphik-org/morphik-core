@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     API_DOMAIN: str = "api.morphik.ai"
     
     # Redis configuration
-    REDIS_HOST: str = "localhost"
+    REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
     
     # Telemetry configuration
@@ -296,7 +296,7 @@ def get_settings() -> Settings:
     redis_config = {}
     if "redis" in config:
         redis_config = {
-            "REDIS_HOST": config["redis"].get("host", "localhost"),
+            "REDIS_HOST": config["redis"].get("host", "redis"),
             "REDIS_PORT": int(config["redis"].get("port", 6379)),
         }
 

@@ -761,7 +761,8 @@ class PostgresDatabase(BaseDatabase):
                     if isinstance(item, bool):
                         escaped_values.append(str(item).lower())
                     elif isinstance(item, str):
-                        escaped_values.append(f"'{item.replace('\'', '\'\'')}'")
+                        temp_item = item.replace('\'', '\'\'')
+                        escaped_values.append(f"'{temp_item}'")
                     else:
                         escaped_values.append(f"'{item}'")
                         
@@ -804,7 +805,8 @@ class PostgresDatabase(BaseDatabase):
                     if isinstance(item, bool):
                         escaped_values.append(str(item).lower())
                     elif isinstance(item, str):
-                        escaped_values.append(f"'{item.replace('\'', '\'\'')}'")
+                        temp_item = item.replace('\'', '\'\'')
+                        escaped_values.append(f"'{temp_item}'")
                     else:
                         escaped_values.append(f"'{item}'")
                         

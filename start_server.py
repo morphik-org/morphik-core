@@ -65,7 +65,7 @@ def check_and_start_redis():
         else:
             logging.info("Creating and starting Redis container (morphik-redis)...")
             subprocess.run(
-                ["docker", "run", "-d", "--name", "morphik-redis", "-p", "6379:6379", "redis"],
+                ["docker", "run", "-d", "--name", "morphik-redis", "-p", "6379:6379", "-v", "./redis_data:/data", "redis"],
                 check=True,
                 capture_output=True,
             )
