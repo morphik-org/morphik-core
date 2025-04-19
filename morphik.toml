@@ -13,9 +13,9 @@ dev_permissions = ["read", "write", "admin"]  # Default dev permissions
 #### Registered models
 [registered_models]
 # OpenAI models
-openai_gpt4o = { model_name = "gpt-4o", vision = true }
-openai_gpt4 = { model_name = "gpt-4" }
-openai_gpt4o_extraction = { model_name = "gpt-4o" }
+openai_gpt4o = { model_name = "gpt-4o-mini-2024-07-18", vision = true }
+openai_gpt4 = { model_name = "gpt-4o-mini-2024-07-18" }
+openai_gpt4o_extraction = { model_name = "gpt-4o-mini-2024-07-18" }
 
 # Azure OpenAI models
 azure_gpt4 = { model_name = "gpt-4", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "gpt-4-deployment" }
@@ -118,7 +118,7 @@ model = "ollama_llama"
 enable_entity_resolution = true
 
 [telemetry]
-enabled = true
+enabled = false
 honeycomb_enabled = true
 honeycomb_endpoint = "https://api.honeycomb.io"
 honeycomb_proxy_endpoint = "https://otel-proxy.onrender.com"
