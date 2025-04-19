@@ -64,8 +64,15 @@ async def readiness_check():
 # Initialize telemetry
 telemetry = TelemetryService()
 
-# Add OpenTelemetry instrumentation
-FastAPIInstrumentor.instrument_app(app)
+# Add OpenTelemetry instrumentation - exclude HTTP send/receive spans
+FastAPIInstrumentor.instrument_app(
+    app,
+    excluded_urls="health,health/.*",  # Exclude health check endpoints
+    exclude_spans=["send", "receive"],  # Exclude HTTP send/receive spans to reduce telemetry volume
+    http_capture_headers_server_request=None,  # Don't capture request headers
+    http_capture_headers_server_response=None,  # Don't capture response headers
+    tracer_provider=None  # Use the global tracer provider
+)
 
 # Add CORS middleware
 app.add_middleware(
