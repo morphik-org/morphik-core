@@ -48,6 +48,7 @@ app = FastAPI(title="Morphik API")
 logger = logging.getLogger(__name__)
 
 
+
 # Add health check endpoints
 @app.get("/health")
 async def health_check():
