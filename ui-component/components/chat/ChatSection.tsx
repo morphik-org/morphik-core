@@ -236,28 +236,39 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
             },
             body: JSON.stringify({
               sources: data.sources,
-              folder_name: queryOptions.folder_name
+              folder_name: queryOptions.folder_name,
+              use_colpali: true,
             })
           });
           
           if (sourcesResponse.ok) {
             const sourcesData = await sourcesResponse.json();
-            
-            // Process source data
+
+            // Check if we have any image sources
+            const imageSources = sourcesData.filter((source: Source) => 
+              source.content_type?.startsWith('image/') || 
+              (source.content && (
+                source.content.startsWith('data:image/png;base64,') || 
+                source.content.startsWith('data:image/jpeg;base64,')
+              ))
+            );
+            console.log('Image sources found:', imageSources.length);
             
             // Update the message with detailed source information
             const updatedMessage = { 
               ...assistantMessage, 
-              sources: sourcesData.map((source: Source) => ({
-                document_id: source.document_id,
-                chunk_number: source.chunk_number,
-                score: source.score,
-                content: source.content,
-                content_type: source.content_type || 'text/plain',
-                filename: source.filename,
-                metadata: source.metadata,
-                download_url: source.download_url
-              }))
+              sources: sourcesData.map((source: Source) => {
+                return {
+                  document_id: source.document_id,
+                  chunk_number: source.chunk_number,
+                  score: source.score,
+                  content: source.content,
+                  content_type: source.content_type || 'text/plain',
+                  filename: source.filename,
+                  metadata: source.metadata,
+                  download_url: source.download_url
+                };
+              })
             };
             
             // Update the message with detailed sources
@@ -284,7 +295,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
   };
 
   return (
-    <Card className="h-[calc(100vh-12rem)] flex flex-col">
+    <Card className="h-full flex flex-col">
       <CardHeader>
         <CardTitle>Chat with Your Documents</CardTitle>
         <CardDescription>
