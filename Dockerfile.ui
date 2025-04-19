@@ -1,0 +1,28 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV NVM_DIR=/root/.nvm
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    bash \
+    ca-certificates \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install NVM and Node.js LTS, make Node & npm available at runtime
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh | bash && \
+    . "$NVM_DIR/nvm.sh" && \
+    nvm install --lts && \
+    nvm alias default 'lts/*' && \
+    nvm use default && \
+    echo 'export NVM_DIR="$HOME/.nvm"' >> /root/.bashrc && \
+    echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> /root/.bashrc && \
+    echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> /root/.bashrc
+
+# Add Node and npm to PATH for all shells (login & non-login)
+ENV PATH="/root/.nvm/versions/node/v18.*/bin:$PATH"
+
+WORKDIR /app
