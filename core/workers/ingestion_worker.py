@@ -160,14 +160,7 @@ async def process_ingestion_job(
         if not doc:
             logger.error(f"Document {document_id} not found in database after multiple retries")
             logger.error(f"Details - file: {original_filename}, content_type: {content_type}, bucket: {bucket}, key: {file_key}")
-            logger.error(f"Auth: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}")
-            # Try to get all accessible documents to debug
-            try:
-                all_docs = await document_service.db.get_documents(auth, 0, 100)
-                logger.debug(f"User has access to {len(all_docs)} documents: {[d.external_id for d in all_docs]}")
-            except Exception as list_err:
-                logger.error(f"Failed to list user documents: {str(list_err)}")
-            
+            logger.error(f"Auth: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}")            
             raise ValueError(f"Document {document_id} not found in database after multiple retries")
             
         # Prepare updates for the document
@@ -175,7 +168,7 @@ async def process_ingestion_job(
         merged_metadata = {**doc.metadata, **metadata}
         # Make sure external_id is preserved in the metadata
         merged_metadata["external_id"] = doc.external_id
-        
+
         updates = {
             "metadata": merged_metadata,
             "additional_metadata": additional_metadata,
@@ -375,26 +368,7 @@ async def startup(ctx):
     logger.info(f"Initialized LiteLLM embedding model with model key: {settings.EMBEDDING_MODEL}")
     ctx['embedding_model'] = embedding_model
     
-    # Initialize completion model
-    completion_model = LiteLLMCompletionModel(model_key=settings.COMPLETION_MODEL)
-    logger.info(f"Initialized LiteLLM completion model with model key: {settings.COMPLETION_MODEL}")
-    ctx['completion_model'] = completion_model
-    
-    # Initialize reranker
-    reranker = None
-    if settings.USE_RERANKING:
-        if settings.RERANKER_PROVIDER == "flag":
-            from core.reranker.flag_reranker import FlagReranker
-            reranker = FlagReranker(
-                model_name=settings.RERANKER_MODEL,
-                device=settings.RERANKER_DEVICE,
-                use_fp16=settings.RERANKER_USE_FP16,
-                query_max_length=settings.RERANKER_QUERY_MAX_LENGTH,
-                passage_max_length=settings.RERANKER_PASSAGE_MAX_LENGTH,
-            )
-        else:
-            logger.warning(f"Unsupported reranker provider: {settings.RERANKER_PROVIDER}")
-    ctx['reranker'] = reranker
+    # Skip initializing completion model and reranker since they're not needed for ingestion
     
     # Initialize ColPali embedding model and vector store if enabled
     colpali_embedding_model = None
@@ -426,15 +400,13 @@ async def startup(ctx):
     telemetry = TelemetryService()
     ctx['telemetry'] = telemetry
     
-    # Create the document service using all initialized components
+    # Create the document service using only the components needed for ingestion
     document_service = DocumentService(
         storage=storage,
         database=database,
         vector_store=vector_store,
         embedding_model=embedding_model,
-        completion_model=completion_model,
         parser=parser,
-        reranker=reranker,
         cache_factory=cache_factory,
         enable_colpali=settings.ENABLE_COLPALI,
         colpali_embedding_model=colpali_embedding_model,
