@@ -114,12 +114,12 @@ const FilterDialog = ({
 };
 
 // Create a separate Column Dialog component to isolate its state
-const AddColumnDialog = ({ 
-  isOpen, 
+const AddColumnDialog = ({
+  isOpen,
   onClose,
   onAddColumn
-}: { 
-  isOpen: boolean; 
+}: {
+  isOpen: boolean;
   onClose: () => void;
   onAddColumn: (column: CustomColumn) => void;
 }) => {
@@ -147,19 +147,19 @@ const AddColumnDialog = ({
         description: localColumnDescription.trim(),
         _type: localColumnType
       };
-      
+
       if (localColumnType === 'json' && localColumnSchema) {
         column.schema = localColumnSchema;
       }
-      
+
       onAddColumn(column);
-      
+
       // Reset form values
       setLocalColumnName('');
       setLocalColumnDescription('');
       setLocalColumnType('string');
       setLocalColumnSchema('');
-      
+
       // Close the dialog
       onClose();
     }
@@ -188,8 +188,8 @@ const AddColumnDialog = ({
             </div>
             <div className="space-y-2">
               <label htmlFor="column-type" className="text-sm font-medium">Type</label>
-              <Select 
-                value={localColumnType} 
+              <Select
+                value={localColumnType}
                 onValueChange={(value) => setLocalColumnType(value as ColumnType)}
               >
                 <SelectTrigger id="column-type">
@@ -216,9 +216,9 @@ const AddColumnDialog = ({
                     className="hidden"
                     onChange={handleLocalSchemaFileChange}
                   />
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     onClick={() => document.getElementById('column-schema-file')?.click()}
                     className="flex items-center gap-2"
                   >
@@ -282,27 +282,27 @@ const DocumentList: React.FC<DocumentListProps> = ({
     });
     return Array.from(fields);
   }, [documents]);
-  
+
   // Apply filter logic
   useEffect(() => {
     if (Object.keys(filterValues).length === 0) {
       setFilteredDocuments(documents);
       return;
     }
-    
+
     const filtered = documents.filter(doc => {
       // Check if document matches all filter criteria
       return Object.entries(filterValues).every(([key, value]) => {
         if (!value || value.trim() === '') return true; // Skip empty filters
-        
+
         const docValue = doc.metadata?.[key];
         if (docValue === undefined) return false;
-        
+
         // String comparison (case-insensitive)
         return String(docValue).toLowerCase().includes(value.toLowerCase());
       });
     });
-    
+
     setFilteredDocuments(filtered);
   }, [documents, filterValues]);
 
@@ -313,7 +313,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
       description: `Extracted ${field}`,
       _type: 'string' // Default to string type for existing metadata
     }));
-    
+
     // Merge with custom columns, preferring custom column definitions if they exist
     const mergedColumns = [...metadataColumns];
     customColumns.forEach(customCol => {
@@ -324,7 +324,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
         mergedColumns.push(customCol);
       }
     });
-    
+
     return mergedColumns;
   }, [existingMetadataFields, customColumns]);
 
@@ -349,18 +349,18 @@ const DocumentList: React.FC<DocumentListProps> = ({
       const foldersResponse = await fetch(`${apiBaseUrl}/folders`, {
         headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
       });
-      
+
       if (!foldersResponse.ok) {
         throw new Error(`Failed to fetch folders: ${foldersResponse.statusText}`);
       }
-      
+
       const folders = await foldersResponse.json();
       const currentFolder = folders.find((folder: Folder) => folder.name === selectedFolder);
-      
+
       if (!currentFolder) {
         throw new Error(`Folder "${selectedFolder}" not found`);
       }
-      
+
       // Convert columns to metadata extraction rule
       const rule: MetadataExtractionRule = {
         type: "metadata_extraction",
@@ -375,7 +375,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
           ])
         )
       };
-      
+
       // Set the rule
       const setRuleResponse = await fetch(`${apiBaseUrl}/folders/${currentFolder.id}/set_rule`, {
         method: 'POST',
@@ -387,14 +387,14 @@ const DocumentList: React.FC<DocumentListProps> = ({
           rules: [rule]
         })
       });
-      
+
       if (!setRuleResponse.ok) {
         throw new Error(`Failed to set rule: ${setRuleResponse.statusText}`);
       }
-      
+
       const result = await setRuleResponse.json();
       console.log("Rule set successfully:", result);
-      
+
       // Show success message
       showAlert("Extraction rule set successfully!", {
         type: 'success',
@@ -413,26 +413,26 @@ const DocumentList: React.FC<DocumentListProps> = ({
               ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
             }
           });
-          
+
           if (!folderResponse.ok) {
             throw new Error(`Failed to fetch folders: ${folderResponse.statusText}`);
           }
-          
+
           const freshFolders = await folderResponse.json();
           console.log(`Rule: Fetched ${freshFolders.length} folders with fresh data`);
-          
+
           // Now fetch documents based on the current folder
           if (selectedFolder && selectedFolder !== "all") {
             // Find the folder by name
             const targetFolder = freshFolders.find((folder: Folder) => folder.name === selectedFolder);
-            
+
             if (targetFolder) {
               console.log(`Rule: Found folder ${targetFolder.name} in fresh data`);
-              
+
               // Get the document IDs from the folder
               const documentIds = Array.isArray(targetFolder.document_ids) ? targetFolder.document_ids : [];
               console.log(`Rule: Folder has ${documentIds.length} documents`);
-              
+
               if (documentIds.length > 0) {
                 // Fetch document details for the IDs
                 const docResponse = await fetch(`${apiBaseUrl}/batch/documents`, {
@@ -445,14 +445,14 @@ const DocumentList: React.FC<DocumentListProps> = ({
                     document_ids: [...documentIds]
                   })
                 });
-                
+
                 if (!docResponse.ok) {
                   throw new Error(`Failed to fetch documents: ${docResponse.statusText}`);
                 }
-                
+
                 const freshDocs = await docResponse.json();
                 console.log(`Rule: Fetched ${freshDocs.length} document details`);
-                
+
                 // Update documents state
                 setDocuments(freshDocs);
               } else {
@@ -473,11 +473,11 @@ const DocumentList: React.FC<DocumentListProps> = ({
               },
               body: JSON.stringify({})
             });
-            
+
             if (!allDocsResponse.ok) {
               throw new Error(`Failed to fetch all documents: ${allDocsResponse.statusText}`);
             }
-            
+
             const allDocs = await allDocsResponse.json();
             console.log(`Rule: Fetched ${allDocs.length} documents for "all" view`);
             setDocuments(allDocs);
@@ -490,7 +490,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
           });
         }
       };
-      
+
       // Execute the refresh
       await refreshAfterRule();
     } catch (error) {
@@ -507,12 +507,12 @@ const DocumentList: React.FC<DocumentListProps> = ({
 
   // Calculate how many filters are currently active
   const activeFilterCount = Object.values(filterValues).filter(v => v && v.trim() !== '').length;
-  
+
   const DocumentListHeader = () => {
     return (
       <div className="bg-muted border-b font-medium sticky top-0 z-10 relative">
-        <div className="grid items-center w-full" style={{ 
-          gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px ${allColumns.map(() => '140px').join(' ')}` 
+        <div className="grid items-center w-full" style={{
+          gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px ${allColumns.map(() => '140px').join(' ')}`
         }}>
           <div className="flex items-center justify-center p-3">
             <Checkbox
@@ -567,14 +567,14 @@ const DocumentList: React.FC<DocumentListProps> = ({
             </div>
           ))}
         </div>
-        
+
         {/* Render dialogs separately */}
-        <AddColumnDialog 
+        <AddColumnDialog
           isOpen={showAddColumnDialog}
           onClose={() => setShowAddColumnDialog(false)}
           onAddColumn={handleAddColumn}
         />
-        
+
         <FilterDialog
           isOpen={showFilterDialog}
           onClose={() => setShowFilterDialog(false)}
@@ -605,20 +605,20 @@ const DocumentList: React.FC<DocumentListProps> = ({
       <DocumentListHeader />
       <ScrollArea className="h-[calc(100vh-220px)]">
         {filteredDocuments.map((doc) => (
-          <div 
+          <div
             key={doc.external_id}
             onClick={() => handleDocumentClick(doc)}
             className={`grid items-center w-full border-b ${
-              doc.external_id === selectedDocument?.external_id 
-                ? 'bg-primary/10 hover:bg-primary/15' 
+              doc.external_id === selectedDocument?.external_id
+                ? 'bg-primary/10 hover:bg-primary/15'
                 : 'hover:bg-muted/70'
             }`}
-            style={{ 
-              gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px ${allColumns.map(() => '140px').join(' ')}` 
+            style={{
+              gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px ${allColumns.map(() => '140px').join(' ')}`
             }}
           >
             <div className="flex items-center justify-center p-3">
-              <Checkbox 
+              <Checkbox
                 id={`doc-${doc.external_id}`}
                 checked={selectedDocuments.includes(doc.external_id)}
                 onCheckedChange={(checked) => handleCheckboxChange(checked, doc.external_id)}
@@ -665,7 +665,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
             ))}
           </div>
         ))}
-        
+
         {filteredDocuments.length === 0 && documents.length > 0 && (
           <div className="p-12 text-center flex flex-col items-center justify-center">
             <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-4">
@@ -674,16 +674,16 @@ const DocumentList: React.FC<DocumentListProps> = ({
             <p className="text-muted-foreground">
               No documents match the current filters.
             </p>
-            <Button 
-              variant="link" 
-              className="mt-2" 
+            <Button
+              variant="link"
+              className="mt-2"
               onClick={() => setFilterValues({})}
             >
               Clear all filters
             </Button>
           </div>
         )}
-        
+
         {documents.length === 0 && (
           <div className="p-12 text-center flex flex-col items-center justify-center">
             <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-4">
@@ -702,7 +702,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
           </div>
         )}
       </ScrollArea>
-      
+
       <div className="border-t p-3 flex justify-between">
         {/* Filter stats */}
         <div className="flex items-center text-sm text-muted-foreground">
@@ -720,13 +720,13 @@ const DocumentList: React.FC<DocumentListProps> = ({
             </div>
           ) : null}
         </div>
-        
+
         {/* Action buttons */}
         <div className="flex gap-2">
           {/* Filter button */}
-          <Button 
+          <Button
             variant={activeFilterCount > 0 ? "default" : "outline"}
-            size="sm" 
+            size="sm"
             className="h-8 text-xs font-medium"
             onClick={() => setShowFilterDialog(true)}
           >
@@ -738,22 +738,22 @@ const DocumentList: React.FC<DocumentListProps> = ({
               </span>
             )}
           </Button>
-          
+
           {/* Add column button */}
-          <Button 
+          <Button
             variant="outline"
             size="sm"
-            className="h-8 text-xs font-medium"  
+            className="h-8 text-xs font-medium"
             title="Add column"
             onClick={() => setShowAddColumnDialog(true)}
           >
             <Plus className="h-3.5 w-3.5 mr-0.5" />
             Column
           </Button>
-          
+
           {customColumns.length > 0 && selectedFolder && (
-            <Button 
-              className="gap-2" 
+            <Button
+              className="gap-2"
               onClick={handleExtract}
               disabled={isExtracting || !selectedFolder}
             >

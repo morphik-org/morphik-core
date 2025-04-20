@@ -65,8 +65,8 @@ async def scrub_document_metadata(
                     # Use a direct query using string formatting (safe in this context since we control the values)
                     query = text(
                         f"""
-                        UPDATE documents 
-                        SET doc_metadata = '{json_string}'::jsonb 
+                        UPDATE documents
+                        SET doc_metadata = '{json_string}'::jsonb
                         WHERE external_id = '{doc_id}'
                     """
                     )

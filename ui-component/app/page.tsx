@@ -8,7 +8,7 @@ function HomeContent() {
   const searchParams = useSearchParams();
   const folderParam = searchParams.get('folder');
   const sectionParam = searchParams.get('section');
-  
+
   return <MorphikUI initialFolder={folderParam} initialSection={sectionParam || undefined} />;
 }
 

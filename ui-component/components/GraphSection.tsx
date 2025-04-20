@@ -10,9 +10,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { 
-  AlertCircle, 
-  Share2, 
+import {
+  AlertCircle,
+  Share2,
   Database,
   Plus,
   Network,
@@ -75,15 +75,15 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
   // Create auth headers for API requests if auth token is available
   const createHeaders = useCallback((contentType?: string): HeadersInit => {
     const headers: HeadersInit = {};
-    
+
     if (authToken) {
       headers['Authorization'] = `Bearer ${authToken}`;
     }
-    
+
     if (contentType) {
       headers['Content-Type'] = contentType;
     }
-    
+
     return headers;
   }, [authToken]);
   // State variables
@@ -103,7 +103,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
   // Refs for graph visualization
   const graphContainerRef = useRef<HTMLDivElement>(null);
   const graphInstance = useRef<{ width: (width: number) => unknown } | null>(null);
-  
+
   // Prepare data for force-graph
   const prepareGraphData = useCallback((graph: Graph | null) => {
     if (!graph) return { nodes: [], links: [] };
@@ -154,11 +154,11 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
       setLoading(true);
       const headers = createHeaders();
       const response = await fetch(`${apiBaseUrl}/graphs`, { headers });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to fetch graphs: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
       setGraphs(data);
     } catch (err: unknown) {
@@ -184,24 +184,24 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
         `${apiBaseUrl}/graph/${encodeURIComponent(graphName)}`,
         { headers }
       );
-      
+
       if (!response.ok) {
         throw new Error(`Failed to fetch graph: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
       setSelectedGraph(data);
-      
+
       // Call the callback if provided
       if (onSelectGraph) {
         onSelectGraph(graphName);
       }
-      
+
       // Change to visualize tab if we're not on the list tab
       if (activeTab !== 'list' && activeTab !== 'create') {
         setActiveTab('visualize');
       }
-      
+
       return data;
     } catch (err: unknown) {
       const error = err as Error;
@@ -224,11 +224,11 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
       setError('Please enter a graph name');
       return;
     }
-    
+
     try {
       setLoading(true);
       setError(null);
-      
+
       // Parse filters
       let parsedFilters = {};
       try {
@@ -236,7 +236,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
       } catch {
         throw new Error('Invalid JSON in filters field');
       }
-      
+
       const headers = createHeaders('application/json');
       const response = await fetch(`${apiBaseUrl}/graph/create`, {
         method: 'POST',
@@ -247,26 +247,26 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
           documents: graphDocuments.length > 0 ? graphDocuments : undefined,
         }),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.detail || `Failed to create graph: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
       setSelectedGraph(data);
-      
+
       // Refresh the graphs list
       await fetchGraphs();
-      
+
       // Reset form
       setGraphName('');
       setGraphDocuments([]);
       setGraphFilters('{}');
-      
+
       // Switch to visualize tab
       setActiveTab('visualize');
-      
+
     } catch (err: unknown) {
       const error = err as Error;
       setError(`Error creating graph: ${error.message}`);
@@ -275,18 +275,18 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
       setLoading(false);
     }
   };
-  
+
   // Update an existing graph
   const handleUpdateGraph = async () => {
     if (!selectedGraph) {
       setError('No graph selected for update');
       return;
     }
-    
+
     try {
       setLoading(true);
       setError(null);
-      
+
       // Parse additional filters
       let parsedFilters = {};
       try {
@@ -294,7 +294,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
       } catch {
         throw new Error('Invalid JSON in additional filters field');
       }
-      
+
       const headers = createHeaders('application/json');
       const response = await fetch(`${apiBaseUrl}/graph/${encodeURIComponent(selectedGraph.name)}/update`, {
         method: 'POST',
@@ -304,25 +304,25 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
           additional_documents: additionalDocuments.length > 0 ? additionalDocuments : undefined,
         }),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.detail || `Failed to update graph: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
       setSelectedGraph(data);
-      
+
       // Refresh the graphs list
       await fetchGraphs();
-      
+
       // Reset form
       setAdditionalDocuments([]);
       setAdditionalFilters('{}');
-      
+
       // Switch to visualize tab
       setActiveTab('visualize');
-      
+
     } catch (err: unknown) {
       const error = err as Error;
       setError(`Error updating graph: ${error.message}`);
@@ -381,24 +381,24 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
           <div className="flex items-center gap-2">
             <Tag className="h-4 w-4" />
             <Label htmlFor="show-node-labels" className="text-sm cursor-pointer">Show Node Labels</Label>
-            <Switch 
-              id="show-node-labels" 
-              checked={showNodeLabels} 
-              onCheckedChange={setShowNodeLabels} 
+            <Switch
+              id="show-node-labels"
+              checked={showNodeLabels}
+              onCheckedChange={setShowNodeLabels}
             />
           </div>
           <div className="flex items-center gap-2">
             <Link className="h-4 w-4" />
             <Label htmlFor="show-link-labels" className="text-sm cursor-pointer">Show Relationship Labels</Label>
-            <Switch 
-              id="show-link-labels" 
-              checked={showLinkLabels} 
-              onCheckedChange={setShowLinkLabels} 
+            <Switch
+              id="show-link-labels"
+              checked={showLinkLabels}
+              onCheckedChange={setShowLinkLabels}
             />
           </div>
         </div>
         <div ref={graphContainerRef} className="h-[900px]">
-          <ForceGraphComponent 
+          <ForceGraphComponent
             data={prepareGraphData(selectedGraph)}
             width={graphContainerRef.current?.clientWidth || 800}
             height={900}
@@ -427,7 +427,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
           )}
         </div>
         <p className="text-muted-foreground">
-          Knowledge graphs represent relationships between entities extracted from your documents. 
+          Knowledge graphs represent relationships between entities extracted from your documents.
           Use them to enhance your queries with structured information and improve retrieval quality.
         </p>
       </div>
@@ -491,7 +491,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
                         <CardContent>
                           <div className="flex flex-wrap gap-2 mt-2">
                             {Array.from(new Set(graph.entities.map(e => e.type))).slice(0, 5).map(type => (
-                              <Badge 
+                              <Badge
                                 key={type}
                                 style={{ backgroundColor: entityTypeColors[type.toLowerCase()] || entityTypeColors.default }}
                                 className="text-white"
@@ -530,19 +530,19 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
                     <div className="text-2xl font-bold">{selectedGraph.document_ids.length}</div>
                     <div className="text-sm text-muted-foreground">source documents</div>
                   </div>
-                  
+
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-lg">
                     <h4 className="font-medium text-emerald-700 dark:text-emerald-300 mb-1">Entities</h4>
                     <div className="text-2xl font-bold">{selectedGraph.entities.length}</div>
                     <div className="text-sm text-muted-foreground">unique elements</div>
                   </div>
-                  
+
                   <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg">
                     <h4 className="font-medium text-amber-700 dark:text-amber-300 mb-1">Relationships</h4>
                     <div className="text-2xl font-bold">{selectedGraph.relationships.length}</div>
                     <div className="text-sm text-muted-foreground">connections</div>
                   </div>
-                  
+
                   <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
                     <h4 className="font-medium text-purple-700 dark:text-purple-300 mb-1">Created</h4>
                     <div className="text-xl font-bold">{new Date(selectedGraph.created_at).toLocaleDateString()}</div>
@@ -564,8 +564,8 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
                       ).map(([type, count]) => (
                         <div key={type} className="flex justify-between mb-2">
                           <div className="flex items-center">
-                            <div 
-                              className="w-3 h-3 rounded-full mr-2" 
+                            <div
+                              className="w-3 h-3 rounded-full mr-2"
                               style={{ backgroundColor: entityTypeColors[type.toLowerCase()] || entityTypeColors.default }}
                             ></div>
                             <span>{type}</span>
@@ -575,7 +575,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
                       ))}
                     </div>
                   </div>
-                  
+
                   <div>
                     <h4 className="font-medium mb-2">Relationship Types</h4>
                     <div className="bg-gray-50 p-3 rounded-md">
@@ -637,7 +637,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
                   <p className="text-sm text-gray-500 mb-3">
                     Choose which documents to include in your graph. You can specify document IDs directly or use metadata filters.
                   </p>
-                  
+
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="graph-documents">Document IDs (Optional)</Label>
@@ -669,8 +669,8 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
                   </div>
                 </div>
 
-                <Button 
-                  onClick={handleCreateGraph} 
+                <Button
+                  onClick={handleCreateGraph}
                   disabled={!graphName || loading}
                   className="w-full"
                 >
@@ -713,13 +713,13 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="border-t pt-4 mt-4">
                     <h3 className="text-md font-medium mb-3">Add New Documents</h3>
                     <p className="text-sm text-gray-500 mb-3">
                       Choose additional documents to include in your graph. You can specify document IDs directly or use metadata filters.
                     </p>
-                    
+
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <Label htmlFor="additional-documents">Additional Document IDs</Label>
@@ -751,8 +751,8 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
                     </div>
                   </div>
 
-                  <Button 
-                    onClick={handleUpdateGraph} 
+                  <Button
+                    onClick={handleUpdateGraph}
                     disabled={loading}
                     className="w-full"
                   >
@@ -771,7 +771,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
             </CardContent>
           </Card>
         </TabsContent>
-        
+
         {/* Visualize Graph Tab */}
         <TabsContent value="visualize">
           {renderVisualization()}

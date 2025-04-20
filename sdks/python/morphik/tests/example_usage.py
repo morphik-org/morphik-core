@@ -5,14 +5,12 @@ This can be run to verify that the SDK is working correctly.
 
 Usage:
     python example_usage.py [--async]
-    
+
 Options:
     --async    Run the example using the async client
 """
 
 import argparse
-import os
-import sys
 import time
 from pathlib import Path
 
@@ -269,10 +267,10 @@ async def run_async_example():
 if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Morphik SDK example script")
-    parser.add_argument("--async", action="store_true", help="Run the async example")
+    parser.add_argument("--run-async", action="store_true", help="Run the async example")
     args = parser.parse_args()
 
-    if args.async:
+    if args.run_async:
         # Run the async example
         import asyncio
 

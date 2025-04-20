@@ -82,7 +82,6 @@ class TestMorphik:
         )
 
         # Wait for processing to complete
-        processed_doc = doc
         max_retries = 10
         for _ in range(max_retries):
             try:

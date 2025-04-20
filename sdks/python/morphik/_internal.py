@@ -11,9 +11,16 @@ from PIL import Image
 from PIL.Image import Image as PILImage
 from pydantic import BaseModel, Field
 
-from .models import (ChunkResult, ChunkSource,  # Prompt override models
-                     CompletionResponse, Document, DocumentResult, Graph,
-                     GraphPromptOverrides, IngestTextRequest)
+from .models import ChunkSource  # Prompt override models
+from .models import (
+    ChunkResult,
+    CompletionResponse,
+    Document,
+    DocumentResult,
+    Graph,
+    GraphPromptOverrides,
+    IngestTextRequest,
+)
 from .rules import Rule
 
 # Type alias for rules

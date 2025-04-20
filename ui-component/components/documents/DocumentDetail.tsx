@@ -36,7 +36,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
   onClose
 }) => {
   const [isMovingToFolder, setIsMovingToFolder] = useState(false);
-  
+
   if (!selectedDocument) {
     return (
       <div className="h-[calc(100vh-200px)] flex items-center justify-center p-8 border border-dashed rounded-lg">
@@ -49,13 +49,13 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
   }
 
   const currentFolder = selectedDocument.system_metadata?.folder_name as string | undefined;
-  
+
   const handleMoveToFolder = async (folderName: string | null) => {
     if (isMovingToFolder || !selectedDocument) return;
-    
+
     const documentId = selectedDocument.external_id;
     setIsMovingToFolder(true);
-    
+
     try {
       // First, get the folder ID from the name if a name is provided
       if (folderName) {
@@ -63,7 +63,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
         const targetFolder = folders.find(folder => folder.name === folderName);
         if (targetFolder && targetFolder.id) {
           console.log(`Found folder with ID: ${targetFolder.id} for name: ${folderName}`);
-          
+
           // Add to folder using folder ID
           await fetch(`${apiBaseUrl}/folders/${targetFolder.id}/documents/${documentId}`, {
             method: 'POST',
@@ -75,8 +75,8 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
         } else {
           console.error(`Could not find folder with name: ${folderName}`);
         }
-      } 
-      
+      }
+
       // If there's a current folder and we're either moving to a new folder or removing from folder
       if (currentFolder) {
         // Find the current folder ID
@@ -92,7 +92,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
           });
         }
       }
-      
+
       // Refresh folders first to get updated document_ids
       await refreshFolders();
       // Then refresh documents with the updated folder information
@@ -121,19 +121,19 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
           <span className="sr-only">Close panel</span>
         </Button>
       </div>
-      
+
       <ScrollArea className="h-[calc(100vh-200px)]">
         <div className="p-4 space-y-4">
           <div>
             <h3 className="font-medium mb-1">Filename</h3>
             <p>{selectedDocument.filename || 'N/A'}</p>
           </div>
-          
+
           <div>
             <h3 className="font-medium mb-1">Content Type</h3>
             <Badge variant="secondary">{selectedDocument.content_type}</Badge>
           </div>
-          
+
           <div>
             <h3 className="font-medium mb-1">Folder</h3>
             <div className="flex items-center gap-2">
@@ -157,12 +157,12 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
               </Select>
             </div>
           </div>
-          
+
           <div>
             <h3 className="font-medium mb-1">Document ID</h3>
             <p className="font-mono text-xs">{selectedDocument.external_id}</p>
           </div>
-          
+
           <Accordion type="single" collapsible>
             <AccordionItem value="metadata">
               <AccordionTrigger>Metadata</AccordionTrigger>
@@ -172,7 +172,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
                 </pre>
               </AccordionContent>
             </AccordionItem>
-            
+
             <AccordionItem value="system-metadata">
               <AccordionTrigger>System Metadata</AccordionTrigger>
               <AccordionContent>
@@ -181,7 +181,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
                 </pre>
               </AccordionContent>
             </AccordionItem>
-            
+
             <AccordionItem value="additional-metadata">
               <AccordionTrigger>Additional Metadata</AccordionTrigger>
               <AccordionContent>
@@ -191,7 +191,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
               </AccordionContent>
             </AccordionItem>
           </Accordion>
-          
+
           <div className="pt-4 border-t mt-4">
             <Dialog>
               <DialogTrigger asChild>
@@ -212,8 +212,8 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => (document.querySelector('[data-state="open"] button[data-state="closed"]') as HTMLElement)?.click()}>Cancel</Button>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     className="border-red-500 text-red-500 hover:bg-red-100 dark:hover:bg-red-950"
                     onClick={() => handleDeleteDocument(selectedDocument.external_id)}
                     disabled={loading}

@@ -7,10 +7,17 @@ from typing import Any, BinaryIO, Dict, List, Optional, Union
 import httpx
 
 from ._internal import FinalChunkResult, RuleOrDict, _MorphikClientLogic
-from .models import (ChunkSource, CompletionResponse,  # Prompt override models
-                     Document, DocumentResult, FolderInfo, Graph,
-                     GraphPromptOverrides, IngestTextRequest,
-                     QueryPromptOverrides)
+from .models import CompletionResponse  # Prompt override models
+from .models import (
+    ChunkSource,
+    Document,
+    DocumentResult,
+    FolderInfo,
+    Graph,
+    GraphPromptOverrides,
+    IngestTextRequest,
+    QueryPromptOverrides,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -529,9 +536,6 @@ class Folder:
         Returns:
             Dict[str, str]: Deletion status
         """
-        # Get the document by filename with folder scope
-        request = {"filename": filename, "folder_name": self._name}
-
         # First get the document ID
         response = self._client._request("GET", f"documents/filename/{filename}", params={"folder_name": self._name})
         doc = self._client._logic._parse_document_response(response)

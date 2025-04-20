@@ -42,59 +42,59 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
             Configure advanced search parameters
           </DialogDescription>
         </DialogHeader>
-        
+
         <div className="grid gap-4 py-4">
           <div>
             <Label htmlFor="search-filters" className="block mb-2">Filters (JSON)</Label>
-            <Textarea 
-              id="search-filters" 
-              value={searchOptions.filters} 
+            <Textarea
+              id="search-filters"
+              value={searchOptions.filters}
               onChange={(e) => updateSearchOption('filters', e.target.value)}
               placeholder='{"key": "value"}'
               rows={3}
             />
           </div>
-          
+
           <div>
             <Label htmlFor="search-k" className="block mb-2">
               Number of Results (k): {searchOptions.k}
             </Label>
-            <Input 
-              id="search-k" 
-              type="number" 
-              min={1} 
+            <Input
+              id="search-k"
+              type="number"
+              min={1}
               value={searchOptions.k}
               onChange={(e) => updateSearchOption('k', parseInt(e.target.value) || 1)}
             />
           </div>
-          
+
           <div>
             <Label htmlFor="search-min-score" className="block mb-2">
               Minimum Score: {searchOptions.min_score.toFixed(2)}
             </Label>
-            <Input 
-              id="search-min-score" 
-              type="number" 
-              min={0} 
-              max={1} 
+            <Input
+              id="search-min-score"
+              type="number"
+              min={0}
+              max={1}
               step={0.01}
               value={searchOptions.min_score}
               onChange={(e) => updateSearchOption('min_score', parseFloat(e.target.value) || 0)}
             />
           </div>
-          
+
           <div className="flex items-center justify-between">
             <Label htmlFor="search-reranking">Use Reranking</Label>
-            <Switch 
+            <Switch
               id="search-reranking"
               checked={searchOptions.use_reranking}
               onCheckedChange={(checked) => updateSearchOption('use_reranking', checked)}
             />
           </div>
-          
+
           <div className="flex items-center justify-between">
             <Label htmlFor="search-colpali">Use Colpali</Label>
-            <Switch 
+            <Switch
               id="search-colpali"
               checked={searchOptions.use_colpali}
               onCheckedChange={(checked) => updateSearchOption('use_colpali', checked)}
@@ -103,8 +103,8 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
 
           <div>
             <Label htmlFor="folderName" className="block mb-2">Scope to Folder</Label>
-            <Select 
-              value={searchOptions.folder_name || "__none__"} 
+            <Select
+              value={searchOptions.folder_name || "__none__"}
               onValueChange={(value) => updateSearchOption('folder_name', value === "__none__" ? undefined : value)}
             >
               <SelectTrigger className="w-full" id="folderName">
@@ -124,7 +124,7 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
             </p>
           </div>
         </div>
-        
+
         <DialogFooter>
           <Button onClick={() => setShowSearchAdvanced(false)}>Apply</Button>
         </DialogFooter>
