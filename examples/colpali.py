@@ -1,7 +1,7 @@
-import io
-from morphik import Morphik
 import os
+
 from dotenv import load_dotenv
+from morphik import Morphik
 from PIL import Image
 
 load_dotenv()

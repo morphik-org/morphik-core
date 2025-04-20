@@ -1,14 +1,15 @@
-import pytest
 import asyncio
-import os
 import logging
+import os
 from pathlib import Path
+
+import pytest
 from pdf2image import convert_from_path
-from core.tests import setup_test_logging
 
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
-from core.vector_store.multi_vector_store import MultiVectorStore
 from core.models.chunk import DocumentChunk
+from core.tests import setup_test_logging
+from core.vector_store.multi_vector_store import MultiVectorStore
 
 # Configure test logging
 setup_test_logging()
@@ -165,9 +166,7 @@ async def test_pdf_processing_and_storage(pdf_path, embedding_model, vector_stor
 
     # Verify we got results
     assert len(results) > 0, "No results returned from query"
-    assert all(
-        isinstance(result, DocumentChunk) for result in results
-    ), "Results are not DocumentChunks"
+    assert all(isinstance(result, DocumentChunk) for result in results), "Results are not DocumentChunks"
 
 
 @pytest.mark.asyncio
@@ -186,9 +185,7 @@ async def test_text_processing_and_storage(embedding_model, vector_store):
 
     # Verify we got results
     assert len(results) > 0, "No results returned from query"
-    assert all(
-        isinstance(result, DocumentChunk) for result in results
-    ), "Results are not DocumentChunks"
+    assert all(isinstance(result, DocumentChunk) for result in results), "Results are not DocumentChunks"
 
 
 @pytest.mark.asyncio
@@ -280,9 +277,7 @@ async def test_specific_queries(pdf_path, embedding_model, vector_store):
         ), f"Expected page {expected_page} to be in top {top_n} results, but got {top_pages[:top_n]}"
 
         # Log the rank of the expected page
-        expected_page_rank = (
-            top_pages.index(expected_page) + 1 if expected_page in top_pages else "not found"
-        )
+        expected_page_rank = top_pages.index(expected_page) + 1 if expected_page in top_pages else "not found"
         logger.info(f"Expected page {expected_page} rank: {expected_page_rank}")
 
 
@@ -338,9 +333,7 @@ async def test_query_performance(pdf_path, embedding_model, vector_store):
                     f"    {i+1}. {content_type} - Page {result.metadata.get('page')} (Score: {result.score:.4f})"
                 )
             else:
-                logger.info(
-                    f"    {i+1}. {content_type} - {result.content[:50]}... (Score: {result.score:.4f})"
-                )
+                logger.info(f"    {i+1}. {content_type} - {result.content[:50]}... (Score: {result.score:.4f})")
 
 
 @pytest.mark.asyncio
@@ -408,17 +401,13 @@ async def test_query_variations_and_consistency(pdf_path, embedding_model, vecto
         matching_percentage = (matching_count / len(top_pages)) * 100
 
         logger.info(f"Most common top page: {most_common_page}")
-        logger.info(
-            f"Percentage of queries with this page as top result: {matching_percentage:.1f}%"
-        )
+        logger.info(f"Percentage of queries with this page as top result: {matching_percentage:.1f}%")
 
         # Instead of asserting, just log the consistency level
         if matching_percentage >= 50:
             logger.info("Good consistency: At least half of the queries return the same top page")
         else:
-            logger.warning(
-                "Low consistency: Less than half of the queries return the same top page"
-            )
+            logger.warning("Low consistency: Less than half of the queries return the same top page")
 
         # Check if the most common page appears in the top 3 for each query
         top3_consistency = []
@@ -427,9 +416,7 @@ async def test_query_variations_and_consistency(pdf_path, embedding_model, vecto
             top3_consistency.append(in_top3)
 
             if not in_top3:
-                logger.warning(
-                    f"Most common page {most_common_page} not in top 3 for query '{result['query']}'"
-                )
+                logger.warning(f"Most common page {most_common_page} not in top 3 for query '{result['query']}'")
 
         # Calculate the percentage of queries that have the most common page in their top 3
         top3_percentage = (sum(1 for x in top3_consistency if x) / len(top3_consistency)) * 100
@@ -514,9 +501,7 @@ async def test_image_variations_robustness(pdf_path, embedding_model, vector_sto
             # Resize to 75% of original
             (
                 "resized",
-                original_image.resize(
-                    (int(original_image.width * 0.75), int(original_image.height * 0.75))
-                ),
+                original_image.resize((int(original_image.width * 0.75), int(original_image.height * 0.75))),
             ),
         ]
 
@@ -642,10 +627,7 @@ async def test_image_variations_robustness(pdf_path, embedding_model, vector_sto
 
         # Check if text description of the expected page is in top results
         text_in_top = any(
-            (
-                r.metadata.get("page") == expected_page
-                or r.metadata.get("related_to_page") == expected_page
-            )
+            (r.metadata.get("page") == expected_page or r.metadata.get("related_to_page") == expected_page)
             and not r.metadata.get("is_image", True)
             for r in results[:5]
         )
@@ -659,9 +641,7 @@ async def test_image_variations_robustness(pdf_path, embedding_model, vector_sto
         if text_in_top:
             logger.info(f"Text description related to page {expected_page} found in top 5 results")
         else:
-            logger.warning(
-                f"Text description related to page {expected_page} not found in top 5 results"
-            )
+            logger.warning(f"Text description related to page {expected_page} not found in top 5 results")
 
         # Check if variations of the expected page are also in top results
         variations_of_expected = [
@@ -673,9 +653,7 @@ async def test_image_variations_robustness(pdf_path, embedding_model, vector_sto
         ]
 
         # Log the number of variations found
-        logger.info(
-            f"Found {len(variations_of_expected)} variations of page {expected_page} in top 10 results"
-        )
+        logger.info(f"Found {len(variations_of_expected)} variations of page {expected_page} in top 10 results")
 
         # We should find at least one variation of the expected page in top results
         # Make this a warning instead of an assertion
@@ -686,9 +664,7 @@ async def test_image_variations_robustness(pdf_path, embedding_model, vector_sto
         if variations_of_expected:
             logger.info(f"Variations of page {expected_page} found in results:")
             for i, var in enumerate(variations_of_expected):
-                logger.info(
-                    f"  {i+1}. Variation: {var.metadata.get('variation')}, Score: {var.score:.4f}"
-                )
+                logger.info(f"  {i+1}. Variation: {var.metadata.get('variation')}, Score: {var.score:.4f}")
 
         # Check consistency between original and variations
         # The difference in ranking between original and best variation should not be too large
@@ -718,10 +694,7 @@ async def test_image_variations_robustness(pdf_path, embedding_model, vector_sto
             (
                 i
                 for i, r in enumerate(results)
-                if (
-                    r.metadata.get("page") == expected_page
-                    or r.metadata.get("related_to_page") == expected_page
-                )
+                if (r.metadata.get("page") == expected_page or r.metadata.get("related_to_page") == expected_page)
                 and not r.metadata.get("is_image", True)
             ),
             -1,
@@ -740,6 +713,4 @@ async def test_image_variations_robustness(pdf_path, embedding_model, vector_sto
 
         if original_rank >= 0 and text_rank >= 0:
             rank_difference = abs(original_rank - text_rank)
-            logger.info(
-                f"Rank difference between original image and text description: {rank_difference}"
-            )
+            logger.info(f"Rank difference between original image and text description: {rank_difference}")

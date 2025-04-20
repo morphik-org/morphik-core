@@ -1,6 +1,7 @@
-from typing import Dict, List, Optional, Any
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
+
 from fastapi import HTTPException
+from pydantic import BaseModel, Field
 
 
 class EntityExtractionExample(BaseModel):
@@ -12,9 +13,7 @@ class EntityExtractionExample(BaseModel):
     """
 
     label: str = Field(..., description="The entity label (e.g., 'John Doe', 'Apple Inc.')")
-    type: str = Field(
-        ..., description="The entity type (e.g., 'PERSON', 'ORGANIZATION', 'PRODUCT')"
-    )
+    type: str = Field(..., description="The entity type (e.g., 'PERSON', 'ORGANIZATION', 'PRODUCT')")
     properties: Optional[Dict[str, Any]] = Field(
         default_factory=dict,
         description="Optional properties of the entity (e.g., {'role': 'CEO', 'age': 42})",
@@ -31,9 +30,7 @@ class EntityResolutionExample(BaseModel):
     """
 
     canonical: str = Field(..., description="The canonical (standard/preferred) form of the entity")
-    variants: List[str] = Field(
-        ..., description="List of variant forms that should resolve to the canonical form"
-    )
+    variants: List[str] = Field(..., description="List of variant forms that should resolve to the canonical form")
 
 
 class EntityExtractionPromptOverride(BaseModel):
@@ -228,9 +225,7 @@ def validate_prompt_template_placeholders(prompt_type: str, template: str) -> No
 
     missing = [p for p in required if p not in template]
     if missing:
-        raise ValueError(
-            f"Required placeholders {missing} are missing from {prompt_type} prompt template"
-        )
+        raise ValueError(f"Required placeholders {missing} are missing from {prompt_type} prompt template")
 
 
 def validate_prompt_overrides(prompt_overrides):
@@ -268,19 +263,11 @@ def validate_prompt_overrides(prompt_overrides):
         for field in prompt_overrides:
             if field not in allowed_fields:
                 context_type = "graph" if is_graph_context else "query"
-                raise ValueError(
-                    f"Field '{field}' is not allowed in {context_type} prompt overrides"
-                )
+                raise ValueError(f"Field '{field}' is not allowed in {context_type} prompt overrides")
 
         # Validate query prompt template if present
-        if (
-            "query" in prompt_overrides
-            and prompt_overrides["query"]
-            and "prompt_template" in prompt_overrides["query"]
-        ):
-            validate_prompt_template_placeholders(
-                "query", prompt_overrides["query"]["prompt_template"]
-            )
+        if "query" in prompt_overrides and prompt_overrides["query"] and "prompt_template" in prompt_overrides["query"]:
+            validate_prompt_template_placeholders("query", prompt_overrides["query"]["prompt_template"])
 
         # Validate entity_extraction prompt template if present
         if (
@@ -305,11 +292,7 @@ def validate_prompt_overrides(prompt_overrides):
     else:
         # Object is a model instance, validate with attribute access
         # Validate query prompt template if present
-        if (
-            hasattr(prompt_overrides, "query")
-            and prompt_overrides.query
-            and prompt_overrides.query.prompt_template
-        ):
+        if hasattr(prompt_overrides, "query") and prompt_overrides.query and prompt_overrides.query.prompt_template:
             validate_prompt_template_placeholders("query", prompt_overrides.query.prompt_template)
 
         # Validate entity_extraction prompt template if present
@@ -368,20 +351,22 @@ class QueryPromptOverrides(BaseModel):
     )
 
 
-def validate_prompt_overrides_with_http_exception(prompt_overrides=None, operation_type: str = None, error: ValueError = None):
+def validate_prompt_overrides_with_http_exception(
+    prompt_overrides=None, operation_type: str = None, error: ValueError = None
+):
     """
     Validate prompt overrides and raise appropriate HTTP exceptions if validation fails.
-    
+
     This function centralizes validation and error handling for prompt overrides in API endpoints.
     It can be used in two ways:
     1. For proactive validation: Pass prompt_overrides and it will validate and raise exceptions if needed
     2. For error handling: Pass an existing error (e) to properly format and raise the HTTP exception
-    
+
     Args:
         prompt_overrides: The prompt overrides object to validate
         operation_type: Type of operation (e.g., "query", "graph") to customize error messages
         error: An existing ValueError to handle (used for exception handling blocks)
-        
+
     Raises:
         HTTPException: With appropriate status code and detail message if validation fails
     """
@@ -399,30 +384,36 @@ def validate_prompt_overrides_with_http_exception(prompt_overrides=None, operati
             error_msg = str(e).lower()
     else:
         return  # Nothing to validate or handle
-        
+
     # Handle field validation errors
-    if ("not allowed in" in error_msg and "prompt overrides" in error_msg) or \
-       "extra fields not permitted" in error_msg or \
-       "field is not allowed" in error_msg:
-        
+    if (
+        ("not allowed in" in error_msg and "prompt overrides" in error_msg)
+        or "extra fields not permitted" in error_msg
+        or "field is not allowed" in error_msg
+    ):
+
         # Customize message based on operation type
         if operation_type == "query":
-            detail = f"Invalid field in query prompt overrides: {str(e)}. " \
-                    f"For query operations, valid fields are 'entity_extraction', 'entity_resolution', and 'query'."
+            detail = (
+                f"Invalid field in query prompt overrides: {str(e)}. "
+                f"For query operations, valid fields are 'entity_extraction', 'entity_resolution', and 'query'."
+            )
         elif operation_type == "graph":
-            detail = f"Invalid field in graph prompt overrides: {str(e)}. " \
-                    f"For graph operations, only 'entity_extraction' and 'entity_resolution' overrides are supported."
+            detail = (
+                f"Invalid field in graph prompt overrides: {str(e)}. "
+                f"For graph operations, only 'entity_extraction' and 'entity_resolution' overrides are supported."
+            )
         else:
             detail = f"Invalid field in prompt overrides: {str(e)}."
-        
+
         raise HTTPException(status_code=422, detail=detail)
-    
+
     # Handle placeholder validation errors
     elif "required placeholders" in error_msg and "are missing" in error_msg:
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid prompt override: {str(e)}. Make sure all required placeholders are included in your prompt templates."
+            detail=f"Invalid prompt override: {str(e)}. Make sure all required placeholders are included in your prompt templates.",
         )
-    
+
     # Default error handling
     raise HTTPException(status_code=400, detail=str(e))

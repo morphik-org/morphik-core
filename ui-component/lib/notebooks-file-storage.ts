@@ -45,7 +45,7 @@ export const loadNotebooksFromFile = (): Notebook[] => {
     // Read the notebooks JSON file
     const fileData = readFileSync(NOTEBOOKS_FILE_PATH, 'utf8');
     const data: NotebooksData = JSON.parse(fileData);
-    
+
     return data.notebooks || DEFAULT_NOTEBOOKS;
   } catch (error) {
     console.error('Error loading notebooks from file:', error);
@@ -62,7 +62,7 @@ export const saveNotebooksToFile = (notebooks: Notebook[]): void => {
       notebooks,
       lastUpdated: new Date().toISOString()
     };
-    
+
     writeFileSync(NOTEBOOKS_FILE_PATH, JSON.stringify(data, null, 2), 'utf8');
   } catch (error) {
     console.error('Error saving notebooks to file:', error);

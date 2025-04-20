@@ -1,10 +1,11 @@
-from pydantic import BaseModel
 from typing import Dict, List, Optional
+
+from pydantic import BaseModel
 
 
 class ChunkSource(BaseModel):
     """Source information for a chunk used in completion"""
-    
+
     document_id: str
     chunk_number: int
     score: Optional[float] = None

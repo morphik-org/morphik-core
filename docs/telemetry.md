@@ -68,4 +68,4 @@ This data helps us:
 If you have any questions or concerns about our telemetry collection, please:
 1. Open an issue on our GitHub repository
 2. Email us at founders@morphik.ai
-3. Review our telemetry implementation in `core/services/telemetry.py` 
+3. Review our telemetry implementation in `core/services/telemetry.py`

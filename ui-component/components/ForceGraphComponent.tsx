@@ -44,36 +44,36 @@ interface ForceGraphInstance {
   _destructor?: () => void;
 }
 
-const ForceGraphComponent: React.FC<ForceGraphComponentProps> = ({ 
-  data, 
-  width, 
-  height, 
-  showNodeLabels = true, 
-  showLinkLabels = true 
+const ForceGraphComponent: React.FC<ForceGraphComponentProps> = ({
+  data,
+  width,
+  height,
+  showNodeLabels = true,
+  showLinkLabels = true
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  
+
   useEffect(() => {
     if (!containerRef.current) return;
-    
+
     // Clear previous graph
     containerRef.current.innerHTML = '';
-    
+
     let graphInstance: ForceGraphInstance | null = null;
-    
+
     // Dynamically import and initialize the force-graph
     const initGraph = async () => {
       try {
         // Dynamic import
         const ForceGraphModule = await import('force-graph');
-        
+
         // Get the ForceGraph constructor function
         const ForceGraphConstructor = ForceGraphModule.default;
-        
+
         // Create a new graph instance using the 'new' keyword
         if (containerRef.current) {
           graphInstance = new ForceGraphConstructor(containerRef.current) as ForceGraphInstance;
-          
+
           // Configure the graph
           const graph = graphInstance
             .width(width)
@@ -91,36 +91,36 @@ const ForceGraphComponent: React.FC<ForceGraphComponentProps> = ({
             .linkLabel((link: LinkObject) => link.type)
             .linkDirectionalArrowLength(3)
             .linkDirectionalArrowRelPos(1);
-          
+
           // Always use nodeCanvasObject to have consistent rendering regardless of label visibility
           if (graph.nodeCanvasObject) {
             graph.nodeCanvasObject((node: NodeObject, ctx: CanvasRenderingContext2D, globalScale: number) => {
               // Draw the node circle
               const nodeR = 5;
-              
+
               if (typeof node.x !== 'number' || typeof node.y !== 'number') return;
-              
+
               const x = node.x;
               const y = node.y;
-              
+
               ctx.beginPath();
               ctx.arc(x, y, nodeR, 0, 2 * Math.PI);
               ctx.fillStyle = node.color;
               ctx.fill();
-              
+
               // Only draw the text label if showNodeLabels is true
               if (showNodeLabels) {
                 const label = node.label;
                 const fontSize = 12/globalScale;
-                
+
                 ctx.font = `${fontSize}px Sans-Serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                
+
                 // Add a background for better readability
                 const textWidth = ctx.measureText(label).width;
                 const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.2);
-                
+
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
                 ctx.fillRect(
                   x - bckgDimensions[0] / 2,
@@ -128,46 +128,46 @@ const ForceGraphComponent: React.FC<ForceGraphComponentProps> = ({
                   bckgDimensions[0],
                   bckgDimensions[1]
                 );
-                
+
                 ctx.fillStyle = 'black';
                 ctx.fillText(label, x, y);
               }
             });
           }
-          
+
           // Always use linkCanvasObject for consistent rendering
           if (graph.linkCanvasObject) {
             graph.linkCanvasObject((link: LinkObject, ctx: CanvasRenderingContext2D, globalScale: number) => {
               // Draw the link line
               const start = link.source as NodeObject;
               const end = link.target as NodeObject;
-              
-              if (!start || !end || typeof start.x !== 'number' || typeof end.x !== 'number' || 
+
+              if (!start || !end || typeof start.x !== 'number' || typeof end.x !== 'number' ||
                   typeof start.y !== 'number' || typeof end.y !== 'number') return;
-              
+
               const startX = start.x;
               const startY = start.y;
               const endX = end.x;
               const endY = end.y;
-              
+
               ctx.beginPath();
               ctx.moveTo(startX, startY);
               ctx.lineTo(endX, endY);
               ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
               ctx.lineWidth = 1;
               ctx.stroke();
-              
+
               // Draw arrowhead regardless of label visibility
               const arrowLength = 5;
               const dx = endX - startX;
               const dy = endY - startY;
               const angle = Math.atan2(dy, dx);
-              
+
               // Calculate a position near the target for the arrow
               const arrowDistance = 15; // Distance from target node
               const arrowX = endX - Math.cos(angle) * arrowDistance;
               const arrowY = endY - Math.sin(angle) * arrowDistance;
-              
+
               ctx.beginPath();
               ctx.moveTo(arrowX, arrowY);
               ctx.lineTo(
@@ -181,22 +181,22 @@ const ForceGraphComponent: React.FC<ForceGraphComponentProps> = ({
               ctx.closePath();
               ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
               ctx.fill();
-              
+
               // Only draw label if showLinkLabels is true
               if (showLinkLabels) {
                 const label = link.type;
                 if (label) {
                   const fontSize = 10/globalScale;
                   ctx.font = `${fontSize}px Sans-Serif`;
-                  
+
                   // Calculate middle point
                   const middleX = startX + (endX - startX) / 2;
                   const middleY = startY + (endY - startY) / 2;
-                  
+
                   // Add a background for better readability
                   const textWidth = ctx.measureText(label).width;
                   const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.2);
-                  
+
                   ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
                   ctx.fillRect(
                     middleX - bckgDimensions[0] / 2,
@@ -204,7 +204,7 @@ const ForceGraphComponent: React.FC<ForceGraphComponentProps> = ({
                     bckgDimensions[0],
                     bckgDimensions[1]
                   );
-                  
+
                   ctx.textAlign = 'center';
                   ctx.textBaseline = 'middle';
                   ctx.fillStyle = 'black';
@@ -216,7 +216,7 @@ const ForceGraphComponent: React.FC<ForceGraphComponentProps> = ({
         }
       } catch (error) {
         console.error("Error initializing force graph:", error);
-        
+
         // Show error message if graph initialization fails
         if (containerRef.current) {
           containerRef.current.innerHTML = `
@@ -232,9 +232,9 @@ const ForceGraphComponent: React.FC<ForceGraphComponentProps> = ({
         }
       }
     };
-    
+
     initGraph();
-    
+
     // Cleanup function
     return () => {
       if (graphInstance && typeof graphInstance._destructor === 'function') {
@@ -242,8 +242,8 @@ const ForceGraphComponent: React.FC<ForceGraphComponentProps> = ({
       }
     };
   }, [data, width, height, showNodeLabels, showLinkLabels]);
-  
+
   return <div ref={containerRef} className="w-full h-full" />;
 };
 
-export default ForceGraphComponent; 
+export default ForceGraphComponent;

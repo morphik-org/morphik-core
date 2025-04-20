@@ -19,9 +19,9 @@ const ChatMessageComponent: React.FC<ChatMessageProps> = ({ role, content, sourc
     if (contentType.startsWith('image/')) {
       return (
         <div className="flex justify-center p-4 bg-muted rounded-md">
-          <Image 
-            src={content} 
-            alt="Document content" 
+          <Image
+            src={content}
+            alt="Document content"
             className="max-w-full max-h-96 object-contain"
             width={500}
             height={300}
@@ -31,9 +31,9 @@ const ChatMessageComponent: React.FC<ChatMessageProps> = ({ role, content, sourc
     } else if (content.startsWith('data:image/png;base64,') || content.startsWith('data:image/jpeg;base64,')) {
       return (
         <div className="flex justify-center p-4 bg-muted rounded-md">
-          <Image 
-            src={content} 
-            alt="Base64 image content" 
+          <Image
+            src={content}
+            alt="Base64 image content"
             className="max-w-full max-h-96 object-contain"
             width={500}
             height={300}
@@ -51,15 +51,15 @@ const ChatMessageComponent: React.FC<ChatMessageProps> = ({ role, content, sourc
 
   return (
     <div className={`flex ${role === 'user' ? 'justify-end' : 'justify-start'}`}>
-      <div 
+      <div
         className={`max-w-3/4 p-3 rounded-lg ${
-          role === 'user' 
-            ? 'bg-primary text-primary-foreground' 
+          role === 'user'
+            ? 'bg-primary text-primary-foreground'
             : 'bg-muted'
         }`}
       >
         <div className="whitespace-pre-wrap">{content}</div>
-        
+
         {sources && sources.length > 0 && role === 'assistant' && (
           <Accordion type="single" collapsible className="mt-4">
             <AccordionItem value="sources">
@@ -85,11 +85,11 @@ const ChatMessageComponent: React.FC<ChatMessageProps> = ({ role, content, sourc
                           )}
                         </div>
                       </div>
-                      
+
                       {source.content && (
                         renderContent(source.content, source.content_type || 'text/plain')
                       )}
-                      
+
                       <Accordion type="single" collapsible className="mt-3">
                         <AccordionItem value="metadata">
                           <AccordionTrigger className="text-[10px]">Metadata</AccordionTrigger>

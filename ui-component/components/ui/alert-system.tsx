@@ -23,7 +23,7 @@ const AlertInstance = ({
   onDismiss,
 }: AlertInstanceProps) => {
   return (
-    <Alert 
+    <Alert
       className={cn(
         "relative mb-2 shadow-md max-w-sm",
         type === 'error' && "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive",
@@ -34,15 +34,15 @@ const AlertInstance = ({
       )}
     >
       {dismissible && (
-        <button 
-          onClick={() => onDismiss(id)} 
+        <button
+          onClick={() => onDismiss(id)}
           className="absolute right-2 top-2 rounded-full p-1 hover:bg-black/5"
           aria-label="Close"
         >
           <X className="h-4 w-4" />
         </button>
       )}
-      
+
       {title && <AlertTitle className={dismissible ? 'pr-5' : ''}>{title}</AlertTitle>}
       <AlertDescription>{message}</AlertDescription>
     </Alert>
@@ -86,7 +86,7 @@ export function AlertSystem({ position = 'bottom-right' }: AlertSystemProps) {
         }
       }
     };
-    
+
     const handleRemoveAlert = (event: Event) => {
       const customEvent = event as CustomEvent<{id: string}>;
       const { id } = customEvent.detail;
@@ -97,7 +97,7 @@ export function AlertSystem({ position = 'bottom-right' }: AlertSystemProps) {
 
     window.addEventListener('morphik:alert', handleAddAlert as EventListener);
     window.addEventListener('morphik:alert:remove', handleRemoveAlert as EventListener);
-    
+
     return () => {
       window.removeEventListener('morphik:alert', handleAddAlert as EventListener);
       window.removeEventListener('morphik:alert:remove', handleRemoveAlert as EventListener);
@@ -121,10 +121,10 @@ export function AlertSystem({ position = 'bottom-right' }: AlertSystemProps) {
   return (
     <div className={cn('flex flex-col animate-in fade-in', positionClasses[position])}>
       {alerts.map(alert => (
-        <AlertInstance 
-          key={alert.id} 
-          {...alert} 
-          onDismiss={removeAlert} 
+        <AlertInstance
+          key={alert.id}
+          {...alert}
+          onDismiss={removeAlert}
         />
       ))}
     </div>
@@ -133,7 +133,7 @@ export function AlertSystem({ position = 'bottom-right' }: AlertSystemProps) {
 
 // Helper function to show alerts programmatically
 export const showAlert = (
-  message: string, 
+  message: string,
   options?: {
     type?: 'error' | 'success' | 'info' | 'upload' | 'warning';
     title?: string;
@@ -152,13 +152,13 @@ export const showAlert = (
       dismissible: options?.dismissible !== false,
     },
   });
-  
+
   window.dispatchEvent(event);
 };
 
 // Upload-specific helper for the upload in-progress alert
 export const showUploadAlert = (
-  count: number, 
+  count: number,
   options?: {
     dismissible?: boolean;
     id?: string;
@@ -179,6 +179,6 @@ export const removeAlert = (id: string) => {
   const event = new CustomEvent('morphik:alert:remove', {
     detail: { id },
   });
-  
+
   window.dispatchEvent(event);
 };

@@ -1,47 +1,50 @@
 import asyncio
-import json
 import base64
-import uuid
-from datetime import datetime, UTC, timedelta
-from pathlib import Path
-import sys
-from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, Form, HTTPException, Depends, Header, UploadFile, File
-from fastapi.middleware.cors import CORSMiddleware
-import jwt
+import json
 import logging
+import uuid
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import arq
+import jwt
+import tomli
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from core.limits_utils import check_and_increment_limits
-from core.models.request import (
-    GenerateUriRequest,
-    RetrieveRequest,
-    CompletionQueryRequest,
-    IngestTextRequest,
-    CreateGraphRequest,
-    UpdateGraphRequest,
-    BatchIngestResponse,
-    SetFolderRuleRequest,
-)
-from core.models.completion import ChunkSource, CompletionResponse
-from core.models.documents import Document, DocumentResult, ChunkResult
-from core.models.graph import Graph
-from core.models.auth import AuthContext, EntityType
-from core.models.prompts import validate_prompt_overrides_with_http_exception
-from core.models.folders import Folder, FolderCreate
-from core.parser.morphik_parser import MorphikParser
-from core.services.document_service import DocumentService
-from core.services.telemetry import TelemetryService
+
+from core.cache.llama_cache_factory import LlamaCacheFactory
+from core.completion.litellm_completion import LiteLLMCompletionModel
 from core.config import get_settings
 from core.database.postgres_database import PostgresDatabase
-from core.vector_store.multi_vector_store import MultiVectorStore
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
-from core.storage.s3_storage import S3Storage
-from core.storage.local_storage import LocalStorage
+from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
+from core.limits_utils import check_and_increment_limits
+from core.models.auth import AuthContext, EntityType
+from core.models.completion import ChunkSource, CompletionResponse
+from core.models.documents import ChunkResult, Document, DocumentResult
+from core.models.folders import Folder, FolderCreate
+from core.models.graph import Graph
+from core.models.prompts import validate_prompt_overrides_with_http_exception
+from core.models.request import (
+    BatchIngestResponse,
+    CompletionQueryRequest,
+    CreateGraphRequest,
+    GenerateUriRequest,
+    IngestTextRequest,
+    RetrieveRequest,
+    SetFolderRuleRequest,
+    UpdateGraphRequest,
+)
+from core.parser.morphik_parser import MorphikParser
 from core.reranker.flag_reranker import FlagReranker
-from core.cache.llama_cache_factory import LlamaCacheFactory
-import tomli
-from pydantic import BaseModel
+from core.services.document_service import DocumentService
+from core.services.telemetry import TelemetryService
+from core.storage.local_storage import LocalStorage
+from core.storage.s3_storage import S3Storage
+from core.vector_store.multi_vector_store import MultiVectorStore
+from core.vector_store.pgvector_store import PGVectorStore
 
 # Initialize FastAPI app
 app = FastAPI(title="Morphik API")
@@ -192,7 +195,6 @@ async def close_redis_pool():
 # Initialize vector store
 if not settings.POSTGRES_URI:
     raise ValueError("PostgreSQL URI is required for pgvector store")
-from core.vector_store.pgvector_store import PGVectorStore
 
 vector_store = PGVectorStore(
     uri=settings.POSTGRES_URI,
@@ -226,9 +228,6 @@ parser = MorphikParser(
 )
 
 # Initialize embedding model
-# Import here to avoid circular imports
-from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
-
 # Create a LiteLLM model using the registered model config
 embedding_model = LiteLLMEmbeddingModel(
     model_key=settings.EMBEDDING_MODEL,
@@ -236,9 +235,6 @@ embedding_model = LiteLLMEmbeddingModel(
 logger.info(f"Initialized LiteLLM embedding model with model key: {settings.EMBEDDING_MODEL}")
 
 # Initialize completion model
-# Import here to avoid circular imports
-from core.completion.litellm_completion import LiteLLMCompletionModel
-
 # Create a LiteLLM model using the registered model config
 completion_model = LiteLLMCompletionModel(
     model_key=settings.COMPLETION_MODEL,
@@ -473,11 +469,12 @@ async def ingest_file(
 
         # Update document with storage info
         doc.storage_info = {"bucket": bucket, "key": stored_key}
-            
+
         # Initialize storage_files array with the first file
+        from datetime import UTC, datetime
+
         from core.models.documents import StorageFileInfo
-        from datetime import datetime, UTC
-        
+
         # Create a StorageFileInfo for the initial file
         initial_file_info = StorageFileInfo(
             bucket=bucket,
@@ -485,16 +482,18 @@ async def ingest_file(
             version=1,
             filename=file.filename,
             content_type=file.content_type,
-            timestamp=datetime.now(UTC)
+            timestamp=datetime.now(UTC),
         )
         doc.storage_files = [initial_file_info]
-        
+
         # Log storage files
         logger.debug(f"Initial storage_files for {doc.external_id}: {doc.storage_files}")
-            
-            # Update both storage_info and storage_files
+
+        # Update both storage_info and storage_files
         await database.update_document(
-            document_id=doc.external_id, updates={"storage_info": doc.storage_info, "storage_files": doc.storage_files}, auth=auth
+            document_id=doc.external_id,
+            updates={"storage_info": doc.storage_info, "storage_files": doc.storage_files},
+            auth=auth,
         )
 
         # Convert auth context to a dictionary for serialization
@@ -1863,7 +1862,7 @@ async def set_folder_rule(
                 logger.debug(f"    Type: {field_config.get('type', 'unknown')}")
                 logger.debug(f"    Description: {field_config.get('description', 'No description')}")
                 if "schema" in field_config:
-                    logger.debug(f"    Has JSON schema: Yes")
+                    logger.debug("    Has JSON schema: Yes")
                     logger.debug(f"    Schema: {field_config['schema']}")
 
         # Get the folder
@@ -1885,7 +1884,7 @@ async def set_folder_rule(
             await session.execute(
                 text(
                     """
-                    UPDATE folders 
+                    UPDATE folders
                     SET rules = :rules
                     WHERE id = :folder_id
                     """
@@ -1906,9 +1905,6 @@ async def set_folder_rule(
             logger.info(f"Applying rules to {len(folder.document_ids)} existing documents in folder")
 
             # Import rules processor
-            from core.services.rules_processor import RulesProcessor
-
-            rules_processor = RulesProcessor()
 
             # Get all documents in the folder
             documents = await document_service.db.get_documents_by_id(folder.document_ids, auth)
@@ -2040,7 +2036,7 @@ async def set_folder_rule(
                 "rules": updated_folder.rules,
                 "processing_results": processing_results,
             }
-    except HTTPException as e:
+    except HTTPException:
         # Re-raise HTTP exceptions
         raise
     except Exception as e:

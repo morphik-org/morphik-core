@@ -19,9 +19,9 @@ import { MorphikUI } from '@morphik/ui';
 
 export default function YourApp() {
   return (
-    <MorphikUI 
-      connectionUri="your-connection-uri" 
-      apiBaseUrl="http://your-api-base-url" 
+    <MorphikUI
+      connectionUri="your-connection-uri"
+      apiBaseUrl="http://your-api-base-url"
       isReadOnlyUri={false}
       onUriChange={(uri) => console.log('URI changed:', uri)}
     />

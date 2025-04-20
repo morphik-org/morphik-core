@@ -49,9 +49,5 @@ def setup_logging(log_level: str = "INFO"):
     logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 
     # Silence telemetry logs to prevent noisy output
-    logging.getLogger("opentelemetry.exporter.otlp.proto.http.trace_exporter").setLevel(
-        logging.CRITICAL
-    )
-    logging.getLogger("opentelemetry.exporter.otlp.proto.http.metric_exporter").setLevel(
-        logging.CRITICAL
-    )
+    logging.getLogger("opentelemetry.exporter.otlp.proto.http.trace_exporter").setLevel(logging.CRITICAL)
+    logging.getLogger("opentelemetry.exporter.otlp.proto.http.metric_exporter").setLevel(logging.CRITICAL)

@@ -46,11 +46,11 @@ const FolderList: React.FC<FolderListProps> = ({
   const [newFolderName, setNewFolderName] = React.useState('');
   const [newFolderDescription, setNewFolderDescription] = React.useState('');
   const [isCreatingFolder, setIsCreatingFolder] = React.useState(false);
-  
+
   // Function to update both state and URL
   const updateSelectedFolder = (folderName: string | null) => {
     setSelectedFolder(folderName);
-    
+
     // Update URL to reflect the selected folder
     if (folderName) {
       router.push(`${pathname}?folder=${encodeURIComponent(folderName)}`);
@@ -61,12 +61,12 @@ const FolderList: React.FC<FolderListProps> = ({
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
-    
+
     setIsCreatingFolder(true);
-    
+
     try {
       console.log(`Creating folder: ${newFolderName}`);
-      
+
       const response = await fetch(`${apiBaseUrl}/folders`, {
         method: 'POST',
         headers: {
@@ -78,44 +78,44 @@ const FolderList: React.FC<FolderListProps> = ({
           description: newFolderDescription.trim() || undefined
         })
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to create folder: ${response.statusText}`);
       }
-      
+
       // Get the created folder data
       const folderData = await response.json();
       console.log(`Created folder with ID: ${folderData.id} and name: ${folderData.name}`);
-      
+
       // Close dialog and reset form
       setShowNewFolderDialog(false);
       setNewFolderName('');
       setNewFolderDescription('');
-      
+
       // Refresh folder list - use a fresh fetch
       await refreshFolders();
-      
+
       // Auto-select this newly created folder so user can immediately add files to it
       // This ensures we start with a clean empty folder view
       updateSelectedFolder(folderData.name);
-      
+
     } catch (error) {
       console.error('Error creating folder:', error);
     } finally {
       setIsCreatingFolder(false);
     }
   };
-  
+
   // If we're viewing a specific folder or all documents, show back button and folder title
   if (selectedFolder !== null) {
     return (
       <div className="mb-4">
         <div className="flex justify-between items-center py-2">
           <div className="flex items-center gap-4">
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="icon"
-              className="rounded-full hover:bg-muted/50" 
+              className="rounded-full hover:bg-muted/50"
               onClick={() => updateSelectedFolder(null)}
             >
               <ArrowLeft size={18} />
@@ -130,13 +130,13 @@ const FolderList: React.FC<FolderListProps> = ({
                 {selectedFolder === "all" ? "All Documents" : selectedFolder}
               </h2>
             </div>
-            
+
             {/* Show action buttons if documents are selected */}
             {selectedDocuments && selectedDocuments.length > 0 && (
               <div className="flex gap-2 ml-4">
                 {/* Chat with selected button */}
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => {
                     // Build proper URL path
                     let path = '/';
@@ -146,11 +146,11 @@ const FolderList: React.FC<FolderListProps> = ({
                         path = currentPath;
                       }
                     }
-                    
+
                     // Create filter with external_id which is the correct field name
                     const filter = JSON.stringify({ external_id: selectedDocuments });
                     const filtersParam = encodeURIComponent(filter);
-                    
+
                     // Navigate to chat with selected documents
                     // Use window.location to force a full page reload
                     if (typeof window !== 'undefined') {
@@ -164,11 +164,11 @@ const FolderList: React.FC<FolderListProps> = ({
                   <MessageSquare size={16} />
                   Chat with {selectedDocuments.length} selected
                 </Button>
-                
+
                 {/* Delete button */}
                 {handleDeleteMultipleDocuments && (
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     onClick={handleDeleteMultipleDocuments}
                     className="border-red-500 text-red-500 hover:bg-red-50"
                   >
@@ -178,7 +178,7 @@ const FolderList: React.FC<FolderListProps> = ({
               </div>
             )}
           </div>
-          
+
           {/* Action buttons */}
           <div className="flex items-center gap-2">
             {refreshAction && (
@@ -197,7 +197,7 @@ const FolderList: React.FC<FolderListProps> = ({
                 Refresh
               </Button>
             )}
-            
+
             {/* Upload dialog component */}
             {uploadDialogComponent}
           </div>
@@ -205,7 +205,7 @@ const FolderList: React.FC<FolderListProps> = ({
       </div>
     );
   }
-  
+
   return (
     <div className="mb-6">
       <div className="flex justify-between items-center mb-4">
@@ -257,9 +257,9 @@ const FolderList: React.FC<FolderListProps> = ({
           </DialogContent>
         </Dialog>
       </div>
-      
+
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6 py-2">
-        <div 
+        <div
           className="cursor-pointer group flex flex-col items-center"
           onClick={() => updateSelectedFolder("all")}
         >
@@ -268,7 +268,7 @@ const FolderList: React.FC<FolderListProps> = ({
           </div>
           <span className="text-sm font-medium text-center group-hover:text-primary transition-colors">All Documents</span>
         </div>
-        
+
         {folders.map((folder) => (
           <div
             key={folder.name}
@@ -282,14 +282,14 @@ const FolderList: React.FC<FolderListProps> = ({
           </div>
         ))}
       </div>
-      
+
       {folders.length === 0 && !loading && (
         <div className="flex flex-col items-center justify-center p-8 mt-4">
           <Image src="/icons/folder-icon.png" alt="Folder" width={80} height={80} className="opacity-50 mb-3" />
           <p className="text-sm text-muted-foreground">No folders yet. Create one to organize your documents.</p>
         </div>
       )}
-      
+
       {loading && folders.length === 0 && (
         <div className="flex items-center justify-center p-8 mt-4">
           <div className="flex items-center space-x-2">

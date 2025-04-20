@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
+
 from .base_cache import BaseCache
 
 
@@ -17,9 +18,7 @@ class BaseCacheFactory(ABC):
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
     @abstractmethod
-    def create_new_cache(
-        self, name: str, model: str, model_file: str, **kwargs: Dict[str, Any]
-    ) -> BaseCache:
+    def create_new_cache(self, name: str, model: str, model_file: str, **kwargs: Dict[str, Any]) -> BaseCache:
         """Create a new cache instance.
 
         Args:

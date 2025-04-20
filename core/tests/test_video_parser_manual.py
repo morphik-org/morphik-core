@@ -1,8 +1,9 @@
-from core.parser.video.parse_video import VideoParser
-import os
 import json
-from datetime import datetime
 import logging
+import os
+from datetime import datetime
+
+from core.parser.video.parse_video import VideoParser
 from core.tests import setup_test_logging
 
 # Configure test logging

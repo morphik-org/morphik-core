@@ -1,4 +1,5 @@
 import os
+
 from dotenv import load_dotenv
 from morphik import Morphik
 
@@ -12,16 +13,16 @@ db = Morphik(os.getenv("MORPHIK_URI"), timeout=10000, is_local=True)
 sample_texts = [
     {
         "text": "AI technology is advancing rapidly with applications in healthcare. Machine learning models are being used to predict patient outcomes.",
-        "metadata": {"category": "tech", "domain": "healthcare"}
+        "metadata": {"category": "tech", "domain": "healthcare"},
     },
     {
         "text": "Cloud computing enables AI systems to scale. AWS, Azure, and Google Cloud provide infrastructure for machine learning.",
-        "metadata": {"category": "tech", "domain": "cloud"}
+        "metadata": {"category": "tech", "domain": "cloud"},
     },
     {
         "text": "Electronic health records are being analyzed with natural language processing to improve diagnoses.",
-        "metadata": {"category": "tech", "domain": "nlp"}
-    }
+        "metadata": {"category": "tech", "domain": "nlp"},
+    },
 ]
 
 # Ingest the documents
@@ -33,17 +34,14 @@ for item in sample_texts:
 
 # Create a knowledge graph from the documents
 print("Creating knowledge graph...")
-graph = db.create_graph(
-    name="tech_healthcare_graph",
-    filters={"category": "tech"}
-)
+graph = db.create_graph(name="tech_healthcare_graph", filters={"category": "tech"})
 print(f"Created graph with name: {graph.name}")
 
 # Query using the knowledge graph
 response = db.query(
     "How is AI technology being used in healthcare?",
     graph_name="tech_healthcare_graph",
-    hop_depth=2  # Consider connections up to 2 hops away
+    hop_depth=2,  # Consider connections up to 2 hops away
 )
 
 print("Graph-enhanced query response:")
@@ -54,7 +52,7 @@ response_with_paths = db.query(
     "What technologies are used for analyzing electronic health records?",
     graph_name="tech_healthcare_graph",
     hop_depth=2,
-    include_paths=True
+    include_paths=True,
 )
 
 # If path information is included, it will be in the response metadata

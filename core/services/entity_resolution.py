@@ -1,10 +1,11 @@
 import logging
-from typing import List, Dict, Any, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
 from pydantic import BaseModel, ConfigDict
 
-from core.models.prompts import EntityResolutionPromptOverride
 from core.config import get_settings
 from core.models.graph import Entity
+from core.models.prompts import EntityResolutionPromptOverride
 
 logger = logging.getLogger(__name__)
 
@@ -161,9 +162,7 @@ class EntityResolver:
         # Get the model configuration from registered_models
         model_config = self.settings.REGISTERED_MODELS.get(self.settings.GRAPH_MODEL, {})
         if not model_config:
-            logger.error(
-                f"Model '{self.settings.GRAPH_MODEL}' not found in registered_models configuration"
-            )
+            logger.error(f"Model '{self.settings.GRAPH_MODEL}' not found in registered_models configuration")
             return [{"canonical": label, "variants": [label]} for label in entity_labels]
 
         system_message = {
@@ -197,9 +196,7 @@ class EntityResolver:
             # Fallback: treat each entity as unique
             return [{"canonical": label, "variants": [label]} for label in entity_labels]
 
-    def _create_entity_resolution_prompt(
-        self, entity_labels: List[str], prompt_template=None, examples=None
-    ) -> str:
+    def _create_entity_resolution_prompt(self, entity_labels: List[str], prompt_template=None, examples=None) -> str:
         """
         Creates a prompt for the LLM to resolve entities.
 
@@ -241,9 +238,7 @@ class EntityResolver:
         # If a custom template is provided, use it
         if prompt_template:
             # Format the custom template with our variables
-            return prompt_template.format(
-                entities_str=entities_str, examples_json=str(entities_example_dict)
-            )
+            return prompt_template.format(entities_str=entities_str, examples_json=str(entities_example_dict))
 
         # Otherwise use the default prompt
         prompt = f"""

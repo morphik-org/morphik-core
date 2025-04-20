@@ -1,35 +1,30 @@
 import base64
 import io
+import logging
 from typing import List, Union
 
 import numpy as np
 import torch
 from colpali_engine.models import ColQwen2, ColQwen2Processor
-from PIL.Image import Image, open as open_image
+from PIL.Image import Image
+from PIL.Image import open as open_image
 
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.models.chunk import Chunk
-import logging
 
 logger = logging.getLogger(__name__)
 
 
 class ColpaliEmbeddingModel(BaseEmbeddingModel):
     def __init__(self):
-        device = (
-            "mps"
-            if torch.backends.mps.is_available()
-            else "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
         self.model = ColQwen2.from_pretrained(
             "vidore/colqwen2-v1.0",
             torch_dtype=torch.bfloat16,
             device_map=device,  # Automatically detect and use available device
             attn_implementation="flash_attention_2" if device == "cuda" else "eager",
         ).eval()
-        self.processor: ColQwen2Processor = ColQwen2Processor.from_pretrained(
-            "vidore/colqwen2-v1.0"
-        )
+        self.processor: ColQwen2Processor = ColQwen2Processor.from_pretrained("vidore/colqwen2-v1.0")
 
     async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> List[np.ndarray]:
         if isinstance(chunks, Chunk):

@@ -20,6 +20,7 @@ async def check_and_increment_limits(auth, limit_type: str, value: int = 1, docu
         HTTPException: If the user exceeds limits (free tier only)
     """
     from fastapi import HTTPException
+
     from core.config import get_settings
     from core.models.tiers import AccountTier
 
@@ -39,7 +40,7 @@ async def check_and_increment_limits(auth, limit_type: str, value: int = 1, docu
 
     user_service = UserService()
     await user_service.initialize()
-    
+
     # Get user data to check tier
     user_data = await user_service.get_user_limits(auth.user_id)
     if not user_data:
@@ -49,9 +50,9 @@ async def check_and_increment_limits(auth, limit_type: str, value: int = 1, docu
         if not user_data:
             logger.error(f"Failed to create user limits for user {auth.user_id}")
             return
-    
+
     tier = user_data.get("tier", AccountTier.FREE)
-    
+
     # Only apply limits to free tier users
     if tier != AccountTier.FREE:
         # For non-free tiers, just record usage without checking limits

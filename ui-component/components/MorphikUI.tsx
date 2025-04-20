@@ -7,16 +7,14 @@ import SearchSection from '@/components/search/SearchSection';
 import ChatSection from '@/components/chat/ChatSection';
 import GraphSection from '@/components/GraphSection';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { AlertSystem } from '@/components/ui/alert-system';
 import { extractTokenFromUri, getApiBaseUrlFromUri } from '@/lib/utils';
 import { MorphikUIProps } from '@/components/types';
-import { ArrowLeft } from 'lucide-react';
 
 // Default API base URL
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
 
-const MorphikUI: React.FC<MorphikUIProps> = ({ 
+const MorphikUI: React.FC<MorphikUIProps> = ({
   connectionUri,
   apiBaseUrl = DEFAULT_API_BASE_URL,
   isReadOnlyUri = false, // Default to editable URI
@@ -27,12 +25,12 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
 }) => {
   // State to manage connectionUri internally if needed
   const [currentUri, setCurrentUri] = useState(connectionUri);
-  
+
   // Update internal state when prop changes
   useEffect(() => {
     setCurrentUri(connectionUri);
   }, [connectionUri]);
-  
+
   // Handle URI changes from sidebar
   const handleUriChange = (newUri: string) => {
     console.log('MorphikUI: URI changed to:', newUri);
@@ -44,25 +42,25 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
   const [activeSection, setActiveSection] = useState(initialSection);
   const [selectedGraphName, setSelectedGraphName] = useState<string | undefined>(undefined);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  
+
   // Extract auth token and API URL from connection URI if provided
   const authToken = currentUri ? extractTokenFromUri(currentUri) : null;
-  
+
   // Derive API base URL from the URI if provided
   // If URI is empty, this will now connect to localhost by default
   const effectiveApiBaseUrl = getApiBaseUrlFromUri(currentUri, apiBaseUrl);
-  
+
   // Log the effective API URL for debugging
   useEffect(() => {
     console.log('MorphikUI: Using API URL:', effectiveApiBaseUrl);
     console.log('MorphikUI: Auth token present:', !!authToken);
   }, [effectiveApiBaseUrl, authToken]);
-  
+
   return (
     <>
       <div className="flex h-screen">
-        <Sidebar 
-          activeSection={activeSection} 
+        <Sidebar
+          activeSection={activeSection}
           onSectionChange={setActiveSection}
           className="h-screen"
           connectionUri={currentUri}
@@ -70,47 +68,34 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
           onUriChange={handleUriChange}
           isCollapsed={isSidebarCollapsed}
           setIsCollapsed={setIsSidebarCollapsed}
+          onBackClick={onBackClick}
         />
-        
+
         <div className="flex-1 flex flex-col h-screen overflow-hidden">
-          {/* Header with back button */}
-          {onBackClick && (
-            <div className="bg-background border-b p-3 flex items-center">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onBackClick}
-                className="mr-2"
-              >
-                <ArrowLeft className="h-4 w-4 mr-1" />
-                Back to dashboard
-              </Button>
-            </div>
-          )}
-          
-          <div className="flex-1 p-6 flex flex-col overflow-hidden">
+          {/* Remove the header with back button */}
+          <div className="flex-1 overflow-y-auto">
             {/* Documents Section */}
             {activeSection === 'documents' && (
-              <DocumentsSection 
-                apiBaseUrl={effectiveApiBaseUrl} 
+              <DocumentsSection
+                apiBaseUrl={effectiveApiBaseUrl}
                 authToken={authToken}
                 initialFolder={initialFolder}
                 setSidebarCollapsed={setIsSidebarCollapsed}
               />
             )}
-            
+
             {/* Search Section */}
             {activeSection === 'search' && (
-              <SearchSection 
-                apiBaseUrl={effectiveApiBaseUrl} 
+              <SearchSection
+                apiBaseUrl={effectiveApiBaseUrl}
                 authToken={authToken}
               />
             )}
-            
+
             {/* Chat Section */}
             {activeSection === 'chat' && (
-              <ChatSection 
-                apiBaseUrl={effectiveApiBaseUrl} 
+              <ChatSection
+                apiBaseUrl={effectiveApiBaseUrl}
                 authToken={authToken}
               />
             )}
@@ -127,8 +112,8 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
                     </Badge>
                   )}
                 </div>
-                
-                <GraphSection 
+
+                <GraphSection
                   apiBaseUrl={effectiveApiBaseUrl}
                   authToken={authToken}
                   onSelectGraph={(graphName) => setSelectedGraphName(graphName)}
@@ -138,7 +123,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
           </div>
         </div>
       </div>
-      
+
       {/* Global alert system - integrated directly in the component */}
       <AlertSystem position="bottom-right" />
     </>

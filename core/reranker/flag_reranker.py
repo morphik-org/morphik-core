@@ -1,4 +1,5 @@
-from typing import List, Union, Optional
+from typing import List, Optional, Union
+
 from FlagEmbedding import FlagAutoReranker
 
 from core.models.chunk import DocumentChunk

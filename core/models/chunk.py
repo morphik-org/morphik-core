@@ -1,7 +1,7 @@
 from typing import Any, Dict, List
 
-from pydantic import BaseModel, Field
 import numpy as np
+from pydantic import BaseModel, Field
 
 Embedding = List[float] | List[List[float]] | np.ndarray
 
@@ -28,9 +28,7 @@ class Chunk(BaseModel):
 
     model_config = {"arbitrary_types_allowed": True}
 
-    def to_document_chunk(
-        self, document_id: str, chunk_number: int, embedding: Embedding
-    ) -> DocumentChunk:
+    def to_document_chunk(self, document_id: str, chunk_number: int, embedding: Embedding) -> DocumentChunk:
         return DocumentChunk(
             document_id=document_id,
             content=self.content,

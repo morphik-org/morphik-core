@@ -1,26 +1,28 @@
-import os
+import argparse
 import sys
 import uuid
 from pathlib import Path
+
+import pandas as pd
+from datasets import Dataset, load_dataset
+from dotenv import load_dotenv
+from ragas import evaluate
+from ragas.metrics import answer_correctness, context_precision, faithfulness
+from tqdm import tqdm
 
 # Add the SDK path to the Python path
 sdk_path = str(Path(__file__).parent.parent / "sdks" / "python")
 sys.path.insert(0, sdk_path)
 
-from datasets import load_dataset, Dataset
-from ragas import evaluate
-from ragas.metrics import faithfulness, answer_correctness, context_precision
-import pandas as pd
-from dotenv import load_dotenv
-from morphik import Morphik
-from tqdm import tqdm
-import argparse
+# Import Morphik after adding the SDK path
+from morphik import Morphik  # noqa: E402
 
 # Load environment variables
 load_dotenv()
 
 # Connect to Morphik
 db = Morphik(timeout=10000, is_local=True)
+
 
 # Generate a run identifier
 def generate_run_id():
@@ -41,7 +43,7 @@ def load_hotpotqa_dataset(num_samples=10, split="validation"):
 def process_with_morphik(dataset, run_id=None):
     """
     Process dataset with Morphik and prepare data for RAGAS evaluation
-    
+
     Args:
         dataset: The dataset to process
         run_id: Unique identifier for this evaluation run
@@ -49,15 +51,15 @@ def process_with_morphik(dataset, run_id=None):
     # Generate a run_id if not provided
     if run_id is None:
         run_id = generate_run_id()
-        
+
     print(f"Using run identifier: {run_id}")
-    
+
     data_samples = {
-        "question": [], 
-        "answer": [], 
-        "contexts": [], 
+        "question": [],
+        "answer": [],
+        "contexts": [],
         "ground_truth": [],
-        "run_id": []  # Store run_id for each sample
+        "run_id": [],  # Store run_id for each sample
     }
 
     for i, item in enumerate(tqdm(dataset, desc="Processing documents")):
@@ -82,16 +84,16 @@ def process_with_morphik(dataset, run_id=None):
             #     context = context[:10000]
 
             # Ingest text with run_id in metadata
-            doc_id = db.ingest_text(
+            db.ingest_text(
                 context,
                 metadata={
                     "source": "hotpotqa",
                     "question_id": item.get("_id", ""),
                     "item_index": i,
-                    "evaluation_run_id": run_id  # Add run_id to metadata
+                    "evaluation_run_id": run_id,  # Add run_id to metadata
                 },
-                use_colpali=False
-            ).external_id
+                use_colpali=False,
+            )
 
             # Query Morphik for the answer with concise prompt override
             prompt_override = {
@@ -100,11 +102,11 @@ def process_with_morphik(dataset, run_id=None):
                 }
             }
             response = db.query(
-                question, 
-                use_colpali=False, 
-                k=10, 
+                question,
+                use_colpali=False,
+                k=10,
                 filters={"evaluation_run_id": run_id},
-                prompt_overrides=prompt_override
+                prompt_overrides=prompt_override,
             )
             answer = response.completion
 
@@ -113,11 +115,7 @@ def process_with_morphik(dataset, run_id=None):
                 answer = "No answer provided"
 
             # Get retrieved chunks for context with filter by run_id
-            chunks = db.retrieve_chunks(
-                query=question, 
-                k=10, 
-                filters={"evaluation_run_id": run_id}  # Filter by run_id
-            )
+            chunks = db.retrieve_chunks(query=question, k=10, filters={"evaluation_run_id": run_id})  # Filter by run_id
             context_texts = [chunk.content for chunk in chunks]
 
             if not context_texts:
@@ -146,7 +144,7 @@ def process_with_morphik(dataset, run_id=None):
 def run_evaluation(num_samples=5, output_file="ragas_results.csv", run_id=None):
     """
     Run the full evaluation pipeline
-    
+
     Args:
         num_samples: Number of samples to use from the dataset
         output_file: Path to save the results CSV
@@ -180,10 +178,10 @@ def run_evaluation(num_samples=5, output_file="ragas_results.csv", run_id=None):
 
         # Convert results to DataFrame and save
         df_result = result.to_pandas()
-        
+
         # Add run_id to the results DataFrame
-        df_result['run_id'] = run_id
-        
+        df_result["run_id"] = run_id
+
         print("\nRAGAS Evaluation Results:")
         print(df_result)
 
@@ -208,9 +206,9 @@ def run_evaluation(num_samples=5, output_file="ragas_results.csv", run_id=None):
         # Include run_id in the output filename if not explicitly provided
         if output_file == "ragas_results.csv":
             # Get just the filename without extension
-            base_name = output_file.rsplit('.', 1)[0]
+            base_name = output_file.rsplit(".", 1)[0]
             output_file = f"{base_name}_{run_id}.csv"
-            
+
         # Save results
         df_result.to_csv(output_file, index=False)
         print(f"Results saved to {output_file}")
@@ -228,12 +226,8 @@ def run_evaluation(num_samples=5, output_file="ragas_results.csv", run_id=None):
 
 def main():
     """Command-line entry point"""
-    parser = argparse.ArgumentParser(
-        description="Run RAGAS evaluation on Morphik using HotpotQA dataset"
-    )
-    parser.add_argument(
-        "--samples", type=int, default=5, help="Number of samples to use (default: 5)"
-    )
+    parser = argparse.ArgumentParser(description="Run RAGAS evaluation on Morphik using HotpotQA dataset")
+    parser.add_argument("--samples", type=int, default=5, help="Number of samples to use (default: 5)")
     parser.add_argument(
         "--output",
         type=str,
@@ -248,11 +242,7 @@ def main():
     )
     args = parser.parse_args()
 
-    run_evaluation(
-        num_samples=args.samples,
-        output_file=args.output,
-        run_id=args.run_id
-    )
+    run_evaluation(num_samples=args.samples, output_file=args.output, run_id=args.run_id)
 
 
 if __name__ == "__main__":
