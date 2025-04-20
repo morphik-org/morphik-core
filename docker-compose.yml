@@ -47,6 +47,22 @@ services:
       - morphik-network
     env_file:
       - .env
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./ui-component:/app/ui-component
+    working_dir: /app/ui-component
+    command: bash -c '. /root/.nvm/nvm.sh && nvm use --lts && npm install && npm run dev'
+    depends_on:
+      - morphik
+    networks:
+      - morphik-network
+
       
   worker:
     build: .
