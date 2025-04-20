@@ -636,13 +636,11 @@ class PostgresDatabase(BaseDatabase):
 
                     # Set all attributes
                     for key, value in updates.items():
-                        if key == "storage_files" and isinstance(value, list):
-                            # Ensure storage_files items are serializable (convert StorageFileInfo to dict)
+                       if key == "storage_files" and isinstance(value, list):
                             serialized_value = [
-                                (
-                                    item.model_dump()
-                                    if hasattr(item, "model_dump")
-                                    else (item.dict() if hasattr(item, "dict") else item)
+                                _serialize_datetime(
+                                    item.model_dump() if hasattr(item, "model_dump") else
+                                    (item.dict() if hasattr(item, "dict") else item)
                                 )
                                 for item in value
                             ]
