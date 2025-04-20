@@ -1282,8 +1282,8 @@ class PostgresDatabase(BaseDatabase):
                         """
                         SELECT * FROM folders
                         WHERE name = :name
-                        AND (owner->>'entity_id' = :entity_id)
-                        AND (owner->>'entity_type' = :entity_type)
+                        AND (owner->>'id' = :entity_id)
+                        AND (owner->>'type' = :entity_type)
                         """
                     ).bindparams(name=name, entity_id=auth.entity_id, entity_type=auth.entity_type.value)
 
@@ -1308,16 +1308,22 @@ class PostgresDatabase(BaseDatabase):
                 # If not found, try to find any accessible folder with that name
                 stmt = text(
                     """
-                    SELECT * FROM documents
-                    WHERE filename = :name
+                    SELECT * FROM folders
+                    WHERE name = :name
                     AND (
-                        (owner->>'entity_id' = :entity_id AND owner->>'entity_type' = :entity_type)
-                        OR (access_control->>'readers' ? :entity_id)
-                        OR (access_control->>'writers' ? :entity_id)
-                        OR (access_control->>'admins' ? :entity_id)
+                        (owner->>'id' = :entity_id AND owner->>'type' = :entity_type)
+                        OR (access_control->'readers' ? :entity_id)
+                        OR (access_control->'writers' ? :entity_id)
+                        OR (access_control->'admins' ? :entity_id)
+                        OR (access_control->'user_id' ? :user_id)
                     )
                     """
-                ).bindparams(name=name, entity_id=auth.entity_id, entity_type=auth.entity_type.value)
+                ).bindparams(
+                    name=name,
+                    entity_id=auth.entity_id,
+                    entity_type=auth.entity_type.value,
+                    user_id=auth.user_id if auth.user_id else "",
+                )
 
                 result = await session.execute(stmt)
                 folder_row = result.fetchone()
