@@ -639,8 +639,9 @@ class PostgresDatabase(BaseDatabase):
                         if key == "storage_files" and isinstance(value, list):
                             serialized_value = [
                                 _serialize_datetime(
-                                    item.model_dump() if hasattr(item, "model_dump") else
-                                    (item.dict() if hasattr(item, "dict") else item)
+                                    item.model_dump()
+                                    if hasattr(item, "model_dump")
+                                    else (item.dict() if hasattr(item, "dict") else item)
                                 )
                                 for item in value
                             ]
@@ -793,7 +794,8 @@ class PostgresDatabase(BaseDatabase):
                     if isinstance(item, bool):
                         escaped_values.append(str(item).lower())
                     elif isinstance(item, str):
-                        escaped_values.append(f"'{item.replace('\'', '\'\'')}'")
+                        # Use standard replace, avoid complex f-string quoting for black
+                        escaped_values.append(f"'{item.replace("'", "''")}'")
                     else:
                         escaped_values.append(f"'{item}'")
 
@@ -836,7 +838,8 @@ class PostgresDatabase(BaseDatabase):
                     if isinstance(item, bool):
                         escaped_values.append(str(item).lower())
                     elif isinstance(item, str):
-                        escaped_values.append(f"'{item.replace('\'', '\'\'')}'")
+                        # Use standard replace, avoid complex f-string quoting for black
+                        escaped_values.append(f"'{item.replace("'", "''")}'")
                     else:
                         escaped_values.append(f"'{item}'")
 
@@ -939,7 +942,8 @@ class PostgresDatabase(BaseDatabase):
                 session.add(graph_model)
                 await session.commit()
                 logger.info(
-                    f"Stored graph '{graph.name}' with {len(graph.entities)} entities and {len(graph.relationships)} relationships"
+                    f"Stored graph '{graph.name}' with {len(graph.entities)} entities "
+                    f"and {len(graph.relationships)} relationships"
                 )
 
             return True
@@ -1159,7 +1163,8 @@ class PostgresDatabase(BaseDatabase):
 
                 await session.commit()
                 logger.info(
-                    f"Updated graph '{graph.name}' with {len(graph.entities)} entities and {len(graph.relationships)} relationships"
+                    f"Updated graph '{graph.name}' with {len(graph.entities)} entities "
+                    f"and {len(graph.relationships)} relationships"
                 )
 
             return True
@@ -1301,27 +1306,36 @@ class PostgresDatabase(BaseDatabase):
                         return Folder(**folder_dict)
 
                 # If not found, try to find any accessible folder with that name
-                result = await session.execute(select(FolderModel).where(FolderModel.name == name))
-                folder_models = result.scalars().all()
+                stmt = text(
+                    """
+                    SELECT * FROM documents
+                    WHERE filename = :name
+                    AND (
+                        (owner->>'entity_id' = :entity_id AND owner->>'entity_type' = :entity_type)
+                        OR (access_control->>'readers' ? :entity_id)
+                        OR (access_control->>'writers' ? :entity_id)
+                        OR (access_control->>'admins' ? :entity_id)
+                    )
+                    """
+                ).bindparams(name=name, entity_id=auth.entity_id, entity_type=auth.entity_type.value)
 
-                for folder_model in folder_models:
+                result = await session.execute(stmt)
+                folder_row = result.fetchone()
+
+                if folder_row:
                     # Convert to Folder object
                     folder_dict = {
-                        "id": folder_model.id,
-                        "name": folder_model.name,
-                        "description": folder_model.description,
-                        "owner": folder_model.owner,
-                        "document_ids": folder_model.document_ids,
-                        "system_metadata": folder_model.system_metadata,
-                        "access_control": folder_model.access_control,
-                        "rules": folder_model.rules,
+                        "id": folder_row.id,
+                        "name": folder_row.name,
+                        "description": folder_row.description,
+                        "owner": folder_row.owner,
+                        "document_ids": folder_row.document_ids,
+                        "system_metadata": folder_row.system_metadata,
+                        "access_control": folder_row.access_control,
+                        "rules": folder_row.rules,
                     }
 
-                    folder = Folder(**folder_dict)
-
-                    # Check if the user has access to the folder
-                    if self._check_folder_access(folder, auth, "read"):
-                        return folder
+                    return Folder(**folder_dict)
 
                 return None
 

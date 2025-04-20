@@ -2,6 +2,7 @@ import logging
 import re  # Import re for parsing model name
 
 import litellm
+
 try:
     import ollama
 except ImportError:
@@ -49,18 +50,27 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             else:
                 self.ollama_api_base = self.model_config.get("api_base")
                 if not self.ollama_api_base:
-                    logger.warning(f"Ollama model {self.model_key} selected for direct use, but 'api_base' is missing in config. Falling back to LiteLLM.")
+                    logger.warning(
+                        f"Ollama model {self.model_key} selected for direct use, "
+                        "but 'api_base' is missing in config. Falling back to LiteLLM."
+                    )
                     self.is_ollama = False  # Fallback if api_base is missing
                 else:
                     # Extract base model name (e.g., 'llama3.2' from 'ollama_chat/llama3.2')
-                    match = re.search(r'[^/]+$', self.model_config["model_name"])
+                    match = re.search(r"[^/]+$", self.model_config["model_name"])
                     if match:
                         self.ollama_base_model_name = match.group(0)
                     else:
-                        logger.warning(f"Could not parse base model name from Ollama model {self.model_config['model_name']}. Falling back to LiteLLM.")
+                        logger.warning(
+                            f"Could not parse base model name from Ollama model "
+                            f"{self.model_config['model_name']}. Falling back to LiteLLM."
+                        )
                         self.is_ollama = False  # Fallback if name parsing fails
 
-        logger.info(f"Initialized LiteLLM completion model with model_key={model_key}, config={self.model_config}, is_ollama_direct={self.is_ollama}")
+        logger.info(
+            f"Initialized LiteLLM completion model with model_key={model_key}, "
+            f"config={self.model_config}, is_ollama_direct={self.is_ollama}"
+        )
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """
@@ -84,7 +94,8 @@ class LiteLLMCompletionModel(BaseCompletionModel):
 4. When relevant, cite specific parts of the context to support your answers
 5. For image-based queries, analyze the visual content in conjunction with any text context provided
 
-Remember: Your primary goal is to provide accurate, context-aware responses that help users understand and utilize the information in their documents effectively.""",
+Remember: Your primary goal is to provide accurate, context-aware responses that help users understand
+and utilize the information in their documents effectively.""",
             }
         ]
 
@@ -97,7 +108,7 @@ Remember: Your primary goal is to provide accurate, context-aware responses that
                 if self.is_ollama:
                     # For Ollama, strip the data URI prefix and just keep the base64 data
                     try:
-                        base64_data = chunk.split(',', 1)[1]
+                        base64_data = chunk.split(",", 1)[1]
                         ollama_image_data.append(base64_data)
                     except IndexError:
                         logger.warning(f"Could not parse base64 data from image chunk: {chunk[:50]}...")
@@ -145,28 +156,28 @@ Remember: Your primary goal is to provide accurate, context-aware responses that
             # Construct Ollama options
             options = {
                 "temperature": request.temperature,
-                "num_predict": request.max_tokens if request.max_tokens is not None else -1  # Default to model's default if None
+                "num_predict": (
+                    request.max_tokens if request.max_tokens is not None else -1
+                ),  # Default to model's default if None
             }
 
             try:
                 response = await client.chat(
-                    model=self.ollama_base_model_name,
-                    messages=ollama_messages,
-                    options=options
+                    model=self.ollama_base_model_name, messages=ollama_messages, options=options
                 )
 
                 # Map Ollama response to CompletionResponse
-                prompt_tokens = response.get('prompt_eval_count', 0)
-                completion_tokens = response.get('eval_count', 0)
+                prompt_tokens = response.get("prompt_eval_count", 0)
+                completion_tokens = response.get("eval_count", 0)
 
                 return CompletionResponse(
-                    completion=response['message']['content'],
+                    completion=response["message"]["content"],
                     usage={
                         "prompt_tokens": prompt_tokens,
                         "completion_tokens": completion_tokens,
                         "total_tokens": prompt_tokens + completion_tokens,
                     },
-                    finish_reason=response.get('done_reason', 'unknown'),  # Map done_reason if available
+                    finish_reason=response.get("done_reason", "unknown"),  # Map done_reason if available
                 )
 
             except Exception as e:
@@ -186,10 +197,7 @@ Remember: Your primary goal is to provide accurate, context-aware responses that
                     content_list.append({"type": "image_url", "image_url": {"url": img_url}})
 
             # LiteLLM uses list content format
-            user_message = {
-                "role": "user",
-                "content": content_list
-            }
+            user_message = {"role": "user", "content": content_list}
             # Use the system prompt defined earlier
             litellm_messages = [messages[0], user_message]
 
