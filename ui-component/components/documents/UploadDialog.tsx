@@ -65,7 +65,7 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
     }
   };
 
-  /* 
+  /*
    * Component state flow:
    * - Internal state is managed here (uploadType, fileToUpload, etc.)
    * - Actions like file upload are handled by parent component via callbacks
@@ -92,44 +92,44 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
             Upload a file or text to your Morphik repository.
           </DialogDescription>
         </DialogHeader>
-        
+
         <div className="grid gap-4 py-4">
           <div className="flex gap-2">
-            <Button 
-              variant={uploadType === 'file' ? "default" : "outline"} 
+            <Button
+              variant={uploadType === 'file' ? "default" : "outline"}
               onClick={() => setUploadType('file')}
             >
               File
             </Button>
-            <Button 
-              variant={uploadType === 'batch' ? "default" : "outline"} 
+            <Button
+              variant={uploadType === 'batch' ? "default" : "outline"}
               onClick={() => setUploadType('batch')}
             >
               Batch Files
             </Button>
-            <Button 
-              variant={uploadType === 'text' ? "default" : "outline"} 
+            <Button
+              variant={uploadType === 'text' ? "default" : "outline"}
               onClick={() => setUploadType('text')}
             >
               Text
             </Button>
           </div>
-          
+
           {uploadType === 'file' ? (
             <div>
               <Label htmlFor="file" className="block mb-2">File</Label>
-              <Input 
-                id="file" 
-                type="file" 
+              <Input
+                id="file"
+                type="file"
                 onChange={handleFileChange}
               />
             </div>
           ) : uploadType === 'batch' ? (
             <div>
               <Label htmlFor="batchFiles" className="block mb-2">Select Multiple Files</Label>
-              <Input 
-                id="batchFiles" 
-                type="file" 
+              <Input
+                id="batchFiles"
+                type="file"
                 multiple
                 onChange={handleBatchFileChange}
               />
@@ -151,46 +151,46 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
           ) : (
             <div>
               <Label htmlFor="text" className="block mb-2">Text Content</Label>
-              <Textarea 
-                id="text" 
-                value={textContent} 
+              <Textarea
+                id="text"
+                value={textContent}
                 onChange={(e) => setTextContent(e.target.value)}
                 placeholder="Enter text content"
                 rows={6}
               />
             </div>
           )}
-          
+
           <div>
             <Label htmlFor="metadata" className="block mb-2">Metadata (JSON)</Label>
-            <Textarea 
-              id="metadata" 
-              value={metadata} 
+            <Textarea
+              id="metadata"
+              value={metadata}
               onChange={(e) => setMetadata(e.target.value)}
               placeholder='{"key": "value"}'
               rows={3}
             />
           </div>
-          
+
           <div>
             <Label htmlFor="rules" className="block mb-2">Rules (JSON)</Label>
-            <Textarea 
-              id="rules" 
-              value={rules} 
+            <Textarea
+              id="rules"
+              value={rules}
               onChange={(e) => setRules(e.target.value)}
               placeholder='[{"type": "metadata_extraction", "schema": {...}}]'
               rows={3}
             />
           </div>
-          
+
           <div className="flex items-center space-x-2">
             <Checkbox
               id="useColpali"
               checked={useColpali}
               onCheckedChange={(checked) => setUseColpali(checked === true)}
             />
-            <Label 
-              htmlFor="useColpali" 
+            <Label
+              htmlFor="useColpali"
               className="cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
               onClick={() => setUseColpali(!useColpali)}
             >
@@ -198,12 +198,12 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
             </Label>
           </div>
         </div>
-        
+
         <DialogFooter>
           <Button variant="outline" onClick={() => setShowUploadDialog(false)}>
             Cancel
           </Button>
-          <Button 
+          <Button
             onClick={() => {
               if (uploadType === 'file') {
                 onFileUpload(fileToUpload);
@@ -223,7 +223,7 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
   );
 };
 
-export { 
+export {
   UploadDialog,
   type UploadDialogProps
 };

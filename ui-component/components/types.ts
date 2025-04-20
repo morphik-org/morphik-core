@@ -7,6 +7,8 @@ export interface MorphikUIProps {
   onUriChange?: (uri: string) => void; // Callback when URI is changed
   onBackClick?: () => void; // Callback when back button is clicked
   appName?: string; // Name of the app to display in UI
+  initialFolder?: string | null; // Initial folder to show
+  initialSection?: string; // Initial section to show (documents, search, chat, etc.)
 }
 
 export interface Document {
@@ -40,9 +42,21 @@ export interface SearchResult {
   metadata: Record<string, unknown>;
 }
 
+export interface Source {
+  document_id: string;
+  chunk_number: number;
+  score?: number;
+  filename?: string;
+  content?: string;
+  content_type?: string;
+  metadata?: Record<string, unknown>;
+  download_url?: string;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  sources?: Source[];
 }
 
 export interface SearchOptions {

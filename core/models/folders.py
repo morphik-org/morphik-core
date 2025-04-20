@@ -1,7 +1,8 @@
-from typing import List, Dict, Any, Optional
-from datetime import datetime, UTC
-from pydantic import BaseModel, Field
 import uuid
+from datetime import UTC, datetime
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class Folder(BaseModel):
@@ -18,9 +19,8 @@ class Folder(BaseModel):
             "updated_at": datetime.now(UTC),
         }
     )
-    access_control: Dict[str, List[str]] = Field(
-        default_factory=lambda: {"readers": [], "writers": [], "admins": []}
-    )
+    access_control: Dict[str, List[str]] = Field(default_factory=lambda: {"readers": [], "writers": [], "admins": []})
+    rules: List[Dict[str, Any]] = Field(default_factory=list)
 
     def __hash__(self):
         return hash(self.id)

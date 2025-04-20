@@ -38,19 +38,19 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
       [key]: value
     }));
   };
-  
+
   // Fetch folders and reset search results when auth token or API URL changes
   useEffect(() => {
     console.log('SearchSection: Token or API URL changed, resetting results');
     setSearchResults([]);
-    
+
     // Fetch available folders
     const fetchFolders = async () => {
       try {
         const response = await fetch(`${apiBaseUrl}/folders`, {
           headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
         });
-        
+
         if (response.ok) {
           const folderData = await response.json();
           setFolders(folderData);
@@ -61,7 +61,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
         console.error('Error fetching folders:', error);
       }
     };
-    
+
     if (authToken || apiBaseUrl.includes('localhost')) {
       fetchFolders();
     }
@@ -79,7 +79,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
 
     try {
       setLoading(true);
-      
+
       const response = await fetch(`${apiBaseUrl}/retrieve/chunks`, {
         method: 'POST',
         headers: {
@@ -95,14 +95,14 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
           use_colpali: searchOptions.use_colpali
         })
       });
-      
+
       if (!response.ok) {
         throw new Error(`Search failed: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
       setSearchResults(data);
-      
+
       if (data.length === 0) {
         showAlert("No search results found for the query", {
           type: "info",
@@ -132,9 +132,9 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
       <CardContent className="flex-1 flex flex-col">
         <div className="space-y-4">
           <div className="flex gap-2">
-            <Input 
-              placeholder="Enter search query" 
-              value={searchQuery} 
+            <Input
+              placeholder="Enter search query"
+              value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSearch();
@@ -145,7 +145,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
               {loading ? 'Searching...' : 'Search'}
             </Button>
           </div>
-          
+
           <div>
             <SearchOptionsDialog
               showSearchAdvanced={showSearchAdvanced}
@@ -156,12 +156,12 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
             />
           </div>
         </div>
-        
+
         <div className="mt-6 flex-1 overflow-hidden">
           {searchResults.length > 0 ? (
             <div>
               <h3 className="text-lg font-medium mb-4">Results ({searchResults.length})</h3>
-              
+
               <ScrollArea className="h-[calc(100vh-320px)]">
                 <div className="space-y-6 pr-4">
                   {searchResults.map((result) => (

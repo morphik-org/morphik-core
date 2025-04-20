@@ -1,5 +1,7 @@
 import os
+import shutil
 import tempfile
+
 from dotenv import load_dotenv
 from morphik import Morphik
 
@@ -8,6 +10,7 @@ load_dotenv()
 
 # Connect to Morphik
 db = Morphik(os.getenv("MORPHIK_URI"), timeout=10000, is_local=True)
+
 
 # Create some sample text files for batch ingestion
 def create_sample_files():
@@ -18,21 +21,22 @@ def create_sample_files():
         "Machine Learning models require significant amounts of data.",
         "Natural Language Processing enables computers to understand human language.",
         "Computer Vision systems can detect objects in images and videos.",
-        "Reinforcement Learning is used in robotics and game-playing AI."
+        "Reinforcement Learning is used in robotics and game-playing AI.",
     ]
-    
+
     # Create temporary directory
     temp_dir = tempfile.mkdtemp()
     print(f"Created temporary directory: {temp_dir}")
-    
+
     # Create text files
     for i, text in enumerate(sample_texts):
         file_path = os.path.join(temp_dir, f"sample_{i+1}.txt")
         with open(file_path, "w") as f:
             f.write(text)
         files.append(file_path)
-    
+
     return temp_dir, files
+
 
 # Create sample files
 temp_dir, file_paths = create_sample_files()
@@ -43,7 +47,7 @@ print("\nPerforming batch ingestion of files...")
 docs = db.ingest_files(
     files=file_paths,
     metadata={"category": "AI technology", "source": "batch example"},
-    parallel=True  # Process in parallel for faster ingestion
+    parallel=True,  # Process in parallel for faster ingestion
 )
 print(f"Ingested {len(docs)} documents")
 
@@ -58,15 +62,9 @@ print(f"Retrieved {len(retrieved_docs)} documents")
 
 # Ingest a directory
 print("\nIngesting all files in a directory...")
-dir_docs = db.ingest_directory(
-    temp_dir,
-    recursive=True,
-    pattern="*.txt",
-    metadata={"source": "directory ingestion"}
-)
+dir_docs = db.ingest_directory(temp_dir, recursive=True, pattern="*.txt", metadata={"source": "directory ingestion"})
 print(f"Ingested {len(dir_docs)} documents from directory")
 
 # Clean up temporary files
-import shutil
 shutil.rmtree(temp_dir)
 print(f"\nCleaned up temporary directory: {temp_dir}")

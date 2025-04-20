@@ -1,8 +1,10 @@
-from typing import Dict, Any, List, Tuple
 import logging
-from core.models.rules import BaseRule, MetadataExtractionRule, NaturalLanguageRule
-from core.config import get_settings
+from typing import Any, Dict, List, Tuple
+
 from pydantic import BaseModel
+
+from core.config import get_settings
+from core.models.rules import BaseRule, MetadataExtractionRule, NaturalLanguageRule
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -40,9 +42,7 @@ class RulesProcessor:
             f"Initializing RulesProcessor with {settings.RULES_PROVIDER} provider using model {settings.RULES_MODEL}"
         )
 
-    async def process_rules(
-        self, content: str, rules: List[Dict[str, Any]]
-    ) -> Tuple[Dict[str, Any], str]:
+    async def process_rules(self, content: str, rules: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], str]:
         """
         Process a list of rules on content.
 
@@ -60,9 +60,7 @@ class RulesProcessor:
         try:
             # Parse all rules first to fail fast if any are invalid
             parsed_rules = [self._parse_rule(rule) for rule in rules]
-            logger.debug(
-                f"Successfully parsed {len(parsed_rules)} rules: {[r.type for r in parsed_rules]}"
-            )
+            logger.debug(f"Successfully parsed {len(parsed_rules)} rules: {[r.type for r in parsed_rules]}")
 
             # Apply rules in order
             for i, rule in enumerate(parsed_rules, 1):

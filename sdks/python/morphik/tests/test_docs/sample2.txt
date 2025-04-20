@@ -1,4 +1,4 @@
-Vector databases are specialized databases designed for storing and retrieving 
+Vector databases are specialized databases designed for storing and retrieving
 high-dimensional vectors. They are becoming increasingly important in the
 world of machine learning and AI applications.
 

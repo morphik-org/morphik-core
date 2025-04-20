@@ -1,15 +1,16 @@
 import base64
 import io
+import logging
 from typing import List, Union
 
 import numpy as np
 import torch
 from colpali_engine.models import ColIdefics3, ColIdefics3Processor
-from PIL.Image import Image, open as open_image
+from PIL.Image import Image
+from PIL.Image import open as open_image
 
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.models.chunk import Chunk
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -17,16 +18,14 @@ logger = logging.getLogger(__name__)
 class ColpaliEmbeddingModel(BaseEmbeddingModel):
     def __init__(self):
         model_name = "vidore/colSmol-256M"
-        device = (
-            "mps"
-            if torch.backends.mps.is_available()
-            else "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
         self.model = ColIdefics3.from_pretrained(
             model_name,
             torch_dtype=torch.bfloat16,
             device_map=device,  # "cuda:0",  # or "mps" if on Apple Silicon
-            attn_implementation="eager",  # "flash_attention_2" if is_flash_attn_2_available() else None,  # or "eager" if "mps"
+            attn_implementation=(
+                "eager"  # "flash_attention_2" if is_flash_attn_2_available() else None,  # or "eager" if "mps"
+            ),
         ).eval()
         self.processor = ColIdefics3Processor.from_pretrained(model_name)
 

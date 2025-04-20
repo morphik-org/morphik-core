@@ -1,4 +1,5 @@
 import os
+
 from dotenv import load_dotenv
 from morphik import Morphik
 
@@ -18,15 +19,12 @@ folder_doc = app_folder.ingest_text(
     "Customer reported an issue with login functionality. Steps to reproduce: "
     "1. Go to login page, 2. Enter credentials, 3. Click login button.",
     filename="ticket-001.txt",
-    metadata={"category": "bug", "priority": "high", "status": "open"}
+    metadata={"category": "bug", "priority": "high", "status": "open"},
 )
 print(f"Ingested document into folder: {folder_doc.external_id}")
 
 # Perform a query in the folder context
-folder_response = app_folder.query(
-    "What issues have been reported?",
-    k=2
-)
+folder_response = app_folder.query("What issues have been reported?", k=2)
 print("\nFolder Query Results:")
 print(folder_response.completion)
 
@@ -40,19 +38,16 @@ user_email = "support@example.com"
 user = db.signin(user_email)
 print(f"Created user scope for: {user.end_user_id}")
 
-# Ingest a document as this user 
+# Ingest a document as this user
 user_doc = user.ingest_text(
     "User requested information about premium features. They are interested in the collaboration tools.",
     filename="inquiry-001.txt",
-    metadata={"category": "inquiry", "priority": "medium", "status": "open"}
+    metadata={"category": "inquiry", "priority": "medium", "status": "open"},
 )
 print(f"Ingested document as user: {user_doc.external_id}")
 
 # Query as this user
-user_response = user.query(
-    "What customer inquiries do we have?",
-    k=2
-)
+user_response = user.query("What customer inquiries do we have?", k=2)
 print("\nUser Query Results:")
 print(user_response.completion)
 
@@ -69,14 +64,11 @@ print(f"Created user scope for {folder_user.end_user_id} in folder {folder_user.
 folder_user_doc = folder_user.ingest_text(
     "Customer called to follow up on ticket-001. They are still experiencing the login issue on Chrome.",
     filename="ticket-002.txt",
-    metadata={"category": "follow-up", "priority": "high", "status": "open"}
+    metadata={"category": "follow-up", "priority": "high", "status": "open"},
 )
 print(f"Ingested document as user in folder: {folder_user_doc.external_id}")
 
 # Query as this user in the folder context
-folder_user_response = folder_user.query(
-    "What high priority issues require attention?",
-    k=2
-)
+folder_user_response = folder_user.query("What high priority issues require attention?", k=2)
 print("\nFolder User Query Results:")
 print(folder_user_response.completion)

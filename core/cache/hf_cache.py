@@ -1,11 +1,13 @@
 # hugging face cache implementation.
 
-from core.cache.base_cache import BaseCache
-from typing import List, Optional, Union
 from pathlib import Path
+from typing import List, Optional, Union
+
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.cache_utils import DynamicCache
+
+from core.cache.base_cache import BaseCache
 from core.models.completion import CompletionRequest, CompletionResponse
 
 
@@ -48,9 +50,7 @@ class HuggingFaceCache(BaseCache):
             self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs).to(device)
         else:
             # For GPU/MPS, use automatic device mapping and optional FP16
-            model_kwargs.update(
-                {"device_map": "auto", "torch_dtype": torch.float16 if use_fp16 else torch.float32}
-            )
+            model_kwargs.update({"device_map": "auto", "torch_dtype": torch.float16 if use_fp16 else torch.float32})
             self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
 
         self.kv_cache = None
@@ -71,9 +71,7 @@ class HuggingFaceCache(BaseCache):
             cache.key_cache[i] = cache.key_cache[i][:, :, :origin_len, :]
             cache.value_cache[i] = cache.value_cache[i][:, :, :origin_len, :]
 
-    def generate(
-        self, input_ids: torch.Tensor, past_key_values, max_new_tokens: Optional[int] = None
-    ) -> torch.Tensor:
+    def generate(self, input_ids: torch.Tensor, past_key_values, max_new_tokens: Optional[int] = None) -> torch.Tensor:
         """Generate text using the model and cache"""
         device = next(self.model.parameters()).device
         origin_len = input_ids.shape[-1]
@@ -83,19 +81,14 @@ class HuggingFaceCache(BaseCache):
 
         with torch.no_grad():
             for _ in range(max_new_tokens or self.default_max_new_tokens):
-                out = self.model(
-                    input_ids=next_token, past_key_values=past_key_values, use_cache=True
-                )
+                out = self.model(input_ids=next_token, past_key_values=past_key_values, use_cache=True)
                 logits = out.logits[:, -1, :]
                 token = torch.argmax(logits, dim=-1, keepdim=True)
                 output_ids = torch.cat([output_ids, token], dim=-1)
                 past_key_values = out.past_key_values
                 next_token = token.to(device)
 
-                if (
-                    self.model.config.eos_token_id is not None
-                    and token.item() == self.model.config.eos_token_id
-                ):
+                if self.model.config.eos_token_id is not None and token.item() == self.model.config.eos_token_id:
                     break
 
         return output_ids[:, origin_len:]
@@ -137,13 +130,9 @@ Question:
                 elif hasattr(self.model.config, "num_attention_heads"):
                     # OPT-style models
                     n_kv_heads = self.model.config.num_attention_heads
-                    head_dim = (
-                        self.model.config.hidden_size // self.model.config.num_attention_heads
-                    )
+                    head_dim = self.model.config.hidden_size // self.model.config.num_attention_heads
                 else:
-                    raise ValueError(
-                        f"Unsupported model architecture: {self.model.config.model_type}"
-                    )
+                    raise ValueError(f"Unsupported model architecture: {self.model.config.model_type}")
 
                 seq_len = input_ids.shape[1]
 
@@ -154,9 +143,7 @@ Question:
                     self.kv_cache.value_cache.append(torch.zeros(value_shape, device=self.device))
 
                 # Now run with the initialized cache
-                outputs = self.model(
-                    input_ids=input_ids, past_key_values=self.kv_cache, use_cache=True
-                )
+                outputs = self.model(input_ids=input_ids, past_key_values=self.kv_cache, use_cache=True)
                 # Update cache with actual values
                 self.kv_cache.key_cache = [layer[0] for layer in outputs.past_key_values]
                 self.kv_cache.value_cache = [layer[1] for layer in outputs.past_key_values]
@@ -176,9 +163,7 @@ Question:
             self.clean_up_cache(self.kv_cache, self.origin_len)
 
             # Add new document to cache
-            input_ids = self.tokenizer(new_doc + "\n", return_tensors="pt").input_ids.to(
-                self.device
-            )
+            input_ids = self.tokenizer(new_doc + "\n", return_tensors="pt").input_ids.to(self.device)
 
             # First run to get the cache shape
             outputs = self.model(input_ids=input_ids, use_cache=True)
@@ -232,9 +217,7 @@ Question:
             self.clean_up_cache(self.kv_cache, self.origin_len)
 
             # Generate completion
-            input_ids = self.tokenizer(request.query + "\n", return_tensors="pt").input_ids.to(
-                self.device
-            )
+            input_ids = self.tokenizer(request.query + "\n", return_tensors="pt").input_ids.to(self.device)
             gen_ids = self.generate(input_ids, self.kv_cache, max_new_tokens=request.max_tokens)
             completion = self.tokenizer.decode(gen_ids[0], skip_special_tokens=True)
 

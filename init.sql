@@ -60,8 +60,8 @@ CREATE OR REPLACE FUNCTION max_sim(document bit[], query bit[]) RETURNS double p
         SELECT unnest(document) AS document
     ),
     similarities AS (
-        SELECT 
-            query_number, 
+        SELECT
+            query_number,
             1.0 - (bit_count(document # query)::float / greatest(bit_length(query), 1)::float) AS similarity
         FROM queries CROSS JOIN documents
     ),

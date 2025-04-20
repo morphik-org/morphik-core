@@ -1,14 +1,15 @@
 import os
+
 from dotenv import load_dotenv
 from morphik import Morphik
 from morphik.models import (
-    QueryPromptOverrides,
-    QueryPromptOverride,
-    EntityExtractionPromptOverride,
     EntityExtractionExample,
-    EntityResolutionPromptOverride,
+    EntityExtractionPromptOverride,
     EntityResolutionExample,
-    GraphPromptOverrides
+    EntityResolutionPromptOverride,
+    GraphPromptOverrides,
+    QueryPromptOverride,
+    QueryPromptOverrides,
 )
 
 # Load environment variables
@@ -21,16 +22,16 @@ db = Morphik(os.getenv("MORPHIK_URI"), timeout=10000, is_local=True)
 medical_texts = [
     {
         "text": "Patients with Type 2 Diabetes often show increased insulin resistance. Treatment options include metformin and lifestyle changes.",
-        "metadata": {"category": "medical", "specialty": "endocrinology"}
+        "metadata": {"category": "medical", "specialty": "endocrinology"},
     },
     {
         "text": "Hypertension (high blood pressure) is a common comorbidity of diabetes. ACE inhibitors are frequently prescribed to manage blood pressure.",
-        "metadata": {"category": "medical", "specialty": "cardiology"}
+        "metadata": {"category": "medical", "specialty": "cardiology"},
     },
     {
         "text": "Studies show that regular exercise can improve glucose control in diabetic patients and reduce the risk of cardiovascular disease.",
-        "metadata": {"category": "medical", "specialty": "research"}
-    }
+        "metadata": {"category": "medical", "specialty": "research"},
+    },
 ]
 
 # Ingest documents
@@ -48,10 +49,7 @@ basic_query_override = QueryPromptOverrides(
     )
 )
 
-response = db.query(
-    "What treatments are available for diabetes?",
-    prompt_overrides=basic_query_override
-)
+response = db.query("What treatments are available for diabetes?", prompt_overrides=basic_query_override)
 
 print("Response with medical professional prompt:")
 print(response.completion)
@@ -70,28 +68,18 @@ graph_overrides = GraphPromptOverrides(
             EntityExtractionExample(label="Diabetes", type="CONDITION"),
             EntityExtractionExample(label="Metformin", type="MEDICATION"),
             EntityExtractionExample(label="Hypertension", type="CONDITION"),
-            EntityExtractionExample(label="ACE inhibitors", type="MEDICATION")
+            EntityExtractionExample(label="ACE inhibitors", type="MEDICATION"),
         ]
     ),
     entity_resolution=EntityResolutionPromptOverride(
         examples=[
-            EntityResolutionExample(
-                canonical="Diabetes Mellitus", 
-                variants=["Diabetes", "Type 2 Diabetes", "T2DM"]
-            ),
-            EntityResolutionExample(
-                canonical="Hypertension", 
-                variants=["High Blood Pressure", "HTN", "Elevated BP"]
-            )
+            EntityResolutionExample(canonical="Diabetes Mellitus", variants=["Diabetes", "Type 2 Diabetes", "T2DM"]),
+            EntityResolutionExample(canonical="Hypertension", variants=["High Blood Pressure", "HTN", "Elevated BP"]),
         ]
-    )
+    ),
 )
 
-graph = db.create_graph(
-    name="medical_conditions_graph",
-    documents=doc_ids,
-    prompt_overrides=graph_overrides
-)
+graph = db.create_graph(name="medical_conditions_graph", documents=doc_ids, prompt_overrides=graph_overrides)
 
 print(f"Created graph with {len(graph.entities)} entities and {len(graph.relationships)} relationships")
 
@@ -101,7 +89,7 @@ graph_response = db.query(
     "How are diabetes and hypertension related?",
     graph_name="medical_conditions_graph",
     hop_depth=2,
-    include_paths=True
+    include_paths=True,
 )
 
 print("Response using knowledge graph:")
@@ -116,14 +104,12 @@ if graph_response.metadata and "graph" in graph_response.metadata:
 # Example 5: Using dictionary for prompt overrides
 print("\nExample 5: Using Dictionary for Prompt Overrides")
 dict_override = {
-    "query": {
-        "prompt_template": "Summarize the information in a bulleted list format, focusing on: {question}"
-    }
+    "query": {"prompt_template": "Summarize the information in a bulleted list format, focusing on: {question}"}
 }
 
 dict_response = db.query(
     "What are the connections between diabetes, medications, and exercise?",
-    prompt_overrides=dict_override
+    prompt_overrides=dict_override,
 )
 
 print("Response with dictionary-based prompt override:")

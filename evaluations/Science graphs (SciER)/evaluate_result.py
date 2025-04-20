@@ -6,28 +6,26 @@ This script evaluates an existing Morphik graph against the SciER dataset
 using OpenAI embeddings for semantic similarity calculations.
 """
 
-import os
-import json
-import uuid
 import argparse
-from pathlib import Path
-from typing import Dict, List, Tuple, Any, Set
-from collections import defaultdict
-import pandas as pd
-import numpy as np
-from dotenv import load_dotenv
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-import requests
-from scipy.spatial.distance import cosine
 import multiprocessing
-from concurrent.futures import ThreadPoolExecutor
+import os
 import time
+import uuid
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List
 
-from morphik import Morphik
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import requests
 
 # Import SciER data loader
 from data_loader import load_jsonl
+from dotenv import load_dotenv
+from morphik import Morphik
+from scipy.spatial.distance import cosine
+from tqdm import tqdm
 
 # Load environment variables
 load_dotenv()
@@ -334,13 +332,9 @@ def load_existing_graph(db: Morphik, graph_name: str) -> Dict:
             break
 
     if target_graph is None:
-        raise ValueError(
-            f"Graph '{graph_name}' not found. Available graphs: {[g.name for g in graphs]}"
-        )
+        raise ValueError(f"Graph '{graph_name}' not found. Available graphs: {[g.name for g in graphs]}")
 
-    print(
-        f"Found graph with {len(target_graph.entities)} entities and {len(target_graph.relationships)} relationships"
-    )
+    print(f"Found graph with {len(target_graph.entities)} entities and {len(target_graph.relationships)} relationships")
 
     return {"graph": target_graph}
 
@@ -385,9 +379,7 @@ def evaluate_entity_extraction(
         entity_type = entity.type
         extracted.append((entity_text, entity_type))
 
-    print(
-        f"Processing {len(gt_entities)} ground truth entities against {len(extracted)} extracted entities"
-    )
+    print(f"Processing {len(gt_entities)} ground truth entities against {len(extracted)} extracted entities")
 
     # Prepare all valid entity comparisons based on type matching
     comparisons = []
@@ -415,9 +407,7 @@ def evaluate_entity_extraction(
         similarity_results = similarity_calculator.compute_similarities_batch(text_pairs)
 
         # Process results
-        for idx, ((gt_idx, ext_idx, _, _), (is_similar, similarity)) in enumerate(
-            zip(batch, similarity_results)
-        ):
+        for idx, ((gt_idx, ext_idx, _, _), (is_similar, similarity)) in enumerate(zip(batch, similarity_results)):
             if is_similar:
                 # Update best match if it's better than the current one
                 if gt_idx not in gt_best_matches or similarity > gt_best_matches[gt_idx][1]:
@@ -432,25 +422,15 @@ def evaluate_entity_extraction(
     false_positives = len(extracted) - len(ext_matched)
 
     # Calculate metrics
-    precision = (
-        true_positives / (true_positives + false_positives)
-        if (true_positives + false_positives) > 0
-        else 0
-    )
-    recall = (
-        true_positives / (true_positives + false_negatives)
-        if (true_positives + false_negatives) > 0
-        else 0
-    )
+    precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+    recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
     f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
 
     # Create a mapping of ground truth texts to extracted entity IDs for relation evaluation
     entity_match_map = {}
     for i, (ext_idx, _) in gt_best_matches.items():
         gt_text, _ = gt_entities[i]
-        ext_id = (
-            extracted_entities[ext_idx].id if hasattr(extracted_entities[ext_idx], "id") else None
-        )
+        ext_id = extracted_entities[ext_idx].id if hasattr(extracted_entities[ext_idx], "id") else None
         if ext_id:
             entity_match_map[gt_text] = ext_id
 
@@ -638,16 +618,8 @@ def evaluate_relation_extraction(
     false_positives = len(extracted_rel_tuples) - len(matched_ext_indices)
 
     # Calculate metrics
-    precision = (
-        true_positives / (true_positives + false_positives)
-        if (true_positives + false_positives) > 0
-        else 0
-    )
-    recall = (
-        true_positives / (true_positives + false_negatives)
-        if (true_positives + false_negatives) > 0
-        else 0
-    )
+    precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+    recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
     f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
 
     return {
@@ -861,11 +833,7 @@ def generate_visualizations(df: pd.DataFrame, output_dir: str, model_name: str) 
     relation_df = df[df["extraction_type"] == "relation"]
 
     # Get evaluation method if available
-    evaluation_method = (
-        df["evaluation_method"].iloc[0]
-        if "evaluation_method" in df.columns
-        else "openai_embeddings"
-    )
+    evaluation_method = df["evaluation_method"].iloc[0] if "evaluation_method" in df.columns else "openai_embeddings"
 
     # Set up the plots
     metrics = ["precision", "recall", "f1"]
@@ -978,15 +946,9 @@ def generate_visualizations(df: pd.DataFrame, output_dir: str, model_name: str) 
 
 def main():
     """Main function to run the evaluation."""
-    parser = argparse.ArgumentParser(
-        description="SciER Evaluation Script for Morphik using OpenAI embeddings"
-    )
-    parser.add_argument(
-        "--limit", type=int, default=57, help="Maximum number of documents to process (default: 57)"
-    )
-    parser.add_argument(
-        "--run-id", type=str, default=None, help="Unique run identifier (default: auto-generated)"
-    )
+    parser = argparse.ArgumentParser(description="SciER Evaluation Script for Morphik using OpenAI embeddings")
+    parser.add_argument("--limit", type=int, default=57, help="Maximum number of documents to process (default: 57)")
+    parser.add_argument("--run-id", type=str, default=None, help="Unique run identifier (default: auto-generated)")
     parser.add_argument(
         "--graph-name",
         type=str,

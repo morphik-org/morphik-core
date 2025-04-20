@@ -15,4 +15,4 @@ ollama pull nomic-embed-text || echo "Failed to pull nomic-embed-text"
 ollama pull llama3.2 || echo "Failed to pull llama3.2"
 
 # Wait for the serve process
-wait $SERVE_PID 
+wait $SERVE_PID
