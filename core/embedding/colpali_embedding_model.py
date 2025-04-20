@@ -22,28 +22,29 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
             if torch.backends.mps.is_available()
             else "cuda" if torch.cuda.is_available() else "cpu"
         )
-        if model_name == "vidore/colqwen2.5-v0.2":
-            self.model = ColQwen2_5.from_pretrained(
-                "vidore/colqwen2.5-v0.2",
-                torch_dtype=torch.bfloat16,
-                device_map=device,  # Automatically detect and use available device
-                attn_implementation="flash_attention_2" if is_flash_attn_2_available() else "eager",
-            ).eval()
-            self.processor: ColQwen2_5_Processor = ColQwen2_5_Processor.from_pretrained(
-                "vidore/colqwen2.5-v0.2"
-            )
-        elif model_name == "vidore/colqwen2-v1.0":
-            self.model = ColQwen2.from_pretrained(
-                "vidore/colqwen2-v1.0",
-                torch_dtype=torch.bfloat16,
-                device_map=device,  # Automatically detect and use available device
-                attn_implementation="flash_attention_2" if is_flash_attn_2_available() else "eager",
-            ).eval()
-            self.processor: ColQwen2Processor = ColQwen2Processor.from_pretrained(
-                "vidore/colqwen2-v1.0"
-            )
-        else:
-            raise ValueError(f"Unsupported model name: {model_name}. Please use 'vidore/colqwen2.5-v0.2' or 'vidore/colqwen2-v1.0'.")
+        match model_name:
+            case "vidore/colqwen2.5-v0.2":
+                self.model = ColQwen2_5.from_pretrained(
+                    "vidore/colqwen2.5-v0.2",
+                    torch_dtype=torch.bfloat16,
+                    device_map=device,  # Automatically detect and use available device
+                    attn_implementation="flash_attention_2" if is_flash_attn_2_available() else "eager",
+                ).eval()
+                self.processor: ColQwen2_5_Processor = ColQwen2_5_Processor.from_pretrained(
+                    "vidore/colqwen2.5-v0.2"
+                )
+            case "vidore/colqwen2-v1.0":
+                self.model = ColQwen2.from_pretrained(
+                    "vidore/colqwen2-v1.0",
+                    torch_dtype=torch.bfloat16,
+                    device_map=device,  # Automatically detect and use available device
+                    attn_implementation="flash_attention_2" if is_flash_attn_2_available() else "eager",
+                ).eval()
+                self.processor: ColQwen2Processor = ColQwen2Processor.from_pretrained(
+                    "vidore/colqwen2-v1.0"
+                )
+            case _:
+                raise ValueError(f"Unsupported model name: {model_name}. Please use 'vidore/colqwen2.5-v0.2' or 'vidore/colqwen2-v1.0'.")
 
     async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> List[np.ndarray]:
         if isinstance(chunks, Chunk):

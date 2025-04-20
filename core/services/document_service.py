@@ -99,8 +99,8 @@ class DocumentService:
         completion_model: Optional[BaseCompletionModel] = None,
         cache_factory: Optional[BaseCacheFactory] = None,
         reranker: Optional[BaseReranker] = None,
-        enable_colpali: bool = True,
-        colpali_embedding_model: Optional[ColpaliEmbeddingModel] = "vidore/colqwen2.5-v0.2",
+        enable_colpali: bool = False,
+        colpali_embedding_model: Optional[ColpaliEmbeddingModel] = None,
         colpali_vector_store: Optional[MultiVectorStore] = None,
     ):
         self.db = database
