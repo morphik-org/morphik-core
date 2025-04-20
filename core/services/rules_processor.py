@@ -4,8 +4,7 @@ from typing import Any, Dict, List, Tuple
 from pydantic import BaseModel
 
 from core.config import get_settings
-from core.models.rules import (BaseRule, MetadataExtractionRule,
-                               NaturalLanguageRule)
+from core.models.rules import BaseRule, MetadataExtractionRule, NaturalLanguageRule
 
 logger = logging.getLogger(__name__)
 settings = get_settings()

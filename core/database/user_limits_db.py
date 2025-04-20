@@ -274,9 +274,9 @@ class UserLimitsDatabase:
                 # This is the most reliable way to append to a JSONB array in PostgreSQL
                 query = text(
                     """
-                    UPDATE user_limits 
-                    SET 
-                        app_ids = CASE 
+                    UPDATE user_limits
+                    SET
+                        app_ids = CASE
                             WHEN NOT (app_ids ? :app_id)  -- Check if app_id is not in the array
                             THEN app_ids || :app_id_json  -- Append it if not present
                             ELSE app_ids                  -- Keep it unchanged if already present

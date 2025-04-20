@@ -54,7 +54,7 @@ python evaluate_result.py --graph-name scier_gpt4o_12345678
 
 To compare models:
 1. Change the model in `morphik.toml`
-2. Repeat steps 2-3 with a different `--model-name` 
+2. Repeat steps 2-3 with a different `--model-name`
 3. Compare the resulting metrics and visualizations
 
 ## Command Arguments

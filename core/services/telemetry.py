@@ -15,14 +15,15 @@ from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 import requests
 from opentelemetry import metrics, trace
-from opentelemetry.exporter.otlp.proto.http.metric_exporter import \
-    OTLPMetricExporter
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import \
-    OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import (AggregationTemporality,
-                                              MetricExporter, MetricsData,
-                                              PeriodicExportingMetricReader)
+from opentelemetry.sdk.metrics.export import (
+    AggregationTemporality,
+    MetricExporter,
+    MetricsData,
+    PeriodicExportingMetricReader,
+)
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -221,7 +222,6 @@ class RetryingOTLPMetricExporter(MetricExporter):
     def export(self, metrics_data, **kwargs):
         """Export metrics with retry logic for handling connection issues."""
         retries = 0
-        last_exception = None
 
         while retries <= self.max_retries:
             try:
@@ -231,8 +231,7 @@ class RetryingOTLPMetricExporter(MetricExporter):
                 requests.exceptions.Timeout,
                 ProtocolError,
                 ReadTimeoutError,
-            ) as e:
-                last_exception = e
+            ):
                 retries += 1
 
                 if retries <= self.max_retries:
@@ -857,7 +856,7 @@ class TelemetryService:
                     user_id=auth.entity_id,
                     tokens_used=tokens,
                     metadata=meta,
-                ) as span:
+                ):
                     # Call the original function
                     result = await func(*args, **kwargs)
                     return result

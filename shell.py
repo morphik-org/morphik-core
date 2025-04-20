@@ -6,7 +6,7 @@ Assumes a Morphik server is running.
 Usage:
     Without authentication (connects to localhost):
         python shell.py
-    
+
     With authentication:
         python shell.py <uri>
         Example: python shell.py "morphik://user:token@localhost:8000"

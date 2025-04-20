@@ -202,7 +202,7 @@ class PGVectorStore(BaseVectorStore):
                 # Check if vector_embeddings table exists
                 check_table_sql = """
                 SELECT EXISTS (
-                    SELECT FROM information_schema.tables 
+                    SELECT FROM information_schema.tables
                     WHERE table_name = 'vector_embeddings'
                 );
                 """

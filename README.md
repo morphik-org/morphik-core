@@ -2,7 +2,7 @@
 
 # Morphik Core
 
-**Note**: For our hosted service: https://www.morphik.ai. 
+**Note**: For our hosted service: https://www.morphik.ai.
 We also deploy our Morphik on prem or VPC, happy to chat: https://cal.com/adityavardhan-agrawal-x6jyhq/30min
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/morphik-org/morphik-core/tree/main?tab=License-1-ov-file#readme) [![PyPI - Version](https://img.shields.io/pypi/v/morphik)](https://pypi.org/project/morphik/) [![Discord](https://img.shields.io/discord/1336524712817332276?logo=discord&label=discord)](https://discord.gg/BwMtv3Zaju)
@@ -79,11 +79,11 @@ from morphik import Morphik
 db = Morphik("morphik://localhost:8000")
 
 # Ingest a document
-doc = db.ingest_text("This is a sample document about AI technology.", 
+doc = db.ingest_text("This is a sample document about AI technology.",
                     metadata={"category": "tech", "author": "Morphik"})
 
 # Ingest a file (PDF, DOCX, video, etc.)
-doc = db.ingest_file("path/to/document.pdf", 
+doc = db.ingest_file("path/to/document.pdf",
                     metadata={"category": "research"})
 
 # Use ColPali for multi-modal documents (PDFs with images, charts, etc.)
@@ -97,8 +97,8 @@ rules = [
 doc = db.ingest_file("path/to/document.pdf", rules=rules)
 
 # Retrieve relevant document chunks
-chunks = db.retrieve_chunks("What are the latest AI advancements?", 
-                           filters={"category": "tech"}, 
+chunks = db.retrieve_chunks("What are the latest AI advancements?",
+                           filters={"category": "tech"},
                            k=5)
 
 # Generate a completion with context
@@ -108,8 +108,8 @@ print(response.completion)
 
 # Create and use a knowledge graph
 db.create_graph("tech_graph", filters={"category": "tech"})
-response = db.query("How does AI relate to cloud computing?", 
-                   graph_name="tech_graph", 
+response = db.query("How does AI relate to cloud computing?",
+                   graph_name="tech_graph",
                    hop_depth=2)
 ```
 
@@ -142,8 +142,8 @@ db.ingest_file("report_with_charts.pdf", use_colpali=True)
 
 # Retrieve relevant chunks, including images
 chunks = db.retrieve_chunks(
-    "Show me the Q2 revenue chart", 
-    use_colpali=True, 
+    "Show me the Q2 revenue chart",
+    use_colpali=True,
     k=3
 )
 

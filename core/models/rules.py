@@ -89,12 +89,12 @@ class MetadataExtractionRule(BaseRule):
 
         prompt = f"""
         Extract metadata from the following text according to this schema:
-        
+
         {schema_text}
-        
+
         Text to extract from:
         {content}
-        
+
         Follow these guidelines:
         1. Extract all requested information as simple strings, numbers, or booleans (not as objects or nested structures)
         2. If information is not present, indicate this with null instead of making something up
@@ -161,10 +161,10 @@ class NaturalLanguageRule(BaseRule):
         prompt = f"""
         Your task is to transform the following text according to this instruction:
         {self.prompt}
-        
+
         Text to transform:
         {content}
-        
+
         Perform the transformation and return only the transformed text.
         """
 

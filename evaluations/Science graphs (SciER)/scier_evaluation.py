@@ -15,9 +15,7 @@ from typing import Dict, List, Tuple
 from data_loader import load_jsonl
 from dotenv import load_dotenv
 from morphik import Morphik
-from morphik.models import (EntityExtractionExample,
-                            EntityExtractionPromptOverride,
-                            GraphPromptOverrides)
+from morphik.models import EntityExtractionExample, EntityExtractionPromptOverride, GraphPromptOverrides
 from tqdm import tqdm
 
 # Load environment variables

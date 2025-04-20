@@ -10,15 +10,16 @@ from typing import Any, Dict, List, Optional
 import arq
 import jwt
 import tomli
-from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException,
-                     UploadFile)
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from core.cache.llama_cache_factory import LlamaCacheFactory
+from core.completion.litellm_completion import LiteLLMCompletionModel
 from core.config import get_settings
 from core.database.postgres_database import PostgresDatabase
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
+from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.limits_utils import check_and_increment_limits
 from core.models.auth import AuthContext, EntityType
 from core.models.completion import ChunkSource, CompletionResponse
@@ -26,10 +27,16 @@ from core.models.documents import ChunkResult, Document, DocumentResult
 from core.models.folders import Folder, FolderCreate
 from core.models.graph import Graph
 from core.models.prompts import validate_prompt_overrides_with_http_exception
-from core.models.request import (BatchIngestResponse, CompletionQueryRequest,
-                                 CreateGraphRequest, GenerateUriRequest,
-                                 IngestTextRequest, RetrieveRequest,
-                                 SetFolderRuleRequest, UpdateGraphRequest)
+from core.models.request import (
+    BatchIngestResponse,
+    CompletionQueryRequest,
+    CreateGraphRequest,
+    GenerateUriRequest,
+    IngestTextRequest,
+    RetrieveRequest,
+    SetFolderRuleRequest,
+    UpdateGraphRequest,
+)
 from core.parser.morphik_parser import MorphikParser
 from core.reranker.flag_reranker import FlagReranker
 from core.services.document_service import DocumentService
@@ -37,6 +44,7 @@ from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.vector_store.multi_vector_store import MultiVectorStore
+from core.vector_store.pgvector_store import PGVectorStore
 
 # Initialize FastAPI app
 app = FastAPI(title="Morphik API")
@@ -187,7 +195,6 @@ async def close_redis_pool():
 # Initialize vector store
 if not settings.POSTGRES_URI:
     raise ValueError("PostgreSQL URI is required for pgvector store")
-from core.vector_store.pgvector_store import PGVectorStore
 
 vector_store = PGVectorStore(
     uri=settings.POSTGRES_URI,
@@ -221,9 +228,6 @@ parser = MorphikParser(
 )
 
 # Initialize embedding model
-# Import here to avoid circular imports
-from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
-
 # Create a LiteLLM model using the registered model config
 embedding_model = LiteLLMEmbeddingModel(
     model_key=settings.EMBEDDING_MODEL,
@@ -231,9 +235,6 @@ embedding_model = LiteLLMEmbeddingModel(
 logger.info(f"Initialized LiteLLM embedding model with model key: {settings.EMBEDDING_MODEL}")
 
 # Initialize completion model
-# Import here to avoid circular imports
-from core.completion.litellm_completion import LiteLLMCompletionModel
-
 # Create a LiteLLM model using the registered model config
 completion_model = LiteLLMCompletionModel(
     model_key=settings.COMPLETION_MODEL,
@@ -1883,7 +1884,7 @@ async def set_folder_rule(
             await session.execute(
                 text(
                     """
-                    UPDATE folders 
+                    UPDATE folders
                     SET rules = :rules
                     WHERE id = :folder_id
                     """
@@ -1904,9 +1905,6 @@ async def set_folder_rule(
             logger.info(f"Applying rules to {len(folder.document_ids)} existing documents in folder")
 
             # Import rules processor
-            from core.services.rules_processor import RulesProcessor
-
-            rules_processor = RulesProcessor()
 
             # Get all documents in the folder
             documents = await document_service.db.get_documents_by_id(folder.document_ids, auth)

@@ -180,8 +180,8 @@ class PostgresDatabase(BaseDatabase):
                 result = await conn.execute(
                     text(
                         """
-                    SELECT column_name 
-                    FROM information_schema.columns 
+                    SELECT column_name
+                    FROM information_schema.columns
                     WHERE table_name = 'documents' AND column_name = 'storage_files'
                     """
                     )
@@ -191,7 +191,7 @@ class PostgresDatabase(BaseDatabase):
                     await conn.execute(
                         text(
                             """
-                        ALTER TABLE documents 
+                        ALTER TABLE documents
                         ADD COLUMN IF NOT EXISTS storage_files JSONB DEFAULT '[]'::jsonb
                         """
                         )
@@ -229,8 +229,8 @@ class PostgresDatabase(BaseDatabase):
                 result = await conn.execute(
                     text(
                         """
-                    SELECT column_name 
-                    FROM information_schema.columns 
+                    SELECT column_name
+                    FROM information_schema.columns
                     WHERE table_name = 'folders' AND column_name = 'rules'
                     """
                     )
@@ -240,7 +240,7 @@ class PostgresDatabase(BaseDatabase):
                     await conn.execute(
                         text(
                             """
-                        ALTER TABLE folders 
+                        ALTER TABLE folders
                         ADD COLUMN IF NOT EXISTS rules JSONB DEFAULT '[]'::jsonb
                         """
                         )
@@ -267,8 +267,8 @@ class PostgresDatabase(BaseDatabase):
                 result = await conn.execute(
                     text(
                         """
-                    SELECT column_name 
-                    FROM information_schema.columns 
+                    SELECT column_name
+                    FROM information_schema.columns
                     WHERE table_name = 'graphs' AND column_name = 'system_metadata'
                     """
                     )
@@ -278,7 +278,7 @@ class PostgresDatabase(BaseDatabase):
                     await conn.execute(
                         text(
                             """
-                        ALTER TABLE graphs 
+                        ALTER TABLE graphs
                         ADD COLUMN IF NOT EXISTS system_metadata JSONB DEFAULT '{}'::jsonb
                         """
                         )
@@ -991,7 +991,7 @@ class PostgresDatabase(BaseDatabase):
                             # Get document IDs with system filters
                             doc_id_placeholders = ", ".join([f"'{doc_id}'" for doc_id in document_ids])
                             filter_query = f"""
-                                SELECT external_id FROM documents 
+                                SELECT external_id FROM documents
                                 WHERE external_id IN ({doc_id_placeholders})
                                 AND ({system_metadata_filter})
                             """
@@ -1067,7 +1067,7 @@ class PostgresDatabase(BaseDatabase):
                             # Get document IDs with system filters
                             doc_id_placeholders = ", ".join([f"'{doc_id}'" for doc_id in document_ids])
                             filter_query = f"""
-                                SELECT external_id FROM documents 
+                                SELECT external_id FROM documents
                                 WHERE external_id IN ({doc_id_placeholders})
                                 AND ({system_metadata_filter})
                             """
@@ -1185,7 +1185,7 @@ class PostgresDatabase(BaseDatabase):
                     """
                     SELECT id FROM folders
                     WHERE name = :name
-                    AND owner->>'id' = :entity_id 
+                    AND owner->>'id' = :entity_id
                     AND owner->>'type' = :entity_type
                     """
                 ).bindparams(name=folder.name, entity_id=folder.owner["id"], entity_type=folder.owner["type"])
@@ -1407,7 +1407,7 @@ class PostgresDatabase(BaseDatabase):
                 folder_name_json = json.dumps(folder.name)
                 stmt = text(
                     f"""
-                    UPDATE documents 
+                    UPDATE documents
                     SET system_metadata = jsonb_set(system_metadata, '{{folder_name}}', '{folder_name_json}'::jsonb)
                     WHERE external_id = :document_id
                     """
@@ -1457,7 +1457,7 @@ class PostgresDatabase(BaseDatabase):
                 # Also update the document's system_metadata to remove the folder_name
                 stmt = text(
                     """
-                    UPDATE documents 
+                    UPDATE documents
                     SET system_metadata = jsonb_set(system_metadata, '{folder_name}', 'null'::jsonb)
                     WHERE external_id = :document_id
                     """

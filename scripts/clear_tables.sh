@@ -12,7 +12,7 @@ echo "Clearing all tables in the morphik database for $ENV environment..."
 
 # SQL command to truncate all tables
 TRUNCATE_CMD="
-DO \$\$ 
+DO \$\$
 DECLARE
     r RECORD;
 BEGIN
@@ -73,4 +73,4 @@ else
     fi
 fi
 
-echo "All tables have been cleared successfully." 
+echo "All tables have been cleared successfully."

@@ -14,9 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from core.api import get_settings
-from core.models.prompts import (EntityExtractionPromptOverride,
-                                 EntityResolutionPromptOverride,
-                                 GraphPromptOverrides)
+from core.models.prompts import EntityExtractionPromptOverride, EntityResolutionPromptOverride, GraphPromptOverrides
 from core.tests import setup_test_logging
 
 # Set up logging for tests
@@ -158,9 +156,16 @@ async def test_app(event_loop: asyncio.AbstractEventLoop) -> FastAPI:
 
     # Update the document service with our test instances
     # Create a new document service with our test database and vector store
-    from core.api import (cache_factory, colpali_embedding_model,
-                          colpali_vector_store, completion_model)
-    from core.api import embedding_model, parser, reranker, storage
+    from core.api import (
+        cache_factory,
+        colpali_embedding_model,
+        colpali_vector_store,
+        completion_model,
+        embedding_model,
+        parser,
+        reranker,
+        storage,
+    )
     from core.services.document_service import DocumentService
 
     test_document_service = DocumentService(
@@ -762,8 +767,7 @@ async def test_file_versioning_with_add_strategy(client: AsyncClient):
 
     assert response.status_code == 200
     doc_id = response.json()["external_id"]
-    initial_doc = response.json()
-    # wait for the document to be fully processed
+    # Wait for the document to be fully processed
     await asyncio.sleep(5)
 
     # Create second version of the file
@@ -1615,7 +1619,7 @@ async def cleanup_graphs():
                 text(
                     """
                 SELECT EXISTS (
-                    SELECT FROM information_schema.tables 
+                    SELECT FROM information_schema.tables
                     WHERE table_name = 'graphs'
                 );
                 """
@@ -2638,7 +2642,6 @@ async def test_system_metadata_filter_behavior(client: AsyncClient):
     # Get the document to verify
     response = await client.get(f"/documents/{folder_only_id}", headers=headers)
     assert response.status_code == 200
-    folder_only_doc = response.json()
 
     # Document with user only
     user_only_content = "This document has only user in system metadata."
@@ -2653,7 +2656,6 @@ async def test_system_metadata_filter_behavior(client: AsyncClient):
     # Get the document to verify
     response = await client.get(f"/documents/{user_only_id}", headers=headers)
     assert response.status_code == 200
-    user_only_doc = response.json()
 
     # Document with both folder and user
     combined_content = "This document has both folder and user in system metadata."
@@ -2668,7 +2670,6 @@ async def test_system_metadata_filter_behavior(client: AsyncClient):
     # Get the document to verify
     response = await client.get(f"/documents/{combined_id}", headers=headers)
     assert response.status_code == 200
-    combined_doc = response.json()
 
     # Test queries with different filter combinations
 
@@ -3146,7 +3147,6 @@ async def test_update_graph_with_prompt_overrides(client: AsyncClient):
     )
 
     assert response.status_code == 200
-    initial_graph = response.json()
 
     # Create a new document to add to the graph
     doc_id3 = await test_ingest_text_document(
@@ -3257,7 +3257,7 @@ async def test_query_with_graph_and_prompt_overrides(client: AsyncClient):
 async def test_query_with_completion_override(client: AsyncClient):
     """Test querying with a custom completion prompt override."""
     # First ingest a document for testing
-    doc_id = await test_ingest_text_document(
+    await test_ingest_text_document(
         client,
         content="Apple Inc. is a technology company headquartered in Cupertino, California. "
         "Tim Cook is the CEO of Apple. The company designs, manufactures, and markets smartphones, "

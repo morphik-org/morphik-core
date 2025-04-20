@@ -97,7 +97,7 @@ class MultiVectorStore(BaseVectorStore):
                 check_table = conn.execute(
                     """
                     SELECT EXISTS (
-                        SELECT FROM information_schema.tables 
+                        SELECT FROM information_schema.tables
                         WHERE table_name = 'multi_vector_embeddings'
                     );
                 """
@@ -108,7 +108,7 @@ class MultiVectorStore(BaseVectorStore):
                     has_document_id = conn.execute(
                         """
                         SELECT EXISTS (
-                            SELECT FROM information_schema.columns 
+                            SELECT FROM information_schema.columns
                             WHERE table_name = 'multi_vector_embeddings' AND column_name = 'document_id'
                         );
                     """
@@ -119,7 +119,7 @@ class MultiVectorStore(BaseVectorStore):
                         logger.info("Updating multi_vector_embeddings table with required columns")
                         conn.execute(
                             """
-                            ALTER TABLE multi_vector_embeddings 
+                            ALTER TABLE multi_vector_embeddings
                             ADD COLUMN document_id TEXT,
                             ADD COLUMN chunk_number INTEGER,
                             ADD COLUMN content TEXT,
@@ -128,7 +128,7 @@ class MultiVectorStore(BaseVectorStore):
                         )
                         conn.execute(
                             """
-                            ALTER TABLE multi_vector_embeddings 
+                            ALTER TABLE multi_vector_embeddings
                             ALTER COLUMN document_id SET NOT NULL
                         """
                         )
@@ -158,7 +158,7 @@ class MultiVectorStore(BaseVectorStore):
                 with self.get_connection() as conn:
                     conn.execute(
                         """
-                        CREATE INDEX IF NOT EXISTS idx_multi_vector_document_id 
+                        CREATE INDEX IF NOT EXISTS idx_multi_vector_document_id
                         ON multi_vector_embeddings (document_id)
                     """
                     )
@@ -187,8 +187,8 @@ class MultiVectorStore(BaseVectorStore):
                                 SELECT unnest(document) AS document
                             ),
                             similarities AS (
-                                SELECT 
-                                    query_number, 
+                                SELECT
+                                    query_number,
                                     1.0 - (bit_count(document # query)::float / greatest(bit_length(query), 1)::float) AS similarity
                                 FROM queries CROSS JOIN documents
                             ),
@@ -247,8 +247,8 @@ class MultiVectorStore(BaseVectorStore):
             with self.get_connection() as conn:
                 conn.execute(
                     """
-                    INSERT INTO multi_vector_embeddings 
-                    (document_id, chunk_number, content, chunk_metadata, embeddings) 
+                    INSERT INTO multi_vector_embeddings
+                    (document_id, chunk_number, content, chunk_metadata, embeddings)
                     VALUES (%s, %s, %s, %s, %s)
                     """,
                     (
@@ -283,7 +283,7 @@ class MultiVectorStore(BaseVectorStore):
 
         # Build query
         query = """
-            SELECT id, document_id, chunk_number, content, chunk_metadata, 
+            SELECT id, document_id, chunk_number, content, chunk_metadata,
                     max_sim(embeddings, %s) AS similarity
             FROM multi_vector_embeddings
         """

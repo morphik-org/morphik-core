@@ -23,10 +23,8 @@ from core.database.base_database import BaseDatabase
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.models.chunk import Chunk, DocumentChunk
-from core.models.completion import (ChunkSource, CompletionRequest,
-                                    CompletionResponse)
-from core.models.documents import (ChunkResult, Document, DocumentContent,
-                                   DocumentResult, StorageFileInfo)
+from core.models.completion import ChunkSource, CompletionRequest, CompletionResponse
+from core.models.documents import ChunkResult, Document, DocumentContent, DocumentResult, StorageFileInfo
 from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
 from core.parser.base_parser import BaseParser
 from core.reranker.base_reranker import BaseReranker
@@ -1534,7 +1532,9 @@ class DocumentService:
                         else (
                             StorageFileInfo(**file.model_dump())
                             if hasattr(file, "model_dump")
-                            else StorageFileInfo(**file.dict()) if hasattr(file, "dict") else file
+                            else StorageFileInfo(**file.dict())
+                            if hasattr(file, "dict")
+                            else file
                         )
                     )
                 )

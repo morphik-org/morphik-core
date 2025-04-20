@@ -11,12 +11,10 @@ from core.config import get_settings
 from core.database.base_database import BaseDatabase
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.models.auth import AuthContext
-from core.models.completion import (ChunkSource, CompletionRequest,
-                                    CompletionResponse)
+from core.models.completion import ChunkSource, CompletionRequest, CompletionResponse
 from core.models.documents import ChunkResult, Document
 from core.models.graph import Entity, Graph, Relationship
-from core.models.prompts import (EntityExtractionPromptOverride,
-                                 GraphPromptOverrides, QueryPromptOverrides)
+from core.models.prompts import EntityExtractionPromptOverride, GraphPromptOverrides, QueryPromptOverrides
 from core.services.entity_resolution import EntityResolver
 
 logger = logging.getLogger(__name__)

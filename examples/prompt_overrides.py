@@ -2,12 +2,15 @@ import os
 
 from dotenv import load_dotenv
 from morphik import Morphik
-from morphik.models import (EntityExtractionExample,
-                            EntityExtractionPromptOverride,
-                            EntityResolutionExample,
-                            EntityResolutionPromptOverride,
-                            GraphPromptOverrides, QueryPromptOverride,
-                            QueryPromptOverrides)
+from morphik.models import (
+    EntityExtractionExample,
+    EntityExtractionPromptOverride,
+    EntityResolutionExample,
+    EntityResolutionPromptOverride,
+    GraphPromptOverrides,
+    QueryPromptOverride,
+    QueryPromptOverrides,
+)
 
 # Load environment variables
 load_dotenv()

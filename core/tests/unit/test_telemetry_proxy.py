@@ -10,15 +10,13 @@ import time
 import uuid
 from datetime import datetime
 
+from core.config import get_settings
+from core.services.telemetry import TelemetryService
 from core.tests import setup_test_logging
 
 # Configure test logging
 setup_test_logging()
 logger = logging.getLogger("telemetry-test")
-
-from core.config import get_settings
-# Import the telemetry service
-from core.services.telemetry import TelemetryService
 
 
 async def run_test():

@@ -245,7 +245,7 @@ async def process_ingestion_job(
         doc.system_metadata["updated_at"] = datetime.now(UTC)
 
         # 11. Store chunks and update document with is_update=True
-        chunk_ids = await document_service._store_chunks_and_doc(
+        await document_service._store_chunks_and_doc(
             chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
         )
 

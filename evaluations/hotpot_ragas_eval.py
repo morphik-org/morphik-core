@@ -1,20 +1,21 @@
+import argparse
 import sys
 import uuid
 from pathlib import Path
+
+import pandas as pd
+from datasets import Dataset, load_dataset
+from dotenv import load_dotenv
+from ragas import evaluate
+from ragas.metrics import answer_correctness, context_precision, faithfulness
+from tqdm import tqdm
 
 # Add the SDK path to the Python path
 sdk_path = str(Path(__file__).parent.parent / "sdks" / "python")
 sys.path.insert(0, sdk_path)
 
-import argparse
-
-import pandas as pd
-from datasets import Dataset, load_dataset
-from dotenv import load_dotenv
-from morphik import Morphik
-from ragas import evaluate
-from ragas.metrics import answer_correctness, context_precision, faithfulness
-from tqdm import tqdm
+# Import Morphik after adding the SDK path
+from morphik import Morphik  # noqa: E402
 
 # Load environment variables
 load_dotenv()
@@ -83,7 +84,7 @@ def process_with_morphik(dataset, run_id=None):
             #     context = context[:10000]
 
             # Ingest text with run_id in metadata
-            doc_id = db.ingest_text(
+            db.ingest_text(
                 context,
                 metadata={
                     "source": "hotpotqa",
@@ -92,7 +93,7 @@ def process_with_morphik(dataset, run_id=None):
                     "evaluation_run_id": run_id,  # Add run_id to metadata
                 },
                 use_colpali=False,
-            ).external_id
+            )
 
             # Query Morphik for the answer with concise prompt override
             prompt_override = {

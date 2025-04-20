@@ -47,7 +47,7 @@ services:
       - morphik-network
     env_file:
       - .env
-      
+
   worker:
     build: .
     command: arq core.workers.ingestion_worker.WorkerSettings
@@ -77,7 +77,7 @@ services:
       - morphik-network
     env_file:
       - .env
-      
+
   redis:
     image: redis:7-alpine
     ports:

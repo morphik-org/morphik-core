@@ -1,4 +1,5 @@
 import os
+import shutil
 import tempfile
 
 from dotenv import load_dotenv
@@ -65,7 +66,5 @@ dir_docs = db.ingest_directory(temp_dir, recursive=True, pattern="*.txt", metada
 print(f"Ingested {len(dir_docs)} documents from directory")
 
 # Clean up temporary files
-import shutil
-
 shutil.rmtree(temp_dir)
 print(f"\nCleaned up temporary directory: {temp_dir}")
