@@ -13,6 +13,10 @@ Morphik is an open-source database designed for AI applications that simplifies 
 
 Built for scale and performance, Morphik can handle millions of documents while maintaining fast retrieval times. Whether you're prototyping a new AI application or deploying production-grade systems, Morphik provides the infrastructure you need.
 
+## Why we built it?
+
+This [blog](https://docs.morphik.ai/blogs/gpt-vs-morphik-multimodal) illustrates why. We faced issues with getting LLMs to work on technical documents, and the sheer frustration prompted (see what I did there?) us to build Morphik.
+
 ## Features
 
 - 📄 **First-class Support for Unstructured Data**
