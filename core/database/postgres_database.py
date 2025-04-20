@@ -631,7 +631,7 @@ class PostgresDatabase(BaseDatabase):
                     
                     # Set all attributes
                     for key, value in updates.items():
-                       if key == "storage_files" and isinstance(value, list):
+                        if key == "storage_files" and isinstance(value, list):
                             serialized_value = [
                                 _serialize_datetime(
                                     item.model_dump() if hasattr(item, "model_dump") else
