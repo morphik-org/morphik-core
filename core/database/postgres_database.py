@@ -8,7 +8,7 @@ from sqlalchemy import Column, String, Index, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 
 from .base_database import BaseDatabase
-from ..models.documents import Document
+from ..models.documents import Document, StorageFileInfo
 from ..models.auth import AuthContext
 from ..models.graph import Graph
 from ..models.folders import Folder
@@ -361,6 +361,15 @@ class PostgresDatabase(BaseDatabase):
 
                 if doc_model:
                     # Convert doc_metadata back to metadata
+                    # Also convert storage_files from dict to StorageFileInfo
+                    storage_files = []
+                    if doc_model.storage_files:
+                        for file_info in doc_model.storage_files:
+                            if isinstance(file_info, dict):
+                                storage_files.append(StorageFileInfo(**file_info))
+                            else:
+                                storage_files.append(file_info)
+                                
                     doc_dict = {
                         "external_id": doc_model.external_id,
                         "owner": doc_model.owner,
@@ -372,7 +381,7 @@ class PostgresDatabase(BaseDatabase):
                         "additional_metadata": doc_model.additional_metadata,
                         "access_control": doc_model.access_control,
                         "chunk_ids": doc_model.chunk_ids,
-                        "storage_files": doc_model.storage_files or [],
+                        "storage_files": storage_files,
                     }
                     return Document(**doc_dict)
                 return None
@@ -422,6 +431,15 @@ class PostgresDatabase(BaseDatabase):
 
                 if doc_model:
                     # Convert doc_metadata back to metadata
+                    # Also convert storage_files from dict to StorageFileInfo
+                    storage_files = []
+                    if doc_model.storage_files:
+                        for file_info in doc_model.storage_files:
+                            if isinstance(file_info, dict):
+                                storage_files.append(StorageFileInfo(**file_info))
+                            else:
+                                storage_files.append(file_info)
+                                
                     doc_dict = {
                         "external_id": doc_model.external_id,
                         "owner": doc_model.owner,
@@ -433,7 +451,7 @@ class PostgresDatabase(BaseDatabase):
                         "additional_metadata": doc_model.additional_metadata,
                         "access_control": doc_model.access_control,
                         "chunk_ids": doc_model.chunk_ids,
-                        "storage_files": doc_model.storage_files or [],
+                        "storage_files": storage_files,
                     }
                     return Document(**doc_dict)
                 return None
@@ -613,8 +631,18 @@ class PostgresDatabase(BaseDatabase):
                     
                     # Set all attributes
                     for key, value in updates.items():
-                        logger.debug(f"Setting document attribute {key} = {value}")
-                        setattr(doc_model, key, value)
+                        if key == "storage_files" and isinstance(value, list):
+                            # Ensure storage_files items are serializable (convert StorageFileInfo to dict)
+                            serialized_value = [
+                                item.model_dump() if hasattr(item, "model_dump") else
+                                (item.dict() if hasattr(item, "dict") else item)
+                                for item in value
+                            ]
+                            logger.debug(f"Serializing storage_files before setting attribute")
+                            setattr(doc_model, key, serialized_value)
+                        else:
+                            logger.debug(f"Setting document attribute {key} = {value}")
+                            setattr(doc_model, key, value)
                         
                     await session.commit()
                     logger.info(f"Document {document_id} updated successfully")
@@ -1421,7 +1449,7 @@ class PostgresDatabase(BaseDatabase):
             
             # Check if the document is in the folder
             if document_id not in folder.document_ids:
-                logger.info(f"Document {document_id} is not in folder {folder_id}")
+                logger.warning(f"Tried to delete document {document_id} not in folder {folder_id}")
                 return True
             
             # Remove the document from the folder

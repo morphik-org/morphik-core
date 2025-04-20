@@ -315,7 +315,7 @@ ujson==5.9.0
 ultralytics==8.3.55
 ultralytics-thop==2.0.13
 unlzw3==0.2.3
-unstructured==0.15.0
+unstructured==0.16.0
 unstructured-client==0.24.1
 unstructured-inference==0.7.36
 unstructured.pytesseract==0.3.12

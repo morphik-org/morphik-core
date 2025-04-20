@@ -96,8 +96,8 @@ class DocumentService:
         storage: BaseStorage,
         parser: BaseParser,
         embedding_model: BaseEmbeddingModel,
-        completion_model: BaseCompletionModel,
-        cache_factory: BaseCacheFactory,
+        completion_model: Optional[BaseCompletionModel] = None,
+        cache_factory: Optional[BaseCacheFactory] = None,
         reranker: Optional[BaseReranker] = None,
         enable_colpali: bool = True,
         colpali_embedding_model: Optional[ColpaliEmbeddingModel] = "vidore/colqwen2.5-v0.2",
@@ -115,12 +115,16 @@ class DocumentService:
         self.colpali_embedding_model = colpali_embedding_model
         self.colpali_vector_store = colpali_vector_store
         
-        # Initialize the graph service
-        self.graph_service = GraphService(
-            db=database,
-            embedding_model=embedding_model,
-            completion_model=completion_model,
-        )
+        # Initialize the graph service only if completion_model is provided
+        # (e.g., not needed for ingestion worker)
+        if completion_model is not None:
+            self.graph_service = GraphService(
+                db=database,
+                embedding_model=embedding_model,
+                completion_model=completion_model,
+            )
+        else:
+            self.graph_service = None
 
         # MultiVectorStore initialization is now handled in the FastAPI startup event
         # so we don't need to initialize it here again
@@ -142,12 +146,20 @@ class DocumentService:
         end_user_id: Optional[str] = None,
     ) -> List[ChunkResult]:
         """Retrieve relevant chunks."""
+
+        # 4 configurations:
+        # 1. No reranking, no colpali -> just return regular chunks
+        # 2. No reranking, colpali  -> return colpali chunks + regular chunks - no need to run smaller colpali model
+        # 3. Reranking, no colpali -> sort regular chunks by re-ranker score
+        # 4. Reranking, colpali -> return merged chunks sorted by smaller colpali model score
+        
         settings = get_settings()
         should_rerank = use_reranking if use_reranking is not None else settings.USE_RERANKING
+        using_colpali = use_colpali if use_colpali is not None else False
 
         # Get embedding for query
         query_embedding_regular = await self.embedding_model.embed_for_query(query)
-        query_embedding_multivector = await self.colpali_embedding_model.embed_for_query(query) if (use_colpali and self.colpali_embedding_model) else None
+        query_embedding_multivector = await self.colpali_embedding_model.embed_for_query(query) if (using_colpali and self.colpali_embedding_model) else None
         logger.info("Generated query embedding")
 
         # Find authorized documents
@@ -164,13 +176,17 @@ class DocumentService:
             return []
         logger.info(f"Found {len(doc_ids)} authorized documents")
 
-
-        search_multi = use_colpali and self.colpali_vector_store and query_embedding_multivector is not None
-        should_rerank = should_rerank and (not search_multi) # colpali has a different re-ranking method
+        # Check if we're using colpali multivector search
+        search_multi = using_colpali and self.colpali_vector_store and query_embedding_multivector is not None
+        
+        # For regular reranking (without colpali), we'll use the existing reranker if available
+        # For colpali reranking, we'll handle it in _combine_multi_and_regular_chunks
+        use_standard_reranker = should_rerank and (not search_multi) and self.reranker is not None
 
         # Search chunks with vector similarity
+        # When using standard reranker, we get more chunks initially to improve reranking quality
         chunks = await self.vector_store.query_similar(
-            query_embedding_regular, k=10 * k if should_rerank else k, doc_ids=doc_ids
+            query_embedding_regular, k=10 * k if use_standard_reranker else k, doc_ids=doc_ids
         )
 
         chunks_multivector = (
@@ -180,36 +196,64 @@ class DocumentService:
         )
 
         logger.debug(f"Found {len(chunks)} similar chunks via regular embedding")
-        if use_colpali:
+        if using_colpali:
             logger.debug(f"Found {len(chunks_multivector)} similar chunks via multivector embedding since we are also using colpali")
 
-        # Rerank chunks using the reranker if enabled and available
-        if chunks and should_rerank and self.reranker is not None:
+        # Rerank chunks using the standard reranker if enabled and available
+        # This handles configuration 3: Reranking without colpali
+        if chunks and use_standard_reranker:
             chunks = await self.reranker.rerank(query, chunks)
             chunks.sort(key=lambda x: x.score, reverse=True)
             chunks = chunks[:k]
             logger.debug(f"Reranked {k*10} chunks and selected the top {k}")
 
-        chunks = await self._combine_multi_and_regular_chunks(query, chunks, chunks_multivector)
+        # Combine multiple chunk sources if needed
+        chunks = await self._combine_multi_and_regular_chunks(query, chunks, chunks_multivector, should_rerank=should_rerank)
 
         # Create and return chunk results
         results = await self._create_chunk_results(auth, chunks)
         logger.info(f"Returning {len(results)} chunk results")
         return results
 
-    async def _combine_multi_and_regular_chunks(self, query: str, chunks: List[DocumentChunk], chunks_multivector: List[DocumentChunk]):
-        # use colpali as a reranker to get the same level of similarity score for both the chunks as well as the multi-vector chunks
-        # TODO: Note that the chunks only need to be rescored in case they weren't ingested with colpali-enabled as true. 
-        # In the other case, we know that chunks_multivector can just come ahead of the regular chunks (since we already
-        # considered the regular chunks when performing the original  similarity search). there is scope for optimization here
-        # by filtering for only the chunks which weren't ingested via colpali...
+    async def _combine_multi_and_regular_chunks(self, query: str, chunks: List[DocumentChunk], chunks_multivector: List[DocumentChunk], should_rerank: bool = None):
+        """Combine and potentially rerank regular and colpali chunks based on configuration.
+        
+        # 4 configurations:
+        # 1. No reranking, no colpali -> just return regular chunks - this already happens upstream, correctly
+        # 2. No reranking, colpali  -> return colpali chunks + regular chunks - no need to run smaller colpali model
+        # 3. Reranking, no colpali -> sort regular chunks by re-ranker score - this already happens upstream, correctly
+        # 4. Reranking, colpali -> return merged chunks sorted by smaller colpali model score
+        
+        Args:
+            query: The user query
+            chunks: Regular chunks with embeddings
+            chunks_multivector: Colpali multi-vector chunks
+            should_rerank: Whether reranking is enabled
+        """
+        # Handle simple cases first
         if len(chunks_multivector) == 0:
             return chunks
         if len(chunks) == 0:
             return chunks_multivector
 
-        # TODO: this is duct tape, fix it properly later
-
+        # Use global setting if not provided
+        if should_rerank is None:
+            settings = get_settings()
+            should_rerank = settings.USE_RERANKING
+        
+        # Check if we need to run the reranking - if reranking is disabled, we just combine the chunks
+        # This is Configuration 2: No reranking, with colpali
+        if not should_rerank:
+            # For configuration 2, simply combine the chunks with multivector chunks first
+            # since they are generally higher quality
+            logger.debug("Using configuration 2: No reranking, with colpali - combining chunks without rescoring")
+            combined_chunks = chunks_multivector + chunks
+            return combined_chunks
+            
+        # Configuration 4: Reranking with colpali
+        # Use colpali as a reranker to get consistent similarity scores for both types of chunks
+        logger.debug("Using configuration 4: Reranking with colpali - rescoring chunks with colpali model")
+        
         model_name = "vidore/colSmol-256M"
         device = (
             "mps"
@@ -225,7 +269,7 @@ class DocumentService:
         ).eval()
         processor = ColIdefics3Processor.from_pretrained(model_name)
 
-        # new_chunks = [Chunk(chunk.content, chunk.metadata) for chunk in chunks]
+        # Score regular chunks with colpali model for consistent comparison
         batch_chunks = processor.process_queries([chunk.content for chunk in chunks]).to(device)
         query_rep = processor.process_queries([query]).to(device)
         multi_vec_representations = model(**batch_chunks)
@@ -233,6 +277,8 @@ class DocumentService:
         scores = processor.score_multi_vector(query_rep, multi_vec_representations)
         for chunk, score in zip(chunks, scores[0]):
             chunk.score = score
+            
+        # Combine and sort all chunks
         full_chunks = chunks + chunks_multivector
         full_chunks.sort(key=lambda x: x.score, reverse=True)
         return full_chunks
@@ -954,7 +1000,7 @@ class DocumentService:
         while attempt < max_retries and not success:
             try:
                 if is_update and auth:
-                    # For updates, use update_document
+                    # For updates, use update_document, serialize StorageFileInfo into plain dicts
                     updates = {
                         "chunk_ids": doc.chunk_ids,
                         "metadata": doc.metadata,
@@ -962,6 +1008,11 @@ class DocumentService:
                         "filename": doc.filename,
                         "content_type": doc.content_type,
                         "storage_info": doc.storage_info,
+                        "storage_files": [
+                            file.model_dump() if hasattr(file, "model_dump")
+                            else (file.dict() if hasattr(file, "dict") else file)
+                            for file in doc.storage_files
+                        ] if doc.storage_files else []
                     }
                     success = await self.db.update_document(doc.external_id, updates, auth)
                     if not success:
@@ -1202,23 +1253,34 @@ class DocumentService:
         file_content = None
         file_type = None
         file_content_base64 = None
-        
         if content is not None:
             update_content = await self._process_text_update(content, doc, filename, metadata, rules)
         elif file is not None:
             update_content, file_content, file_type, file_content_base64 = await self._process_file_update(
                 file, doc, metadata, rules
             )
+            await self._update_storage_info(doc, file, file_content_base64)
         elif not metadata_only_update:
             logger.error("Neither content nor file provided for document update")
             return None
         
         # Apply content update strategy if we have new content
         if update_content:
-            updated_content = self._apply_update_strategy(current_content, update_content, update_strategy)
+            # Fix for initial file upload - if current_content is empty, just use the update_content
+            # without trying to use the update strategy (since there's nothing to update)
+            if not current_content:
+                logger.info(f"No current content found, using only new content of length {len(update_content)}")
+                updated_content = update_content
+            else:
+                updated_content = self._apply_update_strategy(current_content, update_content, update_strategy)
+                logger.info(f"Applied update strategy '{update_strategy}': original length={len(current_content)}, new length={len(updated_content)}")
+            
+            # Always update the content in system_metadata
             doc.system_metadata["content"] = updated_content
+            logger.info(f"Updated system_metadata['content'] with content of length {len(updated_content)}")
         else:
             updated_content = current_content
+            logger.info(f"No content update - keeping current content of length {len(current_content)}")
         
         # Update metadata and version information
         self._update_metadata_and_version(doc, metadata, update_strategy, file)
@@ -1352,20 +1414,15 @@ class DocumentService:
         
     async def _update_storage_info(self, doc: Document, file: UploadFile, file_content_base64: str):
         """Update document storage information for file content."""
-        # Check if we should keep previous file versions
-        if hasattr(doc, "storage_files") and len(doc.storage_files) > 0:
-            # In "add" strategy, create a new StorageFileInfo and append it
-            storage_info = await self.storage.upload_from_base64(
-                file_content_base64, f"{doc.external_id}_{len(doc.storage_files)}", file.content_type
-            )
+        # Initialize storage_files array if needed - using the passed doc object directly
+        # No need to refetch from the database as we already have the full document state
+        if not hasattr(doc, "storage_files") or not doc.storage_files:
+            # Initialize empty list
+            doc.storage_files = []
             
-            # Create a new StorageFileInfo
-            if not hasattr(doc, "storage_files"):
-                doc.storage_files = []
-                
-            # If storage_files doesn't exist yet but we have legacy storage_info, migrate it
-            if len(doc.storage_files) == 0 and doc.storage_info:
-                # Create StorageFileInfo from legacy storage_info
+            # If storage_files is empty but we have storage_info, migrate legacy data
+            if doc.storage_info and doc.storage_info.get("bucket") and doc.storage_info.get("key"):
+                # Create StorageFileInfo from storage_info
                 legacy_file_info = StorageFileInfo(
                     bucket=doc.storage_info.get("bucket", ""),
                     key=doc.storage_info.get("key", ""),
@@ -1375,47 +1432,29 @@ class DocumentService:
                     timestamp=doc.system_metadata.get("updated_at", datetime.now(UTC))
                 )
                 doc.storage_files.append(legacy_file_info)
+                logger.info(f"Migrated legacy storage_info to storage_files: {doc.storage_files}")
             
-            # Add the new file to storage_files
-            new_file_info = StorageFileInfo(
-                bucket=storage_info[0],
-                key=storage_info[1],
-                version=len(doc.storage_files) + 1,
-                filename=file.filename,
-                content_type=file.content_type,
-                timestamp=datetime.now(UTC)
-            )
-            doc.storage_files.append(new_file_info)
-            
-            # Still update legacy storage_info for backward compatibility
-            doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
-        else:
-            # In replace mode (default), just update the storage_info
-            storage_info = await self.storage.upload_from_base64(
-                file_content_base64, doc.external_id, file.content_type
-            )
-            doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
-            
-            # Update storage_files field as well
-            if not hasattr(doc, "storage_files"):
-                doc.storage_files = []
-            
-            # Add or update the primary file info
-            new_file_info = StorageFileInfo(
-                bucket=storage_info[0],
-                key=storage_info[1],
-                version=1,
-                filename=file.filename,
-                content_type=file.content_type,
-                timestamp=datetime.now(UTC)
-            )
-            
-            # Replace the current main file (first file) or add if empty
-            if len(doc.storage_files) > 0:
-                doc.storage_files[0] = new_file_info
-            else:
-                doc.storage_files.append(new_file_info)
-                
+        # Upload the new file with a unique key including version number
+        # The version is based on the current length of storage_files to ensure correct versioning
+        version = len(doc.storage_files) + 1
+        file_extension = os.path.splitext(file.filename)[1] if file.filename else ""
+        storage_info = await self.storage.upload_from_base64(
+            file_content_base64, f"{doc.external_id}_{version}{file_extension}", file.content_type
+        )
+        
+        # Add the new file to storage_files
+        new_file_info = StorageFileInfo(
+            bucket=storage_info[0],
+            key=storage_info[1],
+            version=version,
+            filename=file.filename,
+            content_type=file.content_type,
+            timestamp=datetime.now(UTC)
+        )
+        doc.storage_files.append(new_file_info)
+        
+        # Still update legacy storage_info with the latest file for backward compatibility
+        doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
         logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
         
     def _apply_update_strategy(self, current_content: str, update_content: str, update_strategy: str) -> str:
@@ -1466,13 +1505,29 @@ class DocumentService:
             
         doc.system_metadata["update_history"].append(update_entry)
         
+        # Ensure storage_files models are properly typed as StorageFileInfo objects
+        if hasattr(doc, "storage_files") and doc.storage_files:
+            # Convert to StorageFileInfo objects if they're dicts or ensure they're properly serializable
+            doc.storage_files = [
+                StorageFileInfo(**file) if isinstance(file, dict) else
+                (file if isinstance(file, StorageFileInfo) else 
+                 StorageFileInfo(**file.model_dump()) if hasattr(file, "model_dump") else
+                 StorageFileInfo(**file.dict()) if hasattr(file, "dict") else file)
+                for file in doc.storage_files
+            ]
+        
     async def _update_document_metadata_only(self, doc: Document, auth: AuthContext) -> Optional[Document]:
         """Update document metadata without reprocessing chunks."""
         updates = {
             "metadata": doc.metadata,
             "system_metadata": doc.system_metadata,
             "filename": doc.filename,
+            "storage_files": doc.storage_files if hasattr(doc, "storage_files") else None,
+            "storage_info": doc.storage_info if hasattr(doc, "storage_info") else None,
         }
+        # Remove None values
+        updates = {k: v for k, v in updates.items() if v is not None}
+        
         success = await self.db.update_document(doc.external_id, updates, auth)
         if not success:
             logger.error(f"Failed to update document {doc.external_id} metadata")
