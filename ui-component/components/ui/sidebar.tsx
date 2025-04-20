@@ -4,7 +4,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { FileText, Search, MessageSquare, ChevronLeft, ChevronRight, Network, Copy, Check } from "lucide-react"
+import { FileText, Search, MessageSquare, ChevronLeft, ChevronRight, Network, Copy, Check, ArrowLeft } from "lucide-react"
 import { ModeToggle } from "@/components/mode-toggle"
 import { Input } from "@/components/ui/input"
 
@@ -16,6 +16,7 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   onUriChange?: (uri: string) => void
   isCollapsed?: boolean
   setIsCollapsed?: (collapsed: boolean) => void
+  onBackClick?: () => void
 }
 
 export function Sidebar({
@@ -27,6 +28,7 @@ export function Sidebar({
   onUriChange,
   isCollapsed: externalIsCollapsed,
   setIsCollapsed: externalSetIsCollapsed,
+  onBackClick,
   ...props
 }: SidebarProps) {
   // Use internal state that syncs with external state if provided
@@ -251,7 +253,7 @@ export function Sidebar({
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="space-y-1 p-2">
+        <div className="space-y-4 px-4 py-2">
           <Button
             variant={activeSection === "documents" ? "secondary" : "ghost"}
             className={cn(
@@ -288,7 +290,6 @@ export function Sidebar({
             {!isCollapsed && <span className="ml-2">Chat</span>}
           </Button>
 
-
           <Button
             variant={activeSection === "graphs" ? "secondary" : "ghost"}
             className={cn(
@@ -303,7 +304,18 @@ export function Sidebar({
         </div>
       </ScrollArea>
 
-      <div className={cn("p-2 border-t", isCollapsed ? "flex justify-center" : "")}>
+      <div className={cn("p-4 border-t", isCollapsed ? "flex justify-center" : "flex items-center justify-between gap-2")}>
+        {!isCollapsed && onBackClick && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onBackClick}
+            className="flex items-center gap-2"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>Back to dashboard</span>
+          </Button>
+        )}
         <ModeToggle />
       </div>
     </div>

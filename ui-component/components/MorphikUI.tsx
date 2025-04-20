@@ -7,11 +7,9 @@ import SearchSection from '@/components/search/SearchSection';
 import ChatSection from '@/components/chat/ChatSection';
 import GraphSection from '@/components/GraphSection';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { AlertSystem } from '@/components/ui/alert-system';
 import { extractTokenFromUri, getApiBaseUrlFromUri } from '@/lib/utils';
 import { MorphikUIProps } from '@/components/types';
-import { ArrowLeft } from 'lucide-react';
 
 // Default API base URL
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
@@ -70,25 +68,12 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
           onUriChange={handleUriChange}
           isCollapsed={isSidebarCollapsed}
           setIsCollapsed={setIsSidebarCollapsed}
+          onBackClick={onBackClick}
         />
 
         <div className="flex-1 flex flex-col h-screen overflow-hidden">
-          {/* Header with back button */}
-          {onBackClick && (
-            <div className="bg-background border-b p-3 flex items-center">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onBackClick}
-                className="mr-2"
-              >
-                <ArrowLeft className="h-4 w-4 mr-1" />
-                Back to dashboard
-              </Button>
-            </div>
-          )}
-
-          <div className="flex-1 p-6 flex flex-col overflow-hidden">
+          {/* Remove the header with back button */}
+          <div className="flex-1 overflow-y-auto">
             {/* Documents Section */}
             {activeSection === 'documents' && (
               <DocumentsSection

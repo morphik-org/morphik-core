@@ -411,7 +411,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4">
       <div className="space-y-2">
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold flex items-center">

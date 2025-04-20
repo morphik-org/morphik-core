@@ -1248,7 +1248,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   return (
     <div
       className={cn(
-        "flex-1 flex flex-col h-full relative",
+        "flex-1 flex flex-col h-full relative p-4",
         selectedFolder && isDragging ? "drag-active" : ""
       )}
       {...(selectedFolder ? dragHandlers : {})}
