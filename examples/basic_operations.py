@@ -1,4 +1,5 @@
 import os
+
 from dotenv import load_dotenv
 from morphik import Morphik
 
@@ -11,22 +12,18 @@ db = Morphik(os.getenv("MORPHIK_URI"), timeout=10000, is_local=True)
 # Basic text ingestion
 text_doc = db.ingest_text(
     "Morphik is an open-source database designed for AI applications that simplifies working with unstructured data.",
-    metadata={"category": "tech", "author": "Morphik"}
+    metadata={"category": "tech", "author": "Morphik"},
 )
 print(f"Ingested text document with ID: {text_doc.external_id}")
 
 # Basic file ingestion
 file_doc = db.ingest_file(
-    "examples/assets/colpali_example.pdf",
-    metadata={"category": "research", "topic": "technology"}
+    "examples/assets/colpali_example.pdf", metadata={"category": "research", "topic": "technology"}
 )
 print(f"Ingested file with ID: {file_doc.external_id}")
 
 # Basic retrieval
-chunks = db.retrieve_chunks(
-    query="What is Morphik?",
-    k=3
-)
+chunks = db.retrieve_chunks(query="What is Morphik?", k=3)
 
 print("Retrieved chunks:")
 for chunk in chunks:

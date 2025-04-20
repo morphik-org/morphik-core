@@ -1,7 +1,8 @@
-from typing import Dict, Any, List, Optional
-from datetime import UTC, datetime
-from pydantic import BaseModel, Field
 import uuid
+from datetime import UTC, datetime
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class Entity(BaseModel):
@@ -63,6 +64,4 @@ class Graph(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     owner: Dict[str, str] = Field(default_factory=dict)
-    access_control: Dict[str, List[str]] = Field(
-        default_factory=lambda: {"readers": [], "writers": [], "admins": []}
-    )
+    access_control: Dict[str, List[str]] = Field(default_factory=lambda: {"readers": [], "writers": [], "admins": []})

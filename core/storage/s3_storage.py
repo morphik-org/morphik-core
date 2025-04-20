@@ -1,8 +1,8 @@
 import base64
 import logging
-from typing import Tuple, Optional, Union, BinaryIO
 import tempfile
 from pathlib import Path
+from typing import BinaryIO, Optional, Tuple, Union
 
 import boto3
 from botocore.exceptions import ClientError
@@ -55,9 +55,7 @@ class S3Storage(BaseStorage):
                     temp_file_path = temp_file.name
 
                 try:
-                    self.s3_client.upload_file(
-                        temp_file_path, self.default_bucket, key, ExtraArgs=extra_args
-                    )
+                    self.s3_client.upload_file(temp_file_path, self.default_bucket, key, ExtraArgs=extra_args)
                 finally:
                     Path(temp_file_path).unlink()
             else:
@@ -80,9 +78,7 @@ class S3Storage(BaseStorage):
             extension = detect_file_type(content)
             key = f"{key}{extension}"
 
-            return await self.upload_file(
-                file=decoded_content, key=key, content_type=content_type, bucket=bucket
-            )
+            return await self.upload_file(file=decoded_content, key=key, content_type=content_type, bucket=bucket)
 
         except Exception as e:
             logger.error(f"Error uploading base64 content to S3: {e}")

@@ -1,10 +1,11 @@
-from typing import Dict, Any, List, Optional, Literal
-from enum import Enum
+import logging
+import uuid
 from datetime import UTC, datetime
+from enum import Enum
+from typing import Any, Dict, List, Literal, Optional
+
 from PIL import Image
 from pydantic import BaseModel, Field, field_validator
-import uuid
-import logging
 
 from core.models.video import TimeSeriesData
 
@@ -18,14 +19,15 @@ class QueryReturnType(str, Enum):
 
 class StorageFileInfo(BaseModel):
     """Information about a file stored in storage"""
+
     bucket: str
     key: str
     version: int = 1
     filename: Optional[str] = None
     content_type: Optional[str] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    
-    
+
+
 class Document(BaseModel):
     """Represents a document stored in the database documents collection"""
 
@@ -52,9 +54,7 @@ class Document(BaseModel):
     """metadata such as creation date etc."""
     additional_metadata: Dict[str, Any] = Field(default_factory=dict)
     """metadata to help with querying eg. frame descriptions and time-stamped transcript for videos"""
-    access_control: Dict[str, List[str]] = Field(
-        default_factory=lambda: {"readers": [], "writers": [], "admins": []}
-    )
+    access_control: Dict[str, List[str]] = Field(default_factory=lambda: {"readers": [], "writers": [], "admins": []})
     chunk_ids: List[str] = Field(default_factory=list)
 
     def __hash__(self):
@@ -118,10 +118,7 @@ class ChunkResult(BaseModel):
                     return self.content
                 ts_frame = TimeSeriesData(time_to_content=frame_description)
                 ts_transcript = TimeSeriesData(time_to_content=transcript)
-                timestamps = (
-                    ts_frame.content_to_times[self.content]
-                    + ts_transcript.content_to_times[self.content]
-                )
+                timestamps = ts_frame.content_to_times[self.content] + ts_transcript.content_to_times[self.content]
                 augmented_contents = [
                     f"Frame description: {ts_frame.at_time(t)} \n \n Transcript: {ts_transcript.at_time(t)}"
                     for t in timestamps

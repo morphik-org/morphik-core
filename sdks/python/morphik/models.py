@@ -1,6 +1,7 @@
-from typing import Dict, Any, List, Literal, Optional, Union, BinaryIO
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+from typing import Any, BinaryIO, Dict, List, Literal, Optional, Union
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -11,20 +12,14 @@ class Document(BaseModel):
     content_type: str = Field(..., description="Content type of the document")
     filename: Optional[str] = Field(None, description="Original filename if available")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="User-defined metadata")
-    storage_info: Dict[str, str] = Field(
-        default_factory=dict, description="Storage-related information"
-    )
-    system_metadata: Dict[str, Any] = Field(
-        default_factory=dict, description="System-managed metadata"
-    )
-    access_control: Dict[str, Any] = Field(
-        default_factory=dict, description="Access control information"
-    )
+    storage_info: Dict[str, str] = Field(default_factory=dict, description="Storage-related information")
+    system_metadata: Dict[str, Any] = Field(default_factory=dict, description="System-managed metadata")
+    access_control: Dict[str, Any] = Field(default_factory=dict, description="Access control information")
     chunk_ids: List[str] = Field(default_factory=list, description="IDs of document chunks")
 
     # Client reference for update methods
     _client = None
-    
+
     @property
     def status(self) -> Dict[str, Any]:
         """Get the latest processing status of the document from the API.
@@ -37,38 +32,38 @@ class Document(BaseModel):
                 "Document instance not connected to a client. Use a document returned from a Morphik client method."
             )
         return self._client.get_document_status(self.external_id)
-    
+
     @property
     def is_processing(self) -> bool:
         """Check if the document is still being processed."""
         return self.status.get("status") == "processing"
-    
+
     @property
     def is_ingested(self) -> bool:
         """Check if the document has completed processing."""
         return self.status.get("status") == "completed"
-    
+
     @property
     def is_failed(self) -> bool:
         """Check if document processing has failed."""
         return self.status.get("status") == "failed"
-    
+
     @property
     def error(self) -> Optional[str]:
         """Get the error message if processing failed."""
         status_info = self.status
         return status_info.get("error") if status_info.get("status") == "failed" else None
-    
+
     def wait_for_completion(self, timeout_seconds=300, check_interval_seconds=2):
         """Wait for document processing to complete.
-        
+
         Args:
             timeout_seconds: Maximum time to wait for completion (default: 300 seconds)
             check_interval_seconds: Time between status checks (default: 2 seconds)
-            
+
         Returns:
             Document: Updated document with the latest status
-            
+
         Raises:
             TimeoutError: If processing doesn't complete within the timeout period
             ValueError: If processing fails with an error
@@ -173,9 +168,7 @@ class Document(BaseModel):
                 "Document instance not connected to a client. Use a document returned from a Morphik client method."
             )
 
-        return self._client.update_document_metadata(
-            document_id=self.external_id, metadata=metadata
-        )
+        return self._client.update_document_metadata(document_id=self.external_id, metadata=metadata)
 
 
 class ChunkResult(BaseModel):
@@ -229,9 +222,7 @@ class CompletionResponse(BaseModel):
 
     completion: str
     usage: Dict[str, int]
-    sources: List[ChunkSource] = Field(
-        default_factory=list, description="Sources of chunks used in the completion"
-    )
+    sources: List[ChunkSource] = Field(default_factory=list, description="Sources of chunks used in the completion")
     metadata: Optional[Dict[str, Any]] = None
 
 
@@ -253,9 +244,7 @@ class Entity(BaseModel):
     type: str = Field(..., description="Entity type")
     properties: Dict[str, Any] = Field(default_factory=dict, description="Entity properties")
     document_ids: List[str] = Field(default_factory=list, description="Source document IDs")
-    chunk_sources: Dict[str, List[int]] = Field(
-        default_factory=dict, description="Source chunk numbers by document ID"
-    )
+    chunk_sources: Dict[str, List[int]] = Field(default_factory=dict, description="Source chunk numbers by document ID")
 
     def __hash__(self):
         return hash(self.id)
@@ -274,9 +263,7 @@ class Relationship(BaseModel):
     target_id: str = Field(..., description="Target entity ID")
     type: str = Field(..., description="Relationship type")
     document_ids: List[str] = Field(default_factory=list, description="Source document IDs")
-    chunk_sources: Dict[str, List[int]] = Field(
-        default_factory=dict, description="Source chunk numbers by document ID"
-    )
+    chunk_sources: Dict[str, List[int]] = Field(default_factory=dict, description="Source chunk numbers by document ID")
 
     def __hash__(self):
         return hash(self.id)
@@ -293,20 +280,14 @@ class Graph(BaseModel):
     id: str = Field(..., description="Unique graph identifier")
     name: str = Field(..., description="Graph name")
     entities: List[Entity] = Field(default_factory=list, description="Entities in the graph")
-    relationships: List[Relationship] = Field(
-        default_factory=list, description="Relationships in the graph"
-    )
+    relationships: List[Relationship] = Field(default_factory=list, description="Relationships in the graph")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Graph metadata")
     document_ids: List[str] = Field(default_factory=list, description="Source document IDs")
-    filters: Optional[Dict[str, Any]] = Field(
-        None, description="Document filters used to create the graph"
-    )
+    filters: Optional[Dict[str, Any]] = Field(None, description="Document filters used to create the graph")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
     owner: Dict[str, str] = Field(default_factory=dict, description="Graph owner information")
-    access_control: Dict[str, List[str]] = Field(
-        default_factory=dict, description="Access control information"
-    )
+    access_control: Dict[str, List[str]] = Field(default_factory=dict, description="Access control information")
 
 
 class EntityExtractionExample(BaseModel):
@@ -318,9 +299,7 @@ class EntityExtractionExample(BaseModel):
     """
 
     label: str = Field(..., description="The entity label (e.g., 'John Doe', 'Apple Inc.')")
-    type: str = Field(
-        ..., description="The entity type (e.g., 'PERSON', 'ORGANIZATION', 'PRODUCT')"
-    )
+    type: str = Field(..., description="The entity type (e.g., 'PERSON', 'ORGANIZATION', 'PRODUCT')")
     properties: Optional[Dict[str, Any]] = Field(
         default_factory=dict,
         description="Optional properties of the entity (e.g., {'role': 'CEO', 'age': 42})",
@@ -337,9 +316,7 @@ class EntityResolutionExample(BaseModel):
     """
 
     canonical: str = Field(..., description="The canonical (standard/preferred) form of the entity")
-    variants: List[str] = Field(
-        ..., description="List of variant forms that should resolve to the canonical form"
-    )
+    variants: List[str] = Field(..., description="List of variant forms that should resolve to the canonical form")
 
 
 class EntityExtractionPromptOverride(BaseModel):
@@ -475,9 +452,5 @@ class FolderInfo(BaseModel):
     description: Optional[str] = Field(None, description="Folder description")
     owner: Dict[str, str] = Field(..., description="Owner information")
     document_ids: List[str] = Field(default_factory=list, description="IDs of documents in the folder")
-    system_metadata: Dict[str, Any] = Field(
-        default_factory=dict, description="System-managed metadata"
-    )
-    access_control: Dict[str, List[str]] = Field(
-        default_factory=dict, description="Access control information"
-    )
+    system_metadata: Dict[str, Any] = Field(default_factory=dict, description="System-managed metadata")
+    access_control: Dict[str, List[str]] = Field(default_factory=dict, description="Access control information")

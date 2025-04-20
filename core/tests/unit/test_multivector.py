@@ -1,12 +1,14 @@
-import pytest
 import asyncio
-import torch
-import numpy as np
-from pgvector.psycopg import Bit
 import logging
-from core.vector_store.multi_vector_store import MultiVectorStore
+
+import numpy as np
+import pytest
+import torch
+from pgvector.psycopg import Bit
+
 from core.models.chunk import DocumentChunk
 from core.tests import setup_test_logging
+from core.vector_store.multi_vector_store import MultiVectorStore
 
 # Set up test logging
 setup_test_logging()
@@ -94,12 +96,8 @@ async def test_binary_quantize():
     assert len(binary_result) == 2
 
     # Check results match expected patterns
-    assert (
-        binary_result[0].to_text() == Bit("101").to_text()
-    )  # Positive values (>0) become 1, negative/zero become 0
-    assert (
-        binary_result[1].to_text() == Bit("010").to_text()
-    )  # First row: [0.1 (>0), -0.2 (<0), 0.3 (>0)] → "101"
+    assert binary_result[0].to_text() == Bit("101").to_text()  # Positive values (>0) become 1, negative/zero become 0
+    assert binary_result[1].to_text() == Bit("010").to_text()  # First row: [0.1 (>0), -0.2 (<0), 0.3 (>0)] → "101"
     # Second row: [-0.1 (<0), 0.2 (>0), -0.3 (<0)] → "010"
 
     # Test with numpy array
@@ -125,9 +123,7 @@ async def test_initialize_creates_tables_and_function(vector_store):
     logger.info("Table exists!")
 
     # Check if the max_sim function exists
-    result = vector_store.conn.execute(
-        "SELECT EXISTS (SELECT FROM pg_proc WHERE proname = 'max_sim')"
-    ).fetchone()
+    result = vector_store.conn.execute("SELECT EXISTS (SELECT FROM pg_proc WHERE proname = 'max_sim')").fetchone()
     function_exists = result[0]
     logger.info(f"Function exists {function_exists}")
     assert function_exists is True
@@ -138,8 +134,7 @@ async def test_database_schema(vector_store):
     """Test that the database schema matches our expectations"""
     # Check columns in the table
     result = vector_store.conn.execute(
-        "SELECT column_name, data_type FROM information_schema.columns "
-        "WHERE table_name = 'multi_vector_embeddings'"
+        "SELECT column_name, data_type FROM information_schema.columns " "WHERE table_name = 'multi_vector_embeddings'"
     ).fetchall()
 
     # Convert to a dict for easier checking

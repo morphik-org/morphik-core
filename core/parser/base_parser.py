@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Tuple
+
 from core.models.chunk import Chunk
 
 
@@ -7,9 +8,7 @@ class BaseParser(ABC):
     """Base class for document parsing"""
 
     @abstractmethod
-    async def parse_file_to_text(
-        self, file: bytes, filename: str
-    ) -> Tuple[Dict[str, Any], str]:
+    async def parse_file_to_text(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
         """
         Parse file content into text.
 

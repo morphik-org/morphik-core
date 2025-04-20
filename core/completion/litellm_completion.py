@@ -1,8 +1,11 @@
 import logging
+
 import litellm
-from .base_completion import BaseCompletionModel
-from core.models.completion import CompletionRequest, CompletionResponse
+
 from core.config import get_settings
+from core.models.completion import CompletionRequest, CompletionResponse
+
+from .base_completion import BaseCompletionModel
 
 logger = logging.getLogger(__name__)
 
@@ -24,16 +27,11 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         self.model_key = model_key
 
         # Get the model configuration from registered_models
-        if (
-            not hasattr(settings, "REGISTERED_MODELS")
-            or model_key not in settings.REGISTERED_MODELS
-        ):
+        if not hasattr(settings, "REGISTERED_MODELS") or model_key not in settings.REGISTERED_MODELS:
             raise ValueError(f"Model '{model_key}' not found in registered_models configuration")
 
         self.model_config = settings.REGISTERED_MODELS[model_key]
-        logger.info(
-            f"Initialized LiteLLM completion model with model_key={model_key}, config={self.model_config}"
-        )
+        logger.info(f"Initialized LiteLLM completion model with model_key={model_key}, config={self.model_config}")
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """

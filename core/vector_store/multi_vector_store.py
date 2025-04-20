@@ -1,12 +1,15 @@
-from typing import List, Optional, Tuple, Union, ContextManager
 import logging
-import torch
-import numpy as np
 import time
 from contextlib import contextmanager
+from typing import List, Optional, Tuple, Union
+
+import numpy as np
 import psycopg
+import torch
 from pgvector.psycopg import Bit, register_vector
+
 from core.models.chunk import DocumentChunk
+
 from .base_vector_store import BaseVectorStore
 
 logger = logging.getLogger(__name__)
@@ -36,20 +39,20 @@ class MultiVectorStore(BaseVectorStore):
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         # Don't initialize here - initialization will be handled separately
-        
+
     @contextmanager
     def get_connection(self):
         """Get a PostgreSQL connection with retry logic.
-        
+
         Yields:
             A PostgreSQL connection object
-            
+
         Raises:
             psycopg.OperationalError: If all connection attempts fail
         """
         attempt = 0
         last_error = None
-        
+
         # Try to establish a new connection with retries
         while attempt < self.max_retries:
             try:
@@ -57,7 +60,7 @@ class MultiVectorStore(BaseVectorStore):
                 conn = psycopg.connect(self.uri, autocommit=True)
                 # Register vector extension on every new connection
                 register_vector(conn)
-                
+
                 try:
                     yield conn
                     return
@@ -71,9 +74,11 @@ class MultiVectorStore(BaseVectorStore):
                 last_error = e
                 attempt += 1
                 if attempt < self.max_retries:
-                    logger.warning(f"Connection attempt {attempt} failed: {str(e)}. Retrying in {self.retry_delay} seconds...")
+                    logger.warning(
+                        f"Connection attempt {attempt} failed: {str(e)}. Retrying in {self.retry_delay} seconds..."
+                    )
                     time.sleep(self.retry_delay)
-        
+
         # If we get here, all retries failed
         logger.error(f"All connection attempts failed after {self.max_retries} retries: {str(last_error)}")
         raise last_error
@@ -211,11 +216,11 @@ class MultiVectorStore(BaseVectorStore):
             embeddings = embeddings.cpu().numpy()
         if isinstance(embeddings, list) and not isinstance(embeddings[0], np.ndarray):
             embeddings = np.array(embeddings)
-        
+
         # Add this check to ensure pgvector is registered for the connection
         with self.get_connection() as conn:
             register_vector(conn)
-        
+
         return [Bit(embedding > 0) for embedding in embeddings]
 
     async def store_embeddings(self, chunks: List[DocumentChunk]) -> Tuple[bool, List[str]]:
@@ -229,9 +234,7 @@ class MultiVectorStore(BaseVectorStore):
         for chunk in chunks:
             # Ensure embeddings exist
             if not hasattr(chunk, "embedding") or chunk.embedding is None:
-                logger.error(
-                    f"Missing embeddings for chunk {chunk.document_id}-{chunk.chunk_number}"
-                )
+                logger.error(f"Missing embeddings for chunk {chunk.document_id}-{chunk.chunk_number}")
                 continue
 
             # For multi-vector embeddings, we expect a list of vectors
@@ -290,7 +293,7 @@ class MultiVectorStore(BaseVectorStore):
         # Add document filter if needed with proper parameterization
         if doc_ids:
             # Use placeholders for each document ID
-            placeholders = ', '.join(['%s'] * len(doc_ids))
+            placeholders = ", ".join(["%s"] * len(doc_ids))
             query += f" WHERE document_id IN ({placeholders})"
             # Add document IDs to params
             params.extend(doc_ids)
@@ -334,36 +337,36 @@ class MultiVectorStore(BaseVectorStore):
     ) -> List[DocumentChunk]:
         """
         Retrieve specific chunks by document ID and chunk number in a single database query.
-        
+
         Args:
             chunk_identifiers: List of (document_id, chunk_number) tuples
-            
+
         Returns:
             List of DocumentChunk objects
         """
         # try:
         if not chunk_identifiers:
             return []
-            
+
         # Construct the WHERE clause with OR conditions
         conditions = []
         for doc_id, chunk_num in chunk_identifiers:
             conditions.append(f"(document_id = '{doc_id}' AND chunk_number = {chunk_num})")
-        
+
         where_clause = " OR ".join(conditions)
-        
+
         # Build and execute query
         query = f"""
             SELECT document_id, chunk_number, content, chunk_metadata
             FROM multi_vector_embeddings
             WHERE {where_clause}
         """
-        
+
         logger.debug(f"Batch retrieving {len(chunk_identifiers)} chunks from multi-vector store")
-        
+
         with self.get_connection() as conn:
             result = conn.execute(query).fetchall()
-        
+
         # Convert to DocumentChunks
         chunks = []
         for row in result:
@@ -371,7 +374,7 @@ class MultiVectorStore(BaseVectorStore):
                 metadata = eval(row[3]) if row[3] else {}
             except (ValueError, SyntaxError):
                 metadata = {}
-                
+
             chunk = DocumentChunk(
                 document_id=row[0],
                 chunk_number=row[1],
@@ -381,17 +384,17 @@ class MultiVectorStore(BaseVectorStore):
                 score=0.0,  # No relevance score for direct retrieval
             )
             chunks.append(chunk)
-            
+
         logger.debug(f"Found {len(chunks)} chunks in batch retrieval from multi-vector store")
         return chunks
-    
+
     async def delete_chunks_by_document_id(self, document_id: str) -> bool:
         """
         Delete all chunks associated with a document.
-        
+
         Args:
             document_id: ID of the document whose chunks should be deleted
-            
+
         Returns:
             bool: True if the operation was successful, False otherwise
         """
@@ -400,14 +403,14 @@ class MultiVectorStore(BaseVectorStore):
             query = f"DELETE FROM multi_vector_embeddings WHERE document_id = '{document_id}'"
             with self.get_connection() as conn:
                 conn.execute(query)
-            
+
             logger.info(f"Deleted all chunks for document {document_id} from multi-vector store")
             return True
-                
+
         except Exception as e:
             logger.error(f"Error deleting chunks for document {document_id} from multi-vector store: {str(e)}")
             return False
-    
+
     def close(self):
         """Close the database connection."""
         if self.conn:

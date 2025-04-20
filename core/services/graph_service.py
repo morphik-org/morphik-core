@@ -1,23 +1,22 @@
-import logging
-import numpy as np
 import json
-from typing import Dict, Any, List, Optional, Tuple, Set
-from pydantic import BaseModel
+import logging
 from datetime import datetime, timezone
-from core.models.prompts import (
-    GraphPromptOverrides,
-    QueryPromptOverrides,
-    EntityExtractionPromptOverride
-)
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-from core.models.completion import ChunkSource, CompletionResponse, CompletionRequest
-from core.models.graph import Graph, Entity, Relationship
-from core.models.auth import AuthContext
-from core.embedding.base_embedding_model import BaseEmbeddingModel
+import numpy as np
+from pydantic import BaseModel
+
 from core.completion.base_completion import BaseCompletionModel
-from core.database.base_database import BaseDatabase
-from core.models.documents import Document, ChunkResult
 from core.config import get_settings
+from core.database.base_database import BaseDatabase
+from core.embedding.base_embedding_model import BaseEmbeddingModel
+from core.models.auth import AuthContext
+from core.models.completion import (ChunkSource, CompletionRequest,
+                                    CompletionResponse)
+from core.models.documents import ChunkResult, Document
+from core.models.graph import Entity, Graph, Relationship
+from core.models.prompts import (EntityExtractionPromptOverride,
+                                 GraphPromptOverrides, QueryPromptOverrides)
 from core.services.entity_resolution import EntityResolver
 
 logger = logging.getLogger(__name__)
@@ -90,7 +89,7 @@ class GraphService:
         # Initialize system_filters if None
         if system_filters is None:
             system_filters = {}
-            
+
         if "write" not in auth.permissions:
             raise PermissionError("User does not have write permission")
 
@@ -129,7 +128,10 @@ class GraphService:
 
         # Batch retrieve all documents in a single call
         document_objects = await document_service.batch_retrieve_documents(
-            all_ids_to_retrieve, auth, system_filters.get("folder_name", None), system_filters.get("end_user_id", None)
+            all_ids_to_retrieve,
+            auth,
+            system_filters.get("folder_name", None),
+            system_filters.get("end_user_id", None),
         )
 
         # Process explicit documents if needed
@@ -150,14 +152,10 @@ class GraphService:
         # even if they don't have new entities or relationships
         if additional_filters:
             filtered_docs = await document_service.batch_retrieve_documents(
-                [
-                    doc_id
-                    for doc_id in all_doc_ids
-                    if doc_id not in {d.external_id for d in document_objects}
-                ],
+                [doc_id for doc_id in all_doc_ids if doc_id not in {d.external_id for d in document_objects}],
                 auth,
-                system_filters.get("folder_name", None), 
-                system_filters.get("end_user_id", None)
+                system_filters.get("folder_name", None),
+                system_filters.get("end_user_id", None),
             )
             logger.info(f"Additional filtered documents to include: {len(filtered_docs)}")
             document_objects.extend(filtered_docs)
@@ -217,16 +215,16 @@ class GraphService:
         # Process documents matching the original filters
         if existing_graph.filters:
             # Original filters shouldn't include system filters, as we're applying them separately
-            filtered_docs = await self.db.get_documents(auth, filters=existing_graph.filters, system_filters=system_filters)
+            filtered_docs = await self.db.get_documents(
+                auth, filters=existing_graph.filters, system_filters=system_filters
+            )
             orig_filter_doc_ids = {doc.external_id for doc in filtered_docs}
             logger.info(f"Found {len(orig_filter_doc_ids)} documents matching original filters and system filters")
             document_ids.update(orig_filter_doc_ids)
 
         # Get only the document IDs that are not already in the graph
         new_doc_ids = document_ids - set(existing_graph.document_ids)
-        logger.info(
-            f"Found {len(new_doc_ids)} new documents to add to graph '{existing_graph.name}'"
-        )
+        logger.info(f"Found {len(new_doc_ids)} new documents to add to graph '{existing_graph.name}'")
         return new_doc_ids
 
     def _merge_graph_data(
@@ -275,9 +273,7 @@ class GraphService:
 
         return existing_graph
 
-    def _smart_merge_filters(
-        self, existing_filters: Dict[str, Any], additional_filters: Dict[str, Any]
-    ):
+    def _smart_merge_filters(self, existing_filters: Dict[str, Any], additional_filters: Dict[str, Any]):
         """Merge filters with more intelligence to handle different data types and filter values."""
         for key, value in additional_filters.items():
             # If the key doesn't exist in existing filters, just add it
@@ -371,9 +367,7 @@ class GraphService:
 
         return merged_relationships
 
-    def _merge_relationship_sources(
-        self, existing_rel: Relationship, new_rel: Relationship
-    ) -> None:
+    def _merge_relationship_sources(self, existing_rel: Relationship, new_rel: Relationship) -> None:
         """Merge chunk sources and document IDs from new relationship into existing one."""
         # Merge chunk sources
         for doc_id, chunk_numbers in new_rel.chunk_sources.items():
@@ -419,7 +413,7 @@ class GraphService:
         # Initialize system_filters if None
         if system_filters is None:
             system_filters = {}
-            
+
         if "write" not in auth.permissions:
             raise PermissionError("User does not have write permission")
 
@@ -437,15 +431,12 @@ class GraphService:
         # Convert system_filters for document retrieval
         folder_name = system_filters.get("folder_name") if system_filters else None
         end_user_id = system_filters.get("end_user_id") if system_filters else None
-        
+
         # Batch retrieve documents for authorization check
         document_objects = await document_service.batch_retrieve_documents(
-            list(document_ids), 
-            auth, 
-            folder_name, 
-            end_user_id
+            list(document_ids), auth, folder_name, end_user_id
         )
-        
+
         # Log for debugging
         logger.info(f"Graph creation with folder_name={folder_name}, end_user_id={end_user_id}")
         logger.info(f"Documents retrieved: {len(document_objects)} out of {len(document_ids)} requested")
@@ -466,7 +457,7 @@ class GraphService:
                 "admins": [auth.entity_id],
             },
         )
-        
+
         # Add folder_name and end_user_id to system_metadata if provided
         if system_filters:
             if "folder_name" in system_filters:
@@ -546,7 +537,7 @@ class GraphService:
                 chunk_entities, chunk_relationships = await self.extract_entities_from_text(
                     chunk.content, chunk.document_id, chunk.chunk_number, extraction_overrides
                 )
-                
+
                 # Store all initially extracted entities to track their IDs
                 initial_entities.extend(chunk_entities)
 
@@ -563,13 +554,8 @@ class GraphService:
                         # Add to chunk_sources dictionary
                         if chunk.document_id not in existing_entity.chunk_sources:
                             existing_entity.chunk_sources[chunk.document_id] = [chunk.chunk_number]
-                        elif (
-                            chunk.chunk_number
-                            not in existing_entity.chunk_sources[chunk.document_id]
-                        ):
-                            existing_entity.chunk_sources[chunk.document_id].append(
-                                chunk.chunk_number
-                            )
+                        elif chunk.chunk_number not in existing_entity.chunk_sources[chunk.document_id]:
+                            existing_entity.chunk_sources[chunk.document_id].append(chunk.chunk_number)
 
                 # Add the current chunk source to each relationship
                 for relationship in chunk_relationships:
@@ -584,15 +570,11 @@ class GraphService:
 
             except ValueError as e:
                 # Handle specific extraction errors we've wrapped
-                logger.warning(
-                    f"Skipping chunk {chunk.chunk_number} in document {chunk.document_id}: {e}"
-                )
+                logger.warning(f"Skipping chunk {chunk.chunk_number} in document {chunk.document_id}: {e}")
                 continue
             except Exception as e:
                 # For other errors, log and re-raise to abort graph creation
-                logger.error(
-                    f"Fatal error processing chunk {chunk.chunk_number} in document {chunk.document_id}: {e}"
-                )
+                logger.error(f"Fatal error processing chunk {chunk.chunk_number} in document {chunk.document_id}: {e}")
                 raise
 
         # Build a mapping from entity ID to label for ALL initially extracted entities
@@ -641,27 +623,27 @@ class GraphService:
             # Remap relationships using original entity ID to label mapping
             remapped_count = 0
             skipped_count = 0
-            
+
             for relationship in relationships:
                 # Use original_entity_id_to_label to get the labels for relationship endpoints
                 original_source_label = original_entity_id_to_label.get(relationship.source_id)
                 original_target_label = original_entity_id_to_label.get(relationship.target_id)
-                
+
                 if not original_source_label or not original_target_label:
                     logger.warning(
                         f"Skipping relationship with type '{relationship.type}' - could not find original entity labels"
                     )
                     skipped_count += 1
                     continue
-                
+
                 # Find canonical labels using the mapping from the resolver
                 source_canonical = entity_mapping.get(original_source_label, original_source_label)
                 target_canonical = entity_mapping.get(original_target_label, original_target_label)
-                
+
                 # Find the final unique Entity objects using the canonical labels
                 canonical_source = resolved_entities_dict.get(source_canonical)
                 canonical_target = resolved_entities_dict.get(target_canonical)
-                
+
                 if canonical_source and canonical_target:
                     # Successfully found the final entities, update the relationship's IDs
                     relationship.source_id = canonical_source.id
@@ -675,9 +657,9 @@ class GraphService:
                         f"canonical entities not found after resolution"
                     )
                     skipped_count += 1
-            
+
             logger.info(f"Remapped {remapped_count} relationships, skipped {skipped_count} relationships")
-            
+
             # Deduplicate relationships (same source, target, type)
             final_relationships_map = {}
             for rel in updated_relationships:
@@ -688,12 +670,12 @@ class GraphService:
                     # Merge sources into the existing relationship
                     existing_rel = final_relationships_map[key]
                     self._merge_relationship_sources(existing_rel, rel)
-            
+
             final_relationships = list(final_relationships_map.values())
             logger.info(f"Deduplicated to {len(final_relationships)} unique relationships")
-            
+
             return resolved_entities_dict, final_relationships
-            
+
         # If no entity resolution occurred, return original entities and relationships
         return entities, relationships
 
@@ -739,11 +721,7 @@ class GraphService:
         examples_str = ""
         if custom_examples:
             # Ensure proper serialization for both dict and Pydantic model examples
-            if (
-                isinstance(custom_examples, list)
-                and custom_examples
-                and hasattr(custom_examples[0], "model_dump")
-            ):
+            if isinstance(custom_examples, list) and custom_examples and hasattr(custom_examples[0], "model_dump"):
                 # List of Pydantic model objects
                 serialized_examples = [example.model_dump() for example in custom_examples]
             else:
@@ -781,7 +759,7 @@ class GraphService:
                     "For relationships, specify the source entity, target entity, and the relationship between them. "
                     "The source and target must be simple strings matching the entity labels, not objects. "
                     f"{examples_str}"
-                    "Sample relationship format: {\"source\": \"Entity A\", \"target\": \"Entity B\", \"relationship\": \"works for\"}\n\n"
+                    'Sample relationship format: {"source": "Entity A", "target": "Entity B", "relationship": "works for"}\n\n'
                     "Return your response as valid JSON:\n\n" + content_limited
                 ),
             }
@@ -789,9 +767,7 @@ class GraphService:
         # Get the model configuration from registered_models
         model_config = settings.REGISTERED_MODELS.get(settings.GRAPH_MODEL, {})
         if not model_config:
-            raise ValueError(
-                f"Model '{settings.GRAPH_MODEL}' not found in registered_models configuration"
-            )
+            raise ValueError(f"Model '{settings.GRAPH_MODEL}' not found in registered_models configuration")
 
         # Prepare the completion request parameters
         model_params = {
@@ -804,8 +780,8 @@ class GraphService:
         for key, value in model_config.items():
             if key != "model_name":  # Skip as we've already handled it
                 model_params[key] = value
-        import litellm
         import instructor
+        import litellm
 
         # Use instructor with litellm to get structured responses
         client = instructor.from_litellm(litellm.acompletion, mode=instructor.Mode.JSON)
@@ -817,10 +793,7 @@ class GraphService:
             messages = model_params.pop("messages")
             # Use instructor's chat.completions.create with response_model
             response = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                response_model=ExtractionResult,
-                **model_params
+                model=model, messages=messages, response_model=ExtractionResult, **model_params
             )
 
             try:
@@ -846,9 +819,7 @@ class GraphService:
             return [], []
 
         # Process extraction results
-        entities, relationships = self._process_extraction_results(
-            extraction_result, doc_id, chunk_number
-        )
+        entities, relationships = self._process_extraction_results(extraction_result, doc_id, chunk_number)
         logger.info(
             f"Extracted {len(entities)} entities and {len(relationships)} relationships from document {doc_id}, chunk {chunk_number}"
         )
@@ -946,7 +917,7 @@ class GraphService:
             system_filters["folder_name"] = folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
-        
+
         logger.info(f"Querying graph with system_filters: {system_filters}")
         graph = await self.db.get_graph(graph_name, auth, system_filters=system_filters)
         if not graph:
@@ -1026,9 +997,7 @@ class GraphService:
 
             # If no matches, fallback to embedding similarity
             if matched_entities:
-                top_entities = [
-                    (entity, 1.0) for entity in matched_entities
-                ]  # Score 1.0 for direct matches
+                top_entities = [(entity, 1.0) for entity in matched_entities]  # Score 1.0 for direct matches
             else:
                 top_entities = await self._find_similar_entities(query, graph.entities, k)
 
@@ -1096,9 +1065,7 @@ class GraphService:
             logger.warning(f"Failed to extract entities from query: {e}")
             return []
 
-    async def _find_similar_entities(
-        self, query: str, entities: List[Entity], k: int
-    ) -> List[Tuple[Entity, float]]:
+    async def _find_similar_entities(self, query: str, entities: List[Entity], k: int) -> List[Tuple[Entity, float]]:
         """Find entities similar to the query based on embedding similarity."""
         if not entities:
             return []
@@ -1108,8 +1075,7 @@ class GraphService:
 
         # Create entity text representations and get embeddings for all entities
         entity_texts = [
-            f"{entity.label} {entity.type} "
-            + " ".join(f"{key}: {value}" for key, value in entity.properties.items())
+            f"{entity.label} {entity.type} " + " ".join(f"{key}: {value}" for key, value in entity.properties.items())
             for entity in entities
         ]
 
@@ -1132,9 +1098,7 @@ class GraphService:
         # For now, we'll just map over the texts and get embeddings one by one
         return [await self.embedding_model.embed_for_query(text) for text in texts]
 
-    def _expand_entities(
-        self, graph: Graph, seed_entities: List[Entity], hop_depth: int
-    ) -> List[Entity]:
+    def _expand_entities(self, graph: Graph, seed_entities: List[Entity], hop_depth: int) -> List[Entity]:
         """Expand entities by traversing relationships."""
         if hop_depth <= 1:
             return seed_entities
@@ -1153,9 +1117,7 @@ class GraphService:
             # For each entity we've found so far
             for entity in all_entities:
                 # Find connected entities through relationships
-                connected_ids = self._get_connected_entity_ids(
-                    graph.relationships, entity.id, seen_entity_ids
-                )
+                connected_ids = self._get_connected_entity_ids(graph.relationships, entity.id, seen_entity_ids)
 
                 # Add new connected entities
                 for entity_id in connected_ids:
@@ -1215,7 +1177,7 @@ class GraphService:
 
         # Get unique document IDs for authorization check
         doc_ids = {doc_id for doc_id, _ in entity_chunk_sources}
-        
+
         # Check document authorization with system filters
         documents = await document_service.batch_retrieve_documents(list(doc_ids), auth, folder_name, end_user_id)
 
@@ -1235,7 +1197,9 @@ class GraphService:
 
         # Retrieve and return chunks if we have any valid sources
         return (
-            await document_service.batch_retrieve_chunks(chunk_sources, auth, folder_name=folder_name, end_user_id=end_user_id)
+            await document_service.batch_retrieve_chunks(
+                chunk_sources, auth, folder_name=folder_name, end_user_id=end_user_id
+            )
             if chunk_sources
             else []
         )
@@ -1261,9 +1225,7 @@ class GraphService:
         # Convert to list, sort by score, and return top k
         return sorted(all_chunks.values(), key=lambda x: getattr(x, "score", 0), reverse=True)[:k]
 
-    def _find_relationship_paths(
-        self, graph: Graph, seed_entities: List[Entity], hop_depth: int
-    ) -> List[List[str]]:
+    def _find_relationship_paths(self, graph: Graph, seed_entities: List[Entity], hop_depth: int) -> List[List[str]]:
         """Find meaningful paths in the graph starting from seed entities."""
         paths = []
         entity_map = {entity.id: entity for entity in graph.entities}
@@ -1295,17 +1257,13 @@ class GraphService:
                             continue
 
                         # Check for common chunks
-                        common_chunks = self._find_common_chunks(
-                            entity_map[entity_id], target_entity, relationship
-                        )
+                        common_chunks = self._find_common_chunks(entity_map[entity_id], target_entity, relationship)
 
                         # Only include relationships where entities co-occur
                         if common_chunks:
                             visited.add(target_id)
                             # Create path with relationship info
-                            rel_context = (
-                                f"({relationship.type}, {len(common_chunks)} shared chunks)"
-                            )
+                            rel_context = f"({relationship.type}, {len(common_chunks)} shared chunks)"
                             new_path = path + [rel_context, target_entity.label]
                             queue.append((target_id, new_path))
                             paths.append(new_path)
@@ -1320,26 +1278,20 @@ class GraphService:
                             continue
 
                         # Check for common chunks
-                        common_chunks = self._find_common_chunks(
-                            entity_map[entity_id], source_entity, relationship
-                        )
+                        common_chunks = self._find_common_chunks(entity_map[entity_id], source_entity, relationship)
 
                         # Only include relationships where entities co-occur
                         if common_chunks:
                             visited.add(source_id)
                             # Create path with relationship info (note reverse direction)
-                            rel_context = (
-                                f"(is {relationship.type} of, {len(common_chunks)} shared chunks)"
-                            )
+                            rel_context = f"(is {relationship.type} of, {len(common_chunks)} shared chunks)"
                             new_path = path + [rel_context, source_entity.label]
                             queue.append((source_id, new_path))
                             paths.append(new_path)
 
         return paths
 
-    def _find_common_chunks(
-        self, entity1: Entity, entity2: Entity, relationship: Relationship
-    ) -> Set[Tuple[str, int]]:
+    def _find_common_chunks(self, entity1: Entity, entity2: Entity, relationship: Relationship) -> Set[Tuple[str, int]]:
         """Find chunks that contain both entities and their relationship."""
         # Get chunk locations for each element
         entity1_chunks = set()
@@ -1369,11 +1321,7 @@ class GraphService:
         magnitude1, magnitude2 = np.linalg.norm(vec1_np), np.linalg.norm(vec2_np)
 
         # Avoid division by zero and calculate similarity
-        return (
-            0
-            if magnitude1 == 0 or magnitude2 == 0
-            else np.dot(vec1_np, vec2_np) / (magnitude1 * magnitude2)
-        )
+        return 0 if magnitude1 == 0 or magnitude2 == 0 else np.dot(vec1_np, vec2_np) / (magnitude1 * magnitude2)
 
     async def _generate_completion(
         self,
@@ -1399,9 +1347,7 @@ class GraphService:
 
         # Create augmented chunk contents
         chunk_contents = [
-            chunk.augmented_content(documents[chunk.document_id])
-            for chunk in chunks
-            if chunk.document_id in documents
+            chunk.augmented_content(documents[chunk.document_id]) for chunk in chunks if chunk.document_id in documents
         ]
 
         # Include graph context in prompt if paths are requested

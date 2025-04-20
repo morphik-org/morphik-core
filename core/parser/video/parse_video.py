@@ -1,13 +1,15 @@
-import cv2
 import base64
-import assemblyai as aai
 import logging
-import litellm
-from core.models.video import TimeSeriesData, ParseVideoResult
-import tomli
 import os
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
+import assemblyai as aai
+import cv2
+import litellm
+import tomli
+
 from core.config import get_settings
+from core.models.video import ParseVideoResult, TimeSeriesData
 
 logger = logging.getLogger(__name__)
 
@@ -29,24 +31,15 @@ class VisionModelClient:
         self.settings = get_settings()
 
         # Get the model configuration from registered_models
-        if (
-            not hasattr(self.settings, "REGISTERED_MODELS")
-            or self.model_key not in self.settings.REGISTERED_MODELS
-        ):
-            raise ValueError(
-                f"Model '{self.model_key}' not found in registered_models configuration"
-            )
+        if not hasattr(self.settings, "REGISTERED_MODELS") or self.model_key not in self.settings.REGISTERED_MODELS:
+            raise ValueError(f"Model '{self.model_key}' not found in registered_models configuration")
 
         self.model_config = self.settings.REGISTERED_MODELS[self.model_key]
-        logger.info(
-            f"Initialized VisionModelClient with model_key={self.model_key}, config={self.model_config}"
-        )
+        logger.info(f"Initialized VisionModelClient with model_key={self.model_key}, config={self.model_config}")
 
         # Check if the model has vision capability
         if not self.model_config.get("vision", False):
-            logger.warning(
-                f"Model '{self.model_key}' does not have vision capability marked in config"
-            )
+            logger.warning(f"Model '{self.model_key}' does not have vision capability marked in config")
 
     async def get_frame_description(self, image_base64: str, context: str) -> str:
         # Create a system message
@@ -96,9 +89,7 @@ class VisionModelClient:
 
 
 class VideoParser:
-    def __init__(
-        self, video_path: str, assemblyai_api_key: str, frame_sample_rate: Optional[int] = None
-    ):
+    def __init__(self, video_path: str, assemblyai_api_key: str, frame_sample_rate: Optional[int] = None):
         """
         Initialize the video parser
 
@@ -110,9 +101,7 @@ class VideoParser:
         logger.info(f"Initializing VideoParser for {video_path}")
         self.config = load_config()
         self.video_path = video_path
-        self.frame_sample_rate = frame_sample_rate or self.config["parser"]["vision"].get(
-            "frame_sample_rate", 120
-        )
+        self.frame_sample_rate = frame_sample_rate or self.config["parser"]["vision"].get("frame_sample_rate", 120)
         self.cap = cv2.VideoCapture(video_path)
 
         if not self.cap.isOpened():
@@ -167,9 +156,7 @@ class VideoParser:
         logger.info("Starting video transcription")
         transcript = self.get_transcript_object()
         # divide by 1000 because assemblyai timestamps are in milliseconds
-        time_to_text = (
-            {u.start / 1000: u.text for u in transcript.utterances} if transcript.utterances else {}
-        )
+        time_to_text = {u.start / 1000: u.text for u in transcript.utterances} if transcript.utterances else {}
         debug_object("Time to text", time_to_text)
         self.transcript = TimeSeriesData(time_to_content=time_to_text)
         return self.transcript
@@ -219,9 +206,7 @@ class VideoParser:
                 In your response, only provide the description of the current frame, using the above information as context.
                 """
 
-                last_description = await self.vision_client.get_frame_description(
-                    img_base64, context
-                )
+                last_description = await self.vision_client.get_frame_description(img_base64, context)
                 time_to_description[timestamp] = last_description
 
             frame_count += 1

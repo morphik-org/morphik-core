@@ -1,10 +1,11 @@
-from typing import Any, Dict, List, Optional, Tuple
+import io
 import logging
 import os
 import tempfile
-import io
-import filetype
 from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional, Tuple
+
+import filetype
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from unstructured.partition.auto import partition
 
@@ -73,13 +74,8 @@ class ContextualChunker(BaseChunker):
         self.settings = get_settings()
 
         # Make sure the model exists in registered_models
-        if (
-            not hasattr(self.settings, "REGISTERED_MODELS")
-            or self.model_key not in self.settings.REGISTERED_MODELS
-        ):
-            raise ValueError(
-                f"Model '{self.model_key}' not found in registered_models configuration"
-            )
+        if not hasattr(self.settings, "REGISTERED_MODELS") or self.model_key not in self.settings.REGISTERED_MODELS:
+            raise ValueError(f"Model '{self.model_key}' not found in registered_models configuration")
 
         self.model_config = self.settings.REGISTERED_MODELS[self.model_key]
         logger.info(f"Initialized ContextualChunker with model_key={self.model_key}")
