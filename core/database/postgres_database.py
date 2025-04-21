@@ -795,7 +795,8 @@ class PostgresDatabase(BaseDatabase):
                         escaped_values.append(str(item).lower())
                     elif isinstance(item, str):
                         # Use standard replace, avoid complex f-string quoting for black
-                        escaped_values.append(f"'{item.replace("'", "''")}'")
+                        escaped_value = item.replace("'", "''")
+                        escaped_values.append(f"'{escaped_value}'")
                     else:
                         escaped_values.append(f"'{item}'")
 
@@ -839,7 +840,8 @@ class PostgresDatabase(BaseDatabase):
                         escaped_values.append(str(item).lower())
                     elif isinstance(item, str):
                         # Use standard replace, avoid complex f-string quoting for black
-                        escaped_values.append(f"'{item.replace("'", "''")}'")
+                        escaped_value = item.replace("'", "''")
+                        escaped_values.append(f"'{escaped_value}'")
                     else:
                         escaped_values.append(f"'{item}'")
 
