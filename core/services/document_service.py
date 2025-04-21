@@ -636,6 +636,15 @@ class DocumentService:
         await self._store_chunks_and_doc(chunk_objects, doc, use_colpali, chunk_objects_multivector)
         logger.debug(f"Successfully stored text document {doc.external_id}")
 
+        # Update the document status to completed after successful storage
+        # This matches the behavior in ingestion_worker.py
+        doc.system_metadata["status"] = "completed"
+        doc.system_metadata["updated_at"] = datetime.now(UTC)
+        await self.db.update_document(
+            document_id=doc.external_id, updates={"system_metadata": doc.system_metadata}, auth=auth
+        )
+        logger.debug(f"Updated document status to 'completed' for {doc.external_id}")
+
         return doc
 
     # TODO: check if it's unused. if so, remove it.
