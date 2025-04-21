@@ -48,7 +48,7 @@ ollama_embedding_docker_docker = { model_name = "ollama/nomic-embed-text", api_b
 #### Component configurations ####
 
 [completion]
-model = "openai_gpt4o"  # Reference to a key in registered_models
+model = "openai_gpt4o_extraction"  # Reference to a key in registered_models
 default_max_tokens = "1000"
 default_temperature = 0.5
 
