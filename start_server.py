@@ -1,31 +1,34 @@
-import uvicorn
 import argparse
-import sys
-import tomli
-import requests
-import logging
-import subprocess
-import signal
-import os
 import atexit
+import logging
+import os
+import signal
 import socket
+import subprocess
+import sys
 import time
+
+import requests
+import tomli
+import uvicorn
 from dotenv import load_dotenv
+
 from core.config import get_settings
 from core.logging_config import setup_logging
 
 # Global variable to store the worker process
 worker_process = None
 
+
 def wait_for_redis(host="localhost", port=6379, timeout=20):
     """
     Wait for Redis to become available.
-    
+
     Args:
         host: Redis host address
         port: Redis port number
         timeout: Maximum time to wait in seconds
-        
+
     Returns:
         True if Redis becomes available within the timeout, False otherwise
     """
@@ -39,9 +42,10 @@ def wait_for_redis(host="localhost", port=6379, timeout=20):
         except (OSError, socket.error):
             logging.debug(f"Redis not available yet, retrying... ({int(time.monotonic() - t0)}s elapsed)")
             time.sleep(0.3)
-    
+
     logging.error(f"Redis not reachable after {timeout}s")
     return False
+
 
 def check_and_start_redis():
     """Check if the Redis container is running, start if necessary."""
@@ -85,31 +89,31 @@ def start_arq_worker():
     global worker_process
     try:
         logging.info("Starting ARQ worker...")
-        
+
         # Ensure logs directory exists
         log_dir = os.path.join(os.getcwd(), "logs")
         os.makedirs(log_dir, exist_ok=True)
-        
+
         # Worker log file paths
         worker_log_path = os.path.join(log_dir, "worker.log")
-        
+
         # Open log files
         worker_log = open(worker_log_path, "a")
-        
+
         # Add timestamp to log
         timestamp = subprocess.check_output(["date"]).decode().strip()
         worker_log.write(f"\n\n--- Worker started at {timestamp} ---\n\n")
         worker_log.flush()
-        
+
         # Use sys.executable to ensure the same Python environment is used
         worker_cmd = [sys.executable, "-m", "arq", "core.workers.ingestion_worker.WorkerSettings"]
-        
+
         # Start the worker with output redirected to log files
         worker_process = subprocess.Popen(
-            worker_cmd, 
+            worker_cmd,
             stdout=worker_log,
             stderr=worker_log,
-            env=dict(os.environ, PYTHONUNBUFFERED="1")  # Ensure unbuffered output
+            env=dict(os.environ, PYTHONUNBUFFERED="1"),  # Ensure unbuffered output
         )
         logging.info(f"ARQ worker started with PID: {worker_process.pid}")
         logging.info(f"Worker logs available at: {worker_log_path}")
@@ -121,20 +125,20 @@ def start_arq_worker():
 def cleanup_processes():
     """Stop the ARQ worker process on exit."""
     global worker_process
-    if worker_process and worker_process.poll() is None: # Check if process is still running
+    if worker_process and worker_process.poll() is None:  # Check if process is still running
         logging.info(f"Stopping ARQ worker (PID: {worker_process.pid})...")
-        
+
         # Log the worker termination
         try:
             log_dir = os.path.join(os.getcwd(), "logs")
             worker_log_path = os.path.join(log_dir, "worker.log")
-            
+
             with open(worker_log_path, "a") as worker_log:
                 timestamp = subprocess.check_output(["date"]).decode().strip()
                 worker_log.write(f"\n\n--- Worker stopping at {timestamp} ---\n\n")
         except Exception as e:
             logging.warning(f"Could not write worker stop message to log: {e}")
-        
+
         # Send SIGTERM first for graceful shutdown
         worker_process.terminate()
         try:
@@ -143,15 +147,15 @@ def cleanup_processes():
             logging.info("ARQ worker stopped gracefully.")
         except subprocess.TimeoutExpired:
             logging.warning("ARQ worker did not terminate gracefully, sending SIGKILL.")
-            worker_process.kill() # Force kill if it doesn't stop
+            worker_process.kill()  # Force kill if it doesn't stop
             logging.info("ARQ worker killed.")
-            
+
         # Close any open file descriptors for the process
-        if hasattr(worker_process, 'stdout') and worker_process.stdout:
+        if hasattr(worker_process, "stdout") and worker_process.stdout:
             worker_process.stdout.close()
-        if hasattr(worker_process, 'stderr') and worker_process.stderr:
+        if hasattr(worker_process, "stderr") and worker_process.stderr:
             worker_process.stderr.close()
-    
+
     # Optional: Add Redis container stop logic here if desired
     # try:
     #     logging.info("Stopping Redis container...")
@@ -204,17 +208,13 @@ def get_ollama_usage_info():
                 if "parser" in config and "vision" in config["parser"]:
                     model_key = config["parser"]["vision"].get("model")
                     if model_key in ollama_models:
-                        ollama_configs.append(
-                            {"component": component, "base_url": ollama_models[model_key]}
-                        )
+                        ollama_configs.append({"component": component, "base_url": ollama_models[model_key]})
             else:
                 # Standard component check
                 if component in config:
                     model_key = config[component].get("model")
                     if model_key in ollama_models:
-                        ollama_configs.append(
-                            {"component": component, "base_url": ollama_models[model_key]}
-                        )
+                        ollama_configs.append({"component": component, "base_url": ollama_models[model_key]})
 
         # Add contextual chunking model check
         if (
@@ -283,9 +283,7 @@ def main():
                     all_running = False
 
             if not all_running:
-                print(
-                    "\nPlease ensure Ollama is running at the configured URLs before starting the server"
-                )
+                print("\nPlease ensure Ollama is running at the configured URLs before starting the server")
                 print("Run with --skip-ollama-check to bypass this check")
                 sys.exit(1)
             else:
@@ -294,7 +292,7 @@ def main():
 
     # Load settings (this will validate all required env vars)
     settings = get_settings()
-    
+
     # Wait for Redis to be available (using environment variables or defaults)
     redis_host = os.environ.get("REDIS_HOST", "127.0.0.1")
     redis_port = int(os.environ.get("REDIS_PORT", "6379"))

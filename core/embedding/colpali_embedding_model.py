@@ -1,5 +1,6 @@
 import base64
 import io
+import logging
 from typing import List, Union
 
 import numpy as np
@@ -9,7 +10,6 @@ from PIL.Image import Image, open as open_image
 
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.models.chunk import Chunk
-import logging
 
 logger = logging.getLogger(__name__)
 

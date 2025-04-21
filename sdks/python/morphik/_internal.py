@@ -1,26 +1,25 @@
 import base64
 import io
 import json
-from io import BytesIO, IOBase
-from PIL import Image
-from PIL.Image import Image as PILImage
+from io import BytesIO
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, Tuple, BinaryIO
+from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 import jwt
+from PIL import Image
+from PIL.Image import Image as PILImage
 from pydantic import BaseModel, Field
 
+from .models import ChunkSource  # Prompt override models
 from .models import (
-    Document,
     ChunkResult,
-    DocumentResult,
     CompletionResponse,
-    IngestTextRequest,
-    ChunkSource,
+    Document,
+    DocumentResult,
     Graph,
-    # Prompt override models
     GraphPromptOverrides,
+    IngestTextRequest,
 )
 from .rules import Rule
 
@@ -199,9 +198,7 @@ class _MorphikClientLogic:
         if rules:
             if all(isinstance(r, list) for r in rules):
                 # List of lists - per-file rules
-                converted_rules = [
-                    [self._convert_rule(r) for r in rule_list] for rule_list in rules
-                ]
+                converted_rules = [[self._convert_rule(r) for r in rule_list] for rule_list in rules]
             else:
                 # Flat list - shared rules for all files
                 converted_rules = [self._convert_rule(r) for r in rules]
@@ -454,15 +451,11 @@ class _MorphikClientLogic:
         docs = [Document(**doc) for doc in response_json]
         return docs
 
-    def _parse_document_result_list_response(
-        self, response_json: List[Dict[str, Any]]
-    ) -> List[DocumentResult]:
+    def _parse_document_result_list_response(self, response_json: List[Dict[str, Any]]) -> List[DocumentResult]:
         """Parse document result list response"""
         return [DocumentResult(**r) for r in response_json]
 
-    def _parse_chunk_result_list_response(
-        self, response_json: List[Dict[str, Any]]
-    ) -> List[FinalChunkResult]:
+    def _parse_chunk_result_list_response(self, response_json: List[Dict[str, Any]]) -> List[FinalChunkResult]:
         """Parse chunk result list response"""
         chunks = [ChunkResult(**r) for r in response_json]
 

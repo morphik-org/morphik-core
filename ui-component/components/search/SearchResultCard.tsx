@@ -18,9 +18,9 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
     if (contentType.startsWith('image/')) {
       return (
         <div className="flex justify-center p-4 bg-muted rounded-md">
-          <Image 
-            src={content} 
-            alt="Document content" 
+          <Image
+            src={content}
+            alt="Document content"
             className="max-w-full max-h-96 object-contain"
             width={500}
             height={300}
@@ -30,9 +30,9 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
     } else if (content.startsWith('data:image/png;base64,') || content.startsWith('data:image/jpeg;base64,')) {
       return (
         <div className="flex justify-center p-4 bg-muted rounded-md">
-          <Image 
-            src={content} 
-            alt="Base64 image content" 
+          <Image
+            src={content}
+            alt="Base64 image content"
             className="max-w-full max-h-96 object-contain"
             width={500}
             height={300}
@@ -67,7 +67,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
       </CardHeader>
       <CardContent>
         {renderContent(result.content, result.content_type)}
-        
+
         <Accordion type="single" collapsible className="mt-4">
           <AccordionItem value="metadata">
             <AccordionTrigger className="text-sm">Metadata</AccordionTrigger>

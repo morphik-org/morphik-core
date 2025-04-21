@@ -1,10 +1,11 @@
 import logging
-from typing import List, Dict, Any, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
 from pydantic import BaseModel, ConfigDict
 
-from core.models.prompts import EntityResolutionPromptOverride
 from core.config import get_settings
 from core.models.graph import Entity
+from core.models.prompts import EntityResolutionPromptOverride
 
 logger = logging.getLogger(__name__)
 
@@ -161,9 +162,7 @@ class EntityResolver:
         # Get the model configuration from registered_models
         model_config = self.settings.REGISTERED_MODELS.get(self.settings.GRAPH_MODEL, {})
         if not model_config:
-            logger.error(
-                f"Model '{self.settings.GRAPH_MODEL}' not found in registered_models configuration"
-            )
+            logger.error(f"Model '{self.settings.GRAPH_MODEL}' not found in registered_models configuration")
             return [{"canonical": label, "variants": [label]} for label in entity_labels]
 
         system_message = {
@@ -197,9 +196,7 @@ class EntityResolver:
             # Fallback: treat each entity as unique
             return [{"canonical": label, "variants": [label]} for label in entity_labels]
 
-    def _create_entity_resolution_prompt(
-        self, entity_labels: List[str], prompt_template=None, examples=None
-    ) -> str:
+    def _create_entity_resolution_prompt(self, entity_labels: List[str], prompt_template=None, examples=None) -> str:
         """
         Creates a prompt for the LLM to resolve entities.
 
@@ -241,9 +238,7 @@ class EntityResolver:
         # If a custom template is provided, use it
         if prompt_template:
             # Format the custom template with our variables
-            return prompt_template.format(
-                entities_str=entities_str, examples_json=str(entities_example_dict)
-            )
+            return prompt_template.format(entities_str=entities_str, examples_json=str(entities_example_dict))
 
         # Otherwise use the default prompt
         prompt = f"""
@@ -251,31 +246,24 @@ Below is a list of entities extracted from a document:
 
 {entities_str}
 
-Some of these entities may refer to the same real-world entity but with different names or spellings.
-For example, "JFK" and "John F. Kennedy" refer to the same person.
+Your task is to identify entities in this list that refer to the EXACT SAME real-world concept or object, differing ONLY by name, abbreviation, or minor spelling variations. Group these synonymous entities together.
 
-Please analyze this list and group entities that refer to the same real-world entity.
-For each group, provide:
-1. A canonical (standard) form of the entity
-2. All variant forms found in the list
+**CRITICAL RULES:**
+1.  **Synonymy ONLY:** Only group entities if they are truly synonymous (e.g., "JFK", "John F. Kennedy", "Kennedy").
+2.  **DO NOT Group Related Concepts:** DO NOT group distinct entities even if they are related. For example:
+    * A company and its products (e.g., "Apple" and "iPhone" must remain separate).
+    * An organization and its specific projects or vehicles (e.g., "SpaceX", "Falcon 9", and "Starship" must remain separate).
+    * A person and their title (e.g. "Elon Musk" and "CEO" must remain separate unless the list only contained variations like "CEO Musk").
+3.  **Canonical Form:** For each group of synonyms, choose the most complete and formal name as the "canonical" form.
+4.  **Omit Unique Entities:** If an entity has no synonyms in the provided list, DO NOT include it in the output JSON. The output should only contain groups of two or more synonymous entities.
 
-Format your response as a JSON object with an "entity_groups" array, where each item in the array is an object with:
-- "canonical": The canonical form (choose the most complete and formal name)
-- "variants": Array of all variants (including the canonical form)
+**Output Format:**
+Format your response as a JSON object containing a single key "entity_groups", which is an array. Each element in the array represents a group of synonyms and must have:
+- "canonical": The chosen standard form.
+- "variants": An array of all synonymous variants found in the input list (including the canonical form).
 
-The exact format of the JSON structure should be:
 ```json
 {str(entities_example_dict)}
 ```
-
-Only include entities in your response that have multiple variants or are grouped with other entities.
-If an entity has no variants and doesn't belong to any group, don't include it in your response.
-
-Focus on identifying:
-- Different names for the same person (e.g., full names vs. nicknames)
-- Different forms of the same organization
-- The same concept expressed differently
-- Abbreviations and their full forms
-- Spelling variations and typos
 """
         return prompt

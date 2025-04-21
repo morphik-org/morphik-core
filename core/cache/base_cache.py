@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from core.models.completion import CompletionResponse
 from core.models.documents import Document
 
@@ -11,9 +12,7 @@ class BaseCache(ABC):
     document ingestion and cache-augmented querying.
     """
 
-    def __init__(
-        self, name: str, model: str, gguf_file: str, filters: Dict[str, Any], docs: List[Document]
-    ):
+    def __init__(self, name: str, model: str, gguf_file: str, filters: Dict[str, Any], docs: List[Document]):
         """Initialize the cache with the given parameters.
 
         Args:

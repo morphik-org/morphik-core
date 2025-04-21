@@ -1,6 +1,7 @@
 import base64
 from pathlib import Path
-from typing import Tuple, Optional, BinaryIO
+from typing import BinaryIO, Optional, Tuple
+
 from .base_storage import BaseStorage
 
 

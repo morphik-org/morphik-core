@@ -10,7 +10,7 @@ export default defineConfig({
   tsconfig: './tsconfig.lib.json',
   external: [
     'react',
-    'react-dom', 
+    'react-dom',
     'next',
     'next/image',
     'next/link',

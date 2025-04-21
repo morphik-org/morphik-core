@@ -15,6 +15,7 @@ dev_permissions = ["read", "write", "admin"]  # Default dev permissions
 # OpenAI models
 openai_gpt4o = { model_name = "gpt-4o", vision = true }
 openai_gpt4 = { model_name = "gpt-4" }
+openai_gpt4o_extraction = { model_name = "gpt-4o" }
 
 # Azure OpenAI models
 azure_gpt4 = { model_name = "gpt-4", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "gpt-4-deployment" }

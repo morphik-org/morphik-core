@@ -17,9 +17,7 @@ def setup_test_logging():
     root_logger.setLevel(logging.INFO)
 
     # Create formatter
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s:%(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-    )
+    formatter = logging.Formatter("%(asctime)s - %(name)s:%(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
     # Console handler
     console_handler = logging.StreamHandler()

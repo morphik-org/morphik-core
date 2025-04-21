@@ -15,7 +15,7 @@ const DEFAULT_NOTEBOOKS = [
   },
   {
     id: "nb_default_2",
-    name: "Project Documentation", 
+    name: "Project Documentation",
     description: "Technical specifications and project documents",
     created_at: "2023-01-20T14:30:00Z"
   }
@@ -64,13 +64,13 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const data = await request.json();
-    
+
     if (!data.notebooks || !Array.isArray(data.notebooks)) {
       return NextResponse.json({ error: 'Invalid notebook data' }, { status: 400 });
     }
-    
+
     const success = writeNotebooks(data.notebooks);
-    
+
     if (success) {
       return NextResponse.json({ success: true });
     } else {

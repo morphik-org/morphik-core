@@ -28,7 +28,7 @@ const DEFAULT_NOTEBOOKS: Notebook[] = [
 
 /**
  * Load notebooks from the API
- * 
+ *
  * Using cache:no-store to prevent React's automatic caching from causing issues
  */
 export async function loadNotebooksFromAPI(): Promise<Notebook[]> {
@@ -40,12 +40,12 @@ export async function loadNotebooksFromAPI(): Promise<Notebook[]> {
         'cache-control': 'no-cache'
       }
     });
-    
+
     if (!response.ok) {
       console.error('Failed to load notebooks from API:', response.statusText);
       return DEFAULT_NOTEBOOKS;
     }
-    
+
     const data = await response.json();
     return data.notebooks || DEFAULT_NOTEBOOKS;
   } catch (error) {
@@ -66,12 +66,12 @@ export async function saveNotebooksToAPI(notebooks: Notebook[]): Promise<boolean
       },
       body: JSON.stringify({ notebooks }),
     });
-    
+
     if (!response.ok) {
       console.error('Failed to save notebooks to API:', response.statusText);
       return false;
     }
-    
+
     return true;
   } catch (error) {
     console.error('Error saving notebooks to API:', error);

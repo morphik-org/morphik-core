@@ -1,8 +1,6 @@
 import argparse
 import logging
 import os
-import platform
-import subprocess
 from pathlib import Path
 
 import boto3
@@ -85,9 +83,7 @@ def create_s3_bucket(bucket_name, region=DEFAULT_REGION):
     if region == "us-east-1":
         s3_client.create_bucket(Bucket=bucket_name)
     else:
-        s3_client.create_bucket(
-            Bucket=bucket_name, CreateBucketConfiguration={"LocationConstraint": region}
-        )
+        s3_client.create_bucket(Bucket=bucket_name, CreateBucketConfiguration={"LocationConstraint": region})
 
     LOGGER.debug(f"Bucket {bucket_name} created successfully in {region} region.")
 
@@ -115,7 +111,7 @@ def setup():
     if DATABASE_PROVIDER != "postgres":
         LOGGER.error(f"Unsupported database provider: {DATABASE_PROVIDER}")
         raise ValueError(f"Unsupported database provider: {DATABASE_PROVIDER}")
-        
+
     LOGGER.info("Postgres is setup on database initialization - nothing to do here!")
 
     LOGGER.info("Setup completed successfully. Feel free to start the server now!")

@@ -59,7 +59,7 @@ from morphik.async_ import AsyncMorphik
 async def main():
     # Initialize async client - connects to localhost:8000 by default
     async with AsyncMorphik() as db:
-    
+
     # Or with authentication URI (for production)
     # async with AsyncMorphik("morphik://owner_id:token@api.morphik.ai") as db:
         # Ingest a text document
@@ -67,12 +67,12 @@ async def main():
             content="Your document content",
             metadata={"title": "Example Document"}
         )
-        
+
         # Query with RAG
         response = await db.query(
             query="Summarize the key points in the document",
         )
-        
+
         print(response.completion)
 
 # Run the async function

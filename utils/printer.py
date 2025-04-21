@@ -71,9 +71,7 @@ def get_target_directories(mode: str, root_dir: str) -> Set[str]:
     return {os.path.join(root_dir, d) for d in mode_dirs.get(mode, [])}
 
 
-def aggregate_python_files(
-    root_dir: str, output_file: str, script_name: str, mode: str = "all"
-) -> None:
+def aggregate_python_files(root_dir: str, output_file: str, script_name: str, mode: str = "all") -> None:
     """
     Recursively search through directories and aggregate Python files.
 
@@ -121,10 +119,7 @@ Root Directory: {root_dir}
                 python_files = [
                     f
                     for f in filenames
-                    if f.endswith(".py")
-                    and f != "__init__.py"
-                    and f != script_name
-                    and f != output_file
+                    if f.endswith(".py") and f != "__init__.py" and f != script_name and f != output_file
                 ]
 
                 for py_file in python_files:
@@ -151,10 +146,7 @@ Root Directory: {root_dir}
                 python_files = [
                     f
                     for f in filenames
-                    if f.endswith(".py")
-                    and f != "__init__.py"
-                    and f != script_name
-                    and f != output_file
+                    if f.endswith(".py") and f != "__init__.py" and f != script_name and f != output_file
                 ]
 
                 for py_file in python_files:

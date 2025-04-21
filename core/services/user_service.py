@@ -1,12 +1,12 @@
 import logging
-from typing import Dict, Any, Optional
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime, timedelta
+from typing import Any, Dict, Optional
+
 import jwt
 
-from ..models.tiers import AccountTier, get_tier_limits
-from ..models.auth import AuthContext
 from ..config import get_settings
 from ..database.user_limits_db import UserLimitsDatabase
+from ..models.tiers import AccountTier, get_tier_limits
 
 logger = logging.getLogger(__name__)
 
@@ -31,21 +31,19 @@ class UserService:
         """Create a new user with FREE tier."""
         return await self.db.create_user_limits(user_id, tier=AccountTier.FREE)
 
-    async def update_user_tier(
-        self, user_id: str, tier: str, custom_limits: Optional[Dict[str, Any]] = None
-    ) -> bool:
+    async def update_user_tier(self, user_id: str, tier: str, custom_limits: Optional[Dict[str, Any]] = None) -> bool:
         """Update user tier and custom limits."""
         return await self.db.update_user_tier(user_id, tier, custom_limits)
 
     async def register_app(self, user_id: str, app_id: str) -> bool:
         """
         Register an app for a user.
-        
+
         Creates user limits record if it doesn't exist.
         """
         # First check if user limits exist
         user_limits = await self.db.get_user_limits(user_id)
-        
+
         # If user limits don't exist, create them first
         if not user_limits:
             logger.info(f"Creating user limits for user {user_id}")
@@ -53,7 +51,7 @@ class UserService:
             if not success:
                 logger.error(f"Failed to create user limits for user {user_id}")
                 return False
-        
+
         # Now register the app
         return await self.db.register_app(user_id, app_id)
 
@@ -91,15 +89,15 @@ class UserService:
 
         # Get tier information
         tier = user_data.get("tier", AccountTier.FREE)
-        
+
         # Only apply limits to free tier users
         # For non-free tiers, automatically return True (no limits)
         if tier != AccountTier.FREE:
             return True
-            
+
         # For free tier, check against limits
         tier_limits = get_tier_limits(tier, user_data.get("custom_limits"))
-        
+
         # Get current usage
         usage = user_data.get("usage", {})
 
@@ -164,7 +162,7 @@ class UserService:
         # Skip usage recording for self-hosted mode
         if self.settings.MODE == "self_hosted":
             return True
-        
+
         # Check if user limits exist, create if they don't
         user_data = await self.db.get_user_limits(user_id)
         if not user_data:
@@ -178,55 +176,49 @@ class UserService:
             if not user_data:
                 logger.error(f"Failed to retrieve newly created user limits for user {user_id}")
                 return False
-        
+
         # Get user tier and Stripe customer ID
         tier = user_data.get("tier", AccountTier.FREE)
         stripe_customer_id = user_data.get("stripe_customer_id")
-        
+
         # For non-free tier users in cloud mode, send metering data to Stripe for ingest operations
-        if (tier != AccountTier.FREE and 
-            self.settings.MODE == "cloud" and 
-            usage_type == "ingest" and 
-            stripe_customer_id):
+        if tier != AccountTier.FREE and self.settings.MODE == "cloud" and usage_type == "ingest" and stripe_customer_id:
             try:
                 # Only import stripe if we're in cloud mode and need it
                 import os
+
                 import stripe
                 from dotenv import load_dotenv
+
                 load_dotenv(override=True)
-                
+
                 # Get Stripe API key from environment variable
                 stripe_api_key = os.environ.get("STRIPE_API_KEY")
                 if not stripe_api_key:
                     logger.warning("STRIPE_API_KEY not found in environment variables")
                 else:
                     stripe.api_key = stripe_api_key
-                    
+
                     # For ingest operations, convert to pages if needed
                     # For PDFs and documents, increment is already in pages
                     # For other data types, convert using 1 page per 630 tokens
                     num_pages = increment
-                    
+
                     # Send metering event to Stripe
                     stripe.billing.MeterEvent.create(
                         event_name="pages-ingested",
-                        payload={
-                            "value": str(num_pages), 
-                            "stripe_customer_id": stripe_customer_id
-                        },
-                        identifier=document_id or f"doc_{user_id}_{int(datetime.now(UTC).timestamp())}"
+                        payload={"value": str(num_pages), "stripe_customer_id": stripe_customer_id},
+                        identifier=document_id or f"doc_{user_id}_{int(datetime.now(UTC).timestamp())}",
                     )
                     logger.info(f"Sent Stripe metering event for user {user_id}: {num_pages} pages ingested")
             except Exception as e:
                 # Log error but continue with normal usage recording
                 logger.error(f"Failed to send Stripe metering event: {e}")
-        
+
         # Record usage in database
         return await self.db.update_usage(user_id, usage_type, increment)
 
-    async def generate_cloud_uri(
-        self, user_id: str, app_id: str, name: str, expiry_days: int = 30
-    ) -> Optional[str]:
+    async def generate_cloud_uri(self, user_id: str, app_id: str, name: str, expiry_days: int = 30) -> Optional[str]:
         """
         Generate a cloud URI for an app.
 
@@ -241,7 +233,7 @@ class UserService:
         """
         # Get user limits to check app limit
         user_limits = await self.db.get_user_limits(user_id)
-        
+
         # If user doesn't exist yet, create them
         if not user_limits:
             await self.create_user(user_id)
@@ -249,11 +241,11 @@ class UserService:
             if not user_limits:
                 logger.error(f"Failed to create user limits for user {user_id}")
                 return None
-        
+
         # Get tier information
         tier = user_limits.get("tier", AccountTier.FREE)
         current_apps = user_limits.get("app_ids", [])
-        
+
         # Skip the limit check if app is already registered
         if app_id not in current_apps:
             # Only apply app limits to free tier users
@@ -261,12 +253,12 @@ class UserService:
                 # Get tier limits to enforce app limit for free tier
                 tier_limits = get_tier_limits(tier, user_limits.get("custom_limits"))
                 app_limit = tier_limits.get("app_limit", 1)  # Default to 1 if not specified
-                
+
                 # Check if user has reached app limit
                 if len(current_apps) >= app_limit:
                     logger.info(f"User {user_id} has reached app limit ({app_limit}) for free tier")
                     return None
-        
+
         # Register the app
         success = await self.register_app(user_id, app_id)
         if not success:
@@ -285,9 +277,7 @@ class UserService:
         }
 
         # Generate token
-        token = jwt.encode(
-            payload, self.settings.JWT_SECRET_KEY, algorithm=self.settings.JWT_ALGORITHM
-        )
+        token = jwt.encode(payload, self.settings.JWT_SECRET_KEY, algorithm=self.settings.JWT_ALGORITHM)
 
         # Generate URI with API domain
         api_domain = getattr(self.settings, "API_DOMAIN", "api.morphik.ai")
