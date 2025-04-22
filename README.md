@@ -68,8 +68,11 @@ morphik.query("What's the height of screw 14-A in the chair assembly instruction
 
 ### Morphik Console
 
-You can also interact with the 
+You can also interact with Morphik via the Morphik Console. This is a web-based interface that allows you to ingest, search, and query your data. You can upload files, connect to different data sources, and chat with your data all within the same place.
 
+### Model Context Protocol
+
+Finally, you can also access Morphik via MCP. Instructions are available [here](https://docs.morphik.ai/using-morphik/mcp).
 
 
 ## Contributing
