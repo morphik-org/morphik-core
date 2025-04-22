@@ -33,7 +33,9 @@ offload/*
 test.pdf
 
 experiments/*
-ui-component/package-lock.json
+ee/ui-component/package-lock.json/*
+ee/ui-component/node-modules/*
+ee/ui-component/.next
 
 
 ui-component/notebook-storage/notebooks.json

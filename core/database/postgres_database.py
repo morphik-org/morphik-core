@@ -49,7 +49,7 @@ class GraphModel(Base):
     __tablename__ = "graphs"
 
     id = Column(String, primary_key=True)
-    name = Column(String, unique=True, index=True)
+    name = Column(String, index=True)  # Not unique globally anymore
     entities = Column(JSONB, default=list)
     relationships = Column(JSONB, default=list)
     graph_metadata = Column(JSONB, default=dict)  # Renamed from 'metadata' to avoid conflict
@@ -67,6 +67,8 @@ class GraphModel(Base):
         Index("idx_graph_owner", "owner", postgresql_using="gin"),
         Index("idx_graph_access_control", "access_control", postgresql_using="gin"),
         Index("idx_graph_system_metadata", "system_metadata", postgresql_using="gin"),
+        # Create a unique constraint on name scoped by owner ID
+        Index("idx_graph_owner_name", "name", text("(owner->>'id')"), unique=True),
     )
 
 

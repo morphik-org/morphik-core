@@ -528,7 +528,6 @@ class TelemetryService:
                         export_timeout_millis=OTLP_TIMEOUT * 1000,
                     )
                 )
-                print(f"Successfully configured Honeycomb metrics exporter to {OTLP_METRICS_ENDPOINT}")
             except Exception as e:
                 print(f"Failed to configure Honeycomb metrics exporter: {str(e)}")
 

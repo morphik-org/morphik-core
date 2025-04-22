@@ -79,7 +79,8 @@ class GraphService:
             additional_filters: Optional additional metadata filters to determine which new documents to include
             additional_documents: Optional list of specific additional document IDs to include
             prompt_overrides: Optional GraphPromptOverrides with customizations for prompts
-            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id) to determine which documents to include
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id)
+            to determine which documents to include
 
         Returns:
             Graph: The updated graph
@@ -91,8 +92,8 @@ class GraphService:
         if "write" not in auth.permissions:
             raise PermissionError("User does not have write permission")
 
-        # Get the existing graph
-        existing_graph = await self.db.get_graph(name, auth)
+        # Get the existing graph with system filters for proper user_id scoping
+        existing_graph = await self.db.get_graph(name, auth, system_filters=system_filters)
         if not existing_graph:
             raise ValueError(f"Graph '{name}' not found")
 
@@ -403,7 +404,8 @@ class GraphService:
             filters: Optional metadata filters to determine which documents to include
             documents: Optional list of specific document IDs to include
             prompt_overrides: Optional GraphPromptOverrides with customizations for prompts
-            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id) to determine which documents to include
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id)
+            to determine which documents to include
 
         Returns:
             Graph: The created graph
@@ -444,16 +446,26 @@ class GraphService:
         # Validation is now handled by type annotations
 
         # Create a new graph with authorization info
+        access_control = {
+            "readers": [auth.entity_id],
+            "writers": [auth.entity_id],
+            "admins": [auth.entity_id],
+        }
+
+        # Add user_id to access_control if present (for proper user_id scoping)
+        if auth.user_id:
+            # User ID must be provided as a list to match the Graph model's type constraints
+            access_control["user_id"] = [auth.user_id]
+
+        # Ensure entity_type is a string value for storage
+        entity_type = auth.entity_type.value if hasattr(auth.entity_type, "value") else auth.entity_type
+
         graph = Graph(
             name=name,
             document_ids=[doc.external_id for doc in document_objects],
             filters=filters,
-            owner={"type": auth.entity_type, "id": auth.entity_id},
-            access_control={
-                "readers": [auth.entity_id],
-                "writers": [auth.entity_id],
-                "admins": [auth.entity_id],
-            },
+            owner={"type": entity_type, "id": auth.entity_id},
+            access_control=access_control,
         )
 
         # Add folder_name and end_user_id to system_metadata if provided
@@ -727,17 +739,26 @@ class GraphService:
                 serialized_examples = custom_examples
 
             examples_json = {"entities": serialized_examples}
-            examples_str = f"\nHere are some examples of the kind of entities to extract:\n```json\n{json.dumps(examples_json, indent=2)}\n```\n"
+            examples_str = (
+                f"\nHere are some examples of the kind of entities to extract:\n```json\n"
+                f"{json.dumps(examples_json, indent=2)}\n```\n"
+            )
 
         # Modify the system message to handle properties as a string that will be parsed later
         system_message = {
             "role": "system",
             "content": (
-                "You are an entity extraction and relationship extraction assistant. Extract entities and their relationships from text precisely and thoroughly, extract as many entities and relationships as possible. "
-                "For entities, include entity label and type (some examples: PERSON, ORGANIZATION, LOCATION, CONCEPT, etc.). If the user has given examples, use those, these are just suggestions"
-                "For relationships, use a simple format with source, target, and relationship fields. Be very through, there are many relationships that are not obvious"
-                "IMPORTANT: The source and target fields must be simple strings representing entity labels. For example: "
-                "if you extract entities 'Entity A' and 'Entity B', a relationship would have source: 'Entity A', target: 'Entity B', relationship: 'relates to'. "
+                "You are an entity extraction and relationship extraction assistant. Extract entities and "
+                "their relationships from text precisely and thoroughly, extract as many entities and "
+                "relationships as possible. "
+                "For entities, include entity label and type (some examples: PERSON, ORGANIZATION, LOCATION, "
+                "CONCEPT, etc.). If the user has given examples, use those, these are just suggestions"
+                "For relationships, use a simple format with source, target, and relationship fields. "
+                "Be very through, there are many relationships that are not obvious"
+                "IMPORTANT: The source and target fields must be simple strings representing "
+                "entity labels. For example: "
+                "if you extract entities 'Entity A' and 'Entity B', a relationship would have source: 'Entity A', "
+                "target: 'Entity B', relationship: 'relates to'. "
                 "Respond directly in json format, without any additional text or explanations. "
             ),
         }
@@ -757,7 +778,8 @@ class GraphService:
                     "For relationships, specify the source entity, target entity, and the relationship between them. "
                     "The source and target must be simple strings matching the entity labels, not objects. "
                     f"{examples_str}"
-                    'Sample relationship format: {"source": "Entity A", "target": "Entity B", "relationship": "works for"}\n\n'
+                    'Sample relationship format: {"source": "Entity A", "target": "Entity B", '
+                    '"relationship": "works for"}\n\n'
                     "Return your response as valid JSON:\n\n" + content_limited
                 ),
             }
@@ -819,7 +841,8 @@ class GraphService:
         # Process extraction results
         entities, relationships = self._process_extraction_results(extraction_result, doc_id, chunk_number)
         logger.info(
-            f"Extracted {len(entities)} entities and {len(relationships)} relationships from document {doc_id}, chunk {chunk_number}"
+            f"Extracted {len(entities)} entities and {len(relationships)} relationships from document "
+            f"{doc_id}, chunk {chunk_number}"
         )
         return entities, relationships
 
