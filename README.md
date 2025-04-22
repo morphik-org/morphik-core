@@ -90,3 +90,6 @@ Certain features - such as Morphik Console - are not available in the open-sourc
 ## Contributors
 
 Visit our special thanks page dedicated to our contributors [here](https://docs.morphik.ai/special-thanks).
+
+## PS
+We took inspiration from [PostHog](https://posthog.com) while writing this README. If you're from PostHog, thank you ❤️
