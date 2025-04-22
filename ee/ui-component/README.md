@@ -107,7 +107,3 @@ npm start
 ## Contributing
 
 We welcome contributions! Please feel free to submit a Pull Request.
-
-## License
-
-This project is part of Morphik and is licensed under the MIT License.
