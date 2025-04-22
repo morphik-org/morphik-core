@@ -74,7 +74,7 @@ $$ LANGUAGE SQL;
 -- Create graphs table for knowledge graph functionality
 CREATE TABLE IF NOT EXISTS graphs (
     id VARCHAR PRIMARY KEY,
-    name VARCHAR UNIQUE,
+    name VARCHAR NOT NULL,
     entities JSONB DEFAULT '[]',
     relationships JSONB DEFAULT '[]',
     graph_metadata JSONB DEFAULT '{}',
@@ -86,5 +86,9 @@ CREATE TABLE IF NOT EXISTS graphs (
     access_control JSONB DEFAULT '{"readers": [], "writers": [], "admins": []}'
 );
 
--- Create index for graph name for faster lookups
+-- Create index for graph name and owner for faster lookups
 CREATE INDEX IF NOT EXISTS idx_graph_name ON graphs(name);
+CREATE INDEX IF NOT EXISTS idx_graph_owner ON graphs USING gin(owner);
+
+-- Create unique constraint on name scoped by owner
+CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_owner_name ON graphs((owner->>'id'), name);

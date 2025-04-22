@@ -4,7 +4,6 @@ import logging
 import os
 import urllib.parse as up
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from arq.connections import RedisSettings
@@ -59,7 +58,8 @@ async def get_document_with_retry(document_service, document_id, auth, max_retri
             attempt += 1
             if attempt < max_retries:
                 logger.warning(
-                    f"Document {document_id} not found on attempt {attempt}/{max_retries}. Retrying in {retry_delay}s..."
+                    f"Document {document_id} not found on attempt {attempt}/{max_retries}. "
+                    f"Retrying in {retry_delay}s..."
                 )
                 await asyncio.sleep(retry_delay)
                 retry_delay *= 1.5
@@ -69,7 +69,8 @@ async def get_document_with_retry(document_service, document_id, auth, max_retri
             error_msg = str(e)
             if attempt < max_retries:
                 logger.warning(
-                    f"Error retrieving document on attempt {attempt}/{max_retries}: {error_msg}. Retrying in {retry_delay}s..."
+                    f"Error retrieving document on attempt {attempt}/{max_retries}: {error_msg}. "
+                    f"Retrying in {retry_delay}s..."
                 )
                 await asyncio.sleep(retry_delay)
                 retry_delay *= 1.5
@@ -392,12 +393,7 @@ async def startup(ctx):
             logger.error("ColPali vector store initialization failed")
     ctx["colpali_embedding_model"] = colpali_embedding_model
     ctx["colpali_vector_store"] = colpali_vector_store
-
-    # Initialize cache factory for DocumentService (may not be used for ingestion)
-    from core.cache.llama_cache_factory import LlamaCacheFactory
-
-    cache_factory = LlamaCacheFactory(Path(settings.STORAGE_PATH))
-    ctx["cache_factory"] = cache_factory
+    ctx["cache_factory"] = None
 
     # Initialize rules processor
     rules_processor = RulesProcessor()
@@ -414,7 +410,7 @@ async def startup(ctx):
         vector_store=vector_store,
         embedding_model=embedding_model,
         parser=parser,
-        cache_factory=cache_factory,
+        cache_factory=None,
         enable_colpali=settings.ENABLE_COLPALI,
         colpali_embedding_model=colpali_embedding_model,
         colpali_vector_store=colpali_vector_store,
@@ -463,8 +459,8 @@ def redis_settings_from_env() -> RedisSettings:
     # Use ARQ's supported parameters with optimized values for stability
     # For high-volume ingestion (100+ documents), these settings help prevent timeouts
     return RedisSettings(
-        host=url.hostname or os.getenv("REDIS_HOST", "127.0.0.1"),
-        port=url.port or int(os.getenv("REDIS_PORT", "6379")),
+        host=get_settings().REDIS_HOST,
+        port=get_settings().REDIS_PORT,
         database=int(url.path.lstrip("/") or 0),
         conn_timeout=5,  # Increased connection timeout (seconds)
         conn_retries=15,  # More retries for transient connection issues
