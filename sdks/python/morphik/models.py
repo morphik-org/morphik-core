@@ -220,10 +220,13 @@ class ChunkSource(BaseModel):
 class CompletionResponse(BaseModel):
     """Completion response model"""
 
-    completion: str
+    completion: Optional[Union[str, Dict[str, Any], None]] = Field(
+        None, description="Generated text completion or structured output"
+    )
     usage: Dict[str, int]
     sources: List[ChunkSource] = Field(default_factory=list, description="Sources of chunks used in the completion")
     metadata: Optional[Dict[str, Any]] = None
+    finish_reason: Optional[str] = Field(None, description="Reason the generation finished (e.g., 'stop', 'length')")
 
 
 class IngestTextRequest(BaseModel):
@@ -402,11 +405,13 @@ class GraphPromptOverrides(BaseModel):
 
     entity_extraction: Optional[EntityExtractionPromptOverride] = Field(
         None,
-        description="Overrides for entity extraction prompts - controls how entities are identified in text during graph operations",
+        description="Overrides for entity extraction prompts - controls how entities are identified in text "
+        "during graph operations",
     )
     entity_resolution: Optional[EntityResolutionPromptOverride] = Field(
         None,
-        description="Overrides for entity resolution prompts - controls how variant forms are grouped during graph operations",
+        description="Overrides for entity resolution prompts - controls how variant forms are grouped "
+        "during graph operations",
     )
 
     @model_validator(mode="after")
@@ -432,7 +437,8 @@ class QueryPromptOverrides(BaseModel):
 
     entity_extraction: Optional[EntityExtractionPromptOverride] = Field(
         None,
-        description="Overrides for entity extraction prompts - controls how entities are identified in text during queries",
+        description="Overrides for entity extraction prompts - controls how entities are identified in text "
+        "during queries",
     )
     entity_resolution: Optional[EntityResolutionPromptOverride] = Field(
         None,

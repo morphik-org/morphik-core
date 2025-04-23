@@ -877,10 +877,11 @@ async def query_completion(request: CompletionQueryRequest, auth: AuthContext = 
             - prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
             - folder_name: Optional folder to scope the operation to
             - end_user_id: Optional end-user ID to scope the operation to
+            - schema: Optional schema for structured output
         auth: Authentication context
 
     Returns:
-        CompletionResponse: Generated completion
+        CompletionResponse: Generated text completion or structured output
     """
     try:
         # Validate prompt overrides before proceeding
@@ -908,6 +909,7 @@ async def query_completion(request: CompletionQueryRequest, auth: AuthContext = 
             request.prompt_overrides,
             request.folder_name,
             request.end_user_id,
+            request.schema,
         )
     except ValueError as e:
         validate_prompt_overrides_with_http_exception(operation_type="query", error=e)
@@ -1956,21 +1958,24 @@ async def set_folder_rule(
 
                                         extracted_metadata, _ = await rule.apply(doc_content)
                                         logger.info(
-                                            f"Successfully extracted metadata on attempt {retry_count + 1}: {extracted_metadata}"
+                                            f"Successfully extracted metadata on attempt {retry_count + 1}: "
+                                            f"{extracted_metadata}"
                                         )
                                         break  # Success, exit retry loop
 
                                     except Exception as rule_apply_error:
                                         last_error = rule_apply_error
                                         logger.warning(
-                                            f"Metadata extraction attempt {retry_count + 1} failed: {rule_apply_error}"
+                                            f"Metadata extraction attempt {retry_count + 1} failed: "
+                                            f"{rule_apply_error}"
                                         )
                                         if retry_count == max_retries - 1:  # Last attempt
                                             logger.error(f"All {max_retries} metadata extraction attempts failed")
                                             processing_results["errors"].append(
                                                 {
                                                     "document_id": doc.external_id,
-                                                    "error": f"Failed to extract metadata after {max_retries} attempts: {str(last_error)}",
+                                                    "error": f"Failed to extract metadata after {max_retries} "
+                                                    f"attempts: {str(last_error)}",
                                                 }
                                             )
                                             continue  # Skip to next document

@@ -3,7 +3,7 @@ import io
 import json
 from io import BytesIO
 from pathlib import Path
-from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union
+from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Type, Union
 from urllib.parse import urlparse
 
 import jwt
@@ -11,9 +11,9 @@ from PIL import Image
 from PIL.Image import Image as PILImage
 from pydantic import BaseModel, Field
 
-from .models import ChunkSource  # Prompt override models
 from .models import (
     ChunkResult,
+    ChunkSource,  # Prompt override models
     CompletionResponse,
     Document,
     DocumentResult,
@@ -234,6 +234,7 @@ class _MorphikClientLogic:
         prompt_overrides: Optional[Dict],
         folder_name: Optional[str],
         end_user_id: Optional[str],
+        schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Prepare request for query endpoint"""
         payload = {
@@ -253,6 +254,20 @@ class _MorphikClientLogic:
             payload["folder_name"] = folder_name
         if end_user_id:
             payload["end_user_id"] = end_user_id
+
+        # Add schema to payload if provided
+        if schema:
+            # If schema is a Pydantic model class, serialize it to a JSON schema dict
+            if isinstance(schema, type) and issubclass(schema, BaseModel):
+                payload["schema"] = schema.model_json_schema()
+            elif isinstance(schema, dict):
+                # Basic check if it looks like a JSON schema (has 'properties' or 'type')
+                if "properties" not in schema and "type" not in schema:
+                    raise ValueError("Provided schema dictionary does not look like a valid JSON schema")
+                payload["schema"] = schema
+            else:
+                raise TypeError("schema must be a Pydantic model type or a dictionary representing a JSON schema")
+
         # Filter out None values before sending
         return {k_p: v_p for k_p, v_p in payload.items() if v_p is not None}
 

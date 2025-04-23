@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, Field
 
@@ -32,6 +32,10 @@ class CompletionQueryRequest(RetrieveRequest):
     prompt_overrides: Optional[QueryPromptOverrides] = Field(
         None,
         description="Optional customizations for entity extraction, resolution, and query prompts",
+    )
+    schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = Field(
+        None,
+        description="Schema for structured output, can be a Pydantic model or JSON schema dict",
     )
 
 

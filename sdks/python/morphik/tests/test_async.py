@@ -4,6 +4,8 @@ import uuid
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel, Field
+
 from morphik.async_ import AsyncMorphik
 
 # Set to your local Morphik server - use localhost by default
@@ -19,18 +21,24 @@ pytestmark = pytest.mark.skipif(
 TEST_DOCS_DIR = Path(__file__).parent / "test_docs"
 
 
+class StructuredOutputSchema(BaseModel):
+    summary: str = Field(..., description="A short summary of the input text")
+    key_points: list[str] = Field(..., description="A list of key points from the text")
+
+
 class TestAsyncMorphik:
     """
     Tests for the asynchronous Morphik SDK client with a live server.
 
     To run these tests, start a local Morphik server and then run:
-    MORPHIK_TEST_URL=http://localhost:8000 pytest morphik/tests/test_async.py -v
+    pytest morphik/tests/test_async.py -v
     """
 
     @pytest.fixture
     async def db(self):
         """Create an AsyncMorphik client for testing"""
-        client = AsyncMorphik()  # Connects to localhost:8000 by default
+        # Connects to localhost:8000 by default, increase timeout
+        client = AsyncMorphik(timeout=120)
         yield client
         await client.close()
 
@@ -287,4 +295,90 @@ class TestAsyncMorphik:
 
         finally:
             # Clean up
+            await db.delete_document(doc.external_id)
+
+    @pytest.mark.asyncio
+    async def test_query_with_pydantic_schema(self, db):
+        """Test the query endpoint with a Pydantic schema for structured output (async)."""
+        content = (
+            "Morphik async client supports coroutines. "
+            "It uses httpx for async requests. "
+            "Key features include non-blocking IO."
+        )
+        doc = await db.ingest_text(
+            content=content,
+            filename=f"test_schema_async_{uuid.uuid4().hex[:8]}.txt",
+            metadata={"test_id": "async_schema_pydantic_test"},
+        )
+
+        try:
+            await db.wait_for_document_completion(doc.external_id, timeout_seconds=60)
+
+            response = await db.query(
+                query="Summarize this async document and list key points.",
+                filters={"test_id": "async_schema_pydantic_test"},
+                k=1,
+                schema=StructuredOutputSchema,
+            )
+
+            assert response.completion is not None
+            # Expect completion to be the dictionary itself
+            assert isinstance(response.completion, dict)
+            output_data = response.completion
+            assert "summary" in output_data
+            assert "key_points" in output_data
+            assert isinstance(output_data["summary"], str)
+            assert isinstance(output_data["key_points"], list)
+
+        finally:
+            await db.delete_document(doc.external_id)
+
+    @pytest.mark.asyncio
+    async def test_query_with_dict_schema(self, db):
+        """Test the query endpoint with a dict schema for structured output (async)."""
+        content = "Asyncio provides infrastructure for writing single-threaded concurrent code."
+        doc = await db.ingest_text(
+            content=content,
+            filename=f"test_schema_dict_async_{uuid.uuid4().hex[:8]}.txt",
+            metadata={"test_id": "async_schema_dict_test"},
+        )
+
+        dict_schema = {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "The main topic"},
+                "feature": {"type": "string", "description": "A key feature"},
+            },
+            "required": ["topic"],
+        }
+
+        try:
+            await db.wait_for_document_completion(doc.external_id, timeout_seconds=60)
+
+            response = await db.query(
+                query="Extract the topic and a feature.",
+                filters={"test_id": "async_schema_dict_test"},
+                k=1,
+                schema=dict_schema,
+            )
+
+            assert response.completion is not None
+            # Expect completion to be the dictionary itself
+            assert isinstance(response.completion, dict)
+            output_data = response.completion
+            assert "topic" in output_data
+            # Allow None if not required and type is string
+            if "feature" in dict_schema.get("required", []):
+                assert "feature" in output_data
+            elif output_data.get("feature") is None:
+                pass  # Allow None for non-required string
+            else:
+                assert isinstance(output_data.get("feature"), str)
+
+            if "topic" not in dict_schema.get("required", []) and output_data.get("topic") is None:
+                pass  # Allow None for non-required string
+            else:
+                assert isinstance(output_data.get("topic"), str)
+
+        finally:
             await db.delete_document(doc.external_id)

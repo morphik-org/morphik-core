@@ -1,6 +1,9 @@
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 
 from pydantic import BaseModel
+
+# Type variable for any Pydantic model
+PydanticT = TypeVar("PydanticT", bound=BaseModel)
 
 
 class ChunkSource(BaseModel):
@@ -14,7 +17,7 @@ class ChunkSource(BaseModel):
 class CompletionResponse(BaseModel):
     """Response from completion generation"""
 
-    completion: str
+    completion: Union[str, PydanticT]
     usage: Dict[str, int]
     finish_reason: Optional[str] = None
     sources: List[ChunkSource] = []
@@ -31,3 +34,4 @@ class CompletionRequest(BaseModel):
     prompt_template: Optional[str] = None
     folder_name: Optional[str] = None
     end_user_id: Optional[str] = None
+    schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None
