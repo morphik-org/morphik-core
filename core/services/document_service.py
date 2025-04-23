@@ -5,7 +5,7 @@ import os
 import tempfile
 from datetime import UTC, datetime
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import filetype
 import pdf2image
@@ -34,6 +34,7 @@ from core.storage.base_storage import BaseStorage
 from core.vector_store.base_vector_store import BaseVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
 
+from ..api import BatchDeleteResponse, FailedDeletion  # Import response models
 from ..models.auth import AuthContext
 from ..models.folders import Folder
 from ..models.graph import Graph
@@ -221,7 +222,7 @@ class DocumentService:
             chunks = await self.reranker.rerank(query, chunks)
             chunks.sort(key=lambda x: x.score, reverse=True)
             chunks = chunks[:k]
-            logger.debug(f"Reranked {k*10} chunks and selected the top {k}")
+            logger.debug(f"Reranked {k * 10} chunks and selected the top {k}")
 
         # Combine multiple chunk sources if needed
         chunks = await self._combine_multi_and_regular_chunks(
@@ -1060,7 +1061,7 @@ class DocumentService:
                             current_retry_delay *= 2
                         else:
                             logger.error(
-                                f"All database connection attempts failed " f"after {max_retries} retries: {error_msg}"
+                                f"All database connection attempts failed after {max_retries} retries: {error_msg}"
                             )
                             raise Exception("Failed to store document metadata after multiple retries")
                     else:
@@ -1078,9 +1079,15 @@ class DocumentService:
         # Execute storage tasks concurrently
         storage_results = await asyncio.gather(*storage_tasks)
 
-        # Combine chunk IDs
-        regular_chunk_ids = storage_results[0]
-        colpali_chunk_ids = storage_results[1] if len(storage_results) > 1 else []
+        # Combine chunk IDs, checking for exceptions
+        regular_chunk_ids = []
+        if not isinstance(storage_results[0], Exception):
+            regular_chunk_ids = storage_results[0] or []  # Ensure it's a list even if None is returned
+
+        colpali_chunk_ids = []
+        if len(storage_results) > 1 and not isinstance(storage_results[1], Exception):
+            colpali_chunk_ids = storage_results[1] or []  # Ensure it's a list
+
         doc.chunk_ids = regular_chunk_ids + colpali_chunk_ids
 
         logger.debug(f"Stored chunk embeddings in vector stores: {len(doc.chunk_ids)} chunks total")
@@ -1593,7 +1600,9 @@ class DocumentService:
                         else (
                             StorageFileInfo(**file.model_dump())
                             if hasattr(file, "model_dump")
-                            else StorageFileInfo(**file.dict()) if hasattr(file, "dict") else file
+                            else StorageFileInfo(**file.dict())
+                            if hasattr(file, "dict")
+                            else file
                         )
                     )
                 )
@@ -1847,6 +1856,332 @@ class DocumentService:
 
         logger.info(f"Successfully deleted document {document_id} and all associated data")
         return True
+
+    async def batch_delete_documents(self, document_ids: List[str], auth: AuthContext) -> BatchDeleteResponse:
+        """
+        Delete multiple documents and their associated data in a batch operation.
+
+        Args:
+            document_ids: List of document IDs to delete
+            auth: Authentication context
+
+        Returns:
+            BatchDeleteResponse with successful and failed deletions
+        """
+        successful_deletions: List[str] = []
+        failed_deletions: List[FailedDeletion] = []
+
+        if not document_ids:
+            return BatchDeleteResponse(successful_deletions=[], failed_deletions=[])
+
+        requested_ids = set(document_ids)
+
+        # 1. Permission/Existence Check
+        try:
+            # Retrieve all requested documents that the user has at least read access to
+            retrieved_docs = await self.db.get_documents_by_id(document_ids, auth)
+            found_doc_map = {doc.external_id: doc for doc in retrieved_docs}
+        except Exception as e:
+            logger.error(f"Error retrieving documents for batch delete: {e}")
+            # If we can't even retrieve docs, fail all requested IDs
+            failed_deletions = [
+                FailedDeletion(document_id=doc_id, error="Failed to retrieve document details")
+                for doc_id in requested_ids
+            ]
+            return BatchDeleteResponse(successful_deletions=[], failed_deletions=failed_deletions)
+
+        # Identify missing documents
+        missing_ids = requested_ids - set(found_doc_map.keys())
+        failed_deletions.extend(
+            [FailedDeletion(document_id=doc_id, error="Not found or not accessible") for doc_id in missing_ids]
+        )
+
+        # Check write permissions for found documents
+        accessible_docs: List[Document] = []
+        permission_denied_ids: Set[str] = set()
+
+        # Use asyncio.gather for concurrent permission checks
+        permission_check_tasks = []
+        doc_id_list_for_check = list(found_doc_map.keys())
+        for doc_id in doc_id_list_for_check:
+            permission_check_tasks.append(self.db.check_access(doc_id, auth, "write"))
+
+        try:
+            permission_results = await asyncio.gather(*permission_check_tasks)
+        except Exception as e:
+            logger.error(f"Error checking permissions for batch delete: {e}")
+            # If permission check fails, assume failure for all found docs
+            failed_deletions.extend(
+                [FailedDeletion(document_id=doc_id, error="Permission check failed") for doc_id in found_doc_map.keys()]
+            )
+            return BatchDeleteResponse(successful_deletions=[], failed_deletions=failed_deletions)
+
+        for doc_id, has_permission in zip(doc_id_list_for_check, permission_results):
+            if has_permission:
+                accessible_docs.append(found_doc_map[doc_id])
+            else:
+                permission_denied_ids.add(doc_id)
+
+        failed_deletions.extend(
+            [FailedDeletion(document_id=doc_id, error="Write permission denied") for doc_id in permission_denied_ids]
+        )
+
+        accessible_doc_ids = [doc.external_id for doc in accessible_docs]
+
+        if not accessible_doc_ids:
+            logger.info("Batch delete: No documents found with write permission.")
+            return BatchDeleteResponse(successful_deletions=[], failed_deletions=failed_deletions)
+
+        # 2. Gather Info for Cleanup
+        all_chunk_ids: Set[str] = set()
+        all_storage_keys: Set[Tuple[str, str]] = set()
+
+        for doc in accessible_docs:
+            if hasattr(doc, "chunk_ids") and doc.chunk_ids:
+                all_chunk_ids.update(doc.chunk_ids)
+
+            # Use storage_files as the primary source of truth for files
+            if hasattr(doc, "storage_files") and doc.storage_files:
+                for file_info_data in doc.storage_files:
+                    # Handle both dict and StorageFileInfo object cases
+                    if isinstance(file_info_data, dict):
+                        bucket = file_info_data.get("bucket")
+                        key = file_info_data.get("key")
+                    elif hasattr(file_info_data, "bucket") and hasattr(file_info_data, "key"):
+                        bucket = file_info_data.bucket
+                        key = file_info_data.key
+                    else:
+                        bucket, key = None, None
+
+                    if bucket and key:
+                        all_storage_keys.add((bucket, key))
+            # Fallback to legacy storage_info if storage_files is empty/missing
+            elif hasattr(doc, "storage_info") and doc.storage_info:
+                bucket = doc.storage_info.get("bucket")
+                key = doc.storage_info.get("key")
+                if bucket and key:
+                    all_storage_keys.add((bucket, key))
+
+        logger.info(
+            f"Batch delete: Found {len(all_chunk_ids)} chunk IDs and {len(all_storage_keys)} storage keys to potentially delete for {len(accessible_doc_ids)} documents."
+        )
+
+        # 3. Database Deletion
+        db_success = False
+        try:
+            db_success = await self.db.batch_delete_documents(accessible_doc_ids)
+        except Exception as e:
+            logger.error(f"Error calling db.batch_delete_documents: {e}")
+            db_success = False  # Ensure db_success is False on exception
+
+        # 4. Handle DB Result
+        if not db_success:
+            logger.error(f"Batch delete: Database deletion failed for IDs: {accessible_doc_ids}")
+            failed_deletions.extend(
+                [FailedDeletion(document_id=doc_id, error="Database deletion failed") for doc_id in accessible_doc_ids]
+            )
+            # Return early as the primary deletion failed
+            return BatchDeleteResponse(successful_deletions=[], failed_deletions=failed_deletions)
+        else:
+            # DB deletion was successful for these IDs
+            successful_deletions.extend(accessible_doc_ids)
+            logger.info(f"Batch delete: Successfully deleted {len(accessible_doc_ids)} documents from database.")
+
+        # 5. Concurrent Cleanup (only if DB deletion succeeded)
+        cleanup_tasks = []
+
+        # Vector Store Cleanup
+        if all_chunk_ids:
+            # We use batch_delete_chunks_by_document_ids as it's more efficient if available
+            if hasattr(self.vector_store, "batch_delete_chunks_by_document_ids"):
+                cleanup_tasks.append(self.vector_store.batch_delete_chunks_by_document_ids(accessible_doc_ids))
+                logger.debug("Batch delete: Added task for vector_store.batch_delete_chunks_by_document_ids")
+            # Fallback or additional cleanup if needed (though batch_delete_documents should handle this)
+            # elif hasattr(self.vector_store, "delete_chunks"): # Example fallback
+            #     cleanup_tasks.append(self.vector_store.delete_chunks(list(all_chunk_ids)))
+
+            if self.colpali_vector_store and hasattr(self.colpali_vector_store, "batch_delete_chunks_by_document_ids"):
+                cleanup_tasks.append(self.colpali_vector_store.batch_delete_chunks_by_document_ids(accessible_doc_ids))
+                logger.debug("Batch delete: Added task for colpali_vector_store.batch_delete_chunks_by_document_ids")
+            # Fallback for colpali store
+            # elif self.colpali_vector_store and hasattr(self.colpali_vector_store, "delete_chunks"): # Example fallback
+            #     cleanup_tasks.append(self.colpali_vector_store.delete_chunks(list(all_chunk_ids)))
+
+        # Storage Cleanup
+        if all_storage_keys:
+            if hasattr(self.storage, "batch_delete_files"):
+                cleanup_tasks.append(self.storage.batch_delete_files(list(all_storage_keys)))
+                logger.debug("Batch delete: Added task for storage.batch_delete_files")
+            # Fallback to individual deletes if batch is not available
+            # elif hasattr(self.storage, "delete_file"):
+            #     for bucket, key in all_storage_keys:
+            #         cleanup_tasks.append(self.storage.delete_file(bucket, key))
+
+        if cleanup_tasks:
+            logger.info(f"Batch delete: Running {len(cleanup_tasks)} cleanup tasks concurrently...")
+            results = await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+
+            # Log cleanup results/errors
+            for i, result in enumerate(results):
+                task_description = f"Task {i + 1}"  # Basic description
+                # You could potentially make this more descriptive based on the task order
+                if isinstance(result, Exception):
+                    logger.error(f"Batch delete: Cleanup {task_description} failed: {result}")
+                elif (
+                    isinstance(result, tuple) and len(result) == 2
+                ):  # Assuming storage returns (success_list, fail_list)
+                    success_list, fail_list = result
+                    if fail_list:
+                        logger.warning(
+                            f"Batch delete: Storage cleanup {task_description} had {len(fail_list)} failures: {fail_list}"
+                        )
+                    else:
+                        logger.info(
+                            f"Batch delete: Storage cleanup {task_description} successful for {len(success_list)} items."
+                        )
+                elif isinstance(result, bool) and not result:
+                    logger.warning(f"Batch delete: Cleanup {task_description} reported failure (returned False).")
+                else:
+                    logger.info(
+                        f"Batch delete: Cleanup {task_description} completed."
+                    )  # Log success for bool True or other non-error results
+        else:
+            logger.info("Batch delete: No cleanup tasks required.")
+
+        # 6. Return Response
+        logger.info(f"Batch delete finished. Successful: {len(successful_deletions)}, Failed: {len(failed_deletions)}")
+        return BatchDeleteResponse(successful_deletions=successful_deletions, failed_deletions=failed_deletions)
+
+    async def batch_delete_documents(self, document_ids: List[str], auth: AuthContext) -> Dict[str, Any]:
+        """
+        Delete multiple documents and their associated data in a batch operation.
+
+        This method:
+        1. Retrieves all requested documents and checks permissions
+        2. Deletes authorized documents from the database
+        3. Cleans up associated data in vector stores and storage
+
+        Args:
+            document_ids: List of document IDs to delete
+            auth: Authentication context
+
+        Returns:
+            BatchDeleteResponse with successful and failed deletions
+        """
+        if not document_ids:
+            return {"successful_deletions": [], "failed_deletions": []}
+
+        # Retrieve all requested documents
+        requested_ids = set(document_ids)
+        retrieved_docs = await self.db.get_documents_by_id(document_ids, auth)
+        found_doc_map = {doc.external_id: doc for doc in retrieved_docs}
+
+        # Identify documents that don't exist or aren't accessible
+        missing_ids = requested_ids - set(found_doc_map.keys())
+        failed_deletions = [{"document_id": doc_id, "error": "Not found or not accessible"} for doc_id in missing_ids]
+
+        # Check write permissions for found documents
+        accessible_docs = []
+        permission_denied_ids = set()
+
+        for doc_id, doc in found_doc_map.items():
+            if await self.db.check_access(doc_id, auth, "write"):
+                accessible_docs.append(doc)
+            else:
+                permission_denied_ids.add(doc_id)
+
+        # Add permission errors to failed deletions
+        failed_deletions.extend(
+            [{"document_id": doc_id, "error": "Write permission denied"} for doc_id in permission_denied_ids]
+        )
+
+        # Get accessible document IDs
+        accessible_doc_ids = [doc.external_id for doc in accessible_docs]
+
+        # If no accessible documents, return early
+        if not accessible_doc_ids:
+            return {"successful_deletions": [], "failed_deletions": failed_deletions}
+
+        # Gather information about chunks and storage files to delete
+        chunk_ids = []
+        storage_keys = []
+
+        for doc in accessible_docs:
+            # Collect chunk IDs
+            if hasattr(doc, "chunk_ids") and doc.chunk_ids:
+                chunk_ids.extend(doc.chunk_ids)
+
+            # Collect storage keys from storage_info
+            if hasattr(doc, "storage_info") and doc.storage_info:
+                bucket = doc.storage_info.get("bucket")
+                key = doc.storage_info.get("key")
+                if bucket and key:
+                    storage_keys.append((bucket, key))
+
+            # Collect storage keys from storage_files
+            if hasattr(doc, "storage_files") and doc.storage_files:
+                for file_info in doc.storage_files:
+                    # Handle different possible data structures
+                    if isinstance(file_info, dict):
+                        bucket = file_info.get("bucket")
+                        key = file_info.get("key")
+                        if bucket and key:
+                            storage_keys.append((bucket, key))
+                    elif hasattr(file_info, "bucket") and hasattr(file_info, "key"):
+                        storage_keys.append((file_info.bucket, file_info.key))
+
+        # Delete documents from database
+        db_success = await self.db.batch_delete_documents(accessible_doc_ids)
+
+        # Handle database result
+        if not db_success:
+            # If database deletion failed, add all accessible docs to failed_deletions
+            failed_deletions.extend(
+                [{"document_id": doc_id, "error": "Database deletion failed"} for doc_id in accessible_doc_ids]
+            )
+            return {"successful_deletions": [], "failed_deletions": failed_deletions}
+
+        # At this point, database deletion succeeded for all accessible_doc_ids
+        successful_deletions = accessible_doc_ids
+
+        # Initialize cleanup tasks lists
+        cleanup_tasks = []
+
+        # Add vector store deletion tasks
+        if hasattr(self.vector_store, "batch_delete_chunks_by_document_ids"):
+            cleanup_tasks.append(self.vector_store.batch_delete_chunks_by_document_ids(accessible_doc_ids))
+
+        # Add colpali vector store deletion task if available
+        if self.colpali_vector_store and hasattr(self.colpali_vector_store, "batch_delete_chunks_by_document_ids"):
+            cleanup_tasks.append(self.colpali_vector_store.batch_delete_chunks_by_document_ids(accessible_doc_ids))
+
+        # Add storage deletion task if there are keys to delete
+        if storage_keys and hasattr(self.storage, "batch_delete_files"):
+            cleanup_tasks.append(self.storage.batch_delete_files(storage_keys))
+
+        # Execute cleanup tasks concurrently
+        if cleanup_tasks:
+            try:
+                cleanup_results = await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+
+                # Log any exceptions encountered during cleanup
+                for i, result in enumerate(cleanup_results):
+                    if isinstance(result, Exception):
+                        task_type = "unknown"
+                        if i == 0:
+                            task_type = "vector store"
+                        elif i == 1 and self.colpali_vector_store:
+                            task_type = "colpali vector store"
+                        elif (i == 1 and not self.colpali_vector_store) or i == 2:
+                            task_type = "storage"
+
+                        logger.error(f"Error during batch {task_type} cleanup: {result}")
+            except Exception as e:
+                logger.error(f"Error during batch cleanup operations: {e}")
+                # Continue since document deletion from DB was successful
+
+        logger.info(f"Batch delete completed: {len(successful_deletions)} successful, {len(failed_deletions)} failed")
+        return {"successful_deletions": successful_deletions, "failed_deletions": failed_deletions}
 
     def close(self):
         """Close all resources."""
