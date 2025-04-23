@@ -13,6 +13,7 @@ import tomli
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from pydantic import BaseModel, field_validator
 
 from core.cache.llama_cache_factory import LlamaCacheFactory
 from core.completion.litellm_completion import LiteLLMCompletionModel
@@ -49,6 +50,10 @@ from core.vector_store.pgvector_store import PGVectorStore
 # Initialize FastAPI app
 app = FastAPI(title="Morphik API")
 logger = logging.getLogger(__name__)
+
+
+# Batch delete limit
+BATCH_DELETE_LIMIT = 1000
 
 
 # Add health check endpoints
@@ -277,6 +282,31 @@ document_service = DocumentService(
     colpali_embedding_model=colpali_embedding_model,
     colpali_vector_store=colpali_vector_store,
 )
+
+
+# --- Batch Delete Models ---
+
+
+class BatchDeleteRequest(BaseModel):
+    document_ids: List[str]
+
+    @field_validator("document_ids")
+    def check_batch_size(cls, v):
+        if len(v) > BATCH_DELETE_LIMIT:
+            raise ValueError(f"Number of document IDs cannot exceed {BATCH_DELETE_LIMIT}")
+        if not v:
+            raise ValueError("document_ids list cannot be empty")
+        return v
+
+
+class FailedDeletion(BaseModel):
+    document_id: str
+    error: str
+
+
+class BatchDeleteResponse(BaseModel):
+    successful_deletions: List[str]
+    failed_deletions: List[FailedDeletion]
 
 
 async def verify_token(authorization: str = Header(None)) -> AuthContext:
@@ -1002,9 +1032,13 @@ async def get_document_status(document_id: str, auth: AuthContext = Depends(veri
         raise HTTPException(status_code=500, detail=f"Error getting document status: {str(e)}")
 
 
-@app.delete("/documents/{document_id}")
-@telemetry.track(operation_type="delete_document", metadata_resolver=telemetry.document_delete_metadata)
-async def delete_document(document_id: str, auth: AuthContext = Depends(verify_token)):
+@app.delete("/documents/{document_id}", response_model=Dict[str, str])  # Add response_model
+@telemetry.track(
+    operation_type="delete_document", metadata_resolver=telemetry.document_delete_metadata
+)  # Keep decorator
+async def delete_document(
+    document_id: str, auth: AuthContext = Depends(verify_token)
+) -> Dict[str, str]:  # Keep original signature
     """
     Delete a document and all associated data.
 
@@ -1023,10 +1057,49 @@ async def delete_document(document_id: str, auth: AuthContext = Depends(verify_t
     try:
         success = await document_service.delete_document(document_id, auth)
         if not success:
+            # Raise HTTPException on failure
             raise HTTPException(status_code=404, detail="Document not found or delete failed")
+        # Return success dictionary
         return {"status": "success", "message": f"Document {document_id} deleted successfully"}
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except HTTPException:  # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error deleting document {document_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+@app.delete("/documents", response_model=BatchDeleteResponse)
+@telemetry.track(operation_type="batch_delete_documents")  # Removed metadata_resolver
+async def batch_delete_documents(
+    request: BatchDeleteRequest, auth: AuthContext = Depends(verify_token)
+) -> BatchDeleteResponse:
+    """
+    Delete multiple documents and their associated data in a single batch operation.
+
+    Args:
+        request: BatchDeleteRequest containing document_ids
+        auth: Authentication context
+
+    Returns:
+        BatchDeleteResponse indicating successful and failed deletions.
+    """
+    try:
+        # The validation is handled by Pydantic's field_validator
+        result = await document_service.batch_delete_documents(request.document_ids, auth)
+        # Ensure the result matches the BatchDeleteResponse structure
+        return BatchDeleteResponse(**result)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        # Catch validation errors from the request model
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error during batch document deletion: {str(e)}")
+        # Return a generic error response, assuming partial failure might have occurred
+        # or provide a more specific error structure if possible
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during batch deletion: {str(e)}")
 
 
 @app.get("/documents/filename/{filename}", response_model=Document)
