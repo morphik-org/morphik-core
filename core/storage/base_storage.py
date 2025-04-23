@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 class BaseStorage(ABC):
@@ -64,3 +64,23 @@ class BaseStorage(ABC):
             bool: True if successful
         """
         pass
+
+    @abstractmethod
+    async def batch_delete_files(
+        self, keys: List[Tuple[str, str]]
+    ) -> Tuple[List[Tuple[str, str]], List[Dict[str, str]]]:
+        """
+        Delete multiple files from storage in a batch operation.
+
+        Args:
+            keys: List of (bucket, key) tuples to delete
+
+        Returns:
+            Tuple containing two lists:
+            - List of successful deletions as (bucket, key) tuples
+            - List of failed deletions with error details as dicts (e.g. {"bucket": "bucket", "key": "key", "error": "reason"})
+        """
+        pass
+
+
+# Removed duplicate definition below this line
