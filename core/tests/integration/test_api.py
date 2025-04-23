@@ -4,6 +4,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import AsyncGenerator, Dict
+from typing import AsyncGenerator, Dict, Optional
 
 import filetype
 import jwt
@@ -59,8 +60,8 @@ async def setup_test_environment(event_loop):
 def create_test_token(
     entity_type: str = "developer",
     entity_id: str = TEST_USER_ID,
-    permissions: list = None,
-    app_id: str = None,
+    permissions: Optional[list] = None,
+    app_id: Optional[str] = None,
     expired: bool = False,
 ) -> str:
     """Create a test JWT token"""
@@ -3421,3 +3422,140 @@ async def test_prompt_override_placeholder_validation(client: AsyncClient):
     )
 
     assert response.status_code == 200
+
+
+# --- Batch Delete Tests ---
+
+
+@pytest.mark.asyncio
+async def test_batch_delete_documents_success(client: AsyncClient):
+    """Test successful batch deletion of multiple documents."""
+    headers = create_auth_header()
+
+    # Ingest documents to delete
+    doc_id1 = await test_ingest_text_document(client, content="Batch delete test doc 1")
+    doc_id2 = await test_ingest_text_document(client, content="Batch delete test doc 2")
+    doc_id3 = await test_ingest_text_document(client, content="Batch delete test doc 3 (will remain)")
+
+    # Verify documents exist
+    assert (await client.get(f"/documents/{doc_id1}", headers=headers)).status_code == 200
+    assert (await client.get(f"/documents/{doc_id2}", headers=headers)).status_code == 200
+    assert (await client.get(f"/documents/{doc_id3}", headers=headers)).status_code == 200
+
+    # Perform batch delete
+    delete_ids = [doc_id1, doc_id2]
+    response = await client.request("DELETE", "/documents", json={"document_ids": delete_ids}, headers=headers)
+
+    # Verify response
+    assert response.status_code == 200
+    result = response.json()
+    assert sorted(result["successful_deletions"]) == sorted(delete_ids)
+    assert len(result["failed_deletions"]) == 0
+
+    # Verify documents are deleted
+    assert (await client.get(f"/documents/{doc_id1}", headers=headers)).status_code == 404
+    assert (await client.get(f"/documents/{doc_id2}", headers=headers)).status_code == 404
+
+    # Verify remaining document still exists
+    assert (await client.get(f"/documents/{doc_id3}", headers=headers)).status_code == 200
+
+    # Verify chunks are gone (optional, might take time for cleanup)
+    # search_response = await client.post("/retrieve/chunks", json={"query": "Batch delete", "filters": {"external_id": {"$in": delete_ids}}}, headers=headers)
+    # assert search_response.status_code == 200
+    # assert len(search_response.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_batch_delete_documents_partial_success(client: AsyncClient):
+    """Test batch deletion with some valid and some invalid/non-existent IDs."""
+    headers = create_auth_header()
+
+    # Ingest documents
+    doc_id1 = await test_ingest_text_document(client, content="Partial delete test doc 1")
+    doc_id3 = await test_ingest_text_document(client, content="Partial delete test doc 3 (will remain)")
+    non_existent_id = "doc_does_not_exist_123"
+
+    # Verify documents exist
+    assert (await client.get(f"/documents/{doc_id1}", headers=headers)).status_code == 200
+    assert (await client.get(f"/documents/{doc_id3}", headers=headers)).status_code == 200
+
+    # Perform batch delete with a mix of valid and invalid IDs
+    delete_ids = [doc_id1, non_existent_id]
+    response = await client.request("DELETE", "/documents", json={"document_ids": delete_ids}, headers=headers)
+
+    # Verify response
+    assert response.status_code == 200  # API should still return 200 for partial success
+    result = response.json()
+    assert result["successful_deletions"] == [doc_id1]
+    assert len(result["failed_deletions"]) == 1
+    failed_deletion = result["failed_deletions"][0]
+    assert failed_deletion["document_id"] == non_existent_id
+    assert "Not found" in failed_deletion["error"] or "not accessible" in failed_deletion["error"]
+
+    # Verify documents are deleted/remain
+    assert (await client.get(f"/documents/{doc_id1}", headers=headers)).status_code == 404
+    assert (await client.get(f"/documents/{doc_id3}", headers=headers)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_batch_delete_documents_permission_error(client: AsyncClient):
+    """Test batch deletion where user lacks write permission for some documents."""
+    if get_settings().dev_mode:
+        pytest.skip("Auth tests skipped in dev mode")
+
+    # Ingest documents with full permissions
+    full_perm_headers = create_auth_header()
+    doc_id_allowed = await test_ingest_text_document(client, content="Doc allowed to delete")
+    doc_id_denied = await test_ingest_text_document(client, content="Doc denied to delete")
+
+    # Create token with only read permissions
+    read_only_headers = create_auth_header(permissions=["read"])
+
+    # Attempt batch delete with read-only token
+    delete_ids = [doc_id_allowed, doc_id_denied]
+    response = await client.request(
+        "DELETE", "/documents", json={"document_ids": delete_ids}, headers=read_only_headers
+    )
+
+    # Verify response - Should fail entirely at the service layer due to permission check
+    # Update: The current implementation checks permissions individually.
+    assert response.status_code == 200  # API returns 200 even if all fail due to permissions
+    result = response.json()
+    assert len(result["successful_deletions"]) == 0
+    assert len(result["failed_deletions"]) == 2
+    failed_ids = {f["document_id"] for f in result["failed_deletions"]}
+    assert failed_ids == {doc_id_allowed, doc_id_denied}
+    assert all("permission denied" in f["error"].lower() for f in result["failed_deletions"])
+
+
+    # Verify documents still exist (since deletion failed due to permissions)
+    assert (await client.get(f"/documents/{doc_id_allowed}", headers=full_perm_headers)).status_code == 200
+    assert (await client.get(f"/documents/{doc_id_denied}", headers=full_perm_headers)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_batch_delete_documents_validation_empty(client: AsyncClient):
+    """Test batch delete API validation for an empty document_ids list."""
+    headers = create_auth_header()
+
+    response = await client.request("DELETE", "/documents", json={"document_ids": []}, headers=headers)
+
+    assert response.status_code == 400  # Should be a validation error from Pydantic model
+    result = response.json()
+    assert "detail" in result
+    assert "cannot be empty" in result["detail"]
+
+
+@pytest.mark.asyncio
+async def test_batch_delete_documents_validation_limit(client: AsyncClient):
+    """Test batch delete API validation for exceeding the document ID limit."""
+    headers = create_auth_header()
+    # Exceed the limit (assuming BATCH_DELETE_LIMIT is 1000)
+    too_many_ids = [f"doc_{i}" for i in range(1001)]
+
+    response = await client.request("DELETE", "/documents", json={"document_ids": too_many_ids}, headers=headers)
+
+    assert response.status_code == 400 # Should be a validation error from Pydantic model
+    result = response.json()
+    assert "detail" in result
+    assert "cannot exceed" in result["detail"]
