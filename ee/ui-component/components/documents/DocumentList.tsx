@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Wand2, Upload, Filter } from 'lucide-react';
+import { Plus, Wand2, Upload, Filter, Trash2 } from 'lucide-react'; // Combined imports
+// Removed duplicate import line below
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { showAlert } from '@/components/ui/alert-system';
 
@@ -630,25 +631,33 @@ const DocumentList: React.FC<DocumentListProps> = ({
               <span className="truncate font-medium">{doc.filename || 'N/A'}</span>
             </div>
             <div className="p-3">
-              <Badge variant="secondary" className="capitalize text-xs">
+              {/* Assuming Badge variant handles styling */}
+              {/* Assuming Badge variant handles styling */}
+              <Badge variant="secondary">
                 {doc.content_type.split('/')[0]}
               </Badge>
             </div>
             <div className="p-3">
               {doc.system_metadata?.status === "completed" ? (
-                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 flex items-center gap-1 font-normal text-xs">
-                  <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+                {/* Assuming Badge variant handles styling */}
+                {/* Assuming Badge variant handles styling */}
+                <Badge variant="outline" className="text-green-700 border-green-200">
+                  <span className="h-1.5 w-1.5 rounded-full bg-green-500 mr-1"></span>
                   Completed
                 </Badge>
               ) : doc.system_metadata?.status === "failed" ? (
-                <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 flex items-center gap-1 font-normal text-xs">
-                  <span className="h-1.5 w-1.5 rounded-full bg-red-500"></span>
-                  Failed
+                {/* Assuming Badge variant handles styling */}
+                {/* Assuming Badge variant handles styling */}
+                <Badge variant="destructive" className="text-red-700 border-red-200">
+                   <span className="h-1.5 w-1.5 rounded-full bg-red-500 mr-1"></span>
+                   Failed
                 </Badge>
               ) : (
                 <div className="group relative flex items-center">
-                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 flex items-center gap-1 font-normal text-xs">
-                    <div className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></div>
+                  {/* Assuming Badge variant handles styling */}
+                  {/* Assuming Badge variant handles styling */}
+                  <Badge variant="outline" className="text-amber-700 border-amber-200">
+                    <div className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse mr-1"></div>
                     Processing
                   </Badge>
                   <div className="absolute left-0 -bottom-14 hidden group-hover:block bg-popover border text-foreground text-xs p-2 rounded-md whitespace-nowrap z-10 shadow-md">
@@ -762,6 +771,80 @@ const DocumentList: React.FC<DocumentListProps> = ({
             </Button>
           )}
         </div>
+
+          {/* Delete Selected Button */}
+          {selectedDocuments.length > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              className="h-8 text-xs font-medium"
+              onClick={async (e) => {
+                e.stopPropagation(); // Prevent row click
+                if (!authToken) {
+                  showAlert('Authentication token is missing.', { type: 'error' });
+                  return;
+                }
+                if (selectedDocuments.length === 0) {
+                  showAlert('No documents selected for deletion.', { type: 'warning' });
+                  return;
+                }
+
+                // Confirmation dialog (optional but recommended)
+                if (!confirm(`Are you sure you want to delete ${selectedDocuments.length} document(s)? This action cannot be undone.`)) {
+                  return;
+                }
+
+                console.log(`Attempting to delete ${selectedDocuments.length} documents:`, selectedDocuments);
+
+                try {
+                  const response = await fetch(`${apiBaseUrl}/documents`, {
+                    method: 'DELETE',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${authToken}`,
+                    },
+                    body: JSON.stringify({ document_ids: selectedDocuments }),
+                  });
+
+                  const result = await response.json();
+
+                  if (!response.ok) {
+                     // Handle potential partial success/failure from the API
+                    const errorMsg = result.detail || `Failed to delete documents (status: ${response.status})`;
+                    let detailedError = errorMsg;
+                    if (result.failed_deletions && result.failed_deletions.length > 0) {
+                        detailedError += `\nFailures: ${result.failed_deletions.map((f: any) => `${f.document_id}: ${f.error}`).join(', ')}`;
+                    }
+                    showAlert(detailedError, { type: 'error', duration: 7000 });
+                    console.error('Batch delete failed:', result);
+                  } else {
+                    const successCount = result.successful_deletions?.length || 0;
+                    const failCount = result.failed_deletions?.length || 0;
+                    let message = `Successfully deleted ${successCount} document(s).`;
+                    if (failCount > 0) {
+                        message += ` ${failCount} failed.`;
+                        showAlert(`${message} Failures: ${result.failed_deletions.map((f: any) => `${f.document_id}: ${f.error}`).join(', ')}`, { type: 'warning', duration: 7000 });
+                    } else {
+                        showAlert(message, { type: 'success' });
+                    }
+                    console.log('Batch delete successful:', result);
+
+                    // Refresh the document list by removing deleted documents
+                    const successfulIds = new Set(result.successful_deletions || []);
+                    setDocuments(documents.filter(doc => !successfulIds.has(doc.external_id)));
+                    setSelectedDocuments([]); // Clear selection
+                  }
+                } catch (error) {
+                  console.error('Error during batch delete API call:', error);
+                  showAlert(`An error occurred: ${error instanceof Error ? error.message : String(error)}`, { type: 'error' });
+                }
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              Delete Selected ({selectedDocuments.length})
+            </Button>
+          )}
+
       </div>
     </div>
   );
