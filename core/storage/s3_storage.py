@@ -2,7 +2,7 @@ import base64
 import logging
 import tempfile
 from pathlib import Path
-from typing import BinaryIO, Optional, Tuple, Union
+from typing import BinaryIO, Dict, List, Optional, Tuple, Union
 
 import boto3
 from botocore.exceptions import ClientError
@@ -117,3 +117,84 @@ class S3Storage(BaseStorage):
         except ClientError as e:
             logger.error(f"Error deleting from S3: {e}")
             return False
+
+    async def batch_delete_files(
+        self, keys: List[Tuple[str, str]]
+    ) -> Tuple[List[Tuple[str, str]], List[Dict[str, str]]]:
+        """
+        Delete multiple files from S3 in batches.
+
+        Args:
+            keys: List of (bucket, key) tuples to delete
+
+        Returns:
+            Tuple containing:
+            - List of successful deletions as (bucket, key) tuples
+            - List of failed deletions with error details
+        """
+        if not keys:
+            return [], []
+
+        # Group keys by bucket for efficient batch processing
+        keys_by_bucket: Dict[str, List[str]] = {}
+        for bucket, key in keys:
+            # Use default bucket if none provided in the tuple
+            target_bucket = bucket if bucket else self.default_bucket
+            if target_bucket not in keys_by_bucket:
+                keys_by_bucket[target_bucket] = []
+            keys_by_bucket[target_bucket].append(key)
+
+        successful_keys: List[Tuple[str, str]] = []
+        failed_keys_with_error: List[Dict[str, str]] = []
+
+        # Process each bucket
+        for bucket, bucket_keys in keys_by_bucket.items():
+            # S3 allows deletion of up to 1000 objects in a single request
+            batch_size = 1000
+
+            # Process keys in batches
+            for i in range(0, len(bucket_keys), batch_size):
+                batch = bucket_keys[i : i + batch_size]
+
+                # Format for delete_objects API
+                objects_to_delete = [{"Key": key} for key in batch]
+
+                try:
+                    # Delete objects and get response
+                    # Note: Boto3 S3 client methods are synchronous, no await needed here.
+                    # If using an async client like aioboto3, this would be awaited.
+                    response = self.s3_client.delete_objects(
+                        Bucket=bucket,
+                        Delete={
+                            "Objects": objects_to_delete,
+                            "Quiet": False,  # Return results of deletion
+                        },
+                    )
+
+                    # Track successful deletions
+                    if "Deleted" in response:
+                        for deleted in response["Deleted"]:
+                            successful_keys.append((bucket, deleted["Key"]))
+
+                    # Track errors
+                    if "Errors" in response:
+                        for error in response["Errors"]:
+                            failed_keys_with_error.append(
+                                {"bucket": bucket, "key": error["Key"], "error": error.get("Message", "Unknown error")}
+                            )
+
+                except ClientError as e:
+                    # If the entire batch operation failed, mark all keys as failed
+                    error_message = str(e)
+                    logger.error(f"Error batch deleting from S3 bucket {bucket}: {error_message}")
+
+                    for key in batch:
+                        failed_keys_with_error.append({"bucket": bucket, "key": key, "error": error_message})
+
+        logger.info(
+            f"S3 batch delete completed: {len(successful_keys)} successful, {len(failed_keys_with_error)} failed"
+        )
+        return successful_keys, failed_keys_with_error
+
+
+# Removed duplicate definition below this line
