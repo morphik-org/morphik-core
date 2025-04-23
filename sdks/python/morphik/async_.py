@@ -7,9 +7,9 @@ from typing import Any, BinaryIO, Dict, List, Optional, Union
 import httpx
 
 from ._internal import FinalChunkResult, RuleOrDict, _MorphikClientLogic
-from .models import CompletionResponse  # Prompt override models
 from .models import (
     ChunkSource,
+    CompletionResponse,  # Prompt override models
     Document,
     DocumentResult,
     FolderInfo,
@@ -2325,6 +2325,28 @@ class AsyncMorphik:
 
         # Then delete the document by ID
         return await self.delete_document(doc.external_id)
+
+    async def batch_delete_documents(self, document_ids: List[str]) -> Dict[str, Any]:
+        """
+        Delete multiple documents by their IDs in a single batch operation.
+
+        Args:
+            document_ids: List of document IDs to delete.
+
+        Returns:
+            Dict[str, Any]: API response indicating successful and failed deletions.
+                           Example: {"successful_deletions": ["id1"], "failed_deletions": [{"document_id": "id2", "error": "reason"}]}
+
+        Raises:
+            ValueError: If document_ids list is empty.
+            httpx.HTTPStatusError: If the API request fails.
+        """
+        if not document_ids:
+            raise ValueError("document_ids list cannot be empty")
+
+        payload = {"document_ids": document_ids}
+        response = await self._request("DELETE", "documents", data=payload)
+        return response
 
     async def close(self):
         """Close the HTTP client"""
