@@ -612,6 +612,19 @@ class DB:
         )
         return doc.model_dump()
 
+    def batch_delete_documents(self, ids: List[str]) -> dict:
+        """
+        Delete multiple documents by their IDs in a single batch operation.
+
+        Args:
+            ids: List of document IDs to delete.
+
+        Returns:
+            dict: API response indicating successful and failed deletions.
+                  Example: {"successful_deletions": ["id1"], "failed_deletions": [{"document_id": "id2", "error": "reason"}]}
+        """
+        return self._client.batch_delete_documents(ids)
+
     def batch_get_documents(self, document_ids: List[str], as_objects: bool = False) -> List[Union[dict, "Document"]]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
@@ -867,6 +880,7 @@ if __name__ == "__main__":
     print("  db.ingest_text('hello world')")
     print("  db.query('what are the key findings?')")
     print("  db.batch_get_documents(['doc_id1', 'doc_id2'])")
+    print("  db.batch_delete_documents(['doc_id1', 'doc_id2'])")
     print("  db.batch_get_chunks([{'document_id': 'doc_123', 'chunk_number': 0}])")
     print("\nUpdate by Document ID:")
     print("  db.get_document('doc_123')")
