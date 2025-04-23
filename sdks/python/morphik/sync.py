@@ -2,14 +2,15 @@ import json
 import logging
 from io import BytesIO, IOBase
 from pathlib import Path
-from typing import Any, BinaryIO, Dict, List, Optional, Union
+from typing import Any, BinaryIO, Dict, List, Optional, Type, Union
 
 import httpx
+from pydantic import BaseModel
 
 from ._internal import FinalChunkResult, RuleOrDict, _MorphikClientLogic
-from .models import CompletionResponse  # Prompt override models
 from .models import (
     ChunkSource,
+    CompletionResponse,  # Prompt override models
     Document,
     DocumentResult,
     FolderInfo,
@@ -358,6 +359,7 @@ class Folder:
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
+        schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context within this folder.
@@ -374,6 +376,7 @@ class Folder:
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
+            schema: Optional schema for structured output
 
         Returns:
             CompletionResponse: Generated completion
@@ -392,7 +395,20 @@ class Folder:
             prompt_overrides,
             self._name,
             None,
+            schema,
         )
+
+        # Add schema to payload if provided
+        if schema:
+            # If schema is a Pydantic model class, we need to serialize it to a schema dict
+            if isinstance(schema, type) and issubclass(schema, BaseModel):
+                payload["schema"] = schema.model_json_schema()
+            else:
+                payload["schema"] = schema
+
+            # Add a hint to the query to return in JSON format
+            payload["query"] = f"{payload['query']}\nReturn the answer in JSON format according to the required schema."
+
         response = self._client._request("POST", "query", data=payload)
         return self._client._logic._parse_completion_response(response)
 
@@ -888,6 +904,7 @@ class UserScope:
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
+        schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context as this end user.
@@ -904,6 +921,7 @@ class UserScope:
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
+            schema: Optional schema for structured output
 
         Returns:
             CompletionResponse: Generated completion
@@ -922,7 +940,20 @@ class UserScope:
             prompt_overrides,
             self._folder_name,
             self._end_user_id,
+            schema,
         )
+
+        # Add schema to payload if provided
+        if schema:
+            # If schema is a Pydantic model class, we need to serialize it to a schema dict
+            if isinstance(schema, type) and issubclass(schema, BaseModel):
+                payload["schema"] = schema.model_json_schema()
+            else:
+                payload["schema"] = schema
+
+            # Add a hint to the query to return in JSON format
+            payload["query"] = f"{payload['query']}\nReturn the answer in JSON format according to the required schema."
+
         response = self._client._request("POST", "query", data=payload)
         return self._client._logic._parse_completion_response(response)
 
@@ -1167,8 +1198,13 @@ class Morphik:
             params=params,
             **request_data,
         )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            # Print error response for debugging
+            print(f"Error response: {e.response.status_code} - {e.response.text}")
+            raise
 
     def _convert_rule(self, rule: RuleOrDict) -> Dict[str, Any]:
         """Convert a rule to a dictionary format"""
@@ -1287,7 +1323,8 @@ class Morphik:
             rules: Optional list of rules to apply during ingestion. Can be:
                   - MetadataExtractionRule: Extract metadata using a schema
                   - NaturalLanguageRule: Transform content using natural language
-            use_colpali: Whether to use ColPali-style embedding model to ingest the text (slower, but significantly better retrieval accuracy for text and images)
+            use_colpali: Whether to use ColPali-style embedding model to ingest the text
+                (slower, but significantly better retrieval accuracy for text and images)
         Returns:
             Document: Metadata of the ingested document
 
@@ -1340,7 +1377,8 @@ class Morphik:
             rules: Optional list of rules to apply during ingestion. Can be:
                   - MetadataExtractionRule: Extract metadata using a schema
                   - NaturalLanguageRule: Transform content using natural language
-            use_colpali: Whether to use ColPali-style embedding model to ingest the file (slower, but significantly better retrieval accuracy for images)
+            use_colpali: Whether to use ColPali-style embedding model to ingest the file
+                (slower, but significantly better retrieval accuracy for images)
 
         Returns:
             Document: Metadata of the ingested document
@@ -1513,7 +1551,8 @@ class Morphik:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model to retrieve the chunks (only works for documents ingested with `use_colpali=True`)
+            use_colpali: Whether to use ColPali-style embedding model to retrieve the chunks
+                (only works for documents ingested with `use_colpali=True`)
         Returns:
             List[ChunkResult]
 
@@ -1545,7 +1584,8 @@ class Morphik:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model to retrieve the documents (only works for documents ingested with `use_colpali=True`)
+            use_colpali: Whether to use ColPali-style embedding model to retrieve the documents
+                (only works for documents ingested with `use_colpali=True`)
         Returns:
             List[DocumentResult]
 
@@ -1574,6 +1614,7 @@ class Morphik:
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
+        schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context.
@@ -1585,12 +1626,14 @@ class Morphik:
             min_score: Minimum similarity threshold (default: 0.0)
             max_tokens: Maximum tokens in completion
             temperature: Model temperature
-            use_colpali: Whether to use ColPali-style embedding model to generate the completion (only works for documents ingested with `use_colpali=True`)
+            use_colpali: Whether to use ColPali-style embedding model to generate the completion
+                (only works for documents ingested with `use_colpali=True`)
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
                 Either a QueryPromptOverrides object or a dictionary with the same structure
+            schema: Optional schema for structured output, can be a Pydantic model or a JSON schema dict
         Returns:
             CompletionResponse
 
@@ -1638,6 +1681,27 @@ class Morphik:
             if response.metadata and "graph" in response.metadata:
                 for path in response.metadata["graph"]["paths"]:
                     print(" -> ".join(path))
+
+            # Using structured output with a Pydantic model
+            from pydantic import BaseModel
+
+            class ResearchFindings(BaseModel):
+                main_finding: str
+                supporting_evidence: List[str]
+                limitations: List[str]
+
+            response = db.query(
+                "Summarize the key research findings from these documents",
+                schema=ResearchFindings
+            )
+
+            # Access structured output
+            if response.structured_output:
+                findings = response.structured_output
+                print(f"Main finding: {findings.main_finding}")
+                print("Supporting evidence:")
+                for evidence in findings.supporting_evidence:
+                    print(f"- {evidence}")
             ```
         """
         payload = self._logic._prepare_query_request(
@@ -1654,7 +1718,20 @@ class Morphik:
             prompt_overrides,
             None,
             None,
+            schema,
         )
+
+        # Add schema to payload if provided
+        if schema:
+            # If schema is a Pydantic model class, we need to serialize it to a schema dict
+            if isinstance(schema, type) and issubclass(schema, BaseModel):
+                payload["schema"] = schema.model_json_schema()
+            else:
+                payload["schema"] = schema
+
+            # Add a hint to the query to return in JSON format
+            payload["query"] = f"{payload['query']}\nReturn the answer in JSON format according to the required schema."
+
         response = self._request("POST", "query", data=payload)
         return self._logic._parse_completion_response(response)
 
@@ -2213,8 +2290,10 @@ class Morphik:
             name: Name of the cache to create
             model: Name of the model to use (e.g. "llama2")
             gguf_file: Name of the GGUF file to use for the model
-            filters: Optional metadata filters to determine which documents to include. These filters will be applied in addition to any specific docs provided.
-            docs: Optional list of specific document IDs to include. These docs will be included in addition to any documents matching the filters.
+            filters: Optional metadata filters to determine which documents to include.
+                These filters will be applied in addition to any specific docs provided.
+            docs: Optional list of specific document IDs to include.
+                These docs will be included in addition to any documents matching the filters.
 
         Returns:
             Dict[str, Any]: Created cache configuration
@@ -2319,12 +2398,16 @@ class Morphik:
         if prompt_overrides and isinstance(prompt_overrides, GraphPromptOverrides):
             prompt_overrides = prompt_overrides.model_dump(exclude_none=True)
 
-        request = {
-            "name": name,
-            "filters": filters,
-            "documents": documents,
-            "prompt_overrides": prompt_overrides,
-        }
+        # Initialize request with required fields
+        request = {"name": name}
+
+        # Add optional fields only if they are not None
+        if filters is not None:
+            request["filters"] = filters
+        if documents is not None:
+            request["documents"] = documents
+        if prompt_overrides is not None:
+            request["prompt_overrides"] = prompt_overrides
 
         response = self._request("POST", "graph/create", request)
         return self._logic._parse_graph_response(response)

@@ -7,6 +7,7 @@ from typing import AsyncGenerator, Dict
 
 import filetype
 import jwt
+import pydantic
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -3065,7 +3066,10 @@ async def test_create_graph_with_prompt_overrides(client: AsyncClient):
 
     # Create custom prompt overrides
     extraction_override = EntityExtractionPromptOverride(
-        prompt_template="Extract only companies and their CEOs from the following text, ignore other entities: {content}\n{examples}",
+        prompt_template=(
+            "Extract only companies and their CEOs from the following text, "
+            "ignore other entities: {content}\n{examples}"
+        ),
         examples=[
             {"label": "Example Corp", "type": "ORGANIZATION"},
             {"label": "Jane Smith", "type": "PERSON", "properties": {"role": "CEO"}},
@@ -3156,7 +3160,9 @@ async def test_update_graph_with_prompt_overrides(client: AsyncClient):
 
     # Create custom prompt overrides for update
     extraction_override = EntityExtractionPromptOverride(
-        prompt_template="Extract specifically company names and their founders from the following text: {content}\n{examples}",
+        prompt_template=(
+            "Extract specifically company names and their founders " "from the following text: {content}\n{examples}"
+        ),
         examples=[
             {"label": "Tech Company", "type": "ORGANIZATION"},
             {"label": "Founder Person", "type": "PERSON", "properties": {"role": "founder"}},
@@ -3189,7 +3195,8 @@ async def test_update_graph_with_prompt_overrides(client: AsyncClient):
 
     # Verify relationships include founder relationship (from custom prompt)
     relationship_types = [rel["type"].lower() for rel in updated_graph["relationships"]]
-    founder_relationship = any("found" in rel_type for rel_type in relationship_types)
+    # Check if any relationship type contains "found" or is exactly "founder"
+    founder_relationship = any("found" in rel_type or rel_type == "founder" for rel_type in relationship_types)
     assert founder_relationship, "Expected to find a founder relationship due to custom prompt"
 
     return graph_name, [doc_id1, doc_id2, doc_id3]
@@ -3206,7 +3213,9 @@ async def test_query_with_graph_and_prompt_overrides(client: AsyncClient):
     # Create query prompt overrides
     query_prompt_override = {
         "entity_extraction": {
-            "prompt_template": "Extract specifically people and organizations from the following query: {content}\n{examples}",
+            "prompt_template": (
+                "Extract specifically people and organizations from the following " "query: {content}\n{examples}"
+            ),
             "examples": [
                 {"label": "Apple", "type": "ORGANIZATION"},
                 {"label": "CEO", "type": "ROLE"},
@@ -3259,9 +3268,12 @@ async def test_query_with_completion_override(client: AsyncClient):
     # First ingest a document for testing
     await test_ingest_text_document(
         client,
-        content="Apple Inc. is a technology company headquartered in Cupertino, California. "
-        "Tim Cook is the CEO of Apple. The company designs, manufactures, and markets smartphones, "
-        "personal computers, tablets, wearables, and accessories.",
+        content=(
+            "Tesla Inc. is an electric vehicle manufacturer founded in 2003. "
+            "It produces electric cars, battery energy storage, solar panels, and related products. "
+            "Elon Musk is the CEO. Its headquarters are in Austin, Texas. "
+            "The company's mission is to accelerate the world's transition to sustainable energy."
+        ),
     )
 
     headers = create_auth_header()
@@ -3269,7 +3281,10 @@ async def test_query_with_completion_override(client: AsyncClient):
     # Define custom query prompt override
     query_prompt_override = {
         "query": {
-            "prompt_template": "Using the provided information, answer the following question in the style of a technical expert using '*' for bullet points: {question} with context: {context}",
+            "prompt_template": (
+                "Using the provided information, answer the following question in the style of a "
+                "technical expert using '*' for bullet points: {question} with context: {context}"
+            ),
         }
     }
 
@@ -3293,6 +3308,131 @@ async def test_query_with_completion_override(client: AsyncClient):
 
     # Check that the style was applied (bullet points should be present)
     assert "*" in result["completion"]
+
+
+@pytest.mark.asyncio
+async def test_query_with_schema_structured_output(client: AsyncClient):
+    """Test querying with schema for structured output."""
+    # First ingest a document for testing
+    _ = await test_ingest_text_document(
+        client,
+        content="Morphik is an AI platform built for retrieval-augmented generation. "
+        "It was created in 2023 and supports features like ingestion, retrieval, "
+        "and completion. The core is implemented using Python with FastAPI, and "
+        "includes components for vector storage, embedding, and natural language "
+        "processing.",
+    )
+
+    headers = create_auth_header()
+
+    # Define a simple Pydantic schema for structured output
+    schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "year_created": {"type": "integer"},
+            "features": {"type": "array", "items": {"type": "string"}},
+            "technologies": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["name", "year_created", "features"],
+    }
+
+    # Query with the schema
+    response = await client.post(
+        "/query",
+        json={
+            "query": "What is Morphik, when was it created, and what features does it support?",
+            "k": 3,
+            "schema": schema,
+            "temperature": 0.2,  # Low temperature for more deterministic structured output
+            "use_reranking": False,  # Simplify the test
+            "max_tokens": 500,  # Set reasonable token limit
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Verify the completion is returned as structured data
+    assert "completion" in result
+
+    # Check the structured completion has the expected structure
+    structured_data = result["completion"]
+    assert "name" in structured_data
+    assert "year_created" in structured_data
+    assert "features" in structured_data
+
+    # Verify the content matches the document
+    assert structured_data["name"] == "Morphik"
+    assert structured_data["year_created"] == 2023
+    assert isinstance(structured_data["features"], list)
+
+    # The features array should contain at least some of these items
+    expected_features = ["ingestion", "retrieval", "completion"]
+    assert any(feature in expected_features for feature in structured_data["features"])
+
+
+@pytest.mark.asyncio
+async def test_query_with_pydantic_model_schema(client: AsyncClient):
+    """Test querying with a Pydantic model schema for structured output."""
+    # First ingest a document for testing
+    _ = await test_ingest_text_document(
+        client,
+        content="Tesla Inc. is an electric vehicle manufacturer founded in 2003. "
+        "It produces electric cars, battery energy storage, solar panels, and related products. "
+        "Elon Musk is the CEO. Its headquarters are in Austin, Texas. "
+        "The company's mission is to accelerate the world's transition to sustainable energy.",
+    )
+
+    headers = create_auth_header()
+
+    # Define the Pydantic model
+    class CompanyInfo(pydantic.BaseModel):
+        name: str
+        founded_year: int
+        ceo: str
+        headquarters: str
+        products: list[str]
+        mission: str
+
+    # Get the JSON schema from the Pydantic model
+    company_schema = CompanyInfo.model_json_schema()
+
+    # Query with the schema
+    response = await client.post(
+        "/query",
+        json={
+            "query": "Extract structured information about Tesla Inc.",
+            "k": 3,
+            "schema": company_schema,
+            "temperature": 0.2,  # Low temperature for more deterministic structured output
+            "use_reranking": False,  # Simplify the test
+            "max_tokens": 500,  # Set reasonable token limit
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Verify the completion is returned as structured data
+    assert "completion" in result
+    structured_data = result["completion"]
+
+    # Validate the structured data against the Pydantic model (optional but good practice)
+    try:
+        validated_data = CompanyInfo(**structured_data)
+    except pydantic.ValidationError as e:
+        pytest.fail(f"Output validation failed: {e}")
+
+    # Verify the content using the validated data
+    assert validated_data.name == "Tesla Inc."
+    assert validated_data.founded_year == 2003
+    assert validated_data.ceo == "Elon Musk"
+    assert "Austin" in validated_data.headquarters
+    assert isinstance(validated_data.products, list)
+    assert "sustainable energy" in validated_data.mission.lower()
 
 
 @pytest.mark.asyncio

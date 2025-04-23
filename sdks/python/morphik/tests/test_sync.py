@@ -4,6 +4,8 @@ import uuid
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel, Field
+
 from morphik.sync import Morphik
 
 # Set to your local Morphik server - use localhost by default
@@ -19,18 +21,24 @@ pytestmark = pytest.mark.skipif(
 TEST_DOCS_DIR = Path(__file__).parent / "test_docs"
 
 
+class StructuredOutputSchema(BaseModel):
+    summary: str = Field(..., description="A short summary of the input text")
+    key_points: list[str] = Field(..., description="A list of key points from the text")
+
+
 class TestMorphik:
     """
     Tests for the synchronous Morphik SDK client with a live server.
 
     To run these tests, start a local Morphik server and then run:
-    MORPHIK_TEST_URL=http://localhost:8000 pytest morphik/tests/test_sync.py -v
+    pytest morphik/tests/test_sync.py -v
     """
 
     @pytest.fixture
     def db(self):
         """Create a Morphik client for testing"""
-        client = Morphik()  # Connects to localhost:8000 by default
+        # Connects to localhost:8000 by default, increase timeout for query tests
+        client = Morphik(timeout=120)
         yield client
         client.close()
 
@@ -277,4 +285,87 @@ class TestMorphik:
 
         finally:
             # Clean up
+            db.delete_document(doc.external_id)
+
+    def test_query_with_pydantic_schema(self, db):
+        """Test the query endpoint with a Pydantic schema for structured output."""
+        content = (
+            "Morphik is a platform for building AI applications. "
+            "It provides tools for data ingestion, retrieval, and generation. "
+            "Key features include vector search and knowledge graphs."
+        )
+        doc = db.ingest_text(
+            content=content,
+            filename=f"test_schema_{uuid.uuid4().hex[:8]}.txt",
+            metadata={"test_id": "sync_schema_pydantic_test"},
+        )
+
+        try:
+            db.wait_for_document_completion(doc.external_id, timeout_seconds=60)
+
+            response = db.query(
+                query="Summarize this document and list its key points.",
+                filters={"test_id": "sync_schema_pydantic_test"},
+                k=1,
+                schema=StructuredOutputSchema,
+            )
+
+            assert response.completion is not None
+            # With the updated model, completion should be the dictionary itself
+            assert isinstance(response.completion, dict)
+            output_data = response.completion
+            assert "summary" in output_data
+            assert "key_points" in output_data
+            assert isinstance(output_data["summary"], str)
+            assert isinstance(output_data["key_points"], list)
+
+        finally:
+            db.delete_document(doc.external_id)
+
+    def test_query_with_dict_schema(self, db):
+        """Test the query endpoint with a dictionary schema for structured output."""
+        content = "The capital of France is Paris. It is known for the Eiffel Tower."
+        doc = db.ingest_text(
+            content=content,
+            filename=f"test_schema_dict_{uuid.uuid4().hex[:8]}.txt",
+            metadata={"test_id": "sync_schema_dict_test"},
+        )
+
+        dict_schema = {
+            "type": "object",
+            "properties": {
+                "capital": {"type": "string", "description": "The capital city"},
+                "country": {"type": "string", "description": "The country name"},
+                "landmark": {"type": "string", "description": "A famous landmark"},
+            },
+            "required": ["capital", "country"],
+        }
+
+        try:
+            db.wait_for_document_completion(doc.external_id, timeout_seconds=60)
+
+            response = db.query(
+                query="Extract the capital, country, and a landmark.",
+                filters={"test_id": "sync_schema_dict_test"},
+                k=1,
+                schema=dict_schema,
+            )
+
+            assert response.completion is not None
+            # With the updated model, completion should be the dictionary itself
+            assert isinstance(response.completion, dict)
+            output_data = response.completion
+            assert "capital" in output_data
+            assert "country" in output_data
+            # Landmark might not always be extracted, so check presence if required
+            if "landmark" in dict_schema.get("required", []):
+                assert "landmark" in output_data
+            # Allow None if not required and type is string
+            if "capital" not in dict_schema.get("required", []) and output_data.get("capital") is None:
+                pass  # Allow None for non-required string
+            else:
+                assert isinstance(output_data.get("capital"), str)
+            assert isinstance(output_data["country"], str)
+
+        finally:
             db.delete_document(doc.external_id)

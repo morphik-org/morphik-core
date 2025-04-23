@@ -927,6 +927,8 @@ class GraphService:
             hop_depth: Number of relationship hops to traverse (1-3)
             include_paths: Whether to include relationship paths in response
             prompt_overrides: Optional QueryPromptOverrides with customizations for prompts
+            folder_name: Optional folder name for scoping
+            end_user_id: Optional end user ID for scoping
         """
         logger.info(f"Querying with graph: {graph_name}, hop depth: {hop_depth}")
 

@@ -5,7 +5,7 @@ import os
 import tempfile
 from datetime import UTC, datetime
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type, Union
 
 import filetype
 import pdf2image
@@ -14,6 +14,7 @@ from colpali_engine.models import ColIdefics3, ColIdefics3Processor
 from fastapi import UploadFile
 from filetype.types import IMAGE  # , DOCUMENT, document
 from PIL.Image import Image
+from pydantic import BaseModel
 
 from core.cache.base_cache import BaseCache
 from core.cache.base_cache_factory import BaseCacheFactory
@@ -466,6 +467,7 @@ class DocumentService:
         prompt_overrides: Optional["QueryPromptOverrides"] = None,
         folder_name: Optional[str] = None,
         end_user_id: Optional[str] = None,
+        schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> CompletionResponse:
         """Generate completion using relevant chunks as context.
 
@@ -485,6 +487,10 @@ class DocumentService:
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
+            prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
+            folder_name: Optional folder to scope the operation to
+            end_user_id: Optional end-user ID to scope the operation to
+            schema: Optional schema for structured output
         """
         if graph_name:
             # Use knowledge graph enhanced retrieval via GraphService
@@ -533,6 +539,7 @@ class DocumentService:
             max_tokens=max_tokens,
             temperature=temperature,
             prompt_template=custom_prompt_template,
+            schema=schema,
         )
 
         response = await self.completion_model.complete(request)
