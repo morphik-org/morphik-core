@@ -428,7 +428,8 @@ class PostgresDatabase(BaseDatabase):
 
                 # Query document with system filters
                 query = (
-                    select(DocumentModel).where(text(final_where_clause))
+                    select(DocumentModel)
+                    .where(text(final_where_clause))
                     # Order by updated_at in system_metadata to get the most recent document
                     .order_by(text("system_metadata->>'updated_at' DESC"))
                 )
@@ -681,6 +682,40 @@ class PostgresDatabase(BaseDatabase):
         except Exception as e:
             logger.error(f"Error deleting document: {str(e)}")
             return False
+
+    async def batch_delete_documents(self, document_ids: List[str]) -> bool:
+        """Delete multiple documents in a batch operation.
+
+        Args:
+            document_ids: List of document IDs to delete
+
+        Returns:
+            bool: True if the operation was successful, False otherwise
+        """
+        try:
+            if not document_ids:
+                logger.info("Batch delete documents: No IDs provided.")
+                return True  # Nothing to delete, operation is trivially successful
+
+            async with self.async_session() as session:
+                # Use DELETE with ANY for efficient batch deletion
+                query = text("DELETE FROM documents WHERE external_id = ANY(:document_ids)")
+                await session.execute(query, {"document_ids": document_ids})
+                await session.commit()
+                logger.info(f"Successfully batch deleted {len(document_ids)} documents from database.")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error batch deleting documents: {str(e)}")
+            # Attempt to rollback session only if it was successfully created
+            if "session" in locals():
+                try:
+                    await session.rollback()
+                except Exception as rollback_e:
+                    logger.error(f"Error rolling back session during batch delete error: {rollback_e}")
+            return False
+
+    # Removed duplicate definition below this line
 
     async def find_authorized_and_filtered_documents(
         self,
@@ -1508,7 +1543,6 @@ class PostgresDatabase(BaseDatabase):
             and folder.owner.get("type") == auth.entity_type.value
             and folder.owner.get("id") == auth.entity_id
         ):
-
             # In cloud mode, also verify user_id if present
             if auth.user_id:
                 from core.config import get_settings
