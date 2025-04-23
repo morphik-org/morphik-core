@@ -198,7 +198,6 @@ class PGVectorStore(BaseVectorStore):
 
             # Continue with the rest of the initialization
             async with self.engine.begin() as conn:
-
                 # Check if vector_embeddings table exists
                 check_table_sql = """
                 SELECT EXISTS (
@@ -473,3 +472,40 @@ class PGVectorStore(BaseVectorStore):
         except Exception as e:
             logger.error(f"Error deleting chunks for document {document_id}: {str(e)}")
             return False
+
+    async def batch_delete_chunks_by_document_ids(self, document_ids: List[str]) -> bool:
+        """
+        Delete all chunks associated with multiple documents in a single operation.
+
+        Args:
+            document_ids: List of document IDs whose chunks should be deleted
+
+        Returns:
+            bool: True if the operation was successful, False otherwise
+        """
+        try:
+            if not document_ids:
+                logger.info("Batch delete chunks: No document IDs provided.")
+                return True  # Nothing to delete
+
+            async with self.get_session_with_retry() as session:
+                # Delete all chunks for the specified documents in a single query
+                query = text("DELETE FROM vector_embeddings WHERE document_id = ANY(:document_ids)")
+                await session.execute(query, {"document_ids": document_ids})
+                await session.commit()
+
+                logger.info(f"Batch deleted chunks for {len(document_ids)} documents from vector store.")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error batch deleting chunks for documents: {str(e)}")
+            # Attempt to rollback session only if it was successfully created
+            if "session" in locals():
+                try:
+                    await session.rollback()
+                except Exception as rollback_e:
+                    logger.error(f"Error rolling back session during batch chunk delete error: {rollback_e}")
+            return False
+
+
+# Removed duplicate definition below this line
