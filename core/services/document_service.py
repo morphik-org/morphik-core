@@ -629,18 +629,27 @@ class DocumentService:
         # === Apply post_chunking rules and aggregate metadata ===
         processed_chunks = []
         aggregated_chunk_metadata: Dict[str, Any] = {}  # Initialize dict for aggregated metadata
+        chunk_contents = []  # Initialize list to collect chunk contents efficiently
+
         if rules:
             logger.info("Applying post-chunking rules...")
-            from tqdm import tqdm
 
-            for chunk_obj in tqdm(parsed_chunks, desc="Applying chunk rules"):
+            for chunk_obj in parsed_chunks:
                 # Get metadata *and* the potentially modified chunk
                 chunk_rule_metadata, processed_chunk = await self.rules_processor.process_chunk_rules(chunk_obj, rules)
                 processed_chunks.append(processed_chunk)
+                chunk_contents.append(processed_chunk.content)  # Collect content as we process
                 # Aggregate the metadata extracted from this chunk
                 aggregated_chunk_metadata.update(chunk_rule_metadata)
             logger.info(f"Finished applying post-chunking rules to {len(processed_chunks)} chunks.")
             logger.info(f"Aggregated metadata from all chunks: {aggregated_chunk_metadata}")
+
+            # Update the document content with the stitched content from processed chunks
+            if processed_chunks:
+                logger.info("Updating document content with processed chunks...")
+                stitched_content = "\n".join(chunk_contents)
+                doc.system_metadata["content"] = stitched_content
+                logger.info(f"Updated document content with stitched chunks (length: {len(stitched_content)})")
         else:
             processed_chunks = parsed_chunks  # No rules, use original chunks
 
@@ -1272,6 +1281,17 @@ class DocumentService:
         if not chunks:
             return None
 
+        # If we have rules processing, the chunks may have modified content
+        # Update document content with stitched content from processed chunks
+        if rules and chunks:
+            chunk_contents = [chunk.content for chunk in chunks]
+            stitched_content = "\n".join(chunk_contents)
+            # Check if content actually changed
+            if stitched_content != updated_content:
+                logger.info("Updating document content with stitched content from processed chunks...")
+                doc.system_metadata["content"] = stitched_content
+                logger.info(f"Updated document content with stitched chunks (length: {len(stitched_content)})")
+
         # Merge any aggregated metadata from chunk rules
         if hasattr(self, "_last_aggregated_metadata") and self._last_aggregated_metadata:
             logger.info("Merging aggregated chunk metadata into document metadata...")
@@ -1548,14 +1568,16 @@ class DocumentService:
         # Apply post_chunking rules and aggregate metadata if provided
         processed_chunks = []
         aggregated_chunk_metadata: Dict[str, Any] = {}  # Initialize dict for aggregated metadata
+        chunk_contents = []  # Initialize list to collect chunk contents efficiently
+
         if rules:
             logger.info("Applying post-chunking rules...")
-            from tqdm import tqdm
 
-            for chunk_obj in tqdm(parsed_chunks, desc="Applying chunk rules"):
+            for chunk_obj in parsed_chunks:
                 # Get metadata *and* the potentially modified chunk
                 chunk_rule_metadata, processed_chunk = await self.rules_processor.process_chunk_rules(chunk_obj, rules)
                 processed_chunks.append(processed_chunk)
+                chunk_contents.append(processed_chunk.content)  # Collect content as we process
                 # Aggregate the metadata extracted from this chunk
                 aggregated_chunk_metadata.update(chunk_rule_metadata)
             logger.info(f"Finished applying post-chunking rules to {len(processed_chunks)} chunks.")

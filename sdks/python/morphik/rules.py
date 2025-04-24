@@ -16,12 +16,16 @@ class Rule(ABC):
 class MetadataExtractionRule(Rule):
     """Server-side rule for extracting metadata using a schema"""
 
-    def __init__(self, schema: Union[Type[BaseModel], Dict[str, Any]], stage: Literal["post_parsing", "post_chunking"]):
+    def __init__(
+        self,
+        schema: Union[Type[BaseModel], Dict[str, Any]],
+        stage: Literal["post_parsing", "post_chunking"] = "post_parsing",
+    ):
         """
         Args:
             schema: Pydantic model or dict schema defining metadata fields to extract
             stage: When to apply the rule - either "post_parsing" (full document text) or
-                  "post_chunking" (individual chunks)
+                  "post_chunking" (individual chunks). Defaults to "post_parsing" for backward compatibility.
         """
         self.schema = schema
         self.stage = stage
@@ -40,13 +44,13 @@ class MetadataExtractionRule(Rule):
 class NaturalLanguageRule(Rule):
     """Server-side rule for transforming content using natural language"""
 
-    def __init__(self, prompt: str, stage: Literal["post_parsing", "post_chunking"]):
+    def __init__(self, prompt: str, stage: Literal["post_parsing", "post_chunking"] = "post_parsing"):
         """
         Args:
             prompt: Instruction for how to transform the content
                    e.g. "Remove any personal information" or "Convert to bullet points"
             stage: When to apply the rule - either "post_parsing" (full document text) or
-                  "post_chunking" (individual chunks)
+                  "post_chunking" (individual chunks). Defaults to "post_parsing" for backward compatibility.
         """
         self.prompt = prompt
         self.stage = stage

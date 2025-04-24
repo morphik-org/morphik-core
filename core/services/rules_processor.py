@@ -82,24 +82,25 @@ class RulesProcessor:
         modified_content = content
         parsed_rules = []
 
-        # Parse only post_parsing rules
+        # Process rules for post_parsing stage
         for rule_dict in rules:
-            # Check if stage is specified, default to post_parsing if not (for backward compatibility)
-            rule_stage = rule_dict.get("stage", "post_parsing")
+            try:
+                # Let _parse_rule handle stage defaulting
+                rule = self._parse_rule(rule_dict)
 
-            if rule_stage == "post_parsing":
-                try:
-                    parsed_rules.append(self._parse_rule(rule_dict))
-                except ValueError as e:
-                    logger.warning(f"Skipping invalid document rule: {e}")
-                    continue  # Skip this rule
+                # Only include rules for post_parsing stage
+                if rule.stage == "post_parsing":
+                    parsed_rules.append(rule)
+            except ValueError as e:
+                logger.warning(f"Skipping invalid document rule: {e}")
+                continue  # Skip this rule
 
         logger.debug(f"Applying {len(parsed_rules)} post_parsing rules.")
         for i, rule in enumerate(parsed_rules, 1):
             try:
                 logger.debug(f"Applying document rule {i}/{len(parsed_rules)}: {rule.type}")
                 # Pass document metadata accumulated so far
-                rule_metadata, modified_content = await rule.apply(modified_content)
+                rule_metadata, modified_content = await rule.apply(modified_content, document_metadata)
                 logger.debug(f"Rule {i} extracted metadata: {rule_metadata}")
                 document_metadata.update(rule_metadata)  # Accumulate metadata
             except Exception as e:
@@ -125,14 +126,18 @@ class RulesProcessor:
         logger.debug(f"Processing chunk-level rules (post_chunking) on chunk content length {len(chunk.content)}")
         parsed_rules = []
 
-        # Parse only post_chunking rules
+        # Process rules for post_chunking stage
         for rule_dict in rules:
-            if rule_dict.get("stage") == "post_chunking":
-                try:
-                    parsed_rules.append(self._parse_rule(rule_dict))
-                except ValueError as e:
-                    logger.warning(f"Skipping invalid chunk rule: {e}")
-                    continue
+            try:
+                # Let _parse_rule handle stage defaulting
+                rule = self._parse_rule(rule_dict)
+
+                # Only include rules for post_chunking stage
+                if rule.stage == "post_chunking":
+                    parsed_rules.append(rule)
+            except ValueError as e:
+                logger.warning(f"Skipping invalid chunk rule: {e}")
+                continue
 
         if not parsed_rules:
             return {}, chunk  # No applicable rules, return empty metadata and original chunk

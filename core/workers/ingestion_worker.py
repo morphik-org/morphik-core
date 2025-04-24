@@ -210,20 +210,29 @@ async def process_ingestion_job(
         # === Apply post_chunking rules and aggregate metadata ===
         processed_chunks = []
         aggregated_chunk_metadata: Dict[str, Any] = {}  # Initialize dict for aggregated metadata
+        chunk_contents = []  # Initialize list to collect chunk contents as we process them
+
         if rules_list:
             logger.info("Applying post-chunking rules...")
-            from tqdm import tqdm
 
-            for chunk_obj in tqdm(parsed_chunks, desc="Applying chunk rules"):
+            for chunk_obj in parsed_chunks:
                 # Get metadata *and* the potentially modified chunk
                 chunk_rule_metadata, processed_chunk = await document_service.rules_processor.process_chunk_rules(
                     chunk_obj, rules_list
                 )
                 processed_chunks.append(processed_chunk)
+                chunk_contents.append(processed_chunk.content)  # Collect content as we process
                 # Aggregate the metadata extracted from this chunk
                 aggregated_chunk_metadata.update(chunk_rule_metadata)
             logger.info(f"Finished applying post-chunking rules to {len(processed_chunks)} chunks.")
             logger.info(f"Aggregated metadata from all chunks: {aggregated_chunk_metadata}")
+
+            # Update the document content with the stitched content from processed chunks
+            if processed_chunks:
+                logger.info("Updating document content with processed chunks...")
+                stitched_content = "\n".join(chunk_contents)
+                doc.system_metadata["content"] = stitched_content
+                logger.info(f"Updated document content with stitched chunks (length: {len(stitched_content)})")
         else:
             processed_chunks = parsed_chunks  # No rules, use original chunks
 
