@@ -143,15 +143,16 @@ async def process_ingestion_job(
         additional_metadata, text = await document_service.parser.parse_file_to_text(file_content, original_filename)
         logger.debug(f"Parsed file into text of length {len(text)}")
 
-        # 5. Apply rules if provided
+        # === Apply post_parsing rules ===
+        document_rule_metadata = {}
         if rules_list:
-            rule_metadata, modified_text = await document_service.rules_processor.process_rules(text, rules_list)
-            # Update document metadata with extracted metadata from rules
-            metadata.update(rule_metadata)
-
-            if modified_text:
-                text = modified_text
-                logger.info("Updated text with modified content from rules")
+            logger.info("Applying post-parsing rules...")
+            document_rule_metadata, text = await document_service.rules_processor.process_document_rules(
+                text, rules_list
+            )
+            metadata.update(document_rule_metadata)  # Merge metadata into main doc metadata
+            logger.info(f"Document metadata after post-parsing rules: {metadata}")
+            logger.info(f"Content length after post-parsing rules: {len(text)}")
 
         # 6. Retrieve the existing document
         logger.debug(f"Retrieving document with ID: {document_id}")
@@ -201,17 +202,37 @@ async def process_ingestion_job(
         logger.debug("Updated document in database with parsed content")
 
         # 7. Split text into chunks
-        chunks = await document_service.parser.split_text(text)
-        if not chunks:
-            raise ValueError("No content chunks extracted")
-        logger.debug(f"Split processed text into {len(chunks)} chunks")
+        parsed_chunks = await document_service.parser.split_text(text)
+        if not parsed_chunks:
+            raise ValueError("No content chunks extracted after rules processing")
+        logger.debug(f"Split processed text into {len(parsed_chunks)} chunks")
 
-        # 8. Generate embeddings for chunks
-        embeddings = await document_service.embedding_model.embed_for_ingestion(chunks)
+        # === Apply post_chunking rules and aggregate metadata ===
+        processed_chunks = []
+        aggregated_chunk_metadata: Dict[str, Any] = {}  # Initialize dict for aggregated metadata
+        if rules_list:
+            logger.info("Applying post-chunking rules...")
+            from tqdm import tqdm
+
+            for chunk_obj in tqdm(parsed_chunks, desc="Applying chunk rules"):
+                # Get metadata *and* the potentially modified chunk
+                chunk_rule_metadata, processed_chunk = await document_service.rules_processor.process_chunk_rules(
+                    chunk_obj, rules_list
+                )
+                processed_chunks.append(processed_chunk)
+                # Aggregate the metadata extracted from this chunk
+                aggregated_chunk_metadata.update(chunk_rule_metadata)
+            logger.info(f"Finished applying post-chunking rules to {len(processed_chunks)} chunks.")
+            logger.info(f"Aggregated metadata from all chunks: {aggregated_chunk_metadata}")
+        else:
+            processed_chunks = parsed_chunks  # No rules, use original chunks
+
+        # 8. Generate embeddings for processed chunks
+        embeddings = await document_service.embedding_model.embed_for_ingestion(processed_chunks)
         logger.debug(f"Generated {len(embeddings)} embeddings")
 
-        # 9. Create chunk objects
-        chunk_objects = document_service._create_chunk_objects(doc.external_id, chunks, embeddings)
+        # 9. Create chunk objects with potentially modified chunk content and metadata
+        chunk_objects = document_service._create_chunk_objects(doc.external_id, processed_chunks, embeddings)
         logger.debug(f"Created {len(chunk_objects)} chunk objects")
 
         # 10. Handle ColPali embeddings if enabled
@@ -229,8 +250,9 @@ async def process_ingestion_job(
 
             file_content_base64 = base64.b64encode(file_content).decode()
 
+            # Use the processed chunks for Colpali
             chunks_multivector = document_service._create_chunks_multivector(
-                file_type, file_content_base64, file_content, chunks
+                file_type, file_content_base64, file_content, processed_chunks
             )
             logger.debug(f"Created {len(chunks_multivector)} chunks for multivector embedding")
 
@@ -240,6 +262,16 @@ async def process_ingestion_job(
             chunk_objects_multivector = document_service._create_chunk_objects(
                 doc.external_id, chunks_multivector, colpali_embeddings
             )
+
+        # === Merge aggregated chunk metadata into document metadata ===
+        if aggregated_chunk_metadata:
+            logger.info("Merging aggregated chunk metadata into document metadata...")
+            # Make sure doc.metadata exists
+            if not hasattr(doc, "metadata") or doc.metadata is None:
+                doc.metadata = {}
+            doc.metadata.update(aggregated_chunk_metadata)
+            logger.info(f"Final document metadata after merge: {doc.metadata}")
+        # ===========================================================
 
         # Update document status to completed before storing
         doc.system_metadata["status"] = "completed"
