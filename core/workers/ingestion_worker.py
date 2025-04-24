@@ -14,6 +14,7 @@ from core.database.postgres_database import PostgresDatabase
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.models.auth import AuthContext, EntityType
+from core.models.rules import MetadataExtractionRule
 from core.parser.morphik_parser import MorphikParser
 from core.services.document_service import DocumentService
 from core.services.rules_processor import RulesProcessor
@@ -207,24 +208,87 @@ async def process_ingestion_job(
             raise ValueError("No content chunks extracted after rules processing")
         logger.debug(f"Split processed text into {len(parsed_chunks)} chunks")
 
-        # === Apply post_chunking rules and aggregate metadata ===
+        # 8. Handle ColPali embeddings if enabled - IMPORTANT: Do this BEFORE applying chunk rules
+        # so that image chunks can be processed by rules when use_images=True
+        using_colpali = (
+            use_colpali and document_service.colpali_embedding_model and document_service.colpali_vector_store
+        )
+        chunks_multivector = []
+        if using_colpali:
+            import base64
+
+            import filetype
+
+            file_type = filetype.guess(file_content)
+            file_content_base64 = base64.b64encode(file_content).decode()
+
+            # Use the parsed chunks for Colpali - this will create image chunks if appropriate
+            chunks_multivector = document_service._create_chunks_multivector(
+                file_type, file_content_base64, file_content, parsed_chunks
+            )
+            logger.debug(f"Created {len(chunks_multivector)} chunks for multivector embedding")
+
+        # 9. Apply post_chunking rules and aggregate metadata
         processed_chunks = []
+        processed_chunks_multivector = []
         aggregated_chunk_metadata: Dict[str, Any] = {}  # Initialize dict for aggregated metadata
         chunk_contents = []  # Initialize list to collect chunk contents as we process them
 
         if rules_list:
             logger.info("Applying post-chunking rules...")
 
-            for chunk_obj in parsed_chunks:
-                # Get metadata *and* the potentially modified chunk
-                chunk_rule_metadata, processed_chunk = await document_service.rules_processor.process_chunk_rules(
-                    chunk_obj, rules_list
-                )
-                processed_chunks.append(processed_chunk)
-                chunk_contents.append(processed_chunk.content)  # Collect content as we process
-                # Aggregate the metadata extracted from this chunk
-                aggregated_chunk_metadata.update(chunk_rule_metadata)
-            logger.info(f"Finished applying post-chunking rules to {len(processed_chunks)} chunks.")
+            # Partition rules by type
+            text_rules = []
+            image_rules = []
+
+            for rule_dict in rules_list:
+                rule = document_service.rules_processor._parse_rule(rule_dict)
+                if rule.stage == "post_chunking":
+                    if isinstance(rule, MetadataExtractionRule) and rule.use_images:
+                        image_rules.append(rule_dict)
+                    else:
+                        text_rules.append(rule_dict)
+
+            logger.info(f"Partitioned rules: {len(text_rules)} text rules, {len(image_rules)} image rules")
+
+            # Process regular text chunks with text rules only
+            if text_rules:
+                logger.info(f"Applying {len(text_rules)} text rules to text chunks...")
+                for chunk_obj in parsed_chunks:
+                    # Get metadata *and* the potentially modified chunk
+                    chunk_rule_metadata, processed_chunk = await document_service.rules_processor.process_chunk_rules(
+                        chunk_obj, text_rules
+                    )
+                    processed_chunks.append(processed_chunk)
+                    chunk_contents.append(processed_chunk.content)  # Collect content as we process
+                    # Aggregate the metadata extracted from this chunk
+                    aggregated_chunk_metadata.update(chunk_rule_metadata)
+            else:
+                processed_chunks = parsed_chunks  # No text rules, use original chunks
+
+            # Process colpali image chunks with image rules if they exist
+            if chunks_multivector and image_rules:
+                logger.info(f"Applying {len(image_rules)} image rules to image chunks...")
+                for chunk_obj in chunks_multivector:
+                    # Only process if it's an image chunk - pass the image content to the rule
+                    if chunk_obj.metadata.get("is_image", False):
+                        # Get metadata *and* the potentially modified chunk
+                        chunk_rule_metadata, processed_chunk = (
+                            await document_service.rules_processor.process_chunk_rules(chunk_obj, image_rules)
+                        )
+                        processed_chunks_multivector.append(processed_chunk)
+                        # Aggregate the metadata extracted from this chunk
+                        aggregated_chunk_metadata.update(chunk_rule_metadata)
+                    else:
+                        # Non-image chunks from multivector don't need further processing
+                        processed_chunks_multivector.append(chunk_obj)
+
+                logger.info(f"Finished applying image rules to {len(processed_chunks_multivector)} image chunks.")
+            elif chunks_multivector:
+                # No image rules, use original multivector chunks
+                processed_chunks_multivector = chunks_multivector
+
+            logger.info(f"Finished applying post-chunking rules to {len(processed_chunks)} regular chunks.")
             logger.info(f"Aggregated metadata from all chunks: {aggregated_chunk_metadata}")
 
             # Update the document content with the stitched content from processed chunks
@@ -235,41 +299,26 @@ async def process_ingestion_job(
                 logger.info(f"Updated document content with stitched chunks (length: {len(stitched_content)})")
         else:
             processed_chunks = parsed_chunks  # No rules, use original chunks
+            processed_chunks_multivector = chunks_multivector  # No rules, use original multivector chunks
 
-        # 8. Generate embeddings for processed chunks
+        # 10. Generate embeddings for processed chunks
         embeddings = await document_service.embedding_model.embed_for_ingestion(processed_chunks)
         logger.debug(f"Generated {len(embeddings)} embeddings")
 
-        # 9. Create chunk objects with potentially modified chunk content and metadata
+        # 11. Create chunk objects with potentially modified chunk content and metadata
         chunk_objects = document_service._create_chunk_objects(doc.external_id, processed_chunks, embeddings)
         logger.debug(f"Created {len(chunk_objects)} chunk objects")
 
-        # 10. Handle ColPali embeddings if enabled
-        using_colpali = (
-            use_colpali and document_service.colpali_embedding_model and document_service.colpali_vector_store
-        )
+        # 12. Handle ColPali embeddings
         chunk_objects_multivector = []
         if using_colpali:
-            import filetype
-
-            file_type = filetype.guess(file_content)
-
-            # For ColPali we need the base64 encoding of the file
-            import base64
-
-            file_content_base64 = base64.b64encode(file_content).decode()
-
-            # Use the processed chunks for Colpali
-            chunks_multivector = document_service._create_chunks_multivector(
-                file_type, file_content_base64, file_content, processed_chunks
+            colpali_embeddings = await document_service.colpali_embedding_model.embed_for_ingestion(
+                processed_chunks_multivector
             )
-            logger.debug(f"Created {len(chunks_multivector)} chunks for multivector embedding")
-
-            colpali_embeddings = await document_service.colpali_embedding_model.embed_for_ingestion(chunks_multivector)
             logger.debug(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
 
             chunk_objects_multivector = document_service._create_chunk_objects(
-                doc.external_id, chunks_multivector, colpali_embeddings
+                doc.external_id, processed_chunks_multivector, colpali_embeddings
             )
 
         # === Merge aggregated chunk metadata into document metadata ===

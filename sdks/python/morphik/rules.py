@@ -20,15 +20,18 @@ class MetadataExtractionRule(Rule):
         self,
         schema: Union[Type[BaseModel], Dict[str, Any]],
         stage: Literal["post_parsing", "post_chunking"] = "post_parsing",
+        use_images: bool = False,
     ):
         """
         Args:
             schema: Pydantic model or dict schema defining metadata fields to extract
             stage: When to apply the rule - either "post_parsing" (full document text) or
                   "post_chunking" (individual chunks). Defaults to "post_parsing" for backward compatibility.
+            use_images: Whether to process image chunks instead of text chunks. Defaults to False.
         """
         self.schema = schema
         self.stage = stage
+        self.use_images = use_images
 
     def to_dict(self) -> Dict[str, Any]:
         if isinstance(self.schema, type) and issubclass(self.schema, BaseModel):
@@ -38,7 +41,12 @@ class MetadataExtractionRule(Rule):
             # Assume it's already a dict schema
             schema_dict = self.schema
 
-        return {"type": "metadata_extraction", "schema": schema_dict, "stage": self.stage}
+        return {
+            "type": "metadata_extraction",
+            "schema": schema_dict,
+            "stage": self.stage,
+            "use_images": self.use_images,
+        }
 
 
 class NaturalLanguageRule(Rule):

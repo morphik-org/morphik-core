@@ -60,6 +60,9 @@ class RulesProcessor:
         logger.debug(f"Parsing rule of type: {rule_type}, stage: {stage}")
 
         if rule_type == "metadata_extraction":
+            # Default use_images to False if not present
+            if "use_images" not in rule_dict:
+                rule_dict["use_images"] = False
             return MetadataExtractionRule(**rule_dict)
         elif rule_type == "natural_language":
             return NaturalLanguageRule(**rule_dict)
@@ -119,11 +122,19 @@ class RulesProcessor:
         Args:
             chunk: The Chunk object to process
             rules: The original list of rule dictionaries
+                  (these should be already filtered by the caller based on stage and chunk type)
 
         Returns:
             Tuple[Dict[str, Any], Chunk]: (extracted_metadata_for_doc, potentially_modified_chunk)
         """
-        logger.debug(f"Processing chunk-level rules (post_chunking) on chunk content length {len(chunk.content)}")
+        is_image_chunk = chunk.metadata.get("is_image", False)
+        chunk_type = "image" if is_image_chunk else "text"
+
+        logger.debug(
+            f"Processing chunk-level rules (post_chunking) on {chunk_type} chunk "
+            f"with content length {len(chunk.content)}"
+        )
+
         parsed_rules = []
 
         # Process rules for post_chunking stage
@@ -134,6 +145,16 @@ class RulesProcessor:
 
                 # Only include rules for post_chunking stage
                 if rule.stage == "post_chunking":
+                    # Skip image rules for text chunks and vice versa
+                    if isinstance(rule, MetadataExtractionRule):
+                        # If it's an image rule but chunk is not an image, or vice versa, skip
+                        if (rule.use_images and not is_image_chunk) or (not rule.use_images and is_image_chunk):
+                            logger.debug(
+                                f"Skipping rule with use_images={rule.use_images} "
+                                f"for chunk with is_image={is_image_chunk}"
+                            )
+                            continue
+
                     parsed_rules.append(rule)
             except ValueError as e:
                 logger.warning(f"Skipping invalid chunk rule: {e}")
