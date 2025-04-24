@@ -1,4 +1,5 @@
 import os
+
 from dotenv import load_dotenv
 from morphik import Morphik
 
@@ -31,10 +32,7 @@ The concept of AI dates back to ancient history with myths and stories about art
 
 # Ingest the document
 print("Ingesting document...")
-doc = db.ingest_text(
-    long_document,
-    metadata={"category": "technology", "topic": "AI"}
-)
+doc = db.ingest_text(long_document, metadata={"category": "technology", "topic": "AI"})
 print(f"Ingested document with ID: {doc.external_id}")
 
 # Create a cache
@@ -43,7 +41,7 @@ cache_result = db.create_cache(
     name="ai_overview_cache",
     model="llama2",
     gguf_file="llama-2-7b-chat.Q4_K_M.gguf",
-    docs=[doc.external_id]  # Include our document in the cache
+    docs=[doc.external_id],  # Include our document in the cache
 )
 print("Cache created successfully")
 
@@ -57,18 +55,14 @@ print("Cache updated")
 
 # Query the cache directly
 print("\nQuerying the cache...")
-response = cache.query(
-    "What are the different types of artificial intelligence?",
-    max_tokens=200,
-    temperature=0.7
-)
+response = cache.query("What are the different types of artificial intelligence?", max_tokens=200, temperature=0.7)
 print("Response from cache:")
 print(response.completion)
 
 # Add more documents to the cache (if needed)
 additional_doc = db.ingest_text(
     "Reinforcement learning is a type of machine learning where an agent learns to make decisions by taking actions in an environment to maximize rewards.",
-    metadata={"category": "technology", "topic": "AI", "subtopic": "reinforcement learning"}
+    metadata={"category": "technology", "topic": "AI", "subtopic": "reinforcement learning"},
 )
 
 cache.add_docs([additional_doc.external_id])

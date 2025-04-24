@@ -1,26 +1,25 @@
 import base64
 import io
 import json
-from io import BytesIO, IOBase
-from PIL import Image
-from PIL.Image import Image as PILImage
+from io import BytesIO
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, Tuple, BinaryIO
+from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Type, Union
 from urllib.parse import urlparse
 
 import jwt
+from PIL import Image
+from PIL.Image import Image as PILImage
 from pydantic import BaseModel, Field
 
 from .models import (
-    Document,
     ChunkResult,
-    DocumentResult,
+    ChunkSource,  # Prompt override models
     CompletionResponse,
-    IngestTextRequest,
-    ChunkSource,
+    Document,
+    DocumentResult,
     Graph,
-    # Prompt override models
     GraphPromptOverrides,
+    IngestTextRequest,
 )
 from .rules import Rule
 
@@ -199,9 +198,7 @@ class _MorphikClientLogic:
         if rules:
             if all(isinstance(r, list) for r in rules):
                 # List of lists - per-file rules
-                converted_rules = [
-                    [self._convert_rule(r) for r in rule_list] for rule_list in rules
-                ]
+                converted_rules = [[self._convert_rule(r) for r in rule_list] for rule_list in rules]
             else:
                 # Flat list - shared rules for all files
                 converted_rules = [self._convert_rule(r) for r in rules]
@@ -237,6 +234,7 @@ class _MorphikClientLogic:
         prompt_overrides: Optional[Dict],
         folder_name: Optional[str],
         end_user_id: Optional[str],
+        schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Prepare request for query endpoint"""
         payload = {
@@ -256,6 +254,20 @@ class _MorphikClientLogic:
             payload["folder_name"] = folder_name
         if end_user_id:
             payload["end_user_id"] = end_user_id
+
+        # Add schema to payload if provided
+        if schema:
+            # If schema is a Pydantic model class, serialize it to a JSON schema dict
+            if isinstance(schema, type) and issubclass(schema, BaseModel):
+                payload["schema"] = schema.model_json_schema()
+            elif isinstance(schema, dict):
+                # Basic check if it looks like a JSON schema (has 'properties' or 'type')
+                if "properties" not in schema and "type" not in schema:
+                    raise ValueError("Provided schema dictionary does not look like a valid JSON schema")
+                payload["schema"] = schema
+            else:
+                raise TypeError("schema must be a Pydantic model type or a dictionary representing a JSON schema")
+
         # Filter out None values before sending
         return {k_p: v_p for k_p, v_p in payload.items() if v_p is not None}
 
@@ -454,15 +466,11 @@ class _MorphikClientLogic:
         docs = [Document(**doc) for doc in response_json]
         return docs
 
-    def _parse_document_result_list_response(
-        self, response_json: List[Dict[str, Any]]
-    ) -> List[DocumentResult]:
+    def _parse_document_result_list_response(self, response_json: List[Dict[str, Any]]) -> List[DocumentResult]:
         """Parse document result list response"""
         return [DocumentResult(**r) for r in response_json]
 
-    def _parse_chunk_result_list_response(
-        self, response_json: List[Dict[str, Any]]
-    ) -> List[FinalChunkResult]:
+    def _parse_chunk_result_list_response(self, response_json: List[Dict[str, Any]]) -> List[FinalChunkResult]:
         """Parse chunk result list response"""
         chunks = [ChunkResult(**r) for r in response_json]
 

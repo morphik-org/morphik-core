@@ -122,7 +122,7 @@ services:
    ```bash
    # View all logs
    docker compose logs
-   
+
    # View specific service logs
    docker compose logs morphik
    docker compose logs postgres

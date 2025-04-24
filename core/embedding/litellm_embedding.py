@@ -1,10 +1,11 @@
 import logging
 from typing import List, Union
+
 import litellm
 
+from core.config import get_settings
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.models.chunk import Chunk
-from core.config import get_settings
 
 logger = logging.getLogger(__name__)
 PGVECTOR_MAX_DIMENSIONS = 2000  # Maximum dimensions for pgvector
@@ -27,17 +28,12 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
         self.model_key = model_key
 
         # Get the model configuration from registered_models
-        if (
-            not hasattr(settings, "REGISTERED_MODELS")
-            or model_key not in settings.REGISTERED_MODELS
-        ):
+        if not hasattr(settings, "REGISTERED_MODELS") or model_key not in settings.REGISTERED_MODELS:
             raise ValueError(f"Model '{model_key}' not found in registered_models configuration")
 
         self.model_config = settings.REGISTERED_MODELS[model_key]
         self.dimensions = min(settings.VECTOR_DIMENSIONS, 2000)
-        logger.info(
-            f"Initialized LiteLLM embedding model with model_key={model_key}, config={self.model_config}"
-        )
+        logger.info(f"Initialized LiteLLM embedding model with model_key={model_key}, config={self.model_config}")
 
     async def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
@@ -54,7 +50,10 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
 
         try:
             model_params = {"model": self.model_config["model_name"]}
-            if self.model_config["model_name"] in ["text-embedding-3-large", "azure/text-embedding-3-large"]:
+            if self.model_config["model_name"] in [
+                "text-embedding-3-large",
+                "azure/text-embedding-3-large",
+            ]:
                 model_params["dimensions"] = PGVECTOR_MAX_DIMENSIONS
 
             # Add all model-specific parameters from the config

@@ -1,45 +1,43 @@
+import asyncio
 import base64
-from io import BytesIO
-from typing import Dict, Any, List, Optional
-from core.models.prompts import QueryPromptOverrides, GraphPromptOverrides
-from fastapi import UploadFile
-from datetime import datetime, UTC
-import torch
-from core.models.chunk import Chunk, DocumentChunk
-from core.models.documents import (
-    Document,
-    ChunkResult,
-    DocumentContent,
-    DocumentResult,
-    StorageFileInfo,
-)
-from ..models.auth import AuthContext
-from ..models.graph import Graph
-from ..models.folders import Folder
-from colpali_engine.models import ColIdefics3, ColIdefics3Processor
-from core.services.graph_service import GraphService
-from core.database.base_database import BaseDatabase
-from core.storage.base_storage import BaseStorage
-from core.vector_store.base_vector_store import BaseVectorStore
-from core.embedding.base_embedding_model import BaseEmbeddingModel
-from core.parser.base_parser import BaseParser
-from core.completion.base_completion import BaseCompletionModel
-from core.models.completion import CompletionRequest, CompletionResponse, ChunkSource
 import logging
-from core.reranker.base_reranker import BaseReranker
-from core.config import get_settings
+import os
+import tempfile
+from datetime import UTC, datetime
+from io import BytesIO
+from typing import Any, Dict, List, Optional, Type, Union
+
+import filetype
+import pdf2image
+import torch
+from colpali_engine.models import ColIdefics3, ColIdefics3Processor
+from fastapi import UploadFile
+from filetype.types import IMAGE  # , DOCUMENT, document
+from PIL.Image import Image
+from pydantic import BaseModel
+
 from core.cache.base_cache import BaseCache
 from core.cache.base_cache_factory import BaseCacheFactory
-from core.services.rules_processor import RulesProcessor
+from core.completion.base_completion import BaseCompletionModel
+from core.config import get_settings
+from core.database.base_database import BaseDatabase
+from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
+from core.models.chunk import Chunk, DocumentChunk
+from core.models.completion import ChunkSource, CompletionRequest, CompletionResponse
+from core.models.documents import ChunkResult, Document, DocumentContent, DocumentResult, StorageFileInfo
+from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
+from core.parser.base_parser import BaseParser
+from core.reranker.base_reranker import BaseReranker
+from core.services.graph_service import GraphService
+from core.services.rules_processor import RulesProcessor
+from core.storage.base_storage import BaseStorage
+from core.vector_store.base_vector_store import BaseVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
-import filetype
-from filetype.types import IMAGE  # , DOCUMENT, document
-import pdf2image
-from PIL.Image import Image
-import tempfile
-import os
-import asyncio
+
+from ..models.auth import AuthContext
+from ..models.folders import Folder
+from ..models.graph import Graph
 
 logger = logging.getLogger(__name__)
 IMAGE = {im.mime for im in IMAGE}
@@ -47,16 +45,17 @@ IMAGE = {im.mime for im in IMAGE}
 CHARS_PER_TOKEN = 4
 TOKENS_PER_PAGE = 630
 
+
 class DocumentService:
     async def _ensure_folder_exists(self, folder_name: str, document_id: str, auth: AuthContext) -> Optional[Folder]:
         """
         Check if a folder exists, if not create it. Also adds the document to the folder.
-        
+
         Args:
             folder_name: Name of the folder
             document_id: ID of the document to add to the folder
             auth: Authentication context
-            
+
         Returns:
             Folder object if found or created, None on error
         """
@@ -70,7 +69,7 @@ class DocumentService:
                     if not success:
                         logger.warning(f"Failed to add document {document_id} to existing folder {folder.name}")
                 return folder  # Folder already exists
-                
+
             # Create a new folder
             folder = Folder(
                 name=folder_name,
@@ -80,15 +79,15 @@ class DocumentService:
                 },
                 document_ids=[document_id],  # Add document_id to the new folder
             )
-            
+
             await self.db.create_folder(folder)
             return folder
-            
+
         except Exception as e:
             # Log error but don't raise - we want document ingestion to continue even if folder creation fails
             logger.error(f"Error ensuring folder exists: {e}")
             return None
-    
+
     def __init__(
         self,
         database: BaseDatabase,
@@ -114,7 +113,7 @@ class DocumentService:
         self.rules_processor = RulesProcessor()
         self.colpali_embedding_model = colpali_embedding_model
         self.colpali_vector_store = colpali_vector_store
-        
+
         # Initialize the graph service only if completion_model is provided
         # (e.g., not needed for ingestion worker)
         if completion_model is not None:
@@ -132,6 +131,9 @@ class DocumentService:
         # Cache-related data structures
         # Maps cache name to active cache object
         self.active_caches: Dict[str, BaseCache] = {}
+
+        # Store for aggregated metadata from chunk rules
+        self._last_aggregated_metadata: Dict[str, Any] = {}
 
     async def retrieve_chunks(
         self,
@@ -152,25 +154,35 @@ class DocumentService:
         # 2. No reranking, colpali  -> return colpali chunks + regular chunks - no need to run smaller colpali model
         # 3. Reranking, no colpali -> sort regular chunks by re-ranker score
         # 4. Reranking, colpali -> return merged chunks sorted by smaller colpali model score
-        
+
         settings = get_settings()
         should_rerank = use_reranking if use_reranking is not None else settings.USE_RERANKING
         using_colpali = use_colpali if use_colpali is not None else False
 
-        # Get embedding for query
-        query_embedding_regular = await self.embedding_model.embed_for_query(query)
-        query_embedding_multivector = await self.colpali_embedding_model.embed_for_query(query) if (using_colpali and self.colpali_embedding_model) else None
-        logger.info("Generated query embedding")
+        # Launch embedding queries concurrently
+        embedding_tasks = [self.embedding_model.embed_for_query(query)]
+        if using_colpali and self.colpali_embedding_model:
+            embedding_tasks.append(self.colpali_embedding_model.embed_for_query(query))
 
-        # Find authorized documents
         # Build system filters for folder_name and end_user_id
         system_filters = {}
         if folder_name:
             system_filters["folder_name"] = folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
-            
-        doc_ids = await self.db.find_authorized_and_filtered_documents(auth, filters, system_filters)
+
+        # Run embeddings and document authorization in parallel
+        results = await asyncio.gather(
+            asyncio.gather(*embedding_tasks),
+            self.db.find_authorized_and_filtered_documents(auth, filters, system_filters),
+        )
+
+        embedding_results, doc_ids = results
+        query_embedding_regular = embedding_results[0]
+        query_embedding_multivector = embedding_results[1] if len(embedding_results) > 1 else None
+
+        logger.info("Generated query embedding")
+
         if not doc_ids:
             logger.info("No authorized documents found")
             return []
@@ -178,26 +190,34 @@ class DocumentService:
 
         # Check if we're using colpali multivector search
         search_multi = using_colpali and self.colpali_vector_store and query_embedding_multivector is not None
-        
+
         # For regular reranking (without colpali), we'll use the existing reranker if available
         # For colpali reranking, we'll handle it in _combine_multi_and_regular_chunks
         use_standard_reranker = should_rerank and (not search_multi) and self.reranker is not None
 
-        # Search chunks with vector similarity
+        # Search chunks with vector similarity in parallel
         # When using standard reranker, we get more chunks initially to improve reranking quality
-        chunks = await self.vector_store.query_similar(
-            query_embedding_regular, k=10 * k if use_standard_reranker else k, doc_ids=doc_ids
-        )
+        search_tasks = [
+            self.vector_store.query_similar(
+                query_embedding_regular, k=10 * k if use_standard_reranker else k, doc_ids=doc_ids
+            )
+        ]
 
-        chunks_multivector = (
-            await self.colpali_vector_store.query_similar(
-                query_embedding_multivector, k=k, doc_ids=doc_ids
-            ) if search_multi else []
-        )
+        if search_multi:
+            search_tasks.append(
+                self.colpali_vector_store.query_similar(query_embedding_multivector, k=k, doc_ids=doc_ids)
+            )
+
+        search_results = await asyncio.gather(*search_tasks)
+        chunks = search_results[0]
+        chunks_multivector = search_results[1] if len(search_results) > 1 else []
 
         logger.debug(f"Found {len(chunks)} similar chunks via regular embedding")
         if using_colpali:
-            logger.debug(f"Found {len(chunks_multivector)} similar chunks via multivector embedding since we are also using colpali")
+            logger.debug(
+                f"Found {len(chunks_multivector)} similar chunks via multivector embedding "
+                f"since we are also using colpali"
+            )
 
         # Rerank chunks using the standard reranker if enabled and available
         # This handles configuration 3: Reranking without colpali
@@ -208,22 +228,30 @@ class DocumentService:
             logger.debug(f"Reranked {k*10} chunks and selected the top {k}")
 
         # Combine multiple chunk sources if needed
-        chunks = await self._combine_multi_and_regular_chunks(query, chunks, chunks_multivector, should_rerank=should_rerank)
+        chunks = await self._combine_multi_and_regular_chunks(
+            query, chunks, chunks_multivector, should_rerank=should_rerank
+        )
 
         # Create and return chunk results
         results = await self._create_chunk_results(auth, chunks)
         logger.info(f"Returning {len(results)} chunk results")
         return results
 
-    async def _combine_multi_and_regular_chunks(self, query: str, chunks: List[DocumentChunk], chunks_multivector: List[DocumentChunk], should_rerank: bool = None):
+    async def _combine_multi_and_regular_chunks(
+        self,
+        query: str,
+        chunks: List[DocumentChunk],
+        chunks_multivector: List[DocumentChunk],
+        should_rerank: bool = None,
+    ):
         """Combine and potentially rerank regular and colpali chunks based on configuration.
-        
+
         # 4 configurations:
         # 1. No reranking, no colpali -> just return regular chunks - this already happens upstream, correctly
         # 2. No reranking, colpali  -> return colpali chunks + regular chunks - no need to run smaller colpali model
         # 3. Reranking, no colpali -> sort regular chunks by re-ranker score - this already happens upstream, correctly
         # 4. Reranking, colpali -> return merged chunks sorted by smaller colpali model score
-        
+
         Args:
             query: The user query
             chunks: Regular chunks with embeddings
@@ -240,7 +268,7 @@ class DocumentService:
         if should_rerank is None:
             settings = get_settings()
             should_rerank = settings.USE_RERANKING
-        
+
         # Check if we need to run the reranking - if reranking is disabled, we just combine the chunks
         # This is Configuration 2: No reranking, with colpali
         if not should_rerank:
@@ -249,23 +277,20 @@ class DocumentService:
             logger.debug("Using configuration 2: No reranking, with colpali - combining chunks without rescoring")
             combined_chunks = chunks_multivector + chunks
             return combined_chunks
-            
+
         # Configuration 4: Reranking with colpali
         # Use colpali as a reranker to get consistent similarity scores for both types of chunks
         logger.debug("Using configuration 4: Reranking with colpali - rescoring chunks with colpali model")
-        
+
         model_name = "vidore/colSmol-256M"
-        device = (
-            "mps"
-            if torch.backends.mps.is_available()
-            else "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
 
         model = ColIdefics3.from_pretrained(
             model_name,
             torch_dtype=torch.bfloat16,
             device_map=device,  # "cuda:0",  # or "mps" if on Apple Silicon
-            attn_implementation="eager",  # "flash_attention_2" if is_flash_attn_2_available() else None,  # or "eager" if "mps"
+            attn_implementation="eager",  # "flash_attention_2" if is_flash_attn_2_available() else None,
+            # or "eager" if "mps"
         ).eval()
         processor = ColIdefics3Processor.from_pretrained(model_name)
 
@@ -277,7 +302,7 @@ class DocumentService:
         scores = processor.score_multi_vector(query_rep, multi_vec_representations)
         for chunk, score in zip(chunks, scores[0]):
             chunk.score = score
-            
+
         # Combine and sort all chunks
         full_chunks = chunks + chunks_multivector
         full_chunks.sort(key=lambda x: x.score, reverse=True)
@@ -305,114 +330,124 @@ class DocumentService:
         documents = list(results.values())
         logger.info(f"Returning {len(documents)} document results")
         return documents
-        
+
     async def batch_retrieve_documents(
         self,
         document_ids: List[str],
         auth: AuthContext,
         folder_name: Optional[str] = None,
-        end_user_id: Optional[str] = None
+        end_user_id: Optional[str] = None,
     ) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
-        
+
         Args:
             document_ids: List of document IDs to retrieve
             auth: Authentication context
-            
+
         Returns:
             List of Document objects that user has access to
         """
         if not document_ids:
             return []
-            
+
         # Build system filters for folder_name and end_user_id
         system_filters = {}
         if folder_name:
             system_filters["folder_name"] = folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
-            
+
         # Use the database's batch retrieval method
         documents = await self.db.get_documents_by_id(document_ids, auth, system_filters)
         logger.info(f"Batch retrieved {len(documents)} documents out of {len(document_ids)} requested")
         return documents
-        
+
     async def batch_retrieve_chunks(
         self,
         chunk_ids: List[ChunkSource],
         auth: AuthContext,
         folder_name: Optional[str] = None,
         end_user_id: Optional[str] = None,
-        use_colpali: Optional[bool] = None
+        use_colpali: Optional[bool] = None,
     ) -> List[ChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation.
-        
+
         Args:
             chunk_ids: List of ChunkSource objects with document_id and chunk_number
             auth: Authentication context
             folder_name: Optional folder to scope the operation to
             end_user_id: Optional end-user ID to scope the operation to
             use_colpali: Whether to use colpali multimodal features for image chunks
-            
+
         Returns:
             List of ChunkResult objects
         """
         if not chunk_ids:
             return []
-            
+
         # Collect unique document IDs to check authorization in a single query
         doc_ids = list({source.document_id for source in chunk_ids})
-        
+
         # Find authorized documents in a single query
         authorized_docs = await self.batch_retrieve_documents(doc_ids, auth, folder_name, end_user_id)
         authorized_doc_ids = {doc.external_id for doc in authorized_docs}
-        
+
         # Filter sources to only include authorized documents
-        authorized_sources = [
-            source for source in chunk_ids 
-            if source.document_id in authorized_doc_ids
-        ]
-        
+        authorized_sources = [source for source in chunk_ids if source.document_id in authorized_doc_ids]
+
         if not authorized_sources:
             return []
-            
+
         # Create list of (document_id, chunk_number) tuples for vector store query
-        chunk_identifiers = [
-            (source.document_id, source.chunk_number) 
-            for source in authorized_sources
-        ]
-        
-        # Retrieve the chunks from vector store in a single query
-        chunks = await self.vector_store.get_chunks_by_id(chunk_identifiers)
-        
-        # Check if we should use colpali for image chunks
+        chunk_identifiers = [(source.document_id, source.chunk_number) for source in authorized_sources]
+
+        # Set up vector store retrieval tasks
+        retrieval_tasks = [self.vector_store.get_chunks_by_id(chunk_identifiers)]
+
+        # Add colpali vector store task if needed
         if use_colpali and self.colpali_vector_store:
-            logger.info("Trying to retrieve chunks from colpali vector store")
-            try:
-                # Also try to retrieve from the colpali vector store
-                colpali_chunks = await self.colpali_vector_store.get_chunks_by_id(chunk_identifiers)
-                
+            logger.info("Preparing to retrieve chunks from both regular and colpali vector stores")
+            retrieval_tasks.append(self.colpali_vector_store.get_chunks_by_id(chunk_identifiers))
+
+        # Execute vector store retrievals in parallel
+        try:
+            vector_results = await asyncio.gather(*retrieval_tasks, return_exceptions=True)
+
+            # Process regular chunks
+            chunks = vector_results[0] if not isinstance(vector_results[0], Exception) else []
+
+            # Process colpali chunks if available
+            if len(vector_results) > 1 and not isinstance(vector_results[1], Exception):
+                colpali_chunks = vector_results[1]
+
                 if colpali_chunks:
                     # Create a dictionary of (doc_id, chunk_number) -> chunk for fast lookup
                     chunk_dict = {(c.document_id, c.chunk_number): c for c in chunks}
-                    
+
                     logger.debug(f"Found {len(colpali_chunks)} chunks in colpali store")
                     for colpali_chunk in colpali_chunks:
-                        logger.debug(f"Found colpali chunk: doc={colpali_chunk.document_id}, chunk={colpali_chunk.chunk_number}")
                         key = (colpali_chunk.document_id, colpali_chunk.chunk_number)
                         # Replace chunks with colpali chunks when available
                         chunk_dict[key] = colpali_chunk
-                    
+
                     # Update chunks list with the combined/replaced chunks
                     chunks = list(chunk_dict.values())
                     logger.info(f"Enhanced {len(colpali_chunks)} chunks with colpali/multimodal data")
-                else:
-                    logger.warning("No chunks found in colpali vector store")
-            except Exception as e:
-                logger.error(f"Error retrieving chunks from colpali vector store: {e}", exc_info=True)
-        
+
+            # Handle any exceptions that occurred during retrieval
+            for i, result in enumerate(vector_results):
+                if isinstance(result, Exception):
+                    store_type = "regular" if i == 0 else "colpali"
+                    logger.error(f"Error retrieving chunks from {store_type} vector store: {result}", exc_info=True)
+                    if i == 0:  # If regular store failed, we can't proceed
+                        return []
+
+        except Exception as e:
+            logger.error(f"Error during parallel chunk retrieval: {e}", exc_info=True)
+            return []
+
         # Convert to chunk results
         results = await self._create_chunk_results(auth, chunks)
         logger.info(f"Batch retrieved {len(results)} chunks out of {len(chunk_ids)} requested")
@@ -435,12 +470,13 @@ class DocumentService:
         prompt_overrides: Optional["QueryPromptOverrides"] = None,
         folder_name: Optional[str] = None,
         end_user_id: Optional[str] = None,
+        schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> CompletionResponse:
         """Generate completion using relevant chunks as context.
-        
-        When graph_name is provided, the query will leverage the knowledge graph 
+
+        When graph_name is provided, the query will leverage the knowledge graph
         to enhance retrieval by finding relevant entities and their connected documents.
-        
+
         Args:
             query: The query text
             auth: Authentication context
@@ -454,6 +490,10 @@ class DocumentService:
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
+            prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
+            folder_name: Optional folder to scope the operation to
+            end_user_id: Optional end-user ID to scope the operation to
+            schema: Optional schema for structured output
         """
         if graph_name:
             # Use knowledge graph enhanced retrieval via GraphService
@@ -473,9 +513,9 @@ class DocumentService:
                 include_paths=include_paths,
                 prompt_overrides=prompt_overrides,
                 folder_name=folder_name,
-                end_user_id=end_user_id
+                end_user_id=end_user_id,
             )
-        
+
         # Standard retrieval without graph
         chunks = await self.retrieve_chunks(
             query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, end_user_id
@@ -484,7 +524,7 @@ class DocumentService:
 
         # Create augmented chunk contents
         chunk_contents = [chunk.augmented_content(documents[chunk.document_id]) for chunk in chunks]
-        
+
         # Collect sources information
         sources = [
             ChunkSource(document_id=chunk.document_id, chunk_number=chunk.chunk_number, score=chunk.score)
@@ -495,20 +535,21 @@ class DocumentService:
         custom_prompt_template = None
         if prompt_overrides and prompt_overrides.query:
             custom_prompt_template = prompt_overrides.query.prompt_template
-            
+
         request = CompletionRequest(
             query=query,
             context_chunks=chunk_contents,
             max_tokens=max_tokens,
             temperature=temperature,
             prompt_template=custom_prompt_template,
+            schema=schema,
         )
 
         response = await self.completion_model.complete(request)
-        
+
         # Add sources information at the document service level
         response.sources = sources
-        
+
         return response
 
     async def ingest_text(
@@ -529,8 +570,9 @@ class DocumentService:
 
         # First check ingest limits if in cloud mode
         from core.config import get_settings
+
         settings = get_settings()
-        
+
         doc = Document(
             content_type="text/plain",
             filename=filename,
@@ -540,17 +582,19 @@ class DocumentService:
                 "readers": [auth.entity_id],
                 "writers": [auth.entity_id],
                 "admins": [auth.entity_id],
-                "user_id": [auth.user_id] if auth.user_id else [],  # Add user_id to access control for filtering (as a list)
+                "user_id": (
+                    [auth.user_id] if auth.user_id else []
+                ),  # Add user_id to access control for filtering (as a list)
             },
         )
-        
+
         # Add folder_name and end_user_id to system_metadata if provided
         if folder_name:
             doc.system_metadata["folder_name"] = folder_name
-            
+
             # Check if the folder exists, if not create it
             await self._ensure_folder_exists(folder_name, doc.external_id, auth)
-            
+
         if end_user_id:
             doc.system_metadata["end_user_id"] = end_user_id
         logger.debug(f"Created text document record with ID {doc.external_id}")
@@ -558,198 +602,99 @@ class DocumentService:
         if settings.MODE == "cloud" and auth.user_id:
             # Check limits before proceeding
             from core.api import check_and_increment_limits
-            num_pages = int(len(content)/(CHARS_PER_TOKEN*TOKENS_PER_PAGE)) # 
+
+            num_pages = int(len(content) / (CHARS_PER_TOKEN * TOKENS_PER_PAGE))  #
             await check_and_increment_limits(auth, "ingest", num_pages, doc.external_id)
 
-        # Apply rules if provided
+        # === Apply post_parsing rules ===
+        document_rule_metadata = {}
         if rules:
-            rule_metadata, modified_text = await self.rules_processor.process_rules(content, rules)
+            logger.info("Applying post-parsing rules...")
+            document_rule_metadata, content = await self.rules_processor.process_document_rules(content, rules)
             # Update document metadata with extracted metadata from rules
-            metadata.update(rule_metadata)
+            metadata.update(document_rule_metadata)
             doc.metadata = metadata  # Update doc metadata after rules
-
-            if modified_text:
-                content = modified_text
-                logger.info("Updated content with modified text from rules")
+            logger.info(f"Document metadata after post-parsing rules: {metadata}")
+            logger.info(f"Content length after post-parsing rules: {len(content)}")
 
         # Store full content before chunking
         doc.system_metadata["content"] = content
 
-        # Split into chunks after all processing is done
-        chunks = await self.parser.split_text(content)
-        if not chunks:
-            raise ValueError("No content chunks extracted")
-        logger.debug(f"Split processed text into {len(chunks)} chunks")
+        # Split text into chunks
+        parsed_chunks = await self.parser.split_text(content)
+        if not parsed_chunks:
+            raise ValueError("No content chunks extracted after rules processing")
+        logger.debug(f"Split processed text into {len(parsed_chunks)} chunks")
 
-        # Generate embeddings for chunks
-        embeddings = await self.embedding_model.embed_for_ingestion(chunks)
+        # === Apply post_chunking rules and aggregate metadata ===
+        processed_chunks = []
+        aggregated_chunk_metadata: Dict[str, Any] = {}  # Initialize dict for aggregated metadata
+        chunk_contents = []  # Initialize list to collect chunk contents efficiently
+
+        if rules:
+            logger.info("Applying post-chunking rules...")
+
+            for chunk_obj in parsed_chunks:
+                # Get metadata *and* the potentially modified chunk
+                chunk_rule_metadata, processed_chunk = await self.rules_processor.process_chunk_rules(chunk_obj, rules)
+                processed_chunks.append(processed_chunk)
+                chunk_contents.append(processed_chunk.content)  # Collect content as we process
+                # Aggregate the metadata extracted from this chunk
+                aggregated_chunk_metadata.update(chunk_rule_metadata)
+            logger.info(f"Finished applying post-chunking rules to {len(processed_chunks)} chunks.")
+            logger.info(f"Aggregated metadata from all chunks: {aggregated_chunk_metadata}")
+
+            # Update the document content with the stitched content from processed chunks
+            if processed_chunks:
+                logger.info("Updating document content with processed chunks...")
+                stitched_content = "\n".join(chunk_contents)
+                doc.system_metadata["content"] = stitched_content
+                logger.info(f"Updated document content with stitched chunks (length: {len(stitched_content)})")
+        else:
+            processed_chunks = parsed_chunks  # No rules, use original chunks
+
+        # Generate embeddings for processed chunks
+        embeddings = await self.embedding_model.embed_for_ingestion(processed_chunks)
         logger.debug(f"Generated {len(embeddings)} embeddings")
-        chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
+
+        # Create chunk objects with processed chunk content
+        chunk_objects = self._create_chunk_objects(doc.external_id, processed_chunks, embeddings)
         logger.debug(f"Created {len(chunk_objects)} chunk objects")
 
         chunk_objects_multivector = []
 
         if use_colpali and self.colpali_embedding_model:
-            embeddings_multivector = await self.colpali_embedding_model.embed_for_ingestion(chunks)
-            logger.info(
-                f"Generated {len(embeddings_multivector)} embeddings for multivector embedding"
-            )
+            embeddings_multivector = await self.colpali_embedding_model.embed_for_ingestion(processed_chunks)
+            logger.info(f"Generated {len(embeddings_multivector)} embeddings for multivector embedding")
             chunk_objects_multivector = self._create_chunk_objects(
-                doc.external_id, chunks, embeddings_multivector
+                doc.external_id, processed_chunks, embeddings_multivector
             )
-            logger.info(
-                f"Created {len(chunk_objects_multivector)} chunk objects for multivector embedding"
-            )
+            logger.info(f"Created {len(chunk_objects_multivector)} chunk objects for multivector embedding")
 
         # Create and store chunk objects
+
+        # === Merge aggregated chunk metadata into document metadata ===
+        if aggregated_chunk_metadata:
+            logger.info("Merging aggregated chunk metadata into document metadata...")
+            # Make sure doc.metadata exists
+            if not hasattr(doc, "metadata") or doc.metadata is None:
+                doc.metadata = {}
+            doc.metadata.update(aggregated_chunk_metadata)
+            logger.info(f"Final document metadata after merge: {doc.metadata}")
+        # ===========================================================
 
         # Store everything
         await self._store_chunks_and_doc(chunk_objects, doc, use_colpali, chunk_objects_multivector)
         logger.debug(f"Successfully stored text document {doc.external_id}")
 
-        return doc
-    
-    # TODO: check if it's unused. if so, remove it.
-    async def ingest_file(
-        self,
-        file: UploadFile,
-        metadata: Dict[str, Any],
-        auth: AuthContext,
-        rules: Optional[List[str]] = None,
-        use_colpali: Optional[bool] = None,
-        folder_name: Optional[str] = None,
-        end_user_id: Optional[str] = None,
-    ) -> Document:
-        """Ingest a file document."""
-        if "write" not in auth.permissions:
-            raise PermissionError("User does not have write permission")
-
-        # Read file content
-        file_content = await file.read()
-        file_size = len(file_content)  # Get file size in bytes for limit checking
-        
-        # Check limits before doing any expensive processing
-        from core.config import get_settings
-        settings = get_settings()
-        
-        if settings.MODE == "cloud" and auth.user_id:
-            # Check limits before proceeding with parsing
-            from core.api import check_and_increment_limits
-            await check_and_increment_limits(auth, "storage_file", 1)
-            await check_and_increment_limits(auth, "storage_size", file_size)
-            
-        # Now proceed with parsing and processing the file
-        file_type = filetype.guess(file_content)
-        
-        # Set default mime type for cases where filetype.guess returns None
-        mime_type = ""
-        if file_type is not None:
-            mime_type = file_type.mime
-        elif file.filename:
-            # Try to determine by file extension as fallback
-            import mimetypes
-            guessed_type = mimetypes.guess_type(file.filename)[0]
-            if guessed_type:
-                mime_type = guessed_type
-            else:
-                # Default for text files
-                mime_type = "text/plain"
-        else:
-            mime_type = "application/octet-stream"  # Generic binary data
-            
-        logger.info(f"Determined MIME type: {mime_type} for file {file.filename}")
-
-        # Parse file to text first
-        additional_metadata, text = await self.parser.parse_file_to_text(
-            file_content, file.filename
+        # Update the document status to completed after successful storage
+        # This matches the behavior in ingestion_worker.py
+        doc.system_metadata["status"] = "completed"
+        doc.system_metadata["updated_at"] = datetime.now(UTC)
+        await self.db.update_document(
+            document_id=doc.external_id, updates={"system_metadata": doc.system_metadata}, auth=auth
         )
-        logger.debug(f"Parsed file into text of length {len(text)}")
-
-        # Apply rules if provided
-        if rules:
-            rule_metadata, modified_text = await self.rules_processor.process_rules(text, rules)
-            # Update document metadata with extracted metadata from rules
-            metadata.update(rule_metadata)
-            if modified_text:
-                text = modified_text
-                logger.info("Updated text with modified content from rules")
-        
-        doc = Document(
-            content_type=mime_type,
-            filename=file.filename,
-            metadata=metadata,
-            owner={"type": auth.entity_type, "id": auth.entity_id},
-            access_control={
-                "readers": [auth.entity_id],
-                "writers": [auth.entity_id],
-                "admins": [auth.entity_id],
-                "user_id": [auth.user_id] if auth.user_id else [],  # Add user_id to access control for filtering (as a list)
-            },
-            additional_metadata=additional_metadata,
-        )
-        
-        # Add folder_name and end_user_id to system_metadata if provided
-        if folder_name:
-            doc.system_metadata["folder_name"] = folder_name
-            
-            # Check if the folder exists, if not create it
-            await self._ensure_folder_exists(folder_name, doc.external_id, auth)
-            
-        if end_user_id:
-            doc.system_metadata["end_user_id"] = end_user_id
-
-        if settings.MODE == "cloud" and auth.user_id:
-            # Check limits before proceeding with parsing
-            from core.api import check_and_increment_limits
-            num_pages = int(len(text)/(CHARS_PER_TOKEN*TOKENS_PER_PAGE)) # 
-            await check_and_increment_limits(auth, "ingest", num_pages, doc.external_id)
-
-        # Store full content
-        doc.system_metadata["content"] = text
-        logger.debug(f"Created file document record with ID {doc.external_id}")
-
-        file_content_base64 = base64.b64encode(file_content).decode()
-        # Store the original file
-        storage_info = await self.storage.upload_from_base64(
-            file_content_base64, doc.external_id, file.content_type
-        )
-        doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
-        logger.debug(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
-
-        # Split into chunks after all processing is done
-        chunks = await self.parser.split_text(text)
-        if not chunks:
-            raise ValueError("No content chunks extracted")
-        logger.debug(f"Split processed text into {len(chunks)} chunks")
-
-        # Generate embeddings for chunks
-        embeddings = await self.embedding_model.embed_for_ingestion(chunks)
-        logger.debug(f"Generated {len(embeddings)} embeddings")
-
-        # Create and store chunk objects
-        chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
-        logger.debug(f"Created {len(chunk_objects)} chunk objects")
-
-        chunk_objects_multivector = []
-        logger.debug(f"use_colpali: {use_colpali}")
-        if use_colpali and self.colpali_embedding_model:
-            chunks_multivector = self._create_chunks_multivector(
-                file_type, file_content_base64, file_content, chunks
-            )
-            logger.debug(f"Created {len(chunks_multivector)} chunks for multivector embedding")
-            colpali_embeddings = await self.colpali_embedding_model.embed_for_ingestion(
-                chunks_multivector
-            )
-            logger.debug(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
-            chunk_objects_multivector = self._create_chunk_objects(
-                doc.external_id, chunks_multivector, colpali_embeddings
-            )
-
-        # Store everything
-        doc.chunk_ids = await self._store_chunks_and_doc(
-            chunk_objects, doc, use_colpali, chunk_objects_multivector
-        )
-        logger.debug(f"Successfully stored file document {doc.external_id}")
+        logger.debug(f"Updated document status to 'completed' for {doc.external_id}")
 
         return doc
 
@@ -761,21 +706,16 @@ class DocumentService:
         img_str = "data:image/png;base64," + base64.b64encode(img_byte).decode()
         return img_str
 
-    def _create_chunks_multivector(
-        self, file_type, file_content_base64: str, file_content: bytes, chunks: List[Chunk]
-    ):
+    def _create_chunks_multivector(self, file_type, file_content_base64: str, file_content: bytes, chunks: List[Chunk]):
         # Handle the case where file_type is None
         mime_type = file_type.mime if file_type is not None else "text/plain"
         logger.info(f"Creating chunks for multivector embedding for file type {mime_type}")
-        
+
         # If file_type is None, treat it as a text file
         if file_type is None:
             logger.info("File type is None, treating as text")
-            return [
-                Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
-                for chunk in chunks
-            ]
-            
+            return [Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks]
+
         match mime_type:
             case file_type if file_type in IMAGE:
                 return [Chunk(content=file_content_base64, metadata={"is_image": True})]
@@ -783,10 +723,7 @@ class DocumentService:
                 logger.info("Working with PDF file!")
                 images = pdf2image.convert_from_bytes(file_content)
                 images_b64 = [self.img_to_base64_str(image) for image in images]
-                return [
-                    Chunk(content=image_b64, metadata={"is_image": True})
-                    for image_b64 in images_b64
-                ]
+                return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
             case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/msword":
                 logger.info("Working with Word document!")
                 # Check if file content is empty
@@ -796,69 +733,85 @@ class DocumentService:
                         Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
                         for chunk in chunks
                     ]
-                
+
                 # Convert Word document to PDF first
                 with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as temp_docx:
                     temp_docx.write(file_content)
                     temp_docx_path = temp_docx.name
-                
+
                 with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf:
                     temp_pdf_path = temp_pdf.name
-                
+
                 try:
                     # Convert Word to PDF
                     import subprocess
-                    
+
                     # Get the base filename without extension
                     base_filename = os.path.splitext(os.path.basename(temp_docx_path))[0]
                     output_dir = os.path.dirname(temp_pdf_path)
                     expected_pdf_path = os.path.join(output_dir, f"{base_filename}.pdf")
-                    
+
                     result = subprocess.run(
-                        ["soffice", "--headless", "--convert-to", "pdf", "--outdir", 
-                         output_dir, temp_docx_path],
+                        [
+                            "soffice",
+                            "--headless",
+                            "--convert-to",
+                            "pdf",
+                            "--outdir",
+                            output_dir,
+                            temp_docx_path,
+                        ],
                         capture_output=True,
-                        text=True
+                        text=True,
                     )
-                    
+
                     if result.returncode != 0:
                         logger.error(f"Failed to convert Word to PDF: {result.stderr}")
                         return [
-                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            Chunk(
+                                content=chunk.content,
+                                metadata=(chunk.metadata | {"is_image": False}),
+                            )
                             for chunk in chunks
                         ]
-                    
+
                     # LibreOffice creates the PDF with the same base name in the output directory
                     # Check if the expected PDF file exists
                     if not os.path.exists(expected_pdf_path) or os.path.getsize(expected_pdf_path) == 0:
                         logger.error(f"Generated PDF is empty or doesn't exist at expected path: {expected_pdf_path}")
                         return [
-                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            Chunk(
+                                content=chunk.content,
+                                metadata=(chunk.metadata | {"is_image": False}),
+                            )
                             for chunk in chunks
                         ]
-                    
+
                     # Now process the PDF using the correct path
                     with open(expected_pdf_path, "rb") as pdf_file:
                         pdf_content = pdf_file.read()
-                    
+
                     try:
                         images = pdf2image.convert_from_bytes(pdf_content)
                         if not images:
                             logger.warning("No images extracted from PDF")
                             return [
-                                Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                                Chunk(
+                                    content=chunk.content,
+                                    metadata=(chunk.metadata | {"is_image": False}),
+                                )
                                 for chunk in chunks
                             ]
-                        
+
                         images_b64 = [self.img_to_base64_str(image) for image in images]
-                        return [
-                            Chunk(content=image_b64, metadata={"is_image": True})
-                            for image_b64 in images_b64
-                        ]
+                        return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
                     except Exception as pdf_error:
                         logger.error(f"Error converting PDF to images: {str(pdf_error)}")
                         return [
-                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            Chunk(
+                                content=chunk.content,
+                                metadata=(chunk.metadata | {"is_image": False}),
+                            )
                             for chunk in chunks
                         ]
                 except Exception as e:
@@ -874,7 +827,11 @@ class DocumentService:
                     if os.path.exists(temp_pdf_path):
                         os.unlink(temp_pdf_path)
                     # Also clean up the expected PDF path if it exists and is different from temp_pdf_path
-                    if 'expected_pdf_path' in locals() and os.path.exists(expected_pdf_path) and expected_pdf_path != temp_pdf_path:
+                    if (
+                        "expected_pdf_path" in locals()
+                        and os.path.exists(expected_pdf_path)
+                        and expected_pdf_path != temp_pdf_path
+                    ):
                         os.unlink(expected_pdf_path)
 
             # case filetype.get_type(ext="txt"):
@@ -886,12 +843,9 @@ class DocumentService:
             # case file_type if file_type in DOCUMENT:
             #     pass
             case _:
-                logger.warning(
-                    f"Colpali is not supported for file type {file_type.mime} - skipping"
-                )
+                logger.warning(f"Colpali is not supported for file type {file_type.mime} - skipping")
                 return [
-                    Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
-                    for chunk in chunks
+                    Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks
                 ]
 
     def _create_chunk_objects(
@@ -901,7 +855,7 @@ class DocumentService:
         embeddings: List[List[float]],
     ) -> List[DocumentChunk]:
         """Helper to create chunk objects
-        
+
         Note: folder_name and end_user_id are not needed in chunk metadata because:
         1. Filtering by these values happens at the document level in find_authorized_and_filtered_documents
         2. Vector search is only performed on already authorized and filtered documents
@@ -925,147 +879,164 @@ class DocumentService:
         # Add retry logic for vector store operations
         max_retries = 3
         retry_delay = 1.0
-        
-        # Store chunks in vector store with retry
-        attempt = 0
-        success = False
-        result = None
-        
-        while attempt < max_retries and not success:
-            try:
-                success, result = await self.vector_store.store_embeddings(chunk_objects)
-                if not success:
-                    raise Exception("Failed to store chunk embeddings")
-                break
-            except Exception as e:
-                attempt += 1
-                error_msg = str(e)
-                if "connection was closed" in error_msg or "ConnectionDoesNotExistError" in error_msg:
-                    if attempt < max_retries:
-                        logger.warning(f"Database connection error during embeddings storage (attempt {attempt}/{max_retries}): {error_msg}. Retrying in {retry_delay}s...")
-                        await asyncio.sleep(retry_delay)
-                        # Increase delay for next retry (exponential backoff)
-                        retry_delay *= 2
-                    else:
-                        logger.error(f"All database connection attempts failed after {max_retries} retries: {error_msg}")
-                        raise Exception("Failed to store chunk embeddings after multiple retries")
-                else:
-                    # For other exceptions, don't retry
-                    logger.error(f"Error storing embeddings: {error_msg}")
-                    raise
-        
-        logger.debug("Stored chunk embeddings in vector store")
-        doc.chunk_ids = result
 
-        if use_colpali and self.colpali_vector_store and chunk_objects_multivector:
-            # Reset retry variables for colpali storage
+        # Helper function to store embeddings with retry
+        async def store_with_retry(store, objects, store_name="regular"):
             attempt = 0
-            retry_delay = 1.0
             success = False
-            result_multivector = None
-            
+            result = None
+            current_retry_delay = retry_delay
+
             while attempt < max_retries and not success:
                 try:
-                    success, result_multivector = await self.colpali_vector_store.store_embeddings(
-                        chunk_objects_multivector
-                    )
+                    success, result = await store.store_embeddings(objects)
                     if not success:
-                        raise Exception("Failed to store multivector chunk embeddings")
-                    break
+                        raise Exception(f"Failed to store {store_name} chunk embeddings")
+                    return result
                 except Exception as e:
                     attempt += 1
                     error_msg = str(e)
                     if "connection was closed" in error_msg or "ConnectionDoesNotExistError" in error_msg:
                         if attempt < max_retries:
-                            logger.warning(f"Database connection error during colpali embeddings storage (attempt {attempt}/{max_retries}): {error_msg}. Retrying in {retry_delay}s...")
-                            await asyncio.sleep(retry_delay)
+                            logger.warning(
+                                f"Database connection error during {store_name} embeddings storage "
+                                f"(attempt {attempt}/{max_retries}): {error_msg}. "
+                                f"Retrying in {current_retry_delay}s..."
+                            )
+                            await asyncio.sleep(current_retry_delay)
                             # Increase delay for next retry (exponential backoff)
-                            retry_delay *= 2
+                            current_retry_delay *= 2
                         else:
-                            logger.error(f"All colpali database connection attempts failed after {max_retries} retries: {error_msg}")
-                            raise Exception("Failed to store multivector chunk embeddings after multiple retries")
+                            logger.error(
+                                f"All {store_name} database connection attempts failed "
+                                f"after {max_retries} retries: {error_msg}"
+                            )
+                            raise Exception(f"Failed to store {store_name} chunk embeddings after multiple retries")
                     else:
                         # For other exceptions, don't retry
-                        logger.error(f"Error storing colpali embeddings: {error_msg}")
+                        logger.error(f"Error storing {store_name} embeddings: {error_msg}")
                         raise
-            
-            logger.debug("Stored multivector chunk embeddings in vector store")
-            doc.chunk_ids += result_multivector
 
         # Store document metadata with retry
-        attempt = 0
-        retry_delay = 1.0
-        success = False
-        
-        while attempt < max_retries and not success:
-            try:
-                if is_update and auth:
-                    # For updates, use update_document, serialize StorageFileInfo into plain dicts
-                    updates = {
-                        "chunk_ids": doc.chunk_ids,
-                        "metadata": doc.metadata,
-                        "system_metadata": doc.system_metadata,
-                        "filename": doc.filename,
-                        "content_type": doc.content_type,
-                        "storage_info": doc.storage_info,
-                        "storage_files": [
-                            file.model_dump() if hasattr(file, "model_dump")
-                            else (file.dict() if hasattr(file, "dict") else file)
-                            for file in doc.storage_files
-                        ] if doc.storage_files else []
-                    }
-                    success = await self.db.update_document(doc.external_id, updates, auth)
-                    if not success:
-                        raise Exception("Failed to update document metadata")
-                else:
-                    # For new documents, use store_document
-                    success = await self.db.store_document(doc)
-                    if not success:
-                        raise Exception("Failed to store document metadata")
-                break
-            except Exception as e:
-                attempt += 1
-                error_msg = str(e)
-                if "connection was closed" in error_msg or "ConnectionDoesNotExistError" in error_msg:
-                    if attempt < max_retries:
-                        logger.warning(f"Database connection error during document metadata storage (attempt {attempt}/{max_retries}): {error_msg}. Retrying in {retry_delay}s...")
-                        await asyncio.sleep(retry_delay)
-                        # Increase delay for next retry (exponential backoff)
-                        retry_delay *= 2
+        async def store_document_with_retry():
+            attempt = 0
+            success = False
+            current_retry_delay = retry_delay
+
+            while attempt < max_retries and not success:
+                try:
+                    if is_update and auth:
+                        # For updates, use update_document, serialize StorageFileInfo into plain dicts
+                        updates = {
+                            "chunk_ids": doc.chunk_ids,
+                            "metadata": doc.metadata,
+                            "system_metadata": doc.system_metadata,
+                            "filename": doc.filename,
+                            "content_type": doc.content_type,
+                            "storage_info": doc.storage_info,
+                            "storage_files": (
+                                [
+                                    (
+                                        file.model_dump()
+                                        if hasattr(file, "model_dump")
+                                        else (file.dict() if hasattr(file, "dict") else file)
+                                    )
+                                    for file in doc.storage_files
+                                ]
+                                if doc.storage_files
+                                else []
+                            ),
+                        }
+                        success = await self.db.update_document(doc.external_id, updates, auth)
+                        if not success:
+                            raise Exception("Failed to update document metadata")
                     else:
-                        logger.error(f"All database connection attempts failed after {max_retries} retries: {error_msg}")
-                        raise Exception("Failed to store document metadata after multiple retries")
-                else:
-                    # For other exceptions, don't retry
-                    logger.error(f"Error storing document metadata: {error_msg}")
-                    raise
-        
+                        # For new documents, use store_document
+                        success = await self.db.store_document(doc)
+                        if not success:
+                            raise Exception("Failed to store document metadata")
+                    return success
+                except Exception as e:
+                    attempt += 1
+                    error_msg = str(e)
+                    if "connection was closed" in error_msg or "ConnectionDoesNotExistError" in error_msg:
+                        if attempt < max_retries:
+                            logger.warning(
+                                f"Database connection error during document metadata storage "
+                                f"(attempt {attempt}/{max_retries}): {error_msg}. "
+                                f"Retrying in {current_retry_delay}s..."
+                            )
+                            await asyncio.sleep(current_retry_delay)
+                            # Increase delay for next retry (exponential backoff)
+                            current_retry_delay *= 2
+                        else:
+                            logger.error(
+                                f"All database connection attempts failed " f"after {max_retries} retries: {error_msg}"
+                            )
+                            raise Exception("Failed to store document metadata after multiple retries")
+                    else:
+                        # For other exceptions, don't retry
+                        logger.error(f"Error storing document metadata: {error_msg}")
+                        raise
+
+        # Run storage operations in parallel when possible
+        storage_tasks = [store_with_retry(self.vector_store, chunk_objects, "regular")]
+
+        # Add colpali storage task if needed
+        if use_colpali and self.colpali_vector_store and chunk_objects_multivector:
+            storage_tasks.append(store_with_retry(self.colpali_vector_store, chunk_objects_multivector, "colpali"))
+
+        # Execute storage tasks concurrently
+        storage_results = await asyncio.gather(*storage_tasks)
+
+        # Combine chunk IDs
+        regular_chunk_ids = storage_results[0]
+        colpali_chunk_ids = storage_results[1] if len(storage_results) > 1 else []
+        doc.chunk_ids = regular_chunk_ids + colpali_chunk_ids
+
+        logger.debug(f"Stored chunk embeddings in vector stores: {len(doc.chunk_ids)} chunks total")
+
+        # Store document metadata (this must be done after chunk storage)
+        await store_document_with_retry()
+
         logger.debug("Stored document metadata in database")
         logger.debug(f"Chunk IDs stored: {doc.chunk_ids}")
         return doc.chunk_ids
 
-    async def _create_chunk_results(
-        self, auth: AuthContext, chunks: List[DocumentChunk]
-    ) -> List[ChunkResult]:
+    async def _create_chunk_results(self, auth: AuthContext, chunks: List[DocumentChunk]) -> List[ChunkResult]:
         """Create ChunkResult objects with document metadata."""
         results = []
+        if not chunks:
+            logger.info("No chunks provided, returning empty results")
+            return results
+
+        # Collect all unique document IDs from chunks
+        unique_doc_ids = list({chunk.document_id for chunk in chunks})
+
+        # Fetch all required documents in a single batch query
+        docs = await self.batch_retrieve_documents(unique_doc_ids, auth)
+
+        # Create a lookup dictionary of documents by ID
+        doc_map = {doc.external_id: doc for doc in docs}
+        logger.debug(f"Retrieved metadata for {len(doc_map)} unique documents in a single batch")
+
+        # Generate download URLs for all documents that have storage info
+        download_urls = {}
+        for doc_id, doc in doc_map.items():
+            if doc.storage_info:
+                download_urls[doc_id] = await self.storage.get_download_url(
+                    doc.storage_info["bucket"], doc.storage_info["key"]
+                )
+                logger.debug(f"Generated download URL for document {doc_id}")
+
+        # Create chunk results using the lookup dictionaries
         for chunk in chunks:
-            # Get document metadata
-            doc = await self.db.get_document(chunk.document_id, auth)
+            doc = doc_map.get(chunk.document_id)
             if not doc:
                 logger.warning(f"Document {chunk.document_id} not found")
                 continue
-            logger.debug(f"Retrieved metadata for document {chunk.document_id}")
 
-            # Generate download URL if needed
-            download_url = None
-            if doc.storage_info:
-                download_url = await self.storage.get_download_url(
-                    doc.storage_info["bucket"], doc.storage_info["key"]
-                )
-                logger.debug(f"Generated download URL for document {chunk.document_id}")
-
-            metadata = doc.metadata
+            metadata = doc.metadata.copy()
             metadata["is_image"] = chunk.metadata.get("is_image", False)
             results.append(
                 ChunkResult(
@@ -1076,47 +1047,62 @@ class DocumentService:
                     metadata=metadata,
                     content_type=doc.content_type,
                     filename=doc.filename,
-                    download_url=download_url,
+                    download_url=download_urls.get(chunk.document_id),
                 )
             )
 
         logger.info(f"Created {len(results)} chunk results")
         return results
 
-    async def _create_document_results(
-        self, auth: AuthContext, chunks: List[ChunkResult]
-    ) -> Dict[str, DocumentResult]:
+    async def _create_document_results(self, auth: AuthContext, chunks: List[ChunkResult]) -> Dict[str, DocumentResult]:
         """Group chunks by document and create DocumentResult objects."""
+        if not chunks:
+            logger.info("No chunks provided, returning empty results")
+            return {}
+
         # Group chunks by document and get highest scoring chunk per doc
         doc_chunks: Dict[str, ChunkResult] = {}
         for chunk in chunks:
-            if (
-                chunk.document_id not in doc_chunks
-                or chunk.score > doc_chunks[chunk.document_id].score
-            ):
+            if chunk.document_id not in doc_chunks or chunk.score > doc_chunks[chunk.document_id].score:
                 doc_chunks[chunk.document_id] = chunk
         logger.info(f"Grouped chunks into {len(doc_chunks)} documents")
-        logger.debug(f"Document chunks: {doc_chunks}")
+
+        # Get unique document IDs
+        unique_doc_ids = list(doc_chunks.keys())
+
+        # Fetch all documents in a single batch query
+        docs = await self.batch_retrieve_documents(unique_doc_ids, auth)
+
+        # Create a lookup dictionary of documents by ID
+        doc_map = {doc.external_id: doc for doc in docs}
+        logger.debug(f"Retrieved metadata for {len(doc_map)} unique documents in a single batch")
+
+        # Generate download URLs for non-text documents in a single loop
+        download_urls = {}
+        for doc_id, doc in doc_map.items():
+            if doc.content_type != "text/plain" and doc.storage_info:
+                download_urls[doc_id] = await self.storage.get_download_url(
+                    doc.storage_info["bucket"], doc.storage_info["key"]
+                )
+                logger.debug(f"Generated download URL for document {doc_id}")
+
+        # Create document results using the lookup dictionaries
         results = {}
         for doc_id, chunk in doc_chunks.items():
-            # Get document metadata
-            doc = await self.db.get_document(doc_id, auth)
+            doc = doc_map.get(doc_id)
             if not doc:
                 logger.warning(f"Document {doc_id} not found")
                 continue
-            logger.info(f"Retrieved metadata for document {doc_id}")
 
             # Create DocumentContent based on content type
             if doc.content_type == "text/plain":
                 content = DocumentContent(type="string", value=chunk.content, filename=None)
                 logger.debug(f"Created text content for document {doc_id}")
             else:
-                # Generate download URL for file types
-                download_url = await self.storage.get_download_url(
-                    doc.storage_info["bucket"], doc.storage_info["key"]
-                )
-                content = DocumentContent(type="url", value=download_url, filename=doc.filename)
+                # Use pre-generated download URL for file types
+                content = DocumentContent(type="url", value=download_urls.get(doc_id), filename=doc.filename)
                 logger.debug(f"Created URL content for document {doc_id}")
+
             results[doc_id] = DocumentResult(
                 score=chunk.score,
                 document_id=doc_id,
@@ -1200,9 +1186,7 @@ class DocumentService:
                 metadata["storage_info"]["bucket"], "caches/" + metadata["storage_info"]["key"]
             )
             cache_bytes = cache_bytes.read()
-            cache = self.cache_factory.load_cache_from_bytes(
-                name=name, cache_bytes=cache_bytes, metadata=metadata
-            )
+            cache = self.cache_factory.load_cache_from_bytes(name=name, cache_bytes=cache_bytes, metadata=metadata)
             self.active_caches[name] = cache
             return {"success": True, "message": "Cache loaded successfully"}
         except Exception as e:
@@ -1224,7 +1208,7 @@ class DocumentService:
     ) -> Optional[Document]:
         """
         Update a document with new content and/or metadata using the specified strategy.
-        
+
         Args:
             document_id: ID of the document to update
             auth: Authentication context
@@ -1235,7 +1219,7 @@ class DocumentService:
             rules: Optional list of rules to apply to the content
             update_strategy: Strategy for updating the document ('add' to append content)
             use_colpali: Whether to use multi-vector embedding
-            
+
         Returns:
             Updated document if successful, None if failed
         """
@@ -1243,11 +1227,11 @@ class DocumentService:
         doc = await self._validate_update_access(document_id, auth)
         if not doc:
             return None
-        
+
         # Get current content and determine update type
         current_content = doc.system_metadata.get("content", "")
-        metadata_only_update = (content is None and file is None and metadata is not None)
-        
+        metadata_only_update = content is None and file is None and metadata is not None
+
         # Process content based on update type
         update_content = None
         file_content = None
@@ -1263,7 +1247,7 @@ class DocumentService:
         elif not metadata_only_update:
             logger.error("Neither content nor file provided for document update")
             return None
-        
+
         # Apply content update strategy if we have new content
         if update_content:
             # Fix for initial file upload - if current_content is empty, just use the update_content
@@ -1273,126 +1257,149 @@ class DocumentService:
                 updated_content = update_content
             else:
                 updated_content = self._apply_update_strategy(current_content, update_content, update_strategy)
-                logger.info(f"Applied update strategy '{update_strategy}': original length={len(current_content)}, new length={len(updated_content)}")
-            
+                logger.info(
+                    f"Applied update strategy '{update_strategy}': original length={len(current_content)}, "
+                    f"new length={len(updated_content)}"
+                )
+
             # Always update the content in system_metadata
             doc.system_metadata["content"] = updated_content
             logger.info(f"Updated system_metadata['content'] with content of length {len(updated_content)}")
         else:
             updated_content = current_content
             logger.info(f"No content update - keeping current content of length {len(current_content)}")
-        
+
         # Update metadata and version information
         self._update_metadata_and_version(doc, metadata, update_strategy, file)
-        
+
         # For metadata-only updates, we don't need to re-process chunks
         if metadata_only_update:
             return await self._update_document_metadata_only(doc, auth)
-        
+
         # Process content into chunks and generate embeddings
-        chunks, chunk_objects = await self._process_chunks_and_embeddings(doc.external_id, updated_content)
+        chunks, chunk_objects = await self._process_chunks_and_embeddings(doc.external_id, updated_content, rules)
         if not chunks:
             return None
-        
+
+        # If we have rules processing, the chunks may have modified content
+        # Update document content with stitched content from processed chunks
+        if rules and chunks:
+            chunk_contents = [chunk.content for chunk in chunks]
+            stitched_content = "\n".join(chunk_contents)
+            # Check if content actually changed
+            if stitched_content != updated_content:
+                logger.info("Updating document content with stitched content from processed chunks...")
+                doc.system_metadata["content"] = stitched_content
+                logger.info(f"Updated document content with stitched chunks (length: {len(stitched_content)})")
+
+        # Merge any aggregated metadata from chunk rules
+        if hasattr(self, "_last_aggregated_metadata") and self._last_aggregated_metadata:
+            logger.info("Merging aggregated chunk metadata into document metadata...")
+            # Make sure doc.metadata exists
+            if not hasattr(doc, "metadata") or doc.metadata is None:
+                doc.metadata = {}
+            doc.metadata.update(self._last_aggregated_metadata)
+            logger.info(f"Final document metadata after merge: {doc.metadata}")
+            # Clear the temporary metadata
+            self._last_aggregated_metadata = {}
+
         # Handle colpali (multi-vector) embeddings if needed
         chunk_objects_multivector = await self._process_colpali_embeddings(
             use_colpali, doc.external_id, chunks, file, file_type, file_content, file_content_base64
         )
-        
+
         # Store everything - this will replace existing chunks with new ones
         await self._store_chunks_and_doc(
             chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
         )
         logger.info(f"Successfully updated document {doc.external_id}")
-        
+
         return doc
-        
+
     async def _validate_update_access(self, document_id: str, auth: AuthContext) -> Optional[Document]:
         """Validate user permissions and document access."""
         if "write" not in auth.permissions:
             logger.error(f"User {auth.entity_id} does not have write permission")
             raise PermissionError("User does not have write permission")
-            
+
         # Check if document exists and user has write access
         doc = await self.db.get_document(document_id, auth)
         if not doc:
             logger.error(f"Document {document_id} not found or not accessible")
             return None
-            
+
         if not await self.db.check_access(document_id, auth, "write"):
             logger.error(f"User {auth.entity_id} does not have write permission for document {document_id}")
             raise PermissionError(f"User does not have write permission for document {document_id}")
-            
+
         return doc
-        
+
     async def _process_text_update(
-        self, 
-        content: str, 
-        doc: Document, 
-        filename: Optional[str], 
-        metadata: Optional[Dict[str, Any]], 
-        rules: Optional[List]
+        self,
+        content: str,
+        doc: Document,
+        filename: Optional[str],
+        metadata: Optional[Dict[str, Any]],
+        rules: Optional[List],
     ) -> str:
         """Process text content updates."""
         update_content = content
-        
+
         # Update filename if provided
         if filename:
             doc.filename = filename
-        
-        # Apply rules if provided for text content
+
+        # Apply post_parsing rules if provided
         if rules:
-            rule_metadata, modified_text = await self.rules_processor.process_rules(content, rules)
+            logger.info("Applying post-parsing rules to text update...")
+            rule_metadata, modified_content = await self.rules_processor.process_document_rules(content, rules)
             # Update metadata with extracted metadata from rules
             if metadata is not None:
                 metadata.update(rule_metadata)
-            
-            if modified_text:
-                update_content = modified_text
-                logger.info("Updated content with modified text from rules")
-                
+
+            update_content = modified_content
+            logger.info(f"Content length after post-parsing rules: {len(update_content)}")
+
         return update_content
-        
+
     async def _process_file_update(
         self,
         file: UploadFile,
         doc: Document,
         metadata: Optional[Dict[str, Any]],
-        rules: Optional[List]
+        rules: Optional[List],
     ) -> tuple[str, bytes, Any, str]:
         """Process file content updates."""
         # Read file content
         file_content = await file.read()
-        
+
         # Parse the file content
-        additional_file_metadata, file_text = await self.parser.parse_file_to_text(
-            file_content, file.filename
-        )
+        additional_file_metadata, file_text = await self.parser.parse_file_to_text(file_content, file.filename)
         logger.info(f"Parsed file into text of length {len(file_text)}")
-        
-        # Apply rules if provided for file content
+
+        # Apply post_parsing rules if provided for file content
         if rules:
-            rule_metadata, modified_text = await self.rules_processor.process_rules(file_text, rules)
+            logger.info("Applying post-parsing rules to file update...")
+            rule_metadata, modified_text = await self.rules_processor.process_document_rules(file_text, rules)
             # Update metadata with extracted metadata from rules
             if metadata is not None:
                 metadata.update(rule_metadata)
-            
-            if modified_text:
-                file_text = modified_text
-                logger.info("Updated file content with modified text from rules")
-        
+
+            file_text = modified_text
+            logger.info(f"File content length after post-parsing rules: {len(file_text)}")
+
         # Add additional metadata from file if available
         if additional_file_metadata:
             if not doc.additional_metadata:
                 doc.additional_metadata = {}
             doc.additional_metadata.update(additional_file_metadata)
-        
+
         # Store file in storage if needed
         file_content_base64 = base64.b64encode(file_content).decode()
-        
+
         # Store file in storage and update storage info
         await self._update_storage_info(doc, file, file_content_base64)
-        
+
         # Store file type
         file_type = filetype.guess(file_content)
         if file_type:
@@ -1400,18 +1407,19 @@ class DocumentService:
         else:
             # If filetype.guess failed, try to determine from filename
             import mimetypes
+
             guessed_type = mimetypes.guess_type(file.filename)[0]
             if guessed_type:
                 doc.content_type = guessed_type
             else:
                 # Default fallback
-                doc.content_type = "text/plain" if file.filename.endswith('.txt') else "application/octet-stream"
-        
+                doc.content_type = "text/plain" if file.filename.endswith(".txt") else "application/octet-stream"
+
         # Update filename
         doc.filename = file.filename
-        
+
         return file_text, file_content, file_type, file_content_base64
-        
+
     async def _update_storage_info(self, doc: Document, file: UploadFile, file_content_base64: str):
         """Update document storage information for file content."""
         # Initialize storage_files array if needed - using the passed doc object directly
@@ -1419,7 +1427,7 @@ class DocumentService:
         if not hasattr(doc, "storage_files") or not doc.storage_files:
             # Initialize empty list
             doc.storage_files = []
-            
+
             # If storage_files is empty but we have storage_info, migrate legacy data
             if doc.storage_info and doc.storage_info.get("bucket") and doc.storage_info.get("key"):
                 # Create StorageFileInfo from storage_info
@@ -1429,11 +1437,11 @@ class DocumentService:
                     version=1,
                     filename=doc.filename,
                     content_type=doc.content_type,
-                    timestamp=doc.system_metadata.get("updated_at", datetime.now(UTC))
+                    timestamp=doc.system_metadata.get("updated_at", datetime.now(UTC)),
                 )
                 doc.storage_files.append(legacy_file_info)
                 logger.info(f"Migrated legacy storage_info to storage_files: {doc.storage_files}")
-            
+
         # Upload the new file with a unique key including version number
         # The version is based on the current length of storage_files to ensure correct versioning
         version = len(doc.storage_files) + 1
@@ -1441,7 +1449,7 @@ class DocumentService:
         storage_info = await self.storage.upload_from_base64(
             file_content_base64, f"{doc.external_id}_{version}{file_extension}", file.content_type
         )
-        
+
         # Add the new file to storage_files
         new_file_info = StorageFileInfo(
             bucket=storage_info[0],
@@ -1449,14 +1457,14 @@ class DocumentService:
             version=version,
             filename=file.filename,
             content_type=file.content_type,
-            timestamp=datetime.now(UTC)
+            timestamp=datetime.now(UTC),
         )
         doc.storage_files.append(new_file_info)
-        
+
         # Still update legacy storage_info with the latest file for backward compatibility
         doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
         logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
-        
+
     def _apply_update_strategy(self, current_content: str, update_content: str, update_strategy: str) -> str:
         """Apply the update strategy to combine current and new content."""
         if update_strategy == "add":
@@ -1466,56 +1474,65 @@ class DocumentService:
             # For now, just use 'add' as default strategy
             logger.warning(f"Unknown update strategy '{update_strategy}', defaulting to 'add'")
             return current_content + "\n\n" + update_content
-        
+
     def _update_metadata_and_version(
-        self, 
-        doc: Document, 
-        metadata: Optional[Dict[str, Any]], 
-        update_strategy: str, 
-        file: Optional[UploadFile]
+        self,
+        doc: Document,
+        metadata: Optional[Dict[str, Any]],
+        update_strategy: str,
+        file: Optional[UploadFile],
     ):
         """Update document metadata and version tracking."""
         # Update metadata if provided - additive but replacing existing keys
         if metadata:
             doc.metadata.update(metadata)
-            
+
         # Ensure external_id is preserved in metadata
         doc.metadata["external_id"] = doc.external_id
-        
+
         # Increment version
         current_version = doc.system_metadata.get("version", 1)
         doc.system_metadata["version"] = current_version + 1
         doc.system_metadata["updated_at"] = datetime.now(UTC)
-        
+
         # Track update history
         if "update_history" not in doc.system_metadata:
             doc.system_metadata["update_history"] = []
-            
+
         update_entry = {
             "timestamp": datetime.now(UTC).isoformat(),
             "version": current_version + 1,
             "strategy": update_strategy,
         }
-        
+
         if file:
             update_entry["filename"] = file.filename
-            
+
         if metadata:
             update_entry["metadata_updated"] = True
-            
+
         doc.system_metadata["update_history"].append(update_entry)
-        
+
         # Ensure storage_files models are properly typed as StorageFileInfo objects
         if hasattr(doc, "storage_files") and doc.storage_files:
             # Convert to StorageFileInfo objects if they're dicts or ensure they're properly serializable
             doc.storage_files = [
-                StorageFileInfo(**file) if isinstance(file, dict) else
-                (file if isinstance(file, StorageFileInfo) else 
-                 StorageFileInfo(**file.model_dump()) if hasattr(file, "model_dump") else
-                 StorageFileInfo(**file.dict()) if hasattr(file, "dict") else file)
+                (
+                    StorageFileInfo(**file)
+                    if isinstance(file, dict)
+                    else (
+                        file
+                        if isinstance(file, StorageFileInfo)
+                        else (
+                            StorageFileInfo(**file.model_dump())
+                            if hasattr(file, "model_dump")
+                            else StorageFileInfo(**file.dict()) if hasattr(file, "dict") else file
+                        )
+                    )
+                )
                 for file in doc.storage_files
             ]
-        
+
     async def _update_document_metadata_only(self, doc: Document, auth: AuthContext) -> Optional[Document]:
         """Update document metadata without reprocessing chunks."""
         updates = {
@@ -1527,35 +1544,61 @@ class DocumentService:
         }
         # Remove None values
         updates = {k: v for k, v in updates.items() if v is not None}
-        
+
         success = await self.db.update_document(doc.external_id, updates, auth)
         if not success:
             logger.error(f"Failed to update document {doc.external_id} metadata")
             return None
-            
+
         logger.info(f"Successfully updated document metadata for {doc.external_id}")
         return doc
-        
-    async def _process_chunks_and_embeddings(self, doc_id: str, content: str) -> tuple[List[Chunk], List[DocumentChunk]]:
+
+    async def _process_chunks_and_embeddings(
+        self, doc_id: str, content: str, rules: Optional[List[Dict[str, Any]]] = None
+    ) -> tuple[List[Chunk], List[DocumentChunk]]:
         """Process content into chunks and generate embeddings."""
         # Split content into chunks
-        chunks = await self.parser.split_text(content)
-        if not chunks:
+        parsed_chunks = await self.parser.split_text(content)
+        if not parsed_chunks:
             logger.error("No content chunks extracted after update")
             return None, None
-            
-        logger.info(f"Split updated text into {len(chunks)} chunks")
-        
-        # Generate embeddings for new chunks
-        embeddings = await self.embedding_model.embed_for_ingestion(chunks)
+
+        logger.info(f"Split updated text into {len(parsed_chunks)} chunks")
+
+        # Apply post_chunking rules and aggregate metadata if provided
+        processed_chunks = []
+        aggregated_chunk_metadata: Dict[str, Any] = {}  # Initialize dict for aggregated metadata
+        chunk_contents = []  # Initialize list to collect chunk contents efficiently
+
+        if rules:
+            logger.info("Applying post-chunking rules...")
+
+            for chunk_obj in parsed_chunks:
+                # Get metadata *and* the potentially modified chunk
+                chunk_rule_metadata, processed_chunk = await self.rules_processor.process_chunk_rules(chunk_obj, rules)
+                processed_chunks.append(processed_chunk)
+                chunk_contents.append(processed_chunk.content)  # Collect content as we process
+                # Aggregate the metadata extracted from this chunk
+                aggregated_chunk_metadata.update(chunk_rule_metadata)
+            logger.info(f"Finished applying post-chunking rules to {len(processed_chunks)} chunks.")
+            logger.info(f"Aggregated metadata from all chunks: {aggregated_chunk_metadata}")
+
+            # Return this metadata so the calling method can update the document metadata
+            self._last_aggregated_metadata = aggregated_chunk_metadata
+        else:
+            processed_chunks = parsed_chunks  # No rules, use original chunks
+            self._last_aggregated_metadata = {}
+
+        # Generate embeddings for processed chunks
+        embeddings = await self.embedding_model.embed_for_ingestion(processed_chunks)
         logger.info(f"Generated {len(embeddings)} embeddings")
-        
+
         # Create new chunk objects
-        chunk_objects = self._create_chunk_objects(doc_id, chunks, embeddings)
+        chunk_objects = self._create_chunk_objects(doc_id, processed_chunks, embeddings)
         logger.info(f"Created {len(chunk_objects)} chunk objects")
-        
-        return chunks, chunk_objects
-        
+
+        return processed_chunks, chunk_objects
+
     async def _process_colpali_embeddings(
         self,
         use_colpali: bool,
@@ -1564,39 +1607,33 @@ class DocumentService:
         file: Optional[UploadFile],
         file_type: Any,
         file_content: Optional[bytes],
-        file_content_base64: Optional[str]
+        file_content_base64: Optional[str],
     ) -> List[DocumentChunk]:
         """Process colpali multi-vector embeddings if enabled."""
         chunk_objects_multivector = []
-        
+
         if not (use_colpali and self.colpali_embedding_model and self.colpali_vector_store):
             return chunk_objects_multivector
-            
+
         # For file updates, we need special handling for images and PDFs
         if file and file_type and (file_type.mime in IMAGE or file_type.mime == "application/pdf"):
             # Rewind the file and read it again if needed
-            if hasattr(file, 'seek') and callable(file.seek) and not file_content:
+            if hasattr(file, "seek") and callable(file.seek) and not file_content:
                 await file.seek(0)
                 file_content = await file.read()
                 file_content_base64 = base64.b64encode(file_content).decode()
-            
-            chunks_multivector = self._create_chunks_multivector(
-                file_type, file_content_base64, file_content, chunks
-            )
+
+            chunks_multivector = self._create_chunks_multivector(file_type, file_content_base64, file_content, chunks)
             logger.info(f"Created {len(chunks_multivector)} chunks for multivector embedding")
             colpali_embeddings = await self.colpali_embedding_model.embed_for_ingestion(chunks_multivector)
             logger.info(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
-            chunk_objects_multivector = self._create_chunk_objects(
-                doc_id, chunks_multivector, colpali_embeddings
-            )
+            chunk_objects_multivector = self._create_chunk_objects(doc_id, chunks_multivector, colpali_embeddings)
         else:
             # For text updates or non-image/PDF files
             embeddings_multivector = await self.colpali_embedding_model.embed_for_ingestion(chunks)
             logger.info(f"Generated {len(embeddings_multivector)} embeddings for multivector embedding")
-            chunk_objects_multivector = self._create_chunk_objects(
-                doc_id, chunks, embeddings_multivector
-            )
-            
+            chunk_objects_multivector = self._create_chunk_objects(doc_id, chunks, embeddings_multivector)
+
         logger.info(f"Created {len(chunk_objects_multivector)} chunk objects for multivector embedding")
         return chunk_objects_multivector
 
@@ -1635,7 +1672,7 @@ class DocumentService:
             prompt_overrides=prompt_overrides,
             system_filters=system_filters,
         )
-        
+
     async def update_graph(
         self,
         name: str,
@@ -1646,10 +1683,10 @@ class DocumentService:
         system_filters: Optional[Dict[str, Any]] = None,
     ) -> Graph:
         """Update an existing graph with new documents.
-        
+
         This function processes additional documents matching the original or new filters,
         extracts entities and relationships, and updates the graph with new information.
-        
+
         Args:
             name: Name of the graph to update
             auth: Authentication context
@@ -1657,7 +1694,7 @@ class DocumentService:
             additional_documents: Optional list of additional document IDs to include
             prompt_overrides: Optional customizations for entity extraction and resolution prompts
             system_filters: Optional system filters like folder_name and end_user_id for scoping
-            
+
         Returns:
             Graph: The updated graph
         """
@@ -1711,56 +1748,63 @@ class DocumentService:
         if not db_success:
             logger.error(f"Failed to delete document {document_id} from database")
             return False
-            
+
         logger.info(f"Deleted document {document_id} from database")
-        
-        # Try to delete chunks from vector store if they exist
-        if hasattr(document, 'chunk_ids') and document.chunk_ids:
+
+        # Collect storage deletion tasks
+        storage_deletion_tasks = []
+
+        # Collect vector store deletion tasks
+        vector_deletion_tasks = []
+
+        # Add vector store deletion tasks if chunks exist
+        if hasattr(document, "chunk_ids") and document.chunk_ids:
+            # Try to delete chunks by document ID
+            # Note: Some vector stores may not implement this method
+            if hasattr(self.vector_store, "delete_chunks_by_document_id"):
+                vector_deletion_tasks.append(self.vector_store.delete_chunks_by_document_id(document_id))
+
+            # Try to delete from colpali vector store as well
+            if self.colpali_vector_store and hasattr(self.colpali_vector_store, "delete_chunks_by_document_id"):
+                vector_deletion_tasks.append(self.colpali_vector_store.delete_chunks_by_document_id(document_id))
+
+        # Collect storage file deletion tasks
+        if hasattr(document, "storage_info") and document.storage_info:
+            bucket = document.storage_info.get("bucket")
+            key = document.storage_info.get("key")
+            if bucket and key and hasattr(self.storage, "delete_file"):
+                storage_deletion_tasks.append(self.storage.delete_file(bucket, key))
+
+        # Also handle the case of multiple file versions in storage_files
+        if hasattr(document, "storage_files") and document.storage_files:
+            for file_info in document.storage_files:
+                bucket = file_info.get("bucket")
+                key = file_info.get("key")
+                if bucket and key and hasattr(self.storage, "delete_file"):
+                    storage_deletion_tasks.append(self.storage.delete_file(bucket, key))
+
+        # Execute deletion tasks in parallel
+        if vector_deletion_tasks or storage_deletion_tasks:
             try:
-                # Try to delete chunks by document ID
-                # Note: Some vector stores may not implement this method
-                if hasattr(self.vector_store, 'delete_chunks_by_document_id'):
-                    await self.vector_store.delete_chunks_by_document_id(document_id)
-                    logger.info(f"Deleted chunks for document {document_id} from vector store")
-                else:
-                    logger.warning(f"Vector store does not support deleting chunks by document ID")
-                
-                # Try to delete from colpali vector store as well
-                if self.colpali_vector_store and hasattr(self.colpali_vector_store, 'delete_chunks_by_document_id'):
-                    await self.colpali_vector_store.delete_chunks_by_document_id(document_id)
-                    logger.info(f"Deleted chunks for document {document_id} from colpali vector store")
+                # Run all deletion tasks concurrently
+                all_deletion_results = await asyncio.gather(
+                    *vector_deletion_tasks, *storage_deletion_tasks, return_exceptions=True
+                )
+
+                # Log any errors but continue with deletion
+                for i, result in enumerate(all_deletion_results):
+                    if isinstance(result, Exception):
+                        # Determine if this was a vector store or storage deletion
+                        task_type = "vector store" if i < len(vector_deletion_tasks) else "storage"
+                        logger.error(f"Error during {task_type} deletion for document {document_id}: {result}")
+
             except Exception as e:
-                logger.error(f"Error deleting chunks for document {document_id}: {e}")
-                # We continue even if chunk deletion fails - don't block document deletion
-        
-        # Delete file from storage if it exists
-        if hasattr(document, 'storage_info') and document.storage_info:
-            try:
-                bucket = document.storage_info.get("bucket")
-                key = document.storage_info.get("key")
-                if bucket and key:
-                    # Check if the storage provider supports deletion
-                    if hasattr(self.storage, 'delete_file'):
-                        await self.storage.delete_file(bucket, key)
-                        logger.info(f"Deleted file for document {document_id} from storage (bucket: {bucket}, key: {key})")
-                    else:
-                        logger.warning(f"Storage provider does not support file deletion")
-                
-                # Also handle the case of multiple file versions in storage_files
-                if hasattr(document, 'storage_files') and document.storage_files:
-                    for file_info in document.storage_files:
-                        bucket = file_info.get("bucket")
-                        key = file_info.get("key")
-                        if bucket and key and hasattr(self.storage, 'delete_file'):
-                            await self.storage.delete_file(bucket, key)
-                            logger.info(f"Deleted file version for document {document_id} from storage (bucket: {bucket}, key: {key})")
-            except Exception as e:
-                logger.error(f"Error deleting file for document {document_id}: {e}")
-                # We continue even if file deletion fails - don't block document deletion
-        
+                logger.error(f"Error during parallel deletion operations for document {document_id}: {e}")
+                # We continue even if deletions fail - document is already deleted from DB
+
         logger.info(f"Successfully deleted document {document_id} and all associated data")
         return True
-    
+
     def close(self):
         """Close all resources."""
         # Close any active caches

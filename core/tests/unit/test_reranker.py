@@ -1,9 +1,10 @@
-import pytest
 from typing import List
 
+import pytest
+
+from core.config import get_settings
 from core.models.chunk import DocumentChunk
 from core.reranker.flag_reranker import FlagReranker
-from core.config import get_settings
 
 
 @pytest.fixture

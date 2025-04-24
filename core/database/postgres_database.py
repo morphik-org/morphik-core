@@ -1,17 +1,18 @@
 import json
-from typing import List, Optional, Dict, Any
-from datetime import datetime, UTC
 import logging
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, String, Index, select, text
-from sqlalchemy.dialects.postgresql import JSONB
+from datetime import UTC, datetime
+from typing import Any, Dict, List, Optional
 
-from .base_database import BaseDatabase
-from ..models.documents import Document, StorageFileInfo
+from sqlalchemy import Column, Index, String, select, text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
+
 from ..models.auth import AuthContext
-from ..models.graph import Graph
+from ..models.documents import Document, StorageFileInfo
 from ..models.folders import Folder
+from ..models.graph import Graph
+from .base_database import BaseDatabase
 
 logger = logging.getLogger(__name__)
 Base = declarative_base()
@@ -48,7 +49,7 @@ class GraphModel(Base):
     __tablename__ = "graphs"
 
     id = Column(String, primary_key=True)
-    name = Column(String, unique=True, index=True)
+    name = Column(String, index=True)  # Not unique globally anymore
     entities = Column(JSONB, default=list)
     relationships = Column(JSONB, default=list)
     graph_metadata = Column(JSONB, default=dict)  # Renamed from 'metadata' to avoid conflict
@@ -66,6 +67,8 @@ class GraphModel(Base):
         Index("idx_graph_owner", "owner", postgresql_using="gin"),
         Index("idx_graph_access_control", "access_control", postgresql_using="gin"),
         Index("idx_graph_system_metadata", "system_metadata", postgresql_using="gin"),
+        # Create a unique constraint on name scoped by owner ID
+        Index("idx_graph_owner_name", "name", text("(owner->>'id')"), unique=True),
     )
 
 
@@ -112,18 +115,21 @@ class PostgresDatabase(BaseDatabase):
         """Initialize PostgreSQL connection for document storage."""
         # Load settings from config
         from core.config import get_settings
+
         settings = get_settings()
-        
+
         # Get database pool settings from config with defaults
         pool_size = getattr(settings, "DB_POOL_SIZE", 20)
         max_overflow = getattr(settings, "DB_MAX_OVERFLOW", 30)
         pool_recycle = getattr(settings, "DB_POOL_RECYCLE", 3600)
         pool_timeout = getattr(settings, "DB_POOL_TIMEOUT", 10)
         pool_pre_ping = getattr(settings, "DB_POOL_PRE_PING", True)
-        
-        logger.info(f"Initializing PostgreSQL connection pool with size={pool_size}, "
-                   f"max_overflow={max_overflow}, pool_recycle={pool_recycle}s")
-        
+
+        logger.info(
+            f"Initializing PostgreSQL connection pool with size={pool_size}, "
+            f"max_overflow={max_overflow}, pool_recycle={pool_recycle}s"
+        )
+
         # Create async engine with explicit pool settings
         self.engine = create_async_engine(
             uri,
@@ -176,8 +182,8 @@ class PostgresDatabase(BaseDatabase):
                 result = await conn.execute(
                     text(
                         """
-                    SELECT column_name 
-                    FROM information_schema.columns 
+                    SELECT column_name
+                    FROM information_schema.columns
                     WHERE table_name = 'documents' AND column_name = 'storage_files'
                     """
                     )
@@ -187,13 +193,13 @@ class PostgresDatabase(BaseDatabase):
                     await conn.execute(
                         text(
                             """
-                        ALTER TABLE documents 
+                        ALTER TABLE documents
                         ADD COLUMN IF NOT EXISTS storage_files JSONB DEFAULT '[]'::jsonb
                         """
                         )
                     )
                     logger.info("Added storage_files column to documents table")
-                    
+
                 # Create indexes for folder_name and end_user_id in system_metadata for documents
                 await conn.execute(
                     text(
@@ -203,7 +209,7 @@ class PostgresDatabase(BaseDatabase):
                     """
                     )
                 )
-                
+
                 # Create folders table if it doesn't exist
                 await conn.execute(
                     text(
@@ -220,13 +226,13 @@ class PostgresDatabase(BaseDatabase):
                     """
                     )
                 )
-                
+
                 # Add rules column to folders table if it doesn't exist
                 result = await conn.execute(
                     text(
                         """
-                    SELECT column_name 
-                    FROM information_schema.columns 
+                    SELECT column_name
+                    FROM information_schema.columns
                     WHERE table_name = 'folders' AND column_name = 'rules'
                     """
                     )
@@ -236,18 +242,20 @@ class PostgresDatabase(BaseDatabase):
                     await conn.execute(
                         text(
                             """
-                        ALTER TABLE folders 
+                        ALTER TABLE folders
                         ADD COLUMN IF NOT EXISTS rules JSONB DEFAULT '[]'::jsonb
                         """
                         )
                     )
                     logger.info("Added rules column to folders table")
-                
+
                 # Create indexes for folders table
                 await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_name ON folders (name);"))
                 await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_owner ON folders USING gin (owner);"))
-                await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_access_control ON folders USING gin (access_control);"))
-                
+                await conn.execute(
+                    text("CREATE INDEX IF NOT EXISTS idx_folder_access_control ON folders USING gin (access_control);")
+                )
+
                 await conn.execute(
                     text(
                         """
@@ -256,13 +264,13 @@ class PostgresDatabase(BaseDatabase):
                     """
                     )
                 )
-                
+
                 # Check if system_metadata column exists in graphs table
                 result = await conn.execute(
                     text(
                         """
-                    SELECT column_name 
-                    FROM information_schema.columns 
+                    SELECT column_name
+                    FROM information_schema.columns
                     WHERE table_name = 'graphs' AND column_name = 'system_metadata'
                     """
                     )
@@ -272,13 +280,13 @@ class PostgresDatabase(BaseDatabase):
                     await conn.execute(
                         text(
                             """
-                        ALTER TABLE graphs 
+                        ALTER TABLE graphs
                         ADD COLUMN IF NOT EXISTS system_metadata JSONB DEFAULT '{}'::jsonb
                         """
                         )
                     )
                     logger.info("Added system_metadata column to graphs table")
-                
+
                 # Create indexes for folder_name and end_user_id in system_metadata for graphs
                 await conn.execute(
                     text(
@@ -288,7 +296,7 @@ class PostgresDatabase(BaseDatabase):
                     """
                     )
                 )
-                
+
                 await conn.execute(
                     text(
                         """
@@ -297,7 +305,7 @@ class PostgresDatabase(BaseDatabase):
                     """
                     )
                 )
-                
+
                 logger.info("Created indexes for folder_name and end_user_id in system_metadata")
 
             logger.info("PostgreSQL tables and indexes created successfully")
@@ -369,7 +377,7 @@ class PostgresDatabase(BaseDatabase):
                                 storage_files.append(StorageFileInfo(**file_info))
                             else:
                                 storage_files.append(file_info)
-                                
+
                     doc_dict = {
                         "external_id": doc_model.external_id,
                         "owner": doc_model.owner,
@@ -385,15 +393,17 @@ class PostgresDatabase(BaseDatabase):
                     }
                     return Document(**doc_dict)
                 return None
-                
+
         except Exception as e:
             logger.error(f"Error retrieving document metadata: {str(e)}")
             return None
-            
-    async def get_document_by_filename(self, filename: str, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> Optional[Document]:
+
+    async def get_document_by_filename(
+        self, filename: str, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None
+    ) -> Optional[Document]:
         """Retrieve document metadata by filename if user has access.
         If multiple documents have the same filename, returns the most recently updated one.
-        
+
         Args:
             filename: The filename to search for
             auth: Authentication context
@@ -404,28 +414,27 @@ class PostgresDatabase(BaseDatabase):
                 # Build access filter
                 access_filter = self._build_access_filter(auth)
                 system_metadata_filter = self._build_system_metadata_filter(system_filters)
-                filename = filename.replace('\'', '\'\'')
+                filename = filename.replace("'", "''")
                 # Construct where clauses
                 where_clauses = [
                     f"({access_filter})",
-                    f"filename = '{filename}'"  # Escape single quotes
+                    f"filename = '{filename}'",  # Escape single quotes
                 ]
-                
+
                 if system_metadata_filter:
                     where_clauses.append(f"({system_metadata_filter})")
-                    
+
                 final_where_clause = " AND ".join(where_clauses)
 
                 # Query document with system filters
                 query = (
-                    select(DocumentModel)
-                    .where(text(final_where_clause))
+                    select(DocumentModel).where(text(final_where_clause))
                     # Order by updated_at in system_metadata to get the most recent document
                     .order_by(text("system_metadata->>'updated_at' DESC"))
                 )
 
                 logger.debug(f"Querying document by filename with system filters: {system_filters}")
-                
+
                 result = await session.execute(query)
                 doc_model = result.scalar_one_or_none()
 
@@ -439,7 +448,7 @@ class PostgresDatabase(BaseDatabase):
                                 storage_files.append(StorageFileInfo(**file_info))
                             else:
                                 storage_files.append(file_info)
-                                
+
                     doc_dict = {
                         "external_id": doc_model.external_id,
                         "owner": doc_model.owner,
@@ -455,55 +464,57 @@ class PostgresDatabase(BaseDatabase):
                     }
                     return Document(**doc_dict)
                 return None
-                
+
         except Exception as e:
             logger.error(f"Error retrieving document metadata by filename: {str(e)}")
             return None
-            
-    async def get_documents_by_id(self, document_ids: List[str], auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> List[Document]:
+
+    async def get_documents_by_id(
+        self,
+        document_ids: List[str],
+        auth: AuthContext,
+        system_filters: Optional[Dict[str, Any]] = None,
+    ) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
         Only returns documents the user has access to.
         Can filter by system metadata fields like folder_name and end_user_id.
-        
+
         Args:
             document_ids: List of document IDs to retrieve
             auth: Authentication context
             system_filters: Optional filters for system metadata fields
-            
+
         Returns:
             List of Document objects that were found and user has access to
         """
         try:
             if not document_ids:
                 return []
-                
+
             async with self.async_session() as session:
                 # Build access filter
                 access_filter = self._build_access_filter(auth)
                 system_metadata_filter = self._build_system_metadata_filter(system_filters)
-                
+
                 # Construct where clauses
-                document_ids_linked = ', '.join([('\'' + doc_id + '\'') for doc_id in document_ids])
-                where_clauses = [
-                    f"({access_filter})",
-                    f"external_id IN ({document_ids_linked})"
-                ]
-                
+                document_ids_linked = ", ".join([("'" + doc_id + "'") for doc_id in document_ids])
+                where_clauses = [f"({access_filter})", f"external_id IN ({document_ids_linked})"]
+
                 if system_metadata_filter:
                     where_clauses.append(f"({system_metadata_filter})")
-                    
+
                 final_where_clause = " AND ".join(where_clauses)
-                
+
                 # Query documents with document IDs, access check, and system filters in a single query
                 query = select(DocumentModel).where(text(final_where_clause))
-                
+
                 logger.info(f"Batch retrieving {len(document_ids)} documents with a single query")
-                
+
                 # Execute batch query
                 result = await session.execute(query)
                 doc_models = result.scalars().all()
-                
+
                 documents = []
                 for doc_model in doc_models:
                     # Convert doc_metadata back to metadata
@@ -521,10 +532,10 @@ class PostgresDatabase(BaseDatabase):
                         "storage_files": doc_model.storage_files or [],
                     }
                     documents.append(Document(**doc_dict))
-                
+
                 logger.info(f"Found {len(documents)} documents in batch retrieval")
                 return documents
-                
+
         except Exception as e:
             logger.error(f"Error batch retrieving documents: {str(e)}")
             return []
@@ -546,13 +557,13 @@ class PostgresDatabase(BaseDatabase):
                 system_metadata_filter = self._build_system_metadata_filter(system_filters)
 
                 where_clauses = [f"({access_filter})"]
-                
+
                 if metadata_filter:
                     where_clauses.append(f"({metadata_filter})")
-                    
+
                 if system_metadata_filter:
                     where_clauses.append(f"({system_metadata_filter})")
-                    
+
                 final_where_clause = " AND ".join(where_clauses)
                 query = select(DocumentModel).where(text(final_where_clause))
 
@@ -582,14 +593,12 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error listing documents: {str(e)}")
             return []
 
-    async def update_document(
-        self, document_id: str, updates: Dict[str, Any], auth: AuthContext
-    ) -> bool:
+    async def update_document(self, document_id: str, updates: Dict[str, Any], auth: AuthContext) -> bool:
         """Update document metadata if user has write access."""
         try:
             if not await self.check_access(document_id, auth, "write"):
                 return False
-                
+
             # Get existing document to preserve system_metadata
             existing_doc = await self.get_document(document_id, auth)
             if not existing_doc:
@@ -597,7 +606,7 @@ class PostgresDatabase(BaseDatabase):
 
             # Update system metadata
             updates.setdefault("system_metadata", {})
-            
+
             # Merge with existing system_metadata instead of just preserving specific fields
             if existing_doc.system_metadata:
                 # Start with existing system_metadata
@@ -606,8 +615,8 @@ class PostgresDatabase(BaseDatabase):
                 merged_system_metadata.update(updates["system_metadata"])
                 # Replace with merged result
                 updates["system_metadata"] = merged_system_metadata
-                logger.debug(f"Merged system_metadata during document update, preserving existing fields")
-            
+                logger.debug("Merged system_metadata during document update, preserving existing fields")
+
             # Always update the updated_at timestamp
             updates["system_metadata"]["updated_at"] = datetime.now(UTC)
 
@@ -615,35 +624,35 @@ class PostgresDatabase(BaseDatabase):
             updates = _serialize_datetime(updates)
 
             async with self.async_session() as session:
-                result = await session.execute(
-                    select(DocumentModel).where(DocumentModel.external_id == document_id)
-                )
+                result = await session.execute(select(DocumentModel).where(DocumentModel.external_id == document_id))
                 doc_model = result.scalar_one_or_none()
 
                 if doc_model:
                     # Log what we're updating
                     logger.info(f"Document update: updating fields {list(updates.keys())}")
-                    
+
                     # Special handling for metadata/doc_metadata conversion
                     if "metadata" in updates and "doc_metadata" not in updates:
                         logger.info("Converting 'metadata' to 'doc_metadata' for database update")
                         updates["doc_metadata"] = updates.pop("metadata")
-                    
+
                     # Set all attributes
                     for key, value in updates.items():
                         if key == "storage_files" and isinstance(value, list):
-                            # Ensure storage_files items are serializable (convert StorageFileInfo to dict)
                             serialized_value = [
-                                item.model_dump() if hasattr(item, "model_dump") else
-                                (item.dict() if hasattr(item, "dict") else item)
+                                _serialize_datetime(
+                                    item.model_dump()
+                                    if hasattr(item, "model_dump")
+                                    else (item.dict() if hasattr(item, "dict") else item)
+                                )
                                 for item in value
                             ]
-                            logger.debug(f"Serializing storage_files before setting attribute")
+                            logger.debug("Serializing storage_files before setting attribute")
                             setattr(doc_model, key, serialized_value)
                         else:
                             logger.debug(f"Setting document attribute {key} = {value}")
                             setattr(doc_model, key, value)
-                        
+
                     await session.commit()
                     logger.info(f"Document {document_id} updated successfully")
                     return True
@@ -660,9 +669,7 @@ class PostgresDatabase(BaseDatabase):
                 return False
 
             async with self.async_session() as session:
-                result = await session.execute(
-                    select(DocumentModel).where(DocumentModel.external_id == document_id)
-                )
+                result = await session.execute(select(DocumentModel).where(DocumentModel.external_id == document_id))
                 doc_model = result.scalar_one_or_none()
 
                 if doc_model:
@@ -676,7 +683,10 @@ class PostgresDatabase(BaseDatabase):
             return False
 
     async def find_authorized_and_filtered_documents(
-        self, auth: AuthContext, filters: Optional[Dict[str, Any]] = None, system_filters: Optional[Dict[str, Any]] = None
+        self,
+        auth: AuthContext,
+        filters: Optional[Dict[str, Any]] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
     ) -> List[str]:
         """Find document IDs matching filters and access permissions."""
         try:
@@ -693,13 +703,13 @@ class PostgresDatabase(BaseDatabase):
                 logger.debug(f"System filters: {system_filters}")
 
                 where_clauses = [f"({access_filter})"]
-                
+
                 if metadata_filter:
                     where_clauses.append(f"({metadata_filter})")
-                    
+
                 if system_metadata_filter:
                     where_clauses.append(f"({system_metadata_filter})")
-                    
+
                 final_where_clause = " AND ".join(where_clauses)
                 query = select(DocumentModel.external_id).where(text(final_where_clause))
 
@@ -714,15 +724,11 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error finding authorized documents: {str(e)}")
             return []
 
-    async def check_access(
-        self, document_id: str, auth: AuthContext, required_permission: str = "read"
-    ) -> bool:
+    async def check_access(self, document_id: str, auth: AuthContext, required_permission: str = "read") -> bool:
         """Check if user has required permission for document."""
         try:
             async with self.async_session() as session:
-                result = await session.execute(
-                    select(DocumentModel).where(DocumentModel.external_id == document_id)
-                )
+                result = await session.execute(select(DocumentModel).where(DocumentModel.external_id == document_id))
                 doc_model = result.scalar_one_or_none()
 
                 if not doc_model:
@@ -759,12 +765,13 @@ class PostgresDatabase(BaseDatabase):
         if auth.entity_type == "DEVELOPER" and auth.app_id:
             # Add app-specific access for developers
             filters.append(f"access_control->'app_access' ? '{auth.app_id}'")
-            
+
         # Add user_id filter in cloud mode
         if auth.user_id:
             from core.config import get_settings
+
             settings = get_settings()
-            
+
             if settings.MODE == "cloud":
                 # Filter by user_id in access_control
                 filters.append(f"access_control->>'user_id' = '{auth.user_id}'")
@@ -782,18 +789,19 @@ class PostgresDatabase(BaseDatabase):
             if isinstance(value, list):
                 if not value:  # Skip empty lists
                     continue
-                    
+
                 # Build a list of properly escaped values
                 escaped_values = []
                 for item in value:
                     if isinstance(item, bool):
                         escaped_values.append(str(item).lower())
                     elif isinstance(item, str):
-                        temp_item = item.replace('\'', '\'\'')
-                        escaped_values.append(f"'{temp_item}'")
+                        # Use standard replace, avoid complex f-string quoting for black
+                        escaped_value = item.replace("'", "''")
+                        escaped_values.append(f"'{escaped_value}'")
                     else:
                         escaped_values.append(f"'{item}'")
-                        
+
                 # Join with commas for IN clause
                 values_str = ", ".join(escaped_values)
                 filter_conditions.append(f"doc_metadata->>'{key}' IN ({values_str})")
@@ -802,42 +810,43 @@ class PostgresDatabase(BaseDatabase):
                 # Convert boolean values to string 'true' or 'false'
                 if isinstance(value, bool):
                     value = str(value).lower()
-                    
+
                 # Use proper SQL escaping for string values
                 if isinstance(value, str):
                     # Replace single quotes with double single quotes to escape them
-                    value = value.replace("'", "''") 
-                    
+                    value = value.replace("'", "''")
+
                 filter_conditions.append(f"doc_metadata->>'{key}' = '{value}'")
 
         return " AND ".join(filter_conditions)
-        
+
     def _build_system_metadata_filter(self, system_filters: Optional[Dict[str, Any]]) -> str:
         """Build PostgreSQL filter for system metadata."""
         if not system_filters:
             return ""
-            
+
         conditions = []
         for key, value in system_filters.items():
             if value is None:
                 continue
-                
+
             # Handle list of values (IN operator)
             if isinstance(value, list):
                 if not value:  # Skip empty lists
                     continue
-                    
+
                 # Build a list of properly escaped values
                 escaped_values = []
                 for item in value:
                     if isinstance(item, bool):
                         escaped_values.append(str(item).lower())
                     elif isinstance(item, str):
-                        temp_item = item.replace('\'', '\'\'')
-                        escaped_values.append(f"'{temp_item}'")
+                        # Use standard replace, avoid complex f-string quoting for black
+                        escaped_value = item.replace("'", "''")
+                        escaped_values.append(f"'{escaped_value}'")
                     else:
                         escaped_values.append(f"'{item}'")
-                        
+
                 # Join with commas for IN clause
                 values_str = ", ".join(escaped_values)
                 conditions.append(f"system_metadata->>'{key}' IN ({values_str})")
@@ -851,7 +860,7 @@ class PostgresDatabase(BaseDatabase):
                     conditions.append(f"system_metadata->>'{key}' = '{str(value).lower()}'")
                 else:
                     conditions.append(f"system_metadata->>'{key}' = '{value}'")
-                
+
         return " AND ".join(conditions)
 
     async def store_cache_metadata(self, name: str, metadata: Dict[str, Any]) -> bool:
@@ -896,9 +905,7 @@ class PostgresDatabase(BaseDatabase):
         """
         try:
             async with self.async_session() as session:
-                result = await session.execute(
-                    text("SELECT metadata FROM caches WHERE name = :name"), {"name": name}
-                )
+                result = await session.execute(text("SELECT metadata FROM caches WHERE name = :name"), {"name": name})
                 row = result.first()
                 return row[0] if row else None
         except Exception as e:
@@ -938,7 +945,10 @@ class PostgresDatabase(BaseDatabase):
                 graph_model = GraphModel(**graph_dict)
                 session.add(graph_model)
                 await session.commit()
-                logger.info(f"Stored graph '{graph.name}' with {len(graph.entities)} entities and {len(graph.relationships)} relationships")
+                logger.info(
+                    f"Stored graph '{graph.name}' with {len(graph.entities)} entities "
+                    f"and {len(graph.relationships)} relationships"
+                )
 
             return True
 
@@ -946,7 +956,9 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error storing graph: {str(e)}")
             return False
 
-    async def get_graph(self, name: str, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> Optional[Graph]:
+    async def get_graph(
+        self, name: str, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None
+    ) -> Optional[Graph]:
         """Get a graph by name.
 
         Args:
@@ -968,11 +980,7 @@ class PostgresDatabase(BaseDatabase):
 
                 # We need to check if the documents in the graph match the system filters
                 # First get the graph without system filters
-                query = (
-                    select(GraphModel)
-                    .where(GraphModel.name == name)
-                    .where(text(f"({access_filter})"))
-                )
+                query = select(GraphModel).where(GraphModel.name == name).where(text(f"({access_filter})"))
 
                 result = await session.execute(query)
                 graph_model = result.scalar_one_or_none()
@@ -980,30 +988,30 @@ class PostgresDatabase(BaseDatabase):
                 if graph_model:
                     # If system filters are provided, we need to filter the document_ids
                     document_ids = graph_model.document_ids
-                    
+
                     if system_filters and document_ids:
                         # Apply system_filters to document_ids
                         system_metadata_filter = self._build_system_metadata_filter(system_filters)
-                        
+
                         if system_metadata_filter:
                             # Get document IDs with system filters
                             doc_id_placeholders = ", ".join([f"'{doc_id}'" for doc_id in document_ids])
                             filter_query = f"""
-                                SELECT external_id FROM documents 
+                                SELECT external_id FROM documents
                                 WHERE external_id IN ({doc_id_placeholders})
                                 AND ({system_metadata_filter})
                             """
-                            
+
                             filter_result = await session.execute(text(filter_query))
                             filtered_doc_ids = [row[0] for row in filter_result.all()]
-                            
+
                             # If no documents match system filters, return None
                             if not filtered_doc_ids:
                                 return None
-                            
+
                             # Update document_ids with filtered results
                             document_ids = filtered_doc_ids
-                    
+
                     # Convert to Graph model
                     graph_dict = {
                         "id": graph_model.id,
@@ -1051,28 +1059,28 @@ class PostgresDatabase(BaseDatabase):
 
                 result = await session.execute(query)
                 graph_models = result.scalars().all()
-                
+
                 graphs = []
-                
+
                 # If system filters are provided, we need to filter each graph's document_ids
                 if system_filters:
                     system_metadata_filter = self._build_system_metadata_filter(system_filters)
-                    
+
                     for graph_model in graph_models:
                         document_ids = graph_model.document_ids
-                        
+
                         if document_ids and system_metadata_filter:
                             # Get document IDs with system filters
                             doc_id_placeholders = ", ".join([f"'{doc_id}'" for doc_id in document_ids])
                             filter_query = f"""
-                                SELECT external_id FROM documents 
+                                SELECT external_id FROM documents
                                 WHERE external_id IN ({doc_id_placeholders})
                                 AND ({system_metadata_filter})
                             """
-                            
+
                             filter_result = await session.execute(text(filter_query))
                             filtered_doc_ids = [row[0] for row in filter_result.all()]
-                            
+
                             # Only include graphs that have documents matching the system filters
                             if filtered_doc_ids:
                                 graph = Graph(
@@ -1109,13 +1117,13 @@ class PostgresDatabase(BaseDatabase):
                         )
                         for graph in graph_models
                     ]
-                
+
                 return graphs
 
         except Exception as e:
             logger.error(f"Error listing graphs: {str(e)}")
             return []
-            
+
     async def update_graph(self, graph: Graph) -> bool:
         """Update an existing graph in PostgreSQL.
 
@@ -1146,9 +1154,7 @@ class PostgresDatabase(BaseDatabase):
             # Update the graph in PostgreSQL
             async with self.async_session() as session:
                 # Check if the graph exists
-                result = await session.execute(
-                    select(GraphModel).where(GraphModel.id == graph.id)
-                )
+                result = await session.execute(select(GraphModel).where(GraphModel.id == graph.id))
                 graph_model = result.scalar_one_or_none()
 
                 if not graph_model:
@@ -1160,57 +1166,58 @@ class PostgresDatabase(BaseDatabase):
                     setattr(graph_model, key, value)
 
                 await session.commit()
-                logger.info(f"Updated graph '{graph.name}' with {len(graph.entities)} entities and {len(graph.relationships)} relationships")
+                logger.info(
+                    f"Updated graph '{graph.name}' with {len(graph.entities)} entities "
+                    f"and {len(graph.relationships)} relationships"
+                )
 
             return True
 
         except Exception as e:
             logger.error(f"Error updating graph: {str(e)}")
             return False
-            
+
     async def create_folder(self, folder: Folder) -> bool:
         """Create a new folder."""
         try:
             async with self.async_session() as session:
                 folder_dict = folder.model_dump()
-                
+
                 # Convert datetime objects to strings for JSON serialization
                 folder_dict = _serialize_datetime(folder_dict)
-                
+
                 # Check if a folder with this name already exists for this owner
                 # Use only the type/id format
                 stmt = text(
                     """
                     SELECT id FROM folders
                     WHERE name = :name
-                    AND owner->>'id' = :entity_id 
+                    AND owner->>'id' = :entity_id
                     AND owner->>'type' = :entity_type
                     """
-                ).bindparams(
-                    name=folder.name,
-                    entity_id=folder.owner["id"],
-                    entity_type=folder.owner["type"]
-                )
-                
+                ).bindparams(name=folder.name, entity_id=folder.owner["id"], entity_type=folder.owner["type"])
+
                 result = await session.execute(stmt)
                 existing_folder = result.scalar_one_or_none()
-                
+
                 if existing_folder:
-                    logger.info(f"Folder '{folder.name}' already exists with ID {existing_folder}, not creating a duplicate")
-                    # Update the provided folder's ID to match the existing one 
+                    logger.info(
+                        f"Folder '{folder.name}' already exists with ID {existing_folder}, not creating a duplicate"
+                    )
+                    # Update the provided folder's ID to match the existing one
                     # so the caller gets the correct ID
                     folder.id = existing_folder
                     return True
-                
+
                 # Create a new folder model
                 access_control = folder_dict.get("access_control", {})
-                
+
                 # Log access control to debug any issues
                 if "user_id" in access_control:
                     logger.info(f"Storing folder with user_id: {access_control['user_id']}")
                 else:
                     logger.info("No user_id found in folder access_control")
-                
+
                 folder_model = FolderModel(
                     id=folder.id,
                     name=folder.name,
@@ -1219,34 +1226,32 @@ class PostgresDatabase(BaseDatabase):
                     document_ids=folder_dict.get("document_ids", []),
                     system_metadata=folder_dict.get("system_metadata", {}),
                     access_control=access_control,
-                    rules=folder_dict.get("rules", [])
+                    rules=folder_dict.get("rules", []),
                 )
-                
+
                 session.add(folder_model)
                 await session.commit()
-                
+
                 logger.info(f"Created new folder '{folder.name}' with ID {folder.id}")
                 return True
-                
+
         except Exception as e:
             logger.error(f"Error creating folder: {e}")
             return False
-    
+
     async def get_folder(self, folder_id: str, auth: AuthContext) -> Optional[Folder]:
         """Get a folder by ID."""
         try:
             async with self.async_session() as session:
                 # Get the folder
                 logger.info(f"Getting folder with ID: {folder_id}")
-                result = await session.execute(
-                    select(FolderModel).where(FolderModel.id == folder_id)
-                )
+                result = await session.execute(select(FolderModel).where(FolderModel.id == folder_id))
                 folder_model = result.scalar_one_or_none()
-                
+
                 if not folder_model:
                     logger.error(f"Folder with ID {folder_id} not found in database")
                     return None
-                
+
                 # Convert to Folder object
                 folder_dict = {
                     "id": folder_model.id,
@@ -1256,21 +1261,21 @@ class PostgresDatabase(BaseDatabase):
                     "document_ids": folder_model.document_ids,
                     "system_metadata": folder_model.system_metadata,
                     "access_control": folder_model.access_control,
-                    "rules": folder_model.rules
+                    "rules": folder_model.rules,
                 }
-                
+
                 folder = Folder(**folder_dict)
-                
+
                 # Check if the user has access to the folder
                 if not self._check_folder_access(folder, auth, "read"):
                     return None
-                    
+
                 return folder
-                
+
         except Exception as e:
             logger.error(f"Error getting folder: {e}")
             return None
-    
+
     async def get_folder_by_name(self, name: str, auth: AuthContext) -> Optional[Folder]:
         """Get a folder by name."""
         try:
@@ -1281,18 +1286,14 @@ class PostgresDatabase(BaseDatabase):
                         """
                         SELECT * FROM folders
                         WHERE name = :name
-                        AND (owner->>'entity_id' = :entity_id)
-                        AND (owner->>'entity_type' = :entity_type)
+                        AND (owner->>'id' = :entity_id)
+                        AND (owner->>'type' = :entity_type)
                         """
-                    ).bindparams(
-                        name=name,
-                        entity_id=auth.entity_id,
-                        entity_type=auth.entity_type.value
-                    )
-                    
+                    ).bindparams(name=name, entity_id=auth.entity_id, entity_type=auth.entity_type.value)
+
                     result = await session.execute(stmt)
                     folder_row = result.fetchone()
-                    
+
                     if folder_row:
                         # Convert to Folder object
                         folder_dict = {
@@ -1303,52 +1304,65 @@ class PostgresDatabase(BaseDatabase):
                             "document_ids": folder_row.document_ids,
                             "system_metadata": folder_row.system_metadata,
                             "access_control": folder_row.access_control,
-                            "rules": folder_row.rules
+                            "rules": folder_row.rules,
                         }
-                        
+
                         return Folder(**folder_dict)
-                
+
                 # If not found, try to find any accessible folder with that name
-                result = await session.execute(
-                    select(FolderModel).where(FolderModel.name == name)
+                stmt = text(
+                    """
+                    SELECT * FROM folders
+                    WHERE name = :name
+                    AND (
+                        (owner->>'id' = :entity_id AND owner->>'type' = :entity_type)
+                        OR (access_control->'readers' ? :entity_id)
+                        OR (access_control->'writers' ? :entity_id)
+                        OR (access_control->'admins' ? :entity_id)
+                        OR (access_control->'user_id' ? :user_id)
+                    )
+                    """
+                ).bindparams(
+                    name=name,
+                    entity_id=auth.entity_id,
+                    entity_type=auth.entity_type.value,
+                    user_id=auth.user_id if auth.user_id else "",
                 )
-                folder_models = result.scalars().all()
-                
-                for folder_model in folder_models:
+
+                result = await session.execute(stmt)
+                folder_row = result.fetchone()
+
+                if folder_row:
                     # Convert to Folder object
                     folder_dict = {
-                        "id": folder_model.id,
-                        "name": folder_model.name,
-                        "description": folder_model.description,
-                        "owner": folder_model.owner,
-                        "document_ids": folder_model.document_ids,
-                        "system_metadata": folder_model.system_metadata,
-                        "access_control": folder_model.access_control,
-                        "rules": folder_model.rules
+                        "id": folder_row.id,
+                        "name": folder_row.name,
+                        "description": folder_row.description,
+                        "owner": folder_row.owner,
+                        "document_ids": folder_row.document_ids,
+                        "system_metadata": folder_row.system_metadata,
+                        "access_control": folder_row.access_control,
+                        "rules": folder_row.rules,
                     }
-                    
-                    folder = Folder(**folder_dict)
-                    
-                    # Check if the user has access to the folder
-                    if self._check_folder_access(folder, auth, "read"):
-                        return folder
-                
+
+                    return Folder(**folder_dict)
+
                 return None
-                
+
         except Exception as e:
             logger.error(f"Error getting folder by name: {e}")
             return None
-    
+
     async def list_folders(self, auth: AuthContext) -> List[Folder]:
         """List all folders the user has access to."""
         try:
             folders = []
-            
+
             async with self.async_session() as session:
                 # Get all folders
                 result = await session.execute(select(FolderModel))
                 folder_models = result.scalars().all()
-                
+
                 for folder_model in folder_models:
                     # Convert to Folder object
                     folder_dict = {
@@ -1359,21 +1373,21 @@ class PostgresDatabase(BaseDatabase):
                         "document_ids": folder_model.document_ids,
                         "system_metadata": folder_model.system_metadata,
                         "access_control": folder_model.access_control,
-                        "rules": folder_model.rules
+                        "rules": folder_model.rules,
                     }
-                    
+
                     folder = Folder(**folder_dict)
-                    
+
                     # Check if the user has access to the folder
                     if self._check_folder_access(folder, auth, "read"):
                         folders.append(folder)
-                
+
                 return folders
-                
+
         except Exception as e:
             logger.error(f"Error listing folders: {e}")
             return []
-    
+
     async def add_document_to_folder(self, folder_id: str, document_id: str, auth: AuthContext) -> bool:
         """Add a document to a folder."""
         try:
@@ -1382,57 +1396,55 @@ class PostgresDatabase(BaseDatabase):
             if not folder:
                 logger.error(f"Folder {folder_id} not found or user does not have access")
                 return False
-                
+
             # Check if user has write access to the folder
             if not self._check_folder_access(folder, auth, "write"):
                 logger.error(f"User does not have write access to folder {folder_id}")
                 return False
-                
+
             # Check if the document exists and user has access
             document = await self.get_document(document_id, auth)
             if not document:
                 logger.error(f"Document {document_id} not found or user does not have access")
                 return False
-            
+
             # Check if the document is already in the folder
             if document_id in folder.document_ids:
                 logger.info(f"Document {document_id} is already in folder {folder_id}")
                 return True
-            
+
             # Add the document to the folder
             async with self.async_session() as session:
                 # Add document_id to document_ids array
                 new_document_ids = folder.document_ids + [document_id]
-                
+
                 folder_model = await session.get(FolderModel, folder_id)
                 if not folder_model:
                     logger.error(f"Folder {folder_id} not found in database")
                     return False
-                    
+
                 folder_model.document_ids = new_document_ids
-                
+
                 # Also update the document's system_metadata to include the folder_name
                 folder_name_json = json.dumps(folder.name)
                 stmt = text(
                     f"""
-                    UPDATE documents 
+                    UPDATE documents
                     SET system_metadata = jsonb_set(system_metadata, '{{folder_name}}', '{folder_name_json}'::jsonb)
                     WHERE external_id = :document_id
                     """
-                ).bindparams(
-                    document_id=document_id
-                )
-                
+                ).bindparams(document_id=document_id)
+
                 await session.execute(stmt)
                 await session.commit()
-                
+
                 logger.info(f"Added document {document_id} to folder {folder_id}")
                 return True
-                
+
         except Exception as e:
             logger.error(f"Error adding document to folder: {e}")
             return False
-    
+
     async def remove_document_from_folder(self, folder_id: str, document_id: str, auth: AuthContext) -> bool:
         """Remove a document from a folder."""
         try:
@@ -1441,89 +1453,91 @@ class PostgresDatabase(BaseDatabase):
             if not folder:
                 logger.error(f"Folder {folder_id} not found or user does not have access")
                 return False
-                
+
             # Check if user has write access to the folder
             if not self._check_folder_access(folder, auth, "write"):
                 logger.error(f"User does not have write access to folder {folder_id}")
                 return False
-            
+
             # Check if the document is in the folder
             if document_id not in folder.document_ids:
                 logger.warning(f"Tried to delete document {document_id} not in folder {folder_id}")
                 return True
-            
+
             # Remove the document from the folder
             async with self.async_session() as session:
                 # Remove document_id from document_ids array
                 new_document_ids = [doc_id for doc_id in folder.document_ids if doc_id != document_id]
-                
+
                 folder_model = await session.get(FolderModel, folder_id)
                 if not folder_model:
                     logger.error(f"Folder {folder_id} not found in database")
                     return False
-                    
+
                 folder_model.document_ids = new_document_ids
-                
+
                 # Also update the document's system_metadata to remove the folder_name
                 stmt = text(
-                    f"""
-                    UPDATE documents 
-                    SET system_metadata = jsonb_set(system_metadata, '{{folder_name}}', 'null'::jsonb)
+                    """
+                    UPDATE documents
+                    SET system_metadata = jsonb_set(system_metadata, '{folder_name}', 'null'::jsonb)
                     WHERE external_id = :document_id
                     """
-                ).bindparams(
-                    document_id=document_id
-                )
-                
+                ).bindparams(document_id=document_id)
+
                 await session.execute(stmt)
                 await session.commit()
-                
+
                 logger.info(f"Removed document {document_id} from folder {folder_id}")
                 return True
-                
+
         except Exception as e:
             logger.error(f"Error removing document from folder: {e}")
             return False
-    
+
     def _check_folder_access(self, folder: Folder, auth: AuthContext, permission: str = "read") -> bool:
         """Check if the user has the required permission for the folder."""
         # Admin always has access
         if "admin" in auth.permissions:
             return True
-            
+
         # Check if folder is owned by the user
-        if (auth.entity_type and auth.entity_id and 
-            folder.owner.get("type") == auth.entity_type.value and 
-            folder.owner.get("id") == auth.entity_id):
-            
+        if (
+            auth.entity_type
+            and auth.entity_id
+            and folder.owner.get("type") == auth.entity_type.value
+            and folder.owner.get("id") == auth.entity_id
+        ):
+
             # In cloud mode, also verify user_id if present
             if auth.user_id:
                 from core.config import get_settings
+
                 settings = get_settings()
-                
+
                 if settings.MODE == "cloud":
                     folder_user_ids = folder.access_control.get("user_id", [])
                     if auth.user_id not in folder_user_ids:
                         return False
             return True
-            
+
         # Check access control lists
         access_control = folder.access_control or {}
-        
+
         if permission == "read":
             readers = access_control.get("readers", [])
             if f"{auth.entity_type.value}:{auth.entity_id}" in readers:
                 return True
-                
+
         if permission == "write":
             writers = access_control.get("writers", [])
             if f"{auth.entity_type.value}:{auth.entity_id}" in writers:
                 return True
-                
+
         # For admin permission, check admins list
         if permission == "admin":
             admins = access_control.get("admins", [])
             if f"{auth.entity_type.value}:{auth.entity_id}" in admins:
                 return True
-                
+
         return False

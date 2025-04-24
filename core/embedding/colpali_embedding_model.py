@@ -1,16 +1,18 @@
 import base64
 import io
+import logging
 from typing import List, Union
 
 import numpy as np
 import torch
+
 from colpali_engine.models import ColQwen2, ColQwen2Processor, ColQwen2_5, ColQwen2_5_Processor
 from transformers.utils.import_utils import is_flash_attn_2_available
 from PIL.Image import Image, open as open_image
 
+
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.models.chunk import Chunk
-import logging
 
 logger = logging.getLogger(__name__)
 

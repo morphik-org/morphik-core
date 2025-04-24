@@ -1,11 +1,13 @@
 import json
-import pickle
 import logging
+import pickle
+from typing import Any, Dict, List
+
+from llama_cpp import Llama
+
 from core.cache.base_cache import BaseCache
-from typing import Dict, Any, List
 from core.models.completion import CompletionResponse
 from core.models.documents import Document
-from llama_cpp import Llama
 
 logger = logging.getLogger(__name__)
 
@@ -159,9 +161,7 @@ class LlamaCache(BaseCache):
         return state_bytes
 
     @classmethod
-    def from_bytes(
-        cls, name: str, cache_bytes: bytes, metadata: Dict[str, Any], **kwargs
-    ) -> "LlamaCache":
+    def from_bytes(cls, name: str, cache_bytes: bytes, metadata: Dict[str, Any], **kwargs) -> "LlamaCache":
         """Load a cache from its serialized state.
 
         Args:

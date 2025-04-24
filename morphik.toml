@@ -13,9 +13,9 @@ dev_permissions = ["read", "write", "admin"]  # Default dev permissions
 #### Registered models
 [registered_models]
 # OpenAI models
-openai_gpt4o = { model_name = "gpt-4o", vision = true }
 openai_gpt4 = { model_name = "gpt-4" }
-openai_gpt4o_extraction = { model_name = "gpt-4o" }
+openai_gpt4-1 = { model_name = "gpt-4.1" }
+openai_gpt4o = { model_name = "gpt-4o" }
 
 # Azure OpenAI models
 azure_gpt4 = { model_name = "gpt-4", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "gpt-4-deployment" }
@@ -69,8 +69,8 @@ dimensions = 768
 similarity_metric = "cosine"
 
 [parser]
-chunk_size = 1000
-chunk_overlap = 200
+chunk_size = 6000
+chunk_overlap = 300
 use_unstructured_api = false
 use_contextual_chunking = false
 contextual_chunking_model = "ollama_llama"  # Reference to a key in registered_models
@@ -110,7 +110,7 @@ mode = "self_hosted"  # "cloud" or "self_hosted"
 api_domain = "api.morphik.ai"  # API domain for cloud URIs
 
 [redis]
-host = "localhost"
+host = "localhost"  # use "redis" for docker
 port = 6379
 
 [graph]

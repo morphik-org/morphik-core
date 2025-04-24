@@ -6,23 +6,17 @@ This script creates a knowledge graph from the SciER dataset.
 It ingests the documents and creates a graph using custom prompt overrides.
 """
 
-import os
-import uuid
 import argparse
-from typing import Dict, List, Tuple, Any
+import uuid
 from collections import defaultdict
-from tqdm import tqdm
-from dotenv import load_dotenv
-
-from morphik import Morphik
-from morphik.models import (
-    EntityExtractionPromptOverride,
-    EntityExtractionExample,
-    GraphPromptOverrides,
-)
+from typing import Dict, List, Tuple
 
 # Import SciER data loader
 from data_loader import load_jsonl
+from dotenv import load_dotenv
+from morphik import Morphik
+from morphik.models import EntityExtractionExample, EntityExtractionPromptOverride, GraphPromptOverrides
+from tqdm import tqdm
 
 # Load environment variables
 load_dotenv()
@@ -189,9 +183,7 @@ Desired Relationship Types (only extract these relationships, nothing else, ther
     return EntityExtractionPromptOverride(prompt_template=prompt_template, examples=examples)
 
 
-def create_graph(
-    db: Morphik, documents: List[Dict], model_name: str, run_id: str
-) -> Tuple[List[str], Dict]:
+def create_graph(db: Morphik, documents: List[Dict], model_name: str, run_id: str) -> Tuple[List[str], Dict]:
     """
     Create a knowledge graph from the documents.
 
@@ -225,13 +217,9 @@ def create_graph(
 
     # Create a knowledge graph with overrides
     print("Creating knowledge graph with prompt overrides...")
-    graph = db.create_graph(
-        name=f"scier_{model_name}_{run_id}", documents=doc_ids, prompt_overrides=graph_overrides
-    )
+    graph = db.create_graph(name=f"scier_{model_name}_{run_id}", documents=doc_ids, prompt_overrides=graph_overrides)
 
-    print(
-        f"Created graph with {len(graph.entities)} entities and {len(graph.relationships)} relationships"
-    )
+    print(f"Created graph with {len(graph.entities)} entities and {len(graph.relationships)} relationships")
 
     return doc_ids, {"graph": graph}
 
@@ -239,12 +227,8 @@ def create_graph(
 def main():
     """Main function to create a graph from the SciER dataset."""
     parser = argparse.ArgumentParser(description="SciER Graph Creation Script for Morphik")
-    parser.add_argument(
-        "--limit", type=int, default=57, help="Maximum number of documents to process (default: 57)"
-    )
-    parser.add_argument(
-        "--run-id", type=str, default=None, help="Unique run identifier (default: auto-generated)"
-    )
+    parser.add_argument("--limit", type=int, default=57, help="Maximum number of documents to process (default: 57)")
+    parser.add_argument("--run-id", type=str, default=None, help="Unique run identifier (default: auto-generated)")
     parser.add_argument(
         "--model-name",
         type=str,
@@ -280,9 +264,7 @@ def main():
     # Print graph name for evaluation
     graph_name = f"scier_{model_name}_{run_id}"
     print(f"\nGraph creation complete! Created graph: {graph_name}")
-    print(
-        f"To evaluate this graph, run: python evaluate_result.py --graph-name {graph_name}"
-    )
+    print(f"To evaluate this graph, run: python evaluate_result.py --graph-name {graph_name}")
 
 
 if __name__ == "__main__":

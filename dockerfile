@@ -139,8 +139,14 @@ check_postgres() {\n\
 # Check PostgreSQL\n\
 check_postgres\n\
 \n\
-# Start the application with standard asyncio event loop\n\
-exec uvicorn core.api:app --host $HOST --port $PORT --loop asyncio --http auto --ws auto --lifespan auto\n\
+# Check if command arguments were passed ($# is the number of arguments)\n\
+if [ $# -gt 0 ]; then\n\
+    # If arguments exist, execute them (e.g., execute "arq core.workers...")\n\
+    exec "$@"\n\
+else\n\
+    # Otherwise, execute the default command (Uvicorn for the API)\n\
+    exec uvicorn core.api:app --host $HOST --port $PORT --loop asyncio --http auto --ws auto --lifespan auto\n\
+fi\n\
 ' > /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
 
 # Copy application code

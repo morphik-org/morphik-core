@@ -1,9 +1,11 @@
-from typing import Dict, Any, Literal
-from pydantic import BaseModel
-from abc import ABC, abstractmethod
-from core.config import get_settings
-import litellm
 import logging
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Literal, Optional
+
+import litellm
+from pydantic import BaseModel
+
+from core.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -13,14 +15,16 @@ class BaseRule(BaseModel, ABC):
     """Base model for all rules"""
 
     type: str
+    stage: Literal["post_parsing", "post_chunking"]
 
     @abstractmethod
-    async def apply(self, content: str) -> tuple[Dict[str, Any], str]:
+    async def apply(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> tuple[Dict[str, Any], str]:
         """
         Apply the rule to the content.
 
         Args:
             content: The content to apply the rule to
+            metadata: Optional existing metadata that may be used or modified by the rule
 
         Returns:
             tuple[Dict[str, Any], str]: (metadata, modified_content)
@@ -40,7 +44,7 @@ class MetadataExtractionRule(BaseRule):
     type: Literal["metadata_extraction"]
     schema: Dict[str, Any]
 
-    async def apply(self, content: str) -> tuple[Dict[str, Any], str]:
+    async def apply(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> tuple[Dict[str, Any], str]:
         """Extract metadata according to schema"""
         import instructor
         from pydantic import create_model
@@ -78,21 +82,27 @@ class MetadataExtractionRule(BaseRule):
         schema_descriptions = []
         for field_name, field_config in self.schema.items():
             field_type = field_config.get("type", "string") if isinstance(field_config, dict) else "string"
-            description = field_config.get("description", "No description") if isinstance(field_config, dict) else field_config
+            description = (
+                field_config.get("description", "No description") if isinstance(field_config, dict) else field_config
+            )
             schema_descriptions.append(f"- {field_name}: {description} (type: {field_type})")
-        
+
         schema_text = "\n".join(schema_descriptions)
 
+        # Adjust prompt based on whether it's a chunk or full document
+        prompt_context = "chunk of text" if self.stage == "post_chunking" else "text"
+
         prompt = f"""
-        Extract metadata from the following text according to this schema:
-        
+        Extract metadata from the following {prompt_context} according to this schema:
+
         {schema_text}
-        
+
         Text to extract from:
         {content}
-        
+
         Follow these guidelines:
-        1. Extract all requested information as simple strings, numbers, or booleans (not as objects or nested structures)
+        1. Extract all requested information as simple strings, numbers, or booleans
+        (not as objects or nested structures)
         2. If information is not present, indicate this with null instead of making something up
         3. Answer directly with the requested information - don't include explanations or reasoning
         4. Be concise but accurate in your extractions
@@ -101,13 +111,15 @@ class MetadataExtractionRule(BaseRule):
         # Get the model configuration from registered_models
         model_config = settings.REGISTERED_MODELS.get(settings.RULES_MODEL, {})
         if not model_config:
-            raise ValueError(
-                f"Model '{settings.RULES_MODEL}' not found in registered_models configuration"
-            )
+            raise ValueError(f"Model '{settings.RULES_MODEL}' not found in registered_models configuration")
 
         system_message = {
             "role": "system",
-            "content": "You are a metadata extraction assistant. Extract structured metadata from text precisely following the provided schema. Always return the metadata as direct values (strings, numbers, booleans), not as objects with additional properties.",
+            "content": (
+                "You are a metadata extraction assistant. Extract structured metadata from text "
+                "precisely following the provided schema. Always return the metadata as direct values "
+                "(strings, numbers, booleans), not as objects with additional properties."
+            ),
         }
 
         user_message = {"role": "user", "content": prompt}
@@ -131,13 +143,14 @@ class MetadataExtractionRule(BaseRule):
             )
 
             # Convert pydantic model to dict
-            metadata = response.model_dump()
+            extracted_metadata = response.model_dump()
 
         except Exception as e:
             logger.error(f"Error in instructor metadata extraction: {str(e)}")
-            metadata = {}
+            extracted_metadata = {}
 
-        return metadata, content
+        # Metadata extraction doesn't modify content
+        return extracted_metadata, content
 
 
 class TransformationOutput(BaseModel):
@@ -152,30 +165,34 @@ class NaturalLanguageRule(BaseRule):
     type: Literal["natural_language"]
     prompt: str
 
-    async def apply(self, content: str) -> tuple[Dict[str, Any], str]:
+    async def apply(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> tuple[Dict[str, Any], str]:
         """Transform content according to prompt"""
         import instructor
 
+        # Adjust prompt based on whether it's a chunk or full document
+        prompt_context = "chunk of text" if self.stage == "post_chunking" else "text"
+
         prompt = f"""
-        Your task is to transform the following text according to this instruction:
+        Your task is to transform the following {prompt_context} according to this instruction:
         {self.prompt}
-        
+
         Text to transform:
         {content}
-        
+
         Perform the transformation and return only the transformed text.
         """
 
         # Get the model configuration from registered_models
         model_config = settings.REGISTERED_MODELS.get(settings.RULES_MODEL, {})
         if not model_config:
-            raise ValueError(
-                f"Model '{settings.RULES_MODEL}' not found in registered_models configuration"
-            )
+            raise ValueError(f"Model '{settings.RULES_MODEL}' not found in registered_models configuration")
 
         system_message = {
             "role": "system",
-            "content": "You are a text transformation assistant. Transform text precisely following the provided instructions.",
+            "content": (
+                "You are a text transformation assistant. Transform text precisely following "
+                "the provided instructions."
+            ),
         }
 
         user_message = {"role": "user", "content": prompt}
@@ -205,4 +222,5 @@ class NaturalLanguageRule(BaseRule):
             logger.error(f"Error in instructor text transformation: {str(e)}")
             transformed_text = content  # Return original content on error
 
+        # Natural language rules modify content, don't add metadata directly
         return {}, transformed_text

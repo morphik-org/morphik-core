@@ -1,7 +1,7 @@
-from collections import defaultdict
-from typing import List, Tuple, Optional, Union, Dict
-from bisect import bisect_left
 import logging
+from bisect import bisect_left
+from collections import defaultdict
+from typing import Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, computed_field
 
@@ -52,9 +52,7 @@ class TimeSeriesData(BaseModel):
         after = self.timestamps[idx]
         return idx if (time - before) > (after - time) else idx - 1
 
-    def at_time(
-        self, time: float, padding: Optional[float] = None
-    ) -> Union[str, List[Tuple[float, str]]]:
+    def at_time(self, time: float, padding: Optional[float] = None) -> Union[str, List[Tuple[float, str]]]:
         """
         Get content at or around specified time
 

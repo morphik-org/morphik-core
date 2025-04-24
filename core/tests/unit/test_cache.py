@@ -1,7 +1,8 @@
 import pytest
-from core.models.documents import Document
+
 from core.cache.llama_cache import LlamaCache
 from core.models.completion import CompletionResponse
+from core.models.documents import Document
 
 # TEST_MODEL = "QuantFactory/Llama3.2-3B-Enigma-GGUF"
 TEST_MODEL = "QuantFactory/Dolphin3.0-Llama3.2-1B-GGUF"
@@ -52,9 +53,7 @@ def get_test_document():
 def llama_cache():
     """Create a LlamaCache instance with the test document."""
     doc = get_test_document()
-    cache = LlamaCache(
-        name="test_cache", model=TEST_MODEL, gguf_file=TEST_GGUF_FILE, filters={}, docs=[doc]
-    )
+    cache = LlamaCache(name="test_cache", model=TEST_MODEL, gguf_file=TEST_GGUF_FILE, filters={}, docs=[doc])
     return cache
 
 
@@ -137,16 +136,14 @@ def test_cache_state_persistence():
 
     # Create initial cache
     doc = get_test_document()
-    original_cache = LlamaCache(
-        name="test_cache", model=TEST_MODEL, gguf_file=TEST_GGUF_FILE, filters={}, docs=[doc]
-    )
+    original_cache = LlamaCache(name="test_cache", model=TEST_MODEL, gguf_file=TEST_GGUF_FILE, filters={}, docs=[doc])
 
     # Get the state
     state_bytes = original_cache.saveable_state
     # Save state bytes to temporary file
-    import tempfile
     import os
     import pickle
+    import tempfile
 
     with tempfile.TemporaryDirectory() as temp_dir:
         cache_file = os.path.join(temp_dir, "cache.pkl")

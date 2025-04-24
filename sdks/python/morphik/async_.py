@@ -2,25 +2,23 @@ import json
 import logging
 from io import BytesIO, IOBase
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, BinaryIO
+from typing import Any, BinaryIO, Dict, List, Optional, Type, Union
 
 import httpx
-from PIL.Image import Image as PILImage
+from pydantic import BaseModel
 
+from ._internal import FinalChunkResult, RuleOrDict, _MorphikClientLogic
 from .models import (
+    ChunkSource,
+    CompletionResponse,  # Prompt override models
     Document,
     DocumentResult,
-    CompletionResponse,
-    IngestTextRequest,
-    ChunkSource,
-    Graph,
     FolderInfo,
-    # Prompt override models
+    Graph,
     GraphPromptOverrides,
+    IngestTextRequest,
     QueryPromptOverrides,
 )
-from .rules import Rule
-from ._internal import _MorphikClientLogic, FinalChunkResult, RuleOrDict
 
 logger = logging.getLogger(__name__)
 
@@ -69,16 +67,16 @@ class AsyncFolder:
     def name(self) -> str:
         """Returns the folder name."""
         return self._name
-        
+
     @property
     def id(self) -> Optional[str]:
         """Returns the folder ID if available."""
         return self._id
-        
+
     async def get_info(self) -> Dict[str, Any]:
         """
         Get detailed information about this folder.
-        
+
         Returns:
             Dict[str, Any]: Detailed folder information
         """
@@ -91,9 +89,8 @@ class AsyncFolder:
                     break
             if not self._id:
                 raise ValueError(f"Folder '{self._name}' not found")
-        
+
         return await self._client._request("GET", f"folders/{self._id}")
-        
 
     def signin(self, end_user_id: str) -> "AsyncUserScope":
         """
@@ -166,9 +163,7 @@ class AsyncFolder:
             files = {"file": (filename, file_obj)}
 
             # Create form data
-            form_data = self._client._logic._prepare_ingest_file_form_data(
-                metadata, rules, self._name, None
-            )
+            form_data = self._client._logic._prepare_ingest_file_form_data(metadata, rules, self._name, None)
 
             response = await self._client._request(
                 "POST",
@@ -216,9 +211,9 @@ class AsyncFolder:
             )
 
             response = await self._client._request(
-                "POST", 
-                "ingest/files", 
-                data=data, 
+                "POST",
+                "ingest/files",
+                data=data,
                 files=file_objects,
                 params={"use_colpali": str(use_colpali).lower()},
             )
@@ -228,9 +223,7 @@ class AsyncFolder:
                 for error in response["errors"]:
                     logger.error(f"Failed to ingest {error['filename']}: {error['error']}")
 
-            docs = [
-                self._client._logic._parse_document_response(doc) for doc in response["documents"]
-            ]
+            docs = [self._client._logic._parse_document_response(doc) for doc in response["documents"]]
             for doc in docs:
                 doc._client = self._client
             return docs
@@ -353,6 +346,7 @@ class AsyncFolder:
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
+        schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context within this folder.
@@ -369,9 +363,10 @@ class AsyncFolder:
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
+            schema: Optional schema for structured output
 
         Returns:
-            CompletionResponse: Generated completion
+            CompletionResponse: Generated completion or structured output
         """
         payload = self._client._logic._prepare_query_request(
             query,
@@ -387,6 +382,7 @@ class AsyncFolder:
             prompt_overrides,
             self._name,
             None,
+            schema,
         )
         response = await self._client._request("POST", "query", data=payload)
         return self._client._logic._parse_completion_response(response)
@@ -405,9 +401,7 @@ class AsyncFolder:
         Returns:
             List[Document]: List of documents
         """
-        params, data = self._client._logic._prepare_list_documents_request(
-            skip, limit, filters, self._name, None
-        )
+        params, data = self._client._logic._prepare_list_documents_request(skip, limit, filters, self._name, None)
         response = await self._client._request("POST", "documents", data=data, params=params)
         docs = self._client._logic._parse_document_list_response(response)
         for doc in docs:
@@ -434,9 +428,7 @@ class AsyncFolder:
             doc._client = self._client
         return docs
 
-    async def batch_get_chunks(
-        self, sources: List[Union[ChunkSource, Dict[str, Any]]]
-    ) -> List[FinalChunkResult]:
+    async def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation within this folder.
 
@@ -510,9 +502,6 @@ class AsyncFolder:
         Returns:
             Dict[str, str]: Deletion status
         """
-        # Get the document by filename with folder scope
-        request = {"filename": filename, "folder_name": self._name}
-
         # First get the document ID
         response = await self._client._request(
             "GET", f"documents/filename/{filename}", params={"folder_name": self._name}
@@ -685,9 +674,7 @@ class AsyncUserScope:
             if rules:
                 if all(isinstance(r, list) for r in rules):
                     # List of lists - per-file rules
-                    converted_rules = [
-                        [self._client._convert_rule(r) for r in rule_list] for rule_list in rules
-                    ]
+                    converted_rules = [[self._client._convert_rule(r) for r in rule_list] for rule_list in rules]
                 else:
                     # Flat list - shared rules for all files
                     converted_rules = [self._client._convert_rule(r) for r in rules]
@@ -707,9 +694,9 @@ class AsyncUserScope:
                 data["folder_name"] = self._folder_name
 
             response = await self._client._request(
-                "POST", 
-                "ingest/files", 
-                data=data, 
+                "POST",
+                "ingest/files",
+                data=data,
                 files=file_objects,
                 params={"use_colpali": str(use_colpali).lower()},
             )
@@ -719,9 +706,7 @@ class AsyncUserScope:
                 for error in response["errors"]:
                     logger.error(f"Failed to ingest {error['filename']}: {error['error']}")
 
-            docs = [
-                self._client._logic._parse_document_response(doc) for doc in response["documents"]
-            ]
+            docs = [self._client._logic._parse_document_response(doc) for doc in response["documents"]]
             for doc in docs:
                 doc._client = self._client
             return docs
@@ -844,9 +829,10 @@ class AsyncUserScope:
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
+        schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> CompletionResponse:
         """
-        Generate completion using relevant chunks as context as this end user.
+        Generate completion using relevant chunks as context, scoped to the end user.
 
         Args:
             query: Query text
@@ -860,9 +846,10 @@ class AsyncUserScope:
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
+            schema: Optional schema for structured output
 
         Returns:
-            CompletionResponse: Generated completion
+            CompletionResponse: Generated completion or structured output
         """
         payload = self._client._logic._prepare_query_request(
             query,
@@ -876,8 +863,9 @@ class AsyncUserScope:
             hop_depth,
             include_paths,
             prompt_overrides,
-            self._folder_name,
-            self._end_user_id,
+            self.folder_name,
+            self.end_user_id,
+            schema,
         )
         response = await self._client._request("POST", "query", data=payload)
         return self._client._logic._parse_completion_response(response)
@@ -927,9 +915,7 @@ class AsyncUserScope:
             doc._client = self._client
         return docs
 
-    async def batch_get_chunks(
-        self, sources: List[Union[ChunkSource, Dict[str, Any]]]
-    ) -> List[FinalChunkResult]:
+    async def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation for this end user.
 
@@ -939,9 +925,7 @@ class AsyncUserScope:
         Returns:
             List[FinalChunkResult]: List of chunk results
         """
-        request = self._client._logic._prepare_batch_get_chunks_request(
-            sources, self._folder_name, self._end_user_id
-        )
+        request = self._client._logic._prepare_batch_get_chunks_request(sources, self._folder_name, self._end_user_id)
         response = await self._client._request("POST", "batch/chunks", data=request)
         return self._client._logic._parse_chunk_result_list_response(response)
 
@@ -1018,9 +1002,7 @@ class AsyncUserScope:
             params["folder_name"] = self._folder_name
 
         # First get the document ID
-        response = await self._client._request(
-            "GET", f"documents/filename/{filename}", params=params
-        )
+        response = await self._client._request("GET", f"documents/filename/{filename}", params=params)
         doc = self._client._logic._parse_document_response(response)
 
         # Then delete by ID
@@ -1077,7 +1059,7 @@ class AsyncMorphik:
             # Remove Content-Type if it exists - httpx will set the correct multipart boundary
             if "Content-Type" in headers:
                 del headers["Content-Type"]
-                
+
             # For file uploads with form data, use form data (not json)
             request_data = {"files": files}
             if data:
@@ -1112,18 +1094,16 @@ class AsyncMorphik:
         Returns:
             AsyncFolder: A folder object ready for scoped operations
         """
-        payload = {
-            "name": name
-        }
+        payload = {"name": name}
         if description:
             payload["description"] = description
-            
+
         response = await self._request("POST", "folders", data=payload)
         folder_info = FolderInfo(**response)
-        
+
         # Return a usable AsyncFolder object with the ID from the response
         return AsyncFolder(self, name, folder_id=folder_info.id)
-    
+
     def get_folder_by_name(self, name: str) -> AsyncFolder:
         """
         Get a folder by name to scope operations.
@@ -1135,7 +1115,7 @@ class AsyncMorphik:
             AsyncFolder: A folder object for scoped operations
         """
         return AsyncFolder(self, name)
-        
+
     async def get_folder(self, folder_id: str) -> AsyncFolder:
         """
         Get a folder by ID.
@@ -1148,7 +1128,7 @@ class AsyncMorphik:
         """
         response = await self._request("GET", f"folders/{folder_id}")
         return AsyncFolder(self, response["name"], folder_id)
-        
+
     async def list_folders(self) -> List[AsyncFolder]:
         """
         List all folders the user has access to as AsyncFolder objects.
@@ -1158,7 +1138,7 @@ class AsyncMorphik:
         """
         response = await self._request("GET", "folders")
         return [AsyncFolder(self, folder["name"], folder["id"]) for folder in response]
-        
+
     async def add_document_to_folder(self, folder_id: str, document_id: str) -> Dict[str, str]:
         """
         Add a document to a folder.
@@ -1172,7 +1152,7 @@ class AsyncMorphik:
         """
         response = await self._request("POST", f"folders/{folder_id}/documents/{document_id}")
         return response
-        
+
     async def remove_document_from_folder(self, folder_id: str, document_id: str) -> Dict[str, str]:
         """
         Remove a document from a folder.
@@ -1216,7 +1196,8 @@ class AsyncMorphik:
             rules: Optional list of rules to apply during ingestion. Can be:
                   - MetadataExtractionRule: Extract metadata using a schema
                   - NaturalLanguageRule: Transform content using natural language
-            use_colpali: Whether to use ColPali-style embedding model to ingest the text (slower, but significantly better retrieval accuracy for text and images)
+            use_colpali: Whether to use ColPali-style embedding model to ingest the text
+                (slower, but significantly better retrieval accuracy for text and images)
         Returns:
             Document: Metadata of the ingested document
 
@@ -1314,14 +1295,12 @@ class AsyncMorphik:
 
         try:
             # Prepare form data
-            data = self._logic._prepare_ingest_files_form_data(
-                metadata, rules, use_colpali, parallel, None, None
-            )
+            data = self._logic._prepare_ingest_files_form_data(metadata, rules, use_colpali, parallel, None, None)
 
             response = await self._request(
-                "POST", 
-                "ingest/files", 
-                data=data, 
+                "POST",
+                "ingest/files",
+                data=data,
                 files=file_objects,
                 params={"use_colpali": str(use_colpali).lower()},
             )
@@ -1407,7 +1386,8 @@ class AsyncMorphik:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model to retrieve chunks (only works for documents ingested with `use_colpali=True`)
+            use_colpali: Whether to use ColPali-style embedding model to retrieve chunks
+                (only works for documents ingested with `use_colpali=True`)
         Returns:
             List[FinalChunkResult]
 
@@ -1419,9 +1399,7 @@ class AsyncMorphik:
             )
             ```
         """
-        payload = self._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, None, None
-        )
+        payload = self._logic._prepare_retrieve_chunks_request(query, filters, k, min_score, use_colpali, None, None)
         response = await self._request("POST", "retrieve/chunks", data=payload)
         return self._logic._parse_chunk_result_list_response(response)
 
@@ -1441,7 +1419,8 @@ class AsyncMorphik:
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
-            use_colpali: Whether to use ColPali-style embedding model to retrieve documents (only works for documents ingested with `use_colpali=True`)
+            use_colpali: Whether to use ColPali-style embedding model to retrieve documents
+                (only works for documents ingested with `use_colpali=True`)
         Returns:
             List[DocumentResult]
 
@@ -1453,9 +1432,7 @@ class AsyncMorphik:
             )
             ```
         """
-        payload = self._logic._prepare_retrieve_docs_request(
-            query, filters, k, min_score, use_colpali, None, None
-        )
+        payload = self._logic._prepare_retrieve_docs_request(query, filters, k, min_score, use_colpali, None, None)
         response = await self._request("POST", "retrieve/docs", data=payload)
         return self._logic._parse_document_result_list_response(response)
 
@@ -1472,6 +1449,7 @@ class AsyncMorphik:
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
+        schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context.
@@ -1483,12 +1461,14 @@ class AsyncMorphik:
             min_score: Minimum similarity threshold (default: 0.0)
             max_tokens: Maximum tokens in completion
             temperature: Model temperature
-            use_colpali: Whether to use ColPali-style embedding model to generate the completion (only works for documents ingested with `use_colpali=True`)
+            use_colpali: Whether to use ColPali-style embedding model to generate the completion
+                (only works for documents ingested with `use_colpali=True`)
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
                 Either a QueryPromptOverrides object or a dictionary with the same structure
+            schema: Optional schema for structured output, can be a Pydantic model or a JSON schema dict
         Returns:
             CompletionResponse
 
@@ -1536,6 +1516,27 @@ class AsyncMorphik:
             if response.metadata and "graph" in response.metadata:
                 for path in response.metadata["graph"]["paths"]:
                     print(" -> ".join(path))
+
+            # Using structured output with a Pydantic model
+            from pydantic import BaseModel
+
+            class ResearchFindings(BaseModel):
+                main_finding: str
+                supporting_evidence: List[str]
+                limitations: List[str]
+
+            response = await db.query(
+                "Summarize the key research findings from these documents",
+                schema=ResearchFindings
+            )
+
+            # Access structured output
+            if response.structured_output:
+                findings = response.structured_output
+                print(f"Main finding: {findings.main_finding}")
+                print("Supporting evidence:")
+                for evidence in findings.supporting_evidence:
+                    print(f"- {evidence}")
             ```
         """
         payload = self._logic._prepare_query_request(
@@ -1552,7 +1553,20 @@ class AsyncMorphik:
             prompt_overrides,
             None,
             None,
+            schema,
         )
+
+        # Add schema to payload if provided
+        if schema:
+            # If schema is a Pydantic model class, we need to serialize it to a schema dict
+            if isinstance(schema, type) and issubclass(schema, BaseModel):
+                payload["schema"] = schema.model_json_schema()
+            else:
+                payload["schema"] = schema
+
+            # Add a hint to the query to return in JSON format
+            payload["query"] = f"{payload['query']}\nReturn the answer in JSON format according to the required schema."
+
         response = await self._request("POST", "query", data=payload)
         return self._logic._parse_completion_response(response)
 
@@ -1606,17 +1620,17 @@ class AsyncMorphik:
         doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
-        
+
     async def get_document_status(self, document_id: str) -> Dict[str, Any]:
         """
         Get the current processing status of a document.
-        
+
         Args:
             document_id: ID of the document to check
-            
+
         Returns:
             Dict[str, Any]: Status information including current status, potential errors, and other metadata
-            
+
         Example:
             ```python
             status = await db.get_document_status("doc_123")
@@ -1630,23 +1644,25 @@ class AsyncMorphik:
         """
         response = await self._request("GET", f"documents/{document_id}/status")
         return response
-    
-    async def wait_for_document_completion(self, document_id: str, timeout_seconds=300, check_interval_seconds=2) -> Document:
+
+    async def wait_for_document_completion(
+        self, document_id: str, timeout_seconds=300, check_interval_seconds=2
+    ) -> Document:
         """
         Wait for a document's processing to complete.
-        
+
         Args:
             document_id: ID of the document to wait for
             timeout_seconds: Maximum time to wait for completion (default: 300 seconds)
             check_interval_seconds: Time between status checks (default: 2 seconds)
-            
+
         Returns:
             Document: Updated document with the latest status
-            
+
         Raises:
             TimeoutError: If processing doesn't complete within the timeout period
             ValueError: If processing fails with an error
-            
+
         Example:
             ```python
             # Upload a file and wait for processing to complete
@@ -1661,20 +1677,21 @@ class AsyncMorphik:
             ```
         """
         import asyncio
+
         start_time = asyncio.get_event_loop().time()
-        
+
         while (asyncio.get_event_loop().time() - start_time) < timeout_seconds:
             status = await self.get_document_status(document_id)
-            
+
             if status["status"] == "completed":
                 # Get the full document now that it's complete
                 return await self.get_document(document_id)
             elif status["status"] == "failed":
                 raise ValueError(f"Document processing failed: {status.get('error', 'Unknown error')}")
-            
+
             # Wait before checking again
             await asyncio.sleep(check_interval_seconds)
-        
+
         raise TimeoutError(f"Document processing did not complete within {timeout_seconds} seconds")
 
     async def get_document_by_filename(self, filename: str) -> Document:
@@ -1828,9 +1845,7 @@ class AsyncMorphik:
                 form_data["use_colpali"] = str(use_colpali).lower()
 
             # Use the dedicated file update endpoint
-            response = await self._request(
-                "POST", f"documents/{document_id}/update_file", data=form_data, files=files
-            )
+            response = await self._request("POST", f"documents/{document_id}/update_file", data=form_data, files=files)
 
             doc = self._logic._parse_document_response(response)
             doc._client = self
@@ -1866,9 +1881,7 @@ class AsyncMorphik:
             ```
         """
         # Use the dedicated metadata update endpoint
-        response = await self._request(
-            "POST", f"documents/{document_id}/update_metadata", data=metadata
-        )
+        response = await self._request("POST", f"documents/{document_id}/update_metadata", data=metadata)
         doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
@@ -2059,9 +2072,7 @@ class AsyncMorphik:
             doc._client = self
         return docs
 
-    async def batch_get_chunks(
-        self, sources: List[Union[ChunkSource, Dict[str, Any]]]
-    ) -> List[FinalChunkResult]:
+    async def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation.
 
@@ -2110,8 +2121,10 @@ class AsyncMorphik:
             name: Name of the cache to create
             model: Name of the model to use (e.g. "llama2")
             gguf_file: Name of the GGUF file to use for the model
-            filters: Optional metadata filters to determine which documents to include. These filters will be applied in addition to any specific docs provided.
-            docs: Optional list of specific document IDs to include. These docs will be included in addition to any documents matching the filters.
+            filters: Optional metadata filters to determine which documents to include.
+                These filters will be applied in addition to any specific docs provided.
+            docs: Optional list of specific document IDs to include.
+                These docs will be included in addition to any documents matching the filters.
 
         Returns:
             Dict[str, Any]: Created cache configuration
@@ -2212,9 +2225,7 @@ class AsyncMorphik:
             )
             ```
         """
-        request = self._logic._prepare_create_graph_request(
-            name, filters, documents, prompt_overrides, None, None
-        )
+        request = self._logic._prepare_create_graph_request(name, filters, documents, prompt_overrides, None, None)
         response = await self._request("POST", "graph/create", data=request)
         return self._logic._parse_graph_response(response)
 

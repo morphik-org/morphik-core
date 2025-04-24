@@ -1,206 +1,95 @@
-![Morphik Logo](/morphik_no_pad.png)
+<p align="center">
+  <img alt="Morphik Logo" src="assets/morphik_logo.png">
+</p>
+<p align="center">
+  <a href='http://makeapullrequest.com'><img alt='PRs Welcome' src='https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=shields'/></a>
+  <img alt="GitHub commit activity" src="https://img.shields.io/github/commit-activity/m/morphik-org/morphik-core"/>
+  <img alt="GitHub closed issues" src="https://img.shields.io/github/issues-closed/morphik-org/morphik-core"/>
+  <img alt="PyPI - Downloads" src="https://img.shields.io/pypi/dm/morphik">
+  <a href="https://discord.gg/BwMtv3Zaju"><img alt="Discord" src="https://img.shields.io/discord/1336524712817332276?logo=discord&label=discord"></a>
+</p>
 
-# Morphik Core
+<!-- add a roadmap! - <a href="https://morphik.ai/roadmap">Roadmap</a> - -->
+<!-- Add a changelog! - <a href="https://morphik.ai/changelog">Changelog</a> -->
 
-**Note**: For our hosted service: https://www.morphik.ai. 
-We also deploy our Morphik on prem or VPC, happy to chat: https://cal.com/adityavardhan-agrawal-x6jyhq/30min
+<p align="center">
+  <a href="https://docs.morphik.ai">Docs</a> - <a href="https://discord.gg/BwMtv3Zaju">Community</a> - <a href="https://docs.morphik.ai/blogs/gpt-vs-morphik-multimodal">Why Morphik?</a> - <a href="https://github.com/morphik-org/morphik-core/issues/new?assignees=&labels=bug&template=bug_report.md">Bug reports</a>
+</p>
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/morphik-org/morphik-core/tree/main?tab=License-1-ov-file#readme) [![PyPI - Version](https://img.shields.io/pypi/v/morphik)](https://pypi.org/project/morphik/) [![Discord](https://img.shields.io/discord/1336524712817332276?logo=discord&label=discord)](https://discord.gg/BwMtv3Zaju)
+## Morphik is an alternative to traditional RAG for highly technical and visual documents.
 
-## What is Morphik?
+[Morphik](https://morphik.ai) provides developers the tools to ingest, search (deep and shallow), transform, and manage unstructured and multimodal documents. Some of our features include:
 
-Morphik is an open-source database designed for AI applications that simplifies working with unstructured data. It provides advanced RAG (Retrieval Augmented Generation) capabilities with multi-modal support, knowledge graphs, and intuitive APIs.
+- [Multimodal Search](https://docs.morphik.ai/concepts/colpali): We employ techniques such as ColPali to build search that actually *understands* the visual content of documents you provide. Search over images, PDFs, videos, and more with a single endpoint.
+- [Knowledge Graphs](https://docs.morphik.ai/concepts/knowledge-graphs): Build knowledge graphs for domain-specific use cases in a single line of code. Use our battle-tested system prompts, or use your own.
+- [Fast and Scalable Metadata Extraction](https://docs.morphik.ai/concepts/rules-processing): Extract metadata from documents - including bounding boxes, labeling, classification, and more.
+- [Integrations](https://docs.morphik.ai/integrations): Integrate with existing tools and workflows. Including (but not limited to) Google Suite, Slack, and Confluence.
+- [Cache-Augmented-Generation](https://docs.morphik.ai/python-sdk/create_cache): Create persistent KV-caches of your documents to speed up generation.
 
-Built for scale and performance, Morphik can handle millions of documents while maintaining fast retrieval times. Whether you're prototyping a new AI application or deploying production-grade systems, Morphik provides the infrastructure you need.
+The best part? Morphik has a [free tier](https://www.morphik.ai/pricing) and is open source! Get started by signing up at [Morphik](https://www.morphik.ai/signup).
 
-## Why we built it?
+## Table of Contents
+- [Getting Started with Morphik](#getting-started-with-morphik-recommended)
+- [Self-hosting the open-source version](#self-hosting-the-open-source-version)
+- [Using Morphik](#using-morphik)
+- [Contributing](#contributing)
+- [Open source vs paid](#open-source-vs-paid)
 
-This [blog](https://docs.morphik.ai/blogs/gpt-vs-morphik-multimodal) illustrates why. We faced issues with getting LLMs to work on technical documents, and the sheer frustration prompted (see what I did there?) us to build Morphik.
+## Getting Started with Morphik (Recommended)
 
-## Features
+The fastest and easiest way to get started with Morphik is by signing up for free at [Morphik](https://www.morphik.ai/signup). Your first 200 pages and 100 queries are on us! After this, you can pay based on usage with discounted rates for heavier use.
 
-- 📄 **First-class Support for Unstructured Data**
-  - Ingest ANY file format (PDFs, videos, text) with intelligent parsing
-  - Advanced retrieval with ColPali multi-modal embeddings
-  - Automatic document chunking and embedding
+## Self-hosting the open-source version
 
-- 🧠 **Knowledge Graph Integration**
-  - Extract entities and relationships automatically
-  - Graph-enhanced retrieval for more relevant results
-  - Explore document connections visually
+If you'd like to self-host Morphik, you can find the dedicated instruction [here](https://docs.morphik.ai/getting-started). We offer options for direct isntallation and installation via docker.
 
-- 🔍 **Advanced RAG Capabilities**
-  - Multi-stage retrieval with vector search and reranking
-  - Fine-tuned similarity thresholds
-  - Detailed metadata filtering
+**Important**: Due to limited resources, we cannot provide full support for open-source deployments. We have an installation guide, and a [Discord community](https://discord.gg/BwMtv3Zaju) to help, but we can't guarantee full support.  
 
-- 📏 **Natural Language Rules Engine**
-  - Define schema-like rules for unstructured data
-  - Extract structured metadata during ingestion
-  - Transform documents with natural language instructions
+## Using Morphik
 
-- 💾 **Persistent KV-caching**
-  - Pre-process and "freeze" document states
-  - Reduce compute costs and response times
-  - Cache selective document subsets
+Once you've signed up for Morphik, you can get started with ingesting and search your data right away. 
 
-- 🔌 **MCP Support**
-  - Model Context Protocol integration
-  - Easy knowledge sharing with AI systems
 
-- 🧩 **Extensible Architecture**
-  - Support for custom parsers and embedding models
-  - Multiple storage backends (S3, local)
-  - Vector store integration with PostgreSQL/pgvector
-
-## Quick Start
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/morphik-org/morphik-core.git
-cd morphik-core
-
-# Create a virtual environment
-python3.12 -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure and start the server
-python quick_setup.py
-python start_server.py
-```
-
-### Using the Python SDK
+### Code (Example: Python SDK)
+For programmers, we offer a [Python SDK](https://docs.morphik.ai/python-sdk/morphik) and a [REST API](https://docs.morphik.ai/api-reference/health-check). Ingesting a file is as simple as:
 
 ```python
 from morphik import Morphik
 
-# Connect to Morphik server
-db = Morphik("morphik://localhost:8000")
-
-# Ingest a document
-doc = db.ingest_text("This is a sample document about AI technology.", 
-                    metadata={"category": "tech", "author": "Morphik"})
-
-# Ingest a file (PDF, DOCX, video, etc.)
-doc = db.ingest_file("path/to/document.pdf", 
-                    metadata={"category": "research"})
-
-# Use ColPali for multi-modal documents (PDFs with images, charts, etc.)
-doc = db.ingest_file("path/to/report_with_charts.pdf", use_colpali=True)
-
-# Apply natural language rules during ingestion
-rules = [
-    {"type": "metadata_extraction", "schema": {"title": "string", "author": "string"}},
-    {"type": "natural_language", "prompt": "Remove all personally identifiable information"}
-]
-doc = db.ingest_file("path/to/document.pdf", rules=rules)
-
-# Retrieve relevant document chunks
-chunks = db.retrieve_chunks("What are the latest AI advancements?", 
-                           filters={"category": "tech"}, 
-                           k=5)
-
-# Generate a completion with context
-response = db.query("Explain the benefits of knowledge graphs in AI applications",
-                   filters={"category": "research"})
-print(response.completion)
-
-# Create and use a knowledge graph
-db.create_graph("tech_graph", filters={"category": "tech"})
-response = db.query("How does AI relate to cloud computing?", 
-                   graph_name="tech_graph", 
-                   hop_depth=2)
+morphik = Morphik("<your-morphik-uri>")
+morphik.ingest_file("path/to/your/super/complex/file.pdf")
 ```
 
-### Batch Operations
+Similarly, searching and querying your data is easy too:
 
 ```python
-# Ingest multiple files
-docs = db.ingest_files(
-    ["doc1.pdf", "doc2.pdf"],
-    metadata={"category": "research"},
-    parallel=True
-)
-
-# Ingest all PDFs in a directory
-docs = db.ingest_directory(
-    "data/documents",
-    recursive=True,
-    pattern="*.pdf"
-)
-
-# Batch retrieve documents
-docs = db.batch_get_documents(["doc_id1", "doc_id2"])
+morphik.query("What's the height of screw 14-A in the chair assembly instructions?")
 ```
 
-### Multi-modal Retrieval (ColPali)
+### Morphik Console
 
-```python
-# Ingest a PDF with charts and images
-db.ingest_file("report_with_charts.pdf", use_colpali=True)
+You can also interact with Morphik via the Morphik Console. This is a web-based interface that allows you to ingest, search, and query your data. You can upload files, connect to different data sources, and chat with your data all within the same place.
 
-# Retrieve relevant chunks, including images
-chunks = db.retrieve_chunks(
-    "Show me the Q2 revenue chart", 
-    use_colpali=True, 
-    k=3
-)
+### Model Context Protocol
 
-# Process retrieved images
-for chunk in chunks:
-    if hasattr(chunk.content, 'show'):  # If it's an image
-        chunk.content.show()
-    else:
-        print(chunk.content)
-```
+Finally, you can also access Morphik via MCP. Instructions are available [here](https://docs.morphik.ai/using-morphik/mcp).
 
-## Why Choose Morphik?
 
-| Feature | Morphik | Traditional Vector DBs | Document DBs | LLM Frameworks |
-|---------|-----------|---------------------|------------|---------------|
-| **Multi-modal Support** | ✅ Advanced ColPali embedding for text + images | ❌ or Limited | ❌ | ❌ |
-| **Knowledge Graphs** | ✅ Automated extraction & enhanced retrieval | ❌ | ❌ | ❌ |
-| **Rules Engine** | ✅ Natural language rules & schema definition | ❌ | ❌ | Limited |
-| **Caching** | ✅ Persistent KV-caching with selective updates | ❌ | ❌ | Limited |
-| **Scalability** | ✅ Millions of documents with PostgreSQL | ✅ | ✅ | Limited |
-| **Video Content** | ✅ Native video parsing & transcription | ❌ | ❌ | ❌ |
-| **Deployment Options** | ✅ Self-hosted, cloud, or hybrid | Varies | Varies | Limited |
-| **Open Source** | ✅ MIT License | Varies | Varies | Varies |
-| **API & SDK** | ✅ Clean Python SDK & RESTful API | Varies | Varies | Varies |
+## Contributing
+You're welcome to contribute to the project! We love:
+- Bug reports via [GitHub issues](https://github.com/morphik-org/morphik-core/issues)
+- Feature requests via [GitHub issues](https://github.com/morphik-org/morphik-core/issues)
+- Pull requests
 
-### Key Advantages
+Currently, we're focused on improving speed, integrating with more tools, and finding the research papers that provide the most value to our users. If you ahve thoughts, let us know in the discord or in GitHub!
 
-- **ColPali Multi-modal Embeddings**: Process and retrieve from documents based on both textual and visual content, maintaining the visual context that other systems miss.
+## Open source vs paid
 
-- **Cache Augmented Retrieval**: Pre-process and "freeze" document states to reduce compute costs by up to 80% and drastically improve response times.
+Certain features - such as Morphik Console - are not available in the open-source version. Any feature in the `ee` namespace is not available in the open-source version and carries a different license. Any feature outside that is open source under the MIT expat license. 
 
-- **Schema-like Rules for Unstructured Data**: Define rules to extract consistent metadata from unstructured content, bringing database-like queryability to any document format.
+## Contributors
 
-- **Enterprise-grade Scalability**: Built on proven PostgreSQL database technology that can scale to millions of documents while maintaining sub-second retrieval times.
+Visit our special thanks page dedicated to our contributors [here](https://docs.morphik.ai/special-thanks).
 
-## Documentation
-
-For comprehensive documentation:
-
-- [Installation Guide](https://docs.morphik.ai/getting-started)
-- [Core Concepts](https://docs.morphik.ai/concepts/naive-rag)
-- [Python SDK](https://docs.morphik.ai/python-sdk/morphik)
-- [API Reference](https://docs.morphik.ai/api-reference/health-check)
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Community
-
-- [Discord](https://discord.gg/BwMtv3Zaju) - Join our community
-- [GitHub](https://github.com/morphik-org/morphik-core) - Contribute to development
-
----
-
-Built with ❤️ by Morphik
+## PS
+We took inspiration from [PostHog](https://posthog.com) while writing this README. If you're from PostHog, thank you ❤️

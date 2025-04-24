@@ -6,7 +6,7 @@ Assumes a Morphik server is running.
 Usage:
     Without authentication (connects to localhost):
         python shell.py
-    
+
     With authentication:
         python shell.py <uri>
         Example: python shell.py "morphik://user:token@localhost:8000"
@@ -19,9 +19,10 @@ This provides the exact same interface as the Python SDK:
 """
 
 import sys
-from pathlib import Path
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+
 import requests
 
 # Add local SDK to path before other imports
@@ -52,9 +53,7 @@ class DB:
                 pass
 
             if attempt < max_retries - 1:
-                print(
-                    f"Waiting for Morphik server to be ready... (attempt {attempt + 1}/{max_retries})"
-                )
+                print(f"Waiting for Morphik server to be ready... (attempt {attempt + 1}/{max_retries})")
                 time.sleep(retry_interval)
 
         return False
@@ -89,9 +88,7 @@ class DB:
             doc.update_with_text("Additional content")
             ```
         """
-        doc = self._client.ingest_text(
-            content, metadata=metadata or {}, rules=rules, use_colpali=use_colpali
-        )
+        doc = self._client.ingest_text(content, metadata=metadata or {}, rules=rules, use_colpali=use_colpali)
         return doc if as_object else doc.model_dump()
 
     def ingest_file(
@@ -364,9 +361,7 @@ class DB:
         )
         return response.model_dump()
 
-    def list_documents(
-        self, skip: int = 0, limit: int = 100, filters: dict = None, as_objects: bool = False
-    ) -> list:
+    def list_documents(self, skip: int = 0, limit: int = 100, filters: dict = None, as_objects: bool = False) -> list:
         """
         List accessible documents
 
@@ -404,9 +399,7 @@ class DB:
         doc = self._client.get_document(document_id)
         return doc if as_object else doc.model_dump()
 
-    def get_document_by_filename(
-        self, filename: str, as_object: bool = False
-    ) -> Union[dict, "Document"]:
+    def get_document_by_filename(self, filename: str, as_object: bool = False) -> Union[dict, "Document"]:
         """
         Get document metadata by filename
 
@@ -619,9 +612,7 @@ class DB:
         )
         return doc.model_dump()
 
-    def batch_get_documents(
-        self, document_ids: List[str], as_objects: bool = False
-    ) -> List[Union[dict, "Document"]]:
+    def batch_get_documents(self, document_ids: List[str], as_objects: bool = False) -> List[Union[dict, "Document"]]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
 
@@ -879,18 +870,12 @@ if __name__ == "__main__":
     print("  db.batch_get_chunks([{'document_id': 'doc_123', 'chunk_number': 0}])")
     print("\nUpdate by Document ID:")
     print("  db.get_document('doc_123')")
-    print(
-        "  db.update_document_with_text('doc_123', 'This is new content to append', filename='updated_doc.txt')"
-    )
-    print(
-        "  db.update_document_with_file('doc_123', 'path/to/file.pdf', metadata={'status': 'updated'})"
-    )
+    print("  db.update_document_with_text('doc_123', 'This is new content to append', filename='updated_doc.txt')")
+    print("  db.update_document_with_file('doc_123', 'path/to/file.pdf', metadata={'status': 'updated'})")
     print("  db.update_document_metadata('doc_123', {'reviewed': True, 'reviewer': 'John'})")
     print("\nUpdate by Filename:")
     print("  db.get_document_by_filename('report.pdf')")
-    print(
-        "  db.update_document_by_filename_with_text('report.pdf', 'New content', new_filename='updated_report.pdf')"
-    )
+    print("  db.update_document_by_filename_with_text('report.pdf', 'New content', new_filename='updated_report.pdf')")
     print("  db.update_document_by_filename_with_file('report.pdf', 'path/to/new_data.pdf')")
     print(
         "  db.update_document_by_filename_metadata('report.pdf', {'reviewed': True}, new_filename='reviewed_report.pdf')"
