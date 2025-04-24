@@ -1956,7 +1956,7 @@ async def set_folder_rule(
                                             logger.info(f"Retry {retry_count}/{max_retries} after {delay}s delay")
                                             await asyncio.sleep(delay)
 
-                                        extracted_metadata, _ = await rule.apply(doc_content)
+                                        extracted_metadata, _ = await rule.apply(doc_content, {})
                                         logger.info(
                                             f"Successfully extracted metadata on attempt {retry_count + 1}: "
                                             f"{extracted_metadata}"

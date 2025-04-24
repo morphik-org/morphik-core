@@ -132,6 +132,9 @@ class DocumentService:
         # Maps cache name to active cache object
         self.active_caches: Dict[str, BaseCache] = {}
 
+        # Store for aggregated metadata from chunk rules
+        self._last_aggregated_metadata: Dict[str, Any] = {}
+
     async def retrieve_chunks(
         self,
         query: str,
@@ -603,41 +606,82 @@ class DocumentService:
             num_pages = int(len(content) / (CHARS_PER_TOKEN * TOKENS_PER_PAGE))  #
             await check_and_increment_limits(auth, "ingest", num_pages, doc.external_id)
 
-        # Apply rules if provided
+        # === Apply post_parsing rules ===
+        document_rule_metadata = {}
         if rules:
-            rule_metadata, modified_text = await self.rules_processor.process_rules(content, rules)
+            logger.info("Applying post-parsing rules...")
+            document_rule_metadata, content = await self.rules_processor.process_document_rules(content, rules)
             # Update document metadata with extracted metadata from rules
-            metadata.update(rule_metadata)
+            metadata.update(document_rule_metadata)
             doc.metadata = metadata  # Update doc metadata after rules
-
-            if modified_text:
-                content = modified_text
-                logger.info("Updated content with modified text from rules")
+            logger.info(f"Document metadata after post-parsing rules: {metadata}")
+            logger.info(f"Content length after post-parsing rules: {len(content)}")
 
         # Store full content before chunking
         doc.system_metadata["content"] = content
 
-        # Split into chunks after all processing is done
-        chunks = await self.parser.split_text(content)
-        if not chunks:
-            raise ValueError("No content chunks extracted")
-        logger.debug(f"Split processed text into {len(chunks)} chunks")
+        # Split text into chunks
+        parsed_chunks = await self.parser.split_text(content)
+        if not parsed_chunks:
+            raise ValueError("No content chunks extracted after rules processing")
+        logger.debug(f"Split processed text into {len(parsed_chunks)} chunks")
 
-        # Generate embeddings for chunks
-        embeddings = await self.embedding_model.embed_for_ingestion(chunks)
+        # === Apply post_chunking rules and aggregate metadata ===
+        processed_chunks = []
+        aggregated_chunk_metadata: Dict[str, Any] = {}  # Initialize dict for aggregated metadata
+        chunk_contents = []  # Initialize list to collect chunk contents efficiently
+
+        if rules:
+            logger.info("Applying post-chunking rules...")
+
+            for chunk_obj in parsed_chunks:
+                # Get metadata *and* the potentially modified chunk
+                chunk_rule_metadata, processed_chunk = await self.rules_processor.process_chunk_rules(chunk_obj, rules)
+                processed_chunks.append(processed_chunk)
+                chunk_contents.append(processed_chunk.content)  # Collect content as we process
+                # Aggregate the metadata extracted from this chunk
+                aggregated_chunk_metadata.update(chunk_rule_metadata)
+            logger.info(f"Finished applying post-chunking rules to {len(processed_chunks)} chunks.")
+            logger.info(f"Aggregated metadata from all chunks: {aggregated_chunk_metadata}")
+
+            # Update the document content with the stitched content from processed chunks
+            if processed_chunks:
+                logger.info("Updating document content with processed chunks...")
+                stitched_content = "\n".join(chunk_contents)
+                doc.system_metadata["content"] = stitched_content
+                logger.info(f"Updated document content with stitched chunks (length: {len(stitched_content)})")
+        else:
+            processed_chunks = parsed_chunks  # No rules, use original chunks
+
+        # Generate embeddings for processed chunks
+        embeddings = await self.embedding_model.embed_for_ingestion(processed_chunks)
         logger.debug(f"Generated {len(embeddings)} embeddings")
-        chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
+
+        # Create chunk objects with processed chunk content
+        chunk_objects = self._create_chunk_objects(doc.external_id, processed_chunks, embeddings)
         logger.debug(f"Created {len(chunk_objects)} chunk objects")
 
         chunk_objects_multivector = []
 
         if use_colpali and self.colpali_embedding_model:
-            embeddings_multivector = await self.colpali_embedding_model.embed_for_ingestion(chunks)
+            embeddings_multivector = await self.colpali_embedding_model.embed_for_ingestion(processed_chunks)
             logger.info(f"Generated {len(embeddings_multivector)} embeddings for multivector embedding")
-            chunk_objects_multivector = self._create_chunk_objects(doc.external_id, chunks, embeddings_multivector)
+            chunk_objects_multivector = self._create_chunk_objects(
+                doc.external_id, processed_chunks, embeddings_multivector
+            )
             logger.info(f"Created {len(chunk_objects_multivector)} chunk objects for multivector embedding")
 
         # Create and store chunk objects
+
+        # === Merge aggregated chunk metadata into document metadata ===
+        if aggregated_chunk_metadata:
+            logger.info("Merging aggregated chunk metadata into document metadata...")
+            # Make sure doc.metadata exists
+            if not hasattr(doc, "metadata") or doc.metadata is None:
+                doc.metadata = {}
+            doc.metadata.update(aggregated_chunk_metadata)
+            logger.info(f"Final document metadata after merge: {doc.metadata}")
+        # ===========================================================
 
         # Store everything
         await self._store_chunks_and_doc(chunk_objects, doc, use_colpali, chunk_objects_multivector)
@@ -651,146 +695,6 @@ class DocumentService:
             document_id=doc.external_id, updates={"system_metadata": doc.system_metadata}, auth=auth
         )
         logger.debug(f"Updated document status to 'completed' for {doc.external_id}")
-
-        return doc
-
-    # TODO: check if it's unused. if so, remove it.
-    async def ingest_file(
-        self,
-        file: UploadFile,
-        metadata: Dict[str, Any],
-        auth: AuthContext,
-        rules: Optional[List[str]] = None,
-        use_colpali: Optional[bool] = None,
-        folder_name: Optional[str] = None,
-        end_user_id: Optional[str] = None,
-    ) -> Document:
-        """Ingest a file document."""
-        if "write" not in auth.permissions:
-            raise PermissionError("User does not have write permission")
-
-        # Read file content
-        file_content = await file.read()
-        file_size = len(file_content)  # Get file size in bytes for limit checking
-
-        # Check limits before doing any expensive processing
-        from core.config import get_settings
-
-        settings = get_settings()
-
-        if settings.MODE == "cloud" and auth.user_id:
-            # Check limits before proceeding with parsing
-            from core.api import check_and_increment_limits
-
-            await check_and_increment_limits(auth, "storage_file", 1)
-            await check_and_increment_limits(auth, "storage_size", file_size)
-
-        # Now proceed with parsing and processing the file
-        file_type = filetype.guess(file_content)
-
-        # Set default mime type for cases where filetype.guess returns None
-        mime_type = ""
-        if file_type is not None:
-            mime_type = file_type.mime
-        elif file.filename:
-            # Try to determine by file extension as fallback
-            import mimetypes
-
-            guessed_type = mimetypes.guess_type(file.filename)[0]
-            if guessed_type:
-                mime_type = guessed_type
-            else:
-                # Default for text files
-                mime_type = "text/plain"
-        else:
-            mime_type = "application/octet-stream"  # Generic binary data
-
-        logger.info(f"Determined MIME type: {mime_type} for file {file.filename}")
-
-        # Parse file to text first
-        additional_metadata, text = await self.parser.parse_file_to_text(file_content, file.filename)
-        logger.debug(f"Parsed file into text of length {len(text)}")
-
-        # Apply rules if provided
-        if rules:
-            rule_metadata, modified_text = await self.rules_processor.process_rules(text, rules)
-            # Update document metadata with extracted metadata from rules
-            metadata.update(rule_metadata)
-            if modified_text:
-                text = modified_text
-                logger.info("Updated text with modified content from rules")
-
-        doc = Document(
-            content_type=mime_type,
-            filename=file.filename,
-            metadata=metadata,
-            owner={"type": auth.entity_type, "id": auth.entity_id},
-            access_control={
-                "readers": [auth.entity_id],
-                "writers": [auth.entity_id],
-                "admins": [auth.entity_id],
-                "user_id": (
-                    [auth.user_id] if auth.user_id else []
-                ),  # Add user_id to access control for filtering (as a list)
-            },
-            additional_metadata=additional_metadata,
-        )
-
-        # Add folder_name and end_user_id to system_metadata if provided
-        if folder_name:
-            doc.system_metadata["folder_name"] = folder_name
-
-            # Check if the folder exists, if not create it
-            await self._ensure_folder_exists(folder_name, doc.external_id, auth)
-
-        if end_user_id:
-            doc.system_metadata["end_user_id"] = end_user_id
-
-        if settings.MODE == "cloud" and auth.user_id:
-            # Check limits before proceeding with parsing
-            from core.api import check_and_increment_limits
-
-            num_pages = int(len(text) / (CHARS_PER_TOKEN * TOKENS_PER_PAGE))  #
-            await check_and_increment_limits(auth, "ingest", num_pages, doc.external_id)
-
-        # Store full content
-        doc.system_metadata["content"] = text
-        logger.debug(f"Created file document record with ID {doc.external_id}")
-
-        file_content_base64 = base64.b64encode(file_content).decode()
-        # Store the original file
-        storage_info = await self.storage.upload_from_base64(file_content_base64, doc.external_id, file.content_type)
-        doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
-        logger.debug(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
-
-        # Split into chunks after all processing is done
-        chunks = await self.parser.split_text(text)
-        if not chunks:
-            raise ValueError("No content chunks extracted")
-        logger.debug(f"Split processed text into {len(chunks)} chunks")
-
-        # Generate embeddings for chunks
-        embeddings = await self.embedding_model.embed_for_ingestion(chunks)
-        logger.debug(f"Generated {len(embeddings)} embeddings")
-
-        # Create and store chunk objects
-        chunk_objects = self._create_chunk_objects(doc.external_id, chunks, embeddings)
-        logger.debug(f"Created {len(chunk_objects)} chunk objects")
-
-        chunk_objects_multivector = []
-        logger.debug(f"use_colpali: {use_colpali}")
-        if use_colpali and self.colpali_embedding_model:
-            chunks_multivector = self._create_chunks_multivector(file_type, file_content_base64, file_content, chunks)
-            logger.debug(f"Created {len(chunks_multivector)} chunks for multivector embedding")
-            colpali_embeddings = await self.colpali_embedding_model.embed_for_ingestion(chunks_multivector)
-            logger.debug(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
-            chunk_objects_multivector = self._create_chunk_objects(
-                doc.external_id, chunks_multivector, colpali_embeddings
-            )
-
-        # Store everything
-        doc.chunk_ids = await self._store_chunks_and_doc(chunk_objects, doc, use_colpali, chunk_objects_multivector)
-        logger.debug(f"Successfully stored file document {doc.external_id}")
 
         return doc
 
@@ -1373,9 +1277,31 @@ class DocumentService:
             return await self._update_document_metadata_only(doc, auth)
 
         # Process content into chunks and generate embeddings
-        chunks, chunk_objects = await self._process_chunks_and_embeddings(doc.external_id, updated_content)
+        chunks, chunk_objects = await self._process_chunks_and_embeddings(doc.external_id, updated_content, rules)
         if not chunks:
             return None
+
+        # If we have rules processing, the chunks may have modified content
+        # Update document content with stitched content from processed chunks
+        if rules and chunks:
+            chunk_contents = [chunk.content for chunk in chunks]
+            stitched_content = "\n".join(chunk_contents)
+            # Check if content actually changed
+            if stitched_content != updated_content:
+                logger.info("Updating document content with stitched content from processed chunks...")
+                doc.system_metadata["content"] = stitched_content
+                logger.info(f"Updated document content with stitched chunks (length: {len(stitched_content)})")
+
+        # Merge any aggregated metadata from chunk rules
+        if hasattr(self, "_last_aggregated_metadata") and self._last_aggregated_metadata:
+            logger.info("Merging aggregated chunk metadata into document metadata...")
+            # Make sure doc.metadata exists
+            if not hasattr(doc, "metadata") or doc.metadata is None:
+                doc.metadata = {}
+            doc.metadata.update(self._last_aggregated_metadata)
+            logger.info(f"Final document metadata after merge: {doc.metadata}")
+            # Clear the temporary metadata
+            self._last_aggregated_metadata = {}
 
         # Handle colpali (multi-vector) embeddings if needed
         chunk_objects_multivector = await self._process_colpali_embeddings(
@@ -1423,16 +1349,16 @@ class DocumentService:
         if filename:
             doc.filename = filename
 
-        # Apply rules if provided for text content
+        # Apply post_parsing rules if provided
         if rules:
-            rule_metadata, modified_text = await self.rules_processor.process_rules(content, rules)
+            logger.info("Applying post-parsing rules to text update...")
+            rule_metadata, modified_content = await self.rules_processor.process_document_rules(content, rules)
             # Update metadata with extracted metadata from rules
             if metadata is not None:
                 metadata.update(rule_metadata)
 
-            if modified_text:
-                update_content = modified_text
-                logger.info("Updated content with modified text from rules")
+            update_content = modified_content
+            logger.info(f"Content length after post-parsing rules: {len(update_content)}")
 
         return update_content
 
@@ -1451,16 +1377,16 @@ class DocumentService:
         additional_file_metadata, file_text = await self.parser.parse_file_to_text(file_content, file.filename)
         logger.info(f"Parsed file into text of length {len(file_text)}")
 
-        # Apply rules if provided for file content
+        # Apply post_parsing rules if provided for file content
         if rules:
-            rule_metadata, modified_text = await self.rules_processor.process_rules(file_text, rules)
+            logger.info("Applying post-parsing rules to file update...")
+            rule_metadata, modified_text = await self.rules_processor.process_document_rules(file_text, rules)
             # Update metadata with extracted metadata from rules
             if metadata is not None:
                 metadata.update(rule_metadata)
 
-            if modified_text:
-                file_text = modified_text
-                logger.info("Updated file content with modified text from rules")
+            file_text = modified_text
+            logger.info(f"File content length after post-parsing rules: {len(file_text)}")
 
         # Add additional metadata from file if available
         if additional_file_metadata:
@@ -1628,26 +1554,50 @@ class DocumentService:
         return doc
 
     async def _process_chunks_and_embeddings(
-        self, doc_id: str, content: str
+        self, doc_id: str, content: str, rules: Optional[List[Dict[str, Any]]] = None
     ) -> tuple[List[Chunk], List[DocumentChunk]]:
         """Process content into chunks and generate embeddings."""
         # Split content into chunks
-        chunks = await self.parser.split_text(content)
-        if not chunks:
+        parsed_chunks = await self.parser.split_text(content)
+        if not parsed_chunks:
             logger.error("No content chunks extracted after update")
             return None, None
 
-        logger.info(f"Split updated text into {len(chunks)} chunks")
+        logger.info(f"Split updated text into {len(parsed_chunks)} chunks")
 
-        # Generate embeddings for new chunks
-        embeddings = await self.embedding_model.embed_for_ingestion(chunks)
+        # Apply post_chunking rules and aggregate metadata if provided
+        processed_chunks = []
+        aggregated_chunk_metadata: Dict[str, Any] = {}  # Initialize dict for aggregated metadata
+        chunk_contents = []  # Initialize list to collect chunk contents efficiently
+
+        if rules:
+            logger.info("Applying post-chunking rules...")
+
+            for chunk_obj in parsed_chunks:
+                # Get metadata *and* the potentially modified chunk
+                chunk_rule_metadata, processed_chunk = await self.rules_processor.process_chunk_rules(chunk_obj, rules)
+                processed_chunks.append(processed_chunk)
+                chunk_contents.append(processed_chunk.content)  # Collect content as we process
+                # Aggregate the metadata extracted from this chunk
+                aggregated_chunk_metadata.update(chunk_rule_metadata)
+            logger.info(f"Finished applying post-chunking rules to {len(processed_chunks)} chunks.")
+            logger.info(f"Aggregated metadata from all chunks: {aggregated_chunk_metadata}")
+
+            # Return this metadata so the calling method can update the document metadata
+            self._last_aggregated_metadata = aggregated_chunk_metadata
+        else:
+            processed_chunks = parsed_chunks  # No rules, use original chunks
+            self._last_aggregated_metadata = {}
+
+        # Generate embeddings for processed chunks
+        embeddings = await self.embedding_model.embed_for_ingestion(processed_chunks)
         logger.info(f"Generated {len(embeddings)} embeddings")
 
         # Create new chunk objects
-        chunk_objects = self._create_chunk_objects(doc_id, chunks, embeddings)
+        chunk_objects = self._create_chunk_objects(doc_id, processed_chunks, embeddings)
         logger.info(f"Created {len(chunk_objects)} chunk objects")
 
-        return chunks, chunk_objects
+        return processed_chunks, chunk_objects
 
     async def _process_colpali_embeddings(
         self,
