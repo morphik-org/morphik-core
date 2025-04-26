@@ -41,7 +41,7 @@ The fastest and easiest way to get started with Morphik is by signing up for fre
 
 ## Self-hosting the open-source version
 
-If you'd like to self-host Morphik, you can find the dedicated instruction [here](https://docs.morphik.ai/getting-started). We offer options for direct isntallation and installation via docker.
+If you'd like to self-host Morphik, you can find the dedicated instruction [here](https://docs.morphik.ai/getting-started). We offer options for direct installation and installation via docker.
 
 **Important**: Due to limited resources, we cannot provide full support for open-source deployments. We have an installation guide, and a [Discord community](https://discord.gg/BwMtv3Zaju) to help, but we can't guarantee full support.  
 
