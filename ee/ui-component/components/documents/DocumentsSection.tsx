@@ -1265,40 +1265,8 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           </div>
         </div>
       )}
-      {/* Hide the main header when viewing a specific folder - it will be merged with the FolderList header */}
-      {selectedFolder === null && (
-        <div className="flex justify-between items-center py-3 mb-4">
-          <div>
-            <h2 className="text-2xl font-bold leading-tight">Folders</h2>
-            <p className="text-muted-foreground">Manage your uploaded documents and view their metadata.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleRefresh}
-              disabled={loading}
-              className="flex items-center"
-              title="Refresh folders"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
-                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
-                <path d="M21 3v5h-5"></path>
-                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
-                <path d="M8 16H3v5"></path>
-              </svg>
-              Refresh
-            </Button>
-            <UploadDialog
-              showUploadDialog={showUploadDialog}
-              setShowUploadDialog={setShowUploadDialog}
-              loading={loading}
-              onFileUpload={handleFileUpload}
-              onBatchFileUpload={handleBatchFileUpload}
-              onTextUpload={handleTextUpload}
-            />
-          </div>
-        </div>
-      )}
+      {/* Folder view controls - only show when not in a specific folder */}
+      {/* No longer needed - controls will be provided in FolderList */}
 
       {/* Render the FolderList with header at all times when selectedFolder is not null */}
       {selectedFolder !== null && (

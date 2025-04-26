@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   AlertCircle,
   Share2,
@@ -17,7 +18,8 @@ import {
   Plus,
   Network,
   Tag,
-  Link
+  Link,
+  ArrowLeft
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -97,6 +99,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('list');
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showNodeLabels, setShowNodeLabels] = useState(true);
   const [showLinkLabels, setShowLinkLabels] = useState(true);
 
@@ -410,296 +413,323 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
     );
   };
 
+  // State to control visualization view
+  const [showVisualization, setShowVisualization] = useState(false);
+
   return (
-    <div className="space-y-6 p-4">
-      <div className="space-y-2">
-        <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold flex items-center">
-            <Network className="mr-2 h-6 w-6" />
-            Knowledge Graphs
-          </h2>
-          {selectedGraph && (
-            <div className="flex items-center">
-              <Badge variant="outline" className="text-md px-3 py-1 bg-blue-50">
-                Current Graph: {selectedGraph.name}
-              </Badge>
-            </div>
-          )}
-        </div>
-        <p className="text-muted-foreground">
-          Knowledge graphs represent relationships between entities extracted from your documents.
-          Use them to enhance your queries with structured information and improve retrieval quality.
-        </p>
-      </div>
-
-      <Tabs defaultValue="list" value={activeTab} onValueChange={handleTabChange}>
-        <TabsList className="mb-4">
-          <TabsTrigger value="list">Available Graphs</TabsTrigger>
-          <TabsTrigger value="create">Create New Graph</TabsTrigger>
-          <TabsTrigger value="update" disabled={!selectedGraph}>Update Graph</TabsTrigger>
-          <TabsTrigger value="visualize" disabled={!selectedGraph}>Visualize Graph</TabsTrigger>
-        </TabsList>
-
-        {/* Graph List Tab */}
-        <TabsContent value="list">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Database className="mr-2 h-5 w-5" />
-                Available Knowledge Graphs
-              </CardTitle>
-              <CardDescription>
-                Select a graph to view its details or visualize it.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="flex justify-center items-center p-8">
-                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
-                </div>
-              ) : graphs.length === 0 ? (
-                <div className="text-center p-8 border-2 border-dashed rounded-lg">
-                  <Network className="mx-auto h-12 w-12 mb-3 text-muted-foreground" />
-                  <p className="text-muted-foreground mb-3">No graphs available.</p>
-                  <Button onClick={() => setActiveTab('create')} variant="default">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create Your First Graph
+    <div className="flex-1 flex flex-col h-full p-4">
+      <div className="flex-1 flex flex-col">
+        {selectedGraph === null ? (
+          <div className="mb-6">
+            {/* Graph List View (similar to folder grid view) */}
+            <div className="flex justify-between items-center mb-4">
+              <div></div> {/* Empty div for spacing */}
+              <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Plus className="h-4 w-4 mr-2" /> New Graph
                   </Button>
-                </div>
-              ) : (
-                <ScrollArea className="h-[400px] pr-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {graphs.map((graph) => (
-                      <Card
-                        key={graph.id}
-                        className={`cursor-pointer hover:shadow-md transition-shadow ${
-                          selectedGraph?.id === graph.id ? 'border-2 border-blue-500' : ''
-                        }`}
-                        onClick={() => handleGraphClick(graph)}
-                      >
-                        <CardHeader className="pb-2">
-                          <CardTitle className="flex justify-between items-center">
-                            <span>{graph.name}</span>
-                            <Badge variant="outline">
-                              {new Date(graph.created_at).toLocaleDateString()}
-                            </Badge>
-                          </CardTitle>
-                          <CardDescription>
-                            {graph.entities.length} entities, {graph.relationships.length} relationships
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            {Array.from(new Set(graph.entities.map(e => e.type))).slice(0, 5).map(type => (
-                              <Badge
-                                key={type}
-                                style={{ backgroundColor: entityTypeColors[type.toLowerCase()] || entityTypeColors.default }}
-                                className="text-white"
-                              >
-                                {type}
-                              </Badge>
-                            ))}
-                            {Array.from(new Set(graph.entities.map(e => e.type))).length > 5 && (
-                              <Badge variant="outline">+{Array.from(new Set(graph.entities.map(e => e.type))).length - 5} more</Badge>
-                            )}
-                          </div>
-                          <div className="mt-3 text-sm text-muted-foreground">
-                            {graph.document_ids.length} document{graph.document_ids.length !== 1 ? 's' : ''}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center">
+                      <Plus className="mr-2 h-5 w-5" />
+                      Create New Knowledge Graph
+                    </DialogTitle>
+                    <DialogDescription>
+                      Create a knowledge graph from documents in your Morphik collection to enhance your queries.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="graph-name">Graph Name</Label>
+                      <Input
+                        id="graph-name"
+                        placeholder="Enter a unique name for your graph"
+                        value={graphName}
+                        onChange={(e) => setGraphName(e.target.value)}
+                      />
+                      <p className="text-sm text-muted-foreground">
+                        Give your graph a descriptive name that helps you identify its purpose.
+                      </p>
+                    </div>
 
-          {selectedGraph && (
-            <Card className="mt-4">
+                    <div className="border-t pt-4 mt-4">
+                      <h3 className="text-md font-medium mb-3">Document Selection</h3>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="graph-documents">Document IDs (Optional)</Label>
+                          <Textarea
+                            id="graph-documents"
+                            placeholder="Enter document IDs separated by commas"
+                            value={graphDocuments.join(', ')}
+                            onChange={(e) => setGraphDocuments(e.target.value.split(',').map(id => id.trim()).filter(id => id))}
+                            className="min-h-[80px]"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Specify document IDs to include in the graph, or leave empty and use filters below.
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="graph-filters">Metadata Filters (Optional)</Label>
+                          <Textarea
+                            id="graph-filters"
+                            placeholder='{"category": "research", "author": "Jane Doe"}'
+                            value={graphFilters}
+                            onChange={(e) => setGraphFilters(e.target.value)}
+                            className="min-h-[80px] font-mono"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            JSON object with metadata filters to select documents.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        handleCreateGraph();
+                        setShowCreateDialog(false);
+                      }}
+                      disabled={!graphName || loading}
+                    >
+                      {loading ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      ) : null}
+                      Create Graph
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            {loading ? (
+              <div className="flex justify-center items-center p-8">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
+              </div>
+            ) : graphs.length === 0 ? (
+              <div className="text-center p-8 border-2 border-dashed rounded-lg">
+                <Network className="mx-auto h-12 w-12 mb-3 text-muted-foreground" />
+                <p className="text-muted-foreground mb-3">No graphs available.</p>
+                <Button onClick={() => setShowCreateDialog(true)} variant="default">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Your First Graph
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 py-2">
+                {graphs.map((graph) => (
+                  <div
+                    key={graph.id}
+                    className="cursor-pointer group flex flex-col items-center"
+                    onClick={() => handleGraphClick(graph)}
+                  >
+                    <div className="mb-2 group-hover:scale-110 transition-transform">
+                      <Network className="h-16 w-16 text-primary" />
+                    </div>
+                    <span className="text-sm font-medium text-center truncate w-full max-w-[100px] group-hover:text-primary transition-colors">
+                      {graph.name}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : showVisualization ? (
+          <div className="flex flex-col h-full">
+            {/* Visualization view header */}
+            <div className="flex justify-between items-center py-2 mb-4">
+              <div className="flex items-center gap-4">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full hover:bg-muted/50"
+                  onClick={() => {
+                    setShowVisualization(false);
+                  }}
+                >
+                  <ArrowLeft size={18} />
+                </Button>
+                <div className="flex items-center">
+                  <Network className="h-8 w-8 mr-3 text-primary" />
+                  <h2 className="font-medium text-xl">
+                    {selectedGraph.name} Visualization
+                  </h2>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
+                  <Tag className="h-4 w-4" />
+                  <Label htmlFor="show-node-labels" className="text-sm cursor-pointer">Show Node Labels</Label>
+                  <Switch
+                    id="show-node-labels"
+                    checked={showNodeLabels}
+                    onCheckedChange={setShowNodeLabels}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Link className="h-4 w-4" />
+                  <Label htmlFor="show-link-labels" className="text-sm cursor-pointer">Show Relationships</Label>
+                  <Switch
+                    id="show-link-labels"
+                    checked={showLinkLabels}
+                    onCheckedChange={setShowLinkLabels}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Graph visualization */}
+            <div ref={graphContainerRef} className="flex-1 border rounded-md min-h-[600px]">
+              <ForceGraphComponent
+                data={prepareGraphData(selectedGraph)}
+                width={graphContainerRef.current?.clientWidth || 800}
+                height={600}
+                showNodeLabels={showNodeLabels}
+                showLinkLabels={showLinkLabels}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col space-y-4">
+            {/* Header with back button like folder view */}
+            <div className="flex justify-between items-center py-2 mb-2">
+              <div className="flex items-center gap-4">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full hover:bg-muted/50"
+                  onClick={() => {
+                    setSelectedGraph(null);
+                    if (onSelectGraph) {
+                      onSelectGraph(undefined);
+                    }
+                  }}
+                >
+                  <ArrowLeft size={18} />
+                </Button>
+                <div className="flex items-center">
+                  <Network className="h-8 w-8 mr-3 text-primary" />
+                  <h2 className="font-medium text-xl">
+                    {selectedGraph.name}
+                  </h2>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setActiveTab('update')}
+                  className="flex items-center"
+                >
+                  <Plus className="mr-1 h-4 w-4" />
+                  Update Graph
+                </Button>
+                <Button
+                  onClick={() => setShowVisualization(true)}
+                  className="flex items-center"
+                >
+                  <Share2 className="mr-1 h-4 w-4" />
+                  Visualize
+                </Button>
+              </div>
+            </div>
+
+            {/* Graph details like document details */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-muted/50 p-4 rounded-lg">
+                <h4 className="font-medium mb-1">Documents</h4>
+                <div className="text-2xl font-bold">{selectedGraph.document_ids.length}</div>
+                <div className="text-sm text-muted-foreground">source documents</div>
+              </div>
+
+              <div className="bg-muted/50 p-4 rounded-lg">
+                <h4 className="font-medium mb-1">Entities</h4>
+                <div className="text-2xl font-bold">{selectedGraph.entities.length}</div>
+                <div className="text-sm text-muted-foreground">unique elements</div>
+              </div>
+
+              <div className="bg-muted/50 p-4 rounded-lg">
+                <h4 className="font-medium mb-1">Relationships</h4>
+                <div className="text-2xl font-bold">{selectedGraph.relationships.length}</div>
+                <div className="text-sm text-muted-foreground">connections</div>
+              </div>
+
+              <div className="bg-muted/50 p-4 rounded-lg">
+                <h4 className="font-medium mb-1">Created</h4>
+                <div className="text-xl font-bold">{new Date(selectedGraph.created_at).toLocaleDateString()}</div>
+                <div className="text-sm text-muted-foreground">
+                  {new Date(selectedGraph.created_at).toLocaleTimeString()}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h4 className="font-medium mb-2">Entity Types</h4>
+                <div className="bg-muted/30 p-3 rounded-md">
+                  {Object.entries(
+                    selectedGraph.entities.reduce((acc, entity) => {
+                      acc[entity.type] = (acc[entity.type] || 0) + 1;
+                      return acc;
+                    }, {} as Record<string, number>)
+                  ).map(([type, count]) => (
+                    <div key={type} className="flex justify-between mb-2">
+                      <div className="flex items-center">
+                        <div
+                          className="w-3 h-3 rounded-full mr-2"
+                          style={{ backgroundColor: entityTypeColors[type.toLowerCase()] || entityTypeColors.default }}
+                        ></div>
+                        <span>{type}</span>
+                      </div>
+                      <Badge variant="outline">{count}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-medium mb-2">Relationship Types</h4>
+                <div className="bg-muted/30 p-3 rounded-md">
+                  {Object.entries(
+                    selectedGraph.relationships.reduce((acc, rel) => {
+                      acc[rel.type] = (acc[rel.type] || 0) + 1;
+                      return acc;
+                    }, {} as Record<string, number>)
+                  ).map(([type, count]) => (
+                    <div key={type} className="flex justify-between mb-2">
+                      <span>{type}</span>
+                      <Badge variant="outline">{count}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Update Graph Tab Content */}
+        {activeTab === 'update' && selectedGraph && (
+          <div className="mt-6">
+            <Card>
               <CardHeader>
-                <CardTitle>{selectedGraph.name}</CardTitle>
+                <CardTitle className="flex items-center">
+                  <Network className="mr-2 h-5 w-5" />
+                  Update Knowledge Graph: {selectedGraph?.name}
+                </CardTitle>
                 <CardDescription>
-                  Graph Details and Statistics
+                  Update your knowledge graph with new documents to add more entities and relationships.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                    <h4 className="font-medium text-blue-700 dark:text-blue-300 mb-1">Documents</h4>
-                    <div className="text-2xl font-bold">{selectedGraph.document_ids.length}</div>
-                    <div className="text-sm text-muted-foreground">source documents</div>
-                  </div>
-
-                  <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-lg">
-                    <h4 className="font-medium text-emerald-700 dark:text-emerald-300 mb-1">Entities</h4>
-                    <div className="text-2xl font-bold">{selectedGraph.entities.length}</div>
-                    <div className="text-sm text-muted-foreground">unique elements</div>
-                  </div>
-
-                  <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg">
-                    <h4 className="font-medium text-amber-700 dark:text-amber-300 mb-1">Relationships</h4>
-                    <div className="text-2xl font-bold">{selectedGraph.relationships.length}</div>
-                    <div className="text-sm text-muted-foreground">connections</div>
-                  </div>
-
-                  <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
-                    <h4 className="font-medium text-purple-700 dark:text-purple-300 mb-1">Created</h4>
-                    <div className="text-xl font-bold">{new Date(selectedGraph.created_at).toLocaleDateString()}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {new Date(selectedGraph.created_at).toLocaleTimeString()}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <h4 className="font-medium mb-2">Entity Types</h4>
-                    <div className="bg-gray-50 p-3 rounded-md">
-                      {Object.entries(
-                        selectedGraph.entities.reduce((acc, entity) => {
-                          acc[entity.type] = (acc[entity.type] || 0) + 1;
-                          return acc;
-                        }, {} as Record<string, number>)
-                      ).map(([type, count]) => (
-                        <div key={type} className="flex justify-between mb-2">
-                          <div className="flex items-center">
-                            <div
-                              className="w-3 h-3 rounded-full mr-2"
-                              style={{ backgroundColor: entityTypeColors[type.toLowerCase()] || entityTypeColors.default }}
-                            ></div>
-                            <span>{type}</span>
-                          </div>
-                          <Badge variant="outline">{count}</Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="font-medium mb-2">Relationship Types</h4>
-                    <div className="bg-gray-50 p-3 rounded-md">
-                      {Object.entries(
-                        selectedGraph.relationships.reduce((acc, rel) => {
-                          acc[rel.type] = (acc[rel.type] || 0) + 1;
-                          return acc;
-                        }, {} as Record<string, number>)
-                      ).map(([type, count]) => (
-                        <div key={type} className="flex justify-between mb-2">
-                          <span>{type}</span>
-                          <Badge variant="outline">{count}</Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-6 flex justify-end">
-                  <Button onClick={() => setActiveTab('visualize')}>
-                    <Share2 className="mr-2 h-4 w-4" />
-                    Visualize Graph
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        {/* Create Graph Tab */}
-        <TabsContent value="create">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Plus className="mr-2 h-5 w-5" />
-                Create New Knowledge Graph
-              </CardTitle>
-              <CardDescription>
-                Create a knowledge graph from documents in your Morphik collection to enhance your queries.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="graph-name">Graph Name</Label>
-                  <Input
-                    id="graph-name"
-                    placeholder="Enter a unique name for your graph"
-                    value={graphName}
-                    onChange={(e) => setGraphName(e.target.value)}
-                  />
-                  <p className="text-sm text-gray-500">
-                    Give your graph a descriptive name that helps you identify its purpose.
-                  </p>
-                </div>
-
-                <div className="border-t pt-4 mt-4">
-                  <h3 className="text-md font-medium mb-3">Document Selection</h3>
-                  <p className="text-sm text-gray-500 mb-3">
-                    Choose which documents to include in your graph. You can specify document IDs directly or use metadata filters.
-                  </p>
-
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="graph-documents">Document IDs (Optional)</Label>
-                      <Textarea
-                        id="graph-documents"
-                        placeholder="Enter document IDs separated by commas"
-                        value={graphDocuments.join(', ')}
-                        onChange={(e) => setGraphDocuments(e.target.value.split(',').map(id => id.trim()).filter(id => id))}
-                        className="min-h-[80px]"
-                      />
-                      <p className="text-xs text-gray-500">
-                        Specify document IDs to include in the graph, or leave empty and use filters below.
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="graph-filters">Metadata Filters (Optional)</Label>
-                      <Textarea
-                        id="graph-filters"
-                        placeholder='{"category": "research", "author": "Jane Doe"}'
-                        value={graphFilters}
-                        onChange={(e) => setGraphFilters(e.target.value)}
-                        className="min-h-[80px] font-mono"
-                      />
-                      <p className="text-xs text-gray-500">
-                        JSON object with metadata filters to select documents. All documents matching these filters will be included.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <Button
-                  onClick={handleCreateGraph}
-                  disabled={!graphName || loading}
-                  className="w-full"
-                >
-                  {loading ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  ) : null}
-                  Create Knowledge Graph
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Update Graph Tab */}
-        <TabsContent value="update">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Network className="mr-2 h-5 w-5" />
-                Update Knowledge Graph: {selectedGraph?.name}
-              </CardTitle>
-              <CardDescription>
-                Update your knowledge graph with new documents to add more entities and relationships.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {selectedGraph ? (
                 <div className="space-y-4">
-                  <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <div className="bg-muted/50 p-4 rounded-lg">
                     <h4 className="font-medium mb-2">Current Graph Information</h4>
                     <div className="grid grid-cols-3 gap-2 text-sm">
                       <div>
@@ -716,7 +746,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
 
                   <div className="border-t pt-4 mt-4">
                     <h3 className="text-md font-medium mb-3">Add New Documents</h3>
-                    <p className="text-sm text-gray-500 mb-3">
+                    <p className="text-sm text-muted-foreground mb-3">
                       Choose additional documents to include in your graph. You can specify document IDs directly or use metadata filters.
                     </p>
 
@@ -730,7 +760,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
                           onChange={(e) => setAdditionalDocuments(e.target.value.split(',').map(id => id.trim()).filter(id => id))}
                           className="min-h-[80px]"
                         />
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-muted-foreground">
                           Specify additional document IDs to include in the graph, or use filters below.
                         </p>
                       </div>
@@ -744,7 +774,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
                           onChange={(e) => setAdditionalFilters(e.target.value)}
                           className="min-h-[80px] font-mono"
                         />
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-muted-foreground">
                           JSON object with metadata filters to select additional documents.
                         </p>
                       </div>
@@ -762,21 +792,13 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
                     Update Knowledge Graph
                   </Button>
                 </div>
-              ) : (
-                <div className="text-center p-8 border-2 border-dashed rounded-lg">
-                  <Network className="mx-auto h-12 w-12 mb-3 text-muted-foreground" />
-                  <p className="text-muted-foreground mb-3">Please select a graph to update.</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
-        {/* Visualize Graph Tab */}
-        <TabsContent value="visualize">
-          {renderVisualization()}
-        </TabsContent>
-      </Tabs>
+        {/* Visualize Graph Tab Content - No longer needed as we're using direct view */}
+      </div>
 
       {error && (
         <Alert variant="destructive">

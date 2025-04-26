@@ -209,7 +209,6 @@ const FolderList: React.FC<FolderListProps> = ({
   return (
     <div className="mb-6">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="font-medium text-lg">Folders</h2>
         <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
           <DialogTrigger asChild>
             <Button variant="outline" size="sm">
@@ -230,8 +229,7 @@ const FolderList: React.FC<FolderListProps> = ({
                   id="folderName"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
-                  placeholder="My Folder"
-                  className="mt-1"
+                  placeholder="Enter folder name"
                 />
               </div>
               <div>
@@ -240,22 +238,39 @@ const FolderList: React.FC<FolderListProps> = ({
                   id="folderDescription"
                   value={newFolderDescription}
                   onChange={(e) => setNewFolderDescription(e.target.value)}
-                  placeholder="Enter a description for this folder"
-                  className="mt-1"
+                  placeholder="Enter folder description"
                   rows={3}
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowNewFolderDialog(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleCreateFolder} disabled={isCreatingFolder || !newFolderName.trim()}>
+              <Button variant="ghost" onClick={() => setShowNewFolderDialog(false)} disabled={isCreatingFolder}>Cancel</Button>
+              <Button onClick={handleCreateFolder} disabled={!newFolderName.trim() || isCreatingFolder}>
                 {isCreatingFolder ? 'Creating...' : 'Create Folder'}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <div className="flex items-center gap-2">
+          {refreshAction && (
+            <Button
+              variant="outline"
+              onClick={refreshAction}
+              className="flex items-center"
+              title="Refresh folders"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                <path d="M21 3v5h-5"></path>
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+                <path d="M8 16H3v5"></path>
+              </svg>
+              Refresh
+            </Button>
+          )}
+          {uploadDialogComponent}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6 py-2">
@@ -263,7 +278,7 @@ const FolderList: React.FC<FolderListProps> = ({
           className="cursor-pointer group flex flex-col items-center"
           onClick={() => updateSelectedFolder("all")}
         >
-          <div className="mb-2 group-hover:scale-110 transition-transform">
+          <div className="h-16 w-16 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
             <span className="text-4xl" aria-hidden="true">📄</span>
           </div>
           <span className="text-sm font-medium text-center group-hover:text-primary transition-colors">All Documents</span>
@@ -275,8 +290,8 @@ const FolderList: React.FC<FolderListProps> = ({
             className="cursor-pointer group flex flex-col items-center"
             onClick={() => updateSelectedFolder(folder.name)}
           >
-            <div className="mb-2 group-hover:scale-110 transition-transform">
-              <Image src="/icons/folder-icon.png" alt="Folder" width={64} height={64} />
+            <div className="h-16 w-16 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+              <Image src="/icons/folder-icon.png" alt="Folder" width={64} height={64} className="object-contain" />
             </div>
             <span className="text-sm font-medium truncate text-center w-full max-w-[100px] group-hover:text-primary transition-colors">{folder.name}</span>
           </div>

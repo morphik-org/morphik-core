@@ -1,368 +1,475 @@
-"use client";
+'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { MessageSquare } from 'lucide-react';
-import { showAlert } from '@/components/ui/alert-system';
-import ChatOptionsDialog from './ChatOptionsDialog';
-import ChatMessageComponent from './ChatMessage';
+import { useMorphikChat } from '@/hooks/useMorphikChat';
+import { ChatMessage, Folder } from '@/components/types';
+import { generateUUID } from '@/lib/utils';
 
-import { ChatMessage, QueryOptions, Folder, Source } from '@/components/types';
+import { Settings, Spin, ArrowUp } from './icons';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PreviewMessage } from './ChatMessages';
+import { Textarea } from '@/components/ui/textarea';
+import { Slider } from '@/components/ui/slider';
 
 interface ChatSectionProps {
   apiBaseUrl: string;
   authToken: string | null;
+  initialMessages?: ChatMessage[];
+  isReadonly?: boolean;
 }
 
-const ChatSection: React.FC<ChatSectionProps> = ({ apiBaseUrl, authToken }) => {
-  const [chatQuery, setChatQuery] = useState('');
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [showChatAdvanced, setShowChatAdvanced] = useState(false);
+/**
+ * ChatSection component using Vercel-style UI
+ */
+const ChatSection: React.FC<ChatSectionProps> = ({
+  apiBaseUrl,
+  authToken,
+  initialMessages = [],
+  isReadonly = false
+}) => {
+  // Generate a unique chat ID if not provided
+  const chatId = generateUUID();
+
+  // Initialize our custom hook
+  const {
+    messages,
+    input,
+    setInput,
+    status,
+    handleSubmit,
+    queryOptions,
+    updateQueryOption
+  } = useMorphikChat(chatId, apiBaseUrl, authToken, initialMessages);
+
+  // State for settings visibility
+  const [showSettings, setShowSettings] = useState(false);
   const [availableGraphs, setAvailableGraphs] = useState<string[]>([]);
+  const [loadingGraphs, setLoadingGraphs] = useState(false);
+  const [loadingFolders, setLoadingFolders] = useState(false);
   const [folders, setFolders] = useState<Folder[]>([]);
-  const [queryOptions, setQueryOptions] = useState<QueryOptions>({
-    filters: '{}',
-    k: 4,
-    min_score: 0,
-    use_reranking: false,
-    use_colpali: true,
-    max_tokens: 500,
-    temperature: 0.7
-  });
-
-  // Handle URL parameters for folder and filters
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const folderParam = params.get('folder');
-      const filtersParam = params.get('filters');
-      const documentIdsParam = params.get('document_ids');
-
-      let shouldShowChatOptions = false;
-
-      // Update folder if provided
-      if (folderParam) {
-        try {
-          const folderName = decodeURIComponent(folderParam);
-          if (folderName) {
-            console.log(`Setting folder from URL parameter: ${folderName}`);
-            updateQueryOption('folder_name', folderName);
-            shouldShowChatOptions = true;
-          }
-        } catch (error) {
-          console.error('Error parsing folder parameter:', error);
-        }
-      }
-
-      // Handle document_ids (selected documents) parameter - for backward compatibility
-      if (documentIdsParam) {
-        try {
-          const documentIdsJson = decodeURIComponent(documentIdsParam);
-          const documentIds = JSON.parse(documentIdsJson);
-
-          // Create a filter object with external_id filter (correct field name)
-          const filtersObj = { external_id: documentIds };
-          const validFiltersJson = JSON.stringify(filtersObj);
-
-          console.log(`Setting document_ids filter from URL parameter:`, filtersObj);
-          updateQueryOption('filters', validFiltersJson);
-          shouldShowChatOptions = true;
-        } catch (error) {
-          console.error('Error parsing document_ids parameter:', error);
-        }
-      }
-      // Handle general filters parameter
-      if (filtersParam) {
-        try {
-          const filtersJson = decodeURIComponent(filtersParam);
-          // Parse the JSON to confirm it's valid
-          const filtersObj = JSON.parse(filtersJson);
-
-          console.log(`Setting filters from URL parameter:`, filtersObj);
-
-          // Store the filters directly as a JSON string
-          updateQueryOption('filters', filtersJson);
-          shouldShowChatOptions = true;
-
-          // Log a more helpful message about what's happening
-          if (filtersObj.external_id) {
-            console.log(`Chat will filter by ${Array.isArray(filtersObj.external_id) ? filtersObj.external_id.length : 1} document(s)`);
-          }
-        } catch (error) {
-          console.error('Error parsing filters parameter:', error);
-        }
-      }
-
-      // Only show the chat options panel on initial parameter load
-      if (shouldShowChatOptions) {
-        setShowChatAdvanced(true);
-
-        // Clear URL parameters after processing them to prevent modal from re-appearing on refresh
-        if (window.history.replaceState) {
-          const newUrl = window.location.pathname + window.location.hash;
-          window.history.replaceState({}, document.title, newUrl);
-        }
-      }
-    }
-  }, []);
-
-  // Update query options
-  const updateQueryOption = <K extends keyof QueryOptions>(key: K, value: QueryOptions[K]) => {
-    setQueryOptions(prev => ({
-      ...prev,
-      [key]: value
-    }));
-  };
 
   // Fetch available graphs for dropdown
   const fetchGraphs = useCallback(async () => {
+    if (!apiBaseUrl) return;
+
+    setLoadingGraphs(true);
     try {
+      console.log(`Fetching graphs from: ${apiBaseUrl}/graphs`);
       const response = await fetch(`${apiBaseUrl}/graphs`, {
         headers: {
-          'Authorization': authToken ? `Bearer ${authToken}` : ''
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
         }
       });
+
       if (!response.ok) {
-        throw new Error(`Failed to fetch graphs: ${response.statusText}`);
+        throw new Error(`Failed to fetch graphs: ${response.status} ${response.statusText}`);
       }
+
       const graphsData = await response.json();
-      setAvailableGraphs(graphsData.map((graph: { name: string }) => graph.name));
+      console.log('Graphs data received:', graphsData);
+
+      if (Array.isArray(graphsData)) {
+        setAvailableGraphs(graphsData.map((graph: { name: string }) => graph.name));
+      } else {
+        console.error('Expected array for graphs data but received:', typeof graphsData);
+      }
     } catch (err) {
       console.error('Error fetching available graphs:', err);
+    } finally {
+      setLoadingGraphs(false);
     }
   }, [apiBaseUrl, authToken]);
 
-  // Fetch graphs and folders when auth token or API URL changes
-  useEffect(() => {
-    if (authToken) {
-      console.log('ChatSection: Fetching data with new auth token');
-      // Clear current messages when auth changes
-      setChatMessages([]);
-      fetchGraphs();
+  // Fetch folders
+  const fetchFolders = useCallback(async () => {
+    if (!apiBaseUrl) return;
 
-      // Fetch available folders for dropdown
-      const fetchFolders = async () => {
-        try {
-          const response = await fetch(`${apiBaseUrl}/folders`, {
-            headers: {
-              'Authorization': authToken ? `Bearer ${authToken}` : ''
-            }
-          });
-
-          if (!response.ok) {
-            throw new Error(`Failed to fetch folders: ${response.statusText}`);
-          }
-
-          const foldersData = await response.json();
-          setFolders(foldersData);
-        } catch (err) {
-          console.error('Error fetching folders:', err);
-        }
-      };
-
-      fetchFolders();
-    }
-  }, [authToken, apiBaseUrl, fetchGraphs]);
-
-  // Handle chat
-  const handleChat = async () => {
-    if (!chatQuery.trim()) {
-      showAlert('Please enter a message', {
-        type: 'error',
-        duration: 3000
-      });
-      return;
-    }
-
+    setLoadingFolders(true);
     try {
-      setLoading(true);
-
-      // Add user message to chat
-      const userMessage: ChatMessage = { role: 'user', content: chatQuery };
-      setChatMessages(prev => [...prev, userMessage]);
-
-      // Prepare options with graph_name and folder_name if they exist
-      const options = {
-        filters: JSON.parse(queryOptions.filters || '{}'),
-        k: queryOptions.k,
-        min_score: queryOptions.min_score,
-        use_reranking: queryOptions.use_reranking,
-        use_colpali: queryOptions.use_colpali,
-        max_tokens: queryOptions.max_tokens,
-        temperature: queryOptions.temperature,
-        graph_name: queryOptions.graph_name,
-        folder_name: queryOptions.folder_name
-      };
-
-      const response = await fetch(`${apiBaseUrl}/query`, {
-        method: 'POST',
+      console.log(`Fetching folders from: ${apiBaseUrl}/folders`);
+      const response = await fetch(`${apiBaseUrl}/folders`, {
         headers: {
-          'Authorization': authToken ? `Bearer ${authToken}` : '',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          query: chatQuery,
-          ...options
-        })
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+        }
       });
 
       if (!response.ok) {
-        throw new Error(`Query failed: ${response.statusText}`);
+        throw new Error(`Failed to fetch folders: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const foldersData = await response.json();
+      console.log('Folders data received:', foldersData);
 
-      // Add assistant response to chat
-      const assistantMessage: ChatMessage = {
-        role: 'assistant',
-        content: data.completion,
-        sources: data.sources
-      };
-      setChatMessages(prev => [...prev, assistantMessage]);
-
-      // If sources are available, retrieve the full source content
-      if (data.sources && data.sources.length > 0) {
-        try {
-          // Fetch full source details
-          const sourcesResponse = await fetch(`${apiBaseUrl}/batch/chunks`, {
-            method: 'POST',
-            headers: {
-              'Authorization': authToken ? `Bearer ${authToken}` : '',
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              sources: data.sources,
-              folder_name: queryOptions.folder_name,
-              use_colpali: true,
-            })
-          });
-
-          if (sourcesResponse.ok) {
-            const sourcesData = await sourcesResponse.json();
-
-            // Check if we have any image sources
-            const imageSources = sourcesData.filter((source: Source) =>
-              source.content_type?.startsWith('image/') ||
-              (source.content && (
-                source.content.startsWith('data:image/png;base64,') ||
-                source.content.startsWith('data:image/jpeg;base64,')
-              ))
-            );
-            console.log('Image sources found:', imageSources.length);
-
-            // Update the message with detailed source information
-            const updatedMessage = {
-              ...assistantMessage,
-              sources: sourcesData.map((source: Source) => {
-                return {
-                  document_id: source.document_id,
-                  chunk_number: source.chunk_number,
-                  score: source.score,
-                  content: source.content,
-                  content_type: source.content_type || 'text/plain',
-                  filename: source.filename,
-                  metadata: source.metadata,
-                  download_url: source.download_url
-                };
-              })
-            };
-
-            // Update the message with detailed sources
-            setChatMessages(prev => prev.map((msg, idx) =>
-              idx === prev.length - 1 ? updatedMessage : msg
-            ));
-          }
-        } catch (err) {
-          console.error('Error fetching source details:', err);
-          // Continue with basic sources if detailed fetch fails
-        }
+      if (Array.isArray(foldersData)) {
+        setFolders(foldersData);
+      } else {
+        console.error('Expected array for folders data but received:', typeof foldersData);
       }
-      setChatQuery(''); // Clear input
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
-      showAlert(errorMsg, {
-        type: 'error',
-        title: 'Chat Query Failed',
-        duration: 5000
-      });
+      console.error('Error fetching folders:', err);
     } finally {
-      setLoading(false);
+      setLoadingFolders(false);
+    }
+  }, [apiBaseUrl, authToken]);
+
+  // Fetch graphs and folders when component mounts
+  useEffect(() => {
+    // Define a function to handle data fetching
+    const fetchData = async () => {
+      if (authToken || apiBaseUrl.includes('localhost')) {
+        console.log('ChatSection: Fetching data with auth token:', !!authToken);
+        await fetchGraphs();
+        await fetchFolders();
+      }
+    };
+
+    fetchData();
+  }, [authToken, apiBaseUrl, fetchGraphs, fetchFolders]);
+
+  // Text area ref and adjustment functions
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  React.useEffect(() => {
+    if (textareaRef.current) {
+      adjustHeight();
+    }
+  }, []);
+
+  const adjustHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight + 2}px`;
     }
   };
 
+  const resetHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  };
+
+  const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(event.target.value);
+    adjustHeight();
+  };
+
+  const submitForm = () => {
+    handleSubmit();
+    resetHeight();
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  };
+
+  // Messages container ref for scrolling
+  const messagesContainerRef = React.useRef<HTMLDivElement>(null);
+  const messagesEndRef = React.useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom when messages change
+  React.useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
+
   return (
-    <Card className="h-full flex flex-col">
-      <CardHeader>
-        <CardTitle>Chat with Your Documents</CardTitle>
-        <CardDescription>
-          Ask questions about your documents and get AI-powered answers.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex-grow overflow-hidden flex flex-col">
-        <ScrollArea className="flex-grow pr-4 mb-4">
-          {chatMessages.length > 0 ? (
-            <div className="space-y-4">
-              {chatMessages.map((message, index) => (
-                <ChatMessageComponent
-                  key={index}
-                  role={message.role}
-                  content={message.content}
-                  sources={message.sources}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-center text-muted-foreground">
-                <MessageSquare className="mx-auto h-12 w-12 mb-2" />
-                <p>Start a conversation about your documents</p>
+    <div className="relative flex flex-col h-full w-full bg-background">
+      {/* Chat Header
+      <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm">
+        <div className="flex h-14 items-center justify-between px-4 border-b">
+          <div className="flex items-center">
+            <h1 className="font-semibold text-lg tracking-tight">Morphik Chat</h1>
+          </div>
+        </div>
+      </div> */}
+
+      {/* Messages Area */}
+      <div className="flex-1 relative">
+        <ScrollArea className="h-full" ref={messagesContainerRef}>
+          {messages.length === 0 && (
+            <div className="flex-1 flex items-center justify-center p-8 text-center">
+              <div className="max-w-md space-y-2">
+                <h2 className="text-xl font-semibold">Welcome to Morphik Chat</h2>
+                <p className="text-sm text-muted-foreground">
+                  Ask a question about your documents to get started.
+                </p>
               </div>
             </div>
           )}
-        </ScrollArea>
 
-        <div className="pt-4 border-t">
-          <div className="space-y-4">
-            <div className="flex gap-2">
-              <Textarea
-                placeholder="Ask a question..."
-                value={chatQuery}
-                onChange={(e) => setChatQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleChat();
-                  }
-                }}
-                className="min-h-10"
+          <div className="flex flex-col pt-4 pb-[80px] md:pb-[120px]">
+            {messages.map((message) => (
+              <PreviewMessage
+                key={message.id}
+                message={message}
               />
-              <Button onClick={handleChat} disabled={loading}>
-                {loading ? 'Sending...' : 'Send'}
-              </Button>
-            </div>
+            ))}
 
-            <div className="flex justify-between items-center mt-2">
-              <p className="text-xs text-muted-foreground">
-                Press Enter to send, Shift+Enter for a new line
-              </p>
-
-              <ChatOptionsDialog
-                showChatAdvanced={showChatAdvanced}
-                setShowChatAdvanced={setShowChatAdvanced}
-                queryOptions={queryOptions}
-                updateQueryOption={updateQueryOption}
-                availableGraphs={availableGraphs}
-                folders={folders}
-              />
-            </div>
+            {status === 'submitted' &&
+              messages.length > 0 &&
+              messages[messages.length - 1].role === 'user' && (
+                <div className="flex items-center justify-center h-12 text-center text-xs text-muted-foreground">
+                  <Spin className="mr-2 animate-spin" />
+                  Thinking...
+                </div>
+              )
+            }
           </div>
+
+          <div
+            ref={messagesEndRef}
+            className="shrink-0 min-w-[24px] min-h-[24px]"
+          />
+        </ScrollArea>
+      </div>
+
+      {/* Input Area */}
+      <div className="sticky bottom-0 w-full bg-background">
+        <div className="mx-auto px-4 sm:px-6 max-w-4xl">
+          <form
+            className="pb-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSubmit(e);
+            }}
+          >
+            <div className="relative w-full">
+              <div className="absolute left-0 right-0 -top-20 h-24 bg-gradient-to-t from-background to-transparent pointer-events-none" />
+              <div className="relative flex items-end">
+                <Textarea
+                  ref={textareaRef}
+                  placeholder="Send a message..."
+                  value={input}
+                  onChange={handleInput}
+                  className="min-h-[48px] max-h-[400px] resize-none overflow-hidden text-base w-full pr-16"
+                  rows={1}
+                  autoFocus
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === 'Enter' &&
+                      !event.shiftKey &&
+                      !event.nativeEvent.isComposing
+                    ) {
+                      event.preventDefault();
+
+                      if (status !== 'ready') {
+                        console.log('Please wait for the model to finish its response');
+                      } else {
+                        submitForm();
+                      }
+                    }
+                  }}
+                />
+
+                <div className="absolute bottom-2 right-2 flex items-center">
+                  <Button
+                    onClick={submitForm}
+                    size="icon"
+                    disabled={input.trim().length === 0 || status !== 'ready'}
+                    className="h-8 w-8 rounded-full flex items-center justify-center"
+                  >
+                    {status === 'streaming' ? (
+                      <Spin className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ArrowUp className="h-4 w-4" />
+                    )}
+                    <span className="sr-only">
+                      {status === 'streaming' ? 'Processing' : 'Send message'}
+                    </span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Settings Button */}
+            {!isReadonly && (
+              <div className="flex justify-center mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                  onClick={() => {
+                    setShowSettings(!showSettings);
+                    // Refresh data when opening settings
+                    if (!showSettings && authToken) {
+                      fetchGraphs();
+                      fetchFolders();
+                    }
+                  }}
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                  <span>{showSettings ? 'Hide Settings' : 'Show Settings'}</span>
+                </Button>
+              </div>
+            )}
+
+            {/* Settings Panel */}
+            {showSettings && !isReadonly && (
+              <div className="mt-4 border rounded-xl p-4 bg-muted/30 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-sm">Chat Settings</h3>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => setShowSettings(false)}
+                  >
+                    Done
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* First Column - Core Settings */}
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="use_reranking" className="text-sm">Use Reranking</Label>
+                        <Switch
+                          id="use_reranking"
+                          checked={queryOptions.use_reranking}
+                          onCheckedChange={(checked) => updateQueryOption('use_reranking', checked)}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="use_colpali" className="text-sm">Use Colpali</Label>
+                        <Switch
+                          id="use_colpali"
+                          checked={queryOptions.use_colpali}
+                          onCheckedChange={(checked) => updateQueryOption('use_colpali', checked)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="graph_name" className="text-sm block">Knowledge Graph</Label>
+                      <Select
+                        value={queryOptions.graph_name || "__none__"}
+                        onValueChange={(value) => updateQueryOption('graph_name', value === "__none__" ? undefined : value)}
+                      >
+                        <SelectTrigger className="w-full" id="graph_name">
+                          <SelectValue placeholder="Select a knowledge graph" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">None (Standard RAG)</SelectItem>
+                          {loadingGraphs ? (
+                            <SelectItem value="loading" disabled>Loading graphs...</SelectItem>
+                          ) : availableGraphs.length > 0 ? (
+                            availableGraphs.map(graphName => (
+                              <SelectItem key={graphName} value={graphName}>
+                                {graphName}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="none_available" disabled>No graphs available</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="folder_name" className="text-sm block">Scope to Folder</Label>
+                      <Select
+                        value={queryOptions.folder_name || "__none__"}
+                        onValueChange={(value) => updateQueryOption('folder_name', value === "__none__" ? undefined : value)}
+                      >
+                        <SelectTrigger className="w-full" id="folder_name">
+                          <SelectValue placeholder="Select a folder" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">All Folders</SelectItem>
+                          {loadingFolders ? (
+                            <SelectItem value="loading" disabled>Loading folders...</SelectItem>
+                          ) : folders.length > 0 ? (
+                            folders.map(folder => (
+                              <SelectItem key={folder.id || folder.name} value={folder.name}>
+                                {folder.name}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="none_available" disabled>No folders available</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Second Column - Advanced Settings */}
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="query-k" className="text-sm flex justify-between">
+                        <span>Results (k)</span>
+                        <span className="text-muted-foreground">{queryOptions.k}</span>
+                      </Label>
+                      <Slider
+                        id="query-k"
+                        min={1}
+                        max={20}
+                        step={1}
+                        value={[queryOptions.k]}
+                        onValueChange={(value) => updateQueryOption('k', value[0])}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="query-min-score" className="text-sm flex justify-between">
+                        <span>Min Score</span>
+                        <span className="text-muted-foreground">{queryOptions.min_score.toFixed(2)}</span>
+                      </Label>
+                      <Slider
+                        id="query-min-score"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={[queryOptions.min_score]}
+                        onValueChange={(value) => updateQueryOption('min_score', value[0])}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="query-temperature" className="text-sm flex justify-between">
+                        <span>Temperature</span>
+                        <span className="text-muted-foreground">{queryOptions.temperature.toFixed(2)}</span>
+                      </Label>
+                      <Slider
+                        id="query-temperature"
+                        min={0}
+                        max={2}
+                        step={0.01}
+                        value={[queryOptions.temperature]}
+                        onValueChange={(value) => updateQueryOption('temperature', value[0])}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="query-max-tokens" className="text-sm flex justify-between">
+                        <span>Max Tokens</span>
+                        <span className="text-muted-foreground">{queryOptions.max_tokens}</span>
+                      </Label>
+                      <Slider
+                        id="query-max-tokens"
+                        min={1}
+                        max={2048}
+                        step={1}
+                        value={[queryOptions.max_tokens]}
+                        onValueChange={(value) => updateQueryOption('max_tokens', value[0])}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </form>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 };
 
