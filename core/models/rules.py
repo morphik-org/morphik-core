@@ -43,6 +43,7 @@ class MetadataExtractionRule(BaseRule):
 
     type: Literal["metadata_extraction"]
     schema: Dict[str, Any]
+    use_images: bool = False
 
     async def apply(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> tuple[Dict[str, Any], str]:
         """Extract metadata according to schema"""
@@ -89,15 +90,18 @@ class MetadataExtractionRule(BaseRule):
 
         schema_text = "\n".join(schema_descriptions)
 
-        # Adjust prompt based on whether it's a chunk or full document
-        prompt_context = "chunk of text" if self.stage == "post_chunking" else "text"
+        # Adjust prompt based on whether it's a chunk or full document and whether it's an image
+        if self.use_images:
+            prompt_context = "image" if self.stage == "post_chunking" else "document with images"
+        else:
+            prompt_context = "chunk of text" if self.stage == "post_chunking" else "text"
 
         prompt = f"""
         Extract metadata from the following {prompt_context} according to this schema:
 
         {schema_text}
 
-        Text to extract from:
+        {"Image to analyze:" if self.use_images else "Text to extract from:"}
         {content}
 
         Follow these guidelines:
@@ -113,16 +117,47 @@ class MetadataExtractionRule(BaseRule):
         if not model_config:
             raise ValueError(f"Model '{settings.RULES_MODEL}' not found in registered_models configuration")
 
+        # Prepare base64 data for vision model if this is an image rule
+        vision_messages = []
+        if self.use_images:
+            try:
+                # For image content, check if it's a base64 string
+                # Handle data URI format "data:image/png;base64,..."
+                if content.startswith("data:"):
+                    content_type, content = content.split(";base64,", 1)
+
+                # User message with image content
+                vision_messages = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{content}"}},
+                        ],
+                    }
+                ]
+            except Exception as e:
+                logger.error(f"Error preparing image content for vision model: {str(e)}")
+                # Fall back to text-only if image processing fails
+                vision_messages = []
+
         system_message = {
             "role": "system",
             "content": (
-                "You are a metadata extraction assistant. Extract structured metadata from text "
+                "You are a metadata extraction assistant. Extract structured metadata "
+                f"from {'images' if self.use_images else 'text'} "
                 "precisely following the provided schema. Always return the metadata as direct values "
                 "(strings, numbers, booleans), not as objects with additional properties."
             ),
         }
 
-        user_message = {"role": "user", "content": prompt}
+        # If we have vision messages, use those, otherwise use standard text message
+        messages = []
+        if vision_messages and self.use_images:
+            messages = [system_message] + vision_messages
+        else:
+            user_message = {"role": "user", "content": prompt}
+            messages = [system_message, user_message]
 
         # Use instructor with litellm to get structured responses
         client = instructor.from_litellm(litellm.acompletion, mode=instructor.Mode.JSON)
@@ -137,7 +172,7 @@ class MetadataExtractionRule(BaseRule):
             # Use instructor's client to create a structured response
             response = await client.chat.completions.create(
                 model=model,
-                messages=[system_message, user_message],
+                messages=messages,
                 response_model=DynamicMetadataModel,
                 **model_kwargs,
             )
