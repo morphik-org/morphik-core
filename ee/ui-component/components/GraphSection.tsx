@@ -2,19 +2,16 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   AlertCircle,
   Share2,
-  Database,
   Plus,
   Network,
   Tag,
@@ -345,73 +342,11 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
     }
   }, [selectedGraph, activeTab, initializeGraph, showNodeLabels, showLinkLabels]);
 
-  // Handle tab change
-  const handleTabChange = (value: string) => {
-    setActiveTab(value);
-    // Initialize graph if switching to visualize tab and a graph is selected
-    if (value === 'visualize' && selectedGraph) {
-      setTimeout(() => {
-        initializeGraph();
-      }, 100);
-    }
-  };
+  // This function is no longer needed as we're using direct state changes
+  // instead of tab changes for visualization
 
-  // Render the graph visualization tab
-  const renderVisualization = () => {
-    if (!selectedGraph) {
-      return (
-        <div className="flex items-center justify-center h-[900px] border rounded-md">
-          <div className="text-center p-8">
-            <Network className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-            <h3 className="text-lg font-medium mb-2">No Graph Selected</h3>
-            <p className="text-muted-foreground">
-              Select a graph from the list to visualize it here.
-            </p>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="border rounded-md">
-        <div className="p-4 border-b flex justify-between items-center">
-          <div>
-            <h3 className="text-lg font-medium">{selectedGraph.name}</h3>
-            <p className="text-sm text-gray-500">
-              {selectedGraph.entities.length} entities, {selectedGraph.relationships.length} relationships
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Tag className="h-4 w-4" />
-            <Label htmlFor="show-node-labels" className="text-sm cursor-pointer">Show Node Labels</Label>
-            <Switch
-              id="show-node-labels"
-              checked={showNodeLabels}
-              onCheckedChange={setShowNodeLabels}
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Link className="h-4 w-4" />
-            <Label htmlFor="show-link-labels" className="text-sm cursor-pointer">Show Relationship Labels</Label>
-            <Switch
-              id="show-link-labels"
-              checked={showLinkLabels}
-              onCheckedChange={setShowLinkLabels}
-            />
-          </div>
-        </div>
-        <div ref={graphContainerRef} className="h-[900px]">
-          <ForceGraphComponent
-            data={prepareGraphData(selectedGraph)}
-            width={graphContainerRef.current?.clientWidth || 800}
-            height={900}
-            showNodeLabels={showNodeLabels}
-            showLinkLabels={showLinkLabels}
-          />
-        </div>
-      </div>
-    );
-  };
+  // This visualization code is now directly implemented in the return JSX
+  // in the showVisualization section
 
   // State to control visualization view
   const [showVisualization, setShowVisualization] = useState(false);

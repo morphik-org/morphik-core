@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Button } from '@/components/ui/button';
 import { Upload } from 'lucide-react';
 import { showAlert, removeAlert } from '@/components/ui/alert-system';
 import DocumentList from './DocumentList';
