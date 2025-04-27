@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Button } from '@/components/ui/button';
 import { Upload } from 'lucide-react';
 import { showAlert, removeAlert } from '@/components/ui/alert-system';
 import DocumentList from './DocumentList';
@@ -135,300 +134,195 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
   // Fetch all documents, optionally filtered by folder
   const fetchDocuments = useCallback(async (source: string = 'unknown') => {
-    console.log(`fetchDocuments called from: ${source}`)
-    try {
-      // Only set loading state for initial load, not for refreshes
-      if (documents.length === 0) {
-        setLoading(true);
-      }
-
-      // Don't fetch if no folder is selected (showing folder grid view)
-      if (selectedFolder === null) {
-        setDocuments([]);
+    console.log(`fetchDocuments called from: ${source}, selectedFolder: ${selectedFolder}`);
+    // Ensure API URL is valid before proceeding
+    if (!effectiveApiUrl) {
+        console.error('fetchDocuments: No valid API URL available.');
         setLoading(false);
         return;
-      }
+    }
 
-      // Prepare for document fetching
-      let apiUrl = `${effectiveApiUrl}/documents`;
-      // CRITICAL FIX: The /documents endpoint uses POST method
-      let method = 'POST';
-      let requestBody = {};
+    // Immediately clear documents and set loading state if selectedFolder is null (folder grid view)
+    if (selectedFolder === null) {
+      console.log('fetchDocuments: No folder selected, clearing documents.');
+      setDocuments([]);
+      setLoading(false);
+      return;
+    }
 
-      // If we're looking at a specific folder (not "all" documents)
-      if (selectedFolder && selectedFolder !== "all") {
-        console.log(`Fetching documents for folder: ${selectedFolder}`);
+    // Set loading state only for initial load or when explicitly changing folders
+    if (documents.length === 0 || source === 'folders loaded or selectedFolder changed') {
+      setLoading(true);
+    }
 
-        // Find the target folder to get its document IDs
+    try {
+      let documentsToFetch: Document[] = [];
+
+      if (selectedFolder === "all") {
+        // Fetch all documents for the "all" view
+        console.log('fetchDocuments: Fetching all documents');
+        const response = await fetch(`${effectiveApiUrl}/documents`, {
+          method: 'POST', // Assuming POST is correct for fetching all
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+          },
+          body: JSON.stringify({}) // Empty body for all documents
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to fetch all documents: ${response.statusText}`);
+        }
+        documentsToFetch = await response.json();
+        console.log(`fetchDocuments: Fetched ${documentsToFetch.length} total documents`);
+
+      } else {
+        // Fetch documents for a specific folder
+        console.log(`fetchDocuments: Fetching documents for folder: ${selectedFolder}`);
         const targetFolder = folders.find(folder => folder.name === selectedFolder);
 
-        if (targetFolder) {
-          // Ensure document_ids is always an array
-          const documentIds = Array.isArray(targetFolder.document_ids) ? targetFolder.document_ids : [];
-
-          if (documentIds.length > 0) {
-            // If we found the folder and it contains documents,
-            // Get document details for each document ID in the folder
-            console.log(`Found folder ${targetFolder.name} with ${documentIds.length} documents`);
-
-            // Use batch/documents endpoint which accepts document_ids for efficient fetching
-            apiUrl = `${effectiveApiUrl}/batch/documents`;
-            method = 'POST';
-            requestBody = {
-              document_ids: [...documentIds]
-            };
-          } else {
-            console.log(`Folder ${targetFolder.name} has no documents`);
-            // For empty folder, we'll send an empty request body to the documents endpoint
-            requestBody = {};
+        if (targetFolder && Array.isArray(targetFolder.document_ids) && targetFolder.document_ids.length > 0) {
+          // Folder found and has documents, fetch them by ID
+          console.log(`fetchDocuments: Folder found with ${targetFolder.document_ids.length} IDs. Fetching details...`);
+          const response = await fetch(`${effectiveApiUrl}/batch/documents`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+            },
+            body: JSON.stringify({ document_ids: targetFolder.document_ids })
+          });
+          if (!response.ok) {
+            throw new Error(`Failed to fetch batch documents: ${response.statusText}`);
           }
+          documentsToFetch = await response.json();
+          console.log(`fetchDocuments: Fetched details for ${documentsToFetch.length} documents`);
         } else {
-          console.log(`Folder ${selectedFolder} has no documents or couldn't be found`);
-          // For unknown folder, we'll send an empty request body to the documents endpoint
-          requestBody = {};
+          // Folder not found, or folder is empty
+          if (targetFolder) {
+            console.log(`fetchDocuments: Folder ${selectedFolder} found but is empty.`);
+          } else {
+            console.log(`fetchDocuments: Folder ${selectedFolder} not found in current state.`);
+          }
+          // In either case, the folder contains no documents to display
+          documentsToFetch = [];
         }
-      } else {
-        // For "all" documents request
-        requestBody = {};
       }
 
-      console.log(`DocumentsSection: Sending ${method} request to: ${apiUrl}`);
-
-      // Use non-blocking fetch with appropriate method
-      fetch(apiUrl, {
-        method: method,
-        headers: {
-          'Content-Type': 'application/json',
-          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-        },
-        body: JSON.stringify(requestBody)
-      })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`Failed to fetch documents: ${response.statusText}`);
+      // Process fetched documents (add status if needed)
+      const processedData = documentsToFetch.map((doc: Document) => {
+        if (!doc.system_metadata) {
+          doc.system_metadata = {};
         }
-        return response.json();
-      })
-      .then((data: Document[]) => {
-        // Ensure all documents have a valid status in system_metadata
-        const processedData = data.map((doc: Document) => {
-          // If system_metadata doesn't exist, create it
-          if (!doc.system_metadata) {
-            doc.system_metadata = {};
-          }
-
-          // If status is missing and we have a newly uploaded document, it should be "processing"
-          if (!doc.system_metadata.status && doc.system_metadata.folder_name) {
-            doc.system_metadata.status = "processing";
-          }
-
-          return doc;
-        });
-
-        console.log(`Fetched ${processedData.length} documents from ${apiUrl}`);
-
-        // Only update state if component is still mounted
-        setDocuments(processedData);
-        setLoading(false);
-
-        // Log for debugging
-        const processingCount = processedData.filter(doc => doc.system_metadata?.status === "processing").length;
-        if (processingCount > 0) {
-          console.log(`Found ${processingCount} documents still processing`);
+        if (!doc.system_metadata.status && doc.system_metadata.folder_name) {
+          doc.system_metadata.status = "processing";
         }
-      })
-      .catch(err => {
-        const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
-        console.error(`Document fetch error: ${errorMsg}`);
-        showAlert(errorMsg, {
-          type: 'error',
-          title: 'Error',
-          duration: 5000
-        });
-        setLoading(false);
+        return doc;
       });
+
+      // Update state
+      setDocuments(processedData);
+
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+      console.error(`Error in fetchDocuments (${source}): ${errorMsg}`);
+      showAlert(errorMsg, {
+        type: 'error',
+        title: 'Error Fetching Documents',
+        duration: 5000
+      });
+      // Clear documents on error to avoid showing stale/incorrect data
+      setDocuments([]);
+    } finally {
+      // Always ensure loading state is turned off
+      setLoading(false);
+    }
+  // Dependencies: URL, auth, selected folder, and the folder list itself
+  }, [effectiveApiUrl, authToken, selectedFolder, folders, documents.length]);
+
+  // Fetch all folders
+  const fetchFolders = useCallback(async () => {
+    console.log('fetchFolders called');
+    setFoldersLoading(true);
+    try {
+      const response = await fetch(`${effectiveApiUrl}/folders`, {
+        method: 'GET',
+        headers: {
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+        }
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch folders: ${response.statusText}`);
+      }
+      const data = await response.json();
+      console.log(`Fetched ${data.length} folders`);
+      setFolders(data);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+      console.error(`Folder fetch error: ${errorMsg}`);
       showAlert(errorMsg, {
         type: 'error',
         title: 'Error',
         duration: 5000
       });
-      setLoading(false);
-    }
-  }, [effectiveApiUrl, authToken, documents.length, selectedFolder, folders]);
-
-  // Fetch all folders
-  const fetchFolders = useCallback(async (source: string = 'unknown') => {
-    console.log(`fetchFolders called from: ${source}`)
-    try {
-      setFoldersLoading(true);
-
-      // Use non-blocking fetch with GET method
-      const url = `${effectiveApiUrl}/folders`;
-      console.log(`Fetching folders from: ${url}`);
-
-      fetch(url, {
-        method: 'GET',
-        headers: {
-          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-        }
-      })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`Failed to fetch folders: ${response.statusText}`);
-        }
-        return response.json();
-      })
-      .then(data => {
-        console.log(`Fetched ${data.length} folders`);
-        setFolders(data);
-        setFoldersLoading(false);
-      })
-      .catch(err => {
-        const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
-        console.error(`Error fetching folders: ${errorMsg}`);
-        showAlert(`Error fetching folders: ${errorMsg}`, {
-          type: 'error',
-          duration: 3000
-        });
-        setFoldersLoading(false);
-      });
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
-      console.error(`Error in fetchFolders: ${errorMsg}`);
+    } finally {
       setFoldersLoading(false);
     }
   }, [effectiveApiUrl, authToken]);
 
-  // No automatic polling - we'll only refresh on upload and manual refresh button clicks
+  // Function to refresh documents based on current folder state
+  const refreshDocuments = useCallback(async () => {
+    await fetchDocuments('refreshDocuments call');
+  }, [fetchDocuments]);
 
-  // Create memoized fetch functions that don't cause infinite loops
-  // We need to make sure they don't trigger re-renders that cause further fetches
-  const stableFetchFolders = useCallback((source: string = 'stable-call') => {
-    console.log(`stableFetchFolders called from: ${source}`);
-    return fetchFolders(source);
-  // Keep dependencies minimal to prevent recreation on every render
-  }, [effectiveApiUrl, authToken]);
-
-  const stableFetchDocuments = useCallback((source: string = 'stable-call') => {
-    console.log(`stableFetchDocuments called from: ${source}`);
-    return fetchDocuments(source);
-  // Keep dependencies minimal to prevent recreation on every render
-  }, [effectiveApiUrl, authToken, selectedFolder]);
-
-  // Fetch data when auth token or API URL changes
+  // Fetch folders initially
   useEffect(() => {
-    // Only run this effect if we have auth or are on localhost
-    if (authToken || effectiveApiUrl.includes('localhost')) {
-      console.log('DocumentsSection: Fetching initial data');
+    console.log('DocumentsSection: Initial folder fetch');
+    fetchFolders();
+  }, [fetchFolders]);
 
-      // Clear current data and reset state
-      setDocuments([]);
-      setFolders([]);
-      setSelectedDocument(null);
-      setSelectedDocuments([]);
+  // Fetch documents when folders are loaded or selectedFolder changes
+  useEffect(() => {
+    if (!foldersLoading && folders.length > 0) {
+      // Avoid fetching documents on initial mount if selectedFolder is null
+      // unless initialFolder was specified
+      if (isInitialMount.current && selectedFolder === null && !initialFolder) {
+        console.log('Initial mount with no folder selected, skipping document fetch');
+        isInitialMount.current = false;
+        return;
+      }
+      console.log('Folders loaded or selectedFolder changed, fetching documents...', selectedFolder);
+      fetchDocuments('folders loaded or selectedFolder changed');
+      isInitialMount.current = false; // Mark initial mount as complete
+    } else if (!foldersLoading && folders.length === 0 && selectedFolder === null) {
+        // Handle case where there are no folders at all
+        console.log('No folders found, clearing documents and stopping loading.');
+        setDocuments([]);
+        setLoading(false);
+        isInitialMount.current = false;
+    }
+  }, [foldersLoading, folders, selectedFolder, fetchDocuments, initialFolder]);
 
-      // Use a flag to track component mounting state
-      let isMounted = true;
+  // Poll for document status if any document is processing
+  useEffect(() => {
+    const hasProcessing = documents.some(
+      (doc) => doc.system_metadata?.status === 'processing'
+    );
 
-      // Create an abort controller for request cancellation
-      const controller = new AbortController();
+    if (hasProcessing) {
+      console.log('Polling for document status...');
+      const intervalId = setInterval(() => {
+        console.log('Polling interval: calling refreshDocuments');
+        refreshDocuments(); // Fetch documents again to check status
+      }, 5000); // Poll every 5 seconds
 
-      // Add a slight delay to prevent multiple rapid calls
-      const timeoutId = setTimeout(() => {
-        if (isMounted) {
-          // Fetch folders first
-          stableFetchFolders('initial-load')
-            .then(() => {
-              // Only fetch documents if we're still mounted
-              if (isMounted && selectedFolder !== null) {
-                return stableFetchDocuments('initial-load');
-              }
-            })
-            .catch(err => {
-              console.error("Error during initial data fetch:", err);
-            });
-        }
-      }, 100);
-
-      // Cleanup when component unmounts or the effect runs again
+      // Cleanup function to clear the interval when the component unmounts
+      // or when there are no more processing documents
       return () => {
-        clearTimeout(timeoutId);
-        isMounted = false;
-        controller.abort();
+        console.log('Clearing polling interval');
+        clearInterval(intervalId);
       };
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authToken, effectiveApiUrl, stableFetchFolders, stableFetchDocuments, selectedFolder]);
-
-  // Helper function to refresh documents based on current view
-  const refreshDocuments = async (folders: Folder[]) => {
-    try {
-      if (selectedFolder && selectedFolder !== "all") {
-        // Find the folder by name
-        const targetFolder = folders.find(folder => folder.name === selectedFolder);
-
-        if (targetFolder) {
-          console.log(`Refresh: Found folder ${targetFolder.name} in fresh data`);
-
-          // Get the document IDs from the folder
-          const documentIds = Array.isArray(targetFolder.document_ids) ? targetFolder.document_ids : [];
-          console.log(`Refresh: Folder has ${documentIds.length} documents`);
-
-          if (documentIds.length > 0) {
-            // Fetch document details for the IDs
-            const docResponse = await fetch(`${effectiveApiUrl}/batch/documents`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-              },
-              body: JSON.stringify({
-                document_ids: [...documentIds]
-              })
-            });
-
-            if (!docResponse.ok) {
-              throw new Error(`Failed to fetch documents: ${docResponse.statusText}`);
-            }
-
-            const freshDocs = await docResponse.json();
-            console.log(`Refresh: Fetched ${freshDocs.length} document details`);
-
-            // Update documents state
-            setDocuments(freshDocs);
-          } else {
-            // Empty folder
-            setDocuments([]);
-          }
-        } else {
-          console.log(`Refresh: Selected folder ${selectedFolder} not found in fresh data`);
-          setDocuments([]);
-        }
-      } else if (selectedFolder === "all") {
-        // For "all" documents view, fetch all documents
-        const allDocsResponse = await fetch(`${effectiveApiUrl}/documents`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-          },
-          body: JSON.stringify({})
-        });
-
-        if (!allDocsResponse.ok) {
-          throw new Error(`Failed to fetch all documents: ${allDocsResponse.statusText}`);
-        }
-
-        const allDocs = await allDocsResponse.json();
-        console.log(`Refresh: Fetched ${allDocs.length} documents for "all" view`);
-        setDocuments(allDocs);
-      }
-    } catch (error) {
-      console.error("Error refreshing documents:", error);
-    }
-  };
+  }, [documents, refreshDocuments]);
 
   // Collapse sidebar when a folder is selected
   useEffect(() => {
@@ -438,89 +332,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       setSidebarCollapsed(false);
     }
   }, [selectedFolder, setSidebarCollapsed]);
-
-  // Fetch documents when selected folder changes
-  useEffect(() => {
-    // Skip initial render to prevent double fetching with the auth useEffect
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
-
-    console.log(`Folder selection changed to: ${selectedFolder}`);
-
-    // Clear selected document when changing folders
-    setSelectedDocument(null);
-    setSelectedDocuments([]);
-
-    // CRITICAL: Clear document list immediately to prevent showing old documents
-    // This prevents showing documents from previous folders while loading
-    setDocuments([]);
-
-    // Create a flag to handle component unmounting
-    let isMounted = true;
-
-    // Create an abort controller for fetch operations
-    const controller = new AbortController();
-
-    // Only fetch if we have a valid auth token or running locally
-    if ((authToken || effectiveApiUrl.includes('localhost')) && isMounted) {
-      // Add a small delay to prevent rapid consecutive calls
-      const timeoutId = setTimeout(async () => {
-        try {
-          // Set loading state to show we're fetching new data
-          setLoading(true);
-
-          // Start with a fresh folder fetch
-          const folderResponse = await fetch(`${effectiveApiUrl}/folders`, {
-            method: 'GET',
-            headers: {
-              ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-            },
-            signal: controller.signal
-          });
-
-          if (!folderResponse.ok) {
-            throw new Error(`Failed to fetch folders: ${folderResponse.statusText}`);
-          }
-
-          // Get fresh folder data
-          const freshFolders = await folderResponse.json();
-          console.log(`Folder change: Fetched ${freshFolders.length} folders with fresh data`);
-
-          // Update folder state
-          if (isMounted) {
-            setFolders(freshFolders);
-
-            // Then fetch documents with fresh folder data
-            await refreshDocuments(freshFolders);
-          }
-        } catch (err) {
-          if (err instanceof Error && err.name !== 'AbortError') {
-            console.error("Error during folder change fetch:", err);
-          }
-        } finally {
-          if (isMounted) {
-            setLoading(false);
-          }
-        }
-      }, 100);
-
-      // Clean up timeout if unmounted
-      return () => {
-        clearTimeout(timeoutId);
-        isMounted = false;
-        controller.abort();
-      };
-    }
-
-    // Cleanup function to prevent updates after unmount
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  // Only depend on these specific props to prevent infinite loops
-  }, [selectedFolder, authToken, effectiveApiUrl]);
 
   // Fetch a specific document by ID
   const fetchDocument = async (documentId: string) => {
@@ -797,35 +608,13 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         }
 
         // Force a fresh refresh after upload
-        // This is a special function to ensure we get truly fresh data
         const refreshAfterUpload = async () => {
           try {
-            console.log("Performing fresh refresh after upload");
-            // Clear folder data to force a clean refresh
-            setFolders([]);
-
-            // Get fresh folder data from the server
-            const folderResponse = await fetch(`${effectiveApiUrl}/folders`, {
-              method: 'GET',
-              headers: {
-                ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-              }
-            });
-
-            if (!folderResponse.ok) {
-              throw new Error(`Failed to fetch folders: ${folderResponse.statusText}`);
-            }
-
-            const freshFolders = await folderResponse.json();
-            console.log(`Upload: Fetched ${freshFolders.length} folders with fresh data`);
-
-            // Update folders state with fresh data
-            setFolders(freshFolders);
-
-            // Now fetch documents based on the current view
-            await refreshDocuments(freshFolders);
+            console.log("Performing fresh refresh after upload (file)");
+            // ONLY fetch folders. The useEffect watching folders will trigger fetchDocuments.
+            await fetchFolders();
           } catch (err) {
-            console.error('Error refreshing after upload:', err);
+            console.error('Error refreshing after file upload:', err);
           }
         };
 
@@ -953,35 +742,13 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         }
 
         // Force a fresh refresh after upload
-        // This is a special function to ensure we get truly fresh data
         const refreshAfterUpload = async () => {
           try {
-            console.log("Performing fresh refresh after upload");
-            // Clear folder data to force a clean refresh
-            setFolders([]);
-
-            // Get fresh folder data from the server
-            const folderResponse = await fetch(`${effectiveApiUrl}/folders`, {
-              method: 'GET',
-              headers: {
-                ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-              }
-            });
-
-            if (!folderResponse.ok) {
-              throw new Error(`Failed to fetch folders: ${folderResponse.statusText}`);
-            }
-
-            const freshFolders = await folderResponse.json();
-            console.log(`Upload: Fetched ${freshFolders.length} folders with fresh data`);
-
-            // Update folders state with fresh data
-            setFolders(freshFolders);
-
-            // Now fetch documents based on the current view
-            await refreshDocuments(freshFolders);
+            console.log("Performing fresh refresh after upload (batch)");
+            // ONLY fetch folders. The useEffect watching folders will trigger fetchDocuments.
+            await fetchFolders();
           } catch (err) {
-            console.error('Error refreshing after upload:', err);
+            console.error('Error refreshing after batch upload:', err);
           }
         };
 
@@ -1113,35 +880,13 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         }
 
         // Force a fresh refresh after upload
-        // This is a special function to ensure we get truly fresh data
         const refreshAfterUpload = async () => {
           try {
-            console.log("Performing fresh refresh after upload");
-            // Clear folder data to force a clean refresh
-            setFolders([]);
-
-            // Get fresh folder data from the server
-            const folderResponse = await fetch(`${effectiveApiUrl}/folders`, {
-              method: 'GET',
-              headers: {
-                ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-              }
-            });
-
-            if (!folderResponse.ok) {
-              throw new Error(`Failed to fetch folders: ${folderResponse.statusText}`);
-            }
-
-            const freshFolders = await folderResponse.json();
-            console.log(`Upload: Fetched ${freshFolders.length} folders with fresh data`);
-
-            // Update folders state with fresh data
-            setFolders(freshFolders);
-
-            // Now fetch documents based on the current view
-            await refreshDocuments(freshFolders);
+            console.log("Performing fresh refresh after upload (text)");
+            // ONLY fetch folders. The useEffect watching folders will trigger fetchDocuments.
+            await fetchFolders();
           } catch (err) {
-            console.error('Error refreshing after upload:', err);
+            console.error('Error refreshing after text upload:', err);
           }
         };
 
@@ -1190,54 +935,32 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   // Function to trigger refresh
   const handleRefresh = () => {
     console.log("Manual refresh triggered");
-    // Show a loading indicator
     showAlert("Refreshing documents and folders...", {
       type: 'info',
       duration: 1500
     });
 
-    // First clear folder data to force a clean refresh
     setLoading(true);
-    setFolders([]);
 
     // Create a new function to perform a truly fresh fetch
     const performFreshFetch = async () => {
       try {
-        // First get fresh folder data from the server
-        const folderResponse = await fetch(`${effectiveApiUrl}/folders`, {
-          method: 'GET',
-          headers: {
-            ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-          }
-        });
+        // ONLY fetch folders. The useEffect watching folders will trigger fetchDocuments.
+        await fetchFolders();
 
-        if (!folderResponse.ok) {
-          throw new Error(`Failed to fetch folders: ${folderResponse.statusText}`);
-        }
-
-        // Get the fresh folder data
-        const freshFolders = await folderResponse.json();
-        console.log(`Refresh: Fetched ${freshFolders.length} folders with fresh data`);
-
-        // Update folders state with fresh data
-        setFolders(freshFolders);
-
-        // Use our helper function to refresh documents with fresh folder data
-        await refreshDocuments(freshFolders);
-
-        // Show success message
-        showAlert("Refresh completed successfully", {
+        // Show success message (consider moving this if fetchFolders doesn't guarantee documents are loaded)
+        showAlert("Refresh initiated. Data will update shortly.", {
           type: 'success',
           duration: 1500
         });
       } catch (error) {
-        console.error("Error during refresh:", error);
+        console.error("Error during refresh fetchFolders:", error);
         showAlert(`Error refreshing: ${error instanceof Error ? error.message : 'Unknown error'}`, {
           type: 'error',
           duration: 3000
         });
       } finally {
-        setLoading(false);
+        // setLoading(false); // Loading will be handled by fetchDocuments triggered by useEffect
       }
     };
 
@@ -1265,40 +988,8 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           </div>
         </div>
       )}
-      {/* Hide the main header when viewing a specific folder - it will be merged with the FolderList header */}
-      {selectedFolder === null && (
-        <div className="flex justify-between items-center py-3 mb-4">
-          <div>
-            <h2 className="text-2xl font-bold leading-tight">Folders</h2>
-            <p className="text-muted-foreground">Manage your uploaded documents and view their metadata.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleRefresh}
-              disabled={loading}
-              className="flex items-center"
-              title="Refresh folders"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
-                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
-                <path d="M21 3v5h-5"></path>
-                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
-                <path d="M8 16H3v5"></path>
-              </svg>
-              Refresh
-            </Button>
-            <UploadDialog
-              showUploadDialog={showUploadDialog}
-              setShowUploadDialog={setShowUploadDialog}
-              loading={loading}
-              onFileUpload={handleFileUpload}
-              onBatchFileUpload={handleBatchFileUpload}
-              onTextUpload={handleTextUpload}
-            />
-          </div>
-        </div>
-      )}
+      {/* Folder view controls - only show when not in a specific folder */}
+      {/* No longer needed - controls will be provided in FolderList */}
 
       {/* Render the FolderList with header at all times when selectedFolder is not null */}
       {selectedFolder !== null && (

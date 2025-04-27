@@ -6,7 +6,6 @@ import DocumentsSection from '@/components/documents/DocumentsSection';
 import SearchSection from '@/components/search/SearchSection';
 import ChatSection from '@/components/chat/ChatSection';
 import GraphSection from '@/components/GraphSection';
-import { Badge } from '@/components/ui/badge';
 import { AlertSystem } from '@/components/ui/alert-system';
 import { extractTokenFromUri, getApiBaseUrlFromUri } from '@/lib/utils';
 import { MorphikUIProps } from '@/components/types';
@@ -40,7 +39,6 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
     }
   };
   const [activeSection, setActiveSection] = useState(initialSection);
-  const [selectedGraphName, setSelectedGraphName] = useState<string | undefined>(undefined);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Extract auth token and API URL from connection URI if provided
@@ -105,18 +103,9 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
             {/* Graphs Section */}
             {activeSection === 'graphs' && (
               <div className="space-y-4">
-                <div className="flex justify-end items-center">
-                  {selectedGraphName && (
-                    <Badge variant="outline" className="bg-blue-50 px-3 py-1">
-                      Current Query Graph: {selectedGraphName}
-                    </Badge>
-                  )}
-                </div>
-
                 <GraphSection
                   apiBaseUrl={effectiveApiBaseUrl}
                   authToken={authToken}
-                  onSelectGraph={(graphName) => setSelectedGraphName(graphName)}
                 />
               </div>
             )}

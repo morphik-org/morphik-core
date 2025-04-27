@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -122,14 +121,8 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
   };
 
   return (
-    <Card className="flex-1 flex flex-col h-full">
-      <CardHeader>
-        <CardTitle>Search Documents</CardTitle>
-        <CardDescription>
-          Search across your documents to find relevant information.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col h-full p-4">
+      <div className="flex-1 flex flex-col">
         <div className="space-y-4">
           <div className="flex gap-2">
             <Input
@@ -179,8 +172,8 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
             </div>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 };
 
