@@ -28,22 +28,22 @@ claude_sonnet = { model_name = "claude-3-sonnet-20240229" }
 # Ollama models
 ollama_llama = { model_name = "ollama_chat/llama3.2", api_base = "http://localhost:11434" }
 ollama_llama_vision = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://localhost:11434", vision = true }
-# If you are running on docker, but running ollama locally use the following
-ollama_llama_docker = { model_name = "ollama_chat/llama3.2", api_base = "http://host.docker.internal:11434" }
-ollama_llama_vision_docker = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://host.docker.internal:11434", vision = true }
-# If you are running on docker and ollama is also running on docker use the following
-ollama_llama_docker_docker = { model_name = "ollama_chat/llama3.2", api_base = "http://ollama:11434" }
-ollama_llama_vision_docker_docker = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://ollama:11434", vision = true }
 
 # Embedding models
 openai_embedding = { model_name = "text-embedding-3-small" }
 openai_embedding_large = { model_name = "text-embedding-3-large" }
 azure_embedding = { model_name = "text-embedding-ada-002", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "embedding-ada-002" }
 ollama_embedding = { model_name = "ollama/nomic-embed-text", api_base = "http://localhost:11434" }
+
 # If you are running on docker, but running ollama locally use the following
-ollama_embedding_docker = { model_name = "ollama/nomic-embed-text", api_base = "http://host.docker.internal:11434" }
+# ollama_llama_docker = { model_name = "ollama_chat/llama3.2", api_base = "http://host.docker.internal:11434" }
+# ollama_llama_vision_docker = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://host.docker.internal:11434", vision = true }
+# ollama_embedding_docker = { model_name = "ollama/nomic-embed-text", api_base = "http://host.docker.internal:11434" }
+
 # If you are running on docker and ollama is also running on docker use the following
-ollama_embedding_docker_docker = { model_name = "ollama/nomic-embed-text", api_base = "http://ollama:11434" }
+# ollama_llama_docker_docker = { model_name = "ollama_chat/llama3.2", api_base = "http://ollama:11434" }
+# ollama_llama_vision_docker_docker = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://ollama:11434", vision = true }
+# ollama_embedding_docker_docker = { model_name = "ollama/nomic-embed-text", api_base = "http://ollama:11434" }
 
 #### Component configurations ####
 
@@ -64,7 +64,8 @@ max_retries = 3          # Number of retries for database operations
 retry_delay = 1.0        # Initial delay between retries in seconds
 
 [embedding]
-model = "ollama_embedding"  # Reference to registered model
+# model = "ollama_embedding"  # Reference to registered model
+mode = "openai_embedding"
 dimensions = 768
 similarity_metric = "cosine"
 
@@ -110,7 +111,9 @@ mode = "self_hosted"  # "cloud" or "self_hosted"
 api_domain = "api.morphik.ai"  # API domain for cloud URIs
 
 [redis]
-host = "localhost"  # use "redis" for docker
+# host = "localhost"  
+# use "redis" for docker
+host = "redis"
 port = 6379
 
 [graph]

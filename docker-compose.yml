@@ -40,9 +40,8 @@ services:
         condition: service_healthy
       config-check:
         condition: service_completed_successfully
-      ollama:
-        condition: service_started
-        required: false
+      # ollama:
+      #   condition: service_started
     networks:
       - morphik-network
     env_file:
@@ -70,9 +69,8 @@ services:
         condition: service_healthy
       config-check:
         condition: service_completed_successfully
-      ollama:
-        condition: service_started
-        required: false
+      # ollama:
+      #   condition: service_started
     networks:
       - morphik-network
     env_file:
