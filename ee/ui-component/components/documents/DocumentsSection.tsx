@@ -8,6 +8,7 @@ import DocumentDetail from './DocumentDetail';
 import FolderList from './FolderList';
 import { UploadDialog, useUploadDialog } from './UploadDialog';
 import { cn } from '@/lib/utils';
+import { Skeleton } from "@/components/ui/skeleton";
 
 import { Document, Folder } from '@/components/types';
 
@@ -237,7 +238,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       setLoading(false);
     }
   // Dependencies: URL, auth, selected folder, and the folder list itself
-  }, [effectiveApiUrl, authToken, selectedFolder, folders, documents.length]);
+  }, [effectiveApiUrl, authToken, selectedFolder, folders]);
 
   // Fetch all folders
   const fetchFolders = useCallback(async () => {
@@ -282,47 +283,103 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
   // Fetch documents when folders are loaded or selectedFolder changes
   useEffect(() => {
-    if (!foldersLoading && folders.length > 0) {
+    const effectSource = 'folders loaded or selectedFolder changed';
+    console.log(`Effect triggered: ${effectSource}, foldersLoading: ${foldersLoading}, folders count: ${folders.length}, selectedFolder: ${selectedFolder}`);
+
+    // Guard against running when folders are still loading
+    if (foldersLoading) {
+      console.log(`Effect (${effectSource}): Folders still loading, skipping.`);
+      return;
+    }
+
+    // Handle the case where there are no folders at all
+    if (folders.length === 0 && selectedFolder === null) {
+        console.log(`Effect (${effectSource}): No folders found, clearing documents and stopping loading.`);
+        setDocuments([]);
+        setLoading(false); // Ensure loading is off
+        isInitialMount.current = false;
+        return;
+    }
+
+    // Proceed if folders are loaded
+    if (folders.length >= 0) { // Check >= 0 to handle empty folders array correctly
       // Avoid fetching documents on initial mount if selectedFolder is null
       // unless initialFolder was specified
       if (isInitialMount.current && selectedFolder === null && !initialFolder) {
-        console.log('Initial mount with no folder selected, skipping document fetch');
+        console.log(`Effect (${effectSource}): Initial mount with no folder selected, skipping document fetch`);
         isInitialMount.current = false;
+        // Ensure loading is false if we skip fetching
+        setLoading(false);
         return;
       }
-      console.log('Folders loaded or selectedFolder changed, fetching documents...', selectedFolder);
-      fetchDocuments('folders loaded or selectedFolder changed');
-      isInitialMount.current = false; // Mark initial mount as complete
-    } else if (!foldersLoading && folders.length === 0 && selectedFolder === null) {
-        // Handle case where there are no folders at all
-        console.log('No folders found, clearing documents and stopping loading.');
-        setDocuments([]);
-        setLoading(false);
-        isInitialMount.current = false;
-    }
-  }, [foldersLoading, folders, selectedFolder, fetchDocuments, initialFolder]);
 
-  // Poll for document status if any document is processing
+      // If we reach here, we intend to fetch documents
+      console.log(`Effect (${effectSource}): Preparing to fetch documents for folder: ${selectedFolder}`);
+
+      // Wrap the async operation
+      const fetchWrapper = async () => {
+        // Explicitly set loading true *before* the async call within this effect's scope
+        // Note: fetchDocuments might also set this, but we ensure it's set here.
+        setLoading(true);
+        try {
+          await fetchDocuments(effectSource);
+          // If fetchDocuments completes successfully, it will set loading = false in its finally block.
+          // No need to set it here again in the try block.
+          console.log(`Effect (${effectSource}): fetchDocuments call completed.`);
+        } catch (error) {
+          // Catch potential errors *from* the await fetchDocuments call itself, though
+          // fetchDocuments has internal handling. This is an extra safeguard.
+          console.error(`Effect (${effectSource}): Error occurred during fetchDocuments call:`, error);
+          showAlert(`Error updating documents: ${error instanceof Error ? error.message : 'Unknown error'}`, { type: 'error' });
+          // Ensure loading is turned off even if fetchDocuments had an issue before its finally.
+          setLoading(false);
+        } finally {
+          // **User Request:** Explicitly set loading to false within the effect's finally block.
+          // This acts as a safeguard, ensuring loading is false after the attempt,
+          // regardless of fetchDocuments' internal state management.
+          console.log(`Effect (${effectSource}): Finally block reached, ensuring loading is false.`);
+          setLoading(false);
+          isInitialMount.current = false; // Mark initial mount as complete here
+        }
+      };
+
+      fetchWrapper();
+
+    } else {
+      console.log(`Effect (${effectSource}): Condition not met (folders length < 0 ?), should not happen.`);
+       setLoading(false); // Fallback
+    }
+
+  }, [foldersLoading, folders, selectedFolder, fetchDocuments, initialFolder]); // Keep fetchDocuments dependency
+
+  // Poll for document status if any document is processing *and* user is not viewing details
   useEffect(() => {
     const hasProcessing = documents.some(
       (doc) => doc.system_metadata?.status === 'processing'
     );
 
-    if (hasProcessing) {
-      console.log('Polling for document status...');
+    // Only poll if there are processing documents AND no document detail view is open
+    if (hasProcessing && selectedDocument === null) {
+      console.log('Polling for document status (list view active)...');
       const intervalId = setInterval(() => {
         console.log('Polling interval: calling refreshDocuments');
         refreshDocuments(); // Fetch documents again to check status
       }, 5000); // Poll every 5 seconds
 
-      // Cleanup function to clear the interval when the component unmounts
-      // or when there are no more processing documents
       return () => {
-        console.log('Clearing polling interval');
+        console.log('Clearing polling interval (list view or processing done)');
         clearInterval(intervalId);
       };
+    } else {
+        // Log why polling is not active
+        if (hasProcessing && selectedDocument !== null) {
+            console.log('Polling paused: Document detail view is open.');
+        } else if (!hasProcessing) {
+            console.log('Polling stopped: No documents are processing.');
+        }
     }
-  }, [documents, refreshDocuments]);
+    // Add selectedDocument to dependencies
+  }, [documents, refreshDocuments, selectedDocument]);
 
   // Collapse sidebar when a folder is selected
   useEffect(() => {
@@ -1017,68 +1074,89 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         />
       )}
 
-      {selectedFolder && documents.length === 0 && !loading ? (
-        <div className="text-center py-8 border border-dashed rounded-lg flex-1 flex items-center justify-center">
-          <div>
-            <Upload className="mx-auto h-12 w-12 mb-2 text-muted-foreground" />
-            <p className="text-muted-foreground">Drag and drop files here to upload to this folder.</p>
-            <p className="text-xs text-muted-foreground mt-2">Or use the upload button in the top right.</p>
-          </div>
-        </div>
-      ) : selectedFolder && loading ? (
-        <div className="text-center py-8 flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
-            <p className="text-muted-foreground">Loading documents...</p>
-          </div>
-        </div>
-      ) : selectedFolder === null ? (
+      {/* Folder Grid View (selectedFolder is null) */}
+      {selectedFolder === null ? (
         <div className="flex flex-col gap-4 flex-1">
-          <FolderList
-            folders={folders}
-            selectedFolder={selectedFolder}
-            setSelectedFolder={setSelectedFolder}
-            apiBaseUrl={effectiveApiUrl}
-            authToken={authToken}
-            refreshFolders={fetchFolders}
-            loading={foldersLoading}
-            refreshAction={handleRefresh}
-            selectedDocuments={selectedDocuments}
-            handleDeleteMultipleDocuments={handleDeleteMultipleDocuments}
-            uploadDialogComponent={
-              <UploadDialog
-                showUploadDialog={showUploadDialog}
-                setShowUploadDialog={setShowUploadDialog}
-                loading={loading}
-                onFileUpload={handleFileUpload}
-                onBatchFileUpload={handleBatchFileUpload}
-                onTextUpload={handleTextUpload}
-              />
-            }
-          />
+          {/* Skeleton for Folder List loading state */}
+          {foldersLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 p-4">
+              {[...Array(8)].map((_, i) => (
+                <div key={i} className="border rounded-lg p-4 flex flex-col items-center justify-center h-32">
+                  <Skeleton className="h-8 w-8 mb-2 rounded-md" />
+                  <Skeleton className="h-4 w-20" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <FolderList
+              folders={folders}
+              selectedFolder={selectedFolder}
+              setSelectedFolder={setSelectedFolder}
+              apiBaseUrl={effectiveApiUrl}
+              authToken={authToken}
+              refreshFolders={fetchFolders}
+              loading={foldersLoading}
+              refreshAction={handleRefresh}
+              selectedDocuments={selectedDocuments}
+              handleDeleteMultipleDocuments={handleDeleteMultipleDocuments}
+              uploadDialogComponent={
+                <UploadDialog
+                  showUploadDialog={showUploadDialog}
+                  setShowUploadDialog={setShowUploadDialog}
+                  loading={loading}
+                  onFileUpload={handleFileUpload}
+                  onBatchFileUpload={handleBatchFileUpload}
+                  onTextUpload={handleTextUpload}
+                />
+              }
+            />
+          )}
         </div>
       ) : (
         <div className="flex flex-col md:flex-row gap-4 flex-1">
+          {/* Left Panel: Document List or Skeleton or Empty State */}
           <div className={cn(
-            "w-full transition-all duration-300",
+            "w-full transition-all duration-300 flex flex-col",
             selectedDocument ? "md:w-2/3" : "md:w-full"
           )}>
-            <DocumentList
-              documents={documents}
-              selectedDocument={selectedDocument}
-              selectedDocuments={selectedDocuments}
-              handleDocumentClick={handleDocumentClick}
-              handleCheckboxChange={handleCheckboxChange}
-              getSelectAllState={getSelectAllState}
-              setSelectedDocuments={setSelectedDocuments}
-              setDocuments={setDocuments}
-              loading={loading}
-              apiBaseUrl={effectiveApiUrl}
-              authToken={authToken}
-              selectedFolder={selectedFolder}
-            />
+            {loading ? (
+              // Skeleton Loader for Document List (within the correct layout)
+              <div className="space-y-3 p-4 flex-1">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-8 w-3/4" />
+                <Skeleton className="h-8 w-full" />
+                <Skeleton className="h-8 w-5/6" />
+                <Skeleton className="h-8 w-full" />
+              </div>
+            ) : documents.length === 0 ? (
+              // Empty State (moved here, ensure it fills space)
+              <div className="text-center py-8 border border-dashed rounded-lg flex-1 flex items-center justify-center">
+                <div>
+                  <Upload className="mx-auto h-12 w-12 mb-2 text-muted-foreground" />
+                  <p className="text-muted-foreground">Drag and drop files here to upload to this folder.</p>
+                  <p className="text-xs text-muted-foreground mt-2">Or use the upload button in the top right.</p>
+                </div>
+              </div>
+            ) : (
+              // Actual Document List
+              <DocumentList
+                documents={documents}
+                selectedDocument={selectedDocument}
+                selectedDocuments={selectedDocuments}
+                handleDocumentClick={handleDocumentClick}
+                handleCheckboxChange={handleCheckboxChange}
+                getSelectAllState={getSelectAllState}
+                setSelectedDocuments={setSelectedDocuments}
+                setDocuments={setDocuments}
+                loading={loading}
+                apiBaseUrl={effectiveApiUrl}
+                authToken={authToken}
+                selectedFolder={selectedFolder}
+              />
+            )}
           </div>
 
+          {/* Right Panel: Document Detail (conditionally rendered) */}
           {selectedDocument && (
             <div className="w-full md:w-1/3 animate-in slide-in-from-right duration-300">
               <DocumentDetail

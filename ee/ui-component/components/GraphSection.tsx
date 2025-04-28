@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Skeleton } from "@/components/ui/skeleton";
 
 // Dynamically import ForceGraphComponent to avoid SSR issues
 const ForceGraphComponent = dynamic(() => import('@/components/ForceGraphComponent'), { ssr: false });
@@ -516,7 +517,15 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
 
             {loading ? (
               <div className="flex justify-center items-center p-8">
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
+                {/* Skeleton Loader for Graph List */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 py-2 w-full">
+                  {[...Array(12)].map((_, i) => (
+                    <div key={i} className="flex flex-col items-center p-2 border border-transparent rounded-md">
+                      <Skeleton className="h-12 w-12 mb-2 rounded-md" />
+                      <Skeleton className="h-4 w-20 rounded-md" />
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : graphs.length === 0 ? (
               <div className="text-center p-8 border-2 border-dashed rounded-lg mt-4">
