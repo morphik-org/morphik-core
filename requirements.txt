@@ -180,7 +180,7 @@ olefile==0.47
 ollama==0.4.7
 omegaconf==2.3.0
 onnx==1.16.2
-onnxruntime==1.18.1
+onnxruntime==1.21.1
 openai==1.68.2
 opencv-python==4.10.0.84
 openpyxl==3.1.5
