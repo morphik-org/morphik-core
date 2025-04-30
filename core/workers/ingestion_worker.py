@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 import urllib.parse as up
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
@@ -25,6 +26,19 @@ from core.vector_store.multi_vector_store import MultiVectorStore
 from core.vector_store.pgvector_store import PGVectorStore
 
 logger = logging.getLogger(__name__)
+
+# Configure logger for ingestion worker (restored from diff)
+settings = get_settings()  # Need settings for log level potentially, though INFO used here
+
+# Create logs directory if it doesn't exist
+os.makedirs("logs", exist_ok=True)
+
+# Set up file handler for worker_ingestion.log
+file_handler = logging.FileHandler("logs/worker_ingestion.log")
+file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+logger.addHandler(file_handler)
+# Set logger level based on settings (diff used INFO directly)
+logger.setLevel(logging.INFO)
 
 
 async def get_document_with_retry(document_service, document_id, auth, max_retries=3, initial_delay=0.3):
@@ -116,10 +130,14 @@ async def process_ingestion_job(
         A dictionary with the document ID and processing status
     """
     try:
+        # Start performance timer
+        job_start_time = time.time()
+        phase_times = {}
         # 1. Log the start of the job
         logger.info(f"Starting ingestion job for file: {original_filename}")
 
         # 2. Deserialize metadata and auth
+        deserialize_start = time.time()
         metadata = json.loads(metadata_json) if metadata_json else {}
         auth = AuthContext(
             entity_type=EntityType(auth_dict.get("entity_type", "unknown")),
@@ -128,23 +146,32 @@ async def process_ingestion_job(
             permissions=set(auth_dict.get("permissions", ["read"])),
             user_id=auth_dict.get("user_id", auth_dict.get("entity_id", "")),
         )
+        phase_times["deserialize_auth"] = time.time() - deserialize_start
 
         # Get document service from the context
         document_service: DocumentService = ctx["document_service"]
 
         # 3. Download the file from storage
         logger.info(f"Downloading file from {bucket}/{file_key}")
+        download_start = time.time()
         file_content = await document_service.storage.download_file(bucket, file_key)
 
         # Ensure file_content is bytes
         if hasattr(file_content, "read"):
             file_content = file_content.read()
+        download_time = time.time() - download_start
+        phase_times["download_file"] = download_time
+        logger.info(f"File download took {download_time:.2f}s for {len(file_content)/1024/1024:.2f}MB")
 
         # 4. Parse file to text
+        parse_start = time.time()
         additional_metadata, text = await document_service.parser.parse_file_to_text(file_content, original_filename)
         logger.debug(f"Parsed file into text of length {len(text)}")
+        parse_time = time.time() - parse_start
+        phase_times["parse_file"] = parse_time
 
         # === Apply post_parsing rules ===
+        rules_start = time.time()
         document_rule_metadata = {}
         if rules_list:
             logger.info("Applying post-parsing rules...")
@@ -154,8 +181,13 @@ async def process_ingestion_job(
             metadata.update(document_rule_metadata)  # Merge metadata into main doc metadata
             logger.info(f"Document metadata after post-parsing rules: {metadata}")
             logger.info(f"Content length after post-parsing rules: {len(text)}")
+        rules_time = time.time() - rules_start
+        phase_times["apply_post_parsing_rules"] = rules_time
+        if rules_list:
+            logger.info(f"Post-parsing rules processing took {rules_time:.2f}s")
 
         # 6. Retrieve the existing document
+        retrieve_start = time.time()
         logger.debug(f"Retrieving document with ID: {document_id}")
         logger.debug(
             f"Auth context: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}"
@@ -163,6 +195,9 @@ async def process_ingestion_job(
 
         # Use the retry helper function with initial delay to handle race conditions
         doc = await get_document_with_retry(document_service, document_id, auth, max_retries=5, initial_delay=1.0)
+        retrieve_time = time.time() - retrieve_start
+        phase_times["retrieve_document"] = retrieve_time
+        logger.info(f"Document retrieval took {retrieve_time:.2f}s")
 
         if not doc:
             logger.error(f"Document {document_id} not found in database after multiple retries")
@@ -193,7 +228,11 @@ async def process_ingestion_job(
             updates["system_metadata"]["end_user_id"] = end_user_id
 
         # Update the document in the database
+        update_start = time.time()
         success = await document_service.db.update_document(document_id=document_id, updates=updates, auth=auth)
+        update_time = time.time() - update_start
+        phase_times["update_document_parsed"] = update_time
+        logger.info(f"Initial document update took {update_time:.2f}s")
 
         if not success:
             raise ValueError(f"Failed to update document {document_id}")
@@ -203,13 +242,18 @@ async def process_ingestion_job(
         logger.debug("Updated document in database with parsed content")
 
         # 7. Split text into chunks
+        chunking_start = time.time()
         parsed_chunks = await document_service.parser.split_text(text)
         if not parsed_chunks:
             raise ValueError("No content chunks extracted after rules processing")
         logger.debug(f"Split processed text into {len(parsed_chunks)} chunks")
+        chunking_time = time.time() - chunking_start
+        phase_times["split_into_chunks"] = chunking_time
+        logger.info(f"Text chunking took {chunking_time:.2f}s to create {len(parsed_chunks)} chunks")
 
         # 8. Handle ColPali embeddings if enabled - IMPORTANT: Do this BEFORE applying chunk rules
         # so that image chunks can be processed by rules when use_images=True
+        colpali_processing_start = time.time()
         using_colpali = (
             use_colpali and document_service.colpali_embedding_model and document_service.colpali_vector_store
         )
@@ -227,6 +271,10 @@ async def process_ingestion_job(
                 file_type, file_content_base64, file_content, parsed_chunks
             )
             logger.debug(f"Created {len(chunks_multivector)} chunks for multivector embedding")
+        colpali_create_chunks_time = time.time() - colpali_processing_start
+        phase_times["colpali_create_chunks"] = colpali_create_chunks_time
+        if using_colpali:
+            logger.info(f"Colpali chunk creation took {colpali_create_chunks_time:.2f}s")
 
         # 9. Apply post_chunking rules and aggregate metadata
         processed_chunks = []
@@ -302,14 +350,27 @@ async def process_ingestion_job(
             processed_chunks_multivector = chunks_multivector  # No rules, use original multivector chunks
 
         # 10. Generate embeddings for processed chunks
+        embedding_start = time.time()
         embeddings = await document_service.embedding_model.embed_for_ingestion(processed_chunks)
         logger.debug(f"Generated {len(embeddings)} embeddings")
+        embedding_time = time.time() - embedding_start
+        phase_times["generate_embeddings"] = embedding_time
+        embeddings_per_second = len(embeddings) / embedding_time if embedding_time > 0 else 0
+        logger.info(
+            f"Embedding generation took {embedding_time:.2f}s for {len(embeddings)} embeddings "
+            f"({embeddings_per_second:.2f} embeddings/s)"
+        )
 
         # 11. Create chunk objects with potentially modified chunk content and metadata
+        chunk_objects_start = time.time()
         chunk_objects = document_service._create_chunk_objects(doc.external_id, processed_chunks, embeddings)
         logger.debug(f"Created {len(chunk_objects)} chunk objects")
+        chunk_objects_time = time.time() - chunk_objects_start
+        phase_times["create_chunk_objects"] = chunk_objects_time
+        logger.debug(f"Creating chunk objects took {chunk_objects_time:.2f}s")
 
         # 12. Handle ColPali embeddings
+        colpali_embed_start = time.time()
         chunk_objects_multivector = []
         if using_colpali:
             colpali_embeddings = await document_service.colpali_embedding_model.embed_for_ingestion(
@@ -319,6 +380,14 @@ async def process_ingestion_job(
 
             chunk_objects_multivector = document_service._create_chunk_objects(
                 doc.external_id, processed_chunks_multivector, colpali_embeddings
+            )
+        colpali_embed_time = time.time() - colpali_embed_start
+        phase_times["colpali_generate_embeddings"] = colpali_embed_time
+        if using_colpali:
+            embeddings_per_second = len(colpali_embeddings) / colpali_embed_time if colpali_embed_time > 0 else 0
+            logger.info(
+                f"Colpali embedding took {colpali_embed_time:.2f}s for {len(colpali_embeddings)} embeddings "
+                f"({embeddings_per_second:.2f} embeddings/s)"
             )
 
         # === Merge aggregated chunk metadata into document metadata ===
@@ -336,14 +405,28 @@ async def process_ingestion_job(
         doc.system_metadata["updated_at"] = datetime.now(UTC)
 
         # 11. Store chunks and update document with is_update=True
+        store_start = time.time()
         await document_service._store_chunks_and_doc(
             chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
         )
+        store_time = time.time() - store_start
+        phase_times["store_chunks_and_update_doc"] = store_time
+        logger.info(f"Storing chunks and final document update took {store_time:.2f}s for {len(chunk_objects)} chunks")
 
         logger.debug(f"Successfully completed processing for document {doc.external_id}")
 
         # 13. Log successful completion
         logger.info(f"Successfully completed ingestion for {original_filename}, document ID: {doc.external_id}")
+        # Performance summary
+        total_time = time.time() - job_start_time
+
+        # Log performance summary
+        logger.info("=== Ingestion Performance Summary ===")
+        logger.info(f"Total processing time: {total_time:.2f}s")
+        for phase, duration in sorted(phase_times.items(), key=lambda x: x[1], reverse=True):
+            percentage = (duration / total_time) * 100 if total_time > 0 else 0
+            logger.info(f"  - {phase}: {duration:.2f}s ({percentage:.1f}%)")
+        logger.info("=====================================")
 
         # 14. Return document ID
         return {
