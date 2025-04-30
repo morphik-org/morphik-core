@@ -1,0 +1,45 @@
+{
+  "name": "Morphik Core",
+  "description": "A powerful document processing and retrieval system",
+  "repository": "https://github.com/hotsheet/morphik-core",
+  "keywords": ["python", "fastapi", "document-processing"],
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "env": {
+    "JWT_SECRET_KEY": {
+      "description": "Secret key for JWT token generation",
+      "required": true
+    },
+    "POSTGRES_URI": {
+      "description": "PostgreSQL connection URI",
+      "required": true
+    },
+    "PGPASSWORD": {
+      "description": "PostgreSQL password",
+      "required": true
+    },
+    "HOST": {
+      "description": "Host to bind the server to",
+      "value": "0.0.0.0"
+    },
+    "PORT": {
+      "description": "Port to bind the server to",
+      "value": "8000"
+    },
+    "LOG_LEVEL": {
+      "description": "Logging level",
+      "value": "INFO"
+    },
+    "REDIS_HOST": {
+      "description": "Redis host",
+      "required": true
+    },
+    "REDIS_PORT": {
+      "description": "Redis port",
+      "value": "6379"
+    }
+  }
+}

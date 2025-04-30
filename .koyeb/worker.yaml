@@ -1,0 +1,17 @@
+service:
+  name: morphik-worker
+  type: worker
+  command: arq core.workers.ingestion_worker.WorkerSettings
+  env:
+    - name: JWT_SECRET_KEY
+      value: ${JWT_SECRET_KEY}
+    - name: POSTGRES_URI
+      value: ${POSTGRES_URI}
+    - name: PGPASSWORD
+      value: ${PGPASSWORD}
+    - name: LOG_LEVEL
+      value: INFO
+    - name: REDIS_HOST
+      value: ${REDIS_HOST}
+    - name: REDIS_PORT
+      value: ${REDIS_PORT}

@@ -14,7 +14,9 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update && apt-get install -y cargo
+# Install Rust using the simpler method
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
+RUN echo 'source $HOME/.cargo/env' >> $HOME/.bashrc
 
 # Copy requirements and install dependencies
 COPY requirements.txt .
@@ -59,58 +61,9 @@ ENV HOST=0.0.0.0
 ENV PORT=8000
 ENV PATH="/usr/local/bin:$PATH"
 
-# Create default configuration
-RUN echo '[api]\n\
-host = "0.0.0.0"\n\
-port = 8000\n\
-reload = false\n\
-\n\
-[auth]\n\
-jwt_algorithm = "HS256"\n\
-dev_mode = true\n\
-dev_entity_id = "dev_user"\n\
-dev_entity_type = "developer"\n\
-dev_permissions = ["read", "write", "admin"]\n\
-\n\
-[completion]\n\
-provider = "ollama"\n\
-model_name = "llama2"\n\
-base_url = "http://localhost:11434"\n\
-\n\
-[database]\n\
-provider = "postgres"\n\
-\n\
-[embedding]\n\
-provider = "ollama"\n\
-model_name = "nomic-embed-text"\n\
-dimensions = 768\n\
-similarity_metric = "cosine"\n\
-base_url = "http://localhost:11434"\n\
-\n\
-[parser]\n\
-chunk_size = 1000\n\
-chunk_overlap = 200\n\
-use_unstructured_api = false\n\
-\n\
-[reranker]\n\
-use_reranker = false\n\
-\n\
-[storage]\n\
-provider = "local"\n\
-storage_path = "/app/storage"\n\
-\n\
-[vector_store]\n\
-provider = "pgvector"\n\
-' > /app/morphik.toml.default
-
 # Create startup script
 RUN echo '#!/bin/bash\n\
 set -e\n\
-\n\
-# Copy default config if none exists\n\
-if [ ! -f /app/morphik.toml ]; then\n\
-    cp /app/morphik.toml.default /app/morphik.toml\n\
-fi\n\
 \n\
 # Function to check PostgreSQL\n\
 check_postgres() {\n\

@@ -1,0 +1,36 @@
+service:
+  name: morphik-api
+  type: web
+  command: /app/docker-entrypoint.sh
+  ports:
+    - port: 8000
+      protocol: http
+  env:
+    - name: JWT_SECRET_KEY
+      value: ${JWT_SECRET_KEY}
+    - name: POSTGRES_URI
+      value: ${POSTGRES_URI}
+    - name: PGPASSWORD
+      value: ${PGPASSWORD}
+    - name: HOST
+      value: 0.0.0.0
+    - name: PORT
+      value: 8000
+    - name: LOG_LEVEL
+      value: INFO
+    - name: REDIS_HOST
+      value: ${REDIS_HOST}
+    - name: REDIS_PORT
+      value: ${REDIS_PORT}
+  routes:
+    - path: /
+      port: 8000
+  healthchecks:
+    - type: http
+      port: 8000
+      path: /health
+      initial_delay: 30s
+      interval: 15s
+      timeout: 5s
+      success_threshold: 1
+      failure_threshold: 3
