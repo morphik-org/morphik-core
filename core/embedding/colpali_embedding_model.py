@@ -6,7 +6,7 @@ from typing import List, Union
 
 import numpy as np
 import torch
-from colpali_engine.models import ColQwen2, ColQwen2Processor
+from colpali_engine.models import ColQwen2_5, ColQwen2_5_Processor
 from PIL.Image import Image
 from PIL.Image import open as open_image
 
@@ -22,13 +22,15 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Initializing ColpaliEmbeddingModel with device: {device}")
         start_time = time.time()
-        self.model = ColQwen2.from_pretrained(
-            "vidore/colqwen2-v1.0",
+        self.model = ColQwen2_5.from_pretrained(
+            "tsystems/colqwen2.5-3b-multilingual-v1.0",
             torch_dtype=torch.bfloat16,
             device_map=device,  # Automatically detect and use available device
             attn_implementation="flash_attention_2" if device == "cuda" else "eager",
         ).eval()
-        self.processor: ColQwen2Processor = ColQwen2Processor.from_pretrained("vidore/colqwen2-v1.0")
+        self.processor: ColQwen2_5_Processor = ColQwen2_5_Processor.from_pretrained(
+            "tsystems/colqwen2.5-3b-multilingual-v1.0"
+        )
         self.batch_size = 8  # Default batch size, adjust as needed
         self.settings = get_settings()
         self.mode = self.settings.MODE
