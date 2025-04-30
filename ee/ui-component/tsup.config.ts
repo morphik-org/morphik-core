@@ -16,4 +16,9 @@ export default defineConfig({
     'next/link',
     '@radix-ui/*',
   ],
+  esbuildOptions(options) {
+    options.jsx = 'automatic';
+    options.jsxImportSource = 'react';
+    return options;
+  },
 });

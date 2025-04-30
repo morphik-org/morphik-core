@@ -81,7 +81,7 @@ You're welcome to contribute to the project! We love:
 - Feature requests via [GitHub issues](https://github.com/morphik-org/morphik-core/issues)
 - Pull requests
 
-Currently, we're focused on improving speed, integrating with more tools, and finding the research papers that provide the most value to our users. If you ahve thoughts, let us know in the discord or in GitHub!
+Currently, we're focused on improving speed, integrating with more tools, and finding the research papers that provide the most value to our users. If you have thoughts, let us know in the discord or in GitHub!
 
 ## Open source vs paid
 

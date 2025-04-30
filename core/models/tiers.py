@@ -17,17 +17,17 @@ TIER_LIMITS = {
         # Application limits
         "app_limit": 1,  # Maximum number of applications
         # Storage limits
-        "storage_file_limit": 100,  # Maximum number of files in storage
-        "storage_size_limit_gb": 1,  # Maximum storage size in GB
+        "storage_file_limit": 30,  # Maximum number of files in storage
+        "storage_size_limit_gb": 0.25,  # Maximum storage size in GB
         "hourly_ingest_limit": 30,  # Maximum file/text ingests per hour
-        "monthly_ingest_limit": 100,  # Maximum file/text ingests per month
+        "monthly_ingest_limit": 30,  # Maximum file/text ingests per month
         # Query limits
         "hourly_query_limit": 30,  # Maximum queries per hour
-        "monthly_query_limit": 1000,  # Maximum queries per month
+        "monthly_query_limit": 50,  # Maximum queries per month
         # Graph limits
-        "graph_creation_limit": 3,  # Maximum number of graphs
-        "hourly_graph_query_limit": 20,  # Maximum graph queries per hour
-        "monthly_graph_query_limit": 200,  # Maximum graph queries per month
+        "graph_creation_limit": 1,  # Maximum number of graphs
+        "hourly_graph_query_limit": 1,  # Maximum graph queries per hour
+        "monthly_graph_query_limit": 1,  # Maximum graph queries per month
         # Cache limits
         "cache_creation_limit": 0,  # Maximum number of caches
         "hourly_cache_query_limit": 0,  # Maximum cache queries per hour
