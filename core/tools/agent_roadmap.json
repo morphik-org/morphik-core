@@ -1,0 +1,220 @@
+[
+    {
+        "name": "query_database",
+        "description": "Executes queries against structured data sources to retrieve specific information. This tool provides direct access to databases, allowing precise data retrieval through query languages like SQL, SPARQL, Cypher, or natural language. Use this tool when you need filtered, aggregated, or specific information from structured data sources rather than documents. The query must be in the appropriate syntax for the database type, and the database parameter must identify an accessible data source. For security and efficiency, queries can be parameterized using the params field. Results are returned in a structured format that reflects the database's response.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Database query (SQL, etc.)"
+            },
+            "database": {
+              "type": "string",
+              "description": "Database identifier to query"
+            },
+            "query_type": {
+              "type": "string",
+              "enum": ["sql", "sparql", "cypher", "natural_language"],
+              "description": "Type of query language"
+            },
+            "params": {
+              "type": "object",
+              "description": "Parameters for parameterized queries"
+            }
+          },
+          "required": ["query", "database"]
+        }
+    },
+    {
+      "name": "table_analyzer",
+      "description": "Extracts, processes, and analyzes tabular data from documents or datasets. This specialized tool works with structured tabular information, allowing various operations on tables. Use this when working with data in rows and columns that require specific manipulations. The extract operation pulls tables from documents, filter selects specific rows based on conditions, aggregate performs calculations across rows (sums, averages, etc.), join combines multiple tables, and visualize creates graphical representations of the data. The tool requires a source identifier pointing to the table location and operation-specific parameters defining exactly how the operation should be performed. Results include the processed table data and any derived analytics.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Source identifier (document ID, table ID, or data path)"
+          },
+          "operation": {
+            "type": "string",
+            "enum": ["extract", "filter", "aggregate", "join", "visualize"],
+            "description": "Operation to perform on the table"
+          },
+          "parameters": {
+            "type": "object",
+            "description": "Operation-specific parameters (columns, conditions, etc.)"
+          }
+        },
+        "required": ["source", "operation"]
+      }
+    },
+    {
+      "name": "multi_document_synthesizer",
+      "description": "Synthesizes information across multiple documents to answer complex questions requiring integration of multiple sources. This advanced tool goes beyond simple retrieval to analyze, compare, and combine information from different documents. Use this when a question requires drawing connections between separate sources or resolving conflicting information. The tool processes the specified documents, extracts relevant information related to the question, and creates a coherent response that integrates insights from all sources. Results include proper citations according to the specified style, allowing traceability back to original sources. The response length can be controlled to provide either concise summaries or detailed analyses.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "Research question to answer"
+          },
+          "document_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "IDs of documents to synthesize information from"
+          },
+          "max_length": {
+            "type": "integer",
+            "description": "Maximum length of synthesized response",
+            "default": 2000
+          },
+          "citation_style": {
+            "type": "string",
+            "enum": ["inline", "footnote", "endnote"],
+            "description": "Citation style for references",
+            "default": "inline"
+          }
+        },
+        "required": ["question", "document_ids"]
+      }
+    },
+    {
+      "name": "research_planner",
+      "description": "Plans comprehensive research strategies by breaking complex questions into manageable sub-questions and identifying specific information needs. This meta-research tool helps structure the investigation process for difficult topics. Use this at the beginning of complex research tasks to create a roadmap for exploration. The planner analyzes the research question, considers available context and data sources, then generates a structured plan including key sub-questions to answer, suggested information sources to consult, and a logical sequence for investigation. The resulting plan provides a systematic approach to tackling complex research problems and ensures all relevant aspects are considered.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "research_question": {
+            "type": "string",
+            "description": "Complex research question to break down"
+          },
+          "context": {
+            "type": "string",
+            "description": "Additional context for the research (optional)"
+          },
+          "available_data_sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of available data sources or collections"
+          }
+        },
+        "required": ["research_question"]
+      }
+    },
+    {
+      "name": "image_analyzer",
+      "description": "Extracts and analyzes information from images, charts, and diagrams to make visual content accessible and usable. This specialized tool processes different types of visual information using various techniques. Use this when working with non-textual content that contains valuable information. The OCR analysis type extracts text from images, chart_extraction pulls data from graphs and charts, object_detection identifies and locates objects within images, and diagram_parsing interprets flowcharts, schematics, and other technical diagrams. Results can be returned in different formats: text for simple extraction, structured for organized data, or data_series for numerical information from charts. The tool requires a specific image identifier to locate the visual content for analysis.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "image_id": {
+            "type": "string",
+            "description": "ID of the image to analyze"
+          },
+          "analysis_type": {
+            "type": "string",
+            "enum": ["ocr", "chart_extraction", "object_detection", "diagram_parsing"],
+            "description": "Type of image analysis to perform"
+          },
+          "output_format": {
+            "type": "string",
+            "enum": ["text", "structured", "data_series"],
+            "description": "Format of analysis output",
+            "default": "structured"
+          }
+        },
+        "required": ["image_id", "analysis_type"]
+      }
+    },
+    {
+      "name": "generate_visualization",
+      "description": "Generates visual representations of data to reveal patterns, trends, and relationships. This tool creates charts, graphs, and other visualizations based on provided data. Use this when numerical or categorical information needs to be presented visually for better understanding. The data must be provided in a structured JSON format that the visualization engine can process. Various chart types are supported including bar charts, line graphs, scatter plots, pie charts, and more specialized visualizations. The resulting visualization can be customized with titles and additional options affecting appearance and behavior. This tool is particularly useful for making complex data more accessible and highlighting key insights that might not be apparent from raw numbers.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "Data to visualize (JSON format)"
+          },
+          "chart_type": {
+            "type": "string",
+            "description": "Type of chart to generate"
+          },
+          "title": {
+            "type": "string",
+            "description": "Title for the visualization"
+          },
+          "options": {
+            "type": "object",
+            "description": "Additional visualization options"
+          }
+        },
+        "required": ["data", "chart_type"]
+      }
+    },
+    {
+      "name": "search_refinement",
+      "description": "Refines search queries based on initial results and user feedback to improve relevance and accuracy. This tool helps iteratively improve searches when initial results aren't satisfactory. Use this after an initial search when results need adjustment based on relevance or user feedback. The tool analyzes the original query, evaluates initial results, and applies refinement strategies: broaden expands the search to include more results, narrow focuses the search on more specific aspects, pivot shifts the search direction based on discovered information, and contrast looks for alternatives or opposing viewpoints. The refined query takes into account both the original intent and feedback on previous results, creating a more targeted search likely to yield better information.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "original_query": {
+            "type": "string",
+            "description": "Original search query"
+          },
+          "result_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "IDs of initial search results"
+          },
+          "user_feedback": {
+            "type": "string",
+            "description": "User feedback on initial results"
+          },
+          "refinement_strategy": {
+            "type": "string",
+            "enum": ["broaden", "narrow", "pivot", "contrast"],
+            "description": "Strategy for query refinement",
+            "default": "narrow"
+          }
+        },
+        "required": ["original_query", "result_ids"]
+      }
+    },
+    {
+      "name": "version_compare",
+      "description": "Compares different versions of documents or data to identify changes, evolution, and development over time. This analytical tool examines differences between document versions at various levels of detail. Use this when understanding how information has changed is important, such as tracking policy updates or document revisions. The tool requires a document identifier and at least one version identifier, with the second version defaulting to the latest if not specified. The comparison can be performed at different detail levels: document for overall changes, section for major divisions, paragraph for moderate detail, or sentence for fine-grained analysis. Results highlight additions, deletions, modifications, and moved content between the versions, making it easy to track how information has evolved.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "ID of the document to analyze versions"
+          },
+          "version_a": {
+            "type": "string",
+            "description": "First version identifier"
+          },
+          "version_b": {
+            "type": "string",
+            "description": "Second version identifier (default: latest)",
+            "default": "latest"
+          },
+          "comparison_level": {
+            "type": "string",
+            "enum": ["document", "section", "paragraph", "sentence"],
+            "description": "Level of detail for comparison",
+            "default": "paragraph"
+          }
+        },
+        "required": ["document_id", "version_a"]
+      }
+    }
+]

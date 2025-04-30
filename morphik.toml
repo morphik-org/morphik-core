@@ -75,6 +75,9 @@ use_unstructured_api = false
 use_contextual_chunking = false
 contextual_chunking_model = "ollama_llama"  # Reference to a key in registered_models
 
+[document_analysis]
+model = "ollama_llama"  # Reference to a key in registered_models
+
 [parser.vision]
 model = "ollama_llama_vision"  # Reference to a key in registered_models
 frame_sample_rate = -1  # Set to -1 to disable frame captioning
