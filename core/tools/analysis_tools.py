@@ -6,7 +6,7 @@ import logging
 from typing import Any, Dict, List, Literal, Optional
 
 import instructor
-from litellm import completion as litellm_completion
+from litellm import acompletion as litellm_completion
 from pydantic import BaseModel, Field
 
 from core.config import get_settings
@@ -60,7 +60,7 @@ async def extract_entities(text: str, model: str) -> Entities:
     """Extract entities from text using instructor"""
     client = instructor.from_litellm(litellm_completion, mode=instructor.Mode.JSON)
     response = await client.chat.completions.create(
-        model=model,
+        **model,
         messages=[
             {
                 "role": "system",
@@ -81,7 +81,7 @@ async def extract_entities(text: str, model: str) -> Entities:
 async def summarize_document(text: str, model: str) -> str:
     """Summarize document text"""
     response = await litellm_completion(
-        model=model,
+        model=model["model_name"],
         messages=[
             {
                 "role": "system",
@@ -103,7 +103,7 @@ async def extract_facts(text: str, model: str) -> Facts:
     """Extract facts from text using instructor"""
     client = instructor.from_litellm(litellm_completion, mode=instructor.Mode.JSON)
     response = await client.chat.completions.create(
-        model=model,
+        **model,
         messages=[
             {
                 "role": "system",
@@ -125,7 +125,7 @@ async def analyze_sentiment(text: str, model: str) -> Sentiment:
     """Analyze sentiment of text using instructor"""
     client = instructor.from_litellm(litellm_completion, mode=instructor.Mode.JSON)
     response = await client.chat.completions.create(
-        model=model,
+        **model,
         messages=[
             {
                 "role": "system",
@@ -178,31 +178,37 @@ async def document_analyzer(
 
         # Get document analysis model from settings
         settings = get_settings()
-        model = settings.DOCUMENT_ANALYSIS_MODEL
+        try:
+            model_config_key = settings.DOCUMENT_ANALYSIS_MODEL
+        except AttributeError:
+            # Fallback to completion model if document analysis model is not set
+            logger.warning("DOCUMENT_ANALYSIS_MODEL not found in settings, using COMPLETION_MODEL as fallback")
+            model_config_key = settings.COMPLETION_MODEL
+        model_config = settings.REGISTERED_MODELS[model_config_key]
 
         # Perform requested analysis
         match analysis_type:
             case "entity_extraction":
-                entities = await extract_entities(doc_content, model)
+                entities = await extract_entities(doc_content, model_config)
                 return json.dumps(entities.model_dump(), indent=2)
 
             case "summarization":
-                return await summarize_document(doc_content, model)
+                return await summarize_document(doc_content, model_config)
 
             case "fact_extraction":
-                facts = await extract_facts(doc_content, model)
+                facts = await extract_facts(doc_content, model_config)
                 return json.dumps(facts.model_dump(), indent=2)
 
             case "sentiment":
-                sentiment = await analyze_sentiment(doc_content, model)
+                sentiment = await analyze_sentiment(doc_content, model_config)
                 return json.dumps(sentiment.model_dump(), indent=2)
 
             case "full":
                 # Perform all analyses in parallel for efficiency
-                entities_task = extract_entities(doc_content, model)
-                summary_task = summarize_document(doc_content, model)
-                facts_task = extract_facts(doc_content, model)
-                sentiment_task = analyze_sentiment(doc_content, model)
+                entities_task = extract_entities(doc_content, model_config)
+                summary_task = summarize_document(doc_content, model_config)
+                facts_task = extract_facts(doc_content, model_config)
+                sentiment_task = analyze_sentiment(doc_content, model_config)
 
                 entities, summary, facts, sentiment = await asyncio.gather(
                     entities_task, summary_task, facts_task, sentiment_task

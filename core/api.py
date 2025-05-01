@@ -14,6 +14,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadF
 from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
+from core.agent import MorphikAgent
 from core.cache.llama_cache_factory import LlamaCacheFactory
 from core.completion.litellm_completion import LiteLLMCompletionModel
 from core.config import get_settings
@@ -28,6 +29,7 @@ from core.models.folders import Folder, FolderCreate
 from core.models.graph import Graph
 from core.models.prompts import validate_prompt_overrides_with_http_exception
 from core.models.request import (
+    AgentQueryRequest,
     BatchIngestResponse,
     CompletionQueryRequest,
     CreateGraphRequest,
@@ -915,6 +917,17 @@ async def query_completion(request: CompletionQueryRequest, auth: AuthContext = 
         validate_prompt_overrides_with_http_exception(operation_type="query", error=e)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.post("/agent", response_model=Dict[str, str])
+@telemetry.track(operation_type="agent_query")
+async def agent_query(request: AgentQueryRequest, auth: AuthContext = Depends(verify_token)):
+    """
+    Process a natural language query using the MorphikAgent and return the response.
+    """
+    agent = MorphikAgent(document_service=document_service, auth=auth)
+    result = await agent.run(request.query)
+    return {"response": result}
 
 
 @app.post("/documents", response_model=List[Document])

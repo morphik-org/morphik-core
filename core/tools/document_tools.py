@@ -76,6 +76,7 @@ async def retrieve_chunks(
                     content.append({"type": "image_url", "image_url": {"url": chunk.content}})
                 else:
                     # Assuming it's base64, convert to data URL format
+                    # TODO: potential bug here, if the base64 image is not a png
                     content.append(
                         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{chunk.content}"}}
                     )

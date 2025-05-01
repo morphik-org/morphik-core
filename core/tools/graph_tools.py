@@ -82,33 +82,7 @@ async def knowledge_graph_query(
 
         match query_type:
             case "list_entities":
-                if not start_nodes or len(start_nodes) == 0:
-                    raise ToolError("At least one search term is required for list_entities")
-
-                # Find similar entities using embedding model
-                query_embedding = await graph_service.embedding_model.embed_for_query(start_nodes[0])
-
-                # Create entity text representations
-                entity_texts = [
-                    f"{entity.label} {entity.type} "
-                    + " ".join(f"{key}: {value}" for key, value in entity.properties.items())
-                    for entity in graph.entities
-                ]
-
-                # Get embeddings for all entity texts
-                entity_embeddings = await graph_service._batch_get_embeddings(entity_texts)
-
-                # Calculate similarities and pair with entities
-                entity_similarities = [
-                    (entity, graph_service._calculate_cosine_similarity(query_embedding, embedding))
-                    for entity, embedding in zip(graph.entities, entity_embeddings)
-                ]
-
-                # Sort by similarity and take top 10
-                entity_similarities.sort(key=lambda x: x[1], reverse=True)
-                top_entities = entity_similarities[:10]
-
-                # Format results
+                entities = await graph_service._find_similar_entities(start_nodes[0], graph.entities, 10)
                 results = [
                     {
                         "id": entity.id,
@@ -117,9 +91,8 @@ async def knowledge_graph_query(
                         "properties": entity.properties,
                         "similarity_score": score,
                     }
-                    for entity, score in top_entities
+                    for entity, score in entities
                 ]
-
                 return json.dumps(results, indent=2)
 
             case "entity":

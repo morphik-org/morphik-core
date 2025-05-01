@@ -128,3 +128,9 @@ class SetFolderRuleRequest(BaseModel):
     """Request model for setting folder rules"""
 
     rules: List[MetadataExtractionRuleRequest]
+
+
+class AgentQueryRequest(BaseModel):
+    """Request model for agent queries"""
+
+    query: str = Field(..., description="Natural language query for the Morphik agent")
