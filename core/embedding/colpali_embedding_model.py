@@ -2,7 +2,7 @@ import base64
 import io
 import logging
 import time
-from typing import List, Union
+from typing import List, Tuple, Union
 
 import numpy as np
 import torch
@@ -31,10 +31,11 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         self.processor: ColQwen2_5_Processor = ColQwen2_5_Processor.from_pretrained(
             "tsystems/colqwen2.5-3b-multilingual-v1.0"
         )
-        self.batch_size = 8  # Default batch size, adjust as needed
         self.settings = get_settings()
         self.mode = self.settings.MODE
-        logger.info(f"Colpali running in mode: {self.mode}")
+        # Set batch size based on mode
+        self.batch_size = 8 if self.mode == "cloud" else 1
+        logger.info(f"Colpali running in mode: {self.mode} with batch size: {self.batch_size}")
         total_init_time = time.time() - start_time
         logger.info(f"Colpali initialization time: {total_init_time:.2f} seconds")
 
@@ -43,117 +44,114 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         if isinstance(chunks, Chunk):
             chunks = [chunks]
 
-        logger.info(f"Processing {len(chunks)} chunks for Colpali embedding in {self.mode} mode")
+        if not chunks:
+            return []
 
-        if self.mode == "cloud":
-            # GPU/Cloud path: Batching enabled
-            images: List[Image] = []
-            texts: List[str] = []
-            sorting_start = time.time()
-            for chunk in chunks:
-                if chunk.metadata.get("is_image"):
-                    try:
-                        # Handle data URI format "data:image/png;base64,..."
-                        content = chunk.content
-                        if content.startswith("data:"):
-                            # Extract the base64 part after the comma
-                            content = content.split(",", 1)[1]
+        logger.info(
+            f"Processing {len(chunks)} chunks for Colpali embedding in {self.mode} mode (batch size: {self.batch_size})"
+        )
 
-                        # Now decode the base64 string
-                        image_bytes = base64.b64decode(content)
-                        image = open_image(io.BytesIO(image_bytes))
-                        images.append(image)
-                    except Exception as e:
-                        logger.error(f"Error processing image: {str(e)}")
-                        # Fall back to using the content as text
-                        texts.append(chunk.content)
-                else:
-                    texts.append(chunk.content)
+        image_items: List[Tuple[int, Image]] = []
+        text_items: List[Tuple[int, str]] = []
+        sorting_start = time.time()
 
-            sorting_time = time.time() - sorting_start
-            logger.info(
-                f"Chunk sorting took {sorting_time:.2f}s - Found {len(images)} images and {len(texts)} text chunks"
+        for index, chunk in enumerate(chunks):
+            if chunk.metadata.get("is_image"):
+                try:
+                    content = chunk.content
+                    if content.startswith("data:"):
+                        content = content.split(",", 1)[1]
+                    image_bytes = base64.b64decode(content)
+                    image = open_image(io.BytesIO(image_bytes))
+                    image_items.append((index, image))
+                except Exception as e:
+                    logger.error(f"Error processing image chunk {index}: {str(e)}. Falling back to text.")
+                    text_items.append((index, chunk.content))  # Fallback: treat content as text
+            else:
+                text_items.append((index, chunk.content))
+
+        sorting_time = time.time() - sorting_start
+        logger.info(
+            f"Chunk sorting took {sorting_time:.2f}s - "
+            f"Found {len(image_items)} images and {len(text_items)} text chunks"
+        )
+
+        # Initialize results array to preserve order
+        results: List[np.ndarray | None] = [None] * len(chunks)
+
+        # Process image batches
+        if image_items:
+            img_start = time.time()
+            indices_to_process = [item[0] for item in image_items]
+            images_to_process = [item[1] for item in image_items]
+            for i in range(0, len(images_to_process), self.batch_size):
+                batch_indices = indices_to_process[i : i + self.batch_size]
+                batch_images = images_to_process[i : i + self.batch_size]
+                logger.debug(
+                    f"Processing image batch {i//self.batch_size + 1}/"
+                    f"{(len(images_to_process)-1)//self.batch_size + 1} with {len(batch_images)} images"
+                )
+                batch_start = time.time()
+                batch_embeddings = await self.generate_embeddings_batch_images(batch_images)
+                # Place embeddings in the correct position in results
+                for original_index, embedding in zip(batch_indices, batch_embeddings):
+                    results[original_index] = embedding
+                batch_time = time.time() - batch_start
+                logger.debug(
+                    f"Image batch {i//self.batch_size + 1} processing took {batch_time:.2f}s "
+                    f"({batch_time/len(batch_images):.2f}s per image)"
+                )
+            img_time = time.time() - img_start
+            logger.info(f"All image embedding took {img_time:.2f}s ({img_time/len(images_to_process):.2f}s per image)")
+
+        # Process text batches
+        if text_items:
+            text_start = time.time()
+            indices_to_process = [item[0] for item in text_items]
+            texts_to_process = [item[1] for item in text_items]
+            for i in range(0, len(texts_to_process), self.batch_size):
+                batch_indices = indices_to_process[i : i + self.batch_size]
+                batch_texts = texts_to_process[i : i + self.batch_size]
+                logger.debug(
+                    f"Processing text batch {i//self.batch_size + 1}/"
+                    f"{(len(texts_to_process)-1)//self.batch_size + 1} with {len(batch_texts)} texts"
+                )
+                batch_start = time.time()
+                batch_embeddings = await self.generate_embeddings_batch_texts(batch_texts)
+                # Place embeddings in the correct position in results
+                for original_index, embedding in zip(batch_indices, batch_embeddings):
+                    results[original_index] = embedding
+                batch_time = time.time() - batch_start
+                logger.debug(
+                    f"Text batch {i//self.batch_size + 1} processing took {batch_time:.2f}s "
+                    f"({batch_time/len(batch_texts):.2f}s per text)"
+                )
+            text_time = time.time() - text_start
+            logger.info(f"All text embedding took {text_time:.2f}s ({text_time/len(texts_to_process):.2f}s per text)")
+
+        # Ensure all chunks were processed (handle potential None entries if errors occurred,
+        # though unlikely with fallback)
+        final_results = [res for res in results if res is not None]
+        if len(final_results) != len(chunks):
+            logger.warning(
+                f"Number of embeddings ({len(final_results)}) does not match number of chunks "
+                f"({len(chunks)}). Some chunks might have failed."
             )
-
-            # Process in batches
-            embeddings = []
-
-            # Process image batches
-            if images:
-                img_start = time.time()
-                for i in range(0, len(images), self.batch_size):
-                    batch = images[i : i + self.batch_size]
-                    logger.debug(
-                        f"Processing image batch {i//self.batch_size + 1}/"
-                        f"{(len(images)-1)//self.batch_size + 1} with {len(batch)} images"
-                    )
-                    batch_start = time.time()
-                    batch_embeddings = await self.generate_embeddings_batch_images(batch)
-                    embeddings.extend(batch_embeddings)
-                    batch_time = time.time() - batch_start
-                    logger.debug(
-                        f"Image batch {i//self.batch_size + 1} processing took {batch_time:.2f}s "
-                        f"({batch_time/len(batch):.2f}s per image)"
-                    )
-                img_time = time.time() - img_start
-                logger.info(f"All image embedding took {img_time:.2f}s ({img_time/len(images):.2f}s per image)")
-
-            # Process text batches
-            if texts:
-                text_start = time.time()
-                for i in range(0, len(texts), self.batch_size):
-                    batch = texts[i : i + self.batch_size]
-                    logger.debug(
-                        f"Processing text batch {i//self.batch_size + 1}/"
-                        f"{(len(texts)-1)//self.batch_size + 1} with {len(batch)} texts"
-                    )
-                    batch_start = time.time()
-                    batch_embeddings = await self.generate_embeddings_batch_texts(batch)
-                    embeddings.extend(batch_embeddings)
-                    batch_time = time.time() - batch_start
-                    logger.debug(
-                        f"Text batch {i//self.batch_size + 1} processing took {batch_time:.2f}s "
-                        f"({batch_time/len(batch):.2f}s per text)"
-                    )
-                text_time = time.time() - text_start
-                logger.info(f"All text embedding took {text_time:.2f}s ({text_time/len(texts):.2f}s per text)")
-
-            # Note: The order of embeddings might not match the original chunk order
-            # if images and texts were mixed. If order preservation is critical,
-            # a different approach (e.g., processing all as single items or re-sorting)
-            # would be needed.
-            # For now, we assume the caller handles potential order changes.
-
-        else:
-            # Self-hosted/CPU path: Simple per-item processing
-            contents = []
-            for chunk in chunks:
-                if chunk.metadata.get("is_image"):
-                    try:
-                        # Handle data URI format "data:image/png;base64,..."
-                        content = chunk.content
-                        if content.startswith("data:"):
-                            # Extract the base64 part after the comma
-                            content = content.split(",", 1)[1]
-
-                        # Now decode the base64 string
-                        image_bytes = base64.b64decode(content)
-                        image = open_image(io.BytesIO(image_bytes))
-                        contents.append(image)
-                    except Exception as e:
-                        logger.error(f"Error processing image: {str(e)}")
-                        # Fall back to using the content as text
-                        contents.append(chunk.content)
-                else:
-                    contents.append(chunk.content)
-            embeddings = [await self.generate_embeddings(content) for content in contents]
+            # Fill potential gaps if necessary, though the current logic should cover all chunks
+            # For safety, let's reconstruct based on successfully processed indices, though it shouldn't be needed
+            processed_indices = {idx for idx, _ in image_items} | {idx for idx, _ in text_items}
+            if len(processed_indices) != len(chunks):
+                logger.error("Mismatch in processed indices vs original chunks count. This indicates a logic error.")
+            # Assuming results contains embeddings at correct original indices, filter out Nones
+            final_results = [results[i] for i in range(len(chunks)) if results[i] is not None]
 
         total_time = time.time() - job_start_time
         logger.info(
             f"Total Colpali embed_for_ingestion took {total_time:.2f}s for {len(chunks)} chunks "
             f"({total_time/len(chunks) if chunks else 0:.2f}s per chunk)"
         )
-        return embeddings
+        # Cast is safe because we filter out Nones, though Nones shouldn't occur with the fallback logic
+        return final_results  # type: ignore
 
     async def embed_for_query(self, text: str) -> torch.Tensor:
         start_time = time.time()
