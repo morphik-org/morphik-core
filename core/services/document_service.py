@@ -1778,8 +1778,8 @@ class DocumentService:
         # Also handle the case of multiple file versions in storage_files
         if hasattr(document, "storage_files") and document.storage_files:
             for file_info in document.storage_files:
-                bucket = file_info.get("bucket")
-                key = file_info.get("key")
+                bucket = file_info.bucket
+                key = file_info.key
                 if bucket and key and hasattr(self.storage, "delete_file"):
                     storage_deletion_tasks.append(self.storage.delete_file(bucket, key))
 
