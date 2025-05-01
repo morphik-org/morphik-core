@@ -5,6 +5,7 @@ import { Sidebar } from '@/components/ui/sidebar';
 import DocumentsSection from '@/components/documents/DocumentsSection';
 import SearchSection from '@/components/search/SearchSection';
 import ChatSection from '@/components/chat/ChatSection';
+import AgentChatSection from '@/components/chat/AgentChatSection';
 import GraphSection from '@/components/GraphSection';
 import { AlertSystem } from '@/components/ui/alert-system';
 import { extractTokenFromUri, getApiBaseUrlFromUri } from '@/lib/utils';
@@ -98,7 +99,13 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
               />
             )}
 
-            {/* Notebooks Section - Removed */}
+            {/* Agent Chat Section */}
+            {activeSection === 'agent' && (
+              <AgentChatSection
+                apiBaseUrl={effectiveApiBaseUrl}
+                authToken={authToken}
+              />
+            )}
 
             {/* Graphs Section */}
             {activeSection === 'graphs' && (

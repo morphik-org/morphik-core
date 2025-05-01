@@ -1,3 +1,6 @@
 export { default as ChatSection } from './ChatSection';
-export { PreviewMessage, ThinkingMessage } from './ChatMessages';
+export * from './ChatMessages';
 export * from './icons';
+export { default as AgentChatSection } from './AgentChatSection';
+export { AgentPreviewMessage } from './AgentChatMessages';
+export type { ToolCall } from './AgentChatMessages';

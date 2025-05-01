@@ -58,6 +58,7 @@ class MorphikAgent:
                 }
             )
 
+        # TODO: Evaluate and improve the prompt here please!
         # System prompt
         self.system_prompt = """
 You are Morphik, an intelligent research assistant. You can use the following tools to help answer user queries:
@@ -71,6 +72,7 @@ You are Morphik, an intelligent research assistant. You can use the following to
 - list_documents: list documents accessible to you
 Use function calls to invoke these tools when needed. When you have gathered all necessary information,
 provide a clear, concise final answer. Include all relevant details and cite your sources.
+Always use markdown formatting.
 """.strip()
 
     async def _execute_tool(self, name: str, args: dict):
@@ -102,6 +104,7 @@ provide a clear, concise final answer. Include all relevant details and cite you
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": query},
         ]
+        tool_history = []  # Initialize tool history list
         # Get the full model name from the registered models config
         settings = get_settings()
         if self.model not in settings.REGISTERED_MODELS:
@@ -132,7 +135,8 @@ provide a clear, concise final answer. Include all relevant details and cite you
             # If no tool call, return final content
             if not getattr(msg, "tool_calls", None):
                 logger.info("No tool calls detected, returning final content")
-                return msg.content
+                # Return final content and the history
+                return msg.content, tool_history
 
             call = msg.tool_calls[0]
             name = call.function.name
@@ -147,6 +151,9 @@ provide a clear, concise final answer. Include all relevant details and cite you
             logger.info(f"Executing tool: {name}")
             result = await self._execute_tool(name, args)
             logger.info(f"Tool execution result: {result}")
+
+            # Add tool call and result to history
+            tool_history.append({"tool_name": name, "tool_args": args, "tool_result": result})
 
             # Append raw tool output (string or structured data)
             content = [{"type": "text", "text": result}] if isinstance(result, str) else result

@@ -919,15 +919,17 @@ async def query_completion(request: CompletionQueryRequest, auth: AuthContext = 
         raise HTTPException(status_code=403, detail=str(e))
 
 
-@app.post("/agent", response_model=Dict[str, str])
+@app.post("/agent", response_model=Dict[str, Any])
 @telemetry.track(operation_type="agent_query")
 async def agent_query(request: AgentQueryRequest, auth: AuthContext = Depends(verify_token)):
     """
     Process a natural language query using the MorphikAgent and return the response.
     """
     agent = MorphikAgent(document_service=document_service, auth=auth)
-    result = await agent.run(request.query)
-    return {"response": result}
+    # Capture both response and history
+    response_content, tool_history = await agent.run(request.query)
+    # Return both in the response dictionary
+    return {"response": response_content, "tool_history": tool_history}
 
 
 @app.post("/documents", response_model=List[Document])
