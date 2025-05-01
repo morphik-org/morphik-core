@@ -65,7 +65,7 @@ retry_delay = 1.0        # Initial delay between retries in seconds
 
 [embedding]
 model = "openai_embedding"  # Reference to registered model
-dimensions = 768
+dimensions = 1536
 similarity_metric = "cosine"
 
 [parser]

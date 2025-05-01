@@ -94,6 +94,8 @@ check_postgres() {\n\
 # Check PostgreSQL\n\
 check_postgres\n\
 \n\
+echo "[Entrypoint] Using PostgreSQL connection: $POSTGRES_URI"\n\
+\n\
 # Check if command arguments were passed ($# is the number of arguments)\n\
 if [ $# -gt 0 ]; then\n\
     # If arguments exist, execute them (e.g., execute "arq core.workers...")\n\
@@ -103,6 +105,9 @@ else\n\
     exec uvicorn core.api:app --host $HOST --port $PORT --loop asyncio --http auto --ws auto --lifespan auto\n\
 fi\n\
 ' > /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
+
+# COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+# RUN chmod +x /app/docker-entrypoint.sh
 
 # Copy application code
 COPY core ./core

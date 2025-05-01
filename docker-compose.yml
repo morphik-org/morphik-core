@@ -21,7 +21,7 @@ services:
       - "8000:8000"
     environment:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
-      - POSTGRES_URI=postgresql+asyncpg://morphik:morphik@postgres:5432/morphik
+      - POSTGRES_URI=${POSTGRES_URI:-postgresql+asyncpg://morphik:morphik@postgres:5432/morphik}
       - PGPASSWORD=morphik
       - HOST=0.0.0.0
       - PORT=8000
@@ -52,7 +52,7 @@ services:
     command: arq core.workers.ingestion_worker.WorkerSettings
     environment:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
-      - POSTGRES_URI=postgresql+asyncpg://morphik:morphik@postgres:5432/morphik
+      - POSTGRES_URI=${POSTGRES_URI:-postgresql+asyncpg://morphik:morphik@postgres:5432/morphik}
       - PGPASSWORD=morphik
       - LOG_LEVEL=DEBUG
       - REDIS_HOST=redis
@@ -113,19 +113,6 @@ services:
       start_period: 10s
     networks:
       - morphik-network
-
-  ollama:
-    image: ollama/ollama:latest
-    profiles:
-      - ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-      - ./ollama-entrypoint.sh:/ollama-entrypoint.sh
-    networks:
-      - morphik-network
-    entrypoint: ["/ollama-entrypoint.sh"]
 
 networks:
   morphik-network:
