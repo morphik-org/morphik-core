@@ -67,20 +67,27 @@ async def check_and_increment_limits(auth, limit_type: str, value: int = 1, docu
 
     if not within_limits:
         # Map limit types to appropriate error messages
+        storage_message = (
+            "Storage file count limit exceeded for your free tier. "
+            "Please delete some files or upgrade to remove limits."
+        )
         limit_type_messages = {
             "query": "Query limit exceeded for your free tier. Please upgrade to remove limits.",
             "ingest": "Ingest limit exceeded for your free tier. Please upgrade to remove limits.",
-            "storage_file": "Storage file count limit exceeded for your free tier. Please delete some files or upgrade to remove limits.",
-            "storage_size": "Storage size limit exceeded for your free tier. Please delete some files or upgrade to remove limits.",
+            "storage_file": storage_message,
+            "storage_size": (
+                "Storage size limit exceeded for your free tier. "
+                "Please delete some files or upgrade to remove limits."
+            ),
             "graph": "Graph creation limit exceeded for your free tier. Please upgrade to remove limits.",
             "cache": "Cache creation limit exceeded for your free tier. Please upgrade to remove limits.",
             "cache_query": "Cache query limit exceeded for your free tier. Please upgrade to remove limits.",
+            "agent": "Agent call limit exceeded for your free tier. Please upgrade to remove limits.",
         }
 
         # Get message for the limit type or use default message
-        detail = limit_type_messages.get(
-            limit_type, "Limit exceeded for your free tier. Please upgrade to remove limits."
-        )
+        default_message = "Limit exceeded for your free tier. Please upgrade to remove limits."
+        detail = limit_type_messages.get(limit_type, default_message)
 
         # Raise the exception with appropriate message
         raise HTTPException(status_code=429, detail=detail)

@@ -32,11 +32,9 @@ class MorphikAgent:
     def __init__(
         self,
         document_service,
-        auth: AuthContext,
         model: str = None,
     ):
         self.document_service = document_service
-        self.auth = auth
         # Load settings
         self.settings = get_settings()
         self.model = model or self.settings.COMPLETION_MODEL
@@ -75,30 +73,30 @@ provide a clear, concise final answer. Include all relevant details and cite you
 Always use markdown formatting.
 """.strip()
 
-    async def _execute_tool(self, name: str, args: dict):
+    async def _execute_tool(self, name: str, args: dict, auth: AuthContext):
         """Dispatch tool calls, injecting document_service and auth."""
         match name:
             case "retrieve_chunks":
-                return await retrieve_chunks(document_service=self.document_service, auth=self.auth, **args)
+                return await retrieve_chunks(document_service=self.document_service, auth=auth, **args)
             case "retrieve_document":
-                return await retrieve_document(document_service=self.document_service, auth=self.auth, **args)
+                return await retrieve_document(document_service=self.document_service, auth=auth, **args)
             case "document_analyzer":
-                return await document_analyzer(document_service=self.document_service, auth=self.auth, **args)
+                return await document_analyzer(document_service=self.document_service, auth=auth, **args)
             case "execute_code":
                 res = await execute_code(**args)
                 return res["content"]
             case "knowledge_graph_query":
-                return await knowledge_graph_query(document_service=self.document_service, auth=self.auth, **args)
+                return await knowledge_graph_query(document_service=self.document_service, auth=auth, **args)
             case "list_graphs":
-                return await list_graphs(document_service=self.document_service, auth=self.auth, **args)
+                return await list_graphs(document_service=self.document_service, auth=auth, **args)
             case "save_to_memory":
-                return await save_to_memory(document_service=self.document_service, auth=self.auth, **args)
+                return await save_to_memory(document_service=self.document_service, auth=auth, **args)
             case "list_documents":
-                return await list_documents(document_service=self.document_service, auth=self.auth, **args)
+                return await list_documents(document_service=self.document_service, auth=auth, **args)
             case _:
                 raise ValueError(f"Unknown tool: {name}")
 
-    async def run(self, query: str) -> str:
+    async def run(self, query: str, auth: AuthContext) -> str:
         """Synchronously run the agent and return the final answer."""
         messages = [
             {"role": "system", "content": self.system_prompt},
@@ -149,7 +147,7 @@ Always use markdown formatting.
             #     messages.append({'role': 'assistant', 'content': msg.content})
             messages.append(msg.to_dict(exclude_none=True))
             logger.info(f"Executing tool: {name}")
-            result = await self._execute_tool(name, args)
+            result = await self._execute_tool(name, args, auth)
             logger.info(f"Tool execution result: {result}")
 
             # Add tool call and result to history

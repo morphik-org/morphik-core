@@ -148,7 +148,6 @@ async def document_analyzer(
     analysis_type: Literal["entity_extraction", "summarization", "fact_extraction", "sentiment", "full"] = "full",
     document_service: DocumentService = None,
     auth: AuthContext = None,
-    end_user_id: Optional[str] = None,
 ) -> str:
     """
     Extract structured information from documents.
@@ -158,7 +157,6 @@ async def document_analyzer(
         analysis_type: Type of analysis to perform
         document_service: DocumentService instance
         auth: Authentication context
-        end_user_id: Optional end-user ID to analyze as
 
     Returns:
         Analysis results as a string
@@ -173,7 +171,6 @@ async def document_analyzer(
             format="text",
             document_service=document_service,
             auth=auth,
-            end_user_id=end_user_id,
         )
 
         # Get document analysis model from settings

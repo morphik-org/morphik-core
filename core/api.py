@@ -280,6 +280,9 @@ document_service = DocumentService(
     colpali_vector_store=colpali_vector_store,
 )
 
+# Initialize the MorphikAgent once to load tool definitions and avoid repeated I/O
+morphik_agent = MorphikAgent(document_service=document_service)
+
 
 async def verify_token(authorization: str = Header(None)) -> AuthContext:
     """Verify JWT Bearer token or return dev context if dev_mode is enabled."""
@@ -925,9 +928,11 @@ async def agent_query(request: AgentQueryRequest, auth: AuthContext = Depends(ve
     """
     Process a natural language query using the MorphikAgent and return the response.
     """
-    agent = MorphikAgent(document_service=document_service, auth=auth)
-    # Capture both response and history
-    response_content, tool_history = await agent.run(request.query)
+    # Check free-tier agent call limits in cloud mode
+    if settings.MODE == "cloud" and auth.user_id:
+        await check_and_increment_limits(auth, "agent", 1)
+    # Use shared agent instance and pass auth to run
+    response_content, tool_history = await morphik_agent.run(request.query, auth)
     # Return both in the response dictionary
     return {"response": response_content, "tool_history": tool_history}
 
