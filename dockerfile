@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     g++ \
     cmake \
     python3-dev \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust using the simpler method
@@ -44,6 +45,7 @@ RUN apt-get update && apt-get install -y \
     g++ \
     cmake \
     python3-dev \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder
