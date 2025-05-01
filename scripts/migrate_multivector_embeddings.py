@@ -37,11 +37,25 @@ async def migrate_multivector_embeddings():
 
     for idx, (row_id, doc_id, chunk_num, content, meta_json) in enumerate(rows, start=1):
         try:
-            metadata = json.loads(meta_json) if meta_json else {}
+            # Parse metadata (JSON preferred, fallback to Python literal)
+            try:
+                metadata = json.loads(meta_json) if meta_json else {}
+            except json.JSONDecodeError:
+                import ast
+
+                try:
+                    metadata = ast.literal_eval(meta_json)
+                except Exception as exc:
+                    print(f"Warning: failed to parse metadata for row {row_id}: {exc}")
+                    metadata = {}
+
+            # Create a chunk and recompute its multivector embedding
             chunk = Chunk(content=content, metadata=metadata)
             vectors = await embedding_model.embed_for_ingestion([chunk])
             vector = vectors[0]
             bits = mv_store._binary_quantize(vector)
+
+            # Update the embeddings in-place
             cursor.execute(
                 "UPDATE multi_vector_embeddings SET embeddings = %s WHERE id = %s",
                 (bits, row_id),
