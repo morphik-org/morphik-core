@@ -86,7 +86,7 @@ model_name = "BAAI/bge-reranker-large"
 query_max_length = 256
 passage_max_length = 512
 use_fp16 = true
-device = "mps" # use "cpu" if on docker and using a mac, "cuda" if cuda enabled device
+device = "cpu" # use "cpu" if on docker and using a mac, "cuda" if cuda enabled device
 
 [storage]
 provider = "local"
