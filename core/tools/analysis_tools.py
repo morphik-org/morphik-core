@@ -60,7 +60,7 @@ async def extract_entities(text: str, model: str) -> Entities:
     """Extract entities from text using instructor"""
     client = instructor.from_litellm(litellm_completion, mode=instructor.Mode.JSON)
     response = await client.chat.completions.create(
-        **model,
+        model=model["model_name"],
         messages=[
             {
                 "role": "system",
@@ -103,7 +103,7 @@ async def extract_facts(text: str, model: str) -> Facts:
     """Extract facts from text using instructor"""
     client = instructor.from_litellm(litellm_completion, mode=instructor.Mode.JSON)
     response = await client.chat.completions.create(
-        **model,
+        model=model["model_name"],
         messages=[
             {
                 "role": "system",
@@ -125,7 +125,7 @@ async def analyze_sentiment(text: str, model: str) -> Sentiment:
     """Analyze sentiment of text using instructor"""
     client = instructor.from_litellm(litellm_completion, mode=instructor.Mode.JSON)
     response = await client.chat.completions.create(
-        **model,
+        model=model["model_name"],
         messages=[
             {
                 "role": "system",
