@@ -2,8 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+html,
 body {
-  font-family: Arial, Helvetica, sans-serif;
+  height: 100%; /* Ensure root elements have height for h-full to work */
+  /* font-family: Arial, Helvetica, sans-serif; */ /* Keep existing font or use Tailwind's defaults via layout.tsx */
 }
 
 @layer utilities {
@@ -74,5 +76,6 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+    /* height: 100%; Ensure body has height */ /* Redundant if set above */
   }
 }

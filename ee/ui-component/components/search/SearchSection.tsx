@@ -155,7 +155,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
             <div>
               <h3 className="text-lg font-medium mb-4">Results ({searchResults.length})</h3>
 
-              <ScrollArea className="h-[calc(100vh-320px)]">
+              <ScrollArea className="h-full">
                 <div className="space-y-6 pr-4">
                   {searchResults.map((result) => (
                     <SearchResultCard key={`${result.document_id}-${result.chunk_number}`} result={result} />
