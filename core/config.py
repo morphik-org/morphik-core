@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     COMPLETION_PROVIDER: Literal["litellm"] = "litellm"
     COMPLETION_MODEL: str
 
+    # Agent configuration
+    AGENT_MODEL: str
+
     # Document analysis configuration
     DOCUMENT_ANALYSIS_MODEL: str
 
@@ -171,6 +174,11 @@ def get_settings() -> Settings:
     if "model" not in config["completion"]:
         raise ValueError("'model' is required in the completion configuration")
     completion_config["COMPLETION_MODEL"] = config["completion"]["model"]
+
+    # load agent config
+    agent_config = {"AGENT_MODEL": config["agent"]["model"]}
+    if "model" not in config["agent"]:
+        raise ValueError("'model' is required in the agent configuration")
 
     # load database config
     database_config = {
@@ -332,6 +340,7 @@ def get_settings() -> Settings:
             auth_config,
             registered_models,
             completion_config,
+            agent_config,
             database_config,
             embedding_config,
             parser_config,

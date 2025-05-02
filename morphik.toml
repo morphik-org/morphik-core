@@ -16,6 +16,7 @@ dev_permissions = ["read", "write", "admin"]  # Default dev permissions
 openai_gpt4 = { model_name = "gpt-4" }
 openai_gpt4-1 = { model_name = "gpt-4.1" }
 openai_gpt4o = { model_name = "gpt-4o" }
+openai_gpt4o_mini = { model_name = "gpt-4o-mini" }
 
 # Azure OpenAI models
 azure_gpt4 = { model_name = "gpt-4", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "gpt-4-deployment" }
@@ -47,8 +48,11 @@ ollama_embedding_docker_docker = { model_name = "ollama/nomic-embed-text", api_b
 
 #### Component configurations ####
 
+[agent]
+model = "claude_sonnet" # Model for the agent logic
+
 [completion]
-model = "claude_sonnet" #"openai_gpt4o"  # Reference to a key in registered_models
+model = "openai_gpt4o_mini" #"openai_gpt4o"  # Reference to a key in registered_models
 default_max_tokens = "1000"
 default_temperature = 0.5
 

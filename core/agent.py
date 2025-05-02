@@ -37,7 +37,7 @@ class MorphikAgent:
         self.document_service = document_service
         # Load settings
         self.settings = get_settings()
-        self.model = model or self.settings.COMPLETION_MODEL
+        self.model = model or self.settings.AGENT_MODEL
         # Load tool definitions (function schemas)
         desc_path = os.path.join(os.path.dirname(__file__), "tools", "descriptions.json")
         with open(desc_path, "r") as f:
