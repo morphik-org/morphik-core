@@ -49,10 +49,10 @@ ollama_embedding_docker_docker = { model_name = "ollama/nomic-embed-text", api_b
 #### Component configurations ####
 
 [agent]
-model = "claude_sonnet" # Model for the agent logic
+model = "ollama_llama" # Model for the agent logic
 
 [completion]
-model = "openai_gpt4o_mini" #"openai_gpt4o"  # Reference to a key in registered_models
+model = "ollama_llama" #"openai_gpt4o"  # Reference to a key in registered_models
 default_max_tokens = "1000"
 default_temperature = 0.5
 
@@ -80,10 +80,10 @@ use_contextual_chunking = false
 contextual_chunking_model = "ollama_llama"  # Reference to a key in registered_models
 
 [document_analysis]
-model = "openai_gpt4o"  # Reference to a key in registered_models
+model = "ollama_llama"  # Reference to a key in registered_models
 
 [parser.vision]
-model = "openai_gpt4o"  # Reference to a key in registered_models
+model = "ollama_llama"  # Reference to a key in registered_models
 frame_sample_rate = -1  # Set to -1 to disable frame captioning
 
 [reranker]
@@ -108,7 +108,7 @@ storage_path = "./storage"
 provider = "pgvector"
 
 [rules]
-model = "openai_gpt4o"
+model = "ollama_llama"
 batch_size = 4096
 
 [morphik]
@@ -121,7 +121,7 @@ host = "localhost"  # use "redis" for docker
 port = 6379
 
 [graph]
-model = "openai_gpt4o"
+model = "ollama_llama"
 enable_entity_resolution = true
 
 [telemetry]
