@@ -32,6 +32,9 @@ TIER_LIMITS = {
         "cache_creation_limit": 0,  # Maximum number of caches
         "hourly_cache_query_limit": 0,  # Maximum cache queries per hour
         "monthly_cache_query_limit": 0,  # Maximum cache queries per month
+        # Agent call limits
+        "hourly_agent_limit": 5,
+        "monthly_agent_limit": 5,
     },
     AccountTier.PRO: {
         # Application limits
@@ -52,6 +55,9 @@ TIER_LIMITS = {
         "cache_creation_limit": 5,  # Maximum number of caches
         "hourly_cache_query_limit": 200,  # Maximum cache queries per hour
         "monthly_cache_query_limit": 5000,  # Maximum cache queries per month
+        # Agent call limits for PRO (unlimited)
+        "hourly_agent_limit": 100,
+        "monthly_agent_limit": 1000,
     },
     AccountTier.CUSTOM: {
         # Custom tier limits are set on a per-account basis

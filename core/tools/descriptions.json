@@ -1,0 +1,212 @@
+[
+    {
+      "name": "retrieve_chunks",
+      "description": "Retrieves the most relevant text and image chunks from the knowledge base based on semantic similarity to the query. Supports multimodal retrieval and scoping to specific folders. This tool uses vector similarity to find content fragments that best match the user's question. It should be used for initial information gathering when answering specific questions rather than for broad research. The tool returns content items including text and images with relevance scores, with higher scores indicating better matches. It will not provide analysis or synthesis of the information, only the raw relevant fragments.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query or question"
+          },
+          "k": {
+            "type": "integer",
+            "description": "Number of chunks to retrieve (default: 5)",
+            "default": 5
+          },
+          "filters": {
+            "type": "object",
+            "description": "Metadata filters to narrow results (e.g., date range, author, document type)"
+          },
+          "min_relevance": {
+            "type": "number",
+            "description": "Minimum relevance score threshold (0-1)",
+            "default": 0.7
+          },
+          "folder_name": {
+            "type": ["string", "null"],
+            "description": "Optional folder name to scope the search within"
+          },
+          "end_user_id": {
+            "type": ["string", "null"],
+            "description": "Optional end-user ID to scope the search to"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "retrieve_document",
+      "description": "Retrieves the complete content or metadata of a specific document identified by its unique ID. This tool should be used when you need the entire document rather than just relevant sections. This tool requires knowing the exact document ID, so it's typically used after other search tools have identified relevant documents. It will not analyze or modify the document content.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "ID of the document to retrieve"
+          },
+          "format": {
+            "type": "string",
+            "enum": ["text", "metadata"],
+            "description": "Desired format of the returned document (default: text)",
+            "default": "text"
+          },
+          "end_user_id": {
+            "type": ["string", "null"],
+            "description": "Optional end-user ID to scope the retrieval to"
+          }
+        },
+        "required": ["document_id"]
+      }
+    },
+    {
+      "name": "document_analyzer",
+      "description": "Analyzes documents to extract structured information including entities, relationships, key facts, and sentiment. This powerful tool performs deep content analysis beyond simple retrieval. Use it when you need to identify specific elements within a document like people, organizations, locations, or key concepts. Different analysis types provide targeted results: entity_extraction identifies named entities, summarization creates concise overviews, fact_extraction pulls out key assertions, sentiment analyzes emotional tone, and full performs comprehensive analysis. Results are returned as structured data that can be used for further processing.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "ID of the document to analyze"
+          },
+          "analysis_type": {
+            "type": "string",
+            "enum": ["entity_extraction", "summarization", "fact_extraction", "sentiment", "full"],
+            "description": "Type of analysis to perform",
+            "default": "full"
+          }
+        },
+        "required": ["document_id"]
+      }
+    },
+    {
+      "name": "execute_code",
+      "description": "Executes Python code snippets for data analysis, visualization, or computation in a sandboxed environment. Allows use of common data science libraries (numpy, pandas, matplotlib, seaborn, etc.) but restricts system access for safety. It's ideal for performing calculations, transforming data, or creating visualizations based on research results. Code execution is limited by a configurable timeout to prevent long-running operations. The tool returns execution results, including any output (stdout/stderr), generated visualizations (as base64 images), and execution status.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Python code to execute"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Maximum execution time in seconds",
+            "default": 30
+          }
+        },
+        "required": ["code"]
+      }
+    },
+    {
+      "name": "knowledge_graph_query",
+      "description": "Queries the knowledge graph to explore entities, relationships, and connections. Allows navigation through connected information. Supports several query types: list_entities finds entities semantically similar to a search term (requires a single search term as start_nodes); entity retrieves details for a specific entity (requires a single entity ID or label as start_nodes); path discovers routes between two entities (requires exactly two entity IDs or labels as start_nodes); and subgraph extracts a network around a central entity (requires a single entity ID or label as start_nodes). For entity, path, and subgraph queries, if an ID is not found, it will try to match by label. For best results, consider using list_entities first to find exact entity IDs. The max_depth parameter controls subgraph/path exploration depth. If graph_name is omitted, it attempts to use a default graph ('graph_main') or the user's only available graph.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query_type": {
+            "type": "string",
+            "enum": ["list_entities", "entity", "path", "subgraph"],
+            "description": "Type of knowledge graph query: list_entities (search term to find similar entities), entity (single entity ID/label lookup), path (two entity IDs/labels for connections), subgraph (single entity ID/label for neighborhood)"
+          },
+          "start_nodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "For list_entities: a single search term; for entity/subgraph: a single entity ID or label; for path: exactly two entity IDs or labels"
+          },
+          "max_depth": {
+            "type": "integer",
+            "description": "For subgraph/path: maximum exploration depth/path length (default: 3)",
+            "default": 3
+          },
+          "graph_name": {
+            "type": ["string", "null"],
+            "description": "Optional name of the specific graph to query"
+          },
+          "end_user_id": {
+            "type": ["string", "null"],
+            "description": "Optional end-user ID to scope the query to"
+          }
+        },
+        "required": ["query_type", "start_nodes"]
+      }
+    },
+    {
+      "name": "save_to_memory",
+      "description": "Saves important information to persistent memory for future reference and retrieval. This tool allows storing key findings, insights, or generated content across different memory types: session (current interaction), long_term (indefinite persistence), research_thread (specific project). Content can be tagged for easier categorization and retrieval. Essential for building persistent knowledge across interactions.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Content to save"
+          },
+          "memory_type": {
+            "type": "string",
+            "enum": ["session", "long_term", "research_thread"],
+            "description": "Type of memory to save to"
+          },
+          "tags": {
+            "type": "array",
+            "description": "Optional tags for categorizing the memory",
+            "items": {
+              "type": "string"
+            }
+          },
+          "end_user_id": {
+            "type": ["string", "null"],
+            "description": "Optional end-user ID to save the memory under"
+          }
+        },
+        "required": ["content", "memory_type"]
+      }
+    },
+    {
+      "name": "list_graphs",
+      "description": "Lists all available knowledge graphs accessible to the user, along with basic metadata like document count, entity count, and creation/update times. Useful for discovering available graphs before querying.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+           "end_user_id": {
+             "type": ["string", "null"],
+             "description": "Optional end-user ID to scope the graph listing to"
+           }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "list_documents",
+      "description": "Lists accessible documents, showing their IDs and filenames. Supports filtering by metadata, pagination (skip/limit), and scoping by folder name or end-user ID.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": ["object", "null"],
+            "description": "Optional metadata filters to apply (e.g., {\"key\": \"value\"})"
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of documents to skip (for pagination)",
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of documents to return",
+            "default": 100
+          },
+          "folder_name": {
+            "type": ["string", "null"],
+            "description": "Optional folder name to scope the listing to"
+          },
+          "end_user_id": {
+            "type": ["string", "null"],
+            "description": "Optional end-user ID to scope the listing to"
+          }
+        },
+        "required": []
+      }
+    }
+]

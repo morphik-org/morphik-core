@@ -4,7 +4,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { FileText, Search, MessageSquare, ChevronLeft, ChevronRight, Network, Copy, Check, ArrowLeft } from "lucide-react"
+import { FileText, Search, MessageSquare, ChevronLeft, ChevronRight, Network, Copy, Check, ArrowLeft, Bot } from "lucide-react"
 import { ModeToggle } from "@/components/mode-toggle"
 import { Input } from "@/components/ui/input"
 
@@ -288,6 +288,18 @@ export function Sidebar({
           >
             <MessageSquare className="h-4 w-4" />
             {!isCollapsed && <span className="ml-2">Chat</span>}
+          </Button>
+
+          <Button
+            variant={activeSection === "agent" ? "secondary" : "ghost"}
+            className={cn(
+              "w-full justify-start",
+              isCollapsed && "justify-center"
+            )}
+            onClick={() => onSectionChange("agent")}
+          >
+            <Bot className="h-4 w-4" />
+            {!isCollapsed && <span className="ml-2">Agent Chat</span>}
           </Button>
 
           <Button

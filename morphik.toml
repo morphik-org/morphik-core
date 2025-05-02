@@ -23,7 +23,7 @@ azure_gpt35 = { model_name = "gpt-3.5-turbo", api_base = "YOUR_AZURE_URL_HERE", 
 
 # Anthropic models
 claude_opus = { model_name = "claude-3-opus-20240229" }
-claude_sonnet = { model_name = "claude-3-sonnet-20240229" }
+claude_sonnet = { model_name = "claude-3-7-sonnet-latest" }
 
 # Ollama models
 ollama_llama = { model_name = "ollama_chat/llama3.2", api_base = "http://localhost:11434" }
@@ -48,7 +48,7 @@ ollama_embedding_docker_docker = { model_name = "ollama/nomic-embed-text", api_b
 #### Component configurations ####
 
 [completion]
-model = "ollama_llama_vision"  # Reference to a key in registered_models
+model = "claude_sonnet" #"openai_gpt4o"  # Reference to a key in registered_models
 default_max_tokens = "1000"
 default_temperature = 0.5
 
@@ -75,8 +75,11 @@ use_unstructured_api = false
 use_contextual_chunking = false
 contextual_chunking_model = "ollama_llama"  # Reference to a key in registered_models
 
+[document_analysis]
+model = "openai_gpt4o"  # Reference to a key in registered_models
+
 [parser.vision]
-model = "ollama_llama_vision"  # Reference to a key in registered_models
+model = "openai_gpt4o"  # Reference to a key in registered_models
 frame_sample_rate = -1  # Set to -1 to disable frame captioning
 
 [reranker]
@@ -101,7 +104,7 @@ storage_path = "./storage"
 provider = "pgvector"
 
 [rules]
-model = "ollama_llama"
+model = "openai_gpt4o"
 batch_size = 4096
 
 [morphik]
@@ -114,7 +117,7 @@ host = "localhost"  # use "redis" for docker
 port = 6379
 
 [graph]
-model = "ollama_llama"
+model = "openai_gpt4o"
 enable_entity_resolution = true
 
 [telemetry]

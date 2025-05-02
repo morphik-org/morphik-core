@@ -14,6 +14,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadF
 from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
+from core.agent import MorphikAgent
 from core.cache.llama_cache_factory import LlamaCacheFactory
 from core.completion.litellm_completion import LiteLLMCompletionModel
 from core.config import get_settings
@@ -28,6 +29,7 @@ from core.models.folders import Folder, FolderCreate
 from core.models.graph import Graph
 from core.models.prompts import validate_prompt_overrides_with_http_exception
 from core.models.request import (
+    AgentQueryRequest,
     BatchIngestResponse,
     CompletionQueryRequest,
     CreateGraphRequest,
@@ -277,6 +279,9 @@ document_service = DocumentService(
     colpali_embedding_model=colpali_embedding_model,
     colpali_vector_store=colpali_vector_store,
 )
+
+# Initialize the MorphikAgent once to load tool definitions and avoid repeated I/O
+morphik_agent = MorphikAgent(document_service=document_service)
 
 
 async def verify_token(authorization: str = Header(None)) -> AuthContext:
@@ -915,6 +920,21 @@ async def query_completion(request: CompletionQueryRequest, auth: AuthContext = 
         validate_prompt_overrides_with_http_exception(operation_type="query", error=e)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.post("/agent", response_model=Dict[str, Any])
+@telemetry.track(operation_type="agent_query")
+async def agent_query(request: AgentQueryRequest, auth: AuthContext = Depends(verify_token)):
+    """
+    Process a natural language query using the MorphikAgent and return the response.
+    """
+    # Check free-tier agent call limits in cloud mode
+    if settings.MODE == "cloud" and auth.user_id:
+        await check_and_increment_limits(auth, "agent", 1)
+    # Use shared agent instance and pass auth to run
+    response_content, tool_history = await morphik_agent.run(request.query, auth)
+    # Return both in the response dictionary
+    return {"response": response_content, "tool_history": tool_history}
 
 
 @app.post("/documents", response_model=List[Document])

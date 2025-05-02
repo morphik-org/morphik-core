@@ -268,7 +268,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     } finally {
       setFoldersLoading(false);
     }
-  }, [effectiveApiUrl, authToken]);
+  }, [effectiveApiUrl, authToken, documents.length]);
 
   // Function to refresh documents based on current folder state
   const refreshDocuments = useCallback(async () => {

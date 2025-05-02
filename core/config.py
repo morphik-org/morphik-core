@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     COMPLETION_PROVIDER: Literal["litellm"] = "litellm"
     COMPLETION_MODEL: str
 
+    # Document analysis configuration
+    DOCUMENT_ANALYSIS_MODEL: str
+
     # Database configuration
     DATABASE_PROVIDER: Literal["postgres"]
     DATABASE_NAME: Optional[str] = None
@@ -302,6 +305,11 @@ def get_settings() -> Settings:
         raise ValueError("'model' is required in the graph configuration")
     graph_config["GRAPH_MODEL"] = config["graph"]["model"]
 
+    # load document analysis config
+    document_analysis_config = {}
+    if "document_analysis" in config:
+        document_analysis_config = {"DOCUMENT_ANALYSIS_MODEL": config["document_analysis"]["model"]}
+
     # load telemetry config
     telemetry_config = {}
     if "telemetry" in config:
@@ -334,6 +342,7 @@ def get_settings() -> Settings:
             morphik_config,
             redis_config,
             graph_config,
+            document_analysis_config,
             telemetry_config,
             openai_config,
         )
