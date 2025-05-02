@@ -72,6 +72,7 @@
     "remark-gfm": "^4.0.1",
     "shadcn": "^2.4.0-canary.11",
     "shadcn-ui": "^0.9.4",
+    "sharp": "^0.34.1",
     "sheet": "^0.2.0",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
