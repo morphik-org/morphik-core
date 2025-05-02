@@ -418,8 +418,11 @@ async def ingest_file(
 
         logger.debug(f"API: Queueing file ingestion with use_colpali: {use_colpali}")
 
+        external_id = metadata_dict.pop("external_id", None)
+
         # Create a document with processing status
         doc = Document(
+            external_id=external_id if external_id else None,  # Only pass if not None
             content_type=file.content_type,
             filename=file.filename,
             metadata=metadata_dict,
