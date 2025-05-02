@@ -57,11 +57,11 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
 
   return (
     <>
-      <div className="flex h-screen">
+      <div className="flex h-full">
         <Sidebar
           activeSection={activeSection}
           onSectionChange={setActiveSection}
-          className="h-screen"
+          className="h-full"
           connectionUri={currentUri}
           isReadOnlyUri={isReadOnlyUri}
           onUriChange={handleUriChange}
@@ -70,7 +70,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
           onBackClick={onBackClick}
         />
 
-        <div className="flex-1 flex flex-col h-screen overflow-hidden">
+        <div className="flex-1 flex flex-col h-full overflow-hidden">
           {/* Remove the header with back button */}
           <div className="flex-1 overflow-y-auto">
             {/* Documents Section */}
