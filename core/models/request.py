@@ -49,6 +49,7 @@ class IngestTextRequest(BaseModel):
     use_colpali: Optional[bool] = None
     folder_name: Optional[str] = Field(None, description="Optional folder scope for the operation")
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
+    external_id: Optional[str] = None
 
 
 class CreateGraphRequest(BaseModel):

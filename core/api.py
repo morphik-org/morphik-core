@@ -378,6 +378,7 @@ async def ingest_file(
     metadata: str = Form("{}"),
     rules: str = Form("[]"),
     auth: AuthContext = Depends(verify_token),
+    external_id: Optional[str] = Form(None),
     use_colpali: Optional[bool] = None,
     folder_name: Optional[str] = Form(None),
     end_user_id: Optional[str] = Form(None),
@@ -417,8 +418,6 @@ async def ingest_file(
             raise PermissionError("User does not have write permission")
 
         logger.debug(f"API: Queueing file ingestion with use_colpali: {use_colpali}")
-
-        external_id = metadata_dict.pop("external_id", None)
 
         # Create a document with processing status
         doc = Document(
