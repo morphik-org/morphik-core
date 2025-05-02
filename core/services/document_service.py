@@ -555,6 +555,7 @@ class DocumentService:
     async def ingest_text(
         self,
         content: str,
+        external_id=external_id if external_id else None,
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         auth: AuthContext = None,
@@ -574,8 +575,10 @@ class DocumentService:
         settings = get_settings()
 
         doc = Document(
+            external_id=external_id,
             content_type="text/plain",
             filename=filename,
+            content=content,
             metadata=metadata or {},
             owner={"type": auth.entity_type, "id": auth.entity_id},
             access_control={
