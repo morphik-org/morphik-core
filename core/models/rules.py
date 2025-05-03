@@ -92,25 +92,41 @@ class MetadataExtractionRule(BaseRule):
 
         # Adjust prompt based on whether it's a chunk or full document and whether it's an image
         if self.use_images:
+            # For image rules, we do NOT embed the base64 image data in the textual prompt.
+            # The image will be sent separately via the `image_url` entry in the vision message.
+            # Keeping the textual prompt concise avoids blowing up the context window.
+            prompt = f"""
+            Extract metadata from the following image according to this schema:
+
+            {schema_text}
+
+            The image is attached below.
+
+            Follow these guidelines:
+            1. Extract all requested information as simple strings, numbers, or booleans
+            (not as objects or nested structures)
+            2. If information is not present, indicate this with null instead of making something up
+            3. Answer directly with the requested information - don't include explanations or reasoning
+            4. Be concise but accurate in your extractions
+            """
             prompt_context = "image" if self.stage == "post_chunking" else "document with images"
         else:
             prompt_context = "chunk of text" if self.stage == "post_chunking" else "text"
+            prompt = f"""
+            Extract metadata from the following {prompt_context} according to this schema:
 
-        prompt = f"""
-        Extract metadata from the following {prompt_context} according to this schema:
+            {schema_text}
 
-        {schema_text}
+            Text to extract from:
+            {content}
 
-        {"Image to analyze:" if self.use_images else "Text to extract from:"}
-        {content}
-
-        Follow these guidelines:
-        1. Extract all requested information as simple strings, numbers, or booleans
-        (not as objects or nested structures)
-        2. If information is not present, indicate this with null instead of making something up
-        3. Answer directly with the requested information - don't include explanations or reasoning
-        4. Be concise but accurate in your extractions
-        """
+            Follow these guidelines:
+            1. Extract all requested information as simple strings, numbers, or booleans
+            (not as objects or nested structures)
+            2. If information is not present, indicate this with null instead of making something up
+            3. Answer directly with the requested information - don't include explanations or reasoning
+            4. Be concise but accurate in your extractions
+            """
 
         # Get the model configuration from registered_models
         model_config = settings.REGISTERED_MODELS.get(settings.RULES_MODEL, {})

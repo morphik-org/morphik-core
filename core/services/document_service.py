@@ -744,17 +744,17 @@ class DocumentService:
                 from PIL import Image as PILImage
 
                 img = PILImage.open(BytesIO(file_content))
-                # Resize the image to a max width of 512 while preserving aspect ratio to
-                # keep the base64 payload smaller (helps avoid context window errors).
-                max_width = 512
+                # Resize and compress aggressively to minimize context window footprint
+                max_width = 256  # reduce width to shrink payload dramatically
                 if img.width > max_width:
                     ratio = max_width / float(img.width)
                     new_height = int(float(img.height) * ratio)
                     img = img.resize((max_width, new_height))
 
                 buffered = BytesIO()
-                img.save(buffered, format="PNG", optimize=True)
-                img_b64 = "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode()
+                # Save as JPEG with moderate quality instead of PNG to reduce size further
+                img.convert("RGB").save(buffered, format="JPEG", quality=70, optimize=True)
+                img_b64 = "data:image/jpeg;base64," + base64.b64encode(buffered.getvalue()).decode()
                 return [Chunk(content=img_b64, metadata={"is_image": True})]
             except Exception as e:
                 logger.error(f"Error resizing image for base64 encoding: {e}. Falling back to original size.")
