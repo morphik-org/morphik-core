@@ -245,20 +245,37 @@ async def process_ingestion_job(
         chunking_start = time.time()
         parsed_chunks = await document_service.parser.split_text(text)
         if not parsed_chunks:
-            raise ValueError("No content chunks extracted after rules processing")
-        logger.debug(f"Split processed text into {len(parsed_chunks)} chunks")
+            # No text was extracted from the file.  In many cases (e.g. pure images)
+            # we can still proceed if ColPali multivector chunks are produced later.
+            # Therefore we defer the fatal check until after ColPali chunk creation.
+            logger.warning(
+                "No text chunks extracted after parsing. Will attempt to continue "
+                "and rely on image-based chunks if available."
+            )
         chunking_time = time.time() - chunking_start
         phase_times["split_into_chunks"] = chunking_time
         logger.info(f"Text chunking took {chunking_time:.2f}s to create {len(parsed_chunks)} chunks")
 
-        # 8. Handle ColPali embeddings if enabled - IMPORTANT: Do this BEFORE applying chunk rules
-        # so that image chunks can be processed by rules when use_images=True
-        colpali_processing_start = time.time()
+        # Decide whether we need image chunks either for ColPali embedding or because
+        # there are image-based rules (use_images=True) that must process them.
+        has_image_rules = any(
+            r.get("stage", "post_parsing") == "post_chunking"
+            and r.get("type") == "metadata_extraction"
+            and r.get("use_images", False)
+            for r in rules_list or []
+        )
+
         using_colpali = (
             use_colpali and document_service.colpali_embedding_model and document_service.colpali_vector_store
         )
+
+        should_create_image_chunks = has_image_rules or using_colpali
+
+        # Start timer for optional image chunk creation / multivector processing
+        colpali_processing_start = time.time()
+
         chunks_multivector = []
-        if using_colpali:
+        if should_create_image_chunks:
             import base64
 
             import filetype
@@ -266,15 +283,22 @@ async def process_ingestion_job(
             file_type = filetype.guess(file_content)
             file_content_base64 = base64.b64encode(file_content).decode()
 
-            # Use the parsed chunks for Colpali - this will create image chunks if appropriate
+            # Use the parsed chunks for ColPali/image rules – this will create image chunks if appropriate
             chunks_multivector = document_service._create_chunks_multivector(
                 file_type, file_content_base64, file_content, parsed_chunks
             )
-            logger.debug(f"Created {len(chunks_multivector)} chunks for multivector embedding")
+            logger.debug(
+                f"Created {len(chunks_multivector)} multivector/image chunks "
+                f"(has_image_rules={has_image_rules}, using_colpali={using_colpali})"
+            )
         colpali_create_chunks_time = time.time() - colpali_processing_start
         phase_times["colpali_create_chunks"] = colpali_create_chunks_time
         if using_colpali:
             logger.info(f"Colpali chunk creation took {colpali_create_chunks_time:.2f}s")
+
+        # If we still have no chunks at all (neither text nor image) abort early
+        if not parsed_chunks and not chunks_multivector:
+            raise ValueError("No content chunks (text or image) could be extracted from the document")
 
         # 9. Apply post_chunking rules and aggregate metadata
         processed_chunks = []
