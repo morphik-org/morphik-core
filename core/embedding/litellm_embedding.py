@@ -108,7 +108,15 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
             chunks = [chunks]
 
         texts = [chunk.content for chunk in chunks]
-        return await self.embed_documents(texts)
+        # Batch embedding to respect token limits
+        settings = get_settings()
+        batch_size = getattr(settings, "EMBEDDING_BATCH_SIZE", 100)
+        embeddings: List[List[float]] = []
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i : i + batch_size]
+            batch_embeddings = await self.embed_documents(batch_texts)
+            embeddings.extend(batch_embeddings)
+        return embeddings
 
     async def embed_for_query(self, text: str) -> List[float]:
         """
