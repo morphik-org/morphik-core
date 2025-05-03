@@ -434,6 +434,7 @@ async def ingest_file(
                 "writers": [auth.entity_id],
                 "admins": [auth.entity_id],
                 "user_id": [auth.user_id] if auth.user_id else [],
+                "app_access": ([auth.app_id] if auth.app_id else []),
             },
             system_metadata={"status": "processing"},
         )
@@ -443,6 +444,8 @@ async def ingest_file(
             doc.system_metadata["folder_name"] = folder_name
         if end_user_id:
             doc.system_metadata["end_user_id"] = end_user_id
+        if auth.app_id:
+            doc.system_metadata["app_id"] = auth.app_id
 
         # Set processing status
         doc.system_metadata["status"] = "processing"
@@ -639,6 +642,7 @@ async def batch_ingest_files(
                     "writers": [auth.entity_id],
                     "admins": [auth.entity_id],
                     "user_id": [auth.user_id] if auth.user_id else [],
+                    "app_access": ([auth.app_id] if auth.app_id else []),
                 },
             )
 
@@ -647,6 +651,8 @@ async def batch_ingest_files(
                 doc.system_metadata["folder_name"] = folder_name
             if end_user_id:
                 doc.system_metadata["end_user_id"] = end_user_id
+            if auth.app_id:
+                doc.system_metadata["app_id"] = auth.app_id
 
             # Set processing status
             doc.system_metadata["status"] = "processing"
@@ -813,6 +819,15 @@ async def batch_get_documents(request: Dict[str, Any], auth: AuthContext = Depen
         if not document_ids:
             return []
 
+        # Create system filters for folder and user scoping
+        system_filters = {}
+        if folder_name:
+            system_filters["folder_name"] = folder_name
+        if end_user_id:
+            system_filters["end_user_id"] = end_user_id
+        if auth.app_id:
+            system_filters["app_id"] = auth.app_id
+
         return await document_service.batch_retrieve_documents(document_ids, auth, folder_name, end_user_id)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -851,6 +866,15 @@ async def batch_get_chunks(request: Dict[str, Any], auth: AuthContext = Depends(
                 chunk_sources.append(ChunkSource(**source))
             else:
                 chunk_sources.append(source)
+
+        # Create system filters for folder and user scoping
+        system_filters = {}
+        if folder_name:
+            system_filters["folder_name"] = folder_name
+        if end_user_id:
+            system_filters["end_user_id"] = end_user_id
+        if auth.app_id:
+            system_filters["app_id"] = auth.app_id
 
         return await document_service.batch_retrieve_chunks(chunk_sources, auth, folder_name, end_user_id, use_colpali)
     except PermissionError as e:
@@ -966,6 +990,8 @@ async def list_documents(
         system_filters["folder_name"] = folder_name
     if end_user_id:
         system_filters["end_user_id"] = end_user_id
+    if auth.app_id:
+        system_filters["app_id"] = auth.app_id
 
     return await document_service.db.get_documents(auth, skip, limit, filters, system_filters)
 

@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from ..models.auth import AuthContext
+from ..models.auth import AuthContext, EntityType
 from ..models.documents import Document, StorageFileInfo
 from ..models.folders import Folder
 from ..models.graph import Graph
@@ -200,12 +200,30 @@ class PostgresDatabase(BaseDatabase):
                     )
                     logger.info("Added storage_files column to documents table")
 
-                # Create indexes for folder_name and end_user_id in system_metadata for documents
+                # Create indexes for folder_name, end_user_id and app_id in system_metadata for documents
                 await conn.execute(
                     text(
                         """
                     CREATE INDEX IF NOT EXISTS idx_system_metadata_folder_name
                     ON documents ((system_metadata->>'folder_name'));
+                    """
+                    )
+                )
+
+                await conn.execute(
+                    text(
+                        """
+                    CREATE INDEX IF NOT EXISTS idx_system_metadata_app_id
+                    ON documents ((system_metadata->>'app_id'));
+                    """
+                    )
+                )
+
+                await conn.execute(
+                    text(
+                        """
+                    CREATE INDEX IF NOT EXISTS idx_system_metadata_end_user_id
+                    ON documents ((system_metadata->>'end_user_id'));
                     """
                     )
                 )
@@ -254,15 +272,6 @@ class PostgresDatabase(BaseDatabase):
                 await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_owner ON folders USING gin (owner);"))
                 await conn.execute(
                     text("CREATE INDEX IF NOT EXISTS idx_folder_access_control ON folders USING gin (access_control);")
-                )
-
-                await conn.execute(
-                    text(
-                        """
-                    CREATE INDEX IF NOT EXISTS idx_system_metadata_end_user_id
-                    ON documents ((system_metadata->>'end_user_id'));
-                    """
-                    )
                 )
 
                 # Check if system_metadata column exists in graphs table
@@ -754,26 +763,38 @@ class PostgresDatabase(BaseDatabase):
             return False
 
     def _build_access_filter(self, auth: AuthContext) -> str:
-        """Build PostgreSQL filter for access control."""
-        filters = [
+        """Build PostgreSQL filter for access control.
+
+        For developer-scoped tokens (i.e. those that include an ``app_id``) we *must* ensure
+        that the caller only ever sees documents that belong to that application.  Simply
+        checking the developer entity ID is **insufficient**, because multiple apps created
+        by the same developer share the same entity ID.  Therefore, when an ``app_id`` is
+        present, we additionally scope the filter by the ``app_id`` that is stored either
+        in ``system_metadata.app_id`` or in the ``access_control->app_access`` list.
+        """
+
+        # Base clauses that will always be AND-ed with any additional application scoping.
+        base_clauses = [
             f"owner->>'id' = '{auth.entity_id}'",
             f"access_control->'readers' ? '{auth.entity_id}'",
             f"access_control->'writers' ? '{auth.entity_id}'",
             f"access_control->'admins' ? '{auth.entity_id}'",
         ]
 
-        if auth.entity_type == "DEVELOPER" and auth.app_id:
-            # Add app-specific access for developers
-            filters.append(f"access_control->'app_access' ? '{auth.app_id}'")
+        # Developer token with app_id → restrict strictly by that app_id.
+        if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
+            filters = [f"system_metadata->>'app_id' = '{auth.app_id}'"]
+        else:
+            filters = base_clauses.copy()
 
-        # Add user_id filter in cloud mode
+        # In cloud mode further restrict by user_id when available (used for multi-tenant
+        # end-user isolation).
         if auth.user_id:
             from core.config import get_settings
 
             settings = get_settings()
 
             if settings.MODE == "cloud":
-                # Filter by user_id in access_control
                 filters.append(f"access_control->>'user_id' = '{auth.user_id}'")
 
         return " OR ".join(filters)

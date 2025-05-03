@@ -159,17 +159,19 @@ class DocumentService:
         should_rerank = use_reranking if use_reranking is not None else settings.USE_RERANKING
         using_colpali = use_colpali if use_colpali is not None else False
 
-        # Launch embedding queries concurrently
-        embedding_tasks = [self.embedding_model.embed_for_query(query)]
-        if using_colpali and self.colpali_embedding_model:
-            embedding_tasks.append(self.colpali_embedding_model.embed_for_query(query))
-
         # Build system filters for folder_name and end_user_id
         system_filters = {}
         if folder_name:
             system_filters["folder_name"] = folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
+        if auth.app_id:
+            system_filters["app_id"] = auth.app_id
+
+        # Launch embedding queries concurrently
+        embedding_tasks = [self.embedding_model.embed_for_query(query)]
+        if using_colpali and self.colpali_embedding_model:
+            embedding_tasks.append(self.colpali_embedding_model.embed_for_query(query))
 
         # Run embeddings and document authorization in parallel
         results = await asyncio.gather(
@@ -357,6 +359,8 @@ class DocumentService:
             system_filters["folder_name"] = folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
+        if auth.app_id:
+            system_filters["app_id"] = auth.app_id
 
         # Use the database's batch retrieval method
         documents = await self.db.get_documents_by_id(document_ids, auth, system_filters)
@@ -582,9 +586,7 @@ class DocumentService:
                 "readers": [auth.entity_id],
                 "writers": [auth.entity_id],
                 "admins": [auth.entity_id],
-                "user_id": (
-                    [auth.user_id] if auth.user_id else []
-                ),  # Add user_id to access control for filtering (as a list)
+                "user_id": [auth.user_id] if auth.user_id else [],  # user scoping
             },
         )
 
@@ -597,6 +599,11 @@ class DocumentService:
 
         if end_user_id:
             doc.system_metadata["end_user_id"] = end_user_id
+
+        # Tag document with app_id for segmentation
+        if auth.app_id:
+            doc.system_metadata["app_id"] = auth.app_id
+
         logger.debug(f"Created text document record with ID {doc.external_id}")
 
         if settings.MODE == "cloud" and auth.user_id:
@@ -711,10 +718,47 @@ class DocumentService:
         mime_type = file_type.mime if file_type is not None else "text/plain"
         logger.info(f"Creating chunks for multivector embedding for file type {mime_type}")
 
-        # If file_type is None, treat it as a text file
+        # If file_type is None, attempt a light-weight heuristic to detect images
+        # Some JPGs with uncommon EXIF markers fail `filetype.guess`, leading to
+        # false "text" classification and, eventually, empty chunk lists. Try to
+        # open the bytes with Pillow; if that succeeds, treat it as an image.
         if file_type is None:
-            logger.info("File type is None, treating as text")
-            return [Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks]
+            try:
+                from PIL import Image as PILImage
+
+                PILImage.open(BytesIO(file_content)).verify()
+                logger.info("Heuristic image detection succeeded (Pillow). Treating as image.")
+                return [Chunk(content=file_content_base64, metadata={"is_image": True})]
+            except Exception:
+                logger.info("File type is None and not an image – treating as text")
+                return [
+                    Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks
+                ]
+
+        # Treat any direct image MIME (e.g. "image/jpeg") as an image regardless of
+        # the more specialised pattern matching below. This is more robust for files
+        # where `filetype.guess` fails but we still know from the upload metadata that
+        # it is an image.
+        if mime_type.startswith("image/"):
+            try:
+                from PIL import Image as PILImage
+
+                img = PILImage.open(BytesIO(file_content))
+                # Resize the image to a max width of 512 while preserving aspect ratio to
+                # keep the base64 payload smaller (helps avoid context window errors).
+                max_width = 512
+                if img.width > max_width:
+                    ratio = max_width / float(img.width)
+                    new_height = int(float(img.height) * ratio)
+                    img = img.resize((max_width, new_height))
+
+                buffered = BytesIO()
+                img.save(buffered, format="PNG", optimize=True)
+                img_b64 = "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode()
+                return [Chunk(content=img_b64, metadata={"is_image": True})]
+            except Exception as e:
+                logger.error(f"Error resizing image for base64 encoding: {e}. Falling back to original size.")
+                return [Chunk(content=file_content_base64, metadata={"is_image": True})]
 
         match mime_type:
             case file_type if file_type in IMAGE:
@@ -1475,64 +1519,6 @@ class DocumentService:
             logger.warning(f"Unknown update strategy '{update_strategy}', defaulting to 'add'")
             return current_content + "\n\n" + update_content
 
-    def _update_metadata_and_version(
-        self,
-        doc: Document,
-        metadata: Optional[Dict[str, Any]],
-        update_strategy: str,
-        file: Optional[UploadFile],
-    ):
-        """Update document metadata and version tracking."""
-        # Update metadata if provided - additive but replacing existing keys
-        if metadata:
-            doc.metadata.update(metadata)
-
-        # Ensure external_id is preserved in metadata
-        doc.metadata["external_id"] = doc.external_id
-
-        # Increment version
-        current_version = doc.system_metadata.get("version", 1)
-        doc.system_metadata["version"] = current_version + 1
-        doc.system_metadata["updated_at"] = datetime.now(UTC)
-
-        # Track update history
-        if "update_history" not in doc.system_metadata:
-            doc.system_metadata["update_history"] = []
-
-        update_entry = {
-            "timestamp": datetime.now(UTC).isoformat(),
-            "version": current_version + 1,
-            "strategy": update_strategy,
-        }
-
-        if file:
-            update_entry["filename"] = file.filename
-
-        if metadata:
-            update_entry["metadata_updated"] = True
-
-        doc.system_metadata["update_history"].append(update_entry)
-
-        # Ensure storage_files models are properly typed as StorageFileInfo objects
-        if hasattr(doc, "storage_files") and doc.storage_files:
-            # Convert to StorageFileInfo objects if they're dicts or ensure they're properly serializable
-            doc.storage_files = [
-                (
-                    StorageFileInfo(**file)
-                    if isinstance(file, dict)
-                    else (
-                        file
-                        if isinstance(file, StorageFileInfo)
-                        else (
-                            StorageFileInfo(**file.model_dump())
-                            if hasattr(file, "model_dump")
-                            else StorageFileInfo(**file.dict()) if hasattr(file, "dict") else file
-                        )
-                    )
-                )
-                for file in doc.storage_files
-            ]
-
     async def _update_document_metadata_only(self, doc: Document, auth: AuthContext) -> Optional[Document]:
         """Update document metadata without reprocessing chunks."""
         updates = {
@@ -1809,3 +1795,38 @@ class DocumentService:
         """Close all resources."""
         # Close any active caches
         self.active_caches.clear()
+
+    def _update_metadata_and_version(
+        self,
+        doc: Document,
+        metadata: Optional[Dict[str, Any]],
+        update_strategy: str,
+        file: Optional[UploadFile],
+    ):
+        """Update document metadata and version tracking."""
+
+        # Merge/replace metadata
+        if metadata:
+            doc.metadata.update(metadata)
+
+        # Ensure external_id is preserved
+        doc.metadata["external_id"] = doc.external_id
+
+        # Increment version counter
+        current_version = doc.system_metadata.get("version", 1)
+        doc.system_metadata["version"] = current_version + 1
+        doc.system_metadata["updated_at"] = datetime.now(UTC)
+
+        # Maintain simple history list
+        history = doc.system_metadata.setdefault("update_history", [])
+        entry = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "version": current_version + 1,
+            "strategy": update_strategy,
+        }
+        if file:
+            entry["filename"] = file.filename
+        if metadata:
+            entry["metadata_updated"] = True
+
+        history.append(entry)
