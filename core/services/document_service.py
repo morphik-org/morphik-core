@@ -80,6 +80,10 @@ class DocumentService:
                 document_ids=[document_id],  # Add document_id to the new folder
             )
 
+            # Scope folder to the application ID for developer tokens
+            if auth.app_id:
+                folder.system_metadata["app_id"] = auth.app_id
+
             await self.db.create_folder(folder)
             return folder
 

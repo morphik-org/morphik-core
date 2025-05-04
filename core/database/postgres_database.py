@@ -91,6 +91,8 @@ class FolderModel(Base):
         Index("idx_folder_name", "name"),
         Index("idx_folder_owner", "owner", postgresql_using="gin"),
         Index("idx_folder_access_control", "access_control", postgresql_using="gin"),
+        # Index to filter folders by app_id in system_metadata
+        Index("idx_folder_system_metadata_app_id", text("(system_metadata->>'app_id')")),
     )
 
 
@@ -315,7 +317,17 @@ class PostgresDatabase(BaseDatabase):
                     )
                 )
 
-                logger.info("Created indexes for folder_name and end_user_id in system_metadata")
+                # Create index for app_id in system_metadata for graphs to optimize developer-scoped queries
+                await conn.execute(
+                    text(
+                        """
+                    CREATE INDEX IF NOT EXISTS idx_graph_system_metadata_app_id
+                    ON graphs ((system_metadata->>'app_id'));
+                    """
+                    )
+                )
+
+                logger.info("Created indexes for folder_name, end_user_id, and app_id in system_metadata")
 
             logger.info("PostgreSQL tables and indexes created successfully")
             self._initialized = True
@@ -1207,16 +1219,21 @@ class PostgresDatabase(BaseDatabase):
                 # Convert datetime objects to strings for JSON serialization
                 folder_dict = _serialize_datetime(folder_dict)
 
-                # Check if a folder with this name already exists for this owner
-                # Use only the type/id format
-                stmt = text(
-                    """
+                # Check if a folder with this name already exists for this owner, scoped by app_id (if present)
+                app_id_val = folder_dict.get("system_metadata", {}).get("app_id")
+                params = {"name": folder.name, "entity_id": folder.owner["id"], "entity_type": folder.owner["type"]}
+                sql = """
                     SELECT id FROM folders
                     WHERE name = :name
                     AND owner->>'id' = :entity_id
                     AND owner->>'type' = :entity_type
                     """
-                ).bindparams(name=folder.name, entity_id=folder.owner["id"], entity_type=folder.owner["type"])
+                if app_id_val is not None:
+                    sql += """
+                    AND system_metadata->>'app_id' = :app_id
+                    """
+                    params["app_id"] = app_id_val
+                stmt = text(sql).bindparams(**params)
 
                 result = await session.execute(stmt)
                 existing_folder = result.scalar_one_or_none()
@@ -1328,7 +1345,12 @@ class PostgresDatabase(BaseDatabase):
                             "rules": folder_row.rules,
                         }
 
-                        return Folder(**folder_dict)
+                        folder = Folder(**folder_dict)
+                        # Enforce app_id scoping
+                        if self._check_folder_access(folder, auth, "read"):
+                            return folder
+                        else:
+                            return None
 
                 # If not found, try to find any accessible folder with that name
                 stmt = text(
@@ -1366,7 +1388,12 @@ class PostgresDatabase(BaseDatabase):
                         "rules": folder_row.rules,
                     }
 
-                    return Folder(**folder_dict)
+                    folder = Folder(**folder_dict)
+                    # Enforce app_id scoping
+                    if self._check_folder_access(folder, auth, "read"):
+                        return folder
+                    else:
+                        return None
 
                 return None
 
@@ -1518,6 +1545,11 @@ class PostgresDatabase(BaseDatabase):
 
     def _check_folder_access(self, folder: Folder, auth: AuthContext, permission: str = "read") -> bool:
         """Check if the user has the required permission for the folder."""
+        # Developer-scoped tokens: restrict by app_id on folders
+        if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
+            if folder.system_metadata.get("app_id") != auth.app_id:
+                return False
+
         # Admin always has access
         if "admin" in auth.permissions:
             return True

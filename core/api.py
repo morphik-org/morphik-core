@@ -1489,6 +1489,10 @@ async def create_folder(
                 access_control=access_control,
             )
 
+            # Scope folder to the application ID for developer tokens
+            if auth.app_id:
+                folder.system_metadata["app_id"] = auth.app_id
+
             # Store in database
             success = await document_service.db.create_folder(folder)
 

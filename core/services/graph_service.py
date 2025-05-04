@@ -97,6 +97,10 @@ class GraphService:
         if not existing_graph:
             raise ValueError(f"Graph '{name}' not found")
 
+        # Ensure app_id scoping: persist app_id into system_metadata if this is a developer-scoped token
+        if auth.app_id and existing_graph.system_metadata.get("app_id") != auth.app_id:
+            existing_graph.system_metadata["app_id"] = auth.app_id
+
         # Track explicitly added documents to ensure they're included in the final graph
         # even if they don't have new entities or relationships
         explicit_doc_ids = set(additional_documents or [])
@@ -474,6 +478,10 @@ class GraphService:
                 graph.system_metadata["folder_name"] = system_filters["folder_name"]
             if "end_user_id" in system_filters:
                 graph.system_metadata["end_user_id"] = system_filters["end_user_id"]
+
+        # NEW: Add app_id to system_metadata when operating under a developer-scoped token
+        if auth.app_id:
+            graph.system_metadata["app_id"] = auth.app_id
 
         # Extract entities and relationships
         entities, relationships = await self._process_documents_for_entities(
