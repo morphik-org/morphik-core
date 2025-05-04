@@ -373,7 +373,8 @@ class _MorphikClientLogic:
             if end_user_id:
                 request["end_user_id"] = end_user_id
             return request
-        return source_dicts  # Return just sources list if no scoping is needed
+        # Return the dictionary structure { "sources": [...] } consistently.
+        return {"sources": source_dicts}
 
     def _prepare_create_graph_request(
         self,
