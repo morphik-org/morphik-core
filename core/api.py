@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from core.agent import MorphikAgent
+from core.auth_utils import verify_token
 from core.cache.llama_cache_factory import LlamaCacheFactory
 from core.completion.litellm_completion import LiteLLMCompletionModel
 from core.config import get_settings
@@ -22,7 +23,7 @@ from core.database.postgres_database import PostgresDatabase
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.limits_utils import check_and_increment_limits
-from core.models.auth import AuthContext, EntityType
+from core.models.auth import AuthContext
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentResult
 from core.models.folders import Folder, FolderCreate
@@ -283,49 +284,19 @@ document_service = DocumentService(
 # Initialize the MorphikAgent once to load tool definitions and avoid repeated I/O
 morphik_agent = MorphikAgent(document_service=document_service)
 
+# ---------------------------------------------------------------------------
+# Mount enterprise-only routes when the proprietary ``ee`` package
+# is present.
+# ---------------------------------------------------------------------------
 
-async def verify_token(authorization: str = Header(None)) -> AuthContext:
-    """Verify JWT Bearer token or return dev context if dev_mode is enabled."""
-    # Check if dev mode is enabled
-    if settings.dev_mode:
-        return AuthContext(
-            entity_type=EntityType(settings.dev_entity_type),
-            entity_id=settings.dev_entity_id,
-            permissions=set(settings.dev_permissions),
-            user_id=settings.dev_entity_id,  # In dev mode, entity_id is also the user_id
-        )
+try:
+    from ee.routers import init_app as _init_ee_app  # type: ignore
 
-    # Normal token verification flow
-    if not authorization:
-        raise HTTPException(
-            status_code=401,
-            detail="Missing authorization header",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    try:
-        if not authorization.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Invalid authorization header")
-
-        token = authorization[7:]  # Remove "Bearer "
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-
-        if datetime.fromtimestamp(payload["exp"], UTC) < datetime.now(UTC):
-            raise HTTPException(status_code=401, detail="Token expired")
-
-        # Support both "type" and "entity_type" fields for compatibility
-        entity_type_field = payload.get("type") or payload.get("entity_type")
-        if not entity_type_field:
-            raise HTTPException(status_code=401, detail="Missing entity type in token")
-
-        return AuthContext(
-            entity_type=EntityType(entity_type_field),
-            entity_id=payload["entity_id"],
-            app_id=payload.get("app_id"),
-            permissions=set(payload.get("permissions", ["read"])),
-            user_id=payload.get("user_id", payload["entity_id"]),  # Use user_id if available, fallback to entity_id
-        )
-    except jwt.InvalidTokenError as e:
-        raise HTTPException(status_code=401, detail=str(e))
+    _init_ee_app(app)  # noqa: SLF001 – runtime extension
+    logger.info("Enterprise routes mounted (ee package detected).")
+except ModuleNotFoundError:
+    # Expected in OSS builds – silently ignore.
+    logger.debug("Enterprise package not found – running in community mode.")
 
 
 @app.post("/ingest/text", response_model=Document)
