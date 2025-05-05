@@ -2234,6 +2234,31 @@ class Morphik:
             doc._client = self
         return docs
 
+    def batch_delete_documents(self, document_ids: List[str]) -> Dict[str, Any]:
+        """
+        Delete multiple documents and their associated data in a single batch operation.
+
+        This method deletes multiple documents and all their associated data, including:
+        - Document metadata
+        - Document content in storage
+        - Document chunks and embeddings in vector store
+
+        Args:
+            document_ids: List of document IDs to delete
+
+        Returns:
+            Dict[str, Any]: Deletion status with success and error counts
+
+        Example:
+            ```python
+            # Delete multiple documents
+            result = db.batch_delete_documents(["doc_123", "doc_456", "doc_789"])
+            print(f"Deleted {result['deleted']} documents, {result['errors']} errors")
+            ```
+        """
+        response = self._request("POST", "batch/documents/delete", data={"document_ids": document_ids})
+        return response
+
     def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation.

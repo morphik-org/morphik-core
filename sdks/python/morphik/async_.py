@@ -2375,9 +2375,34 @@ class AsyncMorphik:
         # Then delete the document by ID
         return await self.delete_document(doc.external_id)
 
-    async def close(self):
+    async def batch_delete_documents(self, document_ids: List[str]) -> Dict[str, Any]:
+        """
+        Delete multiple documents and their associated data in a single batch operation.
+
+        This method deletes multiple documents and all their associated data, including:
+        - Document metadata
+        - Document content in storage
+        - Document chunks and embeddings in vector store
+
+        Args:
+            document_ids: List of document IDs to delete
+
+        Returns:
+            Dict[str, Any]: Deletion status with success and error counts
+
+        Example:
+            ```python
+            # Delete multiple documents
+            result = await db.batch_delete_documents(["doc_123", "doc_456", "doc_789"])
+            print(f"Deleted {result['deleted']} documents, {result['errors']} errors")
+            ```
+        """
+        response = await self._request("POST", "batch/documents/delete", data={"document_ids": document_ids})
+        return response
+
+    def close(self):
         """Close the HTTP client"""
-        await self._client.aclose()
+        self._client.close()
 
     async def __aenter__(self):
         return self
