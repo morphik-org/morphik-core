@@ -56,6 +56,8 @@ interface Relationship {
 interface GraphSectionProps {
   apiBaseUrl: string;
   onSelectGraph?: (graphName: string | undefined) => void;
+  onGraphCreate?: (graphName: string, numDocuments: number) => void;
+  onGraphUpdate?: (graphName: string, numAdditionalDocuments: number) => void;
   authToken?: string | null;
 }
 
@@ -71,7 +73,7 @@ const entityTypeColors: Record<string, string> = {
   'default': '#6b7280'   // Gray
 };
 
-const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, authToken }) => {
+const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, onGraphCreate, onGraphUpdate, authToken }) => {
   // Create auth headers for API requests if auth token is available
   const createHeaders = useCallback((contentType?: string): HeadersInit => {
     const headers: HeadersInit = {};
@@ -278,6 +280,9 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
       setSelectedGraph(data);
       setActiveTab('details'); // Switch to details tab after creation
 
+      // Invoke callback before refresh
+      onGraphCreate?.(graphName, graphDocuments.length);
+
       // Refresh the graphs list
       await fetchGraphs();
 
@@ -335,6 +340,9 @@ const GraphSection: React.FC<GraphSectionProps> = ({ apiBaseUrl, onSelectGraph, 
 
       const data = await response.json();
       setSelectedGraph(data); // Update the selected graph data
+
+      // Invoke callback before refresh
+      onGraphUpdate?.(selectedGraph.name, additionalDocuments.length);
 
       // Refresh the graphs list
       await fetchGraphs();

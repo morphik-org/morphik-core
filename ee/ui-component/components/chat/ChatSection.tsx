@@ -2,8 +2,10 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useMorphikChat } from '@/hooks/useMorphikChat';
-import { ChatMessage, Folder } from '@/components/types';
+import { Folder } from '@/components/types';
 import { generateUUID } from '@/lib/utils';
+import type { QueryOptions } from '@/components/types';
+import type { UIMessage } from './ChatMessages';
 
 import { Settings, Spin, ArrowUp } from './icons';
 import { Button } from '@/components/ui/button';
@@ -18,8 +20,9 @@ import { Slider } from '@/components/ui/slider';
 interface ChatSectionProps {
   apiBaseUrl: string;
   authToken: string | null;
-  initialMessages?: ChatMessage[];
+  initialMessages?: UIMessage[];
   isReadonly?: boolean;
+  onChatSubmit?: (query: string, options: QueryOptions, initialMessages?: UIMessage[]) => void;
 }
 
 /**
@@ -29,7 +32,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   apiBaseUrl,
   authToken,
   initialMessages = [],
-  isReadonly = false
+  isReadonly = false,
+  onChatSubmit,
 }) => {
   // Generate a unique chat ID if not provided
   const chatId = generateUUID();
@@ -43,7 +47,29 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     handleSubmit,
     queryOptions,
     updateQueryOption
-  } = useMorphikChat(chatId, apiBaseUrl, authToken, initialMessages);
+  } = useMorphikChat({
+    chatId,
+    apiBaseUrl,
+    authToken,
+    initialMessages,
+    onChatSubmit,
+  });
+
+  // Helper to safely update options (updateQueryOption may be undefined in readonly mode)
+  const safeUpdateOption = useCallback(<K extends keyof QueryOptions>(key: K, value: QueryOptions[K]) => {
+    if (updateQueryOption) {
+      updateQueryOption(key, value);
+    }
+  }, [updateQueryOption]);
+
+  // Derive safe option values with sensible defaults to avoid undefined issues in UI
+  const safeQueryOptions: Required<Pick<QueryOptions, 'k' | 'min_score' | 'temperature' | 'max_tokens'>> & QueryOptions = {
+    k: queryOptions.k ?? 10,
+    min_score: queryOptions.min_score ?? 0.7,
+    temperature: queryOptions.temperature ?? 0.7,
+    max_tokens: queryOptions.max_tokens ?? 1024,
+    ...queryOptions,
+  };
 
   // State for settings visibility
   const [showSettings, setShowSettings] = useState(false);
@@ -209,7 +235,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
               />
             ))}
 
-            {status === 'submitted' &&
+            {status === 'loading' &&
               messages.length > 0 &&
               messages[messages.length - 1].role === 'user' && (
                 <div className="flex items-center justify-center h-12 text-center text-xs text-muted-foreground">
@@ -256,7 +282,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                     ) {
                       event.preventDefault();
 
-                      if (status !== 'ready') {
+                      if (status !== 'idle') {
                         console.log('Please wait for the model to finish its response');
                       } else {
                         submitForm();
@@ -269,16 +295,16 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                   <Button
                     onClick={submitForm}
                     size="icon"
-                    disabled={input.trim().length === 0 || status !== 'ready'}
+                    disabled={input.trim().length === 0 || status !== 'idle'}
                     className="h-8 w-8 rounded-full flex items-center justify-center"
                   >
-                    {status === 'streaming' ? (
+                    {status === 'loading' ? (
                       <Spin className="h-4 w-4 animate-spin" />
                     ) : (
                       <ArrowUp className="h-4 w-4" />
                     )}
                     <span className="sr-only">
-                      {status === 'streaming' ? 'Processing' : 'Send message'}
+                      {status === 'loading' ? 'Processing' : 'Send message'}
                     </span>
                   </Button>
                 </div>
@@ -330,16 +356,16 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                         <Label htmlFor="use_reranking" className="text-sm">Use Reranking</Label>
                         <Switch
                           id="use_reranking"
-                          checked={queryOptions.use_reranking}
-                          onCheckedChange={(checked) => updateQueryOption('use_reranking', checked)}
+                          checked={safeQueryOptions.use_reranking}
+                          onCheckedChange={(checked) => safeUpdateOption('use_reranking', checked)}
                         />
                       </div>
                       <div className="flex items-center justify-between">
                         <Label htmlFor="use_colpali" className="text-sm">Use Colpali</Label>
                         <Switch
                           id="use_colpali"
-                          checked={queryOptions.use_colpali}
-                          onCheckedChange={(checked) => updateQueryOption('use_colpali', checked)}
+                          checked={safeQueryOptions.use_colpali}
+                          onCheckedChange={(checked) => safeUpdateOption('use_colpali', checked)}
                         />
                       </div>
                     </div>
@@ -347,8 +373,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                     <div className="space-y-2">
                       <Label htmlFor="graph_name" className="text-sm block">Knowledge Graph</Label>
                       <Select
-                        value={queryOptions.graph_name || "__none__"}
-                        onValueChange={(value) => updateQueryOption('graph_name', value === "__none__" ? undefined : value)}
+                        value={safeQueryOptions.graph_name || "__none__"}
+                        onValueChange={(value) => safeUpdateOption('graph_name', value === "__none__" ? undefined : value)}
                       >
                         <SelectTrigger className="w-full" id="graph_name">
                           <SelectValue placeholder="Select a knowledge graph" />
@@ -373,8 +399,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                     <div className="space-y-2">
                       <Label htmlFor="folder_name" className="text-sm block">Scope to Folder</Label>
                       <Select
-                        value={queryOptions.folder_name || "__none__"}
-                        onValueChange={(value) => updateQueryOption('folder_name', value === "__none__" ? undefined : value)}
+                        value={safeQueryOptions.folder_name || "__none__"}
+                        onValueChange={(value) => safeUpdateOption('folder_name', value === "__none__" ? undefined : value)}
                       >
                         <SelectTrigger className="w-full" id="folder_name">
                           <SelectValue placeholder="Select a folder" />
@@ -402,15 +428,15 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                     <div className="space-y-2">
                       <Label htmlFor="query-k" className="text-sm flex justify-between">
                         <span>Results (k)</span>
-                        <span className="text-muted-foreground">{queryOptions.k}</span>
+                        <span className="text-muted-foreground">{safeQueryOptions.k}</span>
                       </Label>
                       <Slider
                         id="query-k"
                         min={1}
                         max={20}
                         step={1}
-                        value={[queryOptions.k]}
-                        onValueChange={(value) => updateQueryOption('k', value[0])}
+                        value={[safeQueryOptions.k]}
+                        onValueChange={(value) => safeUpdateOption('k', value[0])}
                         className="w-full"
                       />
                     </div>
@@ -418,15 +444,15 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                     <div className="space-y-2">
                       <Label htmlFor="query-min-score" className="text-sm flex justify-between">
                         <span>Min Score</span>
-                        <span className="text-muted-foreground">{queryOptions.min_score.toFixed(2)}</span>
+                        <span className="text-muted-foreground">{safeQueryOptions.min_score.toFixed(2)}</span>
                       </Label>
                       <Slider
                         id="query-min-score"
                         min={0}
                         max={1}
                         step={0.01}
-                        value={[queryOptions.min_score]}
-                        onValueChange={(value) => updateQueryOption('min_score', value[0])}
+                        value={[safeQueryOptions.min_score]}
+                        onValueChange={(value) => safeUpdateOption('min_score', value[0])}
                         className="w-full"
                       />
                     </div>
@@ -434,15 +460,15 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                     <div className="space-y-2">
                       <Label htmlFor="query-temperature" className="text-sm flex justify-between">
                         <span>Temperature</span>
-                        <span className="text-muted-foreground">{queryOptions.temperature.toFixed(2)}</span>
+                        <span className="text-muted-foreground">{safeQueryOptions.temperature.toFixed(2)}</span>
                       </Label>
                       <Slider
                         id="query-temperature"
                         min={0}
                         max={2}
                         step={0.01}
-                        value={[queryOptions.temperature]}
-                        onValueChange={(value) => updateQueryOption('temperature', value[0])}
+                        value={[safeQueryOptions.temperature]}
+                        onValueChange={(value) => safeUpdateOption('temperature', value[0])}
                         className="w-full"
                       />
                     </div>
@@ -450,15 +476,15 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                     <div className="space-y-2">
                       <Label htmlFor="query-max-tokens" className="text-sm flex justify-between">
                         <span>Max Tokens</span>
-                        <span className="text-muted-foreground">{queryOptions.max_tokens}</span>
+                        <span className="text-muted-foreground">{safeQueryOptions.max_tokens}</span>
                       </Label>
                       <Slider
                         id="query-max-tokens"
                         min={1}
                         max={2048}
                         step={1}
-                        value={[queryOptions.max_tokens]}
-                        onValueChange={(value) => updateQueryOption('max_tokens', value[0])}
+                        value={[safeQueryOptions.max_tokens]}
+                        onValueChange={(value) => safeUpdateOption('max_tokens', value[0])}
                         className="w-full"
                       />
                     </div>

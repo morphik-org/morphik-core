@@ -14,21 +14,24 @@ import { SearchResult, SearchOptions, Folder } from '@/components/types';
 interface SearchSectionProps {
   apiBaseUrl: string;
   authToken: string | null;
+  onSearchSubmit?: (query: string, options: SearchOptions) => void;
 }
 
-const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) => {
+const defaultSearchOptions: SearchOptions = {
+  filters: '{}',
+  k: 10,
+  min_score: 0.7,
+  use_reranking: false,
+  use_colpali: true,
+};
+
+const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, onSearchSubmit }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [showSearchAdvanced, setShowSearchAdvanced] = useState(false);
   const [folders, setFolders] = useState<Folder[]>([]);
-  const [searchOptions, setSearchOptions] = useState<SearchOptions>({
-    filters: '{}',
-    k: 4,
-    min_score: 0,
-    use_reranking: false,
-    use_colpali: true
-  });
+  const [searchOptions, setSearchOptions] = useState<SearchOptions>(defaultSearchOptions);
 
   // Update search options
   const updateSearchOption = <K extends keyof SearchOptions>(key: K, value: SearchOptions[K]) => {
@@ -76,8 +79,18 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
       return;
     }
 
+    // Prepare options for API call
+    const currentSearchOptions: SearchOptions = {
+      ...searchOptions,
+      filters: searchOptions.filters || '{}',
+    };
+
+    // Invoke callback before making the API call (if provided)
+    onSearchSubmit?.(searchQuery, currentSearchOptions);
+
     try {
       setLoading(true);
+      setSearchResults([]);
 
       const response = await fetch(`${apiBaseUrl}/retrieve/chunks`, {
         method: 'POST',
@@ -87,16 +100,17 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
         },
         body: JSON.stringify({
           query: searchQuery,
-          filters: JSON.parse(searchOptions.filters || '{}'),
-          k: searchOptions.k,
-          min_score: searchOptions.min_score,
-          use_reranking: searchOptions.use_reranking,
-          use_colpali: searchOptions.use_colpali
+          filters: JSON.parse(currentSearchOptions.filters || '{}'),
+          k: currentSearchOptions.k,
+          min_score: currentSearchOptions.min_score,
+          use_reranking: currentSearchOptions.use_reranking,
+          use_colpali: currentSearchOptions.use_colpali
         })
       });
 
       if (!response.ok) {
-        throw new Error(`Search failed: ${response.statusText}`);
+        const errorData = await response.json().catch(() => ({ detail: `Search failed: ${response.statusText}` }));
+        throw new Error(errorData.detail || `Search failed: ${response.statusText}`);
       }
 
       const data = await response.json();
@@ -115,6 +129,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
         title: 'Search Failed',
         duration: 5000
       });
+      setSearchResults([]);
     } finally {
       setLoading(false);
     }
@@ -122,7 +137,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
 
   return (
     <div className="flex-1 flex flex-col h-full p-4">
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-h-0">
         <div className="space-y-4">
           <div className="flex gap-2">
             <Input
@@ -150,12 +165,12 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken }) 
           </div>
         </div>
 
-        <div className="mt-6 flex-1 overflow-hidden">
+        <div className="mt-6 flex-1 overflow-hidden min-h-0">
           {searchResults.length > 0 ? (
-            <div>
-              <h3 className="text-lg font-medium mb-4">Results ({searchResults.length})</h3>
+            <div className="flex flex-col h-full">
+              <h3 className="text-lg font-medium mb-4 flex-shrink-0">Results ({searchResults.length})</h3>
 
-              <ScrollArea className="h-full">
+              <ScrollArea className="flex-1">
                 <div className="space-y-6 pr-4">
                   {searchResults.map((result) => (
                     <SearchResultCard key={`${result.document_id}-${result.chunk_number}`} result={result} />
