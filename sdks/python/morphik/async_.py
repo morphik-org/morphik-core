@@ -2400,9 +2400,9 @@ class AsyncMorphik:
         response = await self._request("POST", "batch/documents/delete", data={"document_ids": document_ids})
         return response
 
-    def close(self):
+    async def close(self):
         """Close the HTTP client"""
-        self._client.close()
+        await self._client.aclose()
 
     async def __aenter__(self):
         return self
