@@ -1,14 +1,22 @@
 "use client";
 
-import React, { useState, ChangeEvent } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Upload } from 'lucide-react';
-import { Checkbox } from '@/components/ui/checkbox';
+import React, { useState, ChangeEvent } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Upload } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 // Alert system is handled by the parent component
 
 interface UploadDialogProps {
@@ -26,26 +34,26 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
   loading,
   onFileUpload,
   onBatchFileUpload,
-  onTextUpload
+  onTextUpload,
 }) => {
   // Component state for managing the upload form
-  const [uploadType, setUploadType] = useState<'file' | 'text' | 'batch'>('file');
-  const [textContent, setTextContent] = useState('');
+  const [uploadType, setUploadType] = useState<"file" | "text" | "batch">("file");
+  const [textContent, setTextContent] = useState("");
   // Used in handleFileChange and for providing to the parent component
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const [batchFilesToUpload, setBatchFilesToUpload] = useState<File[]>([]);
-  const [metadata, setMetadata] = useState('{}');
-  const [rules, setRules] = useState('[]');
+  const [metadata, setMetadata] = useState("{}");
+  const [rules, setRules] = useState("[]");
   const [useColpali, setUseColpali] = useState(true);
 
   // Reset upload dialog state
   const resetUploadDialog = () => {
-    setUploadType('file');
+    setUploadType("file");
     setFileToUpload(null);
     setBatchFilesToUpload([]);
-    setTextContent('');
-    setMetadata('{}');
-    setRules('[]');
+    setTextContent("");
+    setMetadata("{}");
+    setRules("[]");
     setUseColpali(true);
   };
 
@@ -75,7 +83,7 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
   return (
     <Dialog
       open={showUploadDialog}
-      onOpenChange={(open) => {
+      onOpenChange={open => {
         setShowUploadDialog(open);
         if (!open) resetUploadDialog();
       }}
@@ -88,58 +96,42 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Upload Document</DialogTitle>
-          <DialogDescription>
-            Upload a file or text to your Morphik repository.
-          </DialogDescription>
+          <DialogDescription>Upload a file or text to your Morphik repository.</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
           <div className="flex gap-2">
-            <Button
-              variant={uploadType === 'file' ? "default" : "outline"}
-              onClick={() => setUploadType('file')}
-            >
+            <Button variant={uploadType === "file" ? "default" : "outline"} onClick={() => setUploadType("file")}>
               File
             </Button>
-            <Button
-              variant={uploadType === 'batch' ? "default" : "outline"}
-              onClick={() => setUploadType('batch')}
-            >
+            <Button variant={uploadType === "batch" ? "default" : "outline"} onClick={() => setUploadType("batch")}>
               Batch Files
             </Button>
-            <Button
-              variant={uploadType === 'text' ? "default" : "outline"}
-              onClick={() => setUploadType('text')}
-            >
+            <Button variant={uploadType === "text" ? "default" : "outline"} onClick={() => setUploadType("text")}>
               Text
             </Button>
           </div>
 
-          {uploadType === 'file' ? (
+          {uploadType === "file" ? (
             <div>
-              <Label htmlFor="file" className="block mb-2">File</Label>
-              <Input
-                id="file"
-                type="file"
-                onChange={handleFileChange}
-              />
+              <Label htmlFor="file" className="mb-2 block">
+                File
+              </Label>
+              <Input id="file" type="file" onChange={handleFileChange} />
             </div>
-          ) : uploadType === 'batch' ? (
+          ) : uploadType === "batch" ? (
             <div>
-              <Label htmlFor="batchFiles" className="block mb-2">Select Multiple Files</Label>
-              <Input
-                id="batchFiles"
-                type="file"
-                multiple
-                onChange={handleBatchFileChange}
-              />
+              <Label htmlFor="batchFiles" className="mb-2 block">
+                Select Multiple Files
+              </Label>
+              <Input id="batchFiles" type="file" multiple onChange={handleBatchFileChange} />
               {batchFilesToUpload.length > 0 && (
                 <div className="mt-2">
-                  <p className="text-sm font-medium mb-1">{batchFilesToUpload.length} files selected:</p>
+                  <p className="mb-1 text-sm font-medium">{batchFilesToUpload.length} files selected:</p>
                   <ScrollArea className="h-24 w-full rounded-md border p-2">
                     <ul className="text-xs">
                       {Array.from(batchFilesToUpload).map((file, index) => (
-                        <li key={index} className="py-1 border-b border-gray-100 last:border-0">
+                        <li key={index} className="border-b border-gray-100 py-1 last:border-0">
                           {file.name} ({(file.size / 1024).toFixed(1)} KB)
                         </li>
                       ))}
@@ -150,11 +142,13 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
             </div>
           ) : (
             <div>
-              <Label htmlFor="text" className="block mb-2">Text Content</Label>
+              <Label htmlFor="text" className="mb-2 block">
+                Text Content
+              </Label>
               <Textarea
                 id="text"
                 value={textContent}
-                onChange={(e) => setTextContent(e.target.value)}
+                onChange={e => setTextContent(e.target.value)}
                 placeholder="Enter text content"
                 rows={6}
               />
@@ -162,22 +156,26 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
           )}
 
           <div>
-            <Label htmlFor="metadata" className="block mb-2">Metadata (JSON)</Label>
+            <Label htmlFor="metadata" className="mb-2 block">
+              Metadata (JSON)
+            </Label>
             <Textarea
               id="metadata"
               value={metadata}
-              onChange={(e) => setMetadata(e.target.value)}
+              onChange={e => setMetadata(e.target.value)}
               placeholder='{"key": "value"}'
               rows={3}
             />
           </div>
 
           <div>
-            <Label htmlFor="rules" className="block mb-2">Rules (JSON)</Label>
+            <Label htmlFor="rules" className="mb-2 block">
+              Rules (JSON)
+            </Label>
             <Textarea
               id="rules"
               value={rules}
-              onChange={(e) => setRules(e.target.value)}
+              onChange={e => setRules(e.target.value)}
               placeholder='[{"type": "metadata_extraction", "schema": {...}}]'
               rows={3}
             />
@@ -187,7 +185,7 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
             <Checkbox
               id="useColpali"
               checked={useColpali}
-              onCheckedChange={(checked) => setUseColpali(checked === true)}
+              onCheckedChange={checked => setUseColpali(checked === true)}
             />
             <Label
               htmlFor="useColpali"
@@ -205,9 +203,9 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
           </Button>
           <Button
             onClick={() => {
-              if (uploadType === 'file') {
+              if (uploadType === "file") {
                 onFileUpload(fileToUpload);
-              } else if (uploadType === 'batch') {
+              } else if (uploadType === "batch") {
                 onBatchFileUpload(batchFilesToUpload);
               } else {
                 onTextUpload(textContent, metadata, rules, useColpali);
@@ -215,7 +213,7 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
             }}
             disabled={loading}
           >
-            {loading ? 'Uploading...' : 'Upload'}
+            {loading ? "Uploading..." : "Upload"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -223,32 +221,29 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
   );
 };
 
-export {
-  UploadDialog,
-  type UploadDialogProps
-};
+export { UploadDialog, type UploadDialogProps };
 
 // Export these values as a custom hook for easy access from the parent component
 // Custom hook to provide upload dialog state management functionality
 export const useUploadDialog = () => {
   // Define all state variables needed for the upload process
-  const [uploadType, setUploadType] = useState<'file' | 'text' | 'batch'>('file');
-  const [textContent, setTextContent] = useState('');
+  const [uploadType, setUploadType] = useState<"file" | "text" | "batch">("file");
+  const [textContent, setTextContent] = useState("");
   // This state is used by the parent component during file upload process
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const [batchFilesToUpload, setBatchFilesToUpload] = useState<File[]>([]);
-  const [metadata, setMetadata] = useState('{}');
-  const [rules, setRules] = useState('[]');
+  const [metadata, setMetadata] = useState("{}");
+  const [rules, setRules] = useState("[]");
   const [useColpali, setUseColpali] = useState(true);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
 
   const resetUploadDialog = () => {
-    setUploadType('file');
+    setUploadType("file");
     setFileToUpload(null);
     setBatchFilesToUpload([]);
-    setTextContent('');
-    setMetadata('{}');
-    setRules('[]');
+    setTextContent("");
+    setMetadata("{}");
+    setRules("[]");
     setUseColpali(true);
   };
 
@@ -269,6 +264,6 @@ export const useUploadDialog = () => {
     setUseColpali,
     showUploadDialog,
     setShowUploadDialog,
-    resetUploadDialog
+    resetUploadDialog,
   };
 };

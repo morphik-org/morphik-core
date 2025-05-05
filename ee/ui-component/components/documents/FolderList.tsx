@@ -1,15 +1,23 @@
 "use client";
 
-import React from 'react';
-import { Button } from '@/components/ui/button';
-import { PlusCircle, ArrowLeft, MessageSquare } from 'lucide-react';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Folder } from '@/components/types';
-import { useRouter, usePathname } from 'next/navigation';
-import Image from 'next/image';
+import React from "react";
+import { Button } from "@/components/ui/button";
+import { PlusCircle, ArrowLeft, MessageSquare } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Folder } from "@/components/types";
+import { useRouter, usePathname } from "next/navigation";
+import Image from "next/image";
 
 interface FolderListProps {
   folders: Folder[];
@@ -40,13 +48,13 @@ const FolderList: React.FC<FolderListProps> = ({
   selectedDocuments = [],
   handleDeleteMultipleDocuments,
   uploadDialogComponent,
-  onFolderCreate
+  onFolderCreate,
 }) => {
   const router = useRouter();
   const pathname = usePathname();
   const [showNewFolderDialog, setShowNewFolderDialog] = React.useState(false);
-  const [newFolderName, setNewFolderName] = React.useState('');
-  const [newFolderDescription, setNewFolderDescription] = React.useState('');
+  const [newFolderName, setNewFolderName] = React.useState("");
+  const [newFolderDescription, setNewFolderDescription] = React.useState("");
   const [isCreatingFolder, setIsCreatingFolder] = React.useState(false);
 
   // Function to update both state and URL
@@ -70,15 +78,15 @@ const FolderList: React.FC<FolderListProps> = ({
       console.log(`Creating folder: ${newFolderName}`);
 
       const response = await fetch(`${apiBaseUrl}/folders`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
         body: JSON.stringify({
           name: newFolderName.trim(),
-          description: newFolderDescription.trim() || undefined
-        })
+          description: newFolderDescription.trim() || undefined,
+        }),
       });
 
       if (!response.ok) {
@@ -91,8 +99,8 @@ const FolderList: React.FC<FolderListProps> = ({
 
       // Close dialog and reset form
       setShowNewFolderDialog(false);
-      setNewFolderName('');
-      setNewFolderDescription('');
+      setNewFolderName("");
+      setNewFolderDescription("");
 
       // Refresh folder list - use a fresh fetch
       await refreshFolders();
@@ -103,9 +111,8 @@ const FolderList: React.FC<FolderListProps> = ({
 
       console.log(`handleCreateFolder: Calling onFolderCreate with '${folderData.name}'`);
       onFolderCreate?.(folderData.name);
-
     } catch (error) {
-      console.error('Error creating folder:', error);
+      console.error("Error creating folder:", error);
     } finally {
       setIsCreatingFolder(false);
     }
@@ -115,7 +122,7 @@ const FolderList: React.FC<FolderListProps> = ({
   if (selectedFolder !== null) {
     return (
       <div className="mb-4">
-        <div className="flex justify-between items-center py-2">
+        <div className="flex items-center justify-between py-2">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
@@ -127,27 +134,27 @@ const FolderList: React.FC<FolderListProps> = ({
             </Button>
             <div className="flex items-center">
               {selectedFolder === "all" ? (
-                <span className="text-3xl mr-3" aria-hidden="true">📄</span>
+                <span className="mr-3 text-3xl" aria-hidden="true">
+                  📄
+                </span>
               ) : (
                 <Image src="/icons/folder-icon.png" alt="Folder" width={32} height={32} className="mr-3" />
               )}
-              <h2 className="font-medium text-xl">
-                {selectedFolder === "all" ? "All Documents" : selectedFolder}
-              </h2>
+              <h2 className="text-xl font-medium">{selectedFolder === "all" ? "All Documents" : selectedFolder}</h2>
             </div>
 
             {/* Show action buttons if documents are selected */}
             {selectedDocuments && selectedDocuments.length > 0 && (
-              <div className="flex gap-2 ml-4">
+              <div className="ml-4 flex gap-2">
                 {/* Chat with selected button */}
                 <Button
                   variant="outline"
                   onClick={() => {
                     // Build proper URL path
-                    let path = '/';
-                    if (typeof window !== 'undefined') {
+                    let path = "/";
+                    if (typeof window !== "undefined") {
                       const currentPath = window.location.pathname;
-                      if (currentPath !== '/') {
+                      if (currentPath !== "/") {
                         path = currentPath;
                       }
                     }
@@ -158,13 +165,13 @@ const FolderList: React.FC<FolderListProps> = ({
 
                     // Navigate to chat with selected documents
                     // Use window.location to force a full page reload
-                    if (typeof window !== 'undefined') {
+                    if (typeof window !== "undefined") {
                       window.location.href = `${path}?section=chat&filters=${filtersParam}`;
                     } else {
                       router.push(`${path}?section=chat&filters=${filtersParam}`);
                     }
                   }}
-                  className="border-primary text-primary hover:bg-primary/10 flex items-center gap-1"
+                  className="flex items-center gap-1 border-primary text-primary hover:bg-primary/10"
                 >
                   <MessageSquare size={16} />
                   Chat with {selectedDocuments.length} selected
@@ -187,13 +194,19 @@ const FolderList: React.FC<FolderListProps> = ({
           {/* Action buttons */}
           <div className="flex items-center gap-2">
             {refreshAction && (
-              <Button
-                variant="outline"
-                onClick={refreshAction}
-                className="flex items-center"
-                title="Refresh documents"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+              <Button variant="outline" onClick={refreshAction} className="flex items-center" title="Refresh documents">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="mr-1"
+                >
                   <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
                   <path d="M21 3v5h-5"></path>
                   <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
@@ -213,19 +226,17 @@ const FolderList: React.FC<FolderListProps> = ({
 
   return (
     <div className="mb-6">
-      <div className="flex justify-between items-center mb-4">
+      <div className="mb-4 flex items-center justify-between">
         <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
           <DialogTrigger asChild>
             <Button variant="outline" size="sm">
-              <PlusCircle className="h-4 w-4 mr-2" /> New Folder
+              <PlusCircle className="mr-2 h-4 w-4" /> New Folder
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create New Folder</DialogTitle>
-              <DialogDescription>
-                Create a new folder to organize your documents.
-              </DialogDescription>
+              <DialogDescription>Create a new folder to organize your documents.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div>
@@ -233,7 +244,7 @@ const FolderList: React.FC<FolderListProps> = ({
                 <Input
                   id="folderName"
                   value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
+                  onChange={e => setNewFolderName(e.target.value)}
                   placeholder="Enter folder name"
                 />
               </div>
@@ -242,16 +253,18 @@ const FolderList: React.FC<FolderListProps> = ({
                 <Textarea
                   id="folderDescription"
                   value={newFolderDescription}
-                  onChange={(e) => setNewFolderDescription(e.target.value)}
+                  onChange={e => setNewFolderDescription(e.target.value)}
                   placeholder="Enter folder description"
                   rows={3}
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="ghost" onClick={() => setShowNewFolderDialog(false)} disabled={isCreatingFolder}>Cancel</Button>
+              <Button variant="ghost" onClick={() => setShowNewFolderDialog(false)} disabled={isCreatingFolder}>
+                Cancel
+              </Button>
               <Button onClick={handleCreateFolder} disabled={!newFolderName.trim() || isCreatingFolder}>
-                {isCreatingFolder ? 'Creating...' : 'Create Folder'}
+                {isCreatingFolder ? "Creating..." : "Create Folder"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -259,13 +272,19 @@ const FolderList: React.FC<FolderListProps> = ({
 
         <div className="flex items-center gap-2">
           {refreshAction && (
-            <Button
-              variant="outline"
-              onClick={refreshAction}
-              className="flex items-center"
-              title="Refresh folders"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+            <Button variant="outline" onClick={refreshAction} className="flex items-center" title="Refresh folders">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="mr-1"
+              >
                 <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
                 <path d="M21 3v5h-5"></path>
                 <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
@@ -278,42 +297,45 @@ const FolderList: React.FC<FolderListProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6 py-2">
-        <div
-          className="cursor-pointer group flex flex-col items-center"
-          onClick={() => updateSelectedFolder("all")}
-        >
-          <div className="h-16 w-16 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
-            <span className="text-4xl" aria-hidden="true">📄</span>
+      <div className="grid grid-cols-2 gap-6 py-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        <div className="group flex cursor-pointer flex-col items-center" onClick={() => updateSelectedFolder("all")}>
+          <div className="mb-2 flex h-16 w-16 items-center justify-center transition-transform group-hover:scale-110">
+            <span className="text-4xl" aria-hidden="true">
+              📄
+            </span>
           </div>
-          <span className="text-sm font-medium text-center group-hover:text-primary transition-colors">All Documents</span>
+          <span className="text-center text-sm font-medium transition-colors group-hover:text-primary">
+            All Documents
+          </span>
         </div>
 
-        {folders.map((folder) => (
+        {folders.map(folder => (
           <div
             key={folder.name}
-            className="cursor-pointer group flex flex-col items-center"
+            className="group flex cursor-pointer flex-col items-center"
             onClick={() => updateSelectedFolder(folder.name)}
           >
-            <div className="h-16 w-16 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+            <div className="mb-2 flex h-16 w-16 items-center justify-center transition-transform group-hover:scale-110">
               <Image src="/icons/folder-icon.png" alt="Folder" width={64} height={64} className="object-contain" />
             </div>
-            <span className="text-sm font-medium truncate text-center w-full max-w-[100px] group-hover:text-primary transition-colors">{folder.name}</span>
+            <span className="w-full max-w-[100px] truncate text-center text-sm font-medium transition-colors group-hover:text-primary">
+              {folder.name}
+            </span>
           </div>
         ))}
       </div>
 
       {folders.length === 0 && !loading && (
-        <div className="flex flex-col items-center justify-center p-8 mt-4">
-          <Image src="/icons/folder-icon.png" alt="Folder" width={80} height={80} className="opacity-50 mb-3" />
+        <div className="mt-4 flex flex-col items-center justify-center p-8">
+          <Image src="/icons/folder-icon.png" alt="Folder" width={80} height={80} className="mb-3 opacity-50" />
           <p className="text-sm text-muted-foreground">No folders yet. Create one to organize your documents.</p>
         </div>
       )}
 
       {loading && folders.length === 0 && (
-        <div className="flex items-center justify-center p-8 mt-4">
+        <div className="mt-4 flex items-center justify-center p-8">
           <div className="flex items-center space-x-2">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+            <div className="h-5 w-5 animate-spin rounded-full border-b-2 border-primary"></div>
             <p className="text-sm text-muted-foreground">Loading folders...</p>
           </div>
         </div>
