@@ -1808,9 +1808,9 @@ class DocumentService:
         This method:
         1. Gets all documents to retrieve their chunk IDs
         2. Verifies write access for all documents
-        3. Deletes documents from the database
-        4. Deletes all associated chunks from vector stores
-        5. Deletes original files from storage
+        3. Deletes all associated chunks from vector stores
+        4. Deletes original files from storage
+        5. Only after successful deletion of all associated data, deletes documents from the database
 
         Args:
             document_ids: List of document IDs to delete
@@ -1848,21 +1848,16 @@ class DocumentService:
                     error_count += 1
                     continue
 
-                db_success = await self.db.delete_document(document.external_id, auth)
-                if not db_success:
-                    logger.error(f"Failed to delete document {document.external_id} from database")
-                    error_count += 1
-                    continue
-
-                storage_deletion_tasks = []
+                # First delete vector store data
                 vector_deletion_tasks = []
-
                 if hasattr(document, "chunk_ids") and document.chunk_ids:
                     if hasattr(self.vector_store, "delete_chunks_by_document_id"):
                         vector_deletion_tasks.append(self.vector_store.delete_chunks_by_document_id(document.external_id))
                     if self.colpali_vector_store and hasattr(self.colpali_vector_store, "delete_chunks_by_document_id"):
                         vector_deletion_tasks.append(self.colpali_vector_store.delete_chunks_by_document_id(document.external_id))
 
+                # Then delete storage files
+                storage_deletion_tasks = []
                 if hasattr(document, "storage_info") and document.storage_info:
                     bucket = document.storage_info.get("bucket")
                     key = document.storage_info.get("key")
@@ -1876,6 +1871,8 @@ class DocumentService:
                         if bucket and key and hasattr(self.storage, "delete_file"):
                             storage_deletion_tasks.append(self.storage.delete_file(bucket, key))
 
+                # Execute all deletion tasks and check for errors
+                deletion_success = True
                 if vector_deletion_tasks or storage_deletion_tasks:
                     try:
                         all_deletion_results = await asyncio.gather(
@@ -1885,11 +1882,23 @@ class DocumentService:
                             if isinstance(result, Exception):
                                 task_type = "vector store" if i < len(vector_deletion_tasks) else "storage"
                                 logger.error(f"Error during {task_type} deletion for document {document.external_id}: {result}")
+                                deletion_success = False
                     except Exception as e:
                         logger.error(f"Error during parallel deletion operations for document {document.external_id}: {e}")
+                        deletion_success = False
 
-                deleted_count += 1
-                logger.info(f"Successfully deleted document {document.external_id} and all associated data")
+                # Only delete from database if all other deletions were successful
+                if deletion_success:
+                    db_success = await self.db.delete_document(document.external_id, auth)
+                    if not db_success:
+                        logger.error(f"Failed to delete document {document.external_id} from database")
+                        error_count += 1
+                        continue
+                    deleted_count += 1
+                    logger.info(f"Successfully deleted document {document.external_id} and all associated data")
+                else:
+                    logger.error(f"Failed to delete associated data for document {document.external_id}, skipping database deletion")
+                    error_count += 1
 
             except Exception as e:
                 logger.error(f"Error deleting document {document.external_id}: {e}")
