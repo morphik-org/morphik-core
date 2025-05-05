@@ -2050,8 +2050,7 @@ async def set_folder_rule(
                                     except Exception as rule_apply_error:
                                         last_error = rule_apply_error
                                         logger.warning(
-                                            f"Metadata extraction attempt {retry_count + 1} failed: "
-                                            f"{rule_apply_error}"
+                                            f"Metadata extraction attempt {retry_count + 1} failed: {rule_apply_error}"
                                         )
                                         if retry_count == max_retries - 1:  # Last attempt
                                             logger.error(f"All {max_retries} metadata extraction attempts failed")

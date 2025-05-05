@@ -105,14 +105,16 @@ storage_path = "./storage"
 # bucket_name = "morphik-s3-storage"
 
 [vector_store]
-provider = "pgvector"
+provider = "qdrant"
+qdrant_host = "localhost"
+qdrant_port = 6333
+qdrant_https = false
 
 [rules]
 model = "ollama_llama"
 batch_size = 4096
 
 [morphik]
-enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"
 api_domain = "api.morphik.ai"  # API domain for cloud URIs
 # Only call the embedding API if colpali_mode is "api"

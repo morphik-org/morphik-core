@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: pgvector/pgvector:0.7.4-pg15
+    shm_size: 128mb
+    environment:
+      - POSTGRES_USER=morphik
+      - POSTGRES_PASSWORD=morphik
+      - POSTGRES_DB=morphik
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U morphik -d morphik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  qdrant:
+    image: qdrant/qdrant:v1.14.0
+    ports:
+      - 6333:6333
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
