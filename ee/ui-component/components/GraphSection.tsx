@@ -23,7 +23,9 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // Dynamically import ForceGraphComponent to avoid SSR issues
-const ForceGraphComponent = dynamic(() => import("@/components/ForceGraphComponent"), { ssr: false });
+const ForceGraphComponent = dynamic(() => import("@/components/ForceGraphComponent"), {
+  ssr: false,
+});
 
 // Define interfaces
 interface Graph {
@@ -211,7 +213,9 @@ const GraphSection: React.FC<GraphSectionProps> = ({
       setLoading(true);
       setError(null); // Clear previous errors
       const headers = createHeaders();
-      const response = await fetch(`${apiBaseUrl}/graph/${encodeURIComponent(graphName)}`, { headers });
+      const response = await fetch(`${apiBaseUrl}/graph/${encodeURIComponent(graphName)}`, {
+        headers,
+      });
 
       if (!response.ok) {
         throw new Error(`Failed to fetch graph: ${response.statusText}`);

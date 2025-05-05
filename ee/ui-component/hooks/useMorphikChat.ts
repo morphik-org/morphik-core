@@ -93,7 +93,10 @@ export function useMorphikChat({
       onChatSubmit?.(newUserMessage.content, currentQueryOptions, messagesBeforeUpdate);
 
       try {
-        console.log(`Sending to ${apiBaseUrl}/query:`, { query: newUserMessage.content, ...currentQueryOptions });
+        console.log(`Sending to ${apiBaseUrl}/query:`, {
+          query: newUserMessage.content,
+          ...currentQueryOptions,
+        });
 
         // Ensure filters is an object before sending to the API
         let parsedFilters: Record<string, unknown> | undefined;
