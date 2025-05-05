@@ -5,7 +5,7 @@ import os
 import tempfile
 from datetime import UTC, datetime
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union, Tuple
 
 import filetype
 import pdf2image
@@ -1794,6 +1794,122 @@ class DocumentService:
 
         logger.info(f"Successfully deleted document {document_id} and all associated data")
         return True
+
+    async def batch_delete_documents(
+        self,
+        document_ids: List[str],
+        auth: AuthContext,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None,
+    ) -> Tuple[int, int]:
+        """
+        Delete multiple documents and their associated data in a single batch operation.
+
+        This method:
+        1. Gets all documents to retrieve their chunk IDs
+        2. Verifies write access for all documents
+        3. Deletes documents from the database
+        4. Deletes all associated chunks from vector stores
+        5. Deletes original files from storage
+
+        Args:
+            document_ids: List of document IDs to delete
+            auth: Authentication context
+            folder_name: Optional folder to scope the operation to
+            end_user_id: Optional end-user ID to scope the operation to
+
+        Returns:
+            Tuple[int, int]: Number of successfully deleted documents and number of errors
+        """
+        if not document_ids:
+            return 0, 0
+
+        # Build system filters for folder and user scoping
+        system_filters = {}
+        if folder_name:
+            system_filters["folder_name"] = folder_name
+        if end_user_id:
+            system_filters["end_user_id"] = end_user_id
+        if auth.app_id:
+            system_filters["app_id"] = auth.app_id
+
+        # Get all documents in a single batch operation
+        documents = await self.db.get_documents_by_id(document_ids, auth, system_filters)
+        
+        if not documents:
+            logger.warning(f"No documents found for batch deletion from {len(document_ids)} requested IDs")
+            return 0, len(document_ids)
+
+        # Track success and error counts
+        deleted_count = 0
+        error_count = 0
+
+        # Process each document
+        for document in documents:
+            try:
+                # Verify write access
+                if not await self.db.check_access(document.external_id, auth, "write"):
+                    logger.error(f"User {auth.entity_id} doesn't have write access to document {document.external_id}")
+                    error_count += 1
+                    continue
+
+                # Delete document from database
+                db_success = await self.db.delete_document(document.external_id, auth)
+                if not db_success:
+                    logger.error(f"Failed to delete document {document.external_id} from database")
+                    error_count += 1
+                    continue
+
+                # Collect storage deletion tasks
+                storage_deletion_tasks = []
+                vector_deletion_tasks = []
+
+                # Add vector store deletion tasks if chunks exist
+                if hasattr(document, "chunk_ids") and document.chunk_ids:
+                    if hasattr(self.vector_store, "delete_chunks_by_document_id"):
+                        vector_deletion_tasks.append(self.vector_store.delete_chunks_by_document_id(document.external_id))
+                    if self.colpali_vector_store and hasattr(self.colpali_vector_store, "delete_chunks_by_document_id"):
+                        vector_deletion_tasks.append(self.colpali_vector_store.delete_chunks_by_document_id(document.external_id))
+
+                # Collect storage file deletion tasks
+                if hasattr(document, "storage_info") and document.storage_info:
+                    bucket = document.storage_info.get("bucket")
+                    key = document.storage_info.get("key")
+                    if bucket and key and hasattr(self.storage, "delete_file"):
+                        storage_deletion_tasks.append(self.storage.delete_file(bucket, key))
+
+                # Handle multiple file versions in storage_files
+                if hasattr(document, "storage_files") and document.storage_files:
+                    for file_info in document.storage_files:
+                        bucket = file_info.bucket
+                        key = file_info.key
+                        if bucket and key and hasattr(self.storage, "delete_file"):
+                            storage_deletion_tasks.append(self.storage.delete_file(bucket, key))
+
+                # Execute deletion tasks in parallel
+                if vector_deletion_tasks or storage_deletion_tasks:
+                    try:
+                        all_deletion_results = await asyncio.gather(
+                            *vector_deletion_tasks, *storage_deletion_tasks, return_exceptions=True
+                        )
+                        for i, result in enumerate(all_deletion_results):
+                            if isinstance(result, Exception):
+                                task_type = "vector store" if i < len(vector_deletion_tasks) else "storage"
+                                logger.error(f"Error during {task_type} deletion for document {document.external_id}: {result}")
+                    except Exception as e:
+                        logger.error(f"Error during parallel deletion operations for document {document.external_id}: {e}")
+
+                deleted_count += 1
+                logger.info(f"Successfully deleted document {document.external_id} and all associated data")
+
+            except Exception as e:
+                logger.error(f"Error deleting document {document.external_id}: {e}")
+                error_count += 1
+
+        # Count documents that weren't found as errors
+        error_count += len(document_ids) - len(documents)
+
+        return deleted_count, error_count
 
     def close(self):
         """Close all resources."""
