@@ -43,11 +43,11 @@ The fastest and easiest way to get started with Morphik is by signing up for fre
 
 If you'd like to self-host Morphik, you can find the dedicated instruction [here](https://docs.morphik.ai/getting-started). We offer options for direct installation and installation via docker.
 
-**Important**: Due to limited resources, we cannot provide full support for open-source deployments. We have an installation guide, and a [Discord community](https://discord.gg/BwMtv3Zaju) to help, but we can't guarantee full support.  
+**Important**: Due to limited resources, we cannot provide full support for open-source deployments. We have an installation guide, and a [Discord community](https://discord.gg/BwMtv3Zaju) to help, but we can't guarantee full support.
 
 ## Using Morphik
 
-Once you've signed up for Morphik, you can get started with ingesting and search your data right away. 
+Once you've signed up for Morphik, you can get started with ingesting and search your data right away.
 
 
 ### Code (Example: Python SDK)
@@ -85,7 +85,7 @@ Currently, we're focused on improving speed, integrating with more tools, and fi
 
 ## Open source vs paid
 
-Certain features - such as Morphik Console - are not available in the open-source version. Any feature in the `ee` namespace is not available in the open-source version and carries a different license. Any feature outside that is open source under the MIT expat license. 
+Certain features - such as Morphik Console - are not available in the open-source version. Any feature in the `ee` namespace is not available in the open-source version and carries a different license. Any feature outside that is open source under the MIT expat license.
 
 ## Contributors
 

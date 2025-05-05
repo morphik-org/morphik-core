@@ -83,6 +83,14 @@ interface DocumentsSectionProps {
   authToken: string | null;
   initialFolder?: string | null;
   setSidebarCollapsed?: (collapsed: boolean) => void;
+
+  // Callback props provided by parent
+  onDocumentUpload?: (fileName: string, fileSize: number) => void;
+  onDocumentDelete?: (fileName: string) => void;
+  onDocumentClick?: (fileName: string) => void;
+  onFolderClick?: (folderName: string | null) => void;
+  onFolderCreate?: (folderName: string) => void;
+  onRefresh?: () => void;
 }
 
 // Debug render counter
@@ -93,6 +101,13 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   authToken,
   initialFolder = null,
   setSidebarCollapsed,
+  // Destructure new props
+  onDocumentUpload,
+  onDocumentDelete,
+  onDocumentClick,
+  onFolderClick,
+  onFolderCreate,
+  onRefresh,
 }) => {
   // Increment render counter for debugging
   renderCount++;
@@ -516,6 +531,12 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
   // Handle document click
   const handleDocumentClick = (document: Document) => {
+    // Invoke callback prop before fetching
+    const docName = document.filename || document.external_id; // Use filename, fallback to ID
+    console.log(
+      `handleDocumentClick: Calling onDocumentClick with '${docName}'`
+    );
+    onDocumentClick?.(docName);
     fetchDocument(document.external_id);
   };
 
@@ -553,6 +574,16 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   // Handle single document deletion
   const handleDeleteDocument = async (documentId: string) => {
     try {
+      // Find document name before deleting (for callback)
+      const docToDelete = documents.find(
+        (doc) => doc.external_id === documentId
+      );
+      const docName = docToDelete?.filename || documentId; // Use filename, fallback to ID
+      console.log(
+        `handleDeleteDocument: Calling onDocumentDelete with '${docName}'`
+      );
+      onDocumentDelete?.(docName); // Invoke callback
+
       setLoading(true);
 
       console.log("DocumentsSection: Deleting document:", documentId);
@@ -596,6 +627,16 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     }
 
     try {
+      // Invoke callback for each selected document BEFORE deleting
+      selectedDocuments.forEach((docId) => {
+        const docToDelete = documents.find((doc) => doc.external_id === docId);
+        const docName = docToDelete?.filename || docId; // Use filename, fallback to ID
+        console.log(
+          `handleDeleteMultipleDocuments: Calling onDocumentDelete with '${docName}'`
+        );
+        onDocumentDelete?.(docName);
+      });
+
       setLoading(true);
 
       console.log(
@@ -749,6 +790,12 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           return response.json();
         })
         .then((newDocument) => {
+          // Invoke callback on success
+          console.log(
+            `handleFileUpload: Calling onDocumentUpload with '${fileToUploadRef.name}', size: ${fileToUploadRef.size}`
+          );
+          onDocumentUpload?.(fileToUploadRef.name, fileToUploadRef.size);
+
           // Log processing status of uploaded document
           if (
             newDocument &&
@@ -896,6 +943,12 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           return response.json();
         })
         .then((result) => {
+          // Invoke callback on success
+          console.log(
+            `handleBatchFileUpload: Calling onDocumentUpload with '${batchFilesRef[0].name}', size: ${batchFilesRef[0].size} (for first file in batch)`
+          );
+          onDocumentUpload?.(batchFilesRef[0].name, batchFilesRef[0].size);
+
           // Log processing status of uploaded documents
           if (result && result.document_ids && result.document_ids.length > 0) {
             console.log(
@@ -1043,6 +1096,11 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           return response.json();
         })
         .then((newDocument) => {
+          // Currently skipping callback for text uploads until an explicit event is defined
+          console.log(
+            `handleTextUpload: Text uploaded successfully (tracking skipped).`
+          );
+
           // Log processing status of uploaded document
           if (
             newDocument &&
@@ -1113,6 +1171,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   // Function to trigger refresh
   const handleRefresh = () => {
     console.log("Manual refresh triggered");
+    // Invoke callback
+    onRefresh?.();
+
     showAlert("Refreshing documents and folders...", {
       type: "info",
       duration: 1500,
@@ -1151,6 +1212,18 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     performFreshFetch();
   };
 
+  // Wrapper for setSelectedFolder to include callback invocation
+  const handleFolderSelect = useCallback(
+    (folderName: string | null) => {
+      console.log(
+        `handleFolderSelect: Calling onFolderClick with '${folderName}'`
+      );
+      onFolderClick?.(folderName);
+      setSelectedFolder(folderName);
+    },
+    [onFolderClick]
+  ); // Add setSelectedFolder if its identity matters, but it usually doesn't
+
   return (
     <div
       className={cn(
@@ -1182,7 +1255,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         <FolderList
           folders={folders}
           selectedFolder={selectedFolder}
-          setSelectedFolder={setSelectedFolder}
+          setSelectedFolder={handleFolderSelect}
           apiBaseUrl={effectiveApiUrl}
           authToken={authToken}
           refreshFolders={fetchFolders}
@@ -1200,6 +1273,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               onTextUpload={handleTextUpload}
             />
           }
+          onFolderCreate={onFolderCreate}
         />
       )}
 
@@ -1223,7 +1297,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
             <FolderList
               folders={folders}
               selectedFolder={selectedFolder}
-              setSelectedFolder={setSelectedFolder}
+              setSelectedFolder={handleFolderSelect}
               apiBaseUrl={effectiveApiUrl}
               authToken={authToken}
               refreshFolders={fetchFolders}
@@ -1241,6 +1315,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                   onTextUpload={handleTextUpload}
                 />
               }
+              onFolderCreate={onFolderCreate}
             />
           )}
         </div>

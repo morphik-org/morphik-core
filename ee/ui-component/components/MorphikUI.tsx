@@ -9,7 +9,8 @@ import AgentChatSection from '@/components/chat/AgentChatSection';
 import GraphSection from '@/components/GraphSection';
 import { AlertSystem } from '@/components/ui/alert-system';
 import { extractTokenFromUri, getApiBaseUrlFromUri } from '@/lib/utils';
-import { MorphikUIProps } from '@/components/types';
+import { MorphikUIProps } from './types';
+import { cn } from '@/lib/utils';
 
 // Default API base URL
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
@@ -21,7 +22,18 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
   onUriChange,
   onBackClick,
   initialFolder = null,
-  initialSection = 'documents'
+  initialSection = 'documents',
+  onDocumentUpload,
+  onDocumentDelete,
+  onDocumentClick,
+  onFolderCreate,
+  onFolderClick,
+  onSearchSubmit,
+  onChatSubmit,
+  onAgentSubmit,
+  onGraphClick,
+  onGraphCreate,
+  onGraphUpdate,
 }) => {
   // State to manage connectionUri internally if needed
   const [currentUri, setCurrentUri] = useState(connectionUri);
@@ -31,14 +43,17 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
     setCurrentUri(connectionUri);
   }, [connectionUri]);
 
+  useEffect(() => {
+    setActiveSection(initialSection);
+  }, [initialSection]);
+
   // Handle URI changes from sidebar
   const handleUriChange = (newUri: string) => {
     console.log('MorphikUI: URI changed to:', newUri);
     setCurrentUri(newUri);
-    if (onUriChange) {
-      onUriChange(newUri);
-    }
+    onUriChange?.(newUri);
   };
+
   const [activeSection, setActiveSection] = useState(initialSection);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -46,8 +61,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
   const authToken = currentUri ? extractTokenFromUri(currentUri) : null;
 
   // Derive API base URL from the URI if provided
-  // If URI is empty, this will now connect to localhost by default
-  const effectiveApiBaseUrl = getApiBaseUrlFromUri(currentUri, apiBaseUrl);
+  const effectiveApiBaseUrl = getApiBaseUrlFromUri(currentUri ?? undefined, apiBaseUrl);
 
   // Log the effective API URL for debugging
   useEffect(() => {
@@ -55,74 +69,82 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
     console.log('MorphikUI: Auth token present:', !!authToken);
   }, [effectiveApiBaseUrl, authToken]);
 
+  // Wrapper for section change to match expected type
+  const handleSectionChange = (section: string) => {
+    if (['documents', 'search', 'chat', 'graphs', 'agent'].includes(section)) {
+      setActiveSection(section as 'documents' | 'search' | 'chat' | 'graphs' | 'agent');
+    }
+  };
+
   return (
-    <>
-      <div className="flex h-full">
-        <Sidebar
-          activeSection={activeSection}
-          onSectionChange={setActiveSection}
-          className="h-full"
-          connectionUri={currentUri}
-          isReadOnlyUri={isReadOnlyUri}
-          onUriChange={handleUriChange}
-          isCollapsed={isSidebarCollapsed}
-          setIsCollapsed={setIsSidebarCollapsed}
-          onBackClick={onBackClick}
-        />
+    <div className={cn("flex h-screen w-full overflow-hidden")}>
+      <Sidebar
+        connectionUri={currentUri ?? undefined}
+        isReadOnlyUri={isReadOnlyUri}
+        onUriChange={handleUriChange}
+        activeSection={activeSection}
+        onSectionChange={handleSectionChange}
+        isCollapsed={isSidebarCollapsed}
+        setIsCollapsed={setIsSidebarCollapsed}
+        onBackClick={onBackClick}
+      />
 
-        <div className="flex-1 flex flex-col h-full overflow-hidden">
-          {/* Remove the header with back button */}
-          <div className="flex-1 overflow-y-auto">
-            {/* Documents Section */}
-            {activeSection === 'documents' && (
-              <DocumentsSection
-                apiBaseUrl={effectiveApiBaseUrl}
-                authToken={authToken}
-                initialFolder={initialFolder}
-                setSidebarCollapsed={setIsSidebarCollapsed}
-              />
-            )}
-
-            {/* Search Section */}
-            {activeSection === 'search' && (
-              <SearchSection
-                apiBaseUrl={effectiveApiBaseUrl}
-                authToken={authToken}
-              />
-            )}
-
-            {/* Chat Section */}
-            {activeSection === 'chat' && (
-              <ChatSection
-                apiBaseUrl={effectiveApiBaseUrl}
-                authToken={authToken}
-              />
-            )}
-
-            {/* Agent Chat Section */}
-            {activeSection === 'agent' && (
-              <AgentChatSection
-                apiBaseUrl={effectiveApiBaseUrl}
-                authToken={authToken}
-              />
-            )}
-
-            {/* Graphs Section */}
-            {activeSection === 'graphs' && (
-              <div className="space-y-4">
-                <GraphSection
-                  apiBaseUrl={effectiveApiBaseUrl}
-                  authToken={authToken}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {/* Render active section based on state */}
+        {activeSection === 'documents' && (
+          <DocumentsSection
+            key={`docs-${effectiveApiBaseUrl}-${initialFolder}`}
+            apiBaseUrl={effectiveApiBaseUrl}
+            authToken={authToken}
+            initialFolder={initialFolder ?? undefined}
+            setSidebarCollapsed={setIsSidebarCollapsed}
+            onDocumentUpload={onDocumentUpload}
+            onDocumentDelete={onDocumentDelete}
+            onDocumentClick={onDocumentClick}
+            onFolderCreate={onFolderCreate}
+            onFolderClick={onFolderClick}
+            onRefresh={undefined}
+          />
+        )}
+        {activeSection === 'search' && (
+          <SearchSection
+            key={`search-${effectiveApiBaseUrl}`}
+            apiBaseUrl={effectiveApiBaseUrl}
+            authToken={authToken}
+            onSearchSubmit={onSearchSubmit}
+          />
+        )}
+        {activeSection === 'chat' && (
+          <ChatSection
+            key={`chat-${effectiveApiBaseUrl}`}
+            apiBaseUrl={effectiveApiBaseUrl}
+            authToken={authToken}
+            onChatSubmit={onChatSubmit}
+          />
+        )}
+        {activeSection === 'agent' && (
+          <AgentChatSection
+            key={`agent-${effectiveApiBaseUrl}`}
+            apiBaseUrl={effectiveApiBaseUrl}
+            authToken={authToken}
+            onAgentSubmit={onAgentSubmit}
+          />
+        )}
+        {activeSection === 'graphs' && (
+          <GraphSection
+            key={`graphs-${effectiveApiBaseUrl}`}
+            apiBaseUrl={effectiveApiBaseUrl}
+            authToken={authToken}
+            onSelectGraph={onGraphClick}
+            onGraphCreate={onGraphCreate}
+            onGraphUpdate={onGraphUpdate}
+          />
+        )}
+      </main>
 
       {/* Global alert system - integrated directly in the component */}
       <AlertSystem position="bottom-right" />
-    </>
+    </div>
   );
 };
 

@@ -25,6 +25,7 @@ interface FolderListProps {
   showUploadDialog?: boolean;
   setShowUploadDialog?: (show: boolean) => void;
   uploadDialogComponent?: React.ReactNode;
+  onFolderCreate?: (folderName: string) => void;
 }
 
 const FolderList: React.FC<FolderListProps> = ({
@@ -38,7 +39,8 @@ const FolderList: React.FC<FolderListProps> = ({
   refreshAction,
   selectedDocuments = [],
   handleDeleteMultipleDocuments,
-  uploadDialogComponent
+  uploadDialogComponent,
+  onFolderCreate
 }) => {
   const router = useRouter();
   const pathname = usePathname();
@@ -98,6 +100,9 @@ const FolderList: React.FC<FolderListProps> = ({
       // Auto-select this newly created folder so user can immediately add files to it
       // This ensures we start with a clean empty folder view
       updateSelectedFolder(folderData.name);
+
+      console.log(`handleCreateFolder: Calling onFolderCreate with '${folderData.name}'`);
+      onFolderCreate?.(folderData.name);
 
     } catch (error) {
       console.error('Error creating folder:', error);
