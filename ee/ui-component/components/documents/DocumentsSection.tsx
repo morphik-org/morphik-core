@@ -1,16 +1,16 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Upload } from 'lucide-react';
-import { showAlert, removeAlert } from '@/components/ui/alert-system';
-import DocumentList from './DocumentList';
-import DocumentDetail from './DocumentDetail';
-import FolderList from './FolderList';
-import { UploadDialog, useUploadDialog } from './UploadDialog';
-import { cn } from '@/lib/utils';
-import { Skeleton } from '@/components/ui/skeleton';
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { Upload } from "lucide-react";
+import { showAlert, removeAlert } from "@/components/ui/alert-system";
+import DocumentList from "./DocumentList";
+import DocumentDetail from "./DocumentDetail";
+import FolderList from "./FolderList";
+import { UploadDialog, useUploadDialog } from "./UploadDialog";
+import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
-import { Document, Folder } from '@/components/types';
+import { Document, Folder } from "@/components/types";
 
 // Custom hook for drag and drop functionality
 function useDragAndDrop({
@@ -99,10 +99,10 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   console.log(`DocumentsSection rendered: #${renderCount}`);
   // Ensure apiBaseUrl is correctly formatted, especially for localhost
   const effectiveApiUrl = React.useMemo(() => {
-    console.log('DocumentsSection: Input apiBaseUrl:', apiBaseUrl);
+    console.log("DocumentsSection: Input apiBaseUrl:", apiBaseUrl);
     // Check if it's a localhost URL and ensure it has the right format
-    if (apiBaseUrl.includes('localhost') || apiBaseUrl.includes('127.0.0.1')) {
-      if (!apiBaseUrl.includes('http')) {
+    if (apiBaseUrl.includes("localhost") || apiBaseUrl.includes("127.0.0.1")) {
+      if (!apiBaseUrl.includes("http")) {
         return `http://${apiBaseUrl}`;
       }
     }
@@ -112,8 +112,12 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   // State for documents and folders
   const [documents, setDocuments] = useState<Document[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(initialFolder);
-  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(
+    initialFolder
+  );
+  const [selectedDocument, setSelectedDocument] = useState<Document | null>(
+    null
+  );
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [foldersLoading, setFoldersLoading] = useState(false);
@@ -123,8 +127,14 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   // Upload dialog state from custom hook
   const uploadDialogState = useUploadDialog();
   // Extract only the state variables we actually use in this component
-  const { showUploadDialog, setShowUploadDialog, metadata, rules, useColpali, resetUploadDialog } =
-    uploadDialogState;
+  const {
+    showUploadDialog,
+    setShowUploadDialog,
+    metadata,
+    rules,
+    useColpali,
+    resetUploadDialog,
+  } = uploadDialogState;
 
   // Initialize drag and drop
   const { isDragging, dragHandlers } = useDragAndDrop({
@@ -141,51 +151,64 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
   // Fetch all documents, optionally filtered by folder
   const fetchDocuments = useCallback(
-    async (source: string = 'unknown') => {
-      console.log(`fetchDocuments called from: ${source}, selectedFolder: ${selectedFolder}`);
+    async (source: string = "unknown") => {
+      console.log(
+        `fetchDocuments called from: ${source}, selectedFolder: ${selectedFolder}`
+      );
       // Ensure API URL is valid before proceeding
       if (!effectiveApiUrl) {
-        console.error('fetchDocuments: No valid API URL available.');
+        console.error("fetchDocuments: No valid API URL available.");
         setLoading(false);
         return;
       }
 
       // Immediately clear documents and set loading state if selectedFolder is null (folder grid view)
       if (selectedFolder === null) {
-        console.log('fetchDocuments: No folder selected, clearing documents.');
+        console.log("fetchDocuments: No folder selected, clearing documents.");
         setDocuments([]);
         setLoading(false);
         return;
       }
 
       // Set loading state only for initial load or when explicitly changing folders
-      if (documents.length === 0 || source === 'folders loaded or selectedFolder changed') {
+      if (
+        documents.length === 0 ||
+        source === "folders loaded or selectedFolder changed"
+      ) {
         setLoading(true);
       }
 
       try {
         let documentsToFetch: Document[] = [];
 
-        if (selectedFolder === 'all') {
+        if (selectedFolder === "all") {
           // Fetch all documents for the "all" view
-          console.log('fetchDocuments: Fetching all documents');
+          console.log("fetchDocuments: Fetching all documents");
           const response = await fetch(`${effectiveApiUrl}/documents`, {
-            method: 'POST', // Assuming POST is correct for fetching all
+            method: "POST", // Assuming POST is correct for fetching all
             headers: {
-              'Content-Type': 'application/json',
+              "Content-Type": "application/json",
               ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
             },
             body: JSON.stringify({}), // Empty body for all documents
           });
           if (!response.ok) {
-            throw new Error(`Failed to fetch all documents: ${response.statusText}`);
+            throw new Error(
+              `Failed to fetch all documents: ${response.statusText}`
+            );
           }
           documentsToFetch = await response.json();
-          console.log(`fetchDocuments: Fetched ${documentsToFetch.length} total documents`);
+          console.log(
+            `fetchDocuments: Fetched ${documentsToFetch.length} total documents`
+          );
         } else {
           // Fetch documents for a specific folder
-          console.log(`fetchDocuments: Fetching documents for folder: ${selectedFolder}`);
-          const targetFolder = folders.find((folder) => folder.name === selectedFolder);
+          console.log(
+            `fetchDocuments: Fetching documents for folder: ${selectedFolder}`
+          );
+          const targetFolder = folders.find(
+            (folder) => folder.name === selectedFolder
+          );
 
           if (
             targetFolder &&
@@ -197,24 +220,32 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               `fetchDocuments: Folder found with ${targetFolder.document_ids.length} IDs. Fetching details...`
             );
             const response = await fetch(`${effectiveApiUrl}/batch/documents`, {
-              method: 'POST',
+              method: "POST",
               headers: {
-                'Content-Type': 'application/json',
+                "Content-Type": "application/json",
                 ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
               },
               body: JSON.stringify({ document_ids: targetFolder.document_ids }),
             });
             if (!response.ok) {
-              throw new Error(`Failed to fetch batch documents: ${response.statusText}`);
+              throw new Error(
+                `Failed to fetch batch documents: ${response.statusText}`
+              );
             }
             documentsToFetch = await response.json();
-            console.log(`fetchDocuments: Fetched details for ${documentsToFetch.length} documents`);
+            console.log(
+              `fetchDocuments: Fetched details for ${documentsToFetch.length} documents`
+            );
           } else {
             // Folder not found, or folder is empty
             if (targetFolder) {
-              console.log(`fetchDocuments: Folder ${selectedFolder} found but is empty.`);
+              console.log(
+                `fetchDocuments: Folder ${selectedFolder} found but is empty.`
+              );
             } else {
-              console.log(`fetchDocuments: Folder ${selectedFolder} not found in current state.`);
+              console.log(
+                `fetchDocuments: Folder ${selectedFolder} not found in current state.`
+              );
             }
             // In either case, the folder contains no documents to display
             documentsToFetch = [];
@@ -227,7 +258,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
             doc.system_metadata = {};
           }
           if (!doc.system_metadata.status && doc.system_metadata.folder_name) {
-            doc.system_metadata.status = 'processing';
+            doc.system_metadata.status = "processing";
           }
           return doc;
         });
@@ -235,11 +266,12 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         // Update state
         setDocuments(processedData);
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+        const errorMsg =
+          err instanceof Error ? err.message : "An unknown error occurred";
         console.error(`Error in fetchDocuments (${source}): ${errorMsg}`);
         showAlert(errorMsg, {
-          type: 'error',
-          title: 'Error Fetching Documents',
+          type: "error",
+          title: "Error Fetching Documents",
           duration: 5000,
         });
         // Clear documents on error to avoid showing stale/incorrect data
@@ -255,11 +287,11 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
   // Fetch all folders
   const fetchFolders = useCallback(async () => {
-    console.log('fetchFolders called');
+    console.log("fetchFolders called");
     setFoldersLoading(true);
     try {
       const response = await fetch(`${effectiveApiUrl}/folders`, {
-        method: 'GET',
+        method: "GET",
         headers: {
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
@@ -271,11 +303,12 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       console.log(`Fetched ${data.length} folders`);
       setFolders(data);
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+      const errorMsg =
+        err instanceof Error ? err.message : "An unknown error occurred";
       console.error(`Folder fetch error: ${errorMsg}`);
       showAlert(errorMsg, {
-        type: 'error',
-        title: 'Error',
+        type: "error",
+        title: "Error",
         duration: 5000,
       });
     } finally {
@@ -285,18 +318,18 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
   // Function to refresh documents based on current folder state
   const refreshDocuments = useCallback(async () => {
-    await fetchDocuments('refreshDocuments call');
+    await fetchDocuments("refreshDocuments call");
   }, [fetchDocuments]);
 
   // Fetch folders initially
   useEffect(() => {
-    console.log('DocumentsSection: Initial folder fetch');
+    console.log("DocumentsSection: Initial folder fetch");
     fetchFolders();
   }, [fetchFolders]);
 
   // Fetch documents when folders are loaded or selectedFolder changes
   useEffect(() => {
-    const effectSource = 'folders loaded or selectedFolder changed';
+    const effectSource = "folders loaded or selectedFolder changed";
     console.log(
       `Effect triggered: ${effectSource}, foldersLoading: ${foldersLoading}, folders count: ${folders.length}, selectedFolder: ${selectedFolder}`
     );
@@ -347,7 +380,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           await fetchDocuments(effectSource);
           // If fetchDocuments completes successfully, it will set loading = false in its finally block.
           // No need to set it here again in the try block.
-          console.log(`Effect (${effectSource}): fetchDocuments call completed.`);
+          console.log(
+            `Effect (${effectSource}): fetchDocuments call completed.`
+          );
         } catch (error) {
           // Catch potential errors *from* the await fetchDocuments call itself, though
           // fetchDocuments has internal handling. This is an extra safeguard.
@@ -356,8 +391,10 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
             error
           );
           showAlert(
-            `Error updating documents: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            { type: 'error' }
+            `Error updating documents: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
+            { type: "error" }
           );
           // Ensure loading is turned off even if fetchDocuments had an issue before its finally.
           setLoading(false);
@@ -384,26 +421,28 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
   // Poll for document status if any document is processing *and* user is not viewing details
   useEffect(() => {
-    const hasProcessing = documents.some((doc) => doc.system_metadata?.status === 'processing');
+    const hasProcessing = documents.some(
+      (doc) => doc.system_metadata?.status === "processing"
+    );
 
     // Only poll if there are processing documents AND no document detail view is open
     if (hasProcessing && selectedDocument === null) {
-      console.log('Polling for document status (list view active)...');
+      console.log("Polling for document status (list view active)...");
       const intervalId = setInterval(() => {
-        console.log('Polling interval: calling refreshDocuments');
+        console.log("Polling interval: calling refreshDocuments");
         refreshDocuments(); // Fetch documents again to check status
       }, 5000); // Poll every 5 seconds
 
       return () => {
-        console.log('Clearing polling interval (list view or processing done)');
+        console.log("Clearing polling interval (list view or processing done)");
         clearInterval(intervalId);
       };
     } else {
       // Log why polling is not active
       if (hasProcessing && selectedDocument !== null) {
-        console.log('Polling paused: Document detail view is open.');
+        console.log("Polling paused: Document detail view is open.");
       } else if (!hasProcessing) {
-        console.log('Polling stopped: No documents are processing.');
+        console.log("Polling stopped: No documents are processing.");
       }
     }
     // Add selectedDocument to dependencies
@@ -422,11 +461,11 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   const fetchDocument = async (documentId: string) => {
     try {
       const url = `${effectiveApiUrl}/documents/${documentId}`;
-      console.log('DocumentsSection: Fetching document detail from:', url);
+      console.log("DocumentsSection: Fetching document detail from:", url);
 
       // Use non-blocking fetch to avoid locking the UI
       fetch(url, {
-        method: 'GET',
+        method: "GET",
         headers: {
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
@@ -446,25 +485,30 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           }
 
           // If status is missing and we have a newly uploaded document, it should be "processing"
-          if (!data.system_metadata.status && data.system_metadata.folder_name) {
-            data.system_metadata.status = 'processing';
+          if (
+            !data.system_metadata.status &&
+            data.system_metadata.folder_name
+          ) {
+            data.system_metadata.status = "processing";
           }
 
           setSelectedDocument(data);
         })
         .catch((err) => {
-          const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+          const errorMsg =
+            err instanceof Error ? err.message : "An unknown error occurred";
           console.error(`Error fetching document details: ${errorMsg}`);
           showAlert(`Error fetching document: ${errorMsg}`, {
-            type: 'error',
+            type: "error",
             duration: 5000,
           });
         });
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+      const errorMsg =
+        err instanceof Error ? err.message : "An unknown error occurred";
       console.error(`Error in fetchDocument: ${errorMsg}`);
       showAlert(`Error: ${errorMsg}`, {
-        type: 'error',
+        type: "error",
         duration: 5000,
       });
     }
@@ -478,7 +522,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   // Helper function for document deletion API call
   const deleteDocumentApi = async (documentId: string) => {
     const response = await fetch(`${effectiveApiUrl}/documents/${documentId}`, {
-      method: 'DELETE',
+      method: "DELETE",
       headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
     });
 
@@ -489,13 +533,12 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     return response;
   };
 
-  // Helper function for batch document deletion API call
   const batchDeleteDocumentsApi = async (documentIds: string[]) => {
     const response = await fetch(`${effectiveApiUrl}/batch/documents/delete`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        Authorization: authToken ? `Bearer ${authToken}` : '',
+        "Content-Type": "application/json",
+        Authorization: authToken ? `Bearer ${authToken}` : "",
       },
       body: JSON.stringify({ document_ids: documentIds }),
     });
@@ -512,7 +555,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     try {
       setLoading(true);
 
-      console.log('DocumentsSection: Deleting document:', documentId);
+      console.log("DocumentsSection: Deleting document:", documentId);
 
       await deleteDocumentApi(documentId);
 
@@ -526,88 +569,98 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       await fetchDocuments();
 
       // Show success message
-      showAlert('Document deleted successfully', {
-        type: 'success',
+      showAlert("Document deleted successfully", {
+        type: "success",
         duration: 3000,
       });
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+      const errorMsg =
+        err instanceof Error ? err.message : "An unknown error occurred";
       showAlert(errorMsg, {
-        type: 'error',
-        title: 'Delete Failed',
+        type: "error",
+        title: "Delete Failed",
         duration: 5000,
       });
 
       // Also remove the progress alert if there was an error
-      removeAlert('delete-multiple-progress');
+      removeAlert("delete-multiple-progress");
     } finally {
       setLoading(false);
     }
   };
 
   // Handle batch document deletion
-  const handleBatchDeleteDocuments = async (documentIds: string[]) => {
+  const handleDeleteMultipleDocuments = async () => {
+    if (selectedDocuments.length === 0) {
+      return;
+    }
+
     try {
       setLoading(true);
 
-      console.log('DocumentsSection: Batch deleting documents:', documentIds);
+      console.log(
+        "DocumentsSection: Batch deleting documents:",
+        selectedDocuments
+      );
 
       // Show progress alert
-      showAlert(`Deleting ${documentIds.length} documents...`, {
-        type: 'info',
-        id: 'delete-multiple-progress',
+      showAlert(`Deleting ${selectedDocuments.length} documents...`, {
+        type: "info",
+        id: "delete-multiple-progress",
         duration: 0,
       });
 
-      const response = await batchDeleteDocumentsApi(documentIds);
+      const response = await batchDeleteDocumentsApi(selectedDocuments);
       const result = await response.json();
 
       // Clear selected document if it was deleted
-      if (selectedDocument && documentIds.includes(selectedDocument.external_id)) {
+      if (
+        selectedDocument &&
+        selectedDocuments.includes(selectedDocument.external_id)
+      ) {
         setSelectedDocument(null);
       }
+
+      setSelectedDocuments([]);
 
       // Refresh folders first, then documents
       await fetchFolders();
       await fetchDocuments();
 
       // Remove progress alert
-      removeAlert('delete-multiple-progress');
+      removeAlert("delete-multiple-progress");
 
       // Show success message with counts
       showAlert(
         `Successfully deleted ${result.deleted} documents${
-          result.errors > 0 ? ` (${result.errors} errors)` : ''
+          result.errors > 0 ? ` (${result.errors} errors)` : ""
         }`,
         {
-          type: 'success',
+          type: "success",
           duration: 5000,
         }
       );
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
+      const errorMsg =
+        err instanceof Error ? err.message : "An unknown error occurred";
       showAlert(errorMsg, {
-        type: 'error',
-        title: 'Batch Delete Failed',
+        type: "error",
+        title: "Batch Delete Failed",
         duration: 5000,
       });
 
       // Also remove the progress alert if there was an error
-      removeAlert('delete-multiple-progress');
+      removeAlert("delete-multiple-progress");
     } finally {
       setLoading(false);
     }
   };
 
-  // Wrapper for batch delete that uses selected documents
-  const handleDeleteMultipleDocuments = () => {
-    if (selectedDocuments.length === 0) return;
-    handleBatchDeleteDocuments(selectedDocuments);
-    setSelectedDocuments([]); // Clear selection after deletion
-  };
-
   // Handle checkbox change (wrapper function for use with shadcn checkbox)
-  const handleCheckboxChange = (checked: boolean | 'indeterminate', docId: string) => {
+  const handleCheckboxChange = (
+    checked: boolean | "indeterminate",
+    docId: string
+  ) => {
     setSelectedDocuments((prev) => {
       if (checked === true && !prev.includes(docId)) {
         return [...prev, docId];
@@ -622,14 +675,14 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   const getSelectAllState = () => {
     if (selectedDocuments.length === 0) return false;
     if (selectedDocuments.length === documents.length) return true;
-    return 'indeterminate';
+    return "indeterminate";
   };
 
   // Handle file upload
   const handleFileUpload = async (file: File | null) => {
     if (!file) {
-      showAlert('Please select a file to upload', {
-        type: 'error',
+      showAlert("Please select a file to upload", {
+        type: "error",
         duration: 3000,
       });
       return;
@@ -637,9 +690,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
     // Close dialog and update upload count using alert system
     setShowUploadDialog(false);
-    const uploadId = 'upload-progress';
+    const uploadId = "upload-progress";
     showAlert(`Uploading 1 file...`, {
-      type: 'upload',
+      type: "upload",
       dismissible: false,
       id: uploadId,
     });
@@ -655,27 +708,27 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
     try {
       const formData = new FormData();
-      formData.append('file', fileToUploadRef);
-      formData.append('metadata', metadataRef);
-      formData.append('rules', rulesRef);
+      formData.append("file", fileToUploadRef);
+      formData.append("metadata", metadataRef);
+      formData.append("rules", rulesRef);
 
       // If we're in a specific folder (not "all" documents), add the folder_name to form data
-      if (selectedFolder && selectedFolder !== 'all') {
+      if (selectedFolder && selectedFolder !== "all") {
         try {
           // Parse metadata to validate it's proper JSON, but don't modify it
-          JSON.parse(metadataRef || '{}');
+          JSON.parse(metadataRef || "{}");
 
           // The API expects folder_name as a direct Form parameter
           // This will be used by document_service._ensure_folder_exists()
-          formData.set('metadata', metadataRef);
-          formData.append('folder_name', selectedFolder);
+          formData.set("metadata", metadataRef);
+          formData.append("folder_name", selectedFolder);
 
           // Log for debugging
           console.log(`Adding file to folder: ${selectedFolder} as form field`);
         } catch (e) {
-          console.error('Error parsing metadata:', e);
-          formData.set('metadata', metadataRef);
-          formData.append('folder_name', selectedFolder);
+          console.error("Error parsing metadata:", e);
+          formData.set("metadata", metadataRef);
+          formData.append("folder_name", selectedFolder);
         }
       }
 
@@ -683,9 +736,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
       // Non-blocking fetch
       fetch(url, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          Authorization: authToken ? `Bearer ${authToken}` : '',
+          Authorization: authToken ? `Bearer ${authToken}` : "",
         },
         body: formData,
       })
@@ -700,20 +753,22 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           if (
             newDocument &&
             newDocument.system_metadata &&
-            newDocument.system_metadata.status === 'processing'
+            newDocument.system_metadata.status === "processing"
           ) {
-            console.log(`Document ${newDocument.external_id} is in processing status`);
+            console.log(
+              `Document ${newDocument.external_id} is in processing status`
+            );
             // No longer need to track processing documents for polling
           }
 
           // Force a fresh refresh after upload
           const refreshAfterUpload = async () => {
             try {
-              console.log('Performing fresh refresh after upload (file)');
+              console.log("Performing fresh refresh after upload (file)");
               // ONLY fetch folders. The useEffect watching folders will trigger fetchDocuments.
               await fetchFolders();
             } catch (err) {
-              console.error('Error refreshing after file upload:', err);
+              console.error("Error refreshing after file upload:", err);
             }
           };
 
@@ -722,48 +777,53 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
           // Show success message and remove upload progress
           showAlert(`File uploaded successfully!`, {
-            type: 'success',
+            type: "success",
             duration: 3000,
           });
 
           // Remove the upload alert
-          removeAlert('upload-progress');
+          removeAlert("upload-progress");
         })
         .catch((err) => {
-          const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+          const errorMessage =
+            err instanceof Error ? err.message : "An unknown error occurred";
           const errorMsg = `Error uploading ${fileToUploadRef.name}: ${errorMessage}`;
 
           // Show error alert and remove upload progress
           showAlert(errorMsg, {
-            type: 'error',
-            title: 'Upload Failed',
+            type: "error",
+            title: "Upload Failed",
             duration: 5000,
           });
 
           // Remove the upload alert
-          removeAlert('upload-progress');
+          removeAlert("upload-progress");
         });
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      const errorMessage =
+        err instanceof Error ? err.message : "An unknown error occurred";
       const errorMsg = `Error uploading ${fileToUploadRef.name}: ${errorMessage}`;
 
       // Show error alert
       showAlert(errorMsg, {
-        type: 'error',
-        title: 'Upload Failed',
+        type: "error",
+        title: "Upload Failed",
         duration: 5000,
       });
 
       // Remove the upload progress alert
-      removeAlert('upload-progress');
+      removeAlert("upload-progress");
     }
   };
 
   // Handle batch file upload
-  const handleBatchFileUpload = async (files: File[], fromDragAndDrop: boolean = false) => {
+  const handleBatchFileUpload = async (
+    files: File[],
+    fromDragAndDrop: boolean = false
+  ) => {
     if (files.length === 0) {
-      showAlert('Please select files to upload', {
-        type: 'error',
+      showAlert("Please select files to upload", {
+        type: "error",
         duration: 3000,
       });
       return;
@@ -775,9 +835,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     }
 
     const fileCount = files.length;
-    const uploadId = 'batch-upload-progress';
+    const uploadId = "batch-upload-progress";
     showAlert(`Uploading ${fileCount} files...`, {
-      type: 'upload',
+      type: "upload",
       dismissible: false,
       id: uploadId,
     });
@@ -798,32 +858,34 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
       // Append each file to the formData with the same field name
       batchFilesRef.forEach((file) => {
-        formData.append('files', file);
+        formData.append("files", file);
       });
 
       // Add metadata to all cases
-      formData.append('metadata', metadataRef);
+      formData.append("metadata", metadataRef);
 
       // If we're in a specific folder (not "all" documents), add the folder_name as a separate field
-      if (selectedFolder && selectedFolder !== 'all') {
+      if (selectedFolder && selectedFolder !== "all") {
         // The API expects folder_name directly, not ID
-        formData.append('folder_name', selectedFolder);
+        formData.append("folder_name", selectedFolder);
 
         // Log for debugging
-        console.log(`Adding batch files to folder: ${selectedFolder} as form field`);
+        console.log(
+          `Adding batch files to folder: ${selectedFolder} as form field`
+        );
       }
 
-      formData.append('rules', rulesRef);
-      formData.append('parallel', 'true');
+      formData.append("rules", rulesRef);
+      formData.append("parallel", "true");
 
       // Always set explicit use_colpali value
       const url = `${effectiveApiUrl}/ingest/files?use_colpali=${useColpaliRef}`;
 
       // Non-blocking fetch
       fetch(url, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          Authorization: authToken ? `Bearer ${authToken}` : '',
+          Authorization: authToken ? `Bearer ${authToken}` : "",
         },
         body: formData,
       })
@@ -836,18 +898,20 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         .then((result) => {
           // Log processing status of uploaded documents
           if (result && result.document_ids && result.document_ids.length > 0) {
-            console.log(`${result.document_ids.length} documents are in processing status`);
+            console.log(
+              `${result.document_ids.length} documents are in processing status`
+            );
             // No need for polling, just wait for manual refresh
           }
 
           // Force a fresh refresh after upload
           const refreshAfterUpload = async () => {
             try {
-              console.log('Performing fresh refresh after upload (batch)');
+              console.log("Performing fresh refresh after upload (batch)");
               // ONLY fetch folders. The useEffect watching folders will trigger fetchDocuments.
               await fetchFolders();
             } catch (err) {
-              console.error('Error refreshing after batch upload:', err);
+              console.error("Error refreshing after batch upload:", err);
             }
           };
 
@@ -859,48 +923,50 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
             const errorMsg = `${result.errors.length} of ${fileCount} files failed to upload`;
 
             showAlert(errorMsg, {
-              type: 'error',
-              title: 'Upload Partially Failed',
+              type: "error",
+              title: "Upload Partially Failed",
               duration: 5000,
             });
           } else {
             // Show success message
             showAlert(`${fileCount} files uploaded successfully!`, {
-              type: 'success',
+              type: "success",
               duration: 3000,
             });
           }
 
           // Remove the upload alert
-          removeAlert('batch-upload-progress');
+          removeAlert("batch-upload-progress");
         })
         .catch((err) => {
-          const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+          const errorMessage =
+            err instanceof Error ? err.message : "An unknown error occurred";
           const errorMsg = `Error uploading files: ${errorMessage}`;
 
           // Show error alert
           showAlert(errorMsg, {
-            type: 'error',
-            title: 'Upload Failed',
+            type: "error",
+            title: "Upload Failed",
             duration: 5000,
           });
 
           // Remove the upload alert
-          removeAlert('batch-upload-progress');
+          removeAlert("batch-upload-progress");
         });
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      const errorMessage =
+        err instanceof Error ? err.message : "An unknown error occurred";
       const errorMsg = `Error uploading files: ${errorMessage}`;
 
       // Show error alert
       showAlert(errorMsg, {
-        type: 'error',
-        title: 'Upload Failed',
+        type: "error",
+        title: "Upload Failed",
         duration: 5000,
       });
 
       // Remove the upload progress alert
-      removeAlert('batch-upload-progress');
+      removeAlert("batch-upload-progress");
     }
   };
 
@@ -912,8 +978,8 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     useColpaliFlag: boolean
   ) => {
     if (!text.trim()) {
-      showAlert('Please enter text content', {
-        type: 'error',
+      showAlert("Please enter text content", {
+        type: "error",
         duration: 3000,
       });
       return;
@@ -921,9 +987,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
     // Close dialog and update upload count using alert system
     setShowUploadDialog(false);
-    const uploadId = 'text-upload-progress';
+    const uploadId = "text-upload-progress";
     showAlert(`Uploading text document...`, {
-      type: 'upload',
+      type: "upload",
       dismissible: false,
       id: uploadId,
     });
@@ -934,17 +1000,17 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     let folderToUse = null;
 
     try {
-      metadataObj = JSON.parse(meta || '{}');
+      metadataObj = JSON.parse(meta || "{}");
 
       // If we're in a specific folder (not "all" documents), set folder variable
-      if (selectedFolder && selectedFolder !== 'all') {
+      if (selectedFolder && selectedFolder !== "all") {
         // The API expects the folder name directly
         folderToUse = selectedFolder;
         // Log for debugging
         console.log(`Will add text document to folder: ${selectedFolder}`);
       }
     } catch (e) {
-      console.error('Error parsing metadata JSON:', e);
+      console.error("Error parsing metadata JSON:", e);
     }
 
     const rulesRef = rulesText;
@@ -958,15 +1024,15 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       const url = `${effectiveApiUrl}/ingest/text?use_colpali=${useColpaliRef}`;
 
       fetch(url, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          Authorization: authToken ? `Bearer ${authToken}` : '',
-          'Content-Type': 'application/json',
+          Authorization: authToken ? `Bearer ${authToken}` : "",
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           content: textContentRef,
           metadata: metadataObj,
-          rules: JSON.parse(rulesRef || '[]'),
+          rules: JSON.parse(rulesRef || "[]"),
           folder_name: folderToUse,
         }),
       })
@@ -981,20 +1047,22 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           if (
             newDocument &&
             newDocument.system_metadata &&
-            newDocument.system_metadata.status === 'processing'
+            newDocument.system_metadata.status === "processing"
           ) {
-            console.log(`Document ${newDocument.external_id} is in processing status`);
+            console.log(
+              `Document ${newDocument.external_id} is in processing status`
+            );
             // No longer need to track processing documents for polling
           }
 
           // Force a fresh refresh after upload
           const refreshAfterUpload = async () => {
             try {
-              console.log('Performing fresh refresh after upload (text)');
+              console.log("Performing fresh refresh after upload (text)");
               // ONLY fetch folders. The useEffect watching folders will trigger fetchDocuments.
               await fetchFolders();
             } catch (err) {
-              console.error('Error refreshing after text upload:', err);
+              console.error("Error refreshing after text upload:", err);
             }
           };
 
@@ -1003,48 +1071,50 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
           // Show success message
           showAlert(`Text document uploaded successfully!`, {
-            type: 'success',
+            type: "success",
             duration: 3000,
           });
 
           // Remove the upload alert
-          removeAlert('text-upload-progress');
+          removeAlert("text-upload-progress");
         })
         .catch((err) => {
-          const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+          const errorMessage =
+            err instanceof Error ? err.message : "An unknown error occurred";
           const errorMsg = `Error uploading text: ${errorMessage}`;
 
           // Show error alert
           showAlert(errorMsg, {
-            type: 'error',
-            title: 'Upload Failed',
+            type: "error",
+            title: "Upload Failed",
             duration: 5000,
           });
 
           // Remove the upload alert
-          removeAlert('text-upload-progress');
+          removeAlert("text-upload-progress");
         });
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      const errorMessage =
+        err instanceof Error ? err.message : "An unknown error occurred";
       const errorMsg = `Error uploading text: ${errorMessage}`;
 
       // Show error alert
       showAlert(errorMsg, {
-        type: 'error',
-        title: 'Upload Failed',
+        type: "error",
+        title: "Upload Failed",
         duration: 5000,
       });
 
       // Remove the upload progress alert
-      removeAlert('text-upload-progress');
+      removeAlert("text-upload-progress");
     }
   };
 
   // Function to trigger refresh
   const handleRefresh = () => {
-    console.log('Manual refresh triggered');
-    showAlert('Refreshing documents and folders...', {
-      type: 'info',
+    console.log("Manual refresh triggered");
+    showAlert("Refreshing documents and folders...", {
+      type: "info",
       duration: 1500,
     });
 
@@ -1057,16 +1127,21 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         await fetchFolders();
 
         // Show success message (consider moving this if fetchFolders doesn't guarantee documents are loaded)
-        showAlert('Refresh initiated. Data will update shortly.', {
-          type: 'success',
+        showAlert("Refresh initiated. Data will update shortly.", {
+          type: "success",
           duration: 1500,
         });
       } catch (error) {
-        console.error('Error during refresh fetchFolders:', error);
-        showAlert(`Error refreshing: ${error instanceof Error ? error.message : 'Unknown error'}`, {
-          type: 'error',
-          duration: 3000,
-        });
+        console.error("Error during refresh fetchFolders:", error);
+        showAlert(
+          `Error refreshing: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`,
+          {
+            type: "error",
+            duration: 3000,
+          }
+        );
       } finally {
         // setLoading(false); // Loading will be handled by fetchDocuments triggered by useEffect
       }
@@ -1079,8 +1154,8 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   return (
     <div
       className={cn(
-        'flex-1 flex flex-col h-full relative p-4',
-        selectedFolder && isDragging ? 'drag-active' : ''
+        "flex-1 flex flex-col h-full relative p-4",
+        selectedFolder && isDragging ? "drag-active" : ""
       )}
       {...(selectedFolder ? dragHandlers : {})}
     >
@@ -1091,8 +1166,10 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
             <Upload className="h-12 w-12 mx-auto mb-4 text-primary" />
             <h3 className="text-xl font-medium mb-2">Drop to Upload</h3>
             <p className="text-muted-foreground">
-              Files will be added to{' '}
-              {selectedFolder === 'all' ? 'your documents' : `folder "${selectedFolder}"`}
+              Files will be added to{" "}
+              {selectedFolder === "all"
+                ? "your documents"
+                : `folder "${selectedFolder}"`}
             </p>
           </div>
         </div>
@@ -1172,8 +1249,8 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           {/* Left Panel: Document List or Skeleton or Empty State */}
           <div
             className={cn(
-              'w-full transition-all duration-300 flex flex-col',
-              selectedDocument ? 'md:w-2/3' : 'md:w-full'
+              "w-full transition-all duration-300 flex flex-col",
+              selectedDocument ? "md:w-2/3" : "md:w-full"
             )}
           >
             {loading ? (
