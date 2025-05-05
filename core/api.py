@@ -31,6 +31,7 @@ from core.models.graph import Graph
 from core.models.prompts import validate_prompt_overrides_with_http_exception
 from core.models.request import (
     AgentQueryRequest,
+    BatchDeleteRequest,
     BatchIngestResponse,
     CompletionQueryRequest,
     CreateGraphRequest,
@@ -1044,6 +1045,61 @@ async def delete_document(document_id: str, auth: AuthContext = Depends(verify_t
         if not success:
             raise HTTPException(status_code=404, detail="Document not found or delete failed")
         return {"status": "success", "message": f"Document {document_id} deleted successfully"}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.post("/batch/documents/delete", response_model=Dict[str, Any])
+@telemetry.track(operation_type="batch_delete_documents", metadata_resolver=telemetry.batch_documents_metadata)
+async def batch_delete_documents(
+    request: BatchDeleteRequest,
+    auth: AuthContext = Depends(verify_token)
+):
+    """
+    Delete multiple documents and their associated data in a single batch operation.
+
+    This endpoint deletes multiple documents and all their associated data, including:
+    - Document metadata
+    - Document content in storage
+    - Document chunks and embeddings in vector store
+
+    Args:
+        request: BatchDeleteRequest containing:
+            - document_ids: List of document IDs to delete
+            - folder_name: Optional folder to scope the operation to
+            - end_user_id: Optional end-user ID to scope the operation to
+        auth: Authentication context (must have write access to all documents)
+
+    Returns:
+        Batch deletion status with success and error counts
+    """
+    try:
+        if not request.document_ids:
+            return {"status": "success", "message": "No documents to delete", "deleted": 0, "errors": 0}
+
+        # Create system filters for folder and user scoping
+        system_filters = {}
+        if request.folder_name:
+            system_filters["folder_name"] = request.folder_name
+        if request.end_user_id:
+            system_filters["end_user_id"] = request.end_user_id
+        if auth.app_id:
+            system_filters["app_id"] = auth.app_id
+
+        # Perform batch deletion
+        deleted_count, error_count = await document_service.batch_delete_documents(
+            request.document_ids, 
+            auth, 
+            request.folder_name, 
+            request.end_user_id
+        )
+        
+        return {
+            "status": "success",
+            "message": f"Batch deletion completed. Deleted: {deleted_count}, Errors: {error_count}",
+            "deleted": deleted_count,
+            "errors": error_count
+        }
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
