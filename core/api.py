@@ -1077,7 +1077,6 @@ async def batch_delete_documents(
         if not request.document_ids:
             return {"status": "success", "message": "No documents to delete", "deleted": 0, "errors": 0}
 
-        # Create system filters for folder and user scoping
         system_filters = {}
         if request.folder_name:
             system_filters["folder_name"] = request.folder_name
@@ -1086,7 +1085,6 @@ async def batch_delete_documents(
         if auth.app_id:
             system_filters["app_id"] = auth.app_id
 
-        # Perform batch deletion
         deleted_count, error_count = await document_service.batch_delete_documents(
             request.document_ids, 
             auth, 
