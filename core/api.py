@@ -5,7 +5,7 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import arq
 import jwt
@@ -949,7 +949,7 @@ async def list_documents(
     skip: int = 0,
     limit: int = 10000,
     filters: Optional[Dict[str, Any]] = None,
-    folder_name: Optional[str] = None,
+    folder_name: Optional[Union[str, List[str]]] = None,
     end_user_id: Optional[str] = None,
 ):
     """
@@ -1063,7 +1063,7 @@ async def delete_document(document_id: str, auth: AuthContext = Depends(verify_t
 async def get_document_by_filename(
     filename: str,
     auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[str] = None,
+    folder_name: Optional[Union[str, List[str]]] = None,
     end_user_id: Optional[str] = None,
 ):
     """
@@ -1627,7 +1627,7 @@ async def remove_document_from_folder(
 async def get_graph(
     name: str,
     auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[str] = None,
+    folder_name: Optional[Union[str, List[str]]] = None,
     end_user_id: Optional[str] = None,
 ) -> Graph:
     """
@@ -1666,7 +1666,7 @@ async def get_graph(
 @telemetry.track(operation_type="list_graphs", metadata_resolver=telemetry.list_graphs_metadata)
 async def list_graphs(
     auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[str] = None,
+    folder_name: Optional[Union[str, List[str]]] = None,
     end_user_id: Optional[str] = None,
 ) -> List[Graph]:
     """

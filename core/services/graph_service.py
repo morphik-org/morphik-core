@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 from pydantic import BaseModel
@@ -907,7 +907,7 @@ class GraphService:
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional[QueryPromptOverrides] = None,
-        folder_name: Optional[str] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
     ) -> CompletionResponse:
         """Generate completion using knowledge graph-enhanced retrieval.
@@ -1188,7 +1188,7 @@ class GraphService:
         auth: AuthContext,
         filters: Optional[Dict[str, Any]],
         document_service,
-        folder_name: Optional[str] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
     ) -> List[ChunkResult]:
         """Retrieve chunks containing the specified entities."""
@@ -1366,7 +1366,7 @@ class GraphService:
         auth: Optional[AuthContext] = None,
         graph_name: Optional[str] = None,
         prompt_overrides: Optional[QueryPromptOverrides] = None,
-        folder_name: Optional[str] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
     ) -> CompletionResponse:
         """Generate completion using the retrieved chunks and optional path information."""
