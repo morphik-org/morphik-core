@@ -854,47 +854,56 @@ class PostgresDatabase(BaseDatabase):
         return " AND ".join(filter_conditions)
 
     def _build_system_metadata_filter(self, system_filters: Optional[Dict[str, Any]]) -> str:
-        """Build PostgreSQL filter for system metadata."""
+        """Build PostgreSQL filter for system metadata.
+
+        This helper supports two storage patterns for JSONB values:
+        1. Scalar values – e.g. ``{"folder_name": "folder1"}``
+        2. Array values  – e.g. ``{"folder_name": ["folder1", "folder2"]}``
+
+        For robust folder / end-user scoping we need to correctly match either
+        pattern.  Therefore for every supplied *value* we generate a predicate
+        that checks **either** a scalar equality **or** membership of the value
+        in a JSON array using the `?` operator.  Multiple values for the same
+        key are OR-ed together, while predicates for different keys are AND-ed.
+        """
         if not system_filters:
             return ""
 
-        conditions = []
+        key_clauses: List[str] = []
+
         for key, value in system_filters.items():
             if value is None:
                 continue
 
-            # Handle list of values (IN operator)
-            if isinstance(value, list):
-                if not value:  # Skip empty lists
-                    continue
+            # Normalise to a list for uniform processing.
+            values = value if isinstance(value, list) else [value]
+            if not values:
+                continue
 
-                # Build a list of properly escaped values
-                escaped_values = []
-                for item in value:
-                    if isinstance(item, bool):
-                        escaped_values.append(str(item).lower())
-                    elif isinstance(item, str):
-                        # Use standard replace, avoid complex f-string quoting for black
-                        escaped_value = item.replace("'", "''")
-                        escaped_values.append(f"'{escaped_value}'")
-                    else:
-                        escaped_values.append(f"'{item}'")
-
-                # Join with commas for IN clause
-                values_str = ", ".join(escaped_values)
-                conditions.append(f"system_metadata->>'{key}' IN ({values_str})")
-            else:
-                # Handle single value (equality)
-                if isinstance(value, str):
-                    # Replace single quotes with double single quotes to escape them
-                    escaped_value = value.replace("'", "''")
-                    conditions.append(f"system_metadata->>'{key}' = '{escaped_value}'")
-                elif isinstance(value, bool):
-                    conditions.append(f"system_metadata->>'{key}' = '{str(value).lower()}'")
+            value_clauses = []
+            for item in values:
+                # Convert booleans to lowercase strings (they are stored as text)
+                if isinstance(item, bool):
+                    item_txt = str(item).lower()
                 else:
-                    conditions.append(f"system_metadata->>'{key}' = '{value}'")
+                    item_txt = str(item)
 
-        return " AND ".join(conditions)
+                # Escape single quotes
+                item_txt_escaped = item_txt.replace("'", "''")
+
+                # Two possible storage representations:
+                #   1. Scalar   : system_metadata->>'key' = 'value'
+                #   2. JSON arr.: system_metadata->'key' ? 'value'
+                value_clauses.append(
+                    f"(system_metadata->>'{key}' = '{item_txt_escaped}' "
+                    f"OR system_metadata->'{key}' ? '{item_txt_escaped}')"
+                )
+
+            # OR all alternative values for this key, wrap in parentheses.
+            key_clauses.append("(" + " OR ".join(value_clauses) + ")")
+
+        # AND across different keys
+        return " AND ".join(key_clauses)
 
     async def store_cache_metadata(self, name: str, metadata: Dict[str, Any]) -> bool:
         """Store metadata for a cache in PostgreSQL.
