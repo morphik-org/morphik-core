@@ -891,11 +891,8 @@ class PostgresDatabase(BaseDatabase):
                 # Escape single quotes
                 item_txt_escaped = item_txt.replace("'", "''")
 
-                # Support scalar equality and array membership; cast literal to text for ? operator
-                value_clauses.append(
-                    f"(system_metadata->>'{key}' = '{item_txt_escaped}' "
-                    f"OR system_metadata->'{key}' ? CAST('{item_txt_escaped}' AS TEXT))"
-                )
+                # Simplify: Only check for direct equality using the ->> operator
+                value_clauses.append(f"(system_metadata->>'{key}' = '{item_txt_escaped}')")
 
             # OR all alternative values for this key, wrap in parentheses.
             key_clauses.append("(" + " OR ".join(value_clauses) + ")")
