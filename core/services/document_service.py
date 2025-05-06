@@ -47,7 +47,9 @@ TOKENS_PER_PAGE = 630
 
 
 class DocumentService:
-    async def _ensure_folder_exists(self, folder_name: str, document_id: str, auth: AuthContext) -> Optional[Folder]:
+    async def _ensure_folder_exists(
+        self, folder_name: Union[str, List[str]], document_id: str, auth: AuthContext
+    ) -> Optional[Folder]:
         """
         Check if a folder exists, if not create it. Also adds the document to the folder.
 
@@ -60,6 +62,13 @@ class DocumentService:
             Folder object if found or created, None on error
         """
         try:
+            # If multiple folders provided, ensure each exists and contains the document
+            if isinstance(folder_name, list):
+                last_folder = None
+                for fname in folder_name:
+                    last_folder = await self._ensure_folder_exists(fname, document_id, auth)
+                return last_folder
+
             # First check if the folder already exists
             folder = await self.db.get_folder_by_name(folder_name, auth)
             if folder:
@@ -148,7 +157,7 @@ class DocumentService:
         min_score: float = 0.0,
         use_reranking: Optional[bool] = None,
         use_colpali: Optional[bool] = None,
-        folder_name: Optional[str] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
     ) -> List[ChunkResult]:
         """Retrieve relevant chunks."""
@@ -166,6 +175,7 @@ class DocumentService:
         # Build system filters for folder_name and end_user_id
         system_filters = {}
         if folder_name:
+            # Allow folder_name to be a single string or list[str]
             system_filters["folder_name"] = folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
@@ -323,7 +333,7 @@ class DocumentService:
         min_score: float = 0.0,
         use_reranking: Optional[bool] = None,
         use_colpali: Optional[bool] = None,
-        folder_name: Optional[str] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
     ) -> List[DocumentResult]:
         """Retrieve relevant documents."""
@@ -341,7 +351,7 @@ class DocumentService:
         self,
         document_ids: List[str],
         auth: AuthContext,
-        folder_name: Optional[str] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
     ) -> List[Document]:
         """
@@ -375,7 +385,7 @@ class DocumentService:
         self,
         chunk_ids: List[ChunkSource],
         auth: AuthContext,
-        folder_name: Optional[str] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
         use_colpali: Optional[bool] = None,
     ) -> List[ChunkResult]:
@@ -476,7 +486,7 @@ class DocumentService:
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional["QueryPromptOverrides"] = None,
-        folder_name: Optional[str] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> CompletionResponse:
