@@ -3561,3 +3561,146 @@ async def test_prompt_override_placeholder_validation(client: AsyncClient):
     )
 
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_multi_folder_list_scoping(client: AsyncClient):
+    """Ensure endpoints correctly accept and enforce *multiple* folder names passed as a list."""
+    headers = create_auth_header()
+
+    # Create three distinct folders
+    folder1_name = "mf_folder1"
+    folder2_name = "mf_folder2"
+    folder_other = "mf_folder_other"
+
+    # Unique contents
+    content_phrase = "multi-folder-unique-phrase"
+    content1 = f"Document in {folder1_name} containing {content_phrase}."
+    content2 = f"Document in {folder2_name} also containing {content_phrase}."
+    other_content = "Document in other folder with different phrase."
+
+    # Ingest documents in the three folders (no end_user scope for simplicity)
+    doc1_id = await test_ingest_text_document_folder_user(
+        client,
+        content=content1,
+        metadata={"mf_test": True},
+        folder_name=folder1_name,
+        end_user_id=None,
+    )
+    doc2_id = await test_ingest_text_document_folder_user(
+        client,
+        content=content2,
+        metadata={"mf_test": True},
+        folder_name=folder2_name,
+        end_user_id=None,
+    )
+    doc_other_id = await test_ingest_text_document_folder_user(
+        client,
+        content=other_content,
+        metadata={"mf_test": True},
+        folder_name=folder_other,
+        end_user_id=None,
+    )
+
+    # Helper: wait until ingestion workers finish so system_metadata is fully committed
+    async def _wait_completion(document_id: str, max_tries: int = 10):
+        for _ in range(max_tries):
+            status_resp = await client.get(f"/documents/{document_id}/status", headers=headers)
+            if status_resp.status_code == 200 and status_resp.json().get("status") == "completed":
+                return
+            await asyncio.sleep(1)
+
+    await _wait_completion(doc1_id)
+    await _wait_completion(doc2_id)
+    await _wait_completion(doc_other_id)
+
+    # ------------ List documents endpoint (multiple folder_name query params) ------------
+    list_docs_url = "/documents"
+    response = await client.post(
+        list_docs_url, json={"mf_test": True, "folder_name": [folder1_name, folder2_name]}, headers=headers
+    )
+    assert response.status_code == 200
+    docs = response.json()
+    returned_ids = {d["external_id"] for d in docs}
+    assert doc1_id in returned_ids
+    assert doc2_id in returned_ids
+    assert doc_other_id not in returned_ids
+
+    # ------------ retrieve/docs with folder list ------------
+    response = await client.post(
+        "/retrieve/docs",
+        json={
+            "query": content_phrase,
+            "folder_name": [folder1_name, folder2_name],
+            "k": 5,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    docs_results = response.json()
+    assert len(docs_results) > 0
+    assert all(r["document_id"] in {doc1_id, doc2_id} for r in docs_results)
+
+    # ------------ retrieve/chunks with folder list ------------
+    response = await client.post(
+        "/retrieve/chunks",
+        json={
+            "query": content_phrase,
+            "folder_name": [folder1_name, folder2_name],
+            "k": 5,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    chunks = response.json()
+    assert len(chunks) > 0
+    assert all(c["document_id"] in {doc1_id, doc2_id} for c in chunks)
+
+    # ------------ batch/documents with folder list ------------
+    response = await client.post(
+        "/batch/documents",
+        json={
+            "document_ids": [doc1_id, doc2_id, doc_other_id],
+            "folder_name": [folder1_name, folder2_name],
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    batch_docs = response.json()
+    returned_ids = {d["external_id"] for d in batch_docs}
+    assert returned_ids == {doc1_id, doc2_id}
+
+    # ------------ batch/chunks with folder list ------------
+    sources = [
+        {"document_id": doc1_id, "chunk_number": 0},
+        {"document_id": doc2_id, "chunk_number": 0},
+        {"document_id": doc_other_id, "chunk_number": 0},
+    ]
+    response = await client.post(
+        "/batch/chunks",
+        json={
+            "sources": sources,
+            "folder_name": [folder1_name, folder2_name],
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    batch_chunks = response.json()
+    assert len(batch_chunks) > 0
+    assert all(ch["document_id"] in {doc1_id, doc2_id} for ch in batch_chunks)
+
+    # ------------ query endpoint with folder list ------------
+    response = await client.post(
+        "/query",
+        json={
+            "query": f"Which folder contains {content_phrase}?",
+            "folder_name": [folder1_name, folder2_name],
+            "k": 2,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    result = response.json()
+    # Ensure sources are scoped correctly
+    assert "sources" in result and len(result["sources"]) > 0
+    assert all(src["document_id"] in {doc1_id, doc2_id} for src in result["sources"])
