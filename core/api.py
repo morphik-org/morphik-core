@@ -20,6 +20,7 @@ from core.cache.llama_cache_factory import LlamaCacheFactory
 from core.completion.litellm_completion import LiteLLMCompletionModel
 from core.config import get_settings
 from core.database.postgres_database import PostgresDatabase
+from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.limits_utils import check_and_increment_limits
@@ -262,9 +263,19 @@ if settings.USE_RERANKING:
 # Initialize cache factory
 cache_factory = LlamaCacheFactory(Path(settings.STORAGE_PATH))
 
-# Initialize ColPali embedding model if enabled
-colpali_embedding_model = ColpaliEmbeddingModel() if settings.ENABLE_COLPALI else None
-colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI) if settings.ENABLE_COLPALI else None
+# Initialize ColPali embedding model per mode (off/local/api)
+match settings.COLPALI_MODE:
+    case "off":
+        colpali_embedding_model = None
+        colpali_vector_store = None
+    case "local":
+        colpali_embedding_model = ColpaliEmbeddingModel()
+        colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI)
+    case "api":
+        colpali_embedding_model = ColpaliApiEmbeddingModel()
+        colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI)
+    case _:
+        raise ValueError(f"Unsupported COLPALI_MODE: {settings.COLPALI_MODE}")
 
 # Initialize document service with configured components
 document_service = DocumentService(
@@ -276,7 +287,7 @@ document_service = DocumentService(
     parser=parser,
     reranker=reranker,
     cache_factory=cache_factory,
-    enable_colpali=settings.ENABLE_COLPALI,
+    enable_colpali=(settings.COLPALI_MODE != "off"),
     colpali_embedding_model=colpali_embedding_model,
     colpali_vector_store=colpali_vector_store,
 )

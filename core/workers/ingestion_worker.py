@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from core.config import get_settings
 from core.database.postgres_database import PostgresDatabase
+from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.models.auth import AuthContext, EntityType
@@ -574,15 +575,23 @@ async def startup(ctx):
 
     # Skip initializing completion model and reranker since they're not needed for ingestion
 
-    # Initialize ColPali embedding model and vector store if enabled
+    # Initialize ColPali embedding model and vector store per mode
     colpali_embedding_model = None
     colpali_vector_store = None
-    if settings.ENABLE_COLPALI:
-        logger.info("Initializing ColPali components...")
-        colpali_embedding_model = ColpaliEmbeddingModel()
+
+    if settings.COLPALI_MODE != "off":
+        logger.info(f"Initializing ColPali components (mode={settings.COLPALI_MODE}) ...")
+        # Choose embedding implementation
+        match settings.COLPALI_MODE:
+            case "local":
+                colpali_embedding_model = ColpaliEmbeddingModel()
+            case "api":
+                colpali_embedding_model = ColpaliApiEmbeddingModel()
+            case _:
+                raise ValueError(f"Unsupported COLPALI_MODE: {settings.COLPALI_MODE}")
+
+        # Vector store is needed for both local and api modes
         colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI)
-        # Properly await the initialization to ensure indexes are ready
-        # MultiVectorStore.initialize is synchronous, so we need to run it in a thread
         success = await asyncio.to_thread(colpali_vector_store.initialize)
         if success:
             logger.info("ColPali vector store initialization successful")
@@ -608,7 +617,7 @@ async def startup(ctx):
         embedding_model=embedding_model,
         parser=parser,
         cache_factory=None,
-        enable_colpali=settings.ENABLE_COLPALI,
+        enable_colpali=(settings.COLPALI_MODE != "off"),
         colpali_embedding_model=colpali_embedding_model,
         colpali_vector_store=colpali_vector_store,
     )
