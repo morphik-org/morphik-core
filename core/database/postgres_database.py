@@ -891,12 +891,10 @@ class PostgresDatabase(BaseDatabase):
                 # Escape single quotes
                 item_txt_escaped = item_txt.replace("'", "''")
 
-                # Two possible storage representations:
-                #   1. Scalar   : system_metadata->>'key' = 'value'
-                #   2. JSON arr.: system_metadata->'key' ? 'value'
+                # Support scalar equality and array membership; cast literal to text for ? operator
                 value_clauses.append(
                     f"(system_metadata->>'{key}' = '{item_txt_escaped}' "
-                    f"OR system_metadata->'{key}' ? '{item_txt_escaped}')"
+                    f"OR system_metadata->'{key}' ? CAST('{item_txt_escaped}' AS TEXT))"
                 )
 
             # OR all alternative values for this key, wrap in parentheses.
