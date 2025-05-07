@@ -1844,3 +1844,42 @@ class DocumentService:
             entry["metadata_updated"] = True
 
         history.append(entry)
+
+    # ------------------------------------------------------------------
+    # Helper – choose bucket per app (isolation)
+    # ------------------------------------------------------------------
+
+    async def _get_bucket_for_app(self, app_id: str | None) -> str | None:
+        """Return dedicated bucket for *app_id* if catalog entry exists."""
+        if not app_id:
+            return None
+
+        try:
+            from sqlalchemy import select
+            from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+            from sqlalchemy.orm import sessionmaker
+
+            from core.models.app_metadata import AppMetadataModel
+
+            settings = get_settings()
+
+            engine = create_async_engine(settings.POSTGRES_URI)
+            async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+            async with async_session() as sess:
+                result = await sess.execute(select(AppMetadataModel).where(AppMetadataModel.id == app_id))
+                meta = result.scalars().first()
+                if meta and meta.extra and meta.extra.get("s3_bucket"):
+                    return meta.extra["s3_bucket"]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not fetch bucket for app %s: %s", app_id, exc)
+        return None
+
+    async def _upload_to_app_bucket(
+        self,
+        auth: AuthContext,
+        content_base64: str,
+        key: str,
+        content_type: Optional[str] = None,
+    ) -> tuple[str, str]:
+        bucket_override = await self._get_bucket_for_app(auth.app_id)
+        return await self.storage.upload_from_base64(content_base64, key, content_type, bucket=bucket_override or "")

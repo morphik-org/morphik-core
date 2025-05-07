@@ -60,10 +60,31 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:  # noq
     if entity_type_field is None:
         raise HTTPException(status_code=401, detail="Missing entity type in token")
 
-    return AuthContext(
+    ctx = AuthContext(
         entity_type=EntityType(entity_type_field),
         entity_id=payload["entity_id"],
         app_id=payload.get("app_id"),
         permissions=set(payload.get("permissions", ["read"])),
         user_id=payload.get("user_id", payload["entity_id"]),
     )
+
+    # ------------------------------------------------------------------
+    # Enterprise enhancement – swap database & vector store based on app_id
+    # ------------------------------------------------------------------
+    try:
+        from core import api as core_api  # type: ignore
+        from ee.db_router import get_database_for_app, get_vector_store_for_app  # noqa: WPS433 – runtime import
+
+        # Replace DB connection pool
+        core_api.document_service.db = await get_database_for_app(ctx.app_id)  # noqa: SLF001
+
+        # Replace vector store (if available)
+        vstore = await get_vector_store_for_app(ctx.app_id)
+        if vstore is not None:
+            core_api.vector_store = vstore  # noqa: SLF001 – monkey-patch
+            core_api.document_service.vector_store = vstore  # noqa: SLF001 – monkey-patch
+    except ModuleNotFoundError:
+        # Enterprise package not installed – nothing to do.
+        pass
+
+    return ctx

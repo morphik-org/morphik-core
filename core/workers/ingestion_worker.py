@@ -26,6 +26,9 @@ from core.storage.s3_storage import S3Storage
 from core.vector_store.multi_vector_store import MultiVectorStore
 from core.vector_store.pgvector_store import PGVectorStore
 
+# Enterprise routing helpers
+from ee.db_router import get_database_for_app, get_vector_store_for_app
+
 logger = logging.getLogger(__name__)
 
 # Configure logger for ingestion worker (restored from diff)
@@ -149,8 +152,47 @@ async def process_ingestion_job(
         )
         phase_times["deserialize_auth"] = time.time() - deserialize_start
 
-        # Get document service from the context
-        document_service: DocumentService = ctx["document_service"]
+        # ------------------------------------------------------------------
+        # Per-app routing for database and vector store
+        # ------------------------------------------------------------------
+
+        # Resolve a dedicated database/vector-store using the JWT *app_id*.
+        # When app_id is None we fall back to the control-plane resources.
+
+        database = await get_database_for_app(auth.app_id)
+        await database.initialize()
+
+        vector_store = await get_vector_store_for_app(auth.app_id)
+        if vector_store and hasattr(vector_store, "initialize"):
+            # PGVectorStore.initialize is *async*
+            try:
+                await vector_store.initialize()
+            except Exception as init_err:
+                logger.warning(f"Vector store initialization failed for app {auth.app_id}: {init_err}")
+
+        # Initialise a per-app MultiVectorStore for ColPali when needed
+        colpali_vector_store = None
+        if use_colpali:
+            try:
+                colpali_vector_store = MultiVectorStore(uri=str(database.engine.url))
+                await asyncio.to_thread(colpali_vector_store.initialize)
+            except Exception as e:
+                logger.warning(f"Failed to initialise ColPali MultiVectorStore for app {auth.app_id}: {e}")
+
+        # Build a fresh DocumentService scoped to this job/app so we don't
+        # mutate the shared instance kept in *ctx* (avoids cross-talk between
+        # concurrent jobs for different apps).
+        document_service = DocumentService(
+            storage=ctx["storage"],
+            database=database,
+            vector_store=vector_store,
+            embedding_model=ctx["embedding_model"],
+            parser=ctx["parser"],
+            cache_factory=None,
+            enable_colpali=use_colpali,
+            colpali_embedding_model=ctx.get("colpali_embedding_model"),
+            colpali_vector_store=colpali_vector_store,
+        )
 
         # 3. Download the file from storage
         logger.info(f"Downloading file from {bucket}/{file_key}")
