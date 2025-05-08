@@ -18,7 +18,7 @@ class AppMetadataModel(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # References the *logical* owner inside Morphik (typically the authenticated user / client)
-    owner_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
 
     # Human-friendly name supplied by the caller (e.g. "my-new-campaign-data")
     app_name = Column(String, nullable=False, index=True)
@@ -47,7 +47,7 @@ class AppMetadata(BaseModel):
     """Pydantic model that mirrors :class:`AppMetadataModel` for API responses."""
 
     id: str = Field(..., description="Internal surrogate ID")
-    owner_id: str = Field(..., description="ID of the Morphik account that owns the app")
+    user_id: str = Field(..., description="ID of the Morphik account that owns the app")
     app_name: str = Field(..., description="Human-friendly app name as provided by the caller")
     neon_project_id: str = Field(..., description="ID of the Neon project backing the app")
     connection_uri: str = Field(..., description="PostgreSQL connection URI for the provisioned Neon DB")

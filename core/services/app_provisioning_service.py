@@ -18,6 +18,7 @@ from sqlalchemy.orm import sessionmaker
 
 from core.config import get_settings
 from core.models.app_metadata import AppMetadataModel
+from core.models.apps import AppModel
 from core.services.neon_client import NeonClient
 
 # =============================================================================
@@ -292,7 +293,7 @@ class AppProvisioningService:  # noqa: D101 – obvious from name
         async with self._async_session() as session:
             model = AppMetadataModel(
                 id=app_id,
-                owner_id=user_id,
+                user_id=user_id,
                 app_name=app_name,  # Store original app_name
                 neon_project_id=project_id,
                 connection_uri=stored_connection_uri,  # Store the cleaned Neon URI
@@ -301,6 +302,15 @@ class AppProvisioningService:  # noqa: D101 – obvious from name
                 updated_at=now,
             )
             session.add(model)
+
+            # Also create lightweight *apps* record for dashboard listing
+            dashboard_app = AppModel(
+                app_id=app_id,
+                user_id=uuid.UUID(user_id),  # Cast to standard Python UUID object
+                name=app_name,
+                uri=morphik_uri,
+            )
+            session.add(dashboard_app)
             await session.commit()
 
         # ------------------------------------------------------------------

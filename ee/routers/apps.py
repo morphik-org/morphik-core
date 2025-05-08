@@ -19,10 +19,12 @@ from pydantic import BaseModel, Field
 
 from core.auth_utils import verify_token
 from core.models.auth import AuthContext
+from core.models.tiers import AccountTier, get_tier_limits
 
 # The provisioning logic lives in *core* because it is useful in background
 # jobs and potentially community deployments as well.  The router is EE-only.
 from core.services.app_provisioning_service import AppProvisioningService, ProvisionResult
+from core.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 
@@ -108,9 +110,53 @@ async def create_app_route(
             request.region,
             morphik_host=morphik_host,
         )
+
+        # ------------------------------------------------------------------
+        # The code snippet `user_service = UserService()` creates an instance of the `UserService`
+        # class, which is responsible for interacting with the user service in the application.
+        # Register the newly created app in the user limits table
+        # ------------------------------------------------------------------
+        user_service = UserService()
+        await user_service.initialize()
+
+        # ------------------------------------------------------------------
+        # Check plan eligibility and enforce Teams app limit
+        # ------------------------------------------------------------------
+
+        user_limits = await user_service.get_user_limits(auth.user_id)
+
+        if not user_limits:
+            # Create default limits record if none exists
+            await user_service.create_user(auth.user_id)
+            user_limits = await user_service.get_user_limits(auth.user_id)
+
+        tier = user_limits.get("tier", AccountTier.FREE)
+
+        # Only Teams or Enterprise (self-hosted) customers may provision isolated apps
+        if tier not in (AccountTier.TEAMS, AccountTier.SELF_HOSTED):
+            raise HTTPException(
+                status_code=403,
+                detail="Only Teams or Enterprise plan customers can create isolated applications. "
+                "Upgrade your plan to access this feature.",
+            )
+
+        # For Teams tier, make sure the user is still within the app limit
+        if tier == AccountTier.TEAMS:
+            tier_limits = get_tier_limits(tier, user_limits.get("custom_limits"))
+            app_limit = tier_limits.get("app_limit", 50)
+            current_apps = user_limits.get("app_ids", []) or []
+
+            if len(current_apps) >= app_limit:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Application limit reached for Teams plan (maximum {app_limit}).",
+                )
+
+        # Record the new app in the user's limits profile
+        await user_service.register_app(auth.user_id, result.app_id)
+
     except Exception as exc:  # noqa: BLE001 – capture NeonAPIError and others
         logger.exception("Failed to provision new app: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to provision app") from exc
 
-    # For now we only care about success.  Future: persist call in user limits.
     return result.as_dict()

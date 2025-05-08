@@ -37,7 +37,6 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:  # noq
     # ------------------------------------------------------------------
     # 2. Normal token verification flow
     # ------------------------------------------------------------------
-    logger.info(f"Authorization header: {authorization}")
     if not authorization:
         logger.info("Missing authorization header")
         raise HTTPException(
