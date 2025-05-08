@@ -30,6 +30,11 @@ try:
 except ImportError:  # When vector store module missing (tests)
     PGVectorStore = None  # type: ignore
 
+try:
+    from core.vector_store.multi_vector_store import MultiVectorStore
+except ImportError:  # pragma: no cover – module optional in some deployments
+    MultiVectorStore = None  # type: ignore
+
 __all__ = ["get_database_for_app"]
 
 # ---------------------------------------------------------------------------
@@ -40,6 +45,7 @@ _CONTROL_PLANE_DB: Optional[PostgresDatabase] = None
 _DB_CACHE: Dict[str, PostgresDatabase] = {}
 # PGVectorStore cache keyed by connection URI to avoid duplicate pools
 _VSTORE_CACHE: Dict[str, "PGVectorStore"] = {}
+_MVSTORE_CACHE: Dict[str, "MultiVectorStore"] = {}
 
 
 async def _resolve_connection_uri(app_id: str) -> Optional[str]:
@@ -154,4 +160,56 @@ async def get_vector_store_for_app(app_id: str | None):
 
     store = PGVectorStore(uri=uri)
     _VSTORE_CACHE[uri] = store
+    return store
+
+
+async def get_multi_vector_store_for_app(app_id: str | None):
+    """Return a MultiVectorStore bound to the connection URI of *app_id*.
+
+    When *app_id* is ``None`` we return a store that points at the control-plane
+    database so that shared/legacy apps keep working.  Instances are cached per
+    URI to avoid duplicate connection pools.
+    """
+
+    if MultiVectorStore is None:  # Dependency missing – feature disabled
+        return None
+
+    settings = get_settings()
+
+    # ------------------------------------------------------------------
+    # 1) No per-app routing required –> control-plane store
+    # ------------------------------------------------------------------
+    if not app_id:
+        uri = settings.POSTGRES_URI
+    else:
+        uri = await _resolve_connection_uri(app_id)
+
+        # Fallback (should not normally happen)
+        if uri is None:
+            uri = settings.POSTGRES_URI
+
+    # Convert asyncpg URI to plain psycopg (sync) variant expected by
+    # MultiVectorStore and make sure *sslmode=require* is present so Neon
+    # accepts the connection.
+    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+    parsed = urlparse(uri)
+
+    # Ensure the driver prefix is *postgresql://* (psycopg)
+    if parsed.scheme.startswith("postgresql+asyncpg"):
+        parsed = parsed._replace(scheme="postgresql")
+
+    # Ensure sslmode=require in the query string (Neon tends to need it)
+    q = parse_qs(parsed.query)
+    if "sslmode" not in q:
+        q["sslmode"] = ["require"]
+    parsed = parsed._replace(query=urlencode(q, doseq=True))
+
+    final_uri = urlunparse(parsed)
+
+    if final_uri in _MVSTORE_CACHE:
+        return _MVSTORE_CACHE[final_uri]
+
+    store = MultiVectorStore(uri=final_uri)
+    _MVSTORE_CACHE[final_uri] = store
     return store

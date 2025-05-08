@@ -230,6 +230,42 @@ class AppProvisioningService:  # noqa: D101 – obvious from name
         parsed_with_driver = parsed_no_query._replace(scheme=new_scheme)
         stored_connection_uri = urlunparse(parsed_with_driver)
 
+        # ------------------------------------------------------------------
+        # 1c) Initialize per-app database schema (document metadata + pgvector)
+        # ------------------------------------------------------------------
+        try:
+            # Import lazily to avoid circular deps when AppProvisioningService is
+            # imported before the database / vector store packages.
+            from core.database.postgres_database import PostgresDatabase
+            from core.vector_store.multi_vector_store import MultiVectorStore
+            from core.vector_store.pgvector_store import PGVectorStore
+
+            # Initialise the relational metadata tables (documents, folders, etc.)
+            app_db = PostgresDatabase(uri=stored_connection_uri)
+            await app_db.initialize()
+
+            # Initialise the pgvector extension + embeddings table
+            vector_store = PGVectorStore(uri=stored_connection_uri)
+            await vector_store.initialize()
+
+            # Initialise the multi-vector store (ColPali) – this is synchronous
+            # so run it in a thread pool to avoid blocking the event loop.
+            mv_store = MultiVectorStore(uri=stored_connection_uri)
+            import asyncio
+
+            await asyncio.to_thread(mv_store.initialize)
+
+            # Engines are only needed during initialisation – dispose to free
+            # connections in the provisioning worker.
+            await app_db.engine.dispose()
+            await vector_store.engine.dispose()
+
+            logger.info("Per-app database schema initialised successfully")
+        except Exception as init_exc:  # noqa: BLE001
+            logger.error("Failed to initialise per-app database schema: %s", init_exc)
+            # Surface the error so callers know provisioning failed completely
+            raise
+
         # 1b) Generate a real JWT that will be embedded in the Morphik URI. This token is
         #     validated by :func:`core.auth_utils.verify_token` on every request from the
         #     provisioned application.  We embed *app_id* so that downstream logic can look
