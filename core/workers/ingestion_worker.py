@@ -173,7 +173,7 @@ async def process_ingestion_job(
 
         # Initialise a per-app MultiVectorStore for ColPali when needed
         colpali_vector_store = None
-        if use_colpali:
+        if use_colpali and settings.MODE == "cloud":
             try:
                 # Use render_as_string(hide_password=False) so the URI keeps the
                 # password – str(engine.url) masks it with "***" which breaks
