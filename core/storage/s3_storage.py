@@ -32,6 +32,37 @@ class S3Storage(BaseStorage):
             region_name=region_name,
         )
 
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _ensure_bucket(self, bucket: str) -> None:
+        """Create *bucket* if it does not exist (idempotent).
+
+        S3 returns an error if you try to create an existing bucket in the
+        *same* region – we silently ignore that specific error code.
+        """
+        try:
+            # HeadBucket is the cheapest – if it succeeds the bucket exists.
+            self.s3_client.head_bucket(Bucket=bucket)
+        except ClientError as exc:  # noqa: BLE001 – fine-grained checks below
+            error_code = exc.response.get("Error", {}).get("Code", "")
+            if error_code in {"404", "NoSuchBucket"}:
+                # Need to create the bucket in the client's region
+                region = self.s3_client.meta.region_name
+                if region == "us-east-1":
+                    self.s3_client.create_bucket(Bucket=bucket)
+                else:
+                    self.s3_client.create_bucket(
+                        Bucket=bucket,
+                        CreateBucketConfiguration={"LocationConstraint": region},
+                    )
+            elif error_code in {"301", "BucketAlreadyOwnedByYou", "400"}:
+                # Bucket exists / owned etc. – safe to continue
+                pass
+            else:
+                raise
+
     async def upload_file(
         self,
         file: Union[str, bytes, BinaryIO],
@@ -45,6 +76,11 @@ class S3Storage(BaseStorage):
             if content_type:
                 extra_args["ContentType"] = content_type
 
+            target_bucket = bucket or self.default_bucket
+
+            # Ensure bucket exists (when dedicated buckets per app are enabled)
+            self._ensure_bucket(target_bucket)
+
             if isinstance(file, (str, bytes)):
                 # Create temporary file for content
                 with tempfile.NamedTemporaryFile(delete=False) as temp_file:
@@ -55,14 +91,14 @@ class S3Storage(BaseStorage):
                     temp_file_path = temp_file.name
 
                 try:
-                    self.s3_client.upload_file(temp_file_path, self.default_bucket, key, ExtraArgs=extra_args)
+                    self.s3_client.upload_file(temp_file_path, target_bucket, key, ExtraArgs=extra_args)
                 finally:
                     Path(temp_file_path).unlink()
             else:
                 # File object
-                self.s3_client.upload_fileobj(file, self.default_bucket, key, ExtraArgs=extra_args)
+                self.s3_client.upload_fileobj(file, target_bucket, key, ExtraArgs=extra_args)
 
-            return self.default_bucket, key
+            return target_bucket, key
 
         except ClientError as e:
             logger.error(f"Error uploading to S3: {e}")

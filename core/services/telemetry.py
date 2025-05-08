@@ -884,13 +884,10 @@ class TelemetryService:
         status = "success"
         current_span = trace.get_current_span()
 
-        # Hash the user ID for anonymity
-        hashed_user_id = hashlib.sha256(user_id.encode()).hexdigest()[:16]
-
         try:
             # Add operation attributes to the current span
             current_span.set_attribute("operation.type", operation_type)
-            current_span.set_attribute("user.id", hashed_user_id)
+            current_span.set_attribute("user.id", user_id)
             if metadata:
                 # Create a copy of metadata to avoid modifying the original
                 metadata_copy = metadata.copy()
@@ -937,7 +934,7 @@ class TelemetryService:
                 timestamp=datetime.now(),
                 operation_type=operation_type,
                 tokens_used=tokens_used,
-                user_id=hashed_user_id,
+                user_id=user_id,
                 duration_ms=duration,
                 status=status,
                 metadata=sanitized_metadata,
@@ -945,16 +942,15 @@ class TelemetryService:
 
             with self._lock:
                 self._usage_records.append(record)
-                self._user_totals[hashed_user_id][operation_type] += tokens_used
+                self._user_totals[user_id][operation_type] += tokens_used
 
     def get_user_usage(self, user_id: str) -> Dict[str, int]:
         """Get usage statistics for a user."""
         if not TELEMETRY_ENABLED:
             return {}
 
-        hashed_user_id = hashlib.sha256(user_id.encode()).hexdigest()[:16]
         with self._lock:
-            return dict(self._user_totals[hashed_user_id])
+            return dict(self._user_totals[user_id])
 
     def get_recent_usage(
         self,
@@ -972,8 +968,7 @@ class TelemetryService:
 
         # Apply filters
         if user_id:
-            hashed_user_id = hashlib.sha256(user_id.encode()).hexdigest()[:16]
-            records = [r for r in records if r.user_id == hashed_user_id]
+            records = [r for r in records if r.user_id == user_id]
         if operation_type:
             records = [r for r in records if r.operation_type == operation_type]
         if since:

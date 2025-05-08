@@ -7,7 +7,7 @@ class AccountTier(str, Enum):
 
     FREE = "free"
     PRO = "pro"
-    CUSTOM = "custom"
+    TEAMS = "teams"
     SELF_HOSTED = "self_hosted"
 
 
@@ -59,14 +59,13 @@ TIER_LIMITS = {
         "hourly_agent_limit": 100,
         "monthly_agent_limit": 1000,
     },
-    AccountTier.CUSTOM: {
-        # Custom tier limits are set on a per-account basis
-        # These are default values that will be overridden
+    AccountTier.TEAMS: {
+        # Teams tier – generous limits but still bounded
         # Application limits
-        "app_limit": 10,  # Maximum number of applications
+        "app_limit": 100,  # Maximum number of applications
         # Storage limits
-        "storage_file_limit": 10000,  # Maximum number of files in storage
-        "storage_size_limit_gb": 100,  # Maximum storage size in GB
+        "storage_file_limit": 500000,  # Maximum number of files in storage
+        "storage_size_limit_gb": 50,  # Maximum storage size in GB
         "hourly_ingest_limit": 500,  # Maximum file/text ingests per hour
         "monthly_ingest_limit": 15000,  # Maximum file/text ingests per month
         # Query limits
@@ -80,6 +79,9 @@ TIER_LIMITS = {
         "cache_creation_limit": 20,  # Maximum number of caches
         "hourly_cache_query_limit": 1000,  # Maximum cache queries per hour
         "monthly_cache_query_limit": 50000,  # Maximum cache queries per month
+        # Agent call limits
+        "hourly_agent_limit": 500,
+        "monthly_agent_limit": 10000,
     },
     AccountTier.SELF_HOSTED: {
         # Self-hosted has no limits
@@ -116,7 +118,7 @@ def get_tier_limits(tier: AccountTier, custom_limits: Dict[str, Any] = None) -> 
     Returns:
         Dict of limits for the specified tier
     """
-    if tier == AccountTier.CUSTOM and custom_limits:
+    if tier == AccountTier.TEAMS and custom_limits:
         # Merge default custom limits with the provided custom limits
         return {**TIER_LIMITS[tier], **custom_limits}
 

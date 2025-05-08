@@ -287,6 +287,7 @@ class Folder:
         k: int = 4,
         min_score: float = 0.0,
         use_colpali: bool = True,
+        additional_folders: Optional[List[str]] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks within this folder.
@@ -297,17 +298,19 @@ class Folder:
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
+            additional_folders: Optional list of extra folders to include in the scope
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
         """
+        effective_folder = self._merge_folders(additional_folders)
         request = {
             "query": query,
             "filters": filters,
             "k": k,
             "min_score": min_score,
             "use_colpali": use_colpali,
-            "folder_name": self._name,  # Add folder name here
+            "folder_name": effective_folder,
         }
 
         response = self._client._request("POST", "retrieve/chunks", request)
@@ -320,6 +323,7 @@ class Folder:
         k: int = 4,
         min_score: float = 0.0,
         use_colpali: bool = True,
+        additional_folders: Optional[List[str]] = None,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents within this folder.
@@ -330,17 +334,19 @@ class Folder:
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
+            additional_folders: Optional list of extra folders to include in the scope
 
         Returns:
             List[DocumentResult]: List of relevant documents
         """
+        effective_folder = self._merge_folders(additional_folders)
         request = {
             "query": query,
             "filters": filters,
             "k": k,
             "min_score": min_score,
             "use_colpali": use_colpali,
-            "folder_name": self._name,  # Add folder name here
+            "folder_name": effective_folder,
         }
 
         response = self._client._request("POST", "retrieve/docs", request)
@@ -359,6 +365,7 @@ class Folder:
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
+        additional_folders: Optional[List[str]] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> CompletionResponse:
         """
@@ -376,11 +383,13 @@ class Folder:
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
+            additional_folders: Optional list of extra folders to include in the scope
             schema: Optional schema for structured output
 
         Returns:
             CompletionResponse: Generated completion
         """
+        effective_folder = self._merge_folders(additional_folders)
         payload = self._client._logic._prepare_query_request(
             query,
             filters,
@@ -393,8 +402,8 @@ class Folder:
             hop_depth,
             include_paths,
             prompt_overrides,
-            self._name,
-            None,
+            effective_folder,
+            None,  # end_user_id not supported at this level
             schema,
         )
 
@@ -413,7 +422,11 @@ class Folder:
         return self._client._logic._parse_completion_response(response)
 
     def list_documents(
-        self, skip: int = 0, limit: int = 100, filters: Optional[Dict[str, Any]] = None
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        filters: Optional[Dict[str, Any]] = None,
+        additional_folders: Optional[List[str]] = None,
     ) -> List[Document]:
         """
         List accessible documents within this folder.
@@ -422,28 +435,34 @@ class Folder:
             skip: Number of documents to skip
             limit: Maximum number of documents to return
             filters: Optional filters
+            additional_folders: Optional list of extra folders to include in the scope
 
         Returns:
             List[Document]: List of documents
         """
-        params, data = self._client._logic._prepare_list_documents_request(skip, limit, filters, self._name, None)
+        effective_folder = self._merge_folders(additional_folders)
+        params, data = self._client._logic._prepare_list_documents_request(skip, limit, filters, effective_folder, None)
         response = self._client._request("POST", "documents", data=data, params=params)
         docs = self._client._logic._parse_document_list_response(response)
         for doc in docs:
             doc._client = self._client
         return docs
 
-    def batch_get_documents(self, document_ids: List[str]) -> List[Document]:
+    def batch_get_documents(
+        self, document_ids: List[str], additional_folders: Optional[List[str]] = None
+    ) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation within this folder.
 
         Args:
             document_ids: List of document IDs to retrieve
+            additional_folders: Optional list of extra folders to include in the scope
 
         Returns:
             List[Document]: List of document metadata for found documents
         """
-        request = {"document_ids": document_ids, "folder_name": self._name}
+        merged = self._merge_folders(additional_folders)
+        request = {"document_ids": document_ids, "folder_name": merged}
 
         response = self._client._request("POST", "batch/documents", data=request)
         docs = [self._client._logic._parse_document_response(doc) for doc in response]
@@ -451,12 +470,17 @@ class Folder:
             doc._client = self._client
         return docs
 
-    def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
+    def batch_get_chunks(
+        self,
+        sources: List[Union[ChunkSource, Dict[str, Any]]],
+        additional_folders: Optional[List[str]] = None,
+    ) -> List[FinalChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation within this folder.
 
         Args:
             sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
+            additional_folders: Optional list of extra folders to include in the scope
 
         Returns:
             List[FinalChunkResult]: List of chunk results
@@ -469,8 +493,8 @@ class Folder:
             else:
                 source_dicts.append(source.model_dump())
 
-        # Add folder_name to request
-        request = {"sources": source_dicts, "folder_name": self._name}
+        merged = self._merge_folders(additional_folders)
+        request = {"sources": source_dicts, "folder_name": merged}
 
         response = self._client._request("POST", "batch/chunks", data=request)
         return self._client._logic._parse_chunk_result_list_response(response)
@@ -558,6 +582,21 @@ class Folder:
 
         # Then delete by ID
         return self._client.delete_document(doc.external_id)
+
+    # Helper --------------------------------------------------------------
+    def _merge_folders(self, additional_folders: Optional[List[str]] = None) -> Union[str, List[str]]:
+        """Return the effective folder scope.
+
+        If *additional_folders* is provided it will be combined with the folder's
+        own *self._name* and returned as a list (to preserve ordering and allow
+        duplicates to be removed server-side).  Otherwise just *self._name* is
+        returned so we keep backward-compatibility with the original API that
+        expected a single string.
+        """
+        if not additional_folders:
+            return self._name
+        # Pre-pend the scoped folder to the list provided by the caller.
+        return [self._name] + additional_folders
 
 
 class UserScope:
@@ -824,6 +863,7 @@ class UserScope:
         k: int = 4,
         min_score: float = 0.0,
         use_colpali: bool = True,
+        additional_folders: Optional[List[str]] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks as this end user.
@@ -834,10 +874,12 @@ class UserScope:
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
+            additional_folders: Optional list of extra folders to include in the scope
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
         """
+        effective_folder = self._merge_folders(additional_folders)
         request = {
             "query": query,
             "filters": filters,
@@ -845,6 +887,7 @@ class UserScope:
             "min_score": min_score,
             "use_colpali": use_colpali,
             "end_user_id": self._end_user_id,  # Add end user ID here
+            "folder_name": effective_folder,  # Add folder name if provided
         }
 
         # Add folder name if scoped to a folder
@@ -861,6 +904,7 @@ class UserScope:
         k: int = 4,
         min_score: float = 0.0,
         use_colpali: bool = True,
+        additional_folders: Optional[List[str]] = None,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents as this end user.
@@ -871,10 +915,12 @@ class UserScope:
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
+            additional_folders: Optional list of extra folders to include in the scope
 
         Returns:
             List[DocumentResult]: List of relevant documents
         """
+        effective_folder = self._merge_folders(additional_folders)
         request = {
             "query": query,
             "filters": filters,
@@ -882,6 +928,7 @@ class UserScope:
             "min_score": min_score,
             "use_colpali": use_colpali,
             "end_user_id": self._end_user_id,  # Add end user ID here
+            "folder_name": effective_folder,  # Add folder name if provided
         }
 
         # Add folder name if scoped to a folder
@@ -904,6 +951,7 @@ class UserScope:
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
+        additional_folders: Optional[List[str]] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> CompletionResponse:
         """
@@ -921,11 +969,13 @@ class UserScope:
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
+            additional_folders: Optional list of extra folders to include in the scope
             schema: Optional schema for structured output
 
         Returns:
             CompletionResponse: Generated completion
         """
+        effective_folder = self._merge_folders(additional_folders)
         payload = self._client._logic._prepare_query_request(
             query,
             filters,
@@ -938,7 +988,7 @@ class UserScope:
             hop_depth,
             include_paths,
             prompt_overrides,
-            self._folder_name,
+            effective_folder,
             self._end_user_id,
             schema,
         )
@@ -958,7 +1008,11 @@ class UserScope:
         return self._client._logic._parse_completion_response(response)
 
     def list_documents(
-        self, skip: int = 0, limit: int = 100, filters: Optional[Dict[str, Any]] = None
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        filters: Optional[Dict[str, Any]] = None,
+        additional_folders: Optional[List[str]] = None,
     ) -> List[Document]:
         """
         List accessible documents for this end user.
@@ -967,6 +1021,7 @@ class UserScope:
             skip: Number of documents to skip
             limit: Maximum number of documents to return
             filters: Optional filters
+            additional_folders: Optional list of extra folders to include in the scope
 
         Returns:
             List[Document]: List of documents
@@ -978,6 +1033,11 @@ class UserScope:
         if self._folder_name:
             params["folder_name"] = self._folder_name
 
+        # Merge any additional folders into the request params
+        effective_folder = self._merge_folders(additional_folders)
+        if effective_folder:
+            params["folder_name"] = effective_folder
+
         response = self._client._request("POST", "documents", data=filters or {}, params=params)
 
         docs = [self._client._logic._parse_document_response(doc) for doc in response]
@@ -985,21 +1045,24 @@ class UserScope:
             doc._client = self._client
         return docs
 
-    def batch_get_documents(self, document_ids: List[str]) -> List[Document]:
+    def batch_get_documents(
+        self, document_ids: List[str], additional_folders: Optional[List[str]] = None
+    ) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation for this end user.
 
         Args:
             document_ids: List of document IDs to retrieve
+            additional_folders: Optional list of extra folders to include in the scope
 
         Returns:
             List[Document]: List of document metadata for found documents
         """
+        merged = self._merge_folders(additional_folders)
         request = {"document_ids": document_ids, "end_user_id": self._end_user_id}
 
-        # Add folder name if scoped to a folder
-        if self._folder_name:
-            request["folder_name"] = self._folder_name
+        if merged:
+            request["folder_name"] = merged
 
         response = self._client._request("POST", "batch/documents", data=request)
         docs = [self._client._logic._parse_document_response(doc) for doc in response]
@@ -1007,12 +1070,17 @@ class UserScope:
             doc._client = self._client
         return docs
 
-    def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
+    def batch_get_chunks(
+        self,
+        sources: List[Union[ChunkSource, Dict[str, Any]]],
+        additional_folders: Optional[List[str]] = None,
+    ) -> List[FinalChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation for this end user.
 
         Args:
             sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
+            additional_folders: Optional list of extra folders to include in the scope
 
         Returns:
             List[FinalChunkResult]: List of chunk results
@@ -1025,12 +1093,11 @@ class UserScope:
             else:
                 source_dicts.append(source.model_dump())
 
-        # Add end_user_id and folder_name to request
+        merged = self._merge_folders(additional_folders)
         request = {"sources": source_dicts, "end_user_id": self._end_user_id}
 
-        # Add folder name if scoped to a folder
-        if self._folder_name:
-            request["folder_name"] = self._folder_name
+        if merged:
+            request["folder_name"] = merged
 
         response = self._client._request("POST", "batch/chunks", data=request)
         return self._client._logic._parse_chunk_result_list_response(response)
@@ -1133,6 +1200,22 @@ class UserScope:
 
         # Then delete by ID
         return self._client.delete_document(doc.external_id)
+
+    # Helper --------------------------------------------------------------
+    def _merge_folders(self, additional_folders: Optional[List[str]] = None) -> Union[str, List[str], None]:
+        """Return combined folder scope for user.
+
+        When this user scope is already tied to *self._folder_name* we combine it
+        with any *additional_folders* passed by the caller.  Otherwise just the
+        *additional_folders* (or None) is returned so that upstream logic is
+        unchanged.
+        """
+        base = self._folder_name
+        if additional_folders:
+            if base:
+                return [base] + additional_folders
+            return additional_folders
+        return base
 
 
 class Morphik:
@@ -1542,6 +1625,7 @@ class Morphik:
         k: int = 4,
         min_score: float = 0.0,
         use_colpali: bool = True,
+        folder_name: Optional[Union[str, List[str]]] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks.
@@ -1564,7 +1648,9 @@ class Morphik:
             )
             ```
         """
-        payload = self._logic._prepare_retrieve_chunks_request(query, filters, k, min_score, use_colpali, None, None)
+        payload = self._logic._prepare_retrieve_chunks_request(
+            query, filters, k, min_score, use_colpali, folder_name, None
+        )
         response = self._request("POST", "retrieve/chunks", data=payload)
         return self._logic._parse_chunk_result_list_response(response)
 
@@ -1575,6 +1661,7 @@ class Morphik:
         k: int = 4,
         min_score: float = 0.0,
         use_colpali: bool = True,
+        folder_name: Optional[Union[str, List[str]]] = None,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents.
@@ -1597,7 +1684,9 @@ class Morphik:
             )
             ```
         """
-        payload = self._logic._prepare_retrieve_docs_request(query, filters, k, min_score, use_colpali, None, None)
+        payload = self._logic._prepare_retrieve_docs_request(
+            query, filters, k, min_score, use_colpali, folder_name, None
+        )
         response = self._request("POST", "retrieve/docs", data=payload)
         return self._logic._parse_document_result_list_response(response)
 
@@ -1614,6 +1703,7 @@ class Morphik:
         hop_depth: int = 1,
         include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> CompletionResponse:
         """
@@ -1633,6 +1723,7 @@ class Morphik:
             include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
                 Either a QueryPromptOverrides object or a dictionary with the same structure
+            folder_name: Optional folder name to further scope operations
             schema: Optional schema for structured output, can be a Pydantic model or a JSON schema dict
         Returns:
             CompletionResponse
@@ -1704,6 +1795,7 @@ class Morphik:
                     print(f"- {evidence}")
             ```
         """
+        # Directly forward the supplied folder_name (may be None, str, or List[str])
         payload = self._logic._prepare_query_request(
             query,
             filters,
@@ -1716,8 +1808,8 @@ class Morphik:
             hop_depth,
             include_paths,
             prompt_overrides,
-            None,
-            None,
+            folder_name,
+            None,  # end_user_id not supported at this level
             schema,
         )
 
@@ -1736,7 +1828,11 @@ class Morphik:
         return self._logic._parse_completion_response(response)
 
     def list_documents(
-        self, skip: int = 0, limit: int = 100, filters: Optional[Dict[str, Any]] = None
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        filters: Optional[Dict[str, Any]] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
     ) -> List[Document]:
         """
         List accessible documents.
@@ -1745,6 +1841,7 @@ class Morphik:
             skip: Number of documents to skip
             limit: Maximum number of documents to return
             filters: Optional filters
+            folder_name: Optional folder name (or list of names) to scope the request
 
         Returns:
             List[Document]: List of accessible documents
@@ -1758,7 +1855,7 @@ class Morphik:
             next_page = db.list_documents(skip=10, limit=10, filters={"department": "research"})
             ```
         """
-        params, data = self._logic._prepare_list_documents_request(skip, limit, filters, None, None)
+        params, data = self._logic._prepare_list_documents_request(skip, limit, filters, folder_name, None)
         response = self._request("POST", "documents", data=data, params=params)
         docs = self._logic._parse_document_list_response(response)
         for doc in docs:
@@ -2210,12 +2307,15 @@ class Morphik:
 
         return result
 
-    def batch_get_documents(self, document_ids: List[str]) -> List[Document]:
+    def batch_get_documents(
+        self, document_ids: List[str], folder_name: Optional[Union[str, List[str]]] = None
+    ) -> List[Document]:
         """
-        Retrieve multiple documents by their IDs in a single batch operation.
+        Retrieve multiple documents by their IDs.
 
         Args:
             document_ids: List of document IDs to retrieve
+            folder_name: Optional folder name (or list of names) to scope the request
 
         Returns:
             List[Document]: List of document metadata for found documents
@@ -2227,8 +2327,9 @@ class Morphik:
                 print(f"Document {doc.external_id}: {doc.metadata.get('title')}")
             ```
         """
-        # API expects a dict with document_ids key, not a direct list
-        response = self._request("POST", "batch/documents", data={"document_ids": document_ids})
+        # Build request respecting folder scoping if provided
+        request = self._logic._prepare_batch_get_documents_request(document_ids, folder_name, None)
+        response = self._request("POST", "batch/documents", data=request)
         docs = self._logic._parse_document_list_response(response)
         for doc in docs:
             doc._client = self
@@ -2259,12 +2360,16 @@ class Morphik:
         response = self._request("POST", "batch/documents/delete", data={"document_ids": document_ids})
         return response
 
-    def batch_get_chunks(self, sources: List[Union[ChunkSource, Dict[str, Any]]]) -> List[FinalChunkResult]:
+    
+    def batch_get_chunks(
+        self, sources: List[Union[ChunkSource, Dict[str, Any]]], folder_name: Optional[Union[str, List[str]]] = None
+    ) -> List[FinalChunkResult]:
         """
-        Retrieve specific chunks by their document ID and chunk number in a single batch operation.
+        Retrieve specific chunks by their document ID and chunk number.
 
         Args:
             sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
+            folder_name: Optional folder name (or list of names) to scope the request
 
         Returns:
             List[FinalChunkResult]: List of chunk results
@@ -2289,15 +2394,8 @@ class Morphik:
                 print(f"Chunk from {chunk.document_id}, number {chunk.chunk_number}: {chunk.content[:50]}...")
             ```
         """
-        # Convert to list of dictionaries if needed
-        source_dicts = []
-        for source in sources:
-            if isinstance(source, dict):
-                source_dicts.append(source)
-            else:
-                source_dicts.append(source.model_dump())
-
-        response = self._request("POST", "batch/chunks", data=source_dicts)
+        request = self._logic._prepare_batch_get_chunks_request(sources, folder_name, None)
+        response = self._request("POST", "batch/chunks", data=request)
         return self._logic._parse_chunk_result_list_response(response)
 
     def create_cache(

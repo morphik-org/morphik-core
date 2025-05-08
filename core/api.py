@@ -5,7 +5,7 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import arq
 import jwt
@@ -20,6 +20,7 @@ from core.cache.llama_cache_factory import LlamaCacheFactory
 from core.completion.litellm_completion import LiteLLMCompletionModel
 from core.config import get_settings
 from core.database.postgres_database import PostgresDatabase
+from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.limits_utils import check_and_increment_limits
@@ -263,9 +264,19 @@ if settings.USE_RERANKING:
 # Initialize cache factory
 cache_factory = LlamaCacheFactory(Path(settings.STORAGE_PATH))
 
-# Initialize ColPali embedding model if enabled
-colpali_embedding_model = ColpaliEmbeddingModel() if settings.ENABLE_COLPALI else None
-colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI) if settings.ENABLE_COLPALI else None
+# Initialize ColPali embedding model per mode (off/local/api)
+match settings.COLPALI_MODE:
+    case "off":
+        colpali_embedding_model = None
+        colpali_vector_store = None
+    case "local":
+        colpali_embedding_model = ColpaliEmbeddingModel()
+        colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI)
+    case "api":
+        colpali_embedding_model = ColpaliApiEmbeddingModel()
+        colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI)
+    case _:
+        raise ValueError(f"Unsupported COLPALI_MODE: {settings.COLPALI_MODE}")
 
 # Initialize document service with configured components
 document_service = DocumentService(
@@ -277,7 +288,7 @@ document_service = DocumentService(
     parser=parser,
     reranker=reranker,
     cache_factory=cache_factory,
-    enable_colpali=settings.ENABLE_COLPALI,
+    enable_colpali=(settings.COLPALI_MODE != "off"),
     colpali_embedding_model=colpali_embedding_model,
     colpali_vector_store=colpali_vector_store,
 )
@@ -422,8 +433,14 @@ async def ingest_file(
         # Set processing status
         doc.system_metadata["status"] = "processing"
 
-        # Store the document in the database
-        success = await database.store_document(doc)
+        # Store the document in the *per-app* database that verify_token has
+        # already routed to (document_service.db).  Using the global
+        # *database* here would put the row into the control-plane DB and the
+        # ingestion worker – which connects to the per-app DB – would never
+        # find it.
+        app_db = document_service.db
+
+        success = await app_db.store_document(doc)
         if not success:
             raise Exception("Failed to store document metadata")
 
@@ -442,9 +459,17 @@ async def ingest_file(
         # Generate a unique key for the file
         file_key = f"ingest_uploads/{uuid.uuid4()}/{file.filename}"
 
-        # Store the file in the configured storage
+        # Store the file in the dedicated bucket for this app (if any)
         file_content_base64 = base64.b64encode(file_content).decode()
-        bucket, stored_key = await storage.upload_from_base64(file_content_base64, file_key, file.content_type)
+
+        bucket_override = await document_service._get_bucket_for_app(auth.app_id)
+
+        bucket, stored_key = await storage.upload_from_base64(
+            file_content_base64,
+            file_key,
+            file.content_type,
+            bucket=bucket_override or "",
+        )
         logger.debug(f"Stored file in bucket {bucket} with key {stored_key}")
 
         # Update document with storage info
@@ -470,7 +495,7 @@ async def ingest_file(
         logger.debug(f"Initial storage_files for {doc.external_id}: {doc.storage_files}")
 
         # Update both storage_info and storage_files
-        await database.update_document(
+        await app_db.update_document(
             document_id=doc.external_id,
             updates={"storage_info": doc.storage_info, "storage_files": doc.storage_files},
             auth=auth,
@@ -629,8 +654,14 @@ async def batch_ingest_files(
             # Set processing status
             doc.system_metadata["status"] = "processing"
 
-            # Store the document in the database
-            success = await database.store_document(doc)
+            # Store the document in the *per-app* database that verify_token has
+            # already routed to (document_service.db).  Using the global
+            # *database* here would put the row into the control-plane DB and the
+            # ingestion worker – which connects to the per-app DB – would never
+            # find it.
+            app_db = document_service.db
+
+            success = await app_db.store_document(doc)
             if not success:
                 raise Exception(f"Failed to store document metadata for {file.filename}")
 
@@ -649,14 +680,22 @@ async def batch_ingest_files(
             # Generate a unique key for the file
             file_key = f"ingest_uploads/{uuid.uuid4()}/{file.filename}"
 
-            # Store the file in the configured storage
+            # Store the file in the dedicated bucket for this app (if any)
             file_content_base64 = base64.b64encode(file_content).decode()
-            bucket, stored_key = await storage.upload_from_base64(file_content_base64, file_key, file.content_type)
+
+            bucket_override = await document_service._get_bucket_for_app(auth.app_id)
+
+            bucket, stored_key = await storage.upload_from_base64(
+                file_content_base64,
+                file_key,
+                file.content_type,
+                bucket=bucket_override or "",
+            )
             logger.debug(f"Stored file in bucket {bucket} with key {stored_key}")
 
             # Update document with storage info
             doc.storage_info = {"bucket": bucket, "key": stored_key}
-            await database.update_document(
+            await app_db.update_document(
                 document_id=doc.external_id, updates={"storage_info": doc.storage_info}, auth=auth
             )
 
@@ -939,7 +978,7 @@ async def list_documents(
     skip: int = 0,
     limit: int = 10000,
     filters: Optional[Dict[str, Any]] = None,
-    folder_name: Optional[str] = None,
+    folder_name: Optional[Union[str, List[str]]] = None,
     end_user_id: Optional[str] = None,
 ):
     """
@@ -1106,7 +1145,7 @@ async def batch_delete_documents(
 async def get_document_by_filename(
     filename: str,
     auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[str] = None,
+    folder_name: Optional[Union[str, List[str]]] = None,
     end_user_id: Optional[str] = None,
 ):
     """
@@ -1670,7 +1709,7 @@ async def remove_document_from_folder(
 async def get_graph(
     name: str,
     auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[str] = None,
+    folder_name: Optional[Union[str, List[str]]] = None,
     end_user_id: Optional[str] = None,
 ) -> Graph:
     """
@@ -1709,7 +1748,7 @@ async def get_graph(
 @telemetry.track(operation_type="list_graphs", metadata_resolver=telemetry.list_graphs_metadata)
 async def list_graphs(
     auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[str] = None,
+    folder_name: Optional[Union[str, List[str]]] = None,
     end_user_id: Optional[str] = None,
 ) -> List[Graph]:
     """
@@ -2083,7 +2122,8 @@ async def set_folder_rule(
                                     )
 
                                     # Update document in database
-                                    success = await document_service.db.update_document(doc.external_id, updates, auth)
+                                    app_db = document_service.db
+                                    success = await app_db.update_document(doc.external_id, updates, auth)
 
                                     if success:
                                         logger.info(f"Updated metadata for document {doc.external_id}")

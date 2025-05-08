@@ -15,7 +15,6 @@ The following anonymous data is collected:
 
 We explicitly DO NOT collect:
 
-- User identifiers (all user IDs are hashed)
 - File contents or queries
 - API keys or credentials
 - Personal information
