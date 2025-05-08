@@ -49,7 +49,14 @@ class S3Storage(BaseStorage):
             error_code = exc.response.get("Error", {}).get("Code", "")
             if error_code in {"404", "NoSuchBucket"}:
                 # Need to create the bucket in the client's region
-                self.s3_client.create_bucket(Bucket=bucket)
+                region = self.s3_client.meta.region_name
+                if region == "us-east-1":
+                    self.s3_client.create_bucket(Bucket=bucket)
+                else:
+                    self.s3_client.create_bucket(
+                        Bucket=bucket,
+                        CreateBucketConfiguration={"LocationConstraint": region},
+                    )
             elif error_code in {"301", "BucketAlreadyOwnedByYou", "400"}:
                 # Bucket exists / owned etc. – safe to continue
                 pass

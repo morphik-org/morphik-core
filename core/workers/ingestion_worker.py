@@ -174,7 +174,23 @@ async def process_ingestion_job(
         colpali_vector_store = None
         if use_colpali:
             try:
-                colpali_vector_store = MultiVectorStore(uri=str(database.engine.url))
+                # Use render_as_string(hide_password=False) so the URI keeps the
+                # password – str(engine.url) masks it with "***" which breaks
+                # authentication for psycopg.  Also append sslmode=require when
+                # missing to satisfy Neon.
+                from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+                uri_raw = database.engine.url.render_as_string(hide_password=False)
+
+                parsed = urlparse(uri_raw)
+                query = parse_qs(parsed.query)
+                if "sslmode" not in query:
+                    query["sslmode"] = ["require"]
+                    parsed = parsed._replace(query=urlencode(query, doseq=True))
+
+                uri_final = urlunparse(parsed)
+
+                colpali_vector_store = MultiVectorStore(uri=uri_final)
                 await asyncio.to_thread(colpali_vector_store.initialize)
             except Exception as e:
                 logger.warning(f"Failed to initialise ColPali MultiVectorStore for app {auth.app_id}: {e}")

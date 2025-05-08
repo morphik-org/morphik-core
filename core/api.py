@@ -432,8 +432,14 @@ async def ingest_file(
         # Set processing status
         doc.system_metadata["status"] = "processing"
 
-        # Store the document in the database
-        success = await database.store_document(doc)
+        # Store the document in the *per-app* database that verify_token has
+        # already routed to (document_service.db).  Using the global
+        # *database* here would put the row into the control-plane DB and the
+        # ingestion worker – which connects to the per-app DB – would never
+        # find it.
+        app_db = document_service.db
+
+        success = await app_db.store_document(doc)
         if not success:
             raise Exception("Failed to store document metadata")
 
@@ -452,9 +458,17 @@ async def ingest_file(
         # Generate a unique key for the file
         file_key = f"ingest_uploads/{uuid.uuid4()}/{file.filename}"
 
-        # Store the file in the configured storage
+        # Store the file in the dedicated bucket for this app (if any)
         file_content_base64 = base64.b64encode(file_content).decode()
-        bucket, stored_key = await storage.upload_from_base64(file_content_base64, file_key, file.content_type)
+
+        bucket_override = await document_service._get_bucket_for_app(auth.app_id)
+
+        bucket, stored_key = await storage.upload_from_base64(
+            file_content_base64,
+            file_key,
+            file.content_type,
+            bucket=bucket_override or "",
+        )
         logger.debug(f"Stored file in bucket {bucket} with key {stored_key}")
 
         # Update document with storage info
@@ -480,7 +494,7 @@ async def ingest_file(
         logger.debug(f"Initial storage_files for {doc.external_id}: {doc.storage_files}")
 
         # Update both storage_info and storage_files
-        await database.update_document(
+        await app_db.update_document(
             document_id=doc.external_id,
             updates={"storage_info": doc.storage_info, "storage_files": doc.storage_files},
             auth=auth,
@@ -639,8 +653,14 @@ async def batch_ingest_files(
             # Set processing status
             doc.system_metadata["status"] = "processing"
 
-            # Store the document in the database
-            success = await database.store_document(doc)
+            # Store the document in the *per-app* database that verify_token has
+            # already routed to (document_service.db).  Using the global
+            # *database* here would put the row into the control-plane DB and the
+            # ingestion worker – which connects to the per-app DB – would never
+            # find it.
+            app_db = document_service.db
+
+            success = await app_db.store_document(doc)
             if not success:
                 raise Exception(f"Failed to store document metadata for {file.filename}")
 
@@ -659,14 +679,22 @@ async def batch_ingest_files(
             # Generate a unique key for the file
             file_key = f"ingest_uploads/{uuid.uuid4()}/{file.filename}"
 
-            # Store the file in the configured storage
+            # Store the file in the dedicated bucket for this app (if any)
             file_content_base64 = base64.b64encode(file_content).decode()
-            bucket, stored_key = await storage.upload_from_base64(file_content_base64, file_key, file.content_type)
+
+            bucket_override = await document_service._get_bucket_for_app(auth.app_id)
+
+            bucket, stored_key = await storage.upload_from_base64(
+                file_content_base64,
+                file_key,
+                file.content_type,
+                bucket=bucket_override or "",
+            )
             logger.debug(f"Stored file in bucket {bucket} with key {stored_key}")
 
             # Update document with storage info
             doc.storage_info = {"bucket": bucket, "key": stored_key}
-            await database.update_document(
+            await app_db.update_document(
                 document_id=doc.external_id, updates={"storage_info": doc.storage_info}, auth=auth
             )
 
@@ -2040,7 +2068,8 @@ async def set_folder_rule(
                                     )
 
                                     # Update document in database
-                                    success = await document_service.db.update_document(doc.external_id, updates, auth)
+                                    app_db = document_service.db
+                                    success = await app_db.update_document(doc.external_id, updates, auth)
 
                                     if success:
                                         logger.info(f"Updated metadata for document {doc.external_id}")

@@ -1504,8 +1504,15 @@ class DocumentService:
         # The version is based on the current length of storage_files to ensure correct versioning
         version = len(doc.storage_files) + 1
         file_extension = os.path.splitext(file.filename)[1] if file.filename else ""
+
+        # Route file uploads to the dedicated app bucket when available
+        bucket_override = await self._get_bucket_for_app(doc.system_metadata.get("app_id"))
+
         storage_info = await self.storage.upload_from_base64(
-            file_content_base64, f"{doc.external_id}_{version}{file_extension}", file.content_type
+            file_content_base64,
+            f"{doc.external_id}_{version}{file_extension}",
+            file.content_type,
+            bucket=bucket_override or "",
         )
 
         # Add the new file to storage_files

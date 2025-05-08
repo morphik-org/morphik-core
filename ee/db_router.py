@@ -103,11 +103,54 @@ async def get_vector_store_for_app(app_id: str | None):
         settings = get_settings()
         return PGVectorStore(uri=settings.POSTGRES_URI)
 
-    db = await get_database_for_app(app_id)
-    uri = str(db.engine.url)  # type: ignore[arg-type]
+    # Fetch the raw connection URI directly from the catalogue – this string
+    # already contains the password.  We augment it to make sure it has
+    # sslmode=require and uses the asyncpg driver.
+
+    uri = await _resolve_connection_uri(app_id)
+
+    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+    if uri is None:
+        # Should not happen – fallback to control-plane vector store
+        settings = get_settings()
+        return PGVectorStore(uri=settings.POSTGRES_URI)
+
+    parsed = urlparse(uri)
+
+    # Ensure asyncpg driver in scheme so we get an async pool
+    scheme = parsed.scheme
+    if scheme == "postgres" or scheme == "postgresql":
+        parsed = parsed._replace(scheme="postgresql+asyncpg")
+    elif not scheme.endswith("+asyncpg"):
+        parsed = parsed._replace(scheme=scheme + "+asyncpg")
+
+    # asyncpg raises "unexpected keyword argument 'sslmode'" if it sees that
+    # parameter, so we must NOT propagate it via the query string.  Strip it
+    # instead of adding it.
+    query_params = parse_qs(parsed.query)
+    query_params.pop("sslmode", None)
+    parsed = parsed._replace(query=urlencode(query_params, doseq=True))
+    uri = urlunparse(parsed)
 
     if uri in _VSTORE_CACHE:
         return _VSTORE_CACHE[uri]
+
+    # Log at DEBUG level with password redacted to aid debugging connection issues
+    import logging
+
+    debug_uri = uri
+    try:
+        from urllib.parse import urlparse, urlunparse
+
+        _p = urlparse(uri)
+        if _p.password:
+            redacted = _p._replace(netloc=f"{_p.username}:***@{_p.hostname}:{_p.port}")
+            debug_uri = urlunparse(redacted)
+    except Exception:  # noqa: BLE001 – best-effort
+        pass
+
+    logging.getLogger(__name__).debug("Creating PGVectorStore for app %s with URI %s", app_id, debug_uri)
 
     store = PGVectorStore(uri=uri)
     _VSTORE_CACHE[uri] = store

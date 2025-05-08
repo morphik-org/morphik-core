@@ -216,8 +216,18 @@ class AppProvisioningService:  # noqa: D101 – obvious from name
 
         # 1a) Clean the Neon connection URI (remove query parameters like sslmode)
         parsed_neon_uri = urlparse(connection_uri_from_neon)
-        cleaned_neon_uri = urlunparse(parsed_neon_uri._replace(query=""))
-        stored_connection_uri = cleaned_neon_uri  # This is what we'll store in AppMetadataModel.connection_uri
+        # Remove query parameters
+        parsed_no_query = parsed_neon_uri._replace(query="")
+        # Ensure asyncpg driver in the scheme
+        scheme = parsed_no_query.scheme
+        if scheme in ("postgres", "postgresql"):
+            new_scheme = "postgresql+asyncpg"
+        elif not scheme.endswith("+asyncpg"):
+            new_scheme = scheme + "+asyncpg"
+        else:
+            new_scheme = scheme
+        parsed_with_driver = parsed_no_query._replace(scheme=new_scheme)
+        stored_connection_uri = urlunparse(parsed_with_driver)
 
         # 1b) Generate a real JWT that will be embedded in the Morphik URI. This token is
         #     validated by :func:`core.auth_utils.verify_token` on every request from the

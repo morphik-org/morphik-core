@@ -1,10 +1,13 @@
 from datetime import UTC, datetime
+from logging import getLogger
 
 import jwt
 from fastapi import Header, HTTPException
 
 from core.config import get_settings
 from core.models.auth import AuthContext, EntityType
+
+logger = getLogger(__name__)
 
 __all__ = ["verify_token"]
 
@@ -34,7 +37,9 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:  # noq
     # ------------------------------------------------------------------
     # 2. Normal token verification flow
     # ------------------------------------------------------------------
+    logger.info(f"Authorization header: {authorization}")
     if not authorization:
+        logger.info("Missing authorization header")
         raise HTTPException(
             status_code=401,
             detail="Missing authorization header",
