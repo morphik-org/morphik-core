@@ -15,10 +15,11 @@ from core.database.postgres_database import PostgresDatabase
 from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
+from core.limits_utils import check_and_increment_limits
 from core.models.auth import AuthContext, EntityType
 from core.models.rules import MetadataExtractionRule
 from core.parser.morphik_parser import MorphikParser
-from core.services.document_service import DocumentService
+from core.services.document_service import CHARS_PER_TOKEN, TOKENS_PER_PAGE, DocumentService
 from core.services.rules_processor import RulesProcessor
 from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
@@ -31,8 +32,8 @@ from ee.db_router import get_database_for_app, get_vector_store_for_app
 
 logger = logging.getLogger(__name__)
 
-# Configure logger for ingestion worker (restored from diff)
-settings = get_settings()  # Need settings for log level potentially, though INFO used here
+# Initialize global settings once
+settings = get_settings()
 
 # Create logs directory if it doesn't exist
 os.makedirs("logs", exist_ok=True)
@@ -228,6 +229,18 @@ async def process_ingestion_job(
         logger.debug(f"Parsed file into text of length {len(text)}")
         parse_time = time.time() - parse_start
         phase_times["parse_file"] = parse_time
+
+        # NEW -----------------------------------------------------------------
+        # 4.b Enforce tier limits (pages ingested) for cloud/free tier users
+        if settings.MODE == "cloud" and auth.user_id:
+            # Calculate approximate pages using same heuristic as DocumentService
+            num_pages = int(len(text) / (CHARS_PER_TOKEN * TOKENS_PER_PAGE)) or 1
+            try:
+                await check_and_increment_limits(auth, "ingest", num_pages, document_id)
+            except Exception as limit_exc:
+                logger.error("User %s exceeded ingest limits: %s", auth.user_id, limit_exc)
+                raise
+        # ---------------------------------------------------------------------
 
         # === Apply post_parsing rules ===
         rules_start = time.time()
@@ -577,9 +590,6 @@ async def startup(ctx):
     """
     logger.info("Worker starting up. Initializing services...")
 
-    # Get settings
-    settings = get_settings()
-
     # Initialize database
     logger.info("Initializing database...")
     database = PostgresDatabase(uri=settings.POSTGRES_URI)
@@ -723,8 +733,8 @@ def redis_settings_from_env() -> RedisSettings:
     # Use ARQ's supported parameters with optimized values for stability
     # For high-volume ingestion (100+ documents), these settings help prevent timeouts
     return RedisSettings(
-        host=get_settings().REDIS_HOST,
-        port=get_settings().REDIS_PORT,
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
         database=int(url.path.lstrip("/") or 0),
         conn_timeout=5,  # Increased connection timeout (seconds)
         conn_retries=15,  # More retries for transient connection issues
