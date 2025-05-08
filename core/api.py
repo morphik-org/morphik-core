@@ -965,10 +965,12 @@ async def agent_query(request: AgentQueryRequest, auth: AuthContext = Depends(ve
     # Check free-tier agent call limits in cloud mode
     if settings.MODE == "cloud" and auth.user_id:
         await check_and_increment_limits(auth, "agent", 1)
-    # Use shared agent instance and pass auth to run
-    response_content, tool_history = await morphik_agent.run(request.query, auth)
+
+    # Use shared agent instance and pass auth, rich, and ground flags to run
+    response_data, tool_history = await morphik_agent.run(request.query, auth, rich=request.rich, ground=request.ground)
+
     # Return both in the response dictionary
-    return {"response": response_content, "tool_history": tool_history}
+    return {"response": response_data, "tool_history": tool_history}
 
 
 @app.post("/documents", response_model=List[Document])

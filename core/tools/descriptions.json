@@ -208,5 +208,61 @@
         },
         "required": []
       }
+    },
+    {
+      "name": "publish_response",
+      "description": "Call this function to publish the final answer along with any citations. This should be the last call you make.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "The final answer text in Markdown format."
+          },
+          "citations": {
+            "type": "array",
+            "description": "A list of citations used to generate the answer.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "A unique identifier for this citation (e.g., 'c1', 'img2')."
+                },
+                "type": {
+                  "type": "string",
+                  "enum": ["text", "image"],
+                  "description": "The type of citation."
+                },
+                "sourceDocId": {
+                  "type": "string",
+                  "description": "The ID of the source document for this citation."
+                },
+                "chunkId": {
+                  "type": "string",
+                  "description": "The ID of the specific chunk within the source document."
+                },
+                "snippet": {
+                  "type": "string",
+                  "description": "For 'text' citations, the exact quoted snippet from the source. For 'image' citations, an optional brief description or alt text."
+                },
+                "imageUrl": {
+                  "type": "string",
+                  "description": "For 'image' citations, the URL or base64 data URI of the image."
+                },
+                "bbox": {
+                  "type": "array",
+                  "items": {"type": "number"},
+                  "minItems": 4,
+                  "maxItems": 4,
+                  "description": "For 'image' citations, optional bounding box coordinates [x1, y1, x2, y2] relative to the image dimensions."
+                }
+              },
+              "required": ["id", "type", "sourceDocId", "chunkId"]
+            }
+          }
+        },
+        "required": ["body", "citations"]
+      }
     }
 ]

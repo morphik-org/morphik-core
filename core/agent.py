@@ -1,12 +1,14 @@
 import json
 import logging
 import os
+from typing import Any, Dict
 
 from dotenv import load_dotenv
 from litellm import acompletion
 
 from core.config import get_settings
 from core.models.auth import AuthContext
+from core.services.grounding_service import GroundingService
 from core.tools.tools import (
     document_analyzer,
     execute_code,
@@ -38,6 +40,7 @@ class MorphikAgent:
         # Load settings
         self.settings = get_settings()
         self.model = model or self.settings.AGENT_MODEL
+        self.grounding_service = GroundingService()
         # Load tool definitions (function schemas)
         desc_path = os.path.join(os.path.dirname(__file__), "tools", "descriptions.json")
         with open(desc_path, "r") as f:
@@ -58,18 +61,11 @@ class MorphikAgent:
 
         # TODO: Evaluate and improve the prompt here please!
         # System prompt
-        self.system_prompt = """
-You are Morphik, an intelligent research assistant. You can use the following tools to help answer user queries:
-- retrieve_chunks: retrieve relevant text and image chunks from the knowledge base
-- retrieve_document: get full document content or metadata
-- document_analyzer: analyze documents for entities, facts, summary, sentiment, or full analysis
-- execute_code: run Python code in a safe sandbox
-- knowledge_graph_query: query the knowledge graph for entities, paths, subgraphs, or list entities
-- list_graphs: list available knowledge graphs
-- save_to_memory: save important information to persistent memory
-- list_documents: list documents accessible to you
+        self.system_prompt_template = """
+        You are Morphik, an intelligent research assistant. You can use the following tools to help answer user queries:
+{tool_list_string}
 Use function calls to invoke these tools when needed. When you have gathered all necessary information,
-provide a clear, concise final answer. Include all relevant details and cite your sources.
+{final_instruction}
 Always use markdown formatting.
 """.strip()
 
@@ -93,13 +89,34 @@ Always use markdown formatting.
                 return await save_to_memory(document_service=self.document_service, auth=auth, **args)
             case "list_documents":
                 return await list_documents(document_service=self.document_service, auth=auth, **args)
+            case "publish_response":
+                return args
             case _:
                 raise ValueError(f"Unknown tool: {name}")
 
-    async def run(self, query: str, auth: AuthContext) -> str:
-        """Synchronously run the agent and return the final answer."""
+    async def run(self, query: str, auth: AuthContext, rich: bool = False, ground: bool = False) -> Dict[str, Any]:
+        """Run the agent and return the final answer, potentially in a rich format."""
+
+        tool_list_string = ""
+        for tool_def in self.tool_definitions:
+            if tool_def["function"]["name"] != "publish_response" or rich:
+                tool_list_string += f"- {tool_def['function']['name']}: {tool_def['function']['description']}\n"
+
+        final_instruction = "provide a clear, concise final answer. Include all relevant details and cite your sources."
+        if rich:
+            final_instruction = """
+            call the `publish_response` function with a `body` (markdown) and a `citations` array.
+            Each citation should point to the exact text range or image URL you used. This should be your final action.
+            """.strip().replace(
+                "\n", " "
+            )
+
+        current_system_prompt = self.system_prompt_template.format(
+            tool_list_string=tool_list_string, final_instruction=final_instruction
+        ).strip()
+
         messages = [
-            {"role": "system", "content": self.system_prompt},
+            {"role": "system", "content": current_system_prompt},
             {"role": "user", "content": query},
         ]
         tool_history = []  # Initialize tool history list
@@ -115,7 +132,11 @@ Always use markdown formatting.
         model_params = {
             "model": model_name,
             "messages": messages,
-            "tools": self.tool_definitions,
+            "tools": (
+                self.tool_definitions
+                if rich
+                else [td for td in self.tool_definitions if td.get("function", {}).get("name") != "publish_response"]
+            ),
             "tool_choice": "auto",
         }
 
@@ -133,18 +154,41 @@ Always use markdown formatting.
             # If no tool call, return final content
             if not getattr(msg, "tool_calls", None):
                 logger.info("No tool calls detected, returning final content")
-                # Return final content and the history
-                return msg.content, tool_history
+                return {"mode": "plain", "body": msg.content}, tool_history
 
             call = msg.tool_calls[0]
             name = call.function.name
             args = json.loads(call.function.arguments)
             logger.info(f"Tool call detected: {name} with args: {args}")
 
-            # Append assistant text and execute tool
-            # logger.info(f"Appending assistant text: {msg}")
-            # if msg.content:
-            #     messages.append({'role': 'assistant', 'content': msg.content})
+            if name == "publish_response":
+                if rich:
+                    logger.info(f"Publish response call detected: {args}")
+                    if ground and "citations" in args and isinstance(args["citations"], list):
+                        logger.info(f"Performing grounding for {len(args['citations'])} citations.")
+                        try:
+                            grounded_citations = await self.grounding_service.ground_citations(
+                                citations=args["citations"],
+                                original_user_query=query,
+                                agent_answer_body=args.get("body", ""),
+                                auth=auth,
+                            )
+                            args["citations"] = grounded_citations
+                            logger.info("Grounding complete.")
+                        except Exception as e:
+                            logger.error(f"Error during grounding: {e}", exc_info=True)
+                    # Decide if we want to return ungrounded or fail.
+                    # For now, continue with ungrounded (or partially grounded).
+                    return {"mode": "rich", **args}, tool_history
+                else:
+                    # Model called publish_response in non-rich mode, treat as plain response
+                    logger.warning("publish_response called in non-rich mode. Returning plain text.")
+                    # We could try to extract body from args if available, or just use msg.content
+                    final_content = args.get(
+                        "body", msg.content if msg.content else "Agent tried to publish rich response in plain mode."
+                    )
+                    return {"mode": "plain", "body": final_content}, tool_history
+
             messages.append(msg.to_dict(exclude_none=True))
             logger.info(f"Executing tool: {name}")
             result = await self._execute_tool(name, args, auth)

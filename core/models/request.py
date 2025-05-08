@@ -143,3 +143,7 @@ class AgentQueryRequest(BaseModel):
     """Request model for agent queries"""
 
     query: str = Field(..., description="Natural language query for the Morphik agent")
+    rich: bool = Field(default=False, description="Whether to request a rich JSON response with citations")
+    ground: bool = Field(
+        default=False, description="Whether to perform a grounding pass on the rich response (requires rich=True)"
+    )

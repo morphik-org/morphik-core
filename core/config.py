@@ -5,6 +5,7 @@ from typing import Any, Dict, Literal, Optional
 
 import tomli
 from dotenv import load_dotenv
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -89,9 +90,14 @@ class Settings(BaseSettings):
     RERANKER_PROVIDER: Optional[Literal["flag"]] = None
     RERANKER_MODEL: Optional[str] = None
     RERANKER_QUERY_MAX_LENGTH: Optional[int] = None
-    RERANKER_PASSAGE_MAX_LENGTH: Optional[int] = None
+    RERANKER_PASSAGE_MAX_LENGTH: int = 512
     RERANKER_USE_FP16: Optional[bool] = None
     RERANKER_DEVICE: Optional[str] = None
+
+    # Grounding Service settings
+    GROUNDING_MODEL: Optional[str] = Field(
+        default=None, description="Model to use for grounding citations (e.g., gemini/gemini-1.5-flash-latest)"
+    )
 
     # Storage configuration
     STORAGE_PROVIDER: Literal["local", "aws-s3"]
