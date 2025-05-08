@@ -5,7 +5,7 @@ import os
 import tempfile
 from datetime import UTC, datetime
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union, Tuple
 
 import filetype
 import pdf2image
@@ -1811,6 +1811,119 @@ class DocumentService:
 
         logger.info(f"Successfully deleted document {document_id} and all associated data")
         return True
+
+    async def batch_delete_documents(
+        self,
+        document_ids: List[str],
+        auth: AuthContext,
+        folder_name: Optional[str] = None,
+        end_user_id: Optional[str] = None,
+    ) -> Tuple[int, int]:
+        """
+        Delete multiple documents and their associated data in a single batch operation.
+
+        This method:
+        1. Gets all documents to retrieve their chunk IDs
+        2. Verifies write access for all documents
+        3. Deletes all associated chunks from vector stores
+        4. Deletes original files from storage
+        5. Only after successful deletion of all associated data, deletes documents from the database
+
+        Args:
+            document_ids: List of document IDs to delete
+            auth: Authentication context
+            folder_name: Optional folder to scope the operation to
+            end_user_id: Optional end-user ID to scope the operation to
+
+        Returns:
+            Tuple[int, int]: Number of successfully deleted documents and number of errors
+        """
+        if not document_ids:
+            return 0, 0
+
+        system_filters = {}
+        if folder_name:
+            system_filters["folder_name"] = folder_name
+        if end_user_id:
+            system_filters["end_user_id"] = end_user_id
+        if auth.app_id:
+            system_filters["app_id"] = auth.app_id
+
+        documents = await self.db.get_documents_by_id(document_ids, auth, system_filters)
+        
+        if not documents:
+            logger.warning(f"No documents found for batch deletion from {len(document_ids)} requested IDs")
+            return 0, len(document_ids)
+
+        deleted_count = 0
+        error_count = 0
+
+        for document in documents:
+            try:
+                if not await self.db.check_access(document.external_id, auth, "write"):
+                    logger.error(f"User {auth.entity_id} doesn't have write access to document {document.external_id}")
+                    error_count += 1
+                    continue
+
+                # First delete vector store data
+                vector_deletion_tasks = []
+                if hasattr(document, "chunk_ids") and document.chunk_ids:
+                    if hasattr(self.vector_store, "delete_chunks_by_document_id"):
+                        vector_deletion_tasks.append(self.vector_store.delete_chunks_by_document_id(document.external_id))
+                    if self.colpali_vector_store and hasattr(self.colpali_vector_store, "delete_chunks_by_document_id"):
+                        vector_deletion_tasks.append(self.colpali_vector_store.delete_chunks_by_document_id(document.external_id))
+
+                # Then delete storage files
+                storage_deletion_tasks = []
+                if hasattr(document, "storage_info") and document.storage_info:
+                    bucket = document.storage_info.get("bucket")
+                    key = document.storage_info.get("key")
+                    if bucket and key and hasattr(self.storage, "delete_file"):
+                        storage_deletion_tasks.append(self.storage.delete_file(bucket, key))
+
+                if hasattr(document, "storage_files") and document.storage_files:
+                    for file_info in document.storage_files:
+                        bucket = file_info.bucket
+                        key = file_info.key
+                        if bucket and key and hasattr(self.storage, "delete_file"):
+                            storage_deletion_tasks.append(self.storage.delete_file(bucket, key))
+
+                # Execute all deletion tasks and check for errors
+                deletion_success = True
+                if vector_deletion_tasks or storage_deletion_tasks:
+                    try:
+                        all_deletion_results = await asyncio.gather(
+                            *vector_deletion_tasks, *storage_deletion_tasks, return_exceptions=True
+                        )
+                        for i, result in enumerate(all_deletion_results):
+                            if isinstance(result, Exception):
+                                task_type = "vector store" if i < len(vector_deletion_tasks) else "storage"
+                                logger.error(f"Error during {task_type} deletion for document {document.external_id}: {result}")
+                                deletion_success = False
+                    except Exception as e:
+                        logger.error(f"Error during parallel deletion operations for document {document.external_id}: {e}")
+                        deletion_success = False
+
+                # Only delete from database if all other deletions were successful
+                if deletion_success:
+                    db_success = await self.db.delete_document(document.external_id, auth)
+                    if not db_success:
+                        logger.error(f"Failed to delete document {document.external_id} from database")
+                        error_count += 1
+                        continue
+                    deleted_count += 1
+                    logger.info(f"Successfully deleted document {document.external_id} and all associated data")
+                else:
+                    logger.error(f"Failed to delete associated data for document {document.external_id}, skipping database deletion")
+                    error_count += 1
+
+            except Exception as e:
+                logger.error(f"Error deleting document {document.external_id}: {e}")
+                error_count += 1
+
+        error_count += len(document_ids) - len(documents)
+
+        return deleted_count, error_count
 
     def close(self):
         """Close all resources."""
