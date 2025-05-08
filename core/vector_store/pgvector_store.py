@@ -150,7 +150,8 @@ class PGVectorStore(BaseVectorStore):
                 attempt += 1
                 if attempt < self.max_retries:
                     logger.warning(
-                        f"Database connection attempt {attempt} failed: {str(e)}. Retrying in {self.retry_delay} seconds..."
+                        f"Database connection attempt {attempt} failed: {str(e)}."
+                        f"Retrying in {self.retry_delay} seconds..."
                     )
                     await asyncio.sleep(self.retry_delay)
 
@@ -187,12 +188,14 @@ class PGVectorStore(BaseVectorStore):
                     attempt += 1
                     if attempt < self.max_retries:
                         logger.warning(
-                            f"Database initialization attempt {attempt} failed: {str(e)}. Retrying in {self.retry_delay} seconds..."
+                            f"Database initialization attempt {attempt} failed: {str(e)}."
+                            f"Retrying in {self.retry_delay} seconds..."
                         )
                         await asyncio.sleep(self.retry_delay)
                     else:
                         logger.error(
-                            f"All database initialization attempts failed after {self.max_retries} retries: {str(last_error)}"
+                            f"All database initialization attempts failed after"
+                            f"{self.max_retries} retries: {str(last_error)}"
                         )
                         raise last_error
 
@@ -225,12 +228,14 @@ class PGVectorStore(BaseVectorStore):
 
                     if (current_dim + 4) != dimensions:
                         logger.warning(
-                            f"Vector dimensions changed from {current_dim} to {dimensions}. This requires recreating tables and will delete all existing vector data."
+                            f"Vector dimensions changed from {current_dim} to {dimensions}."
+                            "This requires recreating tables and will delete all existing vector data."
                         )
 
                         # Ask for explicit user confirmation
                         user_input = input(
-                            f"WARNING: Embedding dimensions changed from {current_dim} to {dimensions}. This will DELETE ALL existing vector data. Type 'yes' to continue: "
+                            f"WARNING: Embedding dimensions changed from {current_dim} to {dimensions}."
+                            "This will DELETE ALL existing vector data. Type 'yes' to continue: "
                         )
 
                         if user_input.lower() != "yes":
@@ -277,6 +282,17 @@ class PGVectorStore(BaseVectorStore):
                             )
                         )
                         logger.info("Created IVFFlat index on vector_embeddings")
+
+                        # Whether the table pre-existed or we just created it, make
+                        # sure the application role can use the serial sequence.
+                        try:
+                            await conn.execute(
+                                text("GRANT USAGE, SELECT ON SEQUENCE vector_embeddings_id_seq TO PUBLIC;")
+                            )
+                        except Exception as priv_exc:  # noqa: BLE001
+                            # Log once at DEBUG level – most likely the current role *does*
+                            # own the sequence already so the grant is unnecessary.
+                            logger.debug("Privilege grant on sequence skipped: %s", priv_exc)
                     else:
                         logger.info(f"Vector dimensions unchanged ({dimensions}), using existing table")
                 else:
@@ -345,7 +361,10 @@ class PGVectorStore(BaseVectorStore):
 
         except Exception as e:
             logger.error(f"Error storing embeddings: {str(e)}")
-            return False, []
+            # Re-raise so the caller can surface a meaningful stack trace –
+            # _store_chunks_and_doc will catch it and retry (or abort) as
+            # appropriate.
+            raise
 
     async def query_similar(
         self,

@@ -37,6 +37,8 @@ ee/ui-component/package-lock.json/*
 ee/ui-component/node-modules/*
 ee/ui-component/.next
 
+# ee/ee.toml
+
 
 ui-component/notebook-storage/notebooks.json
 ee/ui-component/package-lock.json
