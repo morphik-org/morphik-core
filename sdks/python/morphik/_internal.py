@@ -232,7 +232,7 @@ class _MorphikClientLogic:
         hop_depth: int,
         include_paths: bool,
         prompt_overrides: Optional[Dict],
-        folder_name: Optional[str],
+        folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
@@ -278,7 +278,7 @@ class _MorphikClientLogic:
         k: int,
         min_score: float,
         use_colpali: bool,
-        folder_name: Optional[str],
+        folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
     ) -> Dict[str, Any]:
         """Prepare request for retrieve_chunks endpoint"""
@@ -302,7 +302,7 @@ class _MorphikClientLogic:
         k: int,
         min_score: float,
         use_colpali: bool,
-        folder_name: Optional[str],
+        folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
     ) -> Dict[str, Any]:
         """Prepare request for retrieve_docs endpoint"""
@@ -324,7 +324,7 @@ class _MorphikClientLogic:
         skip: int,
         limit: int,
         filters: Optional[Dict[str, Any]],
-        folder_name: Optional[str],
+        folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Prepare request for list_documents endpoint"""
@@ -340,7 +340,7 @@ class _MorphikClientLogic:
         return params, data
 
     def _prepare_batch_get_documents_request(
-        self, document_ids: List[str], folder_name: Optional[str], end_user_id: Optional[str]
+        self, document_ids: List[str], folder_name: Optional[Union[str, List[str]]], end_user_id: Optional[str]
     ) -> Dict[str, Any]:
         """Prepare request for batch_get_documents endpoint"""
         if folder_name or end_user_id:
@@ -355,7 +355,7 @@ class _MorphikClientLogic:
     def _prepare_batch_get_chunks_request(
         self,
         sources: List[Union[ChunkSource, Dict[str, Any]]],
-        folder_name: Optional[str],
+        folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
     ) -> Dict[str, Any]:
         """Prepare request for batch_get_chunks endpoint"""
@@ -382,7 +382,7 @@ class _MorphikClientLogic:
         filters: Optional[Dict[str, Any]],
         documents: Optional[List[str]],
         prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]],
-        folder_name: Optional[str],
+        folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
     ) -> Dict[str, Any]:
         """Prepare request for create_graph endpoint"""
@@ -408,7 +408,7 @@ class _MorphikClientLogic:
         additional_filters: Optional[Dict[str, Any]],
         additional_documents: Optional[List[str]],
         prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]],
-        folder_name: Optional[str],
+        folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
     ) -> Dict[str, Any]:
         """Prepare request for update_graph endpoint"""

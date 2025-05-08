@@ -210,7 +210,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
       </div> */}
 
       {/* Messages Area */}
-      <div className="relative flex-1">
+      <div className="relative min-h-0 flex-1">
         <ScrollArea className="h-full" ref={messagesContainerRef}>
           {messages.length === 0 && (
             <div className="flex flex-1 items-center justify-center p-8 text-center">

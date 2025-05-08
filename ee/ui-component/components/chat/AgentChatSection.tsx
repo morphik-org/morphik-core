@@ -176,7 +176,7 @@ const AgentChatSection: React.FC<AgentChatSectionProps> = ({
   return (
     <div className="relative flex h-full w-full flex-col bg-background">
       {/* Messages Area */}
-      <div className="relative flex-1">
+      <div className="relative min-h-0 flex-1">
         <ScrollArea className="h-full" ref={messagesContainerRef}>
           {messages.length === 0 && (
             <div className="flex flex-1 items-center justify-center p-8 text-center">

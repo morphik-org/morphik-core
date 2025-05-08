@@ -11,9 +11,13 @@ import { AlertSystem } from "@/components/ui/alert-system";
 import { extractTokenFromUri, getApiBaseUrlFromUri } from "@/lib/utils";
 import { MorphikUIProps } from "./types";
 import { cn } from "@/lib/utils";
+import { setupLogging } from "@/lib/log";
 
 // Default API base URL
 const DEFAULT_API_BASE_URL = "http://localhost:8000";
+
+// Disable excessive logging unless debug is enabled
+setupLogging();
 
 const MorphikUI: React.FC<MorphikUIProps> = ({
   connectionUri,
@@ -77,7 +81,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
   };
 
   return (
-    <div className={cn("flex h-screen w-full overflow-hidden")}>
+    <div className={cn("flex h-full w-full overflow-hidden")}>
       <Sidebar
         connectionUri={currentUri ?? undefined}
         isReadOnlyUri={isReadOnlyUri}

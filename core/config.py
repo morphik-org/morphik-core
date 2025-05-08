@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     HOST: str
     PORT: int
     RELOAD: bool
+    # Morphik Embedding API server configuration
+    MORPHIK_EMBEDDING_API_KEY: Optional[str] = None
+    MORPHIK_EMBEDDING_API_DOMAIN: str
 
     # Auth configuration
     JWT_ALGORITHM: str
@@ -102,6 +105,8 @@ class Settings(BaseSettings):
 
     # Colpali configuration
     ENABLE_COLPALI: bool
+    # Colpali embedding mode: off, local, or api
+    COLPALI_MODE: Literal["off", "local", "api"] = "local"
 
     # Mode configuration
     MODE: Literal["cloud", "self_hosted"] = "cloud"
@@ -290,8 +295,14 @@ def get_settings() -> Settings:
     # load morphik config
     morphik_config = {
         "ENABLE_COLPALI": config["morphik"]["enable_colpali"],
+        "COLPALI_MODE": config["morphik"].get("colpali_mode", "local"),
         "MODE": config["morphik"].get("mode", "cloud"),  # Default to "cloud" mode
-        "API_DOMAIN": config["morphik"].get("api_domain", "api.morphik.ai"),  # Default API domain
+        # API domain for core server
+        "API_DOMAIN": config["morphik"].get("api_domain", "api.morphik.ai"),
+        # Domain for Morphik embedding API
+        "MORPHIK_EMBEDDING_API_DOMAIN": config["morphik"].get(
+            "morphik_embedding_api_domain", config["morphik"].get("api_domain", "api.morphik.ai")
+        ),
     }
 
     # load redis config

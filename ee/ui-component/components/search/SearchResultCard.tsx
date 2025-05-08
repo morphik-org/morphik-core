@@ -15,33 +15,36 @@ interface SearchResultCardProps {
 const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
   // Helper to render content based on content type
   const renderContent = (content: string, contentType: string) => {
-    if (contentType.startsWith("image/")) {
+    const isImage = contentType.startsWith("image/");
+    const isDataUri = content.startsWith("data:image/");
+
+    // Helper: Only allow next/image for paths/URLs that Next can parse
+    const canUseNextImage =
+      !isDataUri && (content.startsWith("/") || content.startsWith("http://") || content.startsWith("https://"));
+
+    if (isImage || isDataUri) {
+      // Use next/image for valid remote / relative paths, fallback to <img> otherwise
       return (
         <div className="flex justify-center rounded-md bg-muted p-4">
-          <Image
-            src={content}
-            alt="Document content"
-            className="max-h-96 max-w-full object-contain"
-            width={500}
-            height={300}
-          />
+          {canUseNextImage ? (
+            <Image
+              src={content}
+              alt="Document content"
+              className="max-h-96 max-w-full object-contain"
+              width={500}
+              height={300}
+            />
+          ) : (
+            // Fallback for data-URIs or other non-standard sources
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={content} alt="Document content" className="max-h-96 max-w-full object-contain" />
+          )}
         </div>
       );
-    } else if (content.startsWith("data:image/png;base64,") || content.startsWith("data:image/jpeg;base64,")) {
-      return (
-        <div className="flex justify-center rounded-md bg-muted p-4">
-          <Image
-            src={content}
-            alt="Base64 image content"
-            className="max-h-96 max-w-full object-contain"
-            width={500}
-            height={300}
-          />
-        </div>
-      );
-    } else {
-      return <div className="whitespace-pre-wrap rounded-md bg-muted p-4 font-mono text-sm">{content}</div>;
     }
+
+    // Default (non-image) rendering
+    return <div className="whitespace-pre-wrap rounded-md bg-muted p-4 font-mono text-sm">{content}</div>;
   };
 
   return (

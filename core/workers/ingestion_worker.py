@@ -12,12 +12,14 @@ from sqlalchemy import text
 
 from core.config import get_settings
 from core.database.postgres_database import PostgresDatabase
+from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
+from core.limits_utils import check_and_increment_limits
 from core.models.auth import AuthContext, EntityType
 from core.models.rules import MetadataExtractionRule
 from core.parser.morphik_parser import MorphikParser
-from core.services.document_service import DocumentService
+from core.services.document_service import CHARS_PER_TOKEN, TOKENS_PER_PAGE, DocumentService
 from core.services.rules_processor import RulesProcessor
 from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
@@ -25,10 +27,13 @@ from core.storage.s3_storage import S3Storage
 from core.vector_store.multi_vector_store import MultiVectorStore
 from core.vector_store.pgvector_store import PGVectorStore
 
+# Enterprise routing helpers
+from ee.db_router import get_database_for_app, get_vector_store_for_app
+
 logger = logging.getLogger(__name__)
 
-# Configure logger for ingestion worker (restored from diff)
-settings = get_settings()  # Need settings for log level potentially, though INFO used here
+# Initialize global settings once
+settings = get_settings()
 
 # Create logs directory if it doesn't exist
 os.makedirs("logs", exist_ok=True)
@@ -148,8 +153,63 @@ async def process_ingestion_job(
         )
         phase_times["deserialize_auth"] = time.time() - deserialize_start
 
-        # Get document service from the context
-        document_service: DocumentService = ctx["document_service"]
+        # ------------------------------------------------------------------
+        # Per-app routing for database and vector store
+        # ------------------------------------------------------------------
+
+        # Resolve a dedicated database/vector-store using the JWT *app_id*.
+        # When app_id is None we fall back to the control-plane resources.
+
+        database = await get_database_for_app(auth.app_id)
+        await database.initialize()
+
+        vector_store = await get_vector_store_for_app(auth.app_id)
+        if vector_store and hasattr(vector_store, "initialize"):
+            # PGVectorStore.initialize is *async*
+            try:
+                await vector_store.initialize()
+            except Exception as init_err:
+                logger.warning(f"Vector store initialization failed for app {auth.app_id}: {init_err}")
+
+        # Initialise a per-app MultiVectorStore for ColPali when needed
+        colpali_vector_store = None
+        if use_colpali:
+            try:
+                # Use render_as_string(hide_password=False) so the URI keeps the
+                # password – str(engine.url) masks it with "***" which breaks
+                # authentication for psycopg.  Also append sslmode=require when
+                # missing to satisfy Neon.
+                from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+                uri_raw = database.engine.url.render_as_string(hide_password=False)
+
+                parsed = urlparse(uri_raw)
+                query = parse_qs(parsed.query)
+                if "sslmode" not in query:
+                    query["sslmode"] = ["require"]
+                    parsed = parsed._replace(query=urlencode(query, doseq=True))
+
+                uri_final = urlunparse(parsed)
+
+                colpali_vector_store = MultiVectorStore(uri=uri_final)
+                await asyncio.to_thread(colpali_vector_store.initialize)
+            except Exception as e:
+                logger.warning(f"Failed to initialise ColPali MultiVectorStore for app {auth.app_id}: {e}")
+
+        # Build a fresh DocumentService scoped to this job/app so we don't
+        # mutate the shared instance kept in *ctx* (avoids cross-talk between
+        # concurrent jobs for different apps).
+        document_service = DocumentService(
+            storage=ctx["storage"],
+            database=database,
+            vector_store=vector_store,
+            embedding_model=ctx["embedding_model"],
+            parser=ctx["parser"],
+            cache_factory=None,
+            enable_colpali=use_colpali,
+            colpali_embedding_model=ctx.get("colpali_embedding_model"),
+            colpali_vector_store=colpali_vector_store,
+        )
 
         # 3. Download the file from storage
         logger.info(f"Downloading file from {bucket}/{file_key}")
@@ -169,6 +229,18 @@ async def process_ingestion_job(
         logger.debug(f"Parsed file into text of length {len(text)}")
         parse_time = time.time() - parse_start
         phase_times["parse_file"] = parse_time
+
+        # NEW -----------------------------------------------------------------
+        # 4.b Enforce tier limits (pages ingested) for cloud/free tier users
+        if settings.MODE == "cloud" and auth.user_id:
+            # Calculate approximate pages using same heuristic as DocumentService
+            num_pages = int(len(text) / (CHARS_PER_TOKEN * TOKENS_PER_PAGE)) or 1
+            try:
+                await check_and_increment_limits(auth, "ingest", num_pages, document_id)
+            except Exception as limit_exc:
+                logger.error("User %s exceeded ingest limits: %s", auth.user_id, limit_exc)
+                raise
+        # ---------------------------------------------------------------------
 
         # === Apply post_parsing rules ===
         rules_start = time.time()
@@ -518,9 +590,6 @@ async def startup(ctx):
     """
     logger.info("Worker starting up. Initializing services...")
 
-    # Get settings
-    settings = get_settings()
-
     # Initialize database
     logger.info("Initializing database...")
     database = PostgresDatabase(uri=settings.POSTGRES_URI)
@@ -574,15 +643,23 @@ async def startup(ctx):
 
     # Skip initializing completion model and reranker since they're not needed for ingestion
 
-    # Initialize ColPali embedding model and vector store if enabled
+    # Initialize ColPali embedding model and vector store per mode
     colpali_embedding_model = None
     colpali_vector_store = None
-    if settings.ENABLE_COLPALI:
-        logger.info("Initializing ColPali components...")
-        colpali_embedding_model = ColpaliEmbeddingModel()
+
+    if settings.COLPALI_MODE != "off":
+        logger.info(f"Initializing ColPali components (mode={settings.COLPALI_MODE}) ...")
+        # Choose embedding implementation
+        match settings.COLPALI_MODE:
+            case "local":
+                colpali_embedding_model = ColpaliEmbeddingModel()
+            case "api":
+                colpali_embedding_model = ColpaliApiEmbeddingModel()
+            case _:
+                raise ValueError(f"Unsupported COLPALI_MODE: {settings.COLPALI_MODE}")
+
+        # Vector store is needed for both local and api modes
         colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI)
-        # Properly await the initialization to ensure indexes are ready
-        # MultiVectorStore.initialize is synchronous, so we need to run it in a thread
         success = await asyncio.to_thread(colpali_vector_store.initialize)
         if success:
             logger.info("ColPali vector store initialization successful")
@@ -608,7 +685,7 @@ async def startup(ctx):
         embedding_model=embedding_model,
         parser=parser,
         cache_factory=None,
-        enable_colpali=settings.ENABLE_COLPALI,
+        enable_colpali=(settings.COLPALI_MODE != "off"),
         colpali_embedding_model=colpali_embedding_model,
         colpali_vector_store=colpali_vector_store,
     )
@@ -656,8 +733,8 @@ def redis_settings_from_env() -> RedisSettings:
     # Use ARQ's supported parameters with optimized values for stability
     # For high-volume ingestion (100+ documents), these settings help prevent timeouts
     return RedisSettings(
-        host=get_settings().REDIS_HOST,
-        port=get_settings().REDIS_PORT,
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
         database=int(url.path.lstrip("/") or 0),
         conn_timeout=5,  # Increased connection timeout (seconds)
         conn_retries=15,  # More retries for transient connection issues
