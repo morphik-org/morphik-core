@@ -173,7 +173,7 @@ async def process_ingestion_job(
 
         # Initialise a per-app MultiVectorStore for ColPali when needed
         colpali_vector_store = None
-        if use_colpali and settings.MODE == "cloud":
+        if use_colpali:
             try:
                 # Use render_as_string(hide_password=False) so the URI keeps the
                 # password – str(engine.url) masks it with "***" which breaks
@@ -185,7 +185,7 @@ async def process_ingestion_job(
 
                 parsed = urlparse(uri_raw)
                 query = parse_qs(parsed.query)
-                if "sslmode" not in query:
+                if "sslmode" not in query and settings.MODE == "cloud":
                     query["sslmode"] = ["require"]
                     parsed = parsed._replace(query=urlencode(query, doseq=True))
 
