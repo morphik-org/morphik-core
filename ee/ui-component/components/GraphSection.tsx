@@ -38,6 +38,10 @@ interface Graph {
   filters?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  system_metadata?: {
+    status?: string;
+    [key: string]: unknown;
+  };
 }
 
 interface Entity {
@@ -74,6 +78,8 @@ const entityTypeColors: Record<string, string> = {
   product: "#ef4444", // Red
   default: "#6b7280", // Gray
 };
+
+const POLL_INTERVAL_MS = 60000; // 1 minute
 
 const GraphSection: React.FC<GraphSectionProps> = ({
   apiBaseUrl,
@@ -348,7 +354,8 @@ const GraphSection: React.FC<GraphSectionProps> = ({
       }
 
       const data = await response.json();
-      setSelectedGraph(data); // Update the selected graph data
+      setSelectedGraph(data);
+      setActiveTab("details"); // Update the selected graph data
 
       // Invoke callback before refresh
       onGraphUpdate?.(selectedGraph.name, additionalDocuments.length);
@@ -373,6 +380,24 @@ const GraphSection: React.FC<GraphSectionProps> = ({
   };
 
   // Removed useEffect that depended on initializeGraph
+
+  // Poll for processing graphs
+  useEffect(() => {
+    // Start polling only if at least one graph is processing
+    const hasProcessing = graphs.some(g => g.system_metadata?.status === "processing");
+
+    if (!hasProcessing) return; // No need to poll
+
+    const id = setInterval(async () => {
+      await fetchGraphs();
+      // Refresh selected graph if it is still processing
+      if (selectedGraph?.system_metadata?.status === "processing") {
+        await fetchGraph(selectedGraph.name);
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => clearInterval(id);
+  }, [graphs, selectedGraph, fetchGraphs]);
 
   // Conditional rendering based on visualization state
   if (showVisualization && selectedGraph) {
@@ -572,6 +597,14 @@ const GraphSection: React.FC<GraphSectionProps> = ({
                     <span className="w-full max-w-[120px] truncate text-center text-sm font-medium transition-colors group-hover:text-primary">
                       {graph.name}
                     </span>
+                    {graph.system_metadata?.status === "processing" && (
+                      <Badge
+                        variant="secondary"
+                        className="mt-1 bg-yellow-400 text-[10px] text-black opacity-90 hover:bg-yellow-400"
+                      >
+                        Processing
+                      </Badge>
+                    )}
                   </div>
                 ))}
               </div>
@@ -582,6 +615,13 @@ const GraphSection: React.FC<GraphSectionProps> = ({
         {/* Graph Details View */}
         {activeTab === "details" && selectedGraph && (
           <div className="flex flex-col space-y-4">
+            {selectedGraph.system_metadata?.status === "processing" && (
+              <Alert variant="default" className="mb-2">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Graph is processing</AlertTitle>
+                <AlertDescription>Entities and relationships are still being extracted.</AlertDescription>
+              </Alert>
+            )}
             {/* Header with back button */}
             <div className="mb-2 flex items-center justify-between py-2">
               <div className="flex items-center gap-4">
@@ -606,11 +646,20 @@ const GraphSection: React.FC<GraphSectionProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={() => setActiveTab("update")} className="flex items-center">
+                <Button
+                  variant="outline"
+                  onClick={() => setActiveTab("update")}
+                  className="flex items-center"
+                  disabled={selectedGraph.system_metadata?.status === "processing"}
+                >
                   <Plus className="mr-1 h-4 w-4" />
                   Update Graph
                 </Button>
-                <Button onClick={() => setShowVisualization(true)} className="flex items-center">
+                <Button
+                  onClick={() => setShowVisualization(true)}
+                  className="flex items-center"
+                  disabled={selectedGraph.system_metadata?.status === "processing"}
+                >
                   <Share2 className="mr-1 h-4 w-4" />
                   Visualize
                 </Button>
@@ -626,12 +675,16 @@ const GraphSection: React.FC<GraphSectionProps> = ({
 
               <div className="rounded-lg bg-muted/50 p-4">
                 <h4 className="mb-1 text-sm font-medium text-muted-foreground">Entities</h4>
-                <div className="text-2xl font-bold">{selectedGraph.entities.length}</div>
+                <div className="text-2xl font-bold">
+                  {selectedGraph.system_metadata?.status === "processing" ? "…" : selectedGraph.entities.length}
+                </div>
               </div>
 
               <div className="rounded-lg bg-muted/50 p-4">
                 <h4 className="mb-1 text-sm font-medium text-muted-foreground">Relationships</h4>
-                <div className="text-2xl font-bold">{selectedGraph.relationships.length}</div>
+                <div className="text-2xl font-bold">
+                  {selectedGraph.system_metadata?.status === "processing" ? "…" : selectedGraph.relationships.length}
+                </div>
               </div>
 
               <div className="rounded-lg bg-muted/50 p-4">
@@ -649,7 +702,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({
                 <h4 className="mb-2 text-base font-medium">Entity Types</h4>
                 <div className="max-h-60 overflow-y-auto rounded-md border bg-muted/30 p-3">
                   {Object.entries(
-                    selectedGraph.entities.reduce(
+                    (selectedGraph.system_metadata?.status === "processing" ? [] : selectedGraph.entities).reduce(
                       (acc, entity) => {
                         acc[entity.type] = (acc[entity.type] || 0) + 1;
                         return acc;
@@ -683,7 +736,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({
                 <h4 className="mb-2 text-base font-medium">Relationship Types</h4>
                 <div className="max-h-60 overflow-y-auto rounded-md border bg-muted/30 p-3">
                   {Object.entries(
-                    selectedGraph.relationships.reduce(
+                    (selectedGraph.system_metadata?.status === "processing" ? [] : selectedGraph.relationships).reduce(
                       (acc, rel) => {
                         acc[rel.type] = (acc[rel.type] || 0) + 1;
                         return acc;

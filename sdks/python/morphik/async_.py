@@ -499,7 +499,9 @@ class AsyncFolder:
             name, filters, documents, prompt_overrides, self._name, None
         )
         response = await self._client._request("POST", "graph/create", data=request)
-        return self._client._logic._parse_graph_response(response)
+        graph = self._logic._parse_graph_response(response)
+        graph._client = self  # Attach AsyncMorphik client for polling helpers
+        return graph
 
     async def update_graph(
         self,
@@ -524,7 +526,9 @@ class AsyncFolder:
             name, additional_filters, additional_documents, prompt_overrides, self._name, None
         )
         response = await self._client._request("POST", f"graph/{name}/update", data=request)
-        return self._client._logic._parse_graph_response(response)
+        graph = self._logic._parse_graph_response(response)
+        graph._client = self
+        return graph
 
     async def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
         """
@@ -1032,7 +1036,9 @@ class AsyncUserScope:
             name, filters, documents, prompt_overrides, self._folder_name, self._end_user_id
         )
         response = await self._client._request("POST", "graph/create", data=request)
-        return self._client._logic._parse_graph_response(response)
+        graph = self._logic._parse_graph_response(response)
+        graph._client = self
+        return graph
 
     async def update_graph(
         self,
@@ -1062,7 +1068,9 @@ class AsyncUserScope:
             self._end_user_id,
         )
         response = await self._client._request("POST", f"graph/{name}/update", data=request)
-        return self._client._logic._parse_graph_response(response)
+        graph = self._logic._parse_graph_response(response)
+        graph._client = self
+        return graph
 
     async def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
         """
@@ -2332,7 +2340,9 @@ class AsyncMorphik:
         """
         request = self._logic._prepare_create_graph_request(name, filters, documents, prompt_overrides, None, None)
         response = await self._request("POST", "graph/create", data=request)
-        return self._logic._parse_graph_response(response)
+        graph = self._logic._parse_graph_response(response)
+        graph._client = self  # Attach AsyncMorphik client for polling helpers
+        return graph
 
     async def get_graph(self, name: str) -> Graph:
         """
@@ -2352,7 +2362,9 @@ class AsyncMorphik:
             ```
         """
         response = await self._request("GET", f"graph/{name}")
-        return self._logic._parse_graph_response(response)
+        graph = self._logic._parse_graph_response(response)
+        graph._client = self
+        return graph
 
     async def list_graphs(self) -> List[Graph]:
         """
@@ -2370,7 +2382,10 @@ class AsyncMorphik:
             ```
         """
         response = await self._request("GET", "graphs")
-        return self._logic._parse_graph_list_response(response)
+        graphs = self._logic._parse_graph_list_response(response)
+        for g in graphs:
+            g._client = self
+        return graphs
 
     async def update_graph(
         self,
@@ -2427,7 +2442,9 @@ class AsyncMorphik:
             name, additional_filters, additional_documents, prompt_overrides, None, None
         )
         response = await self._request("POST", f"graph/{name}/update", data=request)
-        return self._logic._parse_graph_response(response)
+        graph = self._logic._parse_graph_response(response)
+        graph._client = self
+        return graph
 
     async def delete_document(self, document_id: str) -> Dict[str, str]:
         """
@@ -2495,3 +2512,31 @@ class AsyncMorphik:
 
         payload = {"app_id": app_id, "name": name, "expiry_days": expiry_days}
         return await self._request("POST", "ee/create_app", data=payload)
+
+    async def wait_for_graph_completion(
+        self,
+        graph_name: str,
+        timeout_seconds: int = 300,
+        check_interval_seconds: int = 5,
+    ) -> Graph:
+        """Block until the specified graph finishes processing (async).
+
+        Args:
+            graph_name: Name of the graph to monitor.
+            timeout_seconds: Maximum seconds to wait.
+            check_interval_seconds: Seconds between status checks.
+
+        Returns:
+            Graph: The completed graph object.
+        """
+        import asyncio
+
+        start = asyncio.get_event_loop().time()
+        while (asyncio.get_event_loop().time() - start) < timeout_seconds:
+            graph = await self.get_graph(graph_name)
+            if graph.is_completed:
+                return graph
+            if graph.is_failed:
+                raise RuntimeError(graph.error or "Graph processing failed")
+            await asyncio.sleep(check_interval_seconds)
+        raise TimeoutError("Timed out waiting for graph completion")

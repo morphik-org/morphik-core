@@ -531,7 +531,9 @@ class Folder:
         }
 
         response = self._client._request("POST", "graph/create", request)
-        return self._client._logic._parse_graph_response(response)
+        graph = self._logic._parse_graph_response(response)
+        graph._client = self
+        return graph
 
     def update_graph(
         self,
@@ -564,7 +566,9 @@ class Folder:
         }
 
         response = self._client._request("POST", f"graph/{name}/update", request)
-        return self._client._logic._parse_graph_response(response)
+        graph = self._logic._parse_graph_response(response)
+        graph._client = self
+        return graph
 
     def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
         """
@@ -1138,7 +1142,9 @@ class UserScope:
             request["folder_name"] = self._folder_name
 
         response = self._client._request("POST", "graph/create", request)
-        return self._client._logic._parse_graph_response(response)
+        graph = self._logic._parse_graph_response(response)
+        graph._client = self
+        return graph
 
     def update_graph(
         self,
@@ -1175,7 +1181,9 @@ class UserScope:
             request["folder_name"] = self._folder_name
 
         response = self._client._request("POST", f"graph/{name}/update", request)
-        return self._client._logic._parse_graph_response(response)
+        graph = self._logic._parse_graph_response(response)
+        graph._client = self
+        return graph
 
     def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
         """
@@ -2507,7 +2515,9 @@ class Morphik:
             request["prompt_overrides"] = prompt_overrides
 
         response = self._request("POST", "graph/create", request)
-        return self._logic._parse_graph_response(response)
+        graph = self._logic._parse_graph_response(response)
+        graph._client = self
+        return graph
 
     def get_graph(self, name: str) -> Graph:
         """
@@ -2527,7 +2537,9 @@ class Morphik:
             ```
         """
         response = self._request("GET", f"graph/{name}")
-        return self._logic._parse_graph_response(response)
+        graph = self._logic._parse_graph_response(response)
+        graph._client = self
+        return graph
 
     def list_graphs(self) -> List[Graph]:
         """
@@ -2545,7 +2557,10 @@ class Morphik:
             ```
         """
         response = self._request("GET", "graphs")
-        return self._logic._parse_graph_list_response(response)
+        graphs = self._logic._parse_graph_list_response(response)
+        for g in graphs:
+            g._client = self
+        return graphs
 
     def update_graph(
         self,
@@ -2609,7 +2624,9 @@ class Morphik:
         }
 
         response = self._request("POST", f"graph/{name}/update", request)
-        return self._logic._parse_graph_response(response)
+        graph = self._logic._parse_graph_response(response)
+        graph._client = self
+        return graph
 
     def delete_document(self, document_id: str) -> Dict[str, str]:
         """
@@ -2690,3 +2707,31 @@ class Morphik:
 
         payload = {"app_id": app_id, "name": name, "expiry_days": expiry_days}
         return self._request("POST", "ee/create_app", data=payload)
+
+    def wait_for_graph_completion(
+        self,
+        graph_name: str,
+        timeout_seconds: int = 300,
+        check_interval_seconds: int = 5,
+    ) -> Graph:
+        """Block until the specified graph finishes processing.
+
+        Args:
+            graph_name: Name of the graph to monitor.
+            timeout_seconds: Maximum seconds to wait.
+            check_interval_seconds: Seconds between status checks.
+
+        Returns:
+            Graph: The completed graph object.
+        """
+        import time
+
+        start = time.time()
+        while time.time() - start < timeout_seconds:
+            graph = self.get_graph(graph_name)
+            if graph.is_completed:
+                return graph
+            if graph.is_failed:
+                raise RuntimeError(graph.error or "Graph processing failed")
+            time.sleep(check_interval_seconds)
+        raise TimeoutError("Timed out waiting for graph completion")

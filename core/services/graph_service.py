@@ -112,6 +112,8 @@ class GraphService:
 
         if not document_ids and not explicit_doc_ids:
             # No new documents to add
+            existing_graph.system_metadata["status"] = "completed"
+            await self.db.update_graph(existing_graph)
             return existing_graph
 
         # Create a set for all document IDs that should be included in the updated graph
@@ -186,6 +188,9 @@ class GraphService:
             additional_filters,
             additional_doc_ids,
         )
+
+        # NEW: mark graph as completed after processing
+        existing_graph.system_metadata["status"] = "completed"
 
         # Store the updated graph in the database
         if not await self.db.update_graph(existing_graph):
@@ -491,6 +496,9 @@ class GraphService:
         # Add entities and relationships to the graph
         graph.entities = list(entities.values())
         graph.relationships = relationships
+
+        # NEW: Mark completion status
+        graph.system_metadata["status"] = "completed"
 
         # Store the graph in the database
         if not await self.db.store_graph(graph):

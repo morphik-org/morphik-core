@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
 
 class Document(BaseModel):
@@ -285,12 +285,54 @@ class Graph(BaseModel):
     entities: List[Entity] = Field(default_factory=list, description="Entities in the graph")
     relationships: List[Relationship] = Field(default_factory=list, description="Relationships in the graph")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Graph metadata")
+    system_metadata: Dict[str, Any] = Field(default_factory=dict, description="System-managed metadata")
     document_ids: List[str] = Field(default_factory=list, description="Source document IDs")
     filters: Optional[Dict[str, Any]] = Field(None, description="Document filters used to create the graph")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
     owner: Dict[str, str] = Field(default_factory=dict, description="Graph owner information")
     access_control: Dict[str, List[str]] = Field(default_factory=dict, description="Access control information")
+
+    _client: Any | None = PrivateAttr(default=None)
+
+    # ---------------- Convenience helpers ----------------
+    @property
+    def status(self) -> str | None:
+        """Return processing status if available."""
+        return self.system_metadata.get("status") if self.system_metadata else None
+
+    @property
+    def is_processing(self) -> bool:
+        return self.status == "processing"
+
+    @property
+    def is_completed(self) -> bool:
+        return self.status == "completed"
+
+    @property
+    def is_failed(self) -> bool:
+        return self.status == "failed"
+
+    @property
+    def error(self) -> str | None:
+        return self.system_metadata.get("error") if self.system_metadata else None
+
+    def wait_for_completion(self, timeout_seconds: int = 300, check_interval_seconds: int = 5) -> "Graph":
+        """Poll the server until the graph processing is finished."""
+        import time
+
+        if not self._client:
+            raise RuntimeError("Graph object has no client reference for polling")
+
+        start = time.time()
+        while time.time() - start < timeout_seconds:
+            refreshed = self._client.get_graph(self.name)
+            if refreshed.is_completed:
+                return refreshed
+            if refreshed.is_failed:
+                raise RuntimeError(refreshed.error or "Graph creation failed")
+            time.sleep(check_interval_seconds)
+        raise TimeoutError("Timed out waiting for graph completion")
 
 
 class EntityExtractionExample(BaseModel):

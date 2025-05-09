@@ -1399,49 +1399,101 @@ async def create_graph(
     auth: AuthContext = Depends(verify_token),
 ) -> Graph:
     """
-    Create a graph from documents.
+    Create a graph from documents **asynchronously**.
 
-    This endpoint extracts entities and relationships from documents
-    matching the specified filters or document IDs and creates a graph.
-
-    Args:
-        request: CreateGraphRequest containing:
-            - name: Name of the graph to create
-            - filters: Optional metadata filters to determine which documents to include
-            - documents: Optional list of specific document IDs to include
-            - prompt_overrides: Optional customizations for entity extraction and resolution prompts
-            - folder_name: Optional folder to scope the operation to
-            - end_user_id: Optional end-user ID to scope the operation to
-        auth: Authentication context
-
-    Returns:
-        Graph: The created graph object
+    Instead of blocking on the potentially slow entity/relationship extraction, we immediately
+    create a placeholder graph with `status = "processing"`. A background task then fills in
+    entities/relationships and marks the graph as completed.
     """
     try:
         # Validate prompt overrides before proceeding
         if request.prompt_overrides:
             validate_prompt_overrides_with_http_exception(request.prompt_overrides, operation_type="graph")
 
-        # Check graph creation limits if in cloud mode
+        # Enforce usage limits (cloud mode)
         if settings.MODE == "cloud" and auth.user_id:
-            # Check limits before proceeding
             await check_and_increment_limits(auth, "graph", 1)
 
-        # Create system filters for folder and user scoping
-        system_filters = {}
+        # --------------------
+        # Build system filters
+        # --------------------
+        system_filters: Dict[str, Any] = {}
         if request.folder_name:
             system_filters["folder_name"] = request.folder_name
         if request.end_user_id:
             system_filters["end_user_id"] = request.end_user_id
 
-        return await document_service.create_graph(
+        # --------------------
+        # Create stub graph
+        # --------------------
+        import uuid
+        from datetime import UTC, datetime
+
+        from core.models.graph import Graph
+
+        access_control = {
+            "readers": [auth.entity_id],
+            "writers": [auth.entity_id],
+            "admins": [auth.entity_id],
+        }
+        if auth.user_id:
+            access_control["user_id"] = [auth.user_id]
+
+        graph_stub = Graph(
+            id=str(uuid.uuid4()),
             name=request.name,
-            auth=auth,
             filters=request.filters,
-            documents=request.documents,
-            prompt_overrides=request.prompt_overrides,
-            system_filters=system_filters,
+            owner={"type": auth.entity_type.value, "id": auth.entity_id},
+            access_control=access_control,
         )
+
+        # Persist scoping info in system metadata
+        if system_filters.get("folder_name"):
+            graph_stub.system_metadata["folder_name"] = system_filters["folder_name"]
+        if system_filters.get("end_user_id"):
+            graph_stub.system_metadata["end_user_id"] = system_filters["end_user_id"]
+        if auth.app_id:
+            graph_stub.system_metadata["app_id"] = auth.app_id
+
+        # Mark graph as processing
+        graph_stub.system_metadata["status"] = "processing"
+        graph_stub.system_metadata["created_at"] = datetime.now(UTC)
+        graph_stub.system_metadata["updated_at"] = datetime.now(UTC)
+
+        # Store the stub graph so clients can poll for status
+        success = await document_service.db.store_graph(graph_stub)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to create graph stub")
+
+        # --------------------
+        # Background processing
+        # --------------------
+        async def _build_graph_async():
+            try:
+                await document_service.update_graph(
+                    name=request.name,
+                    auth=auth,
+                    additional_filters=None,  # original filters already on stub
+                    additional_documents=request.documents,
+                    prompt_overrides=request.prompt_overrides,
+                    system_filters=system_filters,
+                )
+            except Exception as e:
+                logger.error(f"Graph creation failed for {request.name}: {e}")
+                # Update graph status to failed
+                existing = await document_service.db.get_graph(request.name, auth, system_filters=system_filters)
+                if existing:
+                    existing.system_metadata["status"] = "failed"
+                    existing.system_metadata["error"] = str(e)
+                    existing.system_metadata["updated_at"] = datetime.now(UTC)
+                    await document_service.db.update_graph(existing)
+
+        import asyncio
+
+        asyncio.create_task(_build_graph_async())
+
+        # Return the stub graph immediately
+        return graph_stub
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
