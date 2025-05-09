@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkGfm from "remark-gfm";
+import { AgentResponseData, Citation, ImageCitation, TextCitation } from "@/types/agent-response";
 
 // Define interface for the Tool Call
 export interface ToolCall {
@@ -20,6 +21,9 @@ export interface AgentUIMessage extends UIMessage {
     tool_history: ToolCall[];
   };
   isLoading?: boolean;
+  // content remains string as per UIMessage
+  // richResponse will hold the new structured data
+  richResponse?: AgentResponseData;
 }
 
 export interface AgentMessageProps {
@@ -104,8 +108,105 @@ const renderJson = (obj: unknown) => {
   );
 };
 
+// Updated MarkdownContent Props to include citations
+interface MarkdownContentProps {
+  content: string | object;
+  citations?: Citation[]; // Optional for now, but will be used for inline rendering
+}
+
 // Markdown content renderer component
-const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
+const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, citations }) => {
+  const contentString = typeof content === 'string' ? content : JSON.stringify(content);
+  // console.log("MarkdownContent received body:", contentString); // DEBUG: Log the raw body
+  // console.log("MarkdownContent received citations:", citations); // DEBUG: Log the citations array
+
+  const processNode = (node: React.ReactNode): React.ReactNode => {
+    if (typeof node === 'string') {
+      const parts: React.ReactNode[] = []; // Explicitly type parts
+      let lastIndex = 0;
+      const regex = /\[ref:([a-zA-Z0-9_-]+)\]/g;
+      let match;
+
+      while ((match = regex.exec(node)) !== null) {
+        if (match.index > lastIndex) {
+          parts.push(node.substring(lastIndex, match.index));
+        }
+
+        const citationId = match[1];
+        // console.log(`Found placeholder for citation ID: ${citationId}`); // DEBUG
+        const citation = citations?.find(c => c.id === citationId);
+
+        if (citation) {
+          // Check if a text citation actually contains an image data URI
+          let renderAsImage = citation.type === 'image';
+          let imageUrlForRender = "";
+          let imageAltText = `Referenced Image: ${citation.id} from ${citation.sourceDocId}`;
+
+          if (citation.type === 'image') {
+            const imgCitation = citation as ImageCitation;
+            imageUrlForRender = imgCitation.imageUrl;
+            imageAltText = imgCitation.snippet || `Image from ${imgCitation.sourceDocId} (ID: ${imgCitation.id})`;
+          } else if (citation.type === 'text') { // Text citation
+            const textSnippet = (citation as TextCitation).snippet;
+            if (textSnippet && textSnippet.startsWith("data:image")) {
+              renderAsImage = true;
+              imageUrlForRender = textSnippet; // The snippet itself is the data URI
+              imageAltText = `Cited Image Data (Ref: ${citation.id})`;
+              // console.log(`Citation ${citationId} is type text but snippet is an image. Rendering as image.`); // DEBUG
+            }
+          }
+          if (renderAsImage) {
+            if (!imageUrlForRender) {
+              parts.push(`[Missing Image Data: ${citationId}]`);
+            } else {
+              parts.push(
+                <span key={`citation-${citationId}-${match.index}`} className="inline-flex flex-col items-center align-middle mx-1 my-1 p-1 border rounded max-w-xs">
+                  <img
+                    src={imageUrlForRender}
+                    alt={imageAltText}
+                    className="max-w-full h-auto rounded border"
+                    style={{ display: 'block' }}
+                  />
+                  {(citation.type === 'image' && (citation as ImageCitation).snippet) &&
+                    <p className="text-xs italic text-muted-foreground text-center mt-1 px-1">{imageAltText}</p>}
+                </span>
+              );
+            }
+          } else { // Is definitely a text citation (and not an image data URI in snippet)
+            const textCitation = citation as TextCitation;
+            const displaySnippet = textCitation.snippet?.substring(0, 70) + (textCitation.snippet && textCitation.snippet.length > 70 ? "..." : "");
+            const titleText = `Ref: ${textCitation.id} | SourceDoc: ${textCitation.sourceDocId} | ChunkId: ${textCitation.chunkId}` +
+                            (textCitation.reasoning ? `\nReasoning: ${textCitation.reasoning}` : "");
+            parts.push(
+              <span
+                key={`citation-${citationId}-${match.index}`}
+                className="inline-block align-middle mx-1 px-1.5 py-0.5 border border-dashed border-primary/50 rounded bg-primary/10 text-xs cursor-help"
+                title={titleText}
+              >
+                📝 <span className="italic">{displaySnippet}</span> (Ref: {citationId})
+              </span>
+            );
+          }
+        } else {
+          // console.warn(`Citation ID ${citationId} found in text but not in citations array.`); // DEBUG
+          parts.push(match[0]); // Keep original placeholder if citation not found
+        }
+        lastIndex = regex.lastIndex;
+      }
+
+      if (lastIndex < node.length) {
+        parts.push(node.substring(lastIndex));
+      }
+      return parts.length > 0 ? <>{parts}</> : node;
+    }
+
+    if (React.isValidElement(node) && node.props.children) {
+      return React.cloneElement(node, { ...node.props, children: React.Children.map(node.props.children, processNode) });
+    }
+
+    return node;
+  };
+
   return (
     <div className="prose prose-sm dark:prose-invert max-w-none break-words">
       <ReactMarkdown
@@ -124,15 +225,8 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
           h1: ({ children }) => <h1 className="mb-4 text-2xl font-bold">{children}</h1>,
           h2: ({ children }) => <h2 className="mb-3 text-xl font-bold">{children}</h2>,
           h3: ({ children }) => <h3 className="mb-2 text-lg font-bold">{children}</h3>,
-          p: ({ children }) => <p className="mb-4 leading-relaxed">{children}</p>,
-          ul: ({ children }) => <ul className="mb-4 list-disc space-y-2 pl-6">{children}</ul>,
-          ol: ({ children }) => <ol className="mb-4 list-decimal space-y-2 pl-6">{children}</ol>,
-          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-          blockquote: ({ children }) => (
-            <blockquote className="my-4 border-l-4 border-gray-300 pl-4 italic dark:border-gray-600">
-              {children}
-            </blockquote>
-          ),
+          p: ({ node, ...props }) => <p {...props}>{React.Children.map(props.children, child => processNode(child))}</p>,
+          li: ({ node, ...props }) => <li {...props}>{React.Children.map(props.children, child => processNode(child))}</li>,
           code({ className, children }) {
             const match = /language-(\w+)/.exec(className || "");
             const language = match ? match[1] : "";
@@ -149,7 +243,7 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
             }
 
             return isInline ? (
-              <code className="rounded bg-muted px-1.5 py-0.5 text-sm">{children}</code>
+              <code className="rounded bg-muted px-1.5 py-0.5 text-sm">{String(children)}</code>
             ) : (
               <div className="my-4 overflow-hidden rounded-md">
                 <SyntaxHighlighter style={oneDark} language="text" PreTag="div" className="!my-0">
@@ -168,8 +262,52 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
           hr: () => <hr className="my-8 border-t border-gray-200 dark:border-gray-700" />,
         }}
       >
-        {content}
+        {contentString}
       </ReactMarkdown>
+    </div>
+  );
+};
+
+// New component to render individual citations
+const CitationView: React.FC<{ citation: Citation }> = ({ citation }) => {
+  const renderCitationContent = () => {
+    if (citation.type === 'image') {
+      const imgCitation = citation as ImageCitation;
+      return (
+        <div className="mt-2">
+          <img src={imgCitation.imageUrl} alt={imgCitation.snippet || `Image ${imgCitation.id}`} className="max-w-xs rounded border" />
+          {imgCitation.bbox && (
+            <p className="text-xs text-muted-foreground">Bounding box: {JSON.stringify(imgCitation.bbox)}</p>
+          )}
+          {imgCitation.snippet && <p className="mt-1 text-xs italic text-muted-foreground">{imgCitation.snippet}</p>}
+        </div>
+      );
+    }
+    // Default to text citation
+    const textCitation = citation as TextCitation;
+    return (
+      <div className="mt-2">
+        <p className="text-xs text-muted-foreground">Source: Doc {textCitation.sourceDocId}, Chunk {textCitation.chunkId}</p>
+        <blockquote className="mt-1 border-l-2 pl-2 text-xs italic">
+          {textCitation.snippet}
+        </blockquote>
+      </div>
+    );
+  };
+
+  return (
+    <div className="mt-2 rounded-md border bg-background/50 p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold">
+          Citation ID: {citation.id} ({citation.type})
+        </span>
+        {citation.grounded !== undefined && (
+          <Badge variant={citation.grounded ? "default" : "secondary"} className="text-[10px]">
+            {citation.grounded ? "Grounded" : "Not Grounded"}
+          </Badge>
+        )}
+      </div>
+      {renderCitationContent()}
     </div>
   );
 };
@@ -177,34 +315,101 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
 export function AgentPreviewMessage({ message }: AgentMessageProps) {
   const toolHistory = message.experimental_agentData?.tool_history;
 
-  // If this is a loading state, show the thinking message
   if (message.isLoading) {
     return <ThinkingMessage />;
   }
 
-  // If no tool history, render regular message
-  if (!toolHistory || toolHistory.length === 0) {
+  // Handle User Messages separately if PreviewMessage is primarily for them
+  if (message.role === 'user') {
+    // Assuming PreviewMessage is designed to take the whole message object for users
+    // and does not require children from AgentPreviewMessage for user roles.
+    // If PreviewMessage is just a styled bubble, it might take children,
+    // but the error suggested it doesn't when uiMessage prop is used.
+    // Let's assume it handles user message content internally or via a simpler prop.
     return <PreviewMessage message={message} />;
   }
 
-  return (
-    <div className="group relative flex px-4 py-3">
-      <div className={`flex w-full flex-col ${message.role === "user" ? "items-end" : "items-start"}`}>
-        <div className="flex w-full max-w-3xl items-start gap-4">
-          <div className={`flex-1 space-y-2 overflow-hidden ${message.role === "user" ? "" : ""}`}>
-            <div
-              className={`rounded-xl p-4 ${
-                message.role === "user" ? "ml-auto bg-primary text-primary-foreground" : "bg-muted"
-              }`}
-            >
-              {message.role === "assistant" ? (
-                <MarkdownContent content={message.content} />
-              ) : (
-                <div className="prose prose-sm dark:prose-invert break-words">{message.content}</div>
-              )}
-            </div>
+  // Handle Assistant Messages
+  if (message.role === 'assistant') {
+    if (message.richResponse && message.richResponse.mode === 'rich') {
+      const { body, citations } = message.richResponse;
+      return (
+        <div className="group relative flex px-4 py-3">
+          <div className="flex w-full flex-col items-start">
+            <div className="flex w-full max-w-3xl items-start gap-4">
+              <div className="flex-1 space-y-2 overflow-hidden">
+                <div className="rounded-xl bg-muted p-4">
+                  <MarkdownContent content={body} citations={citations} />
+                </div>
 
-            {message.role === "assistant" && toolHistory.length > 0 && (
+                {citations && citations.length > 0 && (
+                  <div className="mt-4 space-y-3 rounded-xl border p-3">
+                    <h4 className="text-sm font-semibold">Citations ({citations.length})</h4>
+                    <div className="max-h-[400px] space-y-3 overflow-y-auto pr-2">
+                      {citations.map((citation) => (
+                        <CitationView key={citation.id} citation={citation} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {toolHistory && toolHistory.length > 0 && (
+                   <Accordion type="single" collapsible className="mt-4 overflow-hidden rounded-xl border">
+                     <AccordionItem value="tools" className="border-0">
+                       <AccordionTrigger className="px-4 py-2 text-sm font-medium">
+                         Tool Calls ({toolHistory.length})
+                       </AccordionTrigger>
+                       <AccordionContent className="px-4 pb-3">
+                         <div className="max-h-[400px] space-y-3 overflow-y-auto pr-2">
+                           {toolHistory.map((tool, index) => (
+                             <div
+                               key={`${tool.tool_name}-${index}`}
+                               className="overflow-hidden rounded-md border bg-background"
+                             >
+                               <div className="border-b p-3">
+                                 <div className="flex items-start justify-between">
+                                   <div>
+                                     <span className="text-sm font-medium">{tool.tool_name}</span>
+                                   </div>
+                                   <Badge variant="outline" className="text-[10px]">
+                                     Tool Call #{index + 1}
+                                   </Badge>
+                                 </div>
+                               </div>
+                               <Accordion type="multiple" className="border-t">
+                                 <AccordionItem value="args" className="border-0">
+                                   <AccordionTrigger className="px-3 py-2 text-xs">Arguments</AccordionTrigger>
+                                   <AccordionContent className="px-3 pb-3">{renderJson(tool.tool_args)}</AccordionContent>
+                                 </AccordionItem>
+                                 <AccordionItem value="result" className="border-t">
+                                   <AccordionTrigger className="px-3 py-2 text-xs">Result</AccordionTrigger>
+                                   <AccordionContent className="px-3 pb-3">{renderJson(tool.tool_result)}</AccordionContent>
+                                 </AccordionItem>
+                               </Accordion>
+                             </div>
+                           ))}
+                         </div>
+                       </AccordionContent>
+                     </AccordionItem>
+                   </Accordion>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    } else {
+      // Plain assistant message (not rich, but may have message.content and/or toolHistory)
+      return (
+        <div className="group relative flex px-4 py-3">
+          <div className="flex-shrink-0 mr-3">{/* Placeholder for an avatar or icon */}</div>
+          <div className="flex-1 space-y-2 overflow-hidden">
+            {message.content && (
+              <div className="rounded-xl bg-muted p-4">
+                <MarkdownContent content={message.content} citations={undefined} /> {/* No rich citations here */}
+              </div>
+            )}
+            {toolHistory && toolHistory.length > 0 && (
               <Accordion type="single" collapsible className="mt-2 overflow-hidden rounded-xl border">
                 <AccordionItem value="tools" className="border-0">
                   <AccordionTrigger className="px-4 py-2 text-sm font-medium">
@@ -227,13 +432,11 @@ export function AgentPreviewMessage({ message }: AgentMessageProps) {
                               </Badge>
                             </div>
                           </div>
-
                           <Accordion type="multiple" className="border-t">
                             <AccordionItem value="args" className="border-0">
                               <AccordionTrigger className="px-3 py-2 text-xs">Arguments</AccordionTrigger>
                               <AccordionContent className="px-3 pb-3">{renderJson(tool.tool_args)}</AccordionContent>
                             </AccordionItem>
-
                             <AccordionItem value="result" className="border-t">
                               <AccordionTrigger className="px-3 py-2 text-xs">Result</AccordionTrigger>
                               <AccordionContent className="px-3 pb-3">{renderJson(tool.tool_result)}</AccordionContent>
@@ -248,7 +451,10 @@ export function AgentPreviewMessage({ message }: AgentMessageProps) {
             )}
           </div>
         </div>
-      </div>
-    </div>
-  );
+      );
+    }
+  }
+
+  // Fallback for any other unhandled message types or roles (should not happen with current types)
+  return <PreviewMessage message={message} />;
 }

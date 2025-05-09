@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, Dict, List, Literal, Optional
 
 from core.models.auth import AuthContext
+from core.models.documents import ChunkResult
 from core.services.document_service import DocumentService
 
 logger = logging.getLogger(__name__)
@@ -30,27 +31,14 @@ async def retrieve_chunks(
 ) -> List[Dict[str, Any]]:
     """
     Retrieve the most relevant text and image chunks from the knowledge base.
-
-    Args:
-        query: The search query or question
-        k: Number of chunks to retrieve (default: 5)
-        filters: Metadata filters to narrow results
-        min_relevance: Minimum relevance score threshold (0-1)
-        use_colpali: Whether to use multimodal features
-        folder_name: Optional folder to scope the search to
-        end_user_id: Optional end-user ID to scope the search to
-        document_service: DocumentService instance
-        auth: Authentication context
-
-    Returns:
-        List of content items with text and images
+    Returns a list of dictionaries, each representing a chunk with its ID, type, and content/description.
     """
     if document_service is None:
         raise ToolError("Document service not provided")
 
     try:
         # Directly await the document service method
-        chunks = await document_service.retrieve_chunks(
+        raw_chunks: List[ChunkResult] = await document_service.retrieve_chunks(
             query=query,
             auth=auth,
             filters=filters,
@@ -62,35 +50,72 @@ async def retrieve_chunks(
         )
 
         # Format the results for LiteLLM tool response
-        content = []
+        # The 'content' for the LLM will be a list of structured chunk information
+        llm_chunk_info_list = []
 
-        # Add a header text element
-        content.append({"type": "text", "text": f"Found {len(chunks)} relevant chunks:"})
+        # Add a header text element (optional, but can be useful for the LLM's context)
+        # content.append({"type": "text", "text": f"Found {len(raw_chunks)} relevant chunks:"})
 
-        for chunk in chunks:
-            # Check if this is an image chunk
-            if chunk.metadata.get("is_image", False):
-                # Add image to content
-                if chunk.content.startswith("data:"):
-                    # Already in data URL format
-                    content.append({"type": "image_url", "image_url": {"url": chunk.content}})
-                else:
-                    # Assuming it's base64, convert to data URL format
-                    # TODO: potential bug here, if the base64 image is not a png
-                    content.append(
-                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{chunk.content}"}}
-                    )
-            else:
-                # Add text content with metadata
-                text = f"Document: {chunk.filename or 'Unnamed'} (Score: {chunk.score:.2f})\n\n{chunk.content}"
-                content.append(
+        for chunk in raw_chunks:
+            chunk_type = "image" if chunk.metadata.get("is_image", False) else "text"
+
+            # Generate the unique ID
+            # Ensure document_id and chunk_number are strings if they might not be.
+            # Forcing string type for document_id just in case, chunk_number is int.
+            doc_id_str = str(chunk.document_id)
+            chunk_id_str = f"doc:{doc_id_str}::chunk:{chunk.chunk_number}::type:{chunk_type}"
+
+            if chunk_type == "image":
+                # For images, provide a description or placeholder.
+                # The actual image data will be fetched by the grounding service using the ID.
+                image_description = (
+                    chunk.metadata.get("alt_text")
+                    or chunk.metadata.get("description")
+                    or f"Image from document {chunk.filename or doc_id_str}, chunk {chunk.chunk_number}"
+                )
+
+                llm_chunk_info_list.append(
                     {
-                        "type": "text",
-                        "text": text,
+                        "id": chunk_id_str,
+                        "type": "image",
+                        "description": image_description,
+                        "source_document_id": doc_id_str,
+                        "source_filename": chunk.filename,
+                        "relevance_score": round(chunk.score, 3) if chunk.score is not None else None,
                     }
                 )
-        return content
+            else:  # text chunk
+                # Provide a snippet of the text content for the LLM
+                # The full content can be retrieved by the grounding service if necessary,
+                # but typically the snippet is enough for the LLM to decide if it's relevant.
+                text_snippet = chunk.content
+                if len(text_snippet) > 300:  # Keep snippet length reasonable for the prompt
+                    text_snippet = text_snippet[:297] + "..."
+
+                llm_chunk_info_list.append(
+                    {
+                        "id": chunk_id_str,
+                        "type": "text",
+                        "content_snippet": text_snippet,
+                        "source_document_id": doc_id_str,
+                        "source_filename": chunk.filename,
+                        "relevance_score": round(chunk.score, 3) if chunk.score is not None else None,
+                    }
+                )
+
+        # The tool will return this list of structured chunk information.
+        # The LLM should be prompted to use the 'id' from these items in its citations.
+        # Prepending a summary message for the LLM.
+        if not llm_chunk_info_list:
+            return [{"type": "text", "text": "No relevant chunks found."}]  # Return a text message if no chunks
+
+        # Return structure for LLM: a list where first item is summary, rest are chunk infos.
+        # Or, just the list of chunks. For function calling, often a direct list of the data items is better.
+        # Let's return the list of chunk dicts directly.
+        # The system prompt for the agent will need to explain how to use this.
+        return llm_chunk_info_list
     except Exception as e:
+        logger.error(f"Error retrieving or formatting chunks: {str(e)}", exc_info=True)  # Log with traceback
         raise ToolError(f"Error retrieving chunks: {str(e)}")
 
 

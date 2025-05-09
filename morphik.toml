@@ -27,8 +27,8 @@ claude_opus = { model_name = "claude-3-opus-20240229" }
 claude_sonnet = { model_name = "claude-3-7-sonnet-latest" }
 
 # Ollama models
-ollama_llama = { model_name = "ollama_chat/llama3.2", api_base = "http://localhost:11434" }
-ollama_llama_vision = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://localhost:11434", vision = true }
+ollama_llama = { model_name = "claude-3-7-sonnet-latest" } #{ model_name = "ollama_chat/llama3.2", api_base = "http://localhost:11434" }
+ollama_llama_vision = { model_name = "claude-3-7-sonnet-latest" } # { model_name = "ollama_chat/llama3.2-vision", api_base = "http://localhost:11434", vision = true }
 # If you are running on docker, but running ollama locally use the following
 ollama_llama_docker = { model_name = "ollama_chat/llama3.2", api_base = "http://host.docker.internal:11434" }
 ollama_llama_vision_docker = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://host.docker.internal:11434", vision = true }

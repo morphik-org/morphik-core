@@ -96,7 +96,11 @@ class Settings(BaseSettings):
 
     # Grounding Service settings
     GROUNDING_MODEL: Optional[str] = Field(
-        default=None, description="Model to use for grounding citations (e.g., gemini/gemini-1.5-flash-latest)"
+        default=None,
+        description=(
+            "Model to use for grounding citations (e.g., gemini/gemini-1.5-pro-latest "
+            "or gemini/gemini-1.5-flash-latest)"
+        ),
     )
 
     # Storage configuration

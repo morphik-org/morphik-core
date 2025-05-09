@@ -40,7 +40,8 @@ class MorphikAgent:
         # Load settings
         self.settings = get_settings()
         self.model = model or self.settings.AGENT_MODEL
-        self.grounding_service = GroundingService()
+        # Pass document_service to GroundingService constructor
+        self.grounding_service = GroundingService(document_service=self.document_service)
         # Load tool definitions (function schemas)
         desc_path = os.path.join(os.path.dirname(__file__), "tools", "descriptions.json")
         with open(desc_path, "r") as f:
@@ -104,11 +105,36 @@ Always use markdown formatting.
 
         final_instruction = "provide a clear, concise final answer. Include all relevant details and cite your sources."
         if rich:
-            final_instruction = """
-            call the `publish_response` function with a `body` (markdown) and a `citations` array.
-            Each citation should point to the exact text range or image URL you used. This should be your final action.
-            """.strip().replace(
-                "\n", " "
+            final_instruction = (
+                (
+                    "You MUST call the `publish_response` function as your final action.\n"
+                    "When constructing the arguments for `publish_response`:\n"
+                    "1. **Body**: The `body` MUST be in markdown. When you state a piece of information or refer to an "
+                    "image/diagram that comes from a retrieved chunk, you MUST insert a placeholder in the `body` text "
+                    "at that exact point of reference. This placeholder MUST be in the format `[ref:CITATION_ID]`. "
+                    "`CITATION_ID` is the unique `id` (e.g., 'c1', 'fig2') that you will assign to the corresponding "
+                    "item in the `citations` array.\n"
+                    '   Example: "...IRR is maximized at 0 MHz [ref:c1]. The graph [ref:fig_graph1] illustrates this '
+                    'performance..."\n'
+                    "2. **Citations Array**: This array MUST contain citation objects for each `[ref:...]` placeholder "
+                    "used in the body.\n"
+                    "   For each citation object:\n"
+                    "     - `id`: MUST match the `CITATION_ID` used in the placeholder (e.g., 'c1', 'fig_graph1').\n"
+                    "     - `type`: This is CRITICAL. It MUST be set to 'text' if the `sourceChunkId` refers to a text "
+                    "chunk from `retrieve_chunks`. It MUST be set to 'image' if the `sourceChunkId` refers to an image "
+                    "chunk from `retrieve_chunks`. Match the 'type' from the chunk object you are citing.\n"
+                    "     - `sourceDocId`: The `source_document_id` from the cited chunk object.\n"
+                    "     - `sourceChunkId`: The `id` of the chunk (e.g., 'doc:xyz::chunk:0::type:image').\n"
+                    "     - `reasoning` (optional): Briefly explain why this chunk is relevant.\n"
+                    "     - `snippet` (for `type: 'text'` only): Include specific phrases;\n"
+                    "       otherwise, the full text from the source chunk is used.\n"
+                    "Do NOT include image URLs or full text in the `body` if cited.\n"
+                    "Use placeholders and entries in the `citations` array.\n"
+                )
+                .strip()
+                .replace("\n            ", " ")
+                .replace("  ", " ")
+                .replace("  ", " ")
             )
 
         current_system_prompt = self.system_prompt_template.format(
@@ -197,9 +223,26 @@ Always use markdown formatting.
             # Add tool call and result to history
             tool_history.append({"tool_name": name, "tool_args": args, "tool_result": result})
 
-            # Append raw tool output (string or structured data)
-            content = [{"type": "text", "text": result}] if isinstance(result, str) else result
-            messages.append({"role": "tool", "name": name, "content": content, "tool_call_id": call.id})
+            # Append raw tool output
+            # If the result is a list (like from retrieve_chunks), serialize it to a JSON string.
+            # Then, wrap it in Anthropic's expected content block format.
+            content_for_llm = []
+            if isinstance(result, str):
+                content_for_llm = [{"type": "text", "text": result}]
+            elif isinstance(result, list):  # This handles the list of dicts from retrieve_chunks
+                try:
+                    # Convert the list of dictionaries to a JSON string
+                    json_string_result = json.dumps(result)
+                    content_for_llm = [{"type": "text", "text": json_string_result}]
+                except TypeError as e:
+                    logger.error(
+                        f"Failed to serialize tool result to JSON: {e}. Falling back to string representation."
+                    )
+                    content_for_llm = [{"type": "text", "text": str(result)}]  # Fallback
+            else:  # Fallback for other types
+                content_for_llm = [{"type": "text", "text": str(result)}]
+
+            messages.append({"role": "tool", "name": name, "content": content_for_llm, "tool_call_id": call.id})
 
             logger.info("Added tool result to conversation, continuing...")
 

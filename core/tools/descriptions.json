@@ -1,7 +1,7 @@
 [
     {
       "name": "retrieve_chunks",
-      "description": "Retrieves the most relevant text and image chunks from the knowledge base based on semantic similarity to the query. Supports multimodal retrieval and scoping to specific folders. This tool uses vector similarity to find content fragments that best match the user's question. It should be used for initial information gathering when answering specific questions rather than for broad research. The tool returns content items including text and images with relevance scores, with higher scores indicating better matches. It will not provide analysis or synthesis of the information, only the raw relevant fragments.",
+      "description": "Retrieves the most relevant text and image chunks from the knowledge base. Returns a list of structured information objects, where each object represents a chunk and includes a unique 'id' (sourceChunkId), 'type' ('text' or 'image'), 'source_document_id', 'source_filename', 'relevance_score', and either a 'content_snippet' (for text) or 'description' (for images). Use these 'id' values in the 'sourceChunkId' field when calling 'publish_response' for citations.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -211,58 +211,56 @@
     },
     {
       "name": "publish_response",
-      "description": "Call this function to publish the final answer along with any citations. This should be the last call you make.",
+      "description": "Call this function to provide the final answer to the user. The `body` should be in markdown. The `citations` array should reference the `sourceChunkId` (obtained from the 'id' field of chunks returned by 'retrieve_chunks') that supports your answer. For each citation, include its `id` (e.g., c1), `type` ('text' or 'image'), `sourceDocId`, and the `sourceChunkId`. Optionally, provide a brief `reasoning` for why the chunk is relevant. Do NOT include imageUrl.",
       "input_schema": {
         "type": "object",
         "properties": {
           "body": {
             "type": "string",
-            "description": "The final answer text in Markdown format."
+            "description": "The final answer in markdown format, suitable for direct display to the user."
           },
           "citations": {
             "type": "array",
-            "description": "A list of citations used to generate the answer.",
+            "description": "A list of citations supporting the answer.",
             "items": {
               "type": "object",
               "properties": {
                 "id": {
                   "type": "string",
-                  "description": "A unique identifier for this citation (e.g., 'c1', 'img2')."
+                  "description": "A unique identifier for this citation within the current response (e.g., 'c1', 'c2')."
                 },
                 "type": {
                   "type": "string",
                   "enum": ["text", "image"],
-                  "description": "The type of citation."
+                  "description": "The type of the cited content."
                 },
                 "sourceDocId": {
                   "type": "string",
-                  "description": "The ID of the source document for this citation."
+                  "description": "The ID of the source document from which the chunk originates."
                 },
-                "chunkId": {
+                "sourceChunkId": {
                   "type": "string",
-                  "description": "The ID of the specific chunk within the source document."
+                  "description": "The unique ID of the specific text or image chunk (obtained from 'retrieve_chunks' tool's output)."
                 },
                 "snippet": {
                   "type": "string",
-                  "description": "For 'text' citations, the exact quoted snippet from the source. For 'image' citations, an optional brief description or alt text."
+                  "description": "Optional: A brief text snippet from the cited text chunk. Should match or be derived from the 'content_snippet' provided by 'retrieve_chunks'."
                 },
-                "imageUrl": {
+                "reasoning": {
                   "type": "string",
-                  "description": "For 'image' citations, the URL or base64 data URI of the image."
-                },
-                "bbox": {
-                  "type": "array",
-                  "items": {"type": "number"},
-                  "minItems": 4,
-                  "maxItems": 4,
-                  "description": "For 'image' citations, optional bounding box coordinates [x1, y1, x2, y2] relative to the image dimensions."
+                  "description": "Optional: A brief explanation of why this specific chunk is relevant to the answer."
                 }
               },
-              "required": ["id", "type", "sourceDocId", "chunkId"]
+              "required": [
+                "id",
+                "type",
+                "sourceDocId",
+                "sourceChunkId"
+              ]
             }
           }
         },
-        "required": ["body", "citations"]
+        "required": ["body"]
       }
     }
 ]
