@@ -112,24 +112,40 @@ const AgentChatSection: React.FC<AgentChatSectionProps> = ({
 
       let agentResponseMessage: AgentUIMessage;
 
-      if (requestRichResponse && data.response && typeof data.response === 'object' && ('mode' in data.response)) {
-        // This is a rich response (or a plain response wrapped in the new structure)
-        const richData = data.response as AgentResponseData; // Type assertion
-        agentResponseMessage = {
-          id: loadingMessageId, // Reuse ID to replace loading message
-          role: "assistant",
-          content: richData.mode === 'plain' ? richData.body : "", // Main text content if plain, or empty if rich (body is in richResponse)
-          richResponse: richData, // Store the full rich/plain response object
-          createdAt: new Date(),
-          experimental_agentData: {
-            tool_history: data.tool_history as ToolCall[],
-          },
-          isLoading: false,
-        };
+      if (data.response && typeof data.response === 'object' && ('mode' in data.response)) {
+        // Structured response with mode present (either plain or rich)
+        const structured = data.response as AgentResponseData;
+
+        if (structured.mode === 'rich') {
+          agentResponseMessage = {
+            id: loadingMessageId,
+            role: "assistant",
+            content: "", // Body rendered via richResponse component
+            richResponse: structured,
+            createdAt: new Date(),
+            experimental_agentData: {
+              tool_history: data.tool_history as ToolCall[],
+            },
+            isLoading: false,
+          };
+        } else {
+          // Plain mode
+          agentResponseMessage = {
+            id: loadingMessageId,
+            role: "assistant",
+            content: structured.body,
+            // Optionally keep the structured object for debugging, but not required for rendering
+            createdAt: new Date(),
+            experimental_agentData: {
+              tool_history: data.tool_history as ToolCall[],
+            },
+            isLoading: false,
+          };
+        }
       } else {
-        // This is an old-style plain text response or a non-rich response without the mode structure
+        // Legacy string response fallback
         agentResponseMessage = {
-          id: loadingMessageId, // Reuse ID
+          id: loadingMessageId,
           role: "assistant",
           content: typeof data.response === 'string' ? data.response : JSON.stringify(data.response),
           createdAt: new Date(),

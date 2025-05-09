@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional, Type, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from core.models.documents import Document
 from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
@@ -147,3 +147,10 @@ class AgentQueryRequest(BaseModel):
     ground: bool = Field(
         default=False, description="Whether to perform a grounding pass on the rich response (requires rich=True)"
     )
+
+    # Ensure that if ground=True, rich must also be True
+    @model_validator(mode="after")
+    def _check_ground_requires_rich(self) -> "AgentQueryRequest":
+        if self.ground and not self.rich:
+            raise ValueError("The 'ground' flag requires 'rich=True'.")
+        return self

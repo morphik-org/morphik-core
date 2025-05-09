@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from dotenv import load_dotenv
 from litellm import acompletion
@@ -95,13 +95,33 @@ Always use markdown formatting.
             case _:
                 raise ValueError(f"Unknown tool: {name}")
 
-    async def run(self, query: str, auth: AuthContext, rich: bool = False, ground: bool = False) -> Dict[str, Any]:
-        """Run the agent and return the final answer, potentially in a rich format."""
+    async def run(
+        self,
+        query: str,
+        auth: AuthContext,
+        rich: bool = False,
+        ground: bool = False,
+    ) -> Tuple[Dict[str, Any], list[dict[str, Any]]]:
+        """Run the agent and return the final answer and tool history.
 
-        tool_list_string = ""
-        for tool_def in self.tool_definitions:
-            if tool_def["function"]["name"] != "publish_response" or rich:
-                tool_list_string += f"- {tool_def['function']['name']}: {tool_def['function']['description']}\n"
+        Returns
+        -------
+        Tuple[Dict[str, Any], List[Dict[str, Any]]]
+            First element is the agent response (plain or rich). Second element is the chronological tool
+            history captured during the run.
+        """
+
+        # Filter tool definitions according to the requested response mode so that the set we expose to the
+        # model matches the set we actually pass as the `tools` param.
+        filtered_tool_definitions = (
+            self.tool_definitions
+            if rich
+            else [td for td in self.tool_definitions if td.get("function", {}).get("name") != "publish_response"]
+        )
+
+        tool_list_string = "".join(
+            f"- {td['function']['name']}: {td['function']['description']}\n" for td in filtered_tool_definitions
+        )
 
         final_instruction = "provide a clear, concise final answer. Include all relevant details and cite your sources."
         if rich:
@@ -134,7 +154,6 @@ Always use markdown formatting.
                 .strip()
                 .replace("\n            ", " ")
                 .replace("  ", " ")
-                .replace("  ", " ")
             )
 
         current_system_prompt = self.system_prompt_template.format(
@@ -158,11 +177,7 @@ Always use markdown formatting.
         model_params = {
             "model": model_name,
             "messages": messages,
-            "tools": (
-                self.tool_definitions
-                if rich
-                else [td for td in self.tool_definitions if td.get("function", {}).get("name") != "publish_response"]
-            ),
+            "tools": filtered_tool_definitions,
             "tool_choice": "auto",
         }
 
@@ -210,9 +225,7 @@ Always use markdown formatting.
                     # Model called publish_response in non-rich mode, treat as plain response
                     logger.warning("publish_response called in non-rich mode. Returning plain text.")
                     # We could try to extract body from args if available, or just use msg.content
-                    final_content = args.get(
-                        "body", msg.content if msg.content else "Agent tried to publish rich response in plain mode."
-                    )
+                    final_content = args.get("body") or (msg.content or "")
                     return {"mode": "plain", "body": final_content}, tool_history
 
             messages.append(msg.to_dict(exclude_none=True))
@@ -223,26 +236,32 @@ Always use markdown formatting.
             # Add tool call and result to history
             tool_history.append({"tool_name": name, "tool_args": args, "tool_result": result})
 
-            # Append raw tool output
-            # If the result is a list (like from retrieve_chunks), serialize it to a JSON string.
-            # Then, wrap it in Anthropic's expected content block format.
-            content_for_llm = []
-            if isinstance(result, str):
-                content_for_llm = [{"type": "text", "text": result}]
-            elif isinstance(result, list):  # This handles the list of dicts from retrieve_chunks
-                try:
-                    # Convert the list of dictionaries to a JSON string
-                    json_string_result = json.dumps(result)
-                    content_for_llm = [{"type": "text", "text": json_string_result}]
-                except TypeError as e:
-                    logger.error(
-                        f"Failed to serialize tool result to JSON: {e}. Falling back to string representation."
-                    )
-                    content_for_llm = [{"type": "text", "text": str(result)}]  # Fallback
-            else:  # Fallback for other types
-                content_for_llm = [{"type": "text", "text": str(result)}]
+            # Provider-specific wrapping of tool outputs. Anthropic models expect the list-of-blocks format whereas
+            # OpenAI style models expect a plain string. We use a simple heuristic based on the model name.
+            anthropic_mode = model_name.lower().startswith("claude") or "anthropic" in model_name.lower()
 
-            messages.append({"role": "tool", "name": name, "content": content_for_llm, "tool_call_id": call.id})
+            if anthropic_mode:
+                if isinstance(result, str):
+                    content_for_llm = [{"type": "text", "text": result}]
+                else:
+                    try:
+                        content_for_llm = [
+                            {"type": "text", "text": json.dumps(result) if not isinstance(result, str) else result}
+                        ]
+                    except TypeError:
+                        content_for_llm = [{"type": "text", "text": str(result)}]
+                messages.append({"role": "tool", "name": name, "content": content_for_llm, "tool_call_id": call.id})
+            else:
+                # Non-Anthropic providers – pass a plain string
+                if not isinstance(result, str):
+                    try:
+                        content_for_llm = json.dumps(result)
+                    except TypeError:
+                        content_for_llm = str(result)
+                else:
+                    content_for_llm = result
+
+                messages.append({"role": "tool", "name": name, "content": content_for_llm, "tool_call_id": call.id})
 
             logger.info("Added tool result to conversation, continuing...")
 
