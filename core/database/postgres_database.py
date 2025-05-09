@@ -3,10 +3,12 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Column, Index, String, select, text
+from sqlalchemy import Column, Index, String, and_, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
+
+from core.config import get_settings
 
 from ..models.auth import AuthContext, EntityType
 from ..models.documents import Document, StorageFileInfo
@@ -116,8 +118,6 @@ class PostgresDatabase(BaseDatabase):
     ):
         """Initialize PostgreSQL connection for document storage."""
         # Load settings from config
-        from core.config import get_settings
-
         settings = get_settings()
 
         # Get database pool settings from config with defaults
@@ -802,11 +802,7 @@ class PostgresDatabase(BaseDatabase):
         # In cloud mode further restrict by user_id when available (used for multi-tenant
         # end-user isolation).
         if auth.user_id:
-            from core.config import get_settings
-
-            settings = get_settings()
-
-            if settings.MODE == "cloud":
+            if get_settings().MODE == "cloud":
                 filters.append(f"access_control->>'user_id' = '{auth.user_id}'")
 
         return " OR ".join(filters)
@@ -1406,17 +1402,70 @@ class PostgresDatabase(BaseDatabase):
             return None
 
     async def list_folders(self, auth: AuthContext) -> List[Folder]:
-        """List all folders the user has access to."""
+        """List all folders the user has access to by building a dynamic SQL query."""
         try:
-            folders = []
+            where_filters = []  # For top-level AND conditions (e.g., app_id)
+            core_access_conditions = []  # For OR conditions (owner, reader_acl, admin_acl)
+            current_params = {}
 
-            async with self.async_session() as session:
-                # Get all folders
-                result = await session.execute(select(FolderModel))
+            # 1. Developer App ID Scoping (always applied as an AND condition if auth context specifies it)
+            if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
+                where_filters.append(text("system_metadata->>'app_id' = :app_id_val"))
+                current_params["app_id_val"] = auth.app_id
+
+            # 2. Build Core Access Conditions (Owner, Reader ACL, Admin ACL)
+            # These are OR'd together. The user must satisfy one of these, AND the app_id scope if applicable.
+
+            # Condition 2a: User is the owner of the folder
+            if auth.entity_type and auth.entity_id:
+                owner_sub_conditions_text = []
+
+                owner_sub_conditions_text.append("owner->>'type' = :owner_type_val")
+                current_params["owner_type_val"] = auth.entity_type.value
+
+                owner_sub_conditions_text.append("owner->>'id' = :owner_id_val")
+                current_params["owner_id_val"] = auth.entity_id
+
+                if auth.user_id and get_settings().MODE == "cloud":
+                    owner_sub_conditions_text.append("access_control->'user_id' ? :owner_user_id_val")
+                    current_params["owner_user_id_val"] = auth.user_id
+
+                # Combine owner sub-conditions with AND
+                core_access_conditions.append(text(f"({' AND '.join(owner_sub_conditions_text)})"))
+
+            # Condition 2b & 2c: User is in the folder's 'readers' or 'admins' access control list
+            if auth.entity_type and auth.entity_id:
+                entity_qualifier_for_acl = f"{auth.entity_type.value}:{auth.entity_id}"
+                current_params["acl_qualifier"] = entity_qualifier_for_acl  # Used for both readers and admins
+
+                core_access_conditions.append(text("access_control->'readers' ? :acl_qualifier"))
+                core_access_conditions.append(
+                    text("access_control->'admins' ? :acl_qualifier")
+                )  # Added folder admins ACL check
+
+            # Combine core access conditions with OR, and add this group to the main AND filters
+            if core_access_conditions:
+                where_filters.append(or_(*core_access_conditions))
+            else:
+                # If there are no core ways to grant access (e.g., anonymous user without entity_id/type),
+                # this effectively means this part of the condition is false.
+                where_filters.append(text("1=0"))  # Effectively False if no ownership or ACL grant possible
+
+            # Build and execute query
+            async with self.async_session() as session:  # Ensure session is correctly established
+                query = select(FolderModel)
+                if where_filters:
+                    # If any filters were constructed
+                    query = query.where(and_(*where_filters))
+                else:
+                    # To be absolutely safe: if no filters ended up in where_filters, deny all access.
+                    query = query.where(text("1=0"))  # Default to no access if no filters constructed
+
+                result = await session.execute(query, current_params)
                 folder_models = result.scalars().all()
 
+                folders = []
                 for folder_model in folder_models:
-                    # Convert to Folder object
                     folder_dict = {
                         "id": folder_model.id,
                         "name": folder_model.name,
@@ -1427,13 +1476,7 @@ class PostgresDatabase(BaseDatabase):
                         "access_control": folder_model.access_control,
                         "rules": folder_model.rules,
                     }
-
-                    folder = Folder(**folder_dict)
-
-                    # Check if the user has access to the folder
-                    if self._check_folder_access(folder, auth, "read"):
-                        folders.append(folder)
-
+                    folders.append(Folder(**folder_dict))
                 return folders
 
         except Exception as e:
@@ -1568,11 +1611,8 @@ class PostgresDatabase(BaseDatabase):
 
             # In cloud mode, also verify user_id if present
             if auth.user_id:
-                from core.config import get_settings
-
-                settings = get_settings()
-
-                if settings.MODE == "cloud":
+                if get_settings().MODE == "cloud":  # Call get_settings() directly
+                    # Assuming access_control.user_id is a list of user IDs
                     folder_user_ids = folder.access_control.get("user_id", [])
                     if auth.user_id not in folder_user_ids:
                         return False
@@ -1580,21 +1620,23 @@ class PostgresDatabase(BaseDatabase):
 
         # Check access control lists
         access_control = folder.access_control or {}
+        # ACLs for folders store entries as "entity_type_value:entity_id"
+        entity_qualifier = f"{auth.entity_type.value}:{auth.entity_id}"
 
         if permission == "read":
             readers = access_control.get("readers", [])
-            if f"{auth.entity_type.value}:{auth.entity_id}" in readers:
+            if entity_qualifier in readers:
                 return True
 
         if permission == "write":
             writers = access_control.get("writers", [])
-            if f"{auth.entity_type.value}:{auth.entity_id}" in writers:
+            if entity_qualifier in writers:
                 return True
 
         # For admin permission, check admins list
-        if permission == "admin":
+        if permission == "admin":  # This check is for folder-level admin, not global admin
             admins = access_control.get("admins", [])
-            if f"{auth.entity_type.value}:{auth.entity_id}" in admins:
+            if entity_qualifier in admins:
                 return True
 
         return False
