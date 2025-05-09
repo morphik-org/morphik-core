@@ -1,12 +1,12 @@
 "use client";
 
-import React from 'react';
-import Image from 'next/image';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import React from "react";
+import Image from "next/image";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
-import { SearchResult } from '@/components/types';
+import { SearchResult } from "@/components/types";
 
 interface SearchResultCardProps {
   result: SearchResult;
@@ -15,51 +15,42 @@ interface SearchResultCardProps {
 const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
   // Helper to render content based on content type
   const renderContent = (content: string, contentType: string) => {
-    const isImage = contentType.startsWith('image/');
-    const isDataUri = content.startsWith('data:image/');
+    const isImage = contentType.startsWith("image/");
+    const isDataUri = content.startsWith("data:image/");
 
     // Helper: Only allow next/image for paths/URLs that Next can parse
     const canUseNextImage =
-      !isDataUri &&
-      (content.startsWith('/') || content.startsWith('http://') || content.startsWith('https://'));
+      !isDataUri && (content.startsWith("/") || content.startsWith("http://") || content.startsWith("https://"));
 
     if (isImage || isDataUri) {
       // Use next/image for valid remote / relative paths, fallback to <img> otherwise
       return (
-        <div className="flex justify-center p-4 bg-muted rounded-md">
+        <div className="flex justify-center rounded-md bg-muted p-4">
           {canUseNextImage ? (
             <Image
               src={content}
               alt="Document content"
-              className="max-w-full max-h-96 object-contain"
+              className="max-h-96 max-w-full object-contain"
               width={500}
               height={300}
             />
           ) : (
             // Fallback for data-URIs or other non-standard sources
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={content}
-              alt="Document content"
-              className="max-w-full max-h-96 object-contain"
-            />
+            <img src={content} alt="Document content" className="max-h-96 max-w-full object-contain" />
           )}
         </div>
       );
     }
 
     // Default (non-image) rendering
-    return (
-      <div className="bg-muted p-4 rounded-md whitespace-pre-wrap font-mono text-sm">
-        {content}
-      </div>
-    );
+    return <div className="whitespace-pre-wrap rounded-md bg-muted p-4 font-mono text-sm">{content}</div>;
   };
 
   return (
     <Card key={`${result.document_id}-${result.chunk_number}`}>
       <CardHeader className="pb-2">
-        <div className="flex justify-between items-start">
+        <div className="flex items-start justify-between">
           <div>
             <CardTitle className="text-base">
               {result.filename || `Document ${result.document_id.substring(0, 8)}...`}
@@ -68,9 +59,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
               Chunk {result.chunk_number} • Score: {result.score.toFixed(2)}
             </CardDescription>
           </div>
-          <Badge variant="outline">
-            {result.content_type}
-          </Badge>
+          <Badge variant="outline">{result.content_type}</Badge>
         </div>
       </CardHeader>
       <CardContent>
@@ -80,7 +69,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result }) => {
           <AccordionItem value="metadata">
             <AccordionTrigger className="text-sm">Metadata</AccordionTrigger>
             <AccordionContent>
-              <pre className="bg-muted p-2 rounded text-xs overflow-x-auto">
+              <pre className="overflow-x-auto rounded bg-muted p-2 text-xs">
                 {JSON.stringify(result.metadata, null, 2)}
               </pre>
             </AccordionContent>

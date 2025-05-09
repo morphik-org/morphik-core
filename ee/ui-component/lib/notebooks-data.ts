@@ -16,14 +16,14 @@ const DEFAULT_NOTEBOOKS: Notebook[] = [
     id: "nb_default_1",
     name: "Research Papers",
     description: "Collection of scientific papers and research documents",
-    created_at: "2023-01-15T12:00:00Z"
+    created_at: "2023-01-15T12:00:00Z",
   },
   {
     id: "nb_default_2",
     name: "Project Documentation",
     description: "Technical specifications and project documents",
-    created_at: "2023-01-20T14:30:00Z"
-  }
+    created_at: "2023-01-20T14:30:00Z",
+  },
 ];
 
 /**
@@ -33,23 +33,23 @@ const DEFAULT_NOTEBOOKS: Notebook[] = [
  */
 export async function loadNotebooksFromAPI(): Promise<Notebook[]> {
   try {
-    const response = await fetch('/api/notebooks', {
-      method: 'GET',
-      cache: 'no-store',
+    const response = await fetch("/api/notebooks", {
+      method: "GET",
+      cache: "no-store",
       headers: {
-        'cache-control': 'no-cache'
-      }
+        "cache-control": "no-cache",
+      },
     });
 
     if (!response.ok) {
-      console.error('Failed to load notebooks from API:', response.statusText);
+      console.error("Failed to load notebooks from API:", response.statusText);
       return DEFAULT_NOTEBOOKS;
     }
 
     const data = await response.json();
     return data.notebooks || DEFAULT_NOTEBOOKS;
   } catch (error) {
-    console.error('Error loading notebooks from API:', error);
+    console.error("Error loading notebooks from API:", error);
     return DEFAULT_NOTEBOOKS;
   }
 }
@@ -59,22 +59,22 @@ export async function loadNotebooksFromAPI(): Promise<Notebook[]> {
  */
 export async function saveNotebooksToAPI(notebooks: Notebook[]): Promise<boolean> {
   try {
-    const response = await fetch('/api/notebooks', {
-      method: 'POST',
+    const response = await fetch("/api/notebooks", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({ notebooks }),
     });
 
     if (!response.ok) {
-      console.error('Failed to save notebooks to API:', response.statusText);
+      console.error("Failed to save notebooks to API:", response.statusText);
       return false;
     }
 
     return true;
   } catch (error) {
-    console.error('Error saving notebooks to API:', error);
+    console.error("Error saving notebooks to API:", error);
     return false;
   }
 }
@@ -84,13 +84,13 @@ export async function saveNotebooksToAPI(notebooks: Notebook[]): Promise<boolean
  */
 export function loadNotebooksFromLocalStorage(): Notebook[] {
   try {
-    const storedNotebooks = localStorage.getItem('notebooks');
+    const storedNotebooks = localStorage.getItem("notebooks");
     if (storedNotebooks) {
       return JSON.parse(storedNotebooks);
     }
     return [];
   } catch (error) {
-    console.error('Error loading notebooks from localStorage:', error);
+    console.error("Error loading notebooks from localStorage:", error);
     return [];
   }
 }
@@ -100,8 +100,8 @@ export function loadNotebooksFromLocalStorage(): Notebook[] {
  */
 export function saveNotebooksToLocalStorage(notebooks: Notebook[]): void {
   try {
-    localStorage.setItem('notebooks', JSON.stringify(notebooks));
+    localStorage.setItem("notebooks", JSON.stringify(notebooks));
   } catch (error) {
-    console.error('Error saving notebooks to localStorage:', error);
+    console.error("Error saving notebooks to localStorage:", error);
   }
 }

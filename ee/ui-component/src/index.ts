@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import MorphikUI from '../components/MorphikUI';
-import { extractTokenFromUri, getApiBaseUrlFromUri } from '../lib/utils';
-import { showAlert, showUploadAlert, removeAlert } from '../components/ui/alert-system';
+import MorphikUI from "../components/MorphikUI";
+import { extractTokenFromUri, getApiBaseUrlFromUri } from "../lib/utils";
+import { showAlert, showUploadAlert, removeAlert } from "../components/ui/alert-system";
 
 export {
   MorphikUI,
@@ -11,8 +11,15 @@ export {
   // Alert system helpers
   showAlert,
   showUploadAlert,
-  removeAlert
+  removeAlert,
 };
 
 // Export types
-export type { MorphikUIProps, Document, SearchResult, ChatMessage, SearchOptions, QueryOptions } from '../components/types';
+export type {
+  MorphikUIProps,
+  Document,
+  SearchResult,
+  ChatMessage,
+  SearchOptions,
+  QueryOptions,
+} from "../components/types";

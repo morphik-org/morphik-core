@@ -1,4 +1,4 @@
-import type { UIMessage } from './chat/ChatMessages';
+import type { UIMessage } from "./chat/ChatMessages";
 
 // Define option types used in callbacks
 export interface SearchOptions {
@@ -27,7 +27,7 @@ export interface MorphikUIProps {
   onBackClick?: () => void; // Callback when back button is clicked
   appName?: string; // Name of the app to display in UI
   initialFolder?: string | null; // Initial folder to show
-  initialSection?: 'documents' | 'search' | 'chat' | 'graphs' | 'agent'; // Initial section to show
+  initialSection?: "documents" | "search" | "chat" | "graphs" | "agent"; // Initial section to show
 
   // Callbacks for Documents Section tracking
   onDocumentUpload?: (fileName: string, fileSize: number) => void;
@@ -93,7 +93,7 @@ export interface Source {
 }
 
 export interface ChatMessage {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   sources?: Source[];
 }

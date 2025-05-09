@@ -1,16 +1,24 @@
 "use client";
 
-import React from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Settings } from 'lucide-react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import React from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Settings } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-import { SearchOptions, Folder } from '@/components/types';
+import { SearchOptions, Folder } from "@/components/types";
 
 // Define an extended search options type that includes folder_name
 interface ExtendedSearchOptions extends SearchOptions {
@@ -30,7 +38,7 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
   setShowSearchAdvanced,
   searchOptions,
   updateSearchOption,
-  folders
+  folders,
 }) => {
   // Handle folder name changes separately since it's not part of SearchOptions
   const handleFolderChange = (value: string) => {
@@ -39,7 +47,7 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
     searchOptions.folder_name = newValue;
     // Force re-render by updating a standard option with its current value
     if (searchOptions.k !== undefined) {
-      updateSearchOption('k', searchOptions.k);
+      updateSearchOption("k", searchOptions.k);
     }
   };
 
@@ -54,25 +62,25 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Search Options</DialogTitle>
-          <DialogDescription>
-            Configure advanced search parameters
-          </DialogDescription>
+          <DialogDescription>Configure advanced search parameters</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
           <div>
-            <Label htmlFor="search-filters" className="block mb-2">Filters (JSON)</Label>
+            <Label htmlFor="search-filters" className="mb-2 block">
+              Filters (JSON)
+            </Label>
             <Textarea
               id="search-filters"
-              value={searchOptions.filters || ''}
-              onChange={(e) => updateSearchOption('filters', e.target.value)}
+              value={searchOptions.filters || ""}
+              onChange={e => updateSearchOption("filters", e.target.value)}
               placeholder='{"key": "value"}'
               rows={3}
             />
           </div>
 
           <div>
-            <Label htmlFor="search-k" className="block mb-2">
+            <Label htmlFor="search-k" className="mb-2 block">
               Number of Results (k): {searchOptions.k || 1}
             </Label>
             <Input
@@ -80,12 +88,12 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
               type="number"
               min={1}
               value={searchOptions.k || 1}
-              onChange={(e) => updateSearchOption('k', parseInt(e.target.value) || 1)}
+              onChange={e => updateSearchOption("k", parseInt(e.target.value) || 1)}
             />
           </div>
 
           <div>
-            <Label htmlFor="search-min-score" className="block mb-2">
+            <Label htmlFor="search-min-score" className="mb-2 block">
               Minimum Score: {(searchOptions.min_score || 0).toFixed(2)}
             </Label>
             <Input
@@ -95,7 +103,7 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
               max={1}
               step={0.01}
               value={searchOptions.min_score || 0}
-              onChange={(e) => updateSearchOption('min_score', parseFloat(e.target.value) || 0)}
+              onChange={e => updateSearchOption("min_score", parseFloat(e.target.value) || 0)}
             />
           </div>
 
@@ -104,7 +112,7 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
             <Switch
               id="search-reranking"
               checked={searchOptions.use_reranking || false}
-              onCheckedChange={(checked) => updateSearchOption('use_reranking', checked)}
+              onCheckedChange={checked => updateSearchOption("use_reranking", checked)}
             />
           </div>
 
@@ -113,16 +121,15 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
             <Switch
               id="search-colpali"
               checked={!!searchOptions.use_colpali}
-              onCheckedChange={(checked) => updateSearchOption('use_colpali', checked)}
+              onCheckedChange={checked => updateSearchOption("use_colpali", checked)}
             />
           </div>
 
           <div>
-            <Label htmlFor="folderName" className="block mb-2">Scope to Folder</Label>
-            <Select
-              value={searchOptions.folder_name || "__none__"}
-              onValueChange={handleFolderChange}
-            >
+            <Label htmlFor="folderName" className="mb-2 block">
+              Scope to Folder
+            </Label>
+            <Select value={searchOptions.folder_name || "__none__"} onValueChange={handleFolderChange}>
               <SelectTrigger className="w-full" id="folderName">
                 <SelectValue placeholder="Select a folder" />
               </SelectTrigger>
@@ -135,7 +142,7 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="mt-1 text-sm text-muted-foreground">
               Limit search results to documents within a specific folder
             </p>
           </div>

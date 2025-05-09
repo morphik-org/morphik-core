@@ -13,6 +13,7 @@ This document provides instructions for publishing the @morphik/ui package to np
 1. Ensure all changes are committed to the repository
 
 2. Update the version in package.json (follow semantic versioning)
+
    ```bash
    npm version patch  # For bug fixes
    npm version minor  # For new features
@@ -20,16 +21,19 @@ This document provides instructions for publishing the @morphik/ui package to np
    ```
 
 3. Build the package
+
    ```bash
    npm run build:package
    ```
 
 4. Run a dry-run to check the package contents
+
    ```bash
    npm pack --dry-run
    ```
 
 5. Publish the package
+
    ```bash
    npm publish --access public
    ```
@@ -45,6 +49,7 @@ This document provides instructions for publishing the @morphik/ui package to np
 If you want to test the package locally before publishing, you can use npm link:
 
 1. In the ui-component directory:
+
    ```bash
    npm link
    ```
