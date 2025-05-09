@@ -185,7 +185,7 @@ async def process_ingestion_job(
 
                 parsed = urlparse(uri_raw)
                 query = parse_qs(parsed.query)
-                if "sslmode" not in query:
+                if "sslmode" not in query and settings.MODE == "cloud":
                     query["sslmode"] = ["require"]
                     parsed = parsed._replace(query=urlencode(query, doseq=True))
 

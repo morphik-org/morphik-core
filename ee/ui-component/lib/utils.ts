@@ -1,11 +1,11 @@
-import { type ClassValue, clsx } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
 
 /**
  * Combines class names using clsx and tailwind-merge
  */
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 
 /**
@@ -18,28 +18,28 @@ export function extractTokenFromUri(uri: string | undefined): string | null {
   if (!uri) return null;
 
   try {
-    console.log('Attempting to extract token from URI:', uri);
+    console.log("Attempting to extract token from URI:", uri);
     // The URI format is: morphik://appname:token@host
     // We need to extract just the token part (after the colon and before the @)
 
     // First get everything before the @ symbol
-    const beforeAt = uri.split('@')[0];
+    const beforeAt = uri.split("@")[0];
     if (!beforeAt) return null;
 
     // Now extract the token after the colon
-    const parts = beforeAt.split('://');
+    const parts = beforeAt.split("://");
     if (parts.length < 2) return null;
 
     // Check if there's a colon in the second part, which separates app name from token
     const authPart = parts[1];
-    if (authPart.includes(':')) {
+    if (authPart.includes(":")) {
       // Format is appname:token
-      const fullToken = authPart.split(':')[1];
-      console.log('Extracted token:', fullToken ? `${fullToken.substring(0, 5)}...` : 'null');
+      const fullToken = authPart.split(":")[1];
+      console.log("Extracted token:", fullToken ? `${fullToken.substring(0, 5)}...` : "null");
       return fullToken;
     } else {
       // Old format with just token (no appname:)
-      console.log('Extracted token (old format):', authPart ? `${authPart.substring(0, 5)}...` : 'null');
+      console.log("Extracted token (old format):", authPart ? `${authPart.substring(0, 5)}...` : "null");
       return authPart;
     }
   } catch (err) {
@@ -55,9 +55,9 @@ export function extractTokenFromUri(uri: string | undefined): string | null {
  * @param defaultUrl - The default API URL to use if URI is invalid
  * @returns The API base URL derived from the URI host
  */
-export function getApiBaseUrlFromUri(uri: string | undefined, defaultUrl: string = 'http://localhost:8000'): string {
+export function getApiBaseUrlFromUri(uri: string | undefined, defaultUrl: string = "http://localhost:8000"): string {
   // If URI is empty or undefined, connect to the default URL
-  if (!uri || uri.trim() === '') {
+  if (!uri || uri.trim() === "") {
     return defaultUrl;
   }
 
@@ -70,22 +70,22 @@ export function getApiBaseUrlFromUri(uri: string | undefined, defaultUrl: string
     let host = match[1];
 
     // If it's local, localhost or 127.0.0.1, ensure http:// protocol and add port if needed
-    if (host.includes('local') || host.includes('127.0.0.1')) {
-      if (!host.includes('://')) {
+    if (host.includes("local") || host.includes("127.0.0.1")) {
+      if (!host.includes("://")) {
         host = `http://${host}`;
       }
       // Add default port 8000 if no port specified
-      if (!host.includes(':') || host.endsWith(':')) {
-        host = `${host.replace(/:$/, '')}:8000`;
+      if (!host.includes(":") || host.endsWith(":")) {
+        host = `${host.replace(/:$/, "")}:8000`;
       }
     } else {
       // For other hosts, ensure https:// protocol
-      if (!host.includes('://')) {
+      if (!host.includes("://")) {
         host = `https://${host}`;
       }
     }
 
-    console.log('Extracted API base URL:', host);
+    console.log("Extracted API base URL:", host);
     return host;
   } catch (err) {
     console.error("Error extracting host from URI:", err);
@@ -104,11 +104,11 @@ export function createAuthHeaders(token: string | null, contentType?: string): H
   const headers: HeadersInit = {};
 
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   if (contentType) {
-    headers['Content-Type'] = contentType;
+    headers["Content-Type"] = contentType;
   }
 
   return headers;
@@ -119,8 +119,9 @@ export function createAuthHeaders(token: string | null, contentType?: string): H
  * This is a simple implementation for client-side use
  */
 export function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0,
+      v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
 }
@@ -133,29 +134,29 @@ export function formatRelativeTime(date: Date): string {
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
   if (diffInSeconds < 60) {
-    return 'just now';
+    return "just now";
   }
 
   const diffInMinutes = Math.floor(diffInSeconds / 60);
   if (diffInMinutes < 60) {
-    return `${diffInMinutes} minute${diffInMinutes > 1 ? 's' : ''} ago`;
+    return `${diffInMinutes} minute${diffInMinutes > 1 ? "s" : ""} ago`;
   }
 
   const diffInHours = Math.floor(diffInMinutes / 60);
   if (diffInHours < 24) {
-    return `${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`;
+    return `${diffInHours} hour${diffInHours > 1 ? "s" : ""} ago`;
   }
 
   const diffInDays = Math.floor(diffInHours / 24);
   if (diffInDays < 30) {
-    return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
+    return `${diffInDays} day${diffInDays > 1 ? "s" : ""} ago`;
   }
 
   const diffInMonths = Math.floor(diffInDays / 30);
   if (diffInMonths < 12) {
-    return `${diffInMonths} month${diffInMonths > 1 ? 's' : ''} ago`;
+    return `${diffInMonths} month${diffInMonths > 1 ? "s" : ""} ago`;
   }
 
   const diffInYears = Math.floor(diffInMonths / 12);
-  return `${diffInYears} year${diffInYears > 1 ? 's' : ''} ago`;
+  return `${diffInYears} year${diffInYears > 1 ? "s" : ""} ago`;
 }

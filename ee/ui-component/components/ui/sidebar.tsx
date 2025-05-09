@@ -1,22 +1,33 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { FileText, Search, MessageSquare, ChevronLeft, ChevronRight, Network, Copy, Check, ArrowLeft, Bot } from "lucide-react"
-import { ModeToggle } from "@/components/mode-toggle"
-import { Input } from "@/components/ui/input"
+import * as React from "react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  FileText,
+  Search,
+  MessageSquare,
+  ChevronLeft,
+  ChevronRight,
+  Network,
+  Copy,
+  Check,
+  ArrowLeft,
+  Bot,
+} from "lucide-react";
+import { ModeToggle } from "@/components/mode-toggle";
+import { Input } from "@/components/ui/input";
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
-  activeSection: string
-  onSectionChange: (section: string) => void
-  connectionUri?: string
-  isReadOnlyUri?: boolean
-  onUriChange?: (uri: string) => void
-  isCollapsed?: boolean
-  setIsCollapsed?: (collapsed: boolean) => void
-  onBackClick?: () => void
+  activeSection: string;
+  onSectionChange: (section: string) => void;
+  connectionUri?: string;
+  isReadOnlyUri?: boolean;
+  onUriChange?: (uri: string) => void;
+  isCollapsed?: boolean;
+  setIsCollapsed?: (collapsed: boolean) => void;
+  onBackClick?: () => void;
 }
 
 export function Sidebar({
@@ -32,25 +43,25 @@ export function Sidebar({
   ...props
 }: SidebarProps) {
   // Use internal state that syncs with external state if provided
-  const [internalIsCollapsed, setInternalIsCollapsed] = React.useState(false)
-  const [editableUri, setEditableUri] = React.useState('')
-  const [isEditingUri, setIsEditingUri] = React.useState(false)
+  const [internalIsCollapsed, setInternalIsCollapsed] = React.useState(false);
+  const [editableUri, setEditableUri] = React.useState("");
+  const [isEditingUri, setIsEditingUri] = React.useState(false);
 
   // Determine if sidebar is collapsed based on props or internal state
-  const isCollapsed = externalIsCollapsed !== undefined ? externalIsCollapsed : internalIsCollapsed
+  const isCollapsed = externalIsCollapsed !== undefined ? externalIsCollapsed : internalIsCollapsed;
 
   // Toggle function that updates both internal and external state if provided
   const toggleCollapsed = () => {
     if (externalSetIsCollapsed) {
-      externalSetIsCollapsed(!isCollapsed)
+      externalSetIsCollapsed(!isCollapsed);
     }
-    setInternalIsCollapsed(!isCollapsed)
-  }
+    setInternalIsCollapsed(!isCollapsed);
+  };
 
   // Initialize from localStorage or props
   React.useEffect(() => {
     // For development/testing - check if we have a stored URI
-    const storedUri = typeof window !== 'undefined' ? localStorage.getItem('morphik_uri') : null;
+    const storedUri = typeof window !== "undefined" ? localStorage.getItem("morphik_uri") : null;
 
     if (storedUri) {
       setEditableUri(storedUri);
@@ -58,14 +69,14 @@ export function Sidebar({
     } else if (connectionUri) {
       setEditableUri(connectionUri);
     }
-  }, [connectionUri])
+  }, [connectionUri]);
 
   // Update editable URI when connectionUri changes
   React.useEffect(() => {
     if (connectionUri && connectionUri !== editableUri) {
       setEditableUri(connectionUri);
     }
-  }, [connectionUri, editableUri])
+  }, [connectionUri, editableUri]);
 
   // Extract connection details if URI is provided
   const isConnected = !!connectionUri;
@@ -77,25 +88,25 @@ export function Sidebar({
       if (match && match[1]) {
         connectionHost = match[1];
         // If it includes a protocol, remove it to get just the host
-        if (connectionHost.includes('://')) {
+        if (connectionHost.includes("://")) {
           connectionHost = new URL(connectionHost).host;
         }
       }
     }
   } catch (error) {
-    console.error('Error parsing connection URI:', error);
-    connectionHost = 'localhost';
+    console.error("Error parsing connection URI:", error);
+    connectionHost = "localhost";
   }
 
   // Handle saving the connection URI
   const handleSaveUri = () => {
     // Store the URI in localStorage for persistence
-    if (typeof window !== 'undefined') {
-      if (editableUri.trim() === '') {
+    if (typeof window !== "undefined") {
+      if (editableUri.trim() === "") {
         // If URI is empty, remove from localStorage to default to local
-        localStorage.removeItem('morphik_uri');
+        localStorage.removeItem("morphik_uri");
       } else {
-        localStorage.setItem('morphik_uri', editableUri);
+        localStorage.setItem("morphik_uri", editableUri);
       }
     }
 
@@ -105,12 +116,12 @@ export function Sidebar({
       onUriChange(editableUri.trim());
     } else {
       // Fallback for demo purposes if no callback is provided
-      console.log('New URI:', editableUri || '(empty - using localhost)');
+      console.log("New URI:", editableUri || "(empty - using localhost)");
     }
 
     // Close editing mode
     setIsEditingUri(false);
-  }
+  };
 
   return (
     <div
@@ -124,12 +135,7 @@ export function Sidebar({
       <div className="flex flex-col border-b">
         <div className="flex items-center justify-between p-4">
           {!isCollapsed && <h2 className="text-lg font-semibold">Morphik</h2>}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="ml-auto"
-            onClick={toggleCollapsed}
-          >
+          <Button variant="ghost" size="icon" className="ml-auto" onClick={toggleCollapsed}>
             {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
         </div>
@@ -137,22 +143,24 @@ export function Sidebar({
         {/* Display connection information when not collapsed */}
         {!isCollapsed && (
           <div className="px-4 pb-3">
-            <div className="p-2 bg-muted rounded-md text-xs">
-              <div className="font-medium mb-1">
-                {isConnected ? "Connected to:" : "Connection Status:"}
-              </div>
+            <div className="rounded-md bg-muted p-2 text-xs">
+              <div className="mb-1 font-medium">{isConnected ? "Connected to:" : "Connection Status:"}</div>
               <div className="text-muted-foreground">
-                {isConnected && connectionHost && !connectionHost.includes('localhost') && !connectionHost.includes('local')
-                  ? <span className="truncate">{connectionHost}</span>
-                  : <span className="flex items-center">
-                      <span className="h-2 w-2 rounded-full bg-green-500 mr-1.5"></span>
-                      Local Connection (localhost:8000)
-                    </span>
-                }
+                {isConnected &&
+                connectionHost &&
+                !connectionHost.includes("localhost") &&
+                !connectionHost.includes("local") ? (
+                  <span className="truncate">{connectionHost}</span>
+                ) : (
+                  <span className="flex items-center">
+                    <span className="mr-1.5 h-2 w-2 rounded-full bg-green-500"></span>
+                    Local Connection (localhost:8000)
+                  </span>
+                )}
               </div>
 
               {/* Connection URI Section */}
-              <div className="flex flex-col mt-2 pt-2 border-t border-background">
+              <div className="mt-2 flex flex-col border-t border-background pt-2">
                 <div className="flex items-center justify-between">
                   <div className="font-medium">Connection URI:</div>
                   {isConnected && !isEditingUri && (
@@ -164,11 +172,11 @@ export function Sidebar({
                         if (connectionUri) {
                           navigator.clipboard.writeText(connectionUri);
                           // Use the showAlert helper instead of native alert
-                          const event = new CustomEvent('morphik:alert', {
+                          const event = new CustomEvent("morphik:alert", {
                             detail: {
-                              type: 'success',
-                              title: 'Copied!',
-                              message: 'Connection URI copied to clipboard',
+                              type: "success",
+                              title: "Copied!",
+                              message: "Connection URI copied to clipboard",
                               duration: 3000,
                             },
                           });
@@ -186,7 +194,7 @@ export function Sidebar({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-xs px-2 py-0.5 h-6"
+                      className="h-6 px-2 py-0.5 text-xs"
                       onClick={() => setIsEditingUri(true)}
                     >
                       {connectionUri ? "Edit" : "Add URI"}
@@ -197,42 +205,35 @@ export function Sidebar({
                 {/* URI Display or Editing Area */}
                 {isReadOnlyUri ? (
                   // Read-only display for production/cloud environments
-                  <div className="mt-1 bg-background p-1 rounded text-xs font-mono break-all">
-                    {connectionUri ?
-                      // Show first and last characters with asterisks in between
-                      `${connectionUri.substring(0, 12)}...${connectionUri.substring(connectionUri.length - 12)}`
-                      : 'No URI configured'
-                    }
+                  <div className="mt-1 break-all rounded bg-background p-1 font-mono text-xs">
+                    {connectionUri
+                      ? // Show first and last characters with asterisks in between
+                        `${connectionUri.substring(0, 12)}...${connectionUri.substring(connectionUri.length - 12)}`
+                      : "No URI configured"}
                   </div>
                 ) : isEditingUri ? (
                   // Editing mode (only available when not read-only)
                   <div className="mt-1">
-                    <div className="flex gap-1 items-center">
+                    <div className="flex items-center gap-1">
                       <Input
                         value={editableUri}
-                        onChange={(e) => setEditableUri(e.target.value)}
+                        onChange={e => setEditableUri(e.target.value)}
                         placeholder="morphik://token@host (empty for localhost)"
-                        className="h-7 text-xs font-mono"
+                        className="h-7 font-mono text-xs"
                       />
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
                         onClick={() => {
-                          setEditableUri('');
+                          setEditableUri("");
                           handleSaveUri();
                         }}
                         title="Clear URI (use localhost)"
                       >
                         <span className="text-xs">X</span>
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={handleSaveUri}
-                        title="Save URI"
-                      >
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleSaveUri} title="Save URI">
                         <Check className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -242,7 +243,7 @@ export function Sidebar({
                   </div>
                 ) : (
                   // Display current URI (or placeholder)
-                  <div className="mt-1 bg-background p-1 rounded text-xs font-mono break-all">
+                  <div className="mt-1 break-all rounded bg-background p-1 font-mono text-xs">
                     {connectionUri || "Using localhost by default - click Edit to change"}
                   </div>
                 )}
@@ -256,10 +257,7 @@ export function Sidebar({
         <div className="space-y-4 px-4 py-2">
           <Button
             variant={activeSection === "documents" ? "secondary" : "ghost"}
-            className={cn(
-              "w-full justify-start",
-              isCollapsed && "justify-center"
-            )}
+            className={cn("w-full justify-start", isCollapsed && "justify-center")}
             onClick={() => onSectionChange("documents")}
           >
             <FileText className="h-4 w-4" />
@@ -268,10 +266,7 @@ export function Sidebar({
 
           <Button
             variant={activeSection === "search" ? "secondary" : "ghost"}
-            className={cn(
-              "w-full justify-start",
-              isCollapsed && "justify-center"
-            )}
+            className={cn("w-full justify-start", isCollapsed && "justify-center")}
             onClick={() => onSectionChange("search")}
           >
             <Search className="h-4 w-4" />
@@ -280,10 +275,7 @@ export function Sidebar({
 
           <Button
             variant={activeSection === "chat" ? "secondary" : "ghost"}
-            className={cn(
-              "w-full justify-start",
-              isCollapsed && "justify-center"
-            )}
+            className={cn("w-full justify-start", isCollapsed && "justify-center")}
             onClick={() => onSectionChange("chat")}
           >
             <MessageSquare className="h-4 w-4" />
@@ -292,10 +284,7 @@ export function Sidebar({
 
           <Button
             variant={activeSection === "agent" ? "secondary" : "ghost"}
-            className={cn(
-              "w-full justify-start",
-              isCollapsed && "justify-center"
-            )}
+            className={cn("w-full justify-start", isCollapsed && "justify-center")}
             onClick={() => onSectionChange("agent")}
           >
             <Bot className="h-4 w-4" />
@@ -304,10 +293,7 @@ export function Sidebar({
 
           <Button
             variant={activeSection === "graphs" ? "secondary" : "ghost"}
-            className={cn(
-              "w-full justify-start",
-              isCollapsed && "justify-center"
-            )}
+            className={cn("w-full justify-start", isCollapsed && "justify-center")}
             onClick={() => onSectionChange("graphs")}
           >
             <Network className="h-4 w-4" />
@@ -316,14 +302,11 @@ export function Sidebar({
         </div>
       </ScrollArea>
 
-      <div className={cn("p-4 border-t", isCollapsed ? "flex justify-center" : "flex items-center justify-between gap-2")}>
+      <div
+        className={cn("border-t p-4", isCollapsed ? "flex justify-center" : "flex items-center justify-between gap-2")}
+      >
         {!isCollapsed && onBackClick && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onBackClick}
-            className="flex items-center gap-2"
-          >
+          <Button variant="ghost" size="sm" onClick={onBackClick} className="flex items-center gap-2">
             <ArrowLeft className="h-4 w-4" />
             <span>Back to dashboard</span>
           </Button>
@@ -331,5 +314,5 @@ export function Sidebar({
         <ModeToggle />
       </div>
     </div>
-  )
+  );
 }

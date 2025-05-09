@@ -1,20 +1,20 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { Sidebar } from '@/components/ui/sidebar';
-import DocumentsSection from '@/components/documents/DocumentsSection';
-import SearchSection from '@/components/search/SearchSection';
-import ChatSection from '@/components/chat/ChatSection';
-import AgentChatSection from '@/components/chat/AgentChatSection';
-import GraphSection from '@/components/GraphSection';
-import { AlertSystem } from '@/components/ui/alert-system';
-import { extractTokenFromUri, getApiBaseUrlFromUri } from '@/lib/utils';
-import { MorphikUIProps } from './types';
-import { cn } from '@/lib/utils';
-import { setupLogging } from '@/lib/log';
+import React, { useState, useEffect } from "react";
+import { Sidebar } from "@/components/ui/sidebar";
+import DocumentsSection from "@/components/documents/DocumentsSection";
+import SearchSection from "@/components/search/SearchSection";
+import ChatSection from "@/components/chat/ChatSection";
+import AgentChatSection from "@/components/chat/AgentChatSection";
+import GraphSection from "@/components/GraphSection";
+import { AlertSystem } from "@/components/ui/alert-system";
+import { extractTokenFromUri, getApiBaseUrlFromUri } from "@/lib/utils";
+import { MorphikUIProps } from "./types";
+import { cn } from "@/lib/utils";
+import { setupLogging } from "@/lib/log";
 
 // Default API base URL
-const DEFAULT_API_BASE_URL = 'http://localhost:8000';
+const DEFAULT_API_BASE_URL = "http://localhost:8000";
 
 // Disable excessive logging unless debug is enabled
 setupLogging();
@@ -26,7 +26,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
   onUriChange,
   onBackClick,
   initialFolder = null,
-  initialSection = 'documents',
+  initialSection = "documents",
   onDocumentUpload,
   onDocumentDelete,
   onDocumentClick,
@@ -53,7 +53,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
 
   // Handle URI changes from sidebar
   const handleUriChange = (newUri: string) => {
-    console.log('MorphikUI: URI changed to:', newUri);
+    console.log("MorphikUI: URI changed to:", newUri);
     setCurrentUri(newUri);
     onUriChange?.(newUri);
   };
@@ -69,14 +69,14 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
 
   // Log the effective API URL for debugging
   useEffect(() => {
-    console.log('MorphikUI: Using API URL:', effectiveApiBaseUrl);
-    console.log('MorphikUI: Auth token present:', !!authToken);
+    console.log("MorphikUI: Using API URL:", effectiveApiBaseUrl);
+    console.log("MorphikUI: Auth token present:", !!authToken);
   }, [effectiveApiBaseUrl, authToken]);
 
   // Wrapper for section change to match expected type
   const handleSectionChange = (section: string) => {
-    if (['documents', 'search', 'chat', 'graphs', 'agent'].includes(section)) {
-      setActiveSection(section as 'documents' | 'search' | 'chat' | 'graphs' | 'agent');
+    if (["documents", "search", "chat", "graphs", "agent"].includes(section)) {
+      setActiveSection(section as "documents" | "search" | "chat" | "graphs" | "agent");
     }
   };
 
@@ -93,9 +93,9 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
         onBackClick={onBackClick}
       />
 
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex flex-1 flex-col overflow-hidden">
         {/* Render active section based on state */}
-        {activeSection === 'documents' && (
+        {activeSection === "documents" && (
           <DocumentsSection
             key={`docs-${effectiveApiBaseUrl}-${initialFolder}`}
             apiBaseUrl={effectiveApiBaseUrl}
@@ -110,7 +110,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
             onRefresh={undefined}
           />
         )}
-        {activeSection === 'search' && (
+        {activeSection === "search" && (
           <SearchSection
             key={`search-${effectiveApiBaseUrl}`}
             apiBaseUrl={effectiveApiBaseUrl}
@@ -118,7 +118,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
             onSearchSubmit={onSearchSubmit}
           />
         )}
-        {activeSection === 'chat' && (
+        {activeSection === "chat" && (
           <ChatSection
             key={`chat-${effectiveApiBaseUrl}`}
             apiBaseUrl={effectiveApiBaseUrl}
@@ -126,7 +126,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
             onChatSubmit={onChatSubmit}
           />
         )}
-        {activeSection === 'agent' && (
+        {activeSection === "agent" && (
           <AgentChatSection
             key={`agent-${effectiveApiBaseUrl}`}
             apiBaseUrl={effectiveApiBaseUrl}
@@ -134,7 +134,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
             onAgentSubmit={onAgentSubmit}
           />
         )}
-        {activeSection === 'graphs' && (
+        {activeSection === "graphs" && (
           <GraphSection
             key={`graphs-${effectiveApiBaseUrl}`}
             apiBaseUrl={effectiveApiBaseUrl}
