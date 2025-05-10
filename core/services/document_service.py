@@ -750,8 +750,8 @@ class DocumentService:
             raise PermissionError("User does not have write permission for ingest_file_content")
 
         doc = Document(
-            name=filename,  # Use 'name' field for filename as per Document model
-            content_type=content_type,  # ADD THIS LINE
+            filename=filename,
+            content_type=content_type,
             owner={"type": auth.entity_type.value, "id": auth.entity_id},
             metadata=metadata or {},
             system_metadata={"status": "processing"},  # Initial status
@@ -775,7 +775,7 @@ class DocumentService:
 
         # 1. Create initial document record in DB
         # The app_db concept from core/api.py implies self.db is already app-specific if needed
-        await self.db.store_document(doc)  # CHANGED from create_document to store_document
+        await self.db.store_document(doc)
         logger.info(f"Initial document record created for {filename} (doc_id: {doc.external_id})")
 
         # 2. Save raw file to Storage
@@ -788,24 +788,27 @@ class DocumentService:
             bucket_name, full_storage_path = await self._upload_to_app_bucket(
                 auth=auth, content_base64=content_base64, key=storage_key, content_type=content_type
             )
-            # Update document with storage info (bucket, key) and initial file details
-            doc.storage_info = StorageFileInfo(
+            # Create StorageFileInfo with version as INT
+            sfi = StorageFileInfo(
                 bucket=bucket_name,
                 key=full_storage_path,
                 content_type=content_type,
                 size=len(file_content_bytes),
                 last_modified=datetime.now(UTC),
-                version=str(1),  # Initial version as string
+                version=1,  # INT, as per StorageFileInfo model
                 filename=filename,
             )
-            # Initialize storage_files list
-            doc.storage_files = [doc.storage_info.model_copy()]
+            # Populate legacy doc.storage_info (Dict[str, str]) with stringified values
+            doc.storage_info = {k: str(v) if v is not None else "" for k, v in sfi.model_dump().items()}
+
+            # Initialize storage_files list with the StorageFileInfo object (version remains int)
+            doc.storage_files = [sfi]
 
             await self.db.update_document(
                 document_id=doc.external_id,
                 updates={
-                    "storage_info": doc.storage_info.model_dump(),  # Ensure it's a dict
-                    "storage_files": [sf.model_dump() for sf in doc.storage_files],  # Ensure list of dicts
+                    "storage_info": doc.storage_info,  # This is now Dict[str, str]
+                    "storage_files": [sf.model_dump() for sf in doc.storage_files],  # Dumps SFI, version is int
                     "system_metadata": doc.system_metadata,  # system_metadata already has status processing
                 },
                 auth=auth,
@@ -1667,27 +1670,27 @@ class DocumentService:
         # Route file uploads to the dedicated app bucket when available
         bucket_override = await self._get_bucket_for_app(doc.system_metadata.get("app_id"))
 
-        storage_info = await self.storage.upload_from_base64(
+        storage_info_tuple = await self.storage.upload_from_base64(
             file_content_base64,
             f"{doc.external_id}_{version}{file_extension}",
             file.content_type,
             bucket=bucket_override or "",
         )
 
-        # Add the new file to storage_files
-        new_file_info = StorageFileInfo(
-            bucket=storage_info[0],
-            key=storage_info[1],
-            version=str(version),  # Ensure version is a string
+        # Add the new file to storage_files, version is INT
+        new_sfi = StorageFileInfo(
+            bucket=storage_info_tuple[0],
+            key=storage_info_tuple[1],
+            version=version,  # version variable is already an int
             filename=file.filename,
             content_type=file.content_type,
             timestamp=datetime.now(UTC),
         )
-        doc.storage_files.append(new_file_info)
+        doc.storage_files.append(new_sfi)
 
-        # Still update legacy storage_info with the latest file for backward compatibility
-        doc.storage_info = new_file_info
-        logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
+        # Still update legacy storage_info (Dict[str, str]) with the latest file, stringifying values
+        doc.storage_info = {k: str(v) if v is not None else "" for k, v in new_sfi.model_dump().items()}
+        logger.info(f"Stored file in bucket `{storage_info_tuple[0]}` with key `{storage_info_tuple[1]}`")
 
     def _apply_update_strategy(self, current_content: str, update_content: str, update_strategy: str) -> str:
         """Apply the update strategy to combine current and new content."""

@@ -30,16 +30,11 @@ def init_app(app: FastAPI) -> None:
         "ee.routers.apps",
         "ee.routers.connectors_router",
     ]:
-        logger.info(f"EE.ROUTERS.INIT_APP: Processing module: {module_path}")
         try:
-            logger.info(f"EE.ROUTERS.INIT_APP: Attempting to import {module_path}...")
             mod = import_module(module_path)
-            logger.info(f"EE.ROUTERS.INIT_APP: Successfully imported {module_path}.")
 
             if hasattr(mod, "router"):
-                logger.info(f"EE.ROUTERS.INIT_APP: Found 'router' in {module_path}. Attempting to include it...")
                 app.include_router(mod.router)
-                logger.info(f"EE.ROUTERS.INIT_APP: Successfully included router from {module_path}.")
             else:
                 logger.warning(f"EE.ROUTERS.INIT_APP: Module {module_path} does not have a 'router' attribute.")
         except ImportError as e:

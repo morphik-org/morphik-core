@@ -258,23 +258,15 @@ logger.info("Document service initialized and stored on app.state")
 # Initialize the MorphikAgent once to load tool definitions and avoid repeated I/O
 morphik_agent = MorphikAgent(document_service=document_service)
 
-logger.info("CORE.API: About to attempt mounting EE routes.")  # Add this line
 # ---------------------------------------------------------------------------
 # Mount enterprise-only routes when the proprietary ``ee`` package
 # is present.
 # ---------------------------------------------------------------------------
 
 try:
-    logger.info("CORE.API: Attempting to import ee.routers.init_app...")
     from ee.routers import init_app as _init_ee_app  # type: ignore
 
-    logger.info("CORE.API: Successfully imported ee.routers.init_app.")
-
-    logger.info("CORE.API: Attempting to call _init_ee_app(app)...")
     _init_ee_app(app)  # noqa: SLF001 – runtime extension
-    logger.info("CORE.API: Successfully called _init_ee_app(app). Enterprise routes should be mounted.")
-    # Original log line, now more contextualized
-    # logger.info("Enterprise routes mounted (ee package detected).")
 except ModuleNotFoundError:
     # Expected in OSS builds – silently ignore.
     logger.debug("Enterprise package not found – running in community mode.")

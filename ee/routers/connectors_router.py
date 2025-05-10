@@ -304,19 +304,49 @@ async def ingest_file_from_connector(
 
         file_content_bytes = file_content_stream.getvalue()  # Assuming BytesIO
 
+        # ----------------------------------------------------------
+        # Detect actual MIME type from file bytes (fallback to API)
+        # and fix filename extension when missing.
+        # ----------------------------------------------------------
+        import filetype as _ft
+
+        detected_kind = _ft.guess(file_content_bytes)
+        if detected_kind:
+            # Use detected mime/extension when available
+            actual_mime_type = detected_kind.mime
+            actual_extension = detected_kind.extension
+        else:
+            # Fall back to connector-reported mime
+            actual_mime_type = file_metadata.mime_type
+            # Derive extension from mime if possible
+            import mimetypes as _mtypes
+
+            guessed_ext = _mtypes.guess_extension(actual_mime_type or "")
+            actual_extension = guessed_ext.lstrip(".") if guessed_ext else None
+
+        # Ensure filename has an extension so downstream parsers work
+        filename_to_use = file_metadata.name
+        if actual_extension and "." not in filename_to_use:
+            filename_to_use = f"{filename_to_use}.{actual_extension}"
+
+        # Clean metadata – keep only connector-specific fields that may be
+        # useful for the user but drop UI/boolean helpers.
+        cleaned_metadata = {}
+        if file_metadata.modified_date:
+            cleaned_metadata["modified_date"] = file_metadata.modified_date
+        # You can add more whitelisted fields here if needed
+
         # 3. Ingest into Morphik using DocumentService
-        # The doc_service.ingest_file_content method is expected to handle storage and enqueueing the processing job.
-        # It will need redis for enqueuing, which is why redis_pool_instance is passed.
         morphik_doc = await doc_service.ingest_file_content(
             file_content_bytes=file_content_bytes,
-            filename=file_metadata.name,
-            content_type=file_metadata.mime_type,
-            metadata=file_metadata.model_dump(),  # Pass connector file metadata
-            auth=auth_context,  # Pass the auth context
-            redis=redis_pool_instance,  # Pass redis for the service to use
+            filename=filename_to_use,
+            content_type=actual_mime_type,
+            metadata=cleaned_metadata,
+            auth=auth_context,
+            redis=redis_pool_instance,
             folder_name=ingest_request.morphik_folder_name,
             end_user_id=ingest_request.morphik_end_user_id,
-            # rules and use_colpali can be added if needed
+            use_colpali=True,
         )
 
         return {

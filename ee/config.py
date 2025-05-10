@@ -70,11 +70,3 @@ def get_ee_settings() -> EESettings:
         settings_kwargs["GOOGLE_TOKEN_STORAGE_PATH"] = config_from_toml["GOOGLE_TOKEN_STORAGE_PATH"]
 
     return EESettings(**settings_kwargs)
-
-
-# Example of how to use it:
-# ee_settings = get_ee_settings()
-# print(f"Client ID: {ee_settings.GOOGLE_CLIENT_ID}")
-# print(f"Token Path: {ee_settings.GOOGLE_TOKEN_STORAGE_PATH}")
-# print(f"Redirect URI: {ee_settings.GOOGLE_REDIRECT_URI}")
-# print(f"Scopes: {ee_settings.GOOGLE_SCOPES}")

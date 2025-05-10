@@ -37,7 +37,7 @@ class Document(BaseModel):
     filename: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     """user-defined metadata"""
-    storage_info: Dict[str, str] = Field(default_factory=dict)
+    storage_info: Dict[str, Any] = Field(default_factory=dict)
     """Legacy field for backwards compatibility - for single file storage"""
     storage_files: List[StorageFileInfo] = Field(default_factory=list)
     """List of files associated with this document"""
@@ -56,6 +56,13 @@ class Document(BaseModel):
     """metadata to help with querying eg. frame descriptions and time-stamped transcript for videos"""
     access_control: Dict[str, List[str]] = Field(default_factory=lambda: {"readers": [], "writers": [], "admins": []})
     chunk_ids: List[str] = Field(default_factory=list)
+
+    # Ensure storage_info values are strings to maintain backward compatibility
+    @field_validator("storage_info", mode="before")
+    def _coerce_storage_info_values(cls, v):
+        if isinstance(v, dict):
+            return {k: str(val) if val is not None else "" for k, val in v.items()}
+        return v
 
     def __hash__(self):
         return hash(self.external_id)
