@@ -66,6 +66,7 @@ class GraphService:
         additional_documents: Optional[List[str]] = None,
         prompt_overrides: Optional[GraphPromptOverrides] = None,
         system_filters: Optional[Dict[str, Any]] = None,
+        is_initial_build: bool = False,
     ) -> Graph:
         """Update an existing graph with new documents.
 
@@ -81,6 +82,7 @@ class GraphService:
             prompt_overrides: Optional GraphPromptOverrides with customizations for prompts
             system_filters: Optional system metadata filters (e.g. folder_name, end_user_id)
             to determine which documents to include
+            is_initial_build: Whether this is the initial build of the graph
 
         Returns:
             Graph: The updated graph
@@ -96,6 +98,13 @@ class GraphService:
         existing_graph = await self.db.get_graph(name, auth, system_filters=system_filters)
         if not existing_graph:
             raise ValueError(f"Graph '{name}' not found")
+
+        # Check if the graph is currently being processed by another operation
+        if existing_graph.system_metadata.get("status") == "processing" and not is_initial_build:
+            raise ValueError(
+                f"Graph '{name}' is currently being processed and cannot be updated yet. "
+                f"Please wait for the creation process to complete."
+            )
 
         # Ensure app_id scoping: persist app_id into system_metadata if this is a developer-scoped token
         if auth.app_id and existing_graph.system_metadata.get("app_id") != auth.app_id:

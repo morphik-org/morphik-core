@@ -415,7 +415,7 @@ async def ingest_file(
                 "readers": [auth.entity_id],
                 "writers": [auth.entity_id],
                 "admins": [auth.entity_id],
-                "user_id": [auth.user_id] if auth.user_id else [],
+                "user_id": [auth.user_id if auth.user_id else []],
                 "app_access": ([auth.app_id] if auth.app_id else []),
             },
             system_metadata={"status": "processing"},
@@ -1477,6 +1477,7 @@ async def create_graph(
                     additional_documents=request.documents,
                     prompt_overrides=request.prompt_overrides,
                     system_filters=system_filters,
+                    is_initial_build=True,  # Indicate this is the initial build
                 )
             except Exception as e:
                 logger.error(f"Graph creation failed for {request.name}: {e}")

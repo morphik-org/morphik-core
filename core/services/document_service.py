@@ -1688,6 +1688,7 @@ class DocumentService:
         additional_documents: Optional[List[str]] = None,
         prompt_overrides: Optional[GraphPromptOverrides] = None,
         system_filters: Optional[Dict[str, Any]] = None,
+        is_initial_build: bool = False,  # New parameter
     ) -> Graph:
         """Update an existing graph with new documents.
 
@@ -1701,6 +1702,7 @@ class DocumentService:
             additional_documents: Optional list of additional document IDs to include
             prompt_overrides: Optional customizations for entity extraction and resolution prompts
             system_filters: Optional system filters like folder_name and end_user_id for scoping
+            is_initial_build: Whether this is the initial build of the graph
 
         Returns:
             Graph: The updated graph
@@ -1714,6 +1716,7 @@ class DocumentService:
             additional_documents=additional_documents,
             prompt_overrides=prompt_overrides,
             system_filters=system_filters,
+            is_initial_build=is_initial_build,  # Pass through
         )
 
     async def delete_document(self, document_id: str, auth: AuthContext) -> bool:
