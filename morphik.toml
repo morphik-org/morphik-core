@@ -13,46 +13,19 @@ dev_permissions = ["read", "write", "admin"]  # Default dev permissions
 #### Registered models
 [registered_models]
 # OpenAI models
-openai_gpt4 = { model_name = "gpt-4" }
-openai_gpt4-1 = { model_name = "gpt-4.1" }
-openai_gpt4o = { model_name = "gpt-4o" }
-openai_gpt4o_mini = { model_name = "gpt-4o-mini" }
+openai_gpt4o-mini = { model_name = "gpt-4o-mini" }
+gpt41 = { model_name = "gpt-4.1" }
+claude = { model_name = "claude-3-7-sonnet-latest" }
 
-# Azure OpenAI models
-azure_gpt4 = { model_name = "gpt-4", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "gpt-4-deployment" }
-azure_gpt35 = { model_name = "gpt-3.5-turbo", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "gpt-35-turbo-deployment" }
-
-# Anthropic models
-claude_opus = { model_name = "claude-3-opus-20240229" }
-claude_sonnet = { model_name = "claude-3-7-sonnet-latest" }
-
-# Ollama models
-ollama_llama = { model_name = "ollama_chat/llama3.2", api_base = "http://localhost:11434" }
-ollama_llama_vision = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://localhost:11434", vision = true }
-# If you are running on docker, but running ollama locally use the following
-ollama_llama_docker = { model_name = "ollama_chat/llama3.2", api_base = "http://host.docker.internal:11434" }
-ollama_llama_vision_docker = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://host.docker.internal:11434", vision = true }
-# If you are running on docker and ollama is also running on docker use the following
-ollama_llama_docker_docker = { model_name = "ollama_chat/llama3.2", api_base = "http://ollama:11434" }
-ollama_llama_vision_docker_docker = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://ollama:11434", vision = true }
-
-# Embedding models
-openai_embedding = { model_name = "text-embedding-3-small" }
-openai_embedding_large = { model_name = "text-embedding-3-large" }
-azure_embedding = { model_name = "text-embedding-ada-002", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "embedding-ada-002" }
-ollama_embedding = { model_name = "ollama/nomic-embed-text", api_base = "http://localhost:11434" }
-# If you are running on docker, but running ollama locally use the following
-ollama_embedding_docker = { model_name = "ollama/nomic-embed-text", api_base = "http://host.docker.internal:11434" }
-# If you are running on docker and ollama is also running on docker use the following
-ollama_embedding_docker_docker = { model_name = "ollama/nomic-embed-text", api_base = "http://ollama:11434" }
+embedding = { model_name = "text-embedding-3-small" }
 
 #### Component configurations ####
 
 [agent]
-model = "ollama_llama" # Model for the agent logic
+model = "claude" # Model for the agent logic
 
 [completion]
-model = "ollama_llama" #"openai_gpt4o"  # Reference to a key in registered_models
+model = "gpt41" #"openai_gpt4o"  # Reference to a key in registered_models
 default_max_tokens = "1000"
 default_temperature = 0.5
 
@@ -68,8 +41,8 @@ max_retries = 3          # Number of retries for database operations
 retry_delay = 1.0        # Initial delay between retries in seconds
 
 [embedding]
-model = "ollama_embedding"  # Reference to registered model
-dimensions = 768
+model = "embedding"  # Reference to registered model
+dimensions = 1536
 similarity_metric = "cosine"
 
 [parser]
@@ -77,13 +50,13 @@ chunk_size = 6000
 chunk_overlap = 300
 use_unstructured_api = false
 use_contextual_chunking = false
-contextual_chunking_model = "ollama_llama"  # Reference to a key in registered_models
+contextual_chunking_model = "openai_gpt4o-mini"  # Reference to a key in registered_models
 
 [document_analysis]
-model = "ollama_llama"  # Reference to a key in registered_models
+model = "openai_gpt4o-mini"  # Reference to a key in registered_models
 
 [parser.vision]
-model = "ollama_llama"  # Reference to a key in registered_models
+model = "openai_gpt4o-mini"  # Reference to a key in registered_models
 frame_sample_rate = -1  # Set to -1 to disable frame captioning
 
 [reranker]
@@ -95,20 +68,21 @@ passage_max_length = 512
 use_fp16 = true
 device = "mps" # use "cpu" if on docker and using a mac, "cuda" if cuda enabled device
 
-[storage]
-provider = "local"
-storage_path = "./storage"
-
 # [storage]
-# provider = "aws-s3"
-# region = "us-east-2"
-# bucket_name = "morphik-s3-storage"
+# provider = "local"
+# storage_path = "./storage"
+
+[storage]
+provider = "aws-s3"
+region = "us-east-2"
+bucket_name = "morphik-s3-storage"
+storage_path = "morphik-s3-storage"
 
 [vector_store]
 provider = "pgvector"
 
 [rules]
-model = "ollama_llama"
+model = "openai_gpt4o-mini"
 batch_size = 4096
 
 [morphik]
@@ -116,15 +90,15 @@ enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"
 api_domain = "api.morphik.ai"  # API domain for cloud URIs
 # Only call the embedding API if colpali_mode is "api"
-morphik_embedding_api_domain = "http://localhost:6000"  # endpoint for multivector embedding service
-colpali_mode = "local" # "off", "local", or "api"
+morphik_embedding_api_domain = "embedding-api.morphik.ai"  # endpoint for multivector embedding service
+colpali_mode = "api" # "off", "local", or "api"
 
 [redis]
 host = "localhost"  # use "redis" for docker
 port = 6379
 
 [graph]
-model = "ollama_llama"
+model = "openai_gpt4o-mini"
 enable_entity_resolution = true
 
 [telemetry]
