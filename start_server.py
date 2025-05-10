@@ -257,7 +257,7 @@ def main():
     setup_logging(log_level=args.log.upper())
 
     # Check and start Redis container
-    check_and_start_redis()
+    # check_and_start_redis()
 
     # Load environment variables from .env file
     load_dotenv()
