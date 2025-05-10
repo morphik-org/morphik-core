@@ -48,7 +48,7 @@ from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.vector_store.multi_vector_store import MultiVectorStore
-from core.vector_store.pgvector_store import PGVectorStore
+from core.vector_store import vector_store_factory
 
 # Initialize FastAPI app
 app = FastAPI(title="Morphik API")
@@ -101,6 +101,7 @@ app.add_middleware(
 
 # Initialize service
 settings = get_settings()
+enable_colpali = settings.COLPALI_MODE != "off"
 
 # Initialize database
 if not settings.POSTGRES_URI:
@@ -138,7 +139,7 @@ async def initialize_vector_store():
         logger.warning("Primary vector store does not have an initialize method")
 
     # Then initialize the multivector store if enabled
-    if settings.ENABLE_COLPALI and colpali_vector_store:
+    if enable_colpali and colpali_vector_store:
         logger.info("Initializing multivector store...")
         # Handle both synchronous and asynchronous initialize methods
         if hasattr(colpali_vector_store.initialize, "__awaitable__"):
@@ -191,7 +192,7 @@ async def close_redis_pool():
     global redis_pool
     if redis_pool:
         logger.info("Closing Redis connection pool...")
-        redis_pool.close()
+        await redis_pool.close()
         await redis_pool.wait_closed()
         logger.info("Redis connection pool closed")
 
@@ -200,9 +201,7 @@ async def close_redis_pool():
 if not settings.POSTGRES_URI:
     raise ValueError("PostgreSQL URI is required for pgvector store")
 
-vector_store = PGVectorStore(
-    uri=settings.POSTGRES_URI,
-)
+vector_store = vector_store_factory(settings)
 
 # Initialize storage
 match settings.STORAGE_PROVIDER:
@@ -287,7 +286,7 @@ document_service = DocumentService(
     parser=parser,
     reranker=reranker,
     cache_factory=cache_factory,
-    enable_colpali=(settings.COLPALI_MODE != "off"),
+    enable_colpali=enable_colpali,
     colpali_embedding_model=colpali_embedding_model,
     colpali_vector_store=colpali_vector_store,
 )
@@ -2079,8 +2078,7 @@ async def set_folder_rule(
                                     except Exception as rule_apply_error:
                                         last_error = rule_apply_error
                                         logger.warning(
-                                            f"Metadata extraction attempt {retry_count + 1} failed: "
-                                            f"{rule_apply_error}"
+                                            f"Metadata extraction attempt {retry_count + 1} failed: {rule_apply_error}"
                                         )
                                         if retry_count == max_retries - 1:  # Last attempt
                                             logger.error(f"All {max_retries} metadata extraction attempts failed")

@@ -251,13 +251,19 @@ def main():
         action="store_true",
         help="Skip Ollama availability check",
     )
+    parser.add_argument(
+        "--skip-redis-setup",
+        action="store_true",
+        help="Skip setting up redis using docker",
+    )
     args = parser.parse_args()
 
     # Set up logging first with specified level
     setup_logging(log_level=args.log.upper())
 
     # Check and start Redis container
-    check_and_start_redis()
+    if not args.skip_redis_setup:
+        check_and_start_redis()
 
     # Load environment variables from .env file
     load_dotenv()

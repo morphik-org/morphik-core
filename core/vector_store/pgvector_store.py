@@ -201,7 +201,6 @@ class PGVectorStore(BaseVectorStore):
 
             # Continue with the rest of the initialization
             async with self.engine.begin() as conn:
-
                 # Check if vector_embeddings table exists
                 check_table_sql = """
                 SELECT EXISTS (
