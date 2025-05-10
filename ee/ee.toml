@@ -1,1 +1,12 @@
 morphik-host = "localhost:8000"
+
+# EE-specific configurations
+
+[google_drive]
+redirect_uri = "http://localhost:8000/ee/connectors/google_drive/oauth2callback" # Must match GCP console setting
+scopes = [
+    "https://www.googleapis.com/auth/drive.readonly"
+    # Add other scopes as needed, e.g.:
+    # "https://www.googleapis.com/auth/drive.metadata.readonly"
+]
+token_storage_path = "ee_tokens" # Default path within the application for storing tokens, ensure this directory is gitignored if created locally.

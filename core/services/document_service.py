@@ -1,17 +1,20 @@
 import asyncio
 import base64
+import json
 import logging
 import os
 import tempfile
+import uuid
 from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any, Dict, List, Optional, Type, Union
 
+import arq
 import filetype
 import pdf2image
 import torch
 from colpali_engine.models import ColIdefics3, ColIdefics3Processor
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 from filetype.types import IMAGE  # , DOCUMENT, document
 from PIL.Image import Image
 from pydantic import BaseModel
@@ -600,7 +603,7 @@ class DocumentService:
                 "readers": [auth.entity_id],
                 "writers": [auth.entity_id],
                 "admins": [auth.entity_id],
-                "user_id": [auth.user_id] if auth.user_id else [],  # user scoping
+                "user_id": [auth.user_id if auth.user_id else []],  # user scoping
             },
         )
 
@@ -716,6 +719,162 @@ class DocumentService:
             document_id=doc.external_id, updates={"system_metadata": doc.system_metadata}, auth=auth
         )
         logger.debug(f"Updated document status to 'completed' for {doc.external_id}")
+
+        return doc
+
+    async def ingest_file_content(
+        self,
+        file_content_bytes: bytes,
+        filename: str,
+        content_type: Optional[str],
+        metadata: Optional[Dict[str, Any]],
+        auth: AuthContext,
+        redis: arq.ArqRedis,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        end_user_id: Optional[str] = None,
+        rules: Optional[List[str]] = None,
+        use_colpali: Optional[bool] = False,
+    ) -> Document:
+        """
+        Ingests file content from bytes. Saves to storage, creates document record,
+        and then enqueues a background job for chunking and embedding.
+        """
+        logger.info(
+            f"Starting ingestion for filename: {filename}, content_type: {content_type}, "
+            f"user: {auth.user_id or auth.entity_id}"
+        )
+
+        # Ensure user has write permission (moved from core/api.py for consistency)
+        if "write" not in auth.permissions:
+            logger.error(f"User {auth.entity_id} does not have write permission for ingest_file_content")
+            raise PermissionError("User does not have write permission for ingest_file_content")
+
+        doc = Document(
+            name=filename,  # Use 'name' field for filename as per Document model
+            content_type=content_type,  # ADD THIS LINE
+            owner={"type": auth.entity_type.value, "id": auth.entity_id},
+            metadata=metadata or {},
+            system_metadata={"status": "processing"},  # Initial status
+            content_info={"type": "file", "mime_type": content_type},
+            # Ensure access_control is set similar to /ingest/file
+            access_control={
+                "readers": [auth.entity_id],
+                "writers": [auth.entity_id],
+                "admins": [auth.entity_id],
+                "user_id": [auth.user_id] if auth.user_id else [],
+                "app_access": ([auth.app_id] if auth.app_id else []),
+            },
+        )
+
+        if auth.app_id:
+            doc.system_metadata["app_id"] = auth.app_id
+        if end_user_id:
+            doc.system_metadata["end_user_id"] = end_user_id
+        if folder_name:
+            doc.system_metadata["folder_name"] = folder_name
+
+        # 1. Create initial document record in DB
+        # The app_db concept from core/api.py implies self.db is already app-specific if needed
+        await self.db.store_document(doc)  # CHANGED from create_document to store_document
+        logger.info(f"Initial document record created for {filename} (doc_id: {doc.external_id})")
+
+        # 2. Save raw file to Storage
+        # Using a unique key structure similar to /ingest/file to avoid collisions if worker needs it
+        file_key_suffix = str(uuid.uuid4())
+        storage_key = f"ingest_uploads/{file_key_suffix}/{filename}"
+        content_base64 = base64.b64encode(file_content_bytes).decode("utf-8")
+
+        try:
+            bucket_name, full_storage_path = await self._upload_to_app_bucket(
+                auth=auth, content_base64=content_base64, key=storage_key, content_type=content_type
+            )
+            # Update document with storage info (bucket, key) and initial file details
+            doc.storage_info = StorageFileInfo(
+                bucket=bucket_name,
+                key=full_storage_path,
+                content_type=content_type,
+                size=len(file_content_bytes),
+                last_modified=datetime.now(UTC),
+                version=str(1),  # Initial version as string
+                filename=filename,
+            )
+            # Initialize storage_files list
+            doc.storage_files = [doc.storage_info.model_copy()]
+
+            await self.db.update_document(
+                document_id=doc.external_id,
+                updates={
+                    "storage_info": doc.storage_info.model_dump(),  # Ensure it's a dict
+                    "storage_files": [sf.model_dump() for sf in doc.storage_files],  # Ensure list of dicts
+                    "system_metadata": doc.system_metadata,  # system_metadata already has status processing
+                },
+                auth=auth,
+            )
+            logger.info(
+                f"File {filename} (doc_id: {doc.external_id}) uploaded to storage: "
+                f"{bucket_name}/{full_storage_path} and DB record updated."
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to upload file {filename} (doc_id: {doc.external_id}) to storage or update DB: {e}")
+            # Update document status to failed if initial storage fails
+            doc.system_metadata["status"] = "failed"
+            doc.system_metadata["error"] = f"Storage upload/DB update failed: {str(e)}"
+            try:
+                await self.db.update_document(doc.external_id, {"system_metadata": doc.system_metadata}, auth=auth)
+            except Exception as db_update_err:
+                logger.error(f"Additionally failed to mark doc {doc.external_id} as failed in DB: {db_update_err}")
+            raise HTTPException(status_code=500, detail=f"Failed to upload file to storage: {str(e)}")
+
+        # 3. Ensure folder exists if folder_name is provided (after doc is created)
+        if folder_name:
+            try:
+                await self._ensure_folder_exists(folder_name, doc.external_id, auth)
+                logger.debug(f"Ensured folder '{folder_name}' exists " f"and contains document {doc.external_id}")
+            except Exception as e:
+                logger.error(
+                    f"Error during _ensure_folder_exists for doc {doc.external_id}"
+                    f"in folder {folder_name}: {e}. Continuing."
+                )
+
+        # 4. Enqueue background job for processing
+        auth_dict = {
+            "entity_type": auth.entity_type.value,
+            "entity_id": auth.entity_id,
+            "app_id": auth.app_id,
+            "permissions": list(auth.permissions),
+            "user_id": auth.user_id,
+        }
+
+        metadata_json_str = json.dumps(metadata or {})
+        rules_list_for_job = rules or []
+
+        try:
+            job = await redis.enqueue_job(
+                "process_ingestion_job",
+                document_id=doc.external_id,
+                file_key=full_storage_path,  # This is the key in storage
+                bucket=bucket_name,
+                original_filename=filename,
+                content_type=content_type,
+                metadata_json=metadata_json_str,
+                auth_dict=auth_dict,
+                rules_list=rules_list_for_job,
+                use_colpali=use_colpali,
+                folder_name=str(folder_name) if folder_name else None,  # Ensure folder_name is str or None
+                end_user_id=end_user_id,
+            )
+            logger.info(f"Connector file ingestion job queued with ID: {job.job_id} for document: {doc.external_id}")
+        except Exception as e:
+            logger.error(f"Failed to enqueue ingestion job for doc {doc.external_id} ({filename}): {e}")
+            # Update document status to failed if enqueuing fails
+            doc.system_metadata["status"] = "failed"
+            doc.system_metadata["error"] = f"Failed to enqueue processing job: {str(e)}"
+            try:
+                await self.db.update_document(doc.external_id, {"system_metadata": doc.system_metadata}, auth=auth)
+            except Exception as db_update_err:
+                logger.error(f"Additionally failed to mark doc {doc.external_id} as failed in DB: {db_update_err}")
+            raise HTTPException(status_code=500, detail=f"Failed to enqueue document processing job: {str(e)}")
 
         return doc
 
@@ -1519,7 +1678,7 @@ class DocumentService:
         new_file_info = StorageFileInfo(
             bucket=storage_info[0],
             key=storage_info[1],
-            version=version,
+            version=str(version),  # Ensure version is a string
             filename=file.filename,
             content_type=file.content_type,
             timestamp=datetime.now(UTC),
@@ -1527,7 +1686,7 @@ class DocumentService:
         doc.storage_files.append(new_file_info)
 
         # Still update legacy storage_info with the latest file for backward compatibility
-        doc.storage_info = {"bucket": storage_info[0], "key": storage_info[1]}
+        doc.storage_info = new_file_info
         logger.info(f"Stored file in bucket `{storage_info[0]}` with key `{storage_info[1]}`")
 
     def _apply_update_strategy(self, current_content: str, update_content: str, update_strategy: str) -> str:

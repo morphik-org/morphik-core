@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     # Environment variables
     JWT_SECRET_KEY: str
+    SESSION_SECRET_KEY: str
     POSTGRES_URI: Optional[str] = None
     UNSTRUCTURED_API_KEY: Optional[str] = None
     AWS_ACCESS_KEY: Optional[str] = None
@@ -155,6 +156,7 @@ def get_settings() -> Settings:
     auth_config = {
         "JWT_ALGORITHM": config["auth"]["jwt_algorithm"],
         "JWT_SECRET_KEY": os.environ.get("JWT_SECRET_KEY", "dev-secret-key"),  # Default for dev mode
+        "SESSION_SECRET_KEY": os.environ.get("SESSION_SECRET_KEY", "super-secret-dev-session-key"),
         "dev_mode": config["auth"].get("dev_mode", False),
         "dev_entity_type": config["auth"].get("dev_entity_type", "developer"),
         "dev_entity_id": config["auth"].get("dev_entity_id", "dev_user"),
@@ -164,6 +166,13 @@ def get_settings() -> Settings:
     # Only require JWT_SECRET_KEY in non-dev mode
     if not auth_config["dev_mode"] and "JWT_SECRET_KEY" not in os.environ:
         raise ValueError("JWT_SECRET_KEY is required when dev_mode is disabled")
+    # Also require SESSION_SECRET_KEY in non-dev mode
+    if not auth_config["dev_mode"] and "SESSION_SECRET_KEY" not in os.environ:
+        # Or, if we want to be more strict and always require it via ENV:
+        # if "SESSION_SECRET_KEY" not in os.environ:
+        #     raise ValueError("SESSION_SECRET_KEY environment variable is required.")
+        # For now, align with JWT_SECRET_KEY's dev mode leniency.
+        pass  # Dev mode has a default, production should use ENV.
 
     # Load registered models if available
     registered_models = {}

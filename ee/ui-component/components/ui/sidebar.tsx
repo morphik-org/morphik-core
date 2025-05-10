@@ -15,13 +15,17 @@ import {
   Check,
   ArrowLeft,
   Bot,
+  PlugZap,
 } from "lucide-react";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Input } from "@/components/ui/input";
 
+// Define the specific section types the Sidebar expects
+export type SidebarSectionType = "documents" | "search" | "chat" | "graphs" | "agent" | "connections";
+
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
-  activeSection: string;
-  onSectionChange: (section: string) => void;
+  activeSection: SidebarSectionType; // Use the specific type
+  onSectionChange: (section: SidebarSectionType) => void; // Use the specific type
   connectionUri?: string;
   isReadOnlyUri?: boolean;
   onUriChange?: (uri: string) => void;
@@ -253,51 +257,63 @@ export function Sidebar({
         )}
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="space-y-4 px-4 py-2">
+      {/* Navigation Items */}
+      <ScrollArea className="flex-1 px-2 py-4">
+        <div className={cn("flex flex-col space-y-1", isCollapsed ? "items-center" : "")}>
           <Button
             variant={activeSection === "documents" ? "secondary" : "ghost"}
             className={cn("w-full justify-start", isCollapsed && "justify-center")}
             onClick={() => onSectionChange("documents")}
+            title="Documents"
           >
-            <FileText className="h-4 w-4" />
-            {!isCollapsed && <span className="ml-2">Folders</span>}
+            <FileText className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
+            {!isCollapsed && <span>Documents</span>}
           </Button>
-
           <Button
             variant={activeSection === "search" ? "secondary" : "ghost"}
             className={cn("w-full justify-start", isCollapsed && "justify-center")}
             onClick={() => onSectionChange("search")}
+            title="Search"
           >
-            <Search className="h-4 w-4" />
-            {!isCollapsed && <span className="ml-2">Search</span>}
+            <Search className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
+            {!isCollapsed && <span>Search</span>}
           </Button>
-
           <Button
             variant={activeSection === "chat" ? "secondary" : "ghost"}
             className={cn("w-full justify-start", isCollapsed && "justify-center")}
             onClick={() => onSectionChange("chat")}
+            title="Chat"
           >
-            <MessageSquare className="h-4 w-4" />
-            {!isCollapsed && <span className="ml-2">Chat</span>}
+            <MessageSquare className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
+            {!isCollapsed && <span>Chat</span>}
           </Button>
-
-          <Button
-            variant={activeSection === "agent" ? "secondary" : "ghost"}
-            className={cn("w-full justify-start", isCollapsed && "justify-center")}
-            onClick={() => onSectionChange("agent")}
-          >
-            <Bot className="h-4 w-4" />
-            {!isCollapsed && <span className="ml-2">Agent Chat</span>}
-          </Button>
-
           <Button
             variant={activeSection === "graphs" ? "secondary" : "ghost"}
             className={cn("w-full justify-start", isCollapsed && "justify-center")}
             onClick={() => onSectionChange("graphs")}
+            title="Graphs"
           >
-            <Network className="h-4 w-4" />
-            {!isCollapsed && <span className="ml-2">Graphs</span>}
+            <Network className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
+            {!isCollapsed && <span>Graphs</span>}
+          </Button>
+          <Button
+            variant={activeSection === "agent" ? "secondary" : "ghost"}
+            className={cn("w-full justify-start", isCollapsed && "justify-center")}
+            onClick={() => onSectionChange("agent")}
+            title="Agent"
+          >
+            <Bot className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
+            {!isCollapsed && <span>Agent</span>}
+          </Button>
+          {/* New Connections Nav Item */}
+          <Button
+            variant={activeSection === "connections" ? "secondary" : "ghost"}
+            className={cn("w-full justify-start", isCollapsed && "justify-center")}
+            onClick={() => onSectionChange("connections")}
+            title="Connections"
+          >
+            <PlugZap className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
+            {!isCollapsed && <span>Connections</span>}
           </Button>
         </div>
       </ScrollArea>

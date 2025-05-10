@@ -1,6 +1,6 @@
 {
   "name": "@morphik/ui",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "description": "Modern UI component for Morphik - A powerful document processing and querying system",
   "author": "Morphik Team",

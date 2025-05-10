@@ -7,6 +7,7 @@ import SearchSection from "@/components/search/SearchSection";
 import ChatSection from "@/components/chat/ChatSection";
 import AgentChatSection from "@/components/chat/AgentChatSection";
 import GraphSection from "@/components/GraphSection";
+import { ConnectorList } from "@/components/connectors/ConnectorList";
 import { AlertSystem } from "@/components/ui/alert-system";
 import { extractTokenFromUri, getApiBaseUrlFromUri } from "@/lib/utils";
 import { MorphikUIProps } from "./types";
@@ -47,8 +48,12 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
     setCurrentUri(connectionUri);
   }, [connectionUri]);
 
+  // Valid section types, now matching the updated MorphikUIProps
+  type SectionType = "documents" | "search" | "chat" | "graphs" | "agent" | "connections";
+
   useEffect(() => {
-    setActiveSection(initialSection);
+    // Ensure initialSection from props is a valid SectionType before setting
+    setActiveSection(initialSection as SectionType);
   }, [initialSection]);
 
   // Handle URI changes from sidebar
@@ -58,7 +63,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
     onUriChange?.(newUri);
   };
 
-  const [activeSection, setActiveSection] = useState(initialSection);
+  const [activeSection, setActiveSection] = useState<SectionType>(initialSection as SectionType);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Extract auth token and API URL from connection URI if provided
@@ -75,8 +80,8 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
 
   // Wrapper for section change to match expected type
   const handleSectionChange = (section: string) => {
-    if (["documents", "search", "chat", "graphs", "agent"].includes(section)) {
-      setActiveSection(section as "documents" | "search" | "chat" | "graphs" | "agent");
+    if (["documents", "search", "chat", "graphs", "agent", "connections"].includes(section)) { // Added "connections"
+      setActiveSection(section as SectionType); // Use SectionType here
     }
   };
 
@@ -143,6 +148,12 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
             onGraphCreate={onGraphCreate}
             onGraphUpdate={onGraphUpdate}
           />
+        )}
+        {activeSection === "connections" && (
+          <div className="p-4 md:p-6 overflow-auto h-full">
+            {/* Wrapper div for consistent padding and full height */}
+            <ConnectorList apiBaseUrl={effectiveApiBaseUrl} />
+          </div>
         )}
       </main>
 

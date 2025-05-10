@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 import uuid
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -11,8 +12,9 @@ import arq
 import jwt
 import tomli
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware  # Import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from starlette.middleware.sessions import SessionMiddleware
 
 from core.agent import MorphikAgent
 from core.auth_utils import verify_token
@@ -20,6 +22,7 @@ from core.cache.llama_cache_factory import LlamaCacheFactory
 from core.completion.litellm_completion import LiteLLMCompletionModel
 from core.config import get_settings
 from core.database.postgres_database import PostgresDatabase
+from core.dependencies import get_redis_pool
 from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
@@ -51,31 +54,82 @@ from core.vector_store.multi_vector_store import MultiVectorStore
 from core.vector_store.pgvector_store import PGVectorStore
 
 # Initialize FastAPI app
-app = FastAPI(title="Morphik API")
 logger = logging.getLogger(__name__)
 
-
-# Add health check endpoints
-@app.get("/health")
-async def health_check():
-    """Basic health check endpoint."""
-    return {"status": "healthy"}
+# Global variable for redis_pool, primarily for shutdown if app.state access fails.
+_global_redis_pool: Optional[arq.ArqRedis] = None
 
 
-@app.get("/health/ready")
-async def readiness_check():
-    """Readiness check that verifies the application is initialized."""
-    return {
-        "status": "ready",
-        "components": {
-            "database": settings.DATABASE_PROVIDER,
-            "vector_store": settings.VECTOR_STORE_PROVIDER,
-            "embedding": settings.EMBEDDING_PROVIDER,
-            "completion": settings.COMPLETION_PROVIDER,
-            "storage": settings.STORAGE_PROVIDER,
-        },
-    }
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
+    # --- BEGIN MOVED STARTUP LOGIC ---
+    logger.info("Lifespan: Initializing Database...")
+    try:
+        success = await database.initialize()
+        if success:
+            logger.info("Lifespan: Database initialization successful")
+        else:
+            logger.error("Lifespan: Database initialization failed")
+    except Exception as e:
+        logger.error(f"Lifespan: CRITICAL - Failed to initialize Database: {e}", exc_info=True)
+        raise  # Or handle more gracefully if appropriate
 
+    logger.info("Lifespan: Initializing Vector Store...")
+    try:
+        global vector_store
+        if hasattr(vector_store, "initialize"):
+            await vector_store.initialize()
+        logger.info("Lifespan: Vector Store initialization successful (or not applicable).")
+    except Exception as e:
+        logger.error(f"Lifespan: CRITICAL - Failed to initialize Vector Store: {e}", exc_info=True)
+        # Decide if this is fatal
+        # raise
+
+    logger.info("Lifespan: Attempting to initialize Redis connection pool...")
+    global _global_redis_pool  # Ensure we're using the global for assignment
+    try:
+        redis_settings_obj = arq.connections.RedisSettings(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+        )
+        logger.info(f"Lifespan: Redis settings for pool: host={settings.REDIS_HOST}, port={settings.REDIS_PORT}")
+        current_redis_pool = await arq.create_pool(redis_settings_obj)
+        if current_redis_pool:
+            app_instance.state.redis_pool = current_redis_pool  # Use app_instance from lifespan
+            _global_redis_pool = current_redis_pool
+            logger.info("Lifespan: Successfully initialized Redis connection pool and stored on app.state.")
+        else:
+            logger.error("Lifespan: arq.create_pool returned None or a falsey value for Redis pool.")
+            raise RuntimeError("Lifespan: Failed to create Redis pool - arq.create_pool returned non-truthy value.")
+    except Exception as e:
+        logger.error(f"Lifespan: CRITICAL - Failed to initialize Redis connection pool: {e}", exc_info=True)
+        raise RuntimeError(f"Lifespan: CRITICAL - Failed to initialize Redis connection pool: {e}") from e
+    # --- END MOVED STARTUP LOGIC ---
+
+    logger.info("Lifespan: Core startup logic executed.")
+    yield
+    # Shutdown logic
+    logger.info("Lifespan: Shutdown initiated.")
+    # Use app_instance.state to get the pool for shutdown too
+    pool_to_close = getattr(app_instance.state, "redis_pool", _global_redis_pool)
+    if pool_to_close:
+        logger.info("Closing Redis connection pool from lifespan...")
+        pool_to_close.close()
+        await pool_to_close.wait_closed()
+        logger.info("Redis connection pool closed from lifespan.")
+    logger.info("Lifespan: Shutdown complete.")
+
+
+app = FastAPI(lifespan=lifespan)
+
+# Add CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 # Initialize telemetry
 telemetry = TelemetryService()
@@ -90,111 +144,16 @@ FastAPIInstrumentor.instrument_app(
     tracer_provider=None,  # Use the global tracer provider
 )
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # Initialize service
 settings = get_settings()
+
+# Add SessionMiddleware
+app.add_middleware(SessionMiddleware, secret_key=settings.SESSION_SECRET_KEY)
 
 # Initialize database
 if not settings.POSTGRES_URI:
     raise ValueError("PostgreSQL URI is required for PostgreSQL database")
 database = PostgresDatabase(uri=settings.POSTGRES_URI)
-
-# Redis settings already imported at top of file
-
-
-@app.on_event("startup")
-async def initialize_database():
-    """Initialize database tables and indexes on application startup."""
-    logger.info("Initializing database...")
-    success = await database.initialize()
-    if success:
-        logger.info("Database initialization successful")
-    else:
-        logger.error("Database initialization failed")
-        # We don't raise an exception here to allow the app to continue starting
-        # even if there are initialization errors
-
-
-@app.on_event("startup")
-async def initialize_vector_store():
-    """Initialize vector store tables and indexes on application startup."""
-    # First initialize the primary vector store (PGVectorStore if using pgvector)
-    logger.info("Initializing primary vector store...")
-    if hasattr(vector_store, "initialize"):
-        success = await vector_store.initialize()
-        if success:
-            logger.info("Primary vector store initialization successful")
-        else:
-            logger.error("Primary vector store initialization failed")
-    else:
-        logger.warning("Primary vector store does not have an initialize method")
-
-    # Then initialize the multivector store if enabled
-    if settings.ENABLE_COLPALI and colpali_vector_store:
-        logger.info("Initializing multivector store...")
-        # Handle both synchronous and asynchronous initialize methods
-        if hasattr(colpali_vector_store.initialize, "__awaitable__"):
-            success = await colpali_vector_store.initialize()
-        else:
-            success = colpali_vector_store.initialize()
-
-        if success:
-            logger.info("Multivector store initialization successful")
-        else:
-            logger.error("Multivector store initialization failed")
-
-
-@app.on_event("startup")
-async def initialize_user_limits_database():
-    """Initialize user service on application startup."""
-    logger.info("Initializing user service...")
-    if settings.MODE == "cloud":
-        from core.database.user_limits_db import UserLimitsDatabase
-
-        user_limits_db = UserLimitsDatabase(uri=settings.POSTGRES_URI)
-        await user_limits_db.initialize()
-
-
-@app.on_event("startup")
-async def initialize_redis_pool():
-    """Initialize the Redis connection pool for background tasks."""
-    global redis_pool
-    logger.info("Initializing Redis connection pool...")
-
-    # Get Redis settings from configuration
-    redis_host = settings.REDIS_HOST
-    redis_port = settings.REDIS_PORT
-
-    # Log the Redis connection details
-    logger.info(f"Connecting to Redis at {redis_host}:{redis_port}")
-
-    redis_settings = arq.connections.RedisSettings(
-        host=redis_host,
-        port=redis_port,
-    )
-
-    redis_pool = await arq.create_pool(redis_settings)
-    logger.info("Redis connection pool initialized successfully")
-
-
-@app.on_event("shutdown")
-async def close_redis_pool():
-    """Close the Redis connection pool on application shutdown."""
-    global redis_pool
-    if redis_pool:
-        logger.info("Closing Redis connection pool...")
-        redis_pool.close()
-        await redis_pool.wait_closed()
-        logger.info("Redis connection pool closed")
-
 
 # Initialize vector store
 if not settings.POSTGRES_URI:
@@ -279,35 +238,50 @@ match settings.COLPALI_MODE:
 
 # Initialize document service with configured components
 document_service = DocumentService(
-    storage=storage,
     database=database,
     vector_store=vector_store,
+    storage=storage,
+    parser=parser,
     embedding_model=embedding_model,
     completion_model=completion_model,
-    parser=parser,
-    reranker=reranker,
     cache_factory=cache_factory,
-    enable_colpali=(settings.COLPALI_MODE != "off"),
+    reranker=reranker,
+    enable_colpali=settings.ENABLE_COLPALI,
     colpali_embedding_model=colpali_embedding_model,
     colpali_vector_store=colpali_vector_store,
 )
+# Store document_service on app.state immediately after it's created.
+# This must happen before _init_ee_app(app) is called.
+app.state.document_service = document_service
+logger.info("Document service initialized and stored on app.state")
 
 # Initialize the MorphikAgent once to load tool definitions and avoid repeated I/O
 morphik_agent = MorphikAgent(document_service=document_service)
 
+logger.info("CORE.API: About to attempt mounting EE routes.")  # Add this line
 # ---------------------------------------------------------------------------
 # Mount enterprise-only routes when the proprietary ``ee`` package
 # is present.
 # ---------------------------------------------------------------------------
 
 try:
+    logger.info("CORE.API: Attempting to import ee.routers.init_app...")
     from ee.routers import init_app as _init_ee_app  # type: ignore
 
+    logger.info("CORE.API: Successfully imported ee.routers.init_app.")
+
+    logger.info("CORE.API: Attempting to call _init_ee_app(app)...")
     _init_ee_app(app)  # noqa: SLF001 – runtime extension
-    logger.info("Enterprise routes mounted (ee package detected).")
+    logger.info("CORE.API: Successfully called _init_ee_app(app). Enterprise routes should be mounted.")
+    # Original log line, now more contextualized
+    # logger.info("Enterprise routes mounted (ee package detected).")
 except ModuleNotFoundError:
     # Expected in OSS builds – silently ignore.
     logger.debug("Enterprise package not found – running in community mode.")
+except ImportError as e:
+    logger.error(f"Failed to import init_app from ee.routers: {e}", exc_info=True)
+except Exception as e:
+    logger.error(f"An unexpected error occurred during EE app initialization: {e}", exc_info=True)
 
 
 @app.post("/ingest/text", response_model=Document)
@@ -347,15 +321,6 @@ async def ingest_text(
         )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
-
-
-# Redis pool for background tasks
-redis_pool = None
-
-
-def get_redis_pool():
-    """Get the global Redis connection pool for background tasks."""
-    return redis_pool
 
 
 @app.post("/ingest/file", response_model=Document)
