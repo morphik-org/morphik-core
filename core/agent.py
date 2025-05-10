@@ -155,6 +155,11 @@ Always use markdown formatting.
                 .replace("\n            ", " ")
                 .replace("  ", " ")
             )
+            if ground:
+                final_instruction += (
+                    ' Also, provide detailed display instructions for how the UI should present the '
+                    'information and images.'
+                )
 
         current_system_prompt = self.system_prompt_template.format(
             tool_list_string=tool_list_string, final_instruction=final_instruction
@@ -195,7 +200,13 @@ Always use markdown formatting.
             # If no tool call, return final content
             if not getattr(msg, "tool_calls", None):
                 logger.info("No tool calls detected, returning final content")
-                return {"mode": "plain", "body": msg.content}, tool_history
+                response = {"mode": "plain", "body": msg.content}
+                if rich and ground:
+                    response.update({
+                        "mode": "rich",
+                        "display_instructions": "Display the response with markdown formatting for text and place any referenced images or graphs below the relevant text with a caption indicating the source or context (e.g., 'Graph from Section XYZ')."
+                    })
+                return response, tool_history
 
             call = msg.tool_calls[0]
             name = call.function.name

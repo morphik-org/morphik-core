@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { ChatMessage } from "@/components/types";
 import { generateUUID } from "@/lib/utils";
-import { AgentResponseData } from "@/types/agent-response";
+import { AgentResponseData, AgentRichResponse } from "@/types/agent-response";
 
 import { Spin, ArrowUp } from "./icons";
 import { Button } from "@/components/ui/button";
@@ -42,8 +42,8 @@ const AgentChatSection: React.FC<AgentChatSectionProps> = ({
   );
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<"idle" | "submitted" | "completed">("idle");
-  const [requestRichResponse, setRequestRichResponse] = useState(false);
-  const [requestGrounding, setRequestGrounding] = useState(false);
+  const [isGrounded, setIsGrounded] = useState(true);
+  const [isRichResponseEnabled, setIsRichResponseEnabled] = useState(true);
 
   // Textarea and scroll refs
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -71,92 +71,131 @@ const AgentChatSection: React.FC<AgentChatSectionProps> = ({
     const loadingMessage: AgentUIMessage = {
       id: loadingMessageId,
       role: "assistant",
-      content: "", // For loading, content is empty or a placeholder if not using richResponse
+      content: "",
       createdAt: new Date(),
       isLoading: true,
     };
 
     setMessages(prev => [...prev, loadingMessage]);
-    setStatus("submitted");
     setInput("");
+    setStatus("submitted");
 
+    // Call onAgentSubmit if provided
     onAgentSubmit?.(userQuery);
 
     try {
-      const requestBody: { query: string; rich?: boolean; ground?: boolean } = {
-        query: userQuery,
-      };
-      if (requestRichResponse) {
-        requestBody.rich = true;
-        // Only send ground if rich is true
-        if (requestGrounding) {
-          requestBody.ground = true;
-        }
-      }
+      // Prepare history for API (filter out loading messages)
+      const history = messages
+        .filter(msg => !msg.isLoading)
+        .map(msg => ({ role: msg.role, content: msg.content }));
 
       const response = await fetch(`${apiBaseUrl}/agent`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          Authorization: `Bearer ${authToken}`,
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          query: userQuery,
+          history,
+          ground: isGrounded,
+          rich: isRichResponseEnabled,
+        }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: response.statusText }));
-        throw new Error(`Agent API error: ${response.status} - ${errorData.detail || "Unknown error"}`);
+        throw new Error(`API error: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
-
-      let agentResponseMessage: AgentUIMessage;
-
-      if (data.response && typeof data.response === 'object' && ('mode' in data.response)) {
-        // Structured response with mode present (either plain or rich)
-        const structured = data.response as AgentResponseData;
-
-        if (structured.mode === 'rich') {
-          agentResponseMessage = {
-            id: loadingMessageId,
-            role: "assistant",
-            content: "", // Body rendered via richResponse component
-            richResponse: structured,
-            createdAt: new Date(),
-            experimental_agentData: {
-              tool_history: data.tool_history as ToolCall[],
-            },
-            isLoading: false,
-          };
-        } else {
-          // Plain mode
-          agentResponseMessage = {
-            id: loadingMessageId,
-            role: "assistant",
-            content: structured.body,
-            // Optionally keep the structured object for debugging, but not required for rendering
-            createdAt: new Date(),
-            experimental_agentData: {
-              tool_history: data.tool_history as ToolCall[],
-            },
-            isLoading: false,
-          };
+      if (isRichResponseEnabled) {
+        // Handle streaming JSON response
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error("Failed to get response reader");
         }
-      } else {
-        // Legacy string response fallback
-        agentResponseMessage = {
-          id: loadingMessageId,
-          role: "assistant",
-          content: typeof data.response === 'string' ? data.response : JSON.stringify(data.response),
-          createdAt: new Date(),
-          experimental_agentData: {
-            tool_history: data.tool_history as ToolCall[],
-          },
-          isLoading: false,
-        };
-      }
 
-      setMessages(prev => prev.map(msg => (msg.id === loadingMessageId ? agentResponseMessage : msg)));
+        let responseData: AgentResponseData = { text: "" };
+        let displayElements: any[] = [];
+
+        const updateMessageContentFromStream = (data: AgentResponseData, elements: any[] = []) => {
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === loadingMessageId
+                ? {
+                    ...msg,
+                    richResponse: data,
+                    content: data.body || data.text || "",
+                    experimental_agentData: {
+                      tool_history: data.tool_history || [],
+                    },
+                    displayElements: elements.length > 0 ? elements : msg.displayElements || [],
+                  }
+                : msg
+            )
+          );
+        };
+
+        const startRichStreamingResponse = async () => {
+          let buffer = "";
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              // Final update when stream ends
+              setMessages(prev =>
+                prev.map(msg =>
+                  msg.id === loadingMessageId ? { ...msg, isLoading: false } : msg
+                )
+              );
+              break;
+            }
+
+            const chunk = new TextDecoder().decode(value);
+            buffer += chunk;
+
+            // Process JSON lines
+            let lines = buffer.split("\n");
+            buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+            for (const line of lines) {
+              if (line.trim()) {
+                try {
+                  const data = JSON.parse(line);
+                  if (data.response) {
+                    responseData = {
+                      ...responseData,
+                      ...data.response,
+                      text: data.response.body || responseData.text || "",
+                    };
+                    displayElements = data.response.display_elements || displayElements;
+                    updateMessageContentFromStream(responseData, displayElements);
+                  }
+                } catch (error) {
+                  console.error("Error parsing JSON from stream:", line, error);
+                }
+              }
+            }
+          }
+        };
+
+        await startRichStreamingResponse();
+      } else {
+        // Non-streaming response
+        const data = await response.json();
+        const responseMessage: AgentUIMessage = {
+          id: loadingMessageId, // Reuse ID
+          role: "assistant",
+          content: data.response.body || "",
+          createdAt: new Date(),
+          isLoading: false,
+          experimental_agentData: {
+            tool_history: data.tool_history || [],
+          },
+          displayElements: data.response.display_elements || [],
+        };
+        setMessages(prev =>
+          prev.map(msg => (msg.id === loadingMessageId ? responseMessage : msg))
+        );
+      }
     } catch (error) {
       console.error("Error submitting to agent API:", error);
       const errorMessageContent = error instanceof Error ? error.message : "Failed to get response from the agent";
@@ -212,11 +251,7 @@ const AgentChatSection: React.FC<AgentChatSectionProps> = ({
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-    // If rich response is turned off, also turn off grounding
-    if (!requestRichResponse && requestGrounding) {
-      setRequestGrounding(false);
-    }
-  }, [messages, requestRichResponse, requestGrounding]);
+  }, [messages]);
 
   return (
     <div className="relative flex h-full w-full flex-col bg-background">
@@ -258,8 +293,8 @@ const AgentChatSection: React.FC<AgentChatSectionProps> = ({
               <div className="flex items-center space-x-2">
                 <Switch
                   id="rich-format-switch"
-                  checked={requestRichResponse}
-                  onCheckedChange={setRequestRichResponse}
+                  checked={isRichResponseEnabled}
+                  onCheckedChange={setIsRichResponseEnabled}
                   disabled={status === "submitted"}
                 />
                 <Label htmlFor="rich-format-switch" className="text-xs">
@@ -269,9 +304,9 @@ const AgentChatSection: React.FC<AgentChatSectionProps> = ({
               <div className="flex items-center space-x-2">
                 <Switch
                   id="ground-answers-switch"
-                  checked={requestGrounding}
-                  onCheckedChange={setRequestGrounding}
-                  disabled={status === "submitted" || !requestRichResponse} // Disable if not rich or if submitted
+                  checked={isGrounded}
+                  onCheckedChange={setIsGrounded}
+                  disabled={status === "submitted" || !isRichResponseEnabled} // Disable if not rich or if submitted
                 />
                 <Label htmlFor="ground-answers-switch" className="text-xs">
                   Ground Answers

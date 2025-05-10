@@ -6,16 +6,36 @@ import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkGfm from "remark-gfm";
-import { AgentResponseData, Citation, ImageCitation, TextCitation } from "@/types/agent-response";
+import { Citation, ImageCitation, TextCitation } from "@/types/agent-response";
 
 // Define interface for the Tool Call
-export interface ToolCall {
-  tool_name: string;
-  tool_args: unknown;
-  tool_result: unknown;
+interface ToolCall {
+  name?: string;
+  args?: any;
+  response?: any;
+  tool_name?: string;
+  tool_args?: any;
+  tool_result?: any;
 }
 
 // Extended interface for UIMessage with tool history
+interface AgentResponseData {
+  body?: string;
+  mode?: 'plain' | 'rich';
+  display_instructions?: string;
+  display_elements?: any[];
+  text?: string; 
+  citations?: any[];
+  tool_history?: any[];
+}
+
+interface AgentRichResponse extends AgentResponseData {
+  mode: 'rich';
+  body: string;
+  citations: any[];
+  text?: string; 
+}
+
 export interface AgentUIMessage extends UIMessage {
   experimental_agentData?: {
     tool_history: ToolCall[];
@@ -24,6 +44,7 @@ export interface AgentUIMessage extends UIMessage {
   // content remains string as per UIMessage
   // richResponse will hold the new structured data
   richResponse?: AgentResponseData;
+  displayElements?: any[];
 }
 
 export interface AgentMessageProps {
@@ -111,18 +132,18 @@ const renderJson = (obj: unknown) => {
 // Updated MarkdownContent Props to include citations
 interface MarkdownContentProps {
   content: string | object;
-  citations?: Citation[]; // Optional for now, but will be used for inline rendering
+  citations?: Citation[]; 
 }
 
 // Markdown content renderer component
 const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, citations }) => {
   const contentString = typeof content === 'string' ? content : JSON.stringify(content);
-  // console.log("MarkdownContent received body:", contentString); // DEBUG: Log the raw body
-  // console.log("MarkdownContent received citations:", citations); // DEBUG: Log the citations array
+  // console.log("MarkdownContent received body:", contentString); 
+  // console.log("MarkdownContent received citations:", citations); 
 
   const processNode = (node: React.ReactNode): React.ReactNode => {
     if (typeof node === 'string') {
-      const parts: React.ReactNode[] = []; // Explicitly type parts
+      const parts: React.ReactNode[] = []; 
       let lastIndex = 0;
       const regex = /\[ref:([a-zA-Z0-9_-]+)\]/g;
       let match;
@@ -133,7 +154,7 @@ const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, citations })
         }
 
         const citationId = match[1];
-        // console.log(`Found placeholder for citation ID: ${citationId}`); // DEBUG
+        // console.log(`Found placeholder for citation ID: ${citationId}`); 
         const citation = citations?.find(c => c.id === citationId);
 
         if (citation) {
@@ -146,13 +167,13 @@ const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, citations })
             const imgCitation = citation as ImageCitation;
             imageUrlForRender = imgCitation.imageUrl;
             imageAltText = imgCitation.snippet || `Image from ${imgCitation.sourceDocId} (ID: ${imgCitation.id})`;
-          } else if (citation.type === 'text') { // Text citation
+          } else if (citation.type === 'text') { 
             const textSnippet = (citation as TextCitation).snippet;
             if (textSnippet && textSnippet.startsWith("data:image")) {
               renderAsImage = true;
-              imageUrlForRender = textSnippet; // The snippet itself is the data URI
+              imageUrlForRender = textSnippet; 
               imageAltText = `Cited Image Data (Ref: ${citation.id})`;
-              // console.log(`Citation ${citationId} is type text but snippet is an image. Rendering as image.`); // DEBUG
+              // console.log(`Citation ${citationId} is type text but snippet is an image. Rendering as image.`); 
             }
           }
           if (renderAsImage) {
@@ -172,7 +193,7 @@ const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, citations })
                 </span>
               );
             }
-          } else { // Is definitely a text citation (and not an image data URI in snippet)
+          } else { 
             const textCitation = citation as TextCitation;
             const displaySnippet = textCitation.snippet?.substring(0, 70) + (textCitation.snippet && textCitation.snippet.length > 70 ? "..." : "");
             const titleText = `Ref: ${textCitation.id} | SourceDoc: ${textCitation.sourceDocId} | ChunkId: ${textCitation.chunkId}` +
@@ -188,8 +209,8 @@ const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, citations })
             );
           }
         } else {
-          // console.warn(`Citation ID ${citationId} found in text but not in citations array.`); // DEBUG
-          parts.push(match[0]); // Keep original placeholder if citation not found
+          // console.warn(`Citation ID ${citationId} found in text but not in citations array.`); 
+          parts.push(match[0]); 
         }
         lastIndex = regex.lastIndex;
       }
@@ -321,140 +342,170 @@ export function AgentPreviewMessage({ message }: AgentMessageProps) {
 
   // Handle User Messages separately if PreviewMessage is primarily for them
   if (message.role === 'user') {
-    // Assuming PreviewMessage is designed to take the whole message object for users
-    // and does not require children from AgentPreviewMessage for user roles.
-    // If PreviewMessage is just a styled bubble, it might take children,
-    // but the error suggested it doesn't when uiMessage prop is used.
-    // Let's assume it handles user message content internally or via a simpler prop.
     return <PreviewMessage message={message} />;
   }
 
   // Handle Assistant Messages
-  if (message.role === 'assistant') {
-    if (message.richResponse && message.richResponse.mode === 'rich') {
-      const { body, citations } = message.richResponse;
-      return (
-        <div className="group relative flex px-4 py-3">
-          <div className="flex w-full flex-col items-start">
-            <div className="flex w-full max-w-3xl items-start gap-4">
-              <div className="flex-1 space-y-2 overflow-hidden">
-                <div className="rounded-xl bg-muted p-4">
-                  <MarkdownContent content={body} citations={citations} />
-                </div>
-
-                {citations && citations.length > 0 && (
-                  <div className="mt-4 space-y-3 rounded-xl border p-3">
-                    <h4 className="text-sm font-semibold">Citations ({citations.length})</h4>
-                    <div className="max-h-[400px] space-y-3 overflow-y-auto pr-2">
-                      {citations.map((citation) => (
-                        <CitationView key={citation.id} citation={citation} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {toolHistory && toolHistory.length > 0 && (
-                   <Accordion type="single" collapsible className="mt-4 overflow-hidden rounded-xl border">
-                     <AccordionItem value="tools" className="border-0">
-                       <AccordionTrigger className="px-4 py-2 text-sm font-medium">
-                         Tool Calls ({toolHistory.length})
-                       </AccordionTrigger>
-                       <AccordionContent className="px-4 pb-3">
-                         <div className="max-h-[400px] space-y-3 overflow-y-auto pr-2">
-                           {toolHistory.map((tool, index) => (
-                             <div
-                               key={`${tool.tool_name}-${index}`}
-                               className="overflow-hidden rounded-md border bg-background"
-                             >
-                               <div className="border-b p-3">
-                                 <div className="flex items-start justify-between">
-                                   <div>
-                                     <span className="text-sm font-medium">{tool.tool_name}</span>
-                                   </div>
-                                   <Badge variant="outline" className="text-[10px]">
-                                     Tool Call #{index + 1}
-                                   </Badge>
-                                 </div>
-                               </div>
-                               <Accordion type="multiple" className="border-t">
-                                 <AccordionItem value="args" className="border-0">
-                                   <AccordionTrigger className="px-3 py-2 text-xs">Arguments</AccordionTrigger>
-                                   <AccordionContent className="px-3 pb-3">{renderJson(tool.tool_args)}</AccordionContent>
-                                 </AccordionItem>
-                                 <AccordionItem value="result" className="border-t">
-                                   <AccordionTrigger className="px-3 py-2 text-xs">Result</AccordionTrigger>
-                                   <AccordionContent className="px-3 pb-3">{renderJson(tool.tool_result)}</AccordionContent>
-                                 </AccordionItem>
-                               </Accordion>
-                             </div>
-                           ))}
-                         </div>
-                       </AccordionContent>
-                     </AccordionItem>
-                   </Accordion>
-                )}
-              </div>
-            </div>
+  // Check if it's a rich response
+  if (message.richResponse && (message.richResponse.text || message.richResponse.body)) {
+    const { text, body, citations } = message.richResponse;
+    return (
+      <div className="group relative flex px-4 py-3">
+        <div className="flex-shrink-0 mr-3">{/* Placeholder for an avatar or icon */}</div>
+        <div className="flex-1 space-y-2 overflow-hidden">
+          <div className="rounded-xl bg-muted p-4">
+            <MarkdownContent content={text || body || ''} citations={citations || []} />
           </div>
-        </div>
-      );
-    } else {
-      // Plain assistant message (not rich, but may have message.content and/or toolHistory)
-      return (
-        <div className="group relative flex px-4 py-3">
-          <div className="flex-shrink-0 mr-3">{/* Placeholder for an avatar or icon */}</div>
-          <div className="flex-1 space-y-2 overflow-hidden">
-            {message.content && (
-              <div className="rounded-xl bg-muted p-4">
-                <MarkdownContent content={message.content} citations={undefined} /> {/* No rich citations here */}
-              </div>
-            )}
-            {toolHistory && toolHistory.length > 0 && (
-              <Accordion type="single" collapsible className="mt-2 overflow-hidden rounded-xl border">
-                <AccordionItem value="tools" className="border-0">
-                  <AccordionTrigger className="px-4 py-2 text-sm font-medium">
-                    Tool Calls ({toolHistory.length})
-                  </AccordionTrigger>
-                  <AccordionContent className="px-4 pb-3">
-                    <div className="max-h-[400px] space-y-3 overflow-y-auto pr-2">
-                      {toolHistory.map((tool, index) => (
-                        <div
-                          key={`${tool.tool_name}-${index}`}
-                          className="overflow-hidden rounded-md border bg-background"
-                        >
-                          <div className="border-b p-3">
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <span className="text-sm font-medium">{tool.tool_name}</span>
-                              </div>
-                              <Badge variant="outline" className="text-[10px]">
-                                Tool Call #{index + 1}
-                              </Badge>
+          {message.displayElements && message.displayElements.length > 0 && (
+            <div className="mt-2 space-y-4">
+              {message.displayElements.map((element, index) => (
+                <div key={index} className="border-l-4 border-blue-500 pl-3">
+                  {element.type === 'text' && (
+                    <div className="text-sm text-gray-700">
+                      <MarkdownContent content={element.element.content} citations={[]} />
+                    </div>
+                  )}
+                  {element.type === 'image' && (
+                    <div className="text-sm">
+                      <p className="font-semibold">Image: {element.element.description}</p>
+                      {element.element.bounding_box && (
+                        <div className="mt-1 text-xs text-gray-500">
+                          Bounding Box: {JSON.stringify(element.element.bounding_box.bbox)}
+                          {element.element.bounding_box.image_number && (
+                            <span> (Image #{element.element.bounding_box.image_number})</span>
+                          )}
+                        </div>
+                      )}
+                      {/* Placeholder for actual image rendering */}
+                      <div className="mt-2 h-48 w-full bg-gray-200 rounded-md flex items-center justify-center">
+                        <span className="text-gray-500">Image Placeholder</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {toolHistory && toolHistory.length > 0 && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              {toolHistory.length === 1
+                ? "1 tool was used to produce this response."
+                : `${toolHistory.length} tools were used to produce this response.`}
+              <Accordion type="single" collapsible className="w-full mt-1">
+                <AccordionItem value="tool-history">
+                  <AccordionTrigger>View Tool History</AccordionTrigger>
+                  <AccordionContent>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {toolHistory.map((toolCall, index) => (
+                        <div key={index} className="p-2 bg-background rounded border text-xs">
+                          <div className="font-medium">Tool: {toolCall.name || toolCall.tool_name || 'Unknown'}</div>
+                          {(toolCall.args || toolCall.tool_args) && (
+                            <div className="mt-1">
+                              <span className="font-medium">Arguments:</span>
+                              <pre className="overflow-x-auto rounded bg-muted p-2 text-xs">
+                                {JSON.stringify(toolCall.args || toolCall.tool_args, null, 2)}
+                              </pre>
                             </div>
-                          </div>
-                          <Accordion type="multiple" className="border-t">
-                            <AccordionItem value="args" className="border-0">
-                              <AccordionTrigger className="px-3 py-2 text-xs">Arguments</AccordionTrigger>
-                              <AccordionContent className="px-3 pb-3">{renderJson(tool.tool_args)}</AccordionContent>
-                            </AccordionItem>
-                            <AccordionItem value="result" className="border-t">
-                              <AccordionTrigger className="px-3 py-2 text-xs">Result</AccordionTrigger>
-                              <AccordionContent className="px-3 pb-3">{renderJson(tool.tool_result)}</AccordionContent>
-                            </AccordionItem>
-                          </Accordion>
+                          )}
+                          {(toolCall.response || toolCall.tool_result) && (
+                            <div className="mt-1">
+                              <span className="font-medium">Response:</span>
+                              <pre className="overflow-x-auto rounded bg-muted p-2 text-xs">
+                                {JSON.stringify(toolCall.response || toolCall.tool_result, null, 2)}
+                              </pre>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
-            )}
-          </div>
+            </div>
+          )}
         </div>
-      );
-    }
+      </div>
+    );
+  } else {
+    // Plain assistant message (not rich, but may have message.content and/or toolHistory)
+    return (
+      <div className="group relative flex px-4 py-3">
+        <div className="flex-shrink-0 mr-3">{/* Placeholder for an avatar or icon */}</div>
+        <div className="flex-1 space-y-2 overflow-hidden">
+          {message.content && (
+            <div className="rounded-xl bg-muted p-4">
+              <MarkdownContent content={message.content} citations={[]} />
+            </div>
+          )}
+          {message.displayElements && message.displayElements.length > 0 && (
+            <div className="mt-2 space-y-4">
+              {message.displayElements.map((element, index) => (
+                <div key={index} className="border-l-4 border-blue-500 pl-3">
+                  {element.type === 'text' && (
+                    <div className="text-sm text-gray-700">
+                      <MarkdownContent content={element.element.content} citations={[]} />
+                    </div>
+                  )}
+                  {element.type === 'image' && (
+                    <div className="text-sm">
+                      <p className="font-semibold">Image: {element.element.description}</p>
+                      {element.element.bounding_box && (
+                        <div className="mt-1 text-xs text-gray-500">
+                          Bounding Box: {JSON.stringify(element.element.bounding_box.bbox)}
+                          {element.element.bounding_box.image_number && (
+                            <span> (Image #{element.element.bounding_box.image_number})</span>
+                          )}
+                        </div>
+                      )}
+                      {/* Placeholder for actual image rendering */}
+                      <div className="mt-2 h-48 w-full bg-gray-200 rounded-md flex items-center justify-center">
+                        <span className="text-gray-500">Image Placeholder</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {toolHistory && toolHistory.length > 0 && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              {toolHistory.length === 1
+                ? "1 tool was used to produce this response."
+                : `${toolHistory.length} tools were used to produce this response.`}
+              <Accordion type="single" collapsible className="w-full mt-1">
+                <AccordionItem value="tool-history">
+                  <AccordionTrigger>View Tool History</AccordionTrigger>
+                  <AccordionContent>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {toolHistory.map((toolCall, index) => (
+                        <div key={index} className="p-2 bg-background rounded border text-xs">
+                          <div className="font-medium">Tool: {toolCall.name || toolCall.tool_name || 'Unknown'}</div>
+                          {(toolCall.args || toolCall.tool_args) && (
+                            <div className="mt-1">
+                              <span className="font-medium">Arguments:</span>
+                              <pre className="overflow-x-auto rounded bg-muted p-2 text-xs">
+                                {JSON.stringify(toolCall.args || toolCall.tool_args, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+                          {(toolCall.response || toolCall.tool_result) && (
+                            <div className="mt-1">
+                              <span className="font-medium">Response:</span>
+                              <pre className="overflow-x-auto rounded bg-muted p-2 text-xs">
+                                {JSON.stringify(toolCall.response || toolCall.tool_result, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
-
-  // Fallback for any other unhandled message types or roles (should not happen with current types)
-  return <PreviewMessage message={message} />;
 }

@@ -54,6 +54,20 @@ from core.vector_store.pgvector_store import PGVectorStore
 app = FastAPI(title="Morphik API")
 logger = logging.getLogger(__name__)
 
+# Configure logging for agent interactions
+agent_logger = logging.getLogger('agent_interactions')
+agent_logger.setLevel(logging.INFO)
+
+# File handler for saving logs to a file
+file_handler = logging.FileHandler('logs/agent_interactions.log')
+file_handler.setLevel(logging.INFO)
+
+# Formatter for log messages
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+
+# Add handler to logger
+agent_logger.addHandler(file_handler)
 
 # Add health check endpoints
 @app.get("/health")
@@ -805,8 +819,9 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
 
 
 @app.post("/batch/documents", response_model=List[Document])
-@telemetry.track(operation_type="batch_get_documents", metadata_resolver=telemetry.batch_documents_metadata)
-async def batch_get_documents(request: Dict[str, Any], auth: AuthContext = Depends(verify_token)):
+async def batch_get_documents(
+    request: Dict[str, Any], auth: AuthContext = Depends(verify_token)
+) -> List[Document]:
     """
     Retrieve multiple documents by their IDs in a single batch operation.
 
@@ -962,12 +977,55 @@ async def agent_query(request: AgentQueryRequest, auth: AuthContext = Depends(ve
     """
     Process a natural language query using the MorphikAgent and return the response.
     """
+    # Log the incoming request
+    agent_logger.info(f"Incoming request from user {auth.user_id}: {request.query}")
+
     # Check free-tier agent call limits in cloud mode
     if settings.MODE == "cloud" and auth.user_id:
         await check_and_increment_limits(auth, "agent", 1)
 
     # Use shared agent instance and pass auth, rich, and ground flags to run
     response_data, tool_history = await morphik_agent.run(request.query, auth, rich=request.rich, ground=request.ground)
+
+    # Log the response
+    agent_logger.info(f"Response for user {auth.user_id}: {response_data}")
+
+    # Log tool history if any
+    if tool_history:
+        agent_logger.info(f"Tool history for user {auth.user_id}: {tool_history}")
+
+    # If rich and ground are enabled, process display instructions with DesignAgent
+    if request.rich and request.ground:
+        from core.design_agent import DesignAgent
+        design_agent = DesignAgent()
+        display_elements = design_agent.process_display_instructions(response_data)
+        response_data['display_elements'] = [element.dict() for element in display_elements]
+
+        # Log display elements
+        agent_logger.info(f"Display elements for user {auth.user_id}: {response_data['display_elements']}")
+
+        # Process image elements with VLMService if any exist
+        image_elements = [elem for elem in response_data['display_elements'] if elem['type'] == 'image']
+        if image_elements:
+            from core.services.vlm_service import VLMService
+            vlm_service = VLMService()
+            # Extract image chunks from tool history (assuming retrieve_chunks tool provides them)
+            image_chunks = []
+            for tool_call in tool_history:
+                if tool_call['name'] == 'retrieve_chunks':
+                    for chunk in tool_call['response'].get('chunks', []):
+                        if chunk.get('metadata', {}).get('is_image', False):
+                            image_chunks.append(chunk)
+            if image_chunks:
+                bounding_boxes = await vlm_service.process_image_elements(image_elements, image_chunks)
+                # Update display elements with bounding box data
+                for elem in response_data['display_elements']:
+                    if elem['type'] == 'image':
+                        elem_id = elem['element'].get('id', '')
+                        if elem_id in bounding_boxes:
+                            elem['element']['bounding_box'] = bounding_boxes[elem_id]
+                # Log bounding box data
+                agent_logger.info(f"Bounding boxes for user {auth.user_id}: {bounding_boxes}")
 
     # Return both in the response dictionary
     return {"response": response_data, "tool_history": tool_history}
