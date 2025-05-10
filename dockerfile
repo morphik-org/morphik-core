@@ -157,6 +157,7 @@ fi\n\
 
 # Copy application code
 COPY core ./core
+COPY ee ./ee
 COPY README.md LICENSE ./
 
 # Labels for the image
