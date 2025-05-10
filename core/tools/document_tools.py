@@ -60,6 +60,7 @@ async def retrieve_chunks(
             folder_name=folder_name,
             end_user_id=end_user_id,
         )
+        sources = {}
 
         # Format the results for LiteLLM tool response
         content = []
@@ -68,28 +69,54 @@ async def retrieve_chunks(
         content.append({"type": "text", "text": f"Found {len(chunks)} relevant chunks:"})
 
         for chunk in chunks:
+            # Create a unique source ID for this chunk
+            source_id = f"doc{chunk.document_id}-chunk{chunk.chunk_number}"
+
+            # Store source information
+            sources[source_id] = {
+                "document_id": chunk.document_id,
+                "document_name": chunk.filename or "Unnamed Document",
+                "chunk_number": chunk.chunk_number,
+                "score": chunk.score,
+                "content": chunk.content,
+            }
+
+            chunk_content = [{"type": "text", "text": f"Source ID: {source_id}"}]
+
             # Check if this is an image chunk
             if chunk.metadata.get("is_image", False):
                 # Add image to content
                 if chunk.content.startswith("data:"):
                     # Already in data URL format
-                    content.append({"type": "image_url", "image_url": {"url": chunk.content}})
+                    chunk_content.append({"type": "image_url", "image_url": {"url": chunk.content}})
                 else:
                     # Assuming it's base64, convert to data URL format
-                    # TODO: potential bug here, if the base64 image is not a png
-                    content.append(
+                    chunk_content.append(
                         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{chunk.content}"}}
                     )
+
+                # Tell the agent this is a reference to an image
+                chunk_content.append(
+                    {
+                        "type": "text",
+                        "text": f"This is an image from {chunk.filename or 'Unnamed'} (Score: {chunk.score:.2f}). "
+                        + f"When referencing this image, cite source: {source_id}",
+                    }
+                )
             else:
                 # Add text content with metadata
-                text = f"Document: {chunk.filename or 'Unnamed'} (Score: {chunk.score:.2f})\n\n{chunk.content}"
-                content.append(
+                text = f"Document: {chunk.filename or 'Unnamed'} (Score: {chunk.score:.2f})\n"
+                text += f"When referencing this content, cite source: {source_id}\n\n"
+                text += chunk.content
+
+                chunk_content.append(
                     {
                         "type": "text",
                         "text": text,
                     }
                 )
-        return content
+            content.extend(chunk_content)
+        return content, sources
     except Exception as e:
         raise ToolError(f"Error retrieving chunks: {str(e)}")
 

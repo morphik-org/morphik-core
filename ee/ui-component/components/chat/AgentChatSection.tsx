@@ -7,7 +7,7 @@ import { generateUUID } from "@/lib/utils";
 import { Spin, ArrowUp } from "./icons";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AgentPreviewMessage, AgentUIMessage, ToolCall } from "./AgentChatMessages";
+import { AgentPreviewMessage, AgentUIMessage, ToolCall, DisplayObject, SourceObject } from "./AgentChatMessages";
 import { Textarea } from "@/components/ui/textarea";
 
 interface AgentChatSectionProps {
@@ -101,7 +101,7 @@ const AgentChatSection: React.FC<AgentChatSectionProps> = ({
 
       const data = await response.json();
 
-      // Create agent response message with tool history
+      // Create agent response message with tool history, display objects and sources
       const agentMessage: AgentUIMessage = {
         id: generateUUID(),
         role: "assistant",
@@ -109,6 +109,8 @@ const AgentChatSection: React.FC<AgentChatSectionProps> = ({
         createdAt: new Date(),
         experimental_agentData: {
           tool_history: data.tool_history as ToolCall[],
+          displayObjects: data.display_objects as DisplayObject[],
+          sources: data.sources as SourceObject[],
         },
       };
 
