@@ -739,12 +739,14 @@ class DocumentService:
         Ingests file content from bytes. Saves to storage, creates document record,
         and then enqueues a background job for chunking and embedding.
         """
+        settings = get_settings()
+
         logger.info(
             f"Starting ingestion for filename: {filename}, content_type: {content_type}, "
             f"user: {auth.user_id or auth.entity_id}"
         )
 
-        # Ensure user has write permission (moved from core/api.py for consistency)
+        # Ensure user has write permission
         if "write" not in auth.permissions:
             logger.error(f"User {auth.entity_id} does not have write permission for ingest_file_content")
             raise PermissionError("User does not have write permission for ingest_file_content")
@@ -770,8 +772,25 @@ class DocumentService:
             doc.system_metadata["app_id"] = auth.app_id
         if end_user_id:
             doc.system_metadata["end_user_id"] = end_user_id
-        if folder_name:
-            doc.system_metadata["folder_name"] = folder_name
+        # folder_name is handled later by _ensure_folder_exists if needed by background worker
+
+        # Check limits before proceeding with DB operations or storage
+        if settings.MODE == "cloud" and auth.user_id:
+            from core.api import check_and_increment_limits
+
+            # Estimate num_pages based on byte length.
+            # This is an approximation; CHARS_PER_TOKEN is an average.
+            # For binary files, this might not perfectly represent "pages"
+            # but aligns with ingest_text's content length based approach.
+            if CHARS_PER_TOKEN > 0 and TOKENS_PER_PAGE > 0:
+                num_pages = int(len(file_content_bytes) / (CHARS_PER_TOKEN * TOKENS_PER_PAGE))
+                if num_pages == 0 and len(file_content_bytes) > 0:
+                    num_pages = 1
+            else:
+                num_pages = 1
+
+            await check_and_increment_limits(auth, "ingest", num_pages, doc.external_id)
+            logger.info(f"Limit check passed for user {auth.user_id}, {num_pages} estimated pages for {filename}.")
 
         # 1. Create initial document record in DB
         # The app_db concept from core/api.py implies self.db is already app-specific if needed
