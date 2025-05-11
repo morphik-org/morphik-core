@@ -35,6 +35,7 @@ from core.models.graph import Graph
 from core.models.prompts import validate_prompt_overrides_with_http_exception
 from core.models.request import (
     AgentQueryRequest,
+    BatchDeleteRequest,
     BatchIngestResponse,
     CompletionQueryRequest,
     CreateGraphRequest,
@@ -1058,6 +1059,27 @@ async def delete_document(document_id: str, auth: AuthContext = Depends(verify_t
         raise HTTPException(status_code=403, detail=str(e))
 
 
+@app.post("/documents/batch_delete")
+@telemetry.track(operation_type="batch_delete_documents", metadata_resolver=telemetry.document_delete_metadata)
+async def batch_delete_documents(request: BatchDeleteRequest, auth: AuthContext = Depends(verify_token)):
+    """
+    Batch delete documents by their IDs.
+
+    Args:
+        request: List of document IDs in JSON.
+        auth: AuthContext
+
+    Returns:
+        Dict: Status and count of deleted documents
+    """
+    try:
+        deleted_count = await document_service.delete_documents(request.document_ids, auth)
+        return {"status": "success", "deleted": deleted_count, "requested": len(request.document_ids)}
+    except Exception as e:
+        logger.error(f"Batch deletion failed: {e}")
+        raise HTTPException(status_code=500, detail="Batch deletion failed")
+
+
 @app.get("/documents/filename/{filename}", response_model=Document)
 async def get_document_by_filename(
     filename: str,
@@ -2050,8 +2072,7 @@ async def set_folder_rule(
                                     except Exception as rule_apply_error:
                                         last_error = rule_apply_error
                                         logger.warning(
-                                            f"Metadata extraction attempt {retry_count + 1} failed: "
-                                            f"{rule_apply_error}"
+                                            f"Metadata extraction attempt {retry_count + 1} failed: {rule_apply_error}"
                                         )
                                         if retry_count == max_retries - 1:  # Last attempt
                                             logger.error(f"All {max_retries} metadata extraction attempts failed")

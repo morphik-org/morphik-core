@@ -369,3 +369,27 @@ class TestMorphik:
 
         finally:
             db.delete_document(doc.external_id)
+
+    def test_batch_delete_documents(self, db):
+        """Test batch deleting multiple documents (sync)"""
+        # Given
+        doc1 = db.ingest_text(
+            content="First document to test batch delete",
+            filename=f"batch_delete_1_{uuid.uuid4().hex[:6]}.txt",
+            metadata={"test_id": "sync_batch_delete_test"},
+        )
+        doc2 = db.ingest_text(
+            content="Second document to test batch delete",
+            filename=f"batch_delete_2_{uuid.uuid4().hex[:6]}.txt",
+            metadata={"test_id": "sync_batch_delete_test"},
+        )
+
+        # Then
+        assert doc1.external_id is not None
+        assert doc2.external_id is not None
+
+        # When
+        deleted = db.batch_delete_documents([doc1.external_id, doc2.external_id])
+
+        # Then
+        assert deleted == 2

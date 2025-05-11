@@ -143,3 +143,12 @@ class AgentQueryRequest(BaseModel):
     """Request model for agent queries"""
 
     query: str = Field(..., description="Natural language query for the Morphik agent")
+
+
+class BatchDeleteRequest(BaseModel):
+    """Request model for delete batch documents"""
+
+    document_ids: List[str] = Field(
+        ...,
+        description="List of document IDs to be deleted. Must be a list of strings.",
+    )

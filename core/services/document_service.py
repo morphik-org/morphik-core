@@ -244,7 +244,7 @@ class DocumentService:
             chunks = await self.reranker.rerank(query, chunks)
             chunks.sort(key=lambda x: x.score, reverse=True)
             chunks = chunks[:k]
-            logger.debug(f"Reranked {k*10} chunks and selected the top {k}")
+            logger.debug(f"Reranked {k * 10} chunks and selected the top {k}")
 
         # Combine multiple chunk sources if needed
         chunks = await self._combine_multi_and_regular_chunks(
@@ -852,7 +852,7 @@ class DocumentService:
         if folder_name:
             try:
                 await self._ensure_folder_exists(folder_name, doc.external_id, auth)
-                logger.debug(f"Ensured folder '{folder_name}' exists " f"and contains document {doc.external_id}")
+                logger.debug(f"Ensured folder '{folder_name}' exists and contains document {doc.external_id}")
             except Exception as e:
                 logger.error(
                     f"Error during _ensure_folder_exists for doc {doc.external_id}"
@@ -1210,7 +1210,7 @@ class DocumentService:
                             current_retry_delay *= 2
                         else:
                             logger.error(
-                                f"All database connection attempts failed " f"after {max_retries} retries: {error_msg}"
+                                f"All database connection attempts failed after {max_retries} retries: {error_msg}"
                             )
                             raise Exception("Failed to store document metadata after multiple retries")
                     else:
@@ -2035,6 +2035,27 @@ class DocumentService:
             entry["metadata_updated"] = True
 
         history.append(entry)
+
+    async def delete_documents(self, document_ids: List[str], auth: AuthContext) -> int:
+        """
+        Batch delete documents and their associated data.
+
+        Args:
+            document_ids: List of document IDs to delete.
+            auth: Authentication context.
+
+        Returns:
+            int: Number of documents successfully deleted.
+        """
+        deleted = 0
+        for doc_id in document_ids:
+            try:
+                success = await self.delete_document(doc_id, auth)
+                if success:
+                    deleted += 1
+            except Exception as e:
+                logger.warning(f"Failed to delete document {doc_id}: {e}")
+        return deleted
 
     # ------------------------------------------------------------------
     # Helper – choose bucket per app (isolation)

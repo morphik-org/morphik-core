@@ -2540,3 +2540,8 @@ class AsyncMorphik:
                 raise RuntimeError(graph.error or "Graph processing failed")
             await asyncio.sleep(check_interval_seconds)
         raise TimeoutError("Timed out waiting for graph completion")
+
+    async def batch_delete_documents(self, document_ids: List[str]) -> int:
+        """Delete multiple documents by their IDs (async)."""
+        response = await self._request("POST", "documents/batch_delete", data={"document_ids": document_ids})
+        return response["deleted"]

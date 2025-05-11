@@ -2735,3 +2735,8 @@ class Morphik:
                 raise RuntimeError(graph.error or "Graph processing failed")
             time.sleep(check_interval_seconds)
         raise TimeoutError("Timed out waiting for graph completion")
+
+    def batch_delete_documents(self, document_ids: List[str]) -> int:
+        """Delete multiple documents by their IDs."""
+        response = self._request("POST", "documents/batch_delete", data={"document_ids": document_ids})
+        return response["deleted"]
