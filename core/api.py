@@ -1059,6 +1059,9 @@ async def delete_document(document_id: str, auth: AuthContext = Depends(verify_t
         raise HTTPException(status_code=403, detail=str(e))
 
 
+MAX_BATCH_DELETE = 100
+
+
 @app.post("/documents/batch_delete")
 @telemetry.track(operation_type="batch_delete_documents", metadata_resolver=telemetry.document_delete_metadata)
 async def batch_delete_documents(request: BatchDeleteRequest, auth: AuthContext = Depends(verify_token)):
@@ -1072,6 +1075,12 @@ async def batch_delete_documents(request: BatchDeleteRequest, auth: AuthContext 
     Returns:
         Dict: Status and count of deleted documents
     """
+    document_ids = request.document_ids
+    if not document_ids:
+        raise HTTPException(status_code=400, detail="No document IDs provided for deletion")
+    if len(document_ids) > MAX_BATCH_DELETE:
+        raise HTTPException(status_code=400, detail=f"Batch size exceeds maximum limit of {MAX_BATCH_DELETE}")
+
     try:
         deleted_count = await document_service.delete_documents(request.document_ids, auth)
         return {"status": "success", "deleted": deleted_count, "requested": len(request.document_ids)}
