@@ -1082,8 +1082,14 @@ async def batch_delete_documents(request: BatchDeleteRequest, auth: AuthContext 
         raise HTTPException(status_code=400, detail=f"Batch size exceeds maximum limit of {MAX_BATCH_DELETE}")
 
     try:
-        deleted_count = await document_service.delete_documents(request.document_ids, auth)
-        return {"status": "success", "deleted": deleted_count, "requested": len(request.document_ids)}
+        success, failed = await document_service.delete_documents(request.document_ids, auth)
+        return {
+            "status": "partial_success" if failed else "success",
+            "deleted_count": len(success),
+            "failed_count": len(failed),
+            "deleted_ids": success,
+            "failed_ids": failed,
+        }
     except Exception as e:
         logger.error(f"Batch deletion failed: {e}")
         raise HTTPException(status_code=500, detail="Batch deletion failed")

@@ -2036,7 +2036,11 @@ class DocumentService:
 
         history.append(entry)
 
-    async def delete_documents(self, document_ids: List[str], auth: AuthContext) -> int:
+    async def delete_documents(
+        self,
+        document_ids: List[str],
+        auth: AuthContext,
+    ) -> tuple[list[str | None], list[str | None]]:
         """
         Batch delete documents and their associated data.
 
@@ -2045,17 +2049,21 @@ class DocumentService:
             auth: Authentication context.
 
         Returns:
-            int: Number of documents successfully deleted.
+            tuple: A tuple containing two lists:
+                - List of successfully deleted document IDs.
+                - List of failed document IDs.
         """
-        deleted = 0
+        success = []
+        failed = []
         for doc_id in document_ids:
             try:
                 success = await self.delete_document(doc_id, auth)
                 if success:
-                    deleted += 1
+                    success.append(doc_id)
             except Exception as e:
                 logger.warning(f"Failed to delete document {doc_id}: {e}")
-        return deleted
+                failed.append(doc_id)
+        return success, failed
 
     # ------------------------------------------------------------------
     # Helper – choose bucket per app (isolation)

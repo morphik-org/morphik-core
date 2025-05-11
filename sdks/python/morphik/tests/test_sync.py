@@ -389,7 +389,21 @@ class TestMorphik:
         assert doc2.external_id is not None
 
         # When
-        deleted = db.batch_delete_documents([doc1.external_id, doc2.external_id])
+        success, failed = db.batch_delete_documents([doc1.external_id, doc2.external_id])
 
         # Then
-        assert deleted == 2
+        assert len(success) == 2
+        assert len(failed) == 0
+
+    def test_batch_delete_with_invalid_id(self, db):
+        doc = db.ingest_text(
+            content="Valid document",
+            filename=f"batch_delete_valid_{uuid.uuid4().hex[:6]}.txt",
+            metadata={"test_id": "partial_batch_delete_test"},
+        )
+
+        # Include a fake ID
+        success, failed = db.batch_delete_documents([doc.external_id, "nonexistent_id_123"])
+
+        assert doc.external_id in success
+        assert "nonexistent_id_123" in failed
