@@ -35,7 +35,6 @@ class MorphikAgent:
         model: str = None,
     ):
         self.document_service = document_service
-        self.sources = {}
         # Load settings
         self.settings = get_settings()
         self.model = model or self.settings.AGENT_MODEL
@@ -100,12 +99,14 @@ Always attribute the information to its specific source. Break your response int
 when citing different sources. Use markdown formatting for text content to improve readability.
 """.strip()
 
-    async def _execute_tool(self, name: str, args: dict, auth: AuthContext):
+    async def _execute_tool(self, name: str, args: dict, auth: AuthContext, source_map: dict):
         """Dispatch tool calls, injecting document_service and auth."""
         match name:
             case "retrieve_chunks":
-                content, sources = await retrieve_chunks(document_service=self.document_service, auth=auth, **args)
-                self.sources.update(sources)
+                content, found_sources = await retrieve_chunks(
+                    document_service=self.document_service, auth=auth, **args
+                )
+                source_map.update(found_sources)
                 return content
             case "retrieve_document":
                 result = await retrieve_document(document_service=self.document_service, auth=auth, **args)
@@ -113,7 +114,7 @@ when citing different sources. Use markdown formatting for text content to impro
                 if isinstance(result, str) and not result.startswith("Document") and not result.startswith("Error"):
                     doc_id = args.get("document_id", "unknown")
                     source_id = f"doc{doc_id}-full"
-                    self.sources[source_id] = {
+                    source_map[source_id] = {
                         "document_id": doc_id,
                         "document_name": f"Full Document {doc_id}",
                         "chunk_number": "full",
@@ -126,7 +127,7 @@ when citing different sources. Use markdown formatting for text content to impro
                     doc_id = args.get("document_id")
                     analysis_type = args.get("analysis_type", "analysis")
                     source_id = f"doc{doc_id}-{analysis_type}"
-                    self.sources[source_id] = {
+                    source_map[source_id] = {
                         "document_id": doc_id,
                         "document_name": f"Document {doc_id} ({analysis_type})",
                         "analysis_type": analysis_type,
@@ -148,6 +149,8 @@ when citing different sources. Use markdown formatting for text content to impro
 
     async def run(self, query: str, auth: AuthContext) -> str:
         """Synchronously run the agent and return the final answer."""
+        # Per-run state to avoid cross-request leakage
+        source_map: dict = {}
         messages = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": query},
@@ -212,8 +215,8 @@ when citing different sources. Use markdown formatting for text content to impro
                                     }
                                     if "caption" in item and item["type"] == "image":
                                         display_obj["caption"] = item["caption"]
-                                    if item["type"] == "image":
-                                        display_obj["content"] = self.sources[item["source"]]["content"]
+                                    if item["type"] == "image" and item.get("source") in source_map:
+                                        display_obj["content"] = source_map[item["source"]]["content"]
                                     display_objects.append(display_obj)
                         elif (
                             isinstance(parsed_content, dict)
@@ -228,8 +231,8 @@ when citing different sources. Use markdown formatting for text content to impro
                             }
                             if "caption" in parsed_content and parsed_content["type"] == "image":
                                 display_obj["caption"] = parsed_content["caption"]
-                            if item["type"] == "image":
-                                display_obj["content"] = self.sources[item["source"]]["content"]
+                            if parsed_content.get("type") == "image" and parsed_content.get("source") in source_map:
+                                display_obj["content"] = source_map[parsed_content["source"]]["content"]
                             display_objects.append(display_obj)
 
                     # If no display objects were created, treat the entire content as text
@@ -260,7 +263,7 @@ when citing different sources. Use markdown formatting for text content to impro
                                     "sourceId": source_id,
                                     "documentName": f"Document {doc_id}",
                                     "documentId": doc_id,
-                                    "content": self.sources.get(source_id, {"content": ""})["content"],
+                                    "content": source_map.get(source_id, {"content": ""}).get("content", ""),
                                 }
                             )
                         else:
@@ -269,7 +272,7 @@ when citing different sources. Use markdown formatting for text content to impro
                                     "sourceId": source_id,
                                     "documentName": "Referenced Source",
                                     "documentId": "unknown",
-                                    "content": self.sources.get(source_id, {"content": ""})["content"],
+                                    "content": source_map.get(source_id, {"content": ""}).get("content", ""),
                                 }
                             )
 
@@ -285,7 +288,7 @@ when citing different sources. Use markdown formatting for text content to impro
                     )
 
                 # Add sources from document chunks used during the session
-                for source_id, source_info in self.sources.items():
+                for source_id, source_info in source_map.items():
                     if source_id not in seen_source_ids:
                         sources.append(
                             {
@@ -314,7 +317,7 @@ when citing different sources. Use markdown formatting for text content to impro
             #     messages.append({'role': 'assistant', 'content': msg.content})
             messages.append(msg.to_dict(exclude_none=True))
             logger.info(f"Executing tool: {name}")
-            result = await self._execute_tool(name, args, auth)
+            result = await self._execute_tool(name, args, auth, source_map)
             logger.info(f"Tool execution result: {result}")
 
             # Add tool call and result to history

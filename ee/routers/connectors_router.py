@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 
 import arq  # Added for Redis
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 from core.auth_utils import verify_token
@@ -48,6 +48,8 @@ class IngestFromConnectorRequest(BaseModel):
     file_id: str
     morphik_folder_name: Optional[str] = None
     morphik_end_user_id: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None  # New field for custom metadata
+    rules: Optional[List[Dict[str, Any]]] = None  # New field for custom rules
 
 
 # Endpoints will be added below
@@ -84,6 +86,7 @@ async def get_auth_status_for_connector(
 async def initiate_connector_authentication(
     request: Request,  # FastAPI Request object to access session
     connector_type: str,
+    app_redirect_uri: Optional[str] = None,  # New parameter for frontend redirect
     service: ConnectorService = Depends(get_connector_service),
 ):
     """
@@ -107,6 +110,10 @@ async def initiate_connector_authentication(
         # Store state and connector type in session for later validation in the callback
         request.session["oauth_state"] = state
         request.session["connector_type_for_callback"] = connector_type
+        if app_redirect_uri:
+            request.session["app_redirect_uri"] = app_redirect_uri
+            logger.info(f"Stored app_redirect_uri in session: {app_redirect_uri}")
+
         logger.info(
             f"Initiating auth for '{connector_type}' for user '{service.user_identifier}'. "
             f"Redirecting to: {authorization_url[:70]}..."
@@ -201,9 +208,19 @@ async def connector_oauth_callback(
             # In a real app, redirect to a frontend page indicating success
             # For example: return RedirectResponse(url="/profile?auth_success="+connector_type)
             # Redirect to the frontend connections page with a success indicator
-            frontend_redirect_url = f"/ee/connections?auth_success={connector_type}"
-            logger.info(f"Redirecting to frontend: {frontend_redirect_url}")
-            return RedirectResponse(url=frontend_redirect_url)
+            app_redirect_uri = request.session.pop("app_redirect_uri", None)
+            if app_redirect_uri:
+                logger.info(f"Redirecting to frontend app_redirect_uri: {app_redirect_uri}")
+                return RedirectResponse(url=app_redirect_uri)
+            else:
+                logger.info("No app_redirect_uri found, showing generic success page.")
+                html_content = """
+                <html><head><title>Authentication Successful</title></head>
+                <body><h1>Authentication Successful</h1>
+                <p>You have successfully authenticated. You can now close this window and return to the application.</p>
+                </body></html>
+                """
+                return HTMLResponse(content=html_content)
         else:
             logger.error(
                 f"Failed to finalize auth for '{connector_type}' with user '{service.user_identifier}' "
@@ -336,17 +353,23 @@ async def ingest_file_from_connector(
             cleaned_metadata["modified_date"] = file_metadata.modified_date
         # You can add more whitelisted fields here if needed
 
+        # Merge user-provided metadata with cleaned connector metadata
+        final_metadata = cleaned_metadata.copy()
+        if ingest_request.metadata:  # User-provided metadata
+            final_metadata.update(ingest_request.metadata)
+
         # 3. Ingest into Morphik using DocumentService
         morphik_doc = await doc_service.ingest_file_content(
             file_content_bytes=file_content_bytes,
             filename=filename_to_use,
             content_type=actual_mime_type,
-            metadata=cleaned_metadata,
+            metadata=final_metadata,  # Use merged metadata
             auth=auth_context,
             redis=redis_pool_instance,
             folder_name=ingest_request.morphik_folder_name,
             end_user_id=ingest_request.morphik_end_user_id,
-            use_colpali=True,
+            rules=ingest_request.rules,  # Pass user-provided rules
+            use_colpali=True,  # As per previous request
         )
 
         return {

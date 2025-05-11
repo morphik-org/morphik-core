@@ -1,15 +1,15 @@
-'use client';
+"use client";
 
-import { ConnectorCard } from './ConnectorCard';
-import { BookLock } from 'lucide-react'; // Example icon for Google Drive
+import { ConnectorCard } from "./ConnectorCard";
+import { BookLock } from "lucide-react"; // Example icon for Google Drive
 
 // In the future, this could come from a configuration or an API call
 const availableConnectors = [
   {
-    connectorType: 'google_drive',
-    displayName: 'Google Drive',
+    connectorType: "google_drive",
+    displayName: "Google Drive",
     icon: BookLock, // Using an appropriate icon from lucide-react
-    description: 'Access files and folders from your Google Drive.',
+    description: "Access files and folders from your Google Drive.",
   },
   // Add other connectors here as they are implemented
   // {
@@ -35,7 +35,7 @@ export function ConnectorList({ apiBaseUrl }: ConnectorListProps) {
 
   return (
     <div className="space-y-6">
-      {availableConnectors.map((connector) => (
+      {availableConnectors.map(connector => (
         <ConnectorCard
           key={connector.connectorType}
           connectorType={connector.connectorType}

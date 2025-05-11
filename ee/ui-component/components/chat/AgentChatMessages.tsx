@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { PreviewMessage, UIMessage } from "./ChatMessages";
 import ReactMarkdown from "react-markdown";
@@ -148,15 +147,6 @@ const ThinkingMessage = () => {
   );
 };
 
-// Helper to render JSON content with syntax highlighting
-const renderJson = (obj: unknown) => {
-  return (
-    <pre className="max-h-[300px] overflow-auto whitespace-pre-wrap rounded-md bg-muted p-4 font-mono text-sm">
-      {JSON.stringify(obj, null, 2)}
-    </pre>
-  );
-};
-
 // Markdown content renderer component
 const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
   return (
@@ -227,22 +217,6 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
   );
 };
 
-// Helper function to ensure image content is properly formatted
-const formatImageSource = (content: string): string => {
-  // If already a data URI, use as is
-  if (content.startsWith("data:image/")) {
-    return content;
-  }
-
-  // If it looks like base64 data without a prefix, add a PNG prefix
-  if (/^[A-Za-z0-9+/=]+$/.test(content.substring(0, 20))) {
-    return `data:image/png;base64,${content}`;
-  }
-
-  // Otherwise assume it's a URL
-  return content;
-};
-
 // Component to render display objects
 const DisplayObjectRenderer: React.FC<{ object: DisplayObject; isInSourceView?: boolean }> = ({
   object,
@@ -266,9 +240,9 @@ const DisplayObjectRenderer: React.FC<{ object: DisplayObject; isInSourceView?: 
             src={hasImagePrefix ? object.content : `data:image/png;base64,${object.content}`}
             alt={object.caption || "Image"}
             className="h-auto max-w-full"
-            onError={e => {
-              // Fallback chain: try JPEG if PNG fails
-              const target = e.target as HTMLImageElement;
+            onError={event => {
+              // Correctly typed event parameter
+              const target = event.target as HTMLImageElement;
               if (!hasImagePrefix && target.src.includes("image/png")) {
                 target.src = `data:image/jpeg;base64,${object.content}`;
               }
@@ -283,35 +257,8 @@ const DisplayObjectRenderer: React.FC<{ object: DisplayObject; isInSourceView?: 
   return null;
 };
 
-// Helper function to detect image format from base64
-const detectImageFormat = (base64String: string): string => {
-  // Check the first few bytes of the base64 to determine image format
-  // See: https://en.wikipedia.org/wiki/List_of_file_signatures
-  try {
-    if (!base64String || base64String.length < 10) return "png";
-
-    // Decode the first few bytes of the base64 string
-    const firstBytes = atob(base64String.substring(0, 20));
-
-    // Check for common image signatures
-    if (firstBytes.startsWith("\xFF\xD8\xFF")) return "jpeg";
-    if (firstBytes.startsWith("\x89PNG\r\n\x1A\n")) return "png";
-    if (firstBytes.startsWith("GIF87a") || firstBytes.startsWith("GIF89a")) return "gif";
-    if (firstBytes.startsWith("RIFF") && firstBytes.substring(8, 12) === "WEBP") return "webp";
-
-    // Default to PNG if signature not recognized
-    return "png";
-  } catch (e) {
-    // If any error in detection, default to PNG
-    return "png";
-  }
-};
-
 // Component to render sources as tags with dropdown content
-const SourcesRenderer: React.FC<{ sources: SourceObject[]; displayObjects?: DisplayObject[] }> = ({
-  sources,
-  displayObjects = [],
-}) => {
+const SourcesRenderer: React.FC<{ sources: SourceObject[] }> = ({ sources }) => {
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [animation, setAnimation] = useState<"open" | "close" | null>(null);
   const [visibleContent, setVisibleContent] = useState<string | null>(null);
@@ -470,7 +417,7 @@ export function AgentPreviewMessage({ message }: AgentMessageProps) {
               {/* Render sources if available */}
               {sources && sources.length > 0 && (
                 <div className="mt-4 border-t border-border pt-3">
-                  <SourcesRenderer sources={sources} displayObjects={displayObjects} />
+                  <SourcesRenderer sources={sources} />
                 </div>
               )}
             </div>

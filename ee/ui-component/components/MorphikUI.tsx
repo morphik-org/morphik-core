@@ -80,7 +80,8 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
 
   // Wrapper for section change to match expected type
   const handleSectionChange = (section: string) => {
-    if (["documents", "search", "chat", "graphs", "agent", "connections"].includes(section)) { // Added "connections"
+    if (["documents", "search", "chat", "graphs", "agent", "connections"].includes(section)) {
+      // Added "connections"
       setActiveSection(section as SectionType); // Use SectionType here
     }
   };
@@ -150,7 +151,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
           />
         )}
         {activeSection === "connections" && (
-          <div className="p-4 md:p-6 overflow-auto h-full">
+          <div className="h-full overflow-auto p-4 md:p-6">
             {/* Wrapper div for consistent padding and full height */}
             <ConnectorList apiBaseUrl={effectiveApiBaseUrl} />
           </div>

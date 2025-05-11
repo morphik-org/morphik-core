@@ -922,7 +922,7 @@ async def agent_query(request: AgentQueryRequest, auth: AuthContext = Depends(ve
     # Check free-tier agent call limits in cloud mode
     if settings.MODE == "cloud" and auth.user_id:
         await check_and_increment_limits(auth, "agent", 1)
-    # Use shared agent instance and pass auth to run
+    # Use the shared MorphikAgent instance; per-run state is now isolated internally
     response = await morphik_agent.run(request.query, auth)
     # Return the complete response dictionary
     return response
