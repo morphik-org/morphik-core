@@ -105,7 +105,8 @@ storage_path = "./storage"
 # bucket_name = "morphik-s3-storage"
 
 [vector_store]
-provider = "qdrant"
+provider = "pgvector"
+# provider = "qdrant"
 qdrant_host = "localhost"
 qdrant_port = 6333
 qdrant_https = false

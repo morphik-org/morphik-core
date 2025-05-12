@@ -51,7 +51,7 @@ from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.vector_store.multi_vector_store import MultiVectorStore
-from core.vector_store.pgvector_store import PGVectorStore
+from core.vector_store import vector_store_factory
 
 # Initialize FastAPI app
 logger = logging.getLogger(__name__)
@@ -173,9 +173,7 @@ database = PostgresDatabase(uri=settings.POSTGRES_URI)
 if not settings.POSTGRES_URI:
     raise ValueError("PostgreSQL URI is required for pgvector store")
 
-vector_store = PGVectorStore(
-    uri=settings.POSTGRES_URI,
-)
+vector_store = vector_store_factory(settings)
 
 # Initialize storage
 match settings.STORAGE_PROVIDER:
@@ -260,7 +258,7 @@ document_service = DocumentService(
     completion_model=completion_model,
     cache_factory=cache_factory,
     reranker=reranker,
-    enable_colpali=settings.ENABLE_COLPALI,
+    enable_colpali=settings.COLPALI_MODE != "off",
     colpali_embedding_model=colpali_embedding_model,
     colpali_vector_store=colpali_vector_store,
 )
