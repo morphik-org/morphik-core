@@ -19,8 +19,7 @@ TIER_LIMITS = {
         # Storage limits
         "storage_file_limit": 30,  # Maximum number of files in storage
         "storage_size_limit_gb": 0.25,  # Maximum storage size in GB
-        "hourly_ingest_limit": 30,  # Maximum file/text ingests per hour
-        "monthly_ingest_limit": 30,  # Maximum file/text ingests per month
+        "ingest_limit": 200,  # Total pages that can be ingested (lifetime)
         # Query limits
         "hourly_query_limit": 30,  # Maximum queries per hour
         "monthly_query_limit": 50,  # Maximum queries per month
@@ -33,8 +32,8 @@ TIER_LIMITS = {
         "hourly_cache_query_limit": 0,  # Maximum cache queries per hour
         "monthly_cache_query_limit": 0,  # Maximum cache queries per month
         # Agent call limits
-        "hourly_agent_limit": 5,
-        "monthly_agent_limit": 5,
+        "hourly_agent_limit": 3,
+        "monthly_agent_limit": 3,
     },
     AccountTier.PRO: {
         # Application limits
@@ -42,8 +41,7 @@ TIER_LIMITS = {
         # Storage limits
         "storage_file_limit": 1000,  # Maximum number of files in storage
         "storage_size_limit_gb": 10,  # Maximum storage size in GB
-        "hourly_ingest_limit": 100,  # Maximum file/text ingests per hour
-        "monthly_ingest_limit": 3000,  # Maximum file/text ingests per month
+        "ingest_limit": 1500,
         # Query limits
         "hourly_query_limit": 100,  # Maximum queries per hour
         "monthly_query_limit": 10000,  # Maximum queries per month
@@ -56,8 +54,8 @@ TIER_LIMITS = {
         "hourly_cache_query_limit": 200,  # Maximum cache queries per hour
         "monthly_cache_query_limit": 5000,  # Maximum cache queries per month
         # Agent call limits for PRO (unlimited)
-        "hourly_agent_limit": 100,
-        "monthly_agent_limit": 1000,
+        "hourly_agent_limit": 30,
+        "monthly_agent_limit": 30,
     },
     AccountTier.TEAMS: {
         # Teams tier – generous limits but still bounded
@@ -66,8 +64,7 @@ TIER_LIMITS = {
         # Storage limits
         "storage_file_limit": 500000,  # Maximum number of files in storage
         "storage_size_limit_gb": 50,  # Maximum storage size in GB
-        "hourly_ingest_limit": 500,  # Maximum file/text ingests per hour
-        "monthly_ingest_limit": 15000,  # Maximum file/text ingests per month
+        "ingest_limit": 15000,
         # Query limits
         "hourly_query_limit": 500,  # Maximum queries per hour
         "monthly_query_limit": 50000,  # Maximum queries per month
@@ -90,8 +87,7 @@ TIER_LIMITS = {
         # Storage limits
         "storage_file_limit": float("inf"),  # Maximum number of files in storage
         "storage_size_limit_gb": float("inf"),  # Maximum storage size in GB
-        "hourly_ingest_limit": float("inf"),  # Maximum file/text ingests per hour
-        "monthly_ingest_limit": float("inf"),  # Maximum file/text ingests per month
+        "ingest_limit": float("inf"),
         # Query limits
         "hourly_query_limit": float("inf"),  # Maximum queries per hour
         "monthly_query_limit": float("inf"),  # Maximum queries per month

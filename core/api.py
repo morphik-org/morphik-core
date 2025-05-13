@@ -26,7 +26,7 @@ from core.dependencies import get_redis_pool
 from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
-from core.limits_utils import check_and_increment_limits
+from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
 from core.models.auth import AuthContext
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentResult
@@ -315,6 +315,17 @@ async def ingest_text(
         Document: Metadata of ingested document
     """
     try:
+        # Verify limits before processing - this will call the function from limits_utils
+        if settings.MODE == "cloud" and auth.user_id:
+            num_pages_estimated = estimate_pages_by_chars(len(request.content))
+            await check_and_increment_limits(
+                auth,
+                "ingest",
+                num_pages_estimated,
+                verify_only=True,  # This initial check in API remains verify_only=True
+                # Final recording will be done in DocumentService.ingest_text
+            )
+
         return await document_service.ingest_text(
             content=request.content,
             filename=request.filename,
@@ -368,13 +379,13 @@ async def ingest_file(
         def str2bool(v):
             return v if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}
 
-        use_colpali = str2bool(use_colpali)
+        use_colpali_bool = str2bool(use_colpali)  # Renamed to avoid conflict
 
         # Ensure user has write permission
         if "write" not in auth.permissions:
             raise PermissionError("User does not have write permission")
 
-        logger.debug(f"API: Queueing file ingestion with use_colpali: {use_colpali}")
+        logger.debug(f"API: Queueing file ingestion with use_colpali: {use_colpali_bool}")
 
         # Create a document with processing status
         doc = Document(
@@ -426,6 +437,15 @@ async def ingest_file(
         # Read file content
         file_content = await file.read()
 
+        # --------------------------------------------
+        # Enforce storage limits (file & size) early
+        # This check remains verify_only=True here, final recording in worker.
+        # --------------------------------------------
+        if settings.MODE == "cloud" and auth.user_id:
+            await check_and_increment_limits(auth, "storage_file", 1, verify_only=True)
+            await check_and_increment_limits(auth, "storage_size", len(file_content), verify_only=True)
+            # Ingest limit pre-check will be done in the worker after parsing.
+
         # Generate a unique key for the file
         file_key = f"ingest_uploads/{uuid.uuid4()}/{file.filename}"
 
@@ -471,6 +491,16 @@ async def ingest_file(
             auth=auth,
         )
 
+        # ------------------------------------------------------------------
+        # Record storage usage now that the upload succeeded (cloud mode)
+        # ------------------------------------------------------------------
+        if settings.MODE == "cloud" and auth.user_id:
+            try:
+                await check_and_increment_limits(auth, "storage_file", 1)
+                await check_and_increment_limits(auth, "storage_size", len(file_content))
+            except Exception as rec_exc:  # noqa: BLE001
+                logger.error("Failed to record storage usage in ingest_file: %s", rec_exc)
+
         # Convert auth context to a dictionary for serialization
         auth_dict = {
             "entity_type": auth.entity_type.value,
@@ -491,7 +521,7 @@ async def ingest_file(
             metadata_json=metadata,
             auth_dict=auth_dict,
             rules_list=rules_list,
-            use_colpali=use_colpali,
+            use_colpali=use_colpali_bool,  # Pass the boolean
             folder_name=folder_name,
             end_user_id=end_user_id,
         )
@@ -514,7 +544,7 @@ async def batch_ingest_files(
     files: List[UploadFile] = File(...),
     metadata: str = Form("{}"),
     rules: str = Form("[]"),
-    use_colpali: Optional[bool] = Form(None),
+    use_colpali: Optional[bool] = Form(None),  # Keep Optional[bool] for Form
     parallel: Optional[bool] = Form(True),
     folder_name: Optional[str] = Form(None),
     end_user_id: Optional[str] = Form(None),
@@ -552,7 +582,7 @@ async def batch_ingest_files(
         def str2bool(v):
             return str(v).lower() in {"true", "1", "yes"}
 
-        use_colpali = str2bool(use_colpali)
+        use_colpali_bool = str2bool(use_colpali)  # Renamed for clarity
 
         # Ensure user has write permission
         if "write" not in auth.permissions:
@@ -647,6 +677,15 @@ async def batch_ingest_files(
             # Read file content
             file_content = await file.read()
 
+            # --------------------------------------------
+            # Enforce storage limits (file & size) early
+            # This check remains verify_only=True here.
+            # --------------------------------------------
+            if settings.MODE == "cloud" and auth.user_id:
+                await check_and_increment_limits(auth, "storage_file", 1, verify_only=True)
+                await check_and_increment_limits(auth, "storage_size", len(file_content), verify_only=True)
+                # Ingest limit pre-check will be done in the worker after parsing for each file.
+
             # Generate a unique key for the file
             file_key = f"ingest_uploads/{uuid.uuid4()}/{file.filename}"
 
@@ -669,6 +708,16 @@ async def batch_ingest_files(
                 document_id=doc.external_id, updates={"storage_info": doc.storage_info}, auth=auth
             )
 
+            # ------------------------------------------------------------------
+            # Record storage usage now that the upload succeeded (cloud mode)
+            # ------------------------------------------------------------------
+            if settings.MODE == "cloud" and auth.user_id:
+                try:
+                    await check_and_increment_limits(auth, "storage_file", 1)
+                    await check_and_increment_limits(auth, "storage_size", len(file_content))
+                except Exception as rec_exc:  # noqa: BLE001
+                    logger.error("Failed to record storage usage in ingest_file: %s", rec_exc)
+
             # Convert metadata to JSON string for job
             metadata_json = json.dumps(metadata_item)
 
@@ -683,7 +732,7 @@ async def batch_ingest_files(
                 metadata_json=metadata_json,
                 auth_dict=auth_dict,
                 rules_list=file_rules,
-                use_colpali=use_colpali,
+                use_colpali=use_colpali_bool,  # Pass the boolean
                 folder_name=folder_name,
                 end_user_id=end_user_id,
             )

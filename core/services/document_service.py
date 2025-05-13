@@ -624,11 +624,17 @@ class DocumentService:
         logger.debug(f"Created text document record with ID {doc.external_id}")
 
         if settings.MODE == "cloud" and auth.user_id:
-            # Check limits before proceeding
-            from core.api import check_and_increment_limits
+            # Verify limits before heavy processing
+            from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
 
-            num_pages = int(len(content) / (CHARS_PER_TOKEN * TOKENS_PER_PAGE))  #
-            await check_and_increment_limits(auth, "ingest", num_pages, doc.external_id)
+            num_pages = estimate_pages_by_chars(len(content))
+            await check_and_increment_limits(
+                auth,
+                "ingest",
+                num_pages,
+                doc.external_id,
+                verify_only=True,
+            )
 
         # === Apply post_parsing rules ===
         document_rule_metadata = {}
@@ -720,6 +726,33 @@ class DocumentService:
         )
         logger.debug(f"Updated document status to 'completed' for {doc.external_id}")
 
+        # Determine the final page count for usage recording
+        colpali_count_for_limit_fn = (
+            len(chunk_objects_multivector) if use_colpali and chunk_objects_multivector else None
+        )
+        final_page_count = estimate_pages_by_chars(len(content))
+        if use_colpali and colpali_count_for_limit_fn is not None:
+            final_page_count = colpali_count_for_limit_fn
+        final_page_count = max(1, final_page_count)  # Ensure minimum of 1 page
+        logger.info(f"Determined final page count for ingest_text usage: {final_page_count}")
+
+        # Record ingest usage after successful completion
+        if settings.MODE == "cloud" and auth.user_id:
+            from core.limits_utils import check_and_increment_limits
+
+            try:
+                await check_and_increment_limits(
+                    auth,
+                    "ingest",
+                    final_page_count,  # Use the determined final count
+                    doc.external_id,
+                    use_colpali=use_colpali,  # Pass colpali status
+                    colpali_chunks_count=colpali_count_for_limit_fn,  # Pass actual colpali count
+                )
+            except Exception as rec_exc:
+                # Log error but don't fail the synchronous request at this point
+                logger.error("Failed to record ingest usage in ingest_text: %s", rec_exc)
+
         return doc
 
     async def ingest_file_content(
@@ -774,23 +807,35 @@ class DocumentService:
             doc.system_metadata["end_user_id"] = end_user_id
         # folder_name is handled later by _ensure_folder_exists if needed by background worker
 
-        # Check limits before proceeding with DB operations or storage
+        # --------------------------------------------------------
+        # Verify quotas before incurring heavy compute or storage
+        # --------------------------------------------------------
         if settings.MODE == "cloud" and auth.user_id:
-            from core.api import check_and_increment_limits
+            from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
 
-            # Estimate num_pages based on byte length.
-            # This is an approximation; CHARS_PER_TOKEN is an average.
-            # For binary files, this might not perfectly represent "pages"
-            # but aligns with ingest_text's content length based approach.
-            if CHARS_PER_TOKEN > 0 and TOKENS_PER_PAGE > 0:
-                num_pages = int(len(file_content_bytes) / (CHARS_PER_TOKEN * TOKENS_PER_PAGE))
-                if num_pages == 0 and len(file_content_bytes) > 0:
-                    num_pages = 1
-            else:
-                num_pages = 1
+            num_pages = estimate_pages_by_chars(len(file_content_bytes))
 
-            await check_and_increment_limits(auth, "ingest", num_pages, doc.external_id)
-            logger.info(f"Limit check passed for user {auth.user_id}, {num_pages} estimated pages for {filename}.")
+            # Dry-run checks; nothing is recorded yet
+            await check_and_increment_limits(
+                auth,
+                "ingest",
+                num_pages,
+                doc.external_id,
+                verify_only=True,
+            )
+            await check_and_increment_limits(auth, "storage_file", 1, verify_only=True)
+            await check_and_increment_limits(
+                auth,
+                "storage_size",
+                len(file_content_bytes),
+                verify_only=True,
+            )
+            logger.info(
+                "Quota verification passed for user %s – pages=%s, file=%s bytes",
+                auth.user_id,
+                num_pages,
+                len(file_content_bytes),
+            )
 
         # 1. Create initial document record in DB
         # The app_db concept from core/api.py implies self.db is already app-specific if needed
@@ -833,9 +878,22 @@ class DocumentService:
                 auth=auth,
             )
             logger.info(
-                f"File {filename} (doc_id: {doc.external_id}) uploaded to storage: "
-                f"{bucket_name}/{full_storage_path} and DB record updated."
+                "File %s (doc_id: %s) uploaded to storage at %s/%s and DB updated.",
+                filename,
+                doc.external_id,
+                bucket_name,
+                full_storage_path,
             )
+
+            # -----------------------------------
+            # Record usage now that upload passed
+            # -----------------------------------
+            if settings.MODE == "cloud" and auth.user_id:
+                try:
+                    await check_and_increment_limits(auth, "storage_file", 1)
+                    await check_and_increment_limits(auth, "storage_size", len(file_content_bytes))
+                except Exception as rec_err:
+                    logger.error("Failed recording usage for doc %s: %s", doc.external_id, rec_err)
 
         except Exception as e:
             logger.error(f"Failed to upload file {filename} (doc_id: {doc.external_id}) to storage or update DB: {e}")
@@ -1483,6 +1541,20 @@ class DocumentService:
                 file, doc, metadata, rules
             )
             await self._update_storage_info(doc, file, file_content_base64)
+
+            # ------------------------------------------------------------------
+            # Record storage usage for the newly uploaded file (cloud mode)
+            # ------------------------------------------------------------------
+            settings = get_settings()
+            if settings.MODE == "cloud" and auth.user_id:
+                try:
+                    from core.limits_utils import check_and_increment_limits
+
+                    await check_and_increment_limits(auth, "storage_file", 1)
+                    await check_and_increment_limits(auth, "storage_size", len(file_content))
+                except Exception as rec_err:  # noqa: BLE001
+                    # Do not fail the update on metering issues – just log
+                    logger.error("Failed to record storage usage in update_document: %s", rec_err)
         elif not metadata_only_update:
             logger.error("Neither content nor file provided for document update")
             return None

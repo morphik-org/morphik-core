@@ -15,11 +15,11 @@ from core.database.postgres_database import PostgresDatabase
 from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
-from core.limits_utils import check_and_increment_limits
+from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
 from core.models.auth import AuthContext, EntityType
 from core.models.rules import MetadataExtractionRule
 from core.parser.morphik_parser import MorphikParser
-from core.services.document_service import CHARS_PER_TOKEN, TOKENS_PER_PAGE, DocumentService
+from core.services.document_service import DocumentService
 from core.services.rules_processor import RulesProcessor
 from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
@@ -231,12 +231,21 @@ async def process_ingestion_job(
         phase_times["parse_file"] = parse_time
 
         # NEW -----------------------------------------------------------------
+        # Estimate pages early for pre-check
+        num_pages_estimated = estimate_pages_by_chars(len(text))
+
         # 4.b Enforce tier limits (pages ingested) for cloud/free tier users
         if settings.MODE == "cloud" and auth.user_id:
             # Calculate approximate pages using same heuristic as DocumentService
-            num_pages = int(len(text) / (CHARS_PER_TOKEN * TOKENS_PER_PAGE)) or 1
             try:
-                await check_and_increment_limits(auth, "ingest", num_pages, document_id)
+                # Dry-run verification before heavy processing
+                await check_and_increment_limits(
+                    auth,
+                    "ingest",
+                    num_pages_estimated,
+                    document_id,
+                    verify_only=True,
+                )
             except Exception as limit_exc:
                 logger.error("User %s exceeded ingest limits: %s", auth.user_id, limit_exc)
                 raise
@@ -371,6 +380,17 @@ async def process_ingestion_job(
         # If we still have no chunks at all (neither text nor image) abort early
         if not parsed_chunks and not chunks_multivector:
             raise ValueError("No content chunks (text or image) could be extracted from the document")
+
+        # Determine the final page count for recording usage
+        final_page_count = num_pages_estimated  # Default to estimate
+        if using_colpali and chunks_multivector:
+            final_page_count = len(chunks_multivector)
+        final_page_count = max(1, final_page_count)  # Ensure at least 1 page
+        logger.info(
+            f"Determined final page count for usage recording: {final_page_count} pages (ColPali used: {using_colpali})"
+        )
+
+        colpali_count_for_limit_fn = len(chunks_multivector) if using_colpali else None
 
         # 9. Apply post_chunking rules and aggregate metadata
         processed_chunks = []
@@ -524,6 +544,21 @@ async def process_ingestion_job(
             logger.info(f"  - {phase}: {duration:.2f}s ({percentage:.1f}%)")
         logger.info("=====================================")
 
+        # Record ingest usage *after* successful completion using the final page count
+        if settings.MODE == "cloud" and auth.user_id:
+            try:
+                await check_and_increment_limits(
+                    auth,
+                    "ingest",
+                    final_page_count,
+                    document_id,
+                    use_colpali=using_colpali,
+                    colpali_chunks_count=colpali_count_for_limit_fn,
+                )
+            except Exception as rec_exc:
+                # Log error but don't fail the job at this point
+                logger.error("Failed to record ingest usage after completion: %s", rec_exc)
+
         # 14. Return document ID
         return {
             "document_id": doc.external_id,
@@ -571,6 +606,8 @@ async def process_ingestion_job(
                     logger.info(f"Updated document {document_id} status to failed")
         except Exception as inner_e:
             logger.error(f"Failed to update document status: {str(inner_e)}")
+
+        # Note: We don't record usage if the job failed.
 
         # Return error information
         return {

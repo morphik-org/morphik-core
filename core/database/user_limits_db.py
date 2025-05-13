@@ -148,10 +148,7 @@ class UserLimitsDatabase:
                         "hourly_query_reset": now,
                         "monthly_query_count": 0,
                         "monthly_query_reset": now,
-                        "hourly_ingest_count": 0,
-                        "hourly_ingest_reset": now,
-                        "monthly_ingest_count": 0,
-                        "monthly_ingest_reset": now,
+                        "ingest_count": 0,
                         "graph_count": 0,
                         "cache_count": 0,
                         "hourly_agent_count": 0,
@@ -369,30 +366,8 @@ class UserLimitsDatabase:
                         usage["monthly_query_reset"] = now_iso
 
                 elif usage_type == "ingest":
-                    # Similar pattern for ingest
-                    hourly_reset_str = usage.get("hourly_ingest_reset", "")
-                    if hourly_reset_str:
-                        hourly_reset = datetime.fromisoformat(hourly_reset_str)
-                        if now > hourly_reset + timedelta(hours=1):
-                            usage["hourly_ingest_count"] = increment
-                            usage["hourly_ingest_reset"] = now_iso
-                        else:
-                            usage["hourly_ingest_count"] = usage.get("hourly_ingest_count", 0) + increment
-                    else:
-                        usage["hourly_ingest_count"] = increment
-                        usage["hourly_ingest_reset"] = now_iso
-
-                    monthly_reset_str = usage.get("monthly_ingest_reset", "")
-                    if monthly_reset_str:
-                        monthly_reset = datetime.fromisoformat(monthly_reset_str)
-                        if now > monthly_reset + timedelta(days=30):
-                            usage["monthly_ingest_count"] = increment
-                            usage["monthly_ingest_reset"] = now_iso
-                        else:
-                            usage["monthly_ingest_count"] = usage.get("monthly_ingest_count", 0) + increment
-                    else:
-                        usage["monthly_ingest_count"] = increment
-                        usage["monthly_ingest_reset"] = now_iso
+                    # Lifetime counter (no reset)
+                    usage["ingest_count"] = usage.get("ingest_count", 0) + increment
 
                 elif usage_type == "storage_file":
                     usage["storage_file_count"] = usage.get("storage_file_count", 0) + increment
