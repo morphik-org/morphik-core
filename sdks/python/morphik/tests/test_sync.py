@@ -4,9 +4,8 @@ import uuid
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel, Field
-
 from morphik.sync import Morphik
+from pydantic import BaseModel, Field
 
 # Set to your local Morphik server - use localhost by default
 # Default client connects to localhost:8000 automatically

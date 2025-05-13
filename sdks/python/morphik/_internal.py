@@ -11,9 +11,9 @@ from PIL import Image
 from PIL.Image import Image as PILImage
 from pydantic import BaseModel, Field
 
+from .models import ChunkSource  # Prompt override models
 from .models import (
     ChunkResult,
-    ChunkSource,  # Prompt override models
     CompletionResponse,
     Document,
     DocumentResult,

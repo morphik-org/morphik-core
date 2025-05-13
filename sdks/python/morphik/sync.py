@@ -8,9 +8,9 @@ import httpx
 from pydantic import BaseModel
 
 from ._internal import FinalChunkResult, RuleOrDict, _MorphikClientLogic
+from .models import CompletionResponse  # Prompt override models
 from .models import (
     ChunkSource,
-    CompletionResponse,  # Prompt override models
     Document,
     DocumentResult,
     FolderInfo,

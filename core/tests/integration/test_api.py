@@ -1,14 +1,16 @@
 import asyncio
 import json
 import logging
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import AsyncGenerator, Dict
+from typing import AsyncGenerator, Dict  # , override
 
 import filetype
 import jwt
 import pydantic
 import pytest
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
@@ -22,12 +24,13 @@ from core.tests import setup_test_logging
 setup_test_logging()
 logger = logging.getLogger(__name__)
 
+load_dotenv(override=True)
 
 # Test configuration
 TEST_DATA_DIR = Path(__file__).parent / "test_data"
 JWT_SECRET = "your-secret-key-for-signing-tokens"
 TEST_USER_ID = "test_user"
-TEST_POSTGRES_URI = "postgresql+asyncpg://morphik@localhost:5432/morphik_test"
+TEST_POSTGRES_URI = os.getenv("TEST_POSTGRES_URI")
 
 
 @pytest.fixture(scope="session")

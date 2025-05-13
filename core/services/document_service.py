@@ -26,6 +26,7 @@ from core.config import get_settings
 from core.database.base_database import BaseDatabase
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
+from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
 from core.models.chunk import Chunk, DocumentChunk
 from core.models.completion import ChunkSource, CompletionRequest, CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentContent, DocumentResult, StorageFileInfo
@@ -625,8 +626,6 @@ class DocumentService:
 
         if settings.MODE == "cloud" and auth.user_id:
             # Verify limits before heavy processing
-            from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
-
             num_pages = estimate_pages_by_chars(len(content))
             await check_and_increment_limits(
                 auth,
@@ -738,8 +737,6 @@ class DocumentService:
 
         # Record ingest usage after successful completion
         if settings.MODE == "cloud" and auth.user_id:
-            from core.limits_utils import check_and_increment_limits
-
             try:
                 await check_and_increment_limits(
                     auth,
@@ -811,8 +808,6 @@ class DocumentService:
         # Verify quotas before incurring heavy compute or storage
         # --------------------------------------------------------
         if settings.MODE == "cloud" and auth.user_id:
-            from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
-
             num_pages = estimate_pages_by_chars(len(file_content_bytes))
 
             # Dry-run checks; nothing is recorded yet
@@ -1548,8 +1543,6 @@ class DocumentService:
             settings = get_settings()
             if settings.MODE == "cloud" and auth.user_id:
                 try:
-                    from core.limits_utils import check_and_increment_limits
-
                     await check_and_increment_limits(auth, "storage_file", 1)
                     await check_and_increment_limits(auth, "storage_size", len(file_content))
                 except Exception as rec_err:  # noqa: BLE001
