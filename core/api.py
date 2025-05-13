@@ -348,6 +348,7 @@ async def ingest_file(
     metadata: str = Form("{}"),
     rules: str = Form("[]"),
     auth: AuthContext = Depends(verify_token),
+    external_id: Optional[str] = Form(None),
     use_colpali: Optional[bool] = None,
     folder_name: Optional[str] = Form(None),
     end_user_id: Optional[str] = Form(None),
@@ -391,6 +392,7 @@ async def ingest_file(
         # Create a document with processing status
         doc = Document(
             content_type=file.content_type,
+            external_id=external_id if external_id else None,
             filename=file.filename,
             metadata=metadata_dict,
             owner={"type": auth.entity_type.value, "id": auth.entity_id},
