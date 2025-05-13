@@ -25,7 +25,7 @@ from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.vector_store.multi_vector_store import MultiVectorStore
-from core.vector_store.pgvector_store import PGVectorStore
+from core.vector_store import vector_store_factory
 
 # Enterprise routing helpers
 from ee.db_router import get_database_for_app, get_vector_store_for_app
@@ -71,7 +71,7 @@ async def get_document_with_retry(document_service, document_id, auth, max_retri
         try:
             doc = await document_service.db.get_document(document_id, auth)
             if doc:
-                logger.debug(f"Successfully retrieved document {document_id} on attempt {attempt+1}")
+                logger.debug(f"Successfully retrieved document {document_id} on attempt {attempt + 1}")
                 return doc
 
             # Document not found but no exception raised
@@ -221,7 +221,7 @@ async def process_ingestion_job(
             file_content = file_content.read()
         download_time = time.time() - download_start
         phase_times["download_file"] = download_time
-        logger.info(f"File download took {download_time:.2f}s for {len(file_content)/1024/1024:.2f}MB")
+        logger.info(f"File download took {download_time:.2f}s for {len(file_content) / 1024 / 1024:.2f}MB")
 
         # 4. Parse file to text
         parse_start = time.time()
@@ -437,9 +437,10 @@ async def process_ingestion_job(
                     # Only process if it's an image chunk - pass the image content to the rule
                     if chunk_obj.metadata.get("is_image", False):
                         # Get metadata *and* the potentially modified chunk
-                        chunk_rule_metadata, processed_chunk = (
-                            await document_service.rules_processor.process_chunk_rules(chunk_obj, image_rules)
-                        )
+                        (
+                            chunk_rule_metadata,
+                            processed_chunk,
+                        ) = await document_service.rules_processor.process_chunk_rules(chunk_obj, image_rules)
                         processed_chunks_multivector.append(processed_chunk)
                         # Aggregate the metadata extracted from this chunk
                         aggregated_chunk_metadata.update(chunk_rule_metadata)
@@ -639,7 +640,7 @@ async def startup(ctx):
 
     # Initialize vector store
     logger.info("Initializing primary vector store...")
-    vector_store = PGVectorStore(uri=settings.POSTGRES_URI)
+    vector_store = vector_store_factory(settings)
     success = await vector_store.initialize()
     if success:
         logger.info("Primary vector store initialization successful")

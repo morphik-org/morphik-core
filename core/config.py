@@ -101,11 +101,13 @@ class Settings(BaseSettings):
     S3_BUCKET: Optional[str] = None
 
     # Vector store configuration
-    VECTOR_STORE_PROVIDER: Literal["pgvector"]
+    VECTOR_STORE_PROVIDER: Literal["pgvector", "qdrant"]
     VECTOR_STORE_DATABASE_NAME: Optional[str] = None
+    QDRANT_HOST: Optional[str] = None
+    QDRANT_PORT: int = 6333
+    QDRANT_HTTPS: bool = False
 
     # Colpali configuration
-    ENABLE_COLPALI: bool
     # Colpali embedding mode: off, local, or api
     COLPALI_MODE: Literal["off", "local", "api"] = "local"
 
@@ -139,7 +141,8 @@ def get_settings() -> Settings:
     load_dotenv(override=True)
 
     # Load config.toml
-    with open("morphik.toml", "rb") as f:
+    cfg_path = os.environ.get("MORPHIK_CONFIG_PATH", "morphik.toml")
+    with open(cfg_path, "rb") as f:
         config = tomli.load(f)
 
     em = "'{missing_value}' needed if '{field}' is set to '{value}'"
@@ -281,14 +284,12 @@ def get_settings() -> Settings:
             raise ValueError(f"Unknown storage provider selected: '{prov}'")
 
     # load vector store config
-    vector_store_config = {"VECTOR_STORE_PROVIDER": config["vector_store"]["provider"]}
-    if vector_store_config["VECTOR_STORE_PROVIDER"] != "pgvector":
-        prov = vector_store_config["VECTOR_STORE_PROVIDER"]
-        raise ValueError(f"Unknown vector store provider selected: '{prov}'")
-
-    if "POSTGRES_URI" not in os.environ:
-        msg = em.format(missing_value="POSTGRES_URI", field="vector_store.provider", value="pgvector")
-        raise ValueError(msg)
+    vector_store_config = {
+        "VECTOR_STORE_PROVIDER": config["vector_store"]["provider"],
+        "QDRANT_HOST": config["vector_store"]["qdrant_host"],
+        "QDRANT_PORT": config["vector_store"]["qdrant_port"],
+        "QDRANT_HTTPS": config["vector_store"]["qdrant_https"],
+    }
 
     # load rules config
     rules_config = {
@@ -303,7 +304,6 @@ def get_settings() -> Settings:
 
     # load morphik config
     morphik_config = {
-        "ENABLE_COLPALI": config["morphik"]["enable_colpali"],
         "COLPALI_MODE": config["morphik"].get("colpali_mode", "local"),
         "MODE": config["morphik"].get("mode", "cloud"),  # Default to "cloud" mode
         # API domain for core server
