@@ -1,18 +1,33 @@
-[tool.isort]
-profile = "black"
-line_length = 120
-
-[tool.black]
-line-length = 120
-target-version = ['py310']
-
-[tool.ruff]
-line-length = 120
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I"]
-fixable = ["ALL"]
-ignore = []
-
-[tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"] # Ignore unused imports in __init__.py files
+[project]
+name = "morphik-core"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "arq>=0.26.3",
+    "assemblyai>=0.40.2",
+    "asyncpg>=0.30.0",
+    "boto3>=1.38.14",
+    "dotenv>=0.9.9",
+    "fastapi>=0.115.12",
+    "filetype>=1.2.0",
+    "flagembedding>=1.3.4",
+    "instructor>=1.8.1",
+    "itsdangerous>=2.2.0",
+    "litellm>=1.69.1",
+    "opencv-python>=4.11.0.86",
+    "opentelemetry-instrumentation-fastapi>=0.54b0",
+    "pdf2image>=1.17.0",
+    "pgvector>=0.4.1",
+    "psycopg>=3.2.8",
+    "pydantic>=2.11.4",
+    "pydantic-settings>=2.9.1",
+    "python-multipart>=0.0.20",
+    "requests>=2.32.3",
+    "sqlalchemy>=2.0.40",
+    "tomli>=2.2.1",
+    "torch>=2.7.0",
+    "unstructured>=0.17.2",
+    "uvicorn>=0.34.2",
+]

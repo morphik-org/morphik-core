@@ -42,3 +42,4 @@ ee/ui-component/.next
 
 ui-component/notebook-storage/notebooks.json
 ee/ui-component/package-lock.json
+ee/ee_tokens/gdrive_token_dev_user.pickle
