@@ -375,30 +375,33 @@ class PGVectorStore(BaseVectorStore):
         """Find similar chunks using cosine similarity."""
         try:
             async with self.get_session_with_retry() as session:
-                # Build query
-                query = select(VectorEmbedding).order_by(VectorEmbedding.embedding.op("<->")(query_embedding))
+                # Build query with distance calculation
+                distance = VectorEmbedding.embedding.op("<->")(query_embedding)
+                query = select(VectorEmbedding, distance).order_by(distance)
 
                 if doc_ids:
                     query = query.filter(VectorEmbedding.document_id.in_(doc_ids))
 
                 query = query.limit(k)
                 result = await session.execute(query)
-                embeddings = result.scalars().all()
+                embeddings = result.all()
 
-                # Convert to DocumentChunks
+                # Convert to DocumentChunks with similarity scores
                 chunks = []
-                for emb in embeddings:
+                for emb, distance in embeddings:
                     try:
                         metadata = eval(emb.chunk_metadata) if emb.chunk_metadata else {}
                     except (ValueError, SyntaxError):
                         metadata = {}
 
+                    # Chunk scores are normalized to [0, 1] where 1 is a perfect match
                     chunk = DocumentChunk(
                         document_id=emb.document_id,
                         chunk_number=emb.chunk_number,
                         content=emb.content,
                         embedding=[],  # Don't send embeddings back
                         metadata=metadata,
+                        score=1.0 - float(distance) / 2.0,
                     )
                     chunks.append(chunk)
 
