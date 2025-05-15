@@ -375,8 +375,9 @@ class PGVectorStore(BaseVectorStore):
         """Find similar chunks using cosine similarity."""
         try:
             async with self.get_session_with_retry() as session:
-                # Build query with distance calculation
-                distance = VectorEmbedding.embedding.op("<->")(query_embedding)
+                # Build query with cosine distance calculation, which is normalized to [0, 2].
+                # A distance of 0 is perfect similarity.
+                distance = VectorEmbedding.embedding.op("<=>")(query_embedding)
                 query = select(VectorEmbedding, distance).order_by(distance)
 
                 if doc_ids:
