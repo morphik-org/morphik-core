@@ -811,6 +811,18 @@ class DB:
         graphs = self._client.list_graphs()
         return [graph.model_dump() for graph in graphs] if graphs else []
 
+    def batch_delete_documents(self, document_ids: List[str]) -> dict:
+        """
+        Delete multiple documents in a single batch.
+
+        Args:
+            document_ids: List of document external_ids to delete
+
+        Returns:
+            dict: Deletion result from the server
+        """
+        return self._client.batch_delete_documents(document_ids)
+
     def close(self):
         """Close the client connection"""
         self._client.close()
@@ -899,6 +911,7 @@ if __name__ == "__main__":
     print("  db.create_graph('knowledge_graph', filters={'category': 'research'})")
     print("  db.query('How does X relate to Y?', graph_name='knowledge_graph', include_paths=True)")
     print("Type help(db) for documentation.")
+    print("  db.batch_delete_documents(['doc_id1', 'doc_id2'])")
 
     # Start the shell
     shell.interact(banner="")

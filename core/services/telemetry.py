@@ -295,7 +295,7 @@ class RetryingOTLPSpanExporter:
                     # Use exponential backoff
                     delay = self.retry_delay * (2 ** (retries - 1))
                     self.logger.warning(
-                        f"Honeycomb trace export attempt {retries} failed: {str(e)}. " f"Retrying in {delay}s..."
+                        f"Honeycomb trace export attempt {retries} failed: {str(e)}. Retrying in {delay}s..."
                     )
                     time.sleep(delay)
                 else:
@@ -845,6 +845,18 @@ class TelemetryService:
                     "rules",
                     transform=lambda rules: ([rule.type for rule in rules] if hasattr(rules, "__iter__") else []),
                 ),
+            ]
+        )
+
+        self.batch_document_delete_metadata = MetadataExtractor(
+            [
+                MetadataField(
+                    "document_count",
+                    "request",
+                    transform=lambda req: len(req.document_ids) if req and hasattr(req, "document_ids") else 0,
+                ),
+                MetadataField("folder_name", "request"),
+                MetadataField("end_user_id", "request"),
             ]
         )
 

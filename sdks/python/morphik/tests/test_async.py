@@ -381,3 +381,42 @@ class TestAsyncMorphik:
 
         finally:
             await db.delete_document(doc.external_id)
+
+    @pytest.mark.asyncio
+    async def test_batch_delete_documents(self, db):
+        """Test batch deleting multiple documents"""
+        # Given
+        doc1 = await db.ingest_text(
+            content="This is batch delete document 1",
+            filename=f"batch_del_1_{uuid.uuid4().hex[:6]}.txt",
+            metadata={"test_case": "batch_delete"},
+        )
+        doc2 = await db.ingest_text(
+            content="This is batch delete document 2",
+            filename=f"batch_del_2_{uuid.uuid4().hex[:6]}.txt",
+            metadata={"test_case": "batch_delete"},
+        )
+
+        # Then
+        assert doc1.external_id and doc2.external_id
+
+        # When
+        success, failed = await db.batch_delete_documents([doc1.external_id, doc2.external_id])
+
+        # Then
+        assert len(success) == 2
+        assert len(failed) == 0
+
+    @pytest.mark.asyncio
+    async def test_batch_delete_with_invalid_id(self, db):
+        doc = await db.ingest_text(
+            content="This is batch delete document 1",
+            filename=f"batch_del_1_{uuid.uuid4().hex[:6]}.txt",
+            metadata={"test_case": "batch_delete"},
+        )
+
+        # Include a fake ID
+        success, failed = db.batch_delete_documents([doc.external_id, "nonexistent_id_123"])
+
+        assert doc.external_id in success
+        assert "nonexistent_id_123" in failed
