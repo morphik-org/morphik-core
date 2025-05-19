@@ -17,7 +17,25 @@ from core.models.graph import Entity, Graph, Relationship
 from core.models.prompts import EntityExtractionPromptOverride, GraphPromptOverrides, QueryPromptOverrides
 from core.services.entity_resolution import EntityResolver
 
+# NEW: dynamic LLM key overrides
+from ee.llm_key_router import get_current_overrides
+
 logger = logging.getLogger(__name__)
+
+
+# Helper to determine provider from model name string (can be moved to a util module later)
+def _get_provider_from_model_name(model_name_str: Optional[str]) -> Optional[str]:
+    if not model_name_str:
+        return None
+    if "gpt-" in model_name_str.lower() or "openai" in model_name_str.lower():
+        return "openai"
+    if "claude-" in model_name_str.lower() or "anthropic" in model_name_str.lower():
+        return "anthropic"
+    if "azure_" in model_name_str.lower() or "azure" == model_name_str.lower():
+        return "azure"
+    if "ollama" in model_name_str.lower():
+        return "ollama"
+    return None  # Default if no specific provider pattern is matched
 
 
 class EntityExtraction(BaseModel):
@@ -723,53 +741,39 @@ class GraphService:
     ) -> Tuple[List[Entity], List[Relationship]]:
         """
         Extract entities and relationships from text content using the LLM.
-
-        Args:
-            content: Text content to process
-            doc_id: Document ID
-            chunk_number: Chunk number within the document
-
-        Returns:
-            Tuple of (entities, relationships)
+        Now respects user-defined model for the 'graph' stage.
         """
-        settings = get_settings()
+        global_settings = get_settings()
+        all_user_settings = get_current_overrides()
+
+        # Determine the model key for the 'graph' stage
+        graph_stage_settings = all_user_settings.get("graph", {})
+        user_defined_graph_model_key = graph_stage_settings.get("model_name")
+
+        final_graph_model_key = user_defined_graph_model_key or global_settings.GRAPH_MODEL
 
         # Limit text length to avoid token limits
         content_limited = content[: min(len(content), 5000)]
 
-        # We'll use the Pydantic model directly when calling litellm
-        # No need to generate JSON schema separately
-
-        # Get entity extraction overrides if available
         extraction_overrides = {}
-
-        # Convert prompt_overrides to dict for processing
         if prompt_overrides:
-            # If it's already an EntityExtractionPromptOverride, convert to dict
             extraction_overrides = prompt_overrides.model_dump(exclude_none=True)
 
-        # Check for custom prompt template
         custom_prompt = extraction_overrides.get("prompt_template")
         custom_examples = extraction_overrides.get("examples")
 
-        # Prepare examples if provided
         examples_str = ""
         if custom_examples:
-            # Ensure proper serialization for both dict and Pydantic model examples
             if isinstance(custom_examples, list) and custom_examples and hasattr(custom_examples[0], "model_dump"):
-                # List of Pydantic model objects
                 serialized_examples = [example.model_dump() for example in custom_examples]
             else:
-                # List of dictionaries
                 serialized_examples = custom_examples
-
             examples_json = {"entities": serialized_examples}
             examples_str = (
                 f"\nHere are some examples of the kind of entities to extract:\n```json\n"
                 f"{json.dumps(examples_json, indent=2)}\n```\n"
             )
 
-        # Modify the system message to handle properties as a string that will be parsed later
         system_message = {
             "role": "system",
             "content": (
@@ -788,7 +792,6 @@ class GraphService:
             ),
         }
 
-        # Use custom prompt if provided, otherwise use default
         if custom_prompt:
             user_message = {
                 "role": "user",
@@ -809,61 +812,58 @@ class GraphService:
                 ),
             }
 
-        # Get the model configuration from registered_models
-        model_config = settings.REGISTERED_MODELS.get(settings.GRAPH_MODEL, {})
+        # Get the model configuration from registered_models FOR THE FINAL MODEL KEY
+        model_config = global_settings.REGISTERED_MODELS.get(final_graph_model_key, {})
         if not model_config:
-            raise ValueError(f"Model '{settings.GRAPH_MODEL}' not found in registered_models configuration")
+            raise ValueError(f"Model '{final_graph_model_key}' not found in registered_models configuration")
 
-        # Prepare the completion request parameters
         model_params = {
-            "model": model_config.get("model_name"),
+            "model": model_config.get("model_name"),  # Use model_name from the resolved model_config
             "messages": [system_message, user_message],
             "response_format": ExtractionResult,
         }
 
-        # Add all model-specific parameters from the config
+        # Inject stage-specific API key override for "graph" stage (this part should be correct from previous refactor)
+        try:
+            # graph_stage_settings already fetched above
+            user_selected_provider = graph_stage_settings.get("provider")
+            if user_selected_provider:
+                user_api_key = graph_stage_settings.get(f"{user_selected_provider}_api_key")
+                current_model_provider = _get_provider_from_model_name(model_config.get("model_name"))
+                if user_api_key and current_model_provider == user_selected_provider:
+                    model_params["api_key"] = user_api_key
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Failed to apply API key override for graph service: {e}")
+
         for key, value in model_config.items():
-            if key != "model_name":  # Skip as we've already handled it
+            if key not in ["model_name", "api_key"]:  # Avoid overriding already set model_name or api_key
                 model_params[key] = value
         import instructor
         import litellm
 
-        # Use instructor with litellm to get structured responses
         client = instructor.from_litellm(litellm.acompletion, mode=instructor.Mode.JSON)
         try:
-            # Use LiteLLM with instructor for structured completion
             logger.debug(f"Calling LiteLLM with instructor and params: {model_params}")
-            # Extract the model and messages from model_params
-            model = model_params.pop("model")
-            messages = model_params.pop("messages")
-            # Use instructor's chat.completions.create with response_model
+            model_for_call = model_params.pop("model")
+            messages_for_call = model_params.pop("messages")
             response = await client.chat.completions.create(
-                model=model, messages=messages, response_model=ExtractionResult, **model_params
+                model=model_for_call, messages=messages_for_call, response_model=ExtractionResult, **model_params
             )
-
-            try:
-
-                logger.info(f"Extraction result type: {type(response)}")
-                extraction_result = response  # The response is already our Pydantic model
-
-                # Make sure the extraction_result has the expected properties
-                if not hasattr(extraction_result, "entities"):
-                    extraction_result.entities = []
-                if not hasattr(extraction_result, "relationships"):
-                    extraction_result.relationships = []
-
-            except AttributeError as e:
-                logger.error(f"Invalid response format from LiteLLM: {e}")
-                logger.debug(f"Raw response structure: {response.choices[0]}")
-                return [], []
-
+            extraction_result = response
+            if not hasattr(extraction_result, "entities"):
+                extraction_result.entities = []
+            if not hasattr(extraction_result, "relationships"):
+                extraction_result.relationships = []
+        except AttributeError as e:
+            logger.error(f"Invalid response format from LiteLLM: {e}")
+            logger.debug(
+                f"Raw response structure: {response.choices[0] if hasattr(response, 'choices') else response}"
+            )  # Guard access
+            return [], []
         except Exception as e:
             logger.error(f"Error during entity extraction with LiteLLM: {str(e)}")
-            # Enable this for more verbose debugging
-            # litellm.set_verbose = True
             return [], []
 
-        # Process extraction results
         entities, relationships = self._process_extraction_results(extraction_result, doc_id, chunk_number)
         logger.info(
             f"Extracted {len(entities)} entities and {len(relationships)} relationships from document "

@@ -103,4 +103,14 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:  # noq
         # Enterprise package not installed – nothing to do.
         pass
 
+    # ------------------------------------------------------------------
+    # Configure per-app LLM overrides (non-blocking best-effort)
+    # ------------------------------------------------------------------
+    try:
+        from ee.llm_key_router import set_llm_overrides  # noqa: WPS433 – runtime import
+
+        await set_llm_overrides(ctx.app_id, ctx.user_id)
+    except Exception as exc:  # noqa: BLE001 – best-effort, never fail auth
+        logger.debug("LLM override setup failed: %s", exc)
+
     return ctx

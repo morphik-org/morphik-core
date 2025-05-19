@@ -6,9 +6,25 @@ import litellm
 from pydantic import BaseModel
 
 from core.config import get_settings
+from ee.llm_key_router import get_current_overrides
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
+global_settings_ref = get_settings()
+
+
+# Helper to determine provider from model name string (can be moved to a util module later)
+def _get_provider_from_model_name(model_name_str: Optional[str]) -> Optional[str]:
+    if not model_name_str:
+        return None
+    if "gpt-" in model_name_str.lower() or "openai" in model_name_str.lower():
+        return "openai"
+    if "claude-" in model_name_str.lower() or "anthropic" in model_name_str.lower():
+        return "anthropic"
+    if "azure_" in model_name_str.lower() or "azure" == model_name_str.lower():
+        return "azure"
+    if "ollama" in model_name_str.lower():
+        return "ollama"
+    return None  # Default if no specific provider pattern is matched
 
 
 class BaseRule(BaseModel, ABC):
@@ -46,9 +62,17 @@ class MetadataExtractionRule(BaseRule):
     use_images: bool = False
 
     async def apply(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> tuple[Dict[str, Any], str]:
-        """Extract metadata according to schema"""
+        """Extract metadata according to schema, respecting user's model for 'rules' stage."""
         import instructor
         from pydantic import create_model
+
+        all_user_settings = get_current_overrides()
+
+        # Determine the model key for the 'rules' stage
+        rules_stage_settings = all_user_settings.get("rules", {})
+        user_defined_rules_model_key = rules_stage_settings.get("model_name")
+
+        final_rules_model_key = user_defined_rules_model_key or global_settings_ref.RULES_MODEL
 
         # Create a dynamic Pydantic model based on the schema
         # This allows instructor to validate the output against our schema
@@ -128,10 +152,10 @@ class MetadataExtractionRule(BaseRule):
             4. Be concise but accurate in your extractions
             """
 
-        # Get the model configuration from registered_models
-        model_config = settings.REGISTERED_MODELS.get(settings.RULES_MODEL, {})
+        # Get the model configuration from registered_models FOR THE FINAL MODEL KEY
+        model_config = global_settings_ref.REGISTERED_MODELS.get(final_rules_model_key, {})
         if not model_config:
-            raise ValueError(f"Model '{settings.RULES_MODEL}' not found in registered_models configuration")
+            raise ValueError(f"Model '{final_rules_model_key}' not found in registered_models configuration")
 
         # Prepare base64 data for vision model if this is an image rule
         vision_messages = []
@@ -179,15 +203,24 @@ class MetadataExtractionRule(BaseRule):
         client = instructor.from_litellm(litellm.acompletion, mode=instructor.Mode.JSON)
 
         try:
-            # Extract the model name for instructor call
-            model = model_config.get("model_name")
-
-            # Prepare additional parameters from model config
+            model_for_call = model_config.get("model_name")
             model_kwargs = {k: v for k, v in model_config.items() if k != "model_name"}
+
+            # Inject stage-specific API key override for "rules" stage
+            try:
+                # rules_stage_settings already fetched
+                user_selected_provider = rules_stage_settings.get("provider")
+                if user_selected_provider:
+                    user_api_key = rules_stage_settings.get(f"{user_selected_provider}_api_key")
+                    current_model_provider = _get_provider_from_model_name(model_config.get("model_name"))
+                    if user_api_key and current_model_provider == user_selected_provider:
+                        model_kwargs["api_key"] = user_api_key
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Failed to apply API key override for metadata rule: {e}")
 
             # Use instructor's client to create a structured response
             response = await client.chat.completions.create(
-                model=model,
+                model=model_for_call,
                 messages=messages,
                 response_model=DynamicMetadataModel,
                 **model_kwargs,
@@ -217,8 +250,16 @@ class NaturalLanguageRule(BaseRule):
     prompt: str
 
     async def apply(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> tuple[Dict[str, Any], str]:
-        """Transform content according to prompt"""
+        """Transform content according to prompt, respecting user's model for 'rules' stage."""
         import instructor
+
+        all_user_settings = get_current_overrides()
+
+        # Determine the model key for the 'rules' stage
+        rules_stage_settings = all_user_settings.get("rules", {})
+        user_defined_rules_model_key = rules_stage_settings.get("model_name")
+
+        final_rules_model_key = user_defined_rules_model_key or global_settings_ref.RULES_MODEL
 
         # Adjust prompt based on whether it's a chunk or full document
         prompt_context = "chunk of text" if self.stage == "post_chunking" else "text"
@@ -233,10 +274,10 @@ class NaturalLanguageRule(BaseRule):
         Perform the transformation and return only the transformed text.
         """
 
-        # Get the model configuration from registered_models
-        model_config = settings.REGISTERED_MODELS.get(settings.RULES_MODEL, {})
+        # Get the model configuration from registered_models FOR THE FINAL MODEL KEY
+        model_config = global_settings_ref.REGISTERED_MODELS.get(final_rules_model_key, {})
         if not model_config:
-            raise ValueError(f"Model '{settings.RULES_MODEL}' not found in registered_models configuration")
+            raise ValueError(f"Model '{final_rules_model_key}' not found in registered_models configuration")
 
         system_message = {
             "role": "system",
@@ -252,15 +293,24 @@ class NaturalLanguageRule(BaseRule):
         client = instructor.from_litellm(litellm.acompletion, mode=instructor.Mode.JSON)
 
         try:
-            # Extract the model name for instructor call
-            model = model_config.get("model_name")
-
-            # Prepare additional parameters from model config
+            model_for_call = model_config.get("model_name")
             model_kwargs = {k: v for k, v in model_config.items() if k != "model_name"}
+
+            # Inject stage-specific API key override for "rules" stage
+            try:
+                # rules_stage_settings already fetched
+                user_selected_provider = rules_stage_settings.get("provider")
+                if user_selected_provider:
+                    user_api_key = rules_stage_settings.get(f"{user_selected_provider}_api_key")
+                    current_model_provider = _get_provider_from_model_name(model_config.get("model_name"))
+                    if user_api_key and current_model_provider == user_selected_provider:
+                        model_kwargs["api_key"] = user_api_key
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Failed to apply API key override for NL rule: {e}")
 
             # Use instructor's client to create a structured response
             response = await client.chat.completions.create(
-                model=model,
+                model=model_for_call,
                 messages=[system_message, user_message],
                 response_model=TransformationOutput,
                 **model_kwargs,

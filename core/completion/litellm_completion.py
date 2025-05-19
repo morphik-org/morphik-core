@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from core.config import get_settings
 from core.models.completion import CompletionRequest, CompletionResponse
+from ee.llm_key_router import get_current_overrides
 
 from .base_completion import BaseCompletionModel
 
@@ -139,6 +140,21 @@ def create_dynamic_model_from_schema(schema: Union[type, Dict]) -> Optional[type
     else:
         logger.warning(f"Unrecognized schema format: {schema}")
         return None
+
+
+# Helper to determine provider from model name string
+def _get_provider_from_model_name(model_name_str: Optional[str]) -> Optional[str]:
+    if not model_name_str:
+        return None
+    if "gpt-" in model_name_str.lower() or "openai" in model_name_str.lower():
+        return "openai"
+    if "claude-" in model_name_str.lower() or "anthropic" in model_name_str.lower():
+        return "anthropic"
+    if "azure_" in model_name_str.lower() or "azure" == model_name_str.lower():
+        return "azure"
+    if "ollama" in model_name_str.lower():
+        return "ollama"
+    return None  # Default if no specific provider pattern is matched
 
 
 class LiteLLMCompletionModel(BaseCompletionModel):
@@ -292,6 +308,29 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             if request.max_tokens is not None:
                 model_kwargs["max_tokens"] = request.max_tokens
 
+            # Inject stage-specific API key override
+            try:
+                all_user_settings = get_current_overrides()
+                current_settings = get_settings()
+                determined_stage_name = None
+                if self.model_key == current_settings.COMPLETION_MODEL:
+                    determined_stage_name = "completion"
+                elif hasattr(current_settings, "RULES_MODEL") and self.model_key == current_settings.RULES_MODEL:
+                    determined_stage_name = "rules"
+                elif hasattr(current_settings, "GRAPH_MODEL") and self.model_key == current_settings.GRAPH_MODEL:
+                    determined_stage_name = "graph"
+
+                if determined_stage_name:
+                    stage_settings = all_user_settings.get(determined_stage_name, {})
+                    user_selected_provider = stage_settings.get("provider")
+                    if user_selected_provider:
+                        user_api_key = stage_settings.get(f"{user_selected_provider}_api_key")
+                        current_model_provider = _get_provider_from_model_name(self.model_config.get("model_name"))
+                        if user_api_key and current_model_provider == user_selected_provider:
+                            model_kwargs["api_key"] = user_api_key
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Failed to apply API key override: {e}")
+
             # Add format forcing for structured output
             model_kwargs["response_format"] = {"type": "json_object"}
 
@@ -406,6 +445,29 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         for key, value in self.model_config.items():
             if key != "model_name":
                 model_params[key] = value
+
+        # Inject stage-specific API key override
+        try:
+            all_user_settings = get_current_overrides()
+            current_settings = get_settings()
+            determined_stage_name = None
+            if self.model_key == current_settings.COMPLETION_MODEL:
+                determined_stage_name = "completion"
+            elif hasattr(current_settings, "RULES_MODEL") and self.model_key == current_settings.RULES_MODEL:
+                determined_stage_name = "rules"
+            elif hasattr(current_settings, "GRAPH_MODEL") and self.model_key == current_settings.GRAPH_MODEL:
+                determined_stage_name = "graph"
+
+            if determined_stage_name:
+                stage_settings = all_user_settings.get(determined_stage_name, {})
+                user_selected_provider = stage_settings.get("provider")
+                if user_selected_provider:
+                    user_api_key = stage_settings.get(f"{user_selected_provider}_api_key")
+                    current_model_provider = _get_provider_from_model_name(self.model_config.get("model_name"))
+                    if user_api_key and current_model_provider == user_selected_provider:
+                        model_params["api_key"] = user_api_key
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Failed to apply API key override: {e}")
 
         logger.debug(f"Calling LiteLLM with params: {model_params}")
         response = await litellm.acompletion(**model_params)
