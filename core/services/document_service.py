@@ -31,6 +31,7 @@ from core.models.chunk import Chunk, DocumentChunk
 from core.models.completion import ChunkSource, CompletionRequest, CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentContent, DocumentResult, StorageFileInfo
 from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
+from core.models.chat import ChatMessage
 from core.parser.base_parser import BaseParser
 from core.reranker.base_reranker import BaseReranker
 from core.services.graph_service import GraphService
@@ -493,6 +494,7 @@ class DocumentService:
         folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
+        chat_history: Optional[List[ChatMessage]] = None,
     ) -> CompletionResponse:
         """Generate completion using relevant chunks as context.
 
@@ -565,6 +567,7 @@ class DocumentService:
             temperature=temperature,
             prompt_template=custom_prompt_template,
             schema=schema,
+            chat_history=chat_history,
         )
 
         response = await self.completion_model.complete(request)

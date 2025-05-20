@@ -404,6 +404,7 @@ class Folder:
             prompt_overrides,
             effective_folder,
             None,  # end_user_id not supported at this level
+            chat_id,
             schema,
         )
 
@@ -985,6 +986,7 @@ class UserScope:
             prompt_overrides,
             effective_folder,
             self._end_user_id,
+            chat_id,
             schema,
         )
 
@@ -1692,6 +1694,7 @@ class Morphik:
         include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
+        chat_id: Optional[str] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> CompletionResponse:
         """
@@ -1798,6 +1801,7 @@ class Morphik:
             prompt_overrides,
             folder_name,
             None,  # end_user_id not supported at this level
+            chat_id,
             schema,
         )
 

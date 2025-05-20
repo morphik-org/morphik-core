@@ -104,6 +104,24 @@ class FolderModel(Base):
     )
 
 
+class ChatConversationModel(Base):
+    """SQLAlchemy model for persisted chat history."""
+
+    __tablename__ = "chat_conversations"
+
+    conversation_id = Column(String, primary_key=True)
+    user_id = Column(String, index=True, nullable=True)
+    app_id = Column(String, index=True, nullable=True)
+    history = Column(JSONB, default=list)
+    created_at = Column(String)
+    updated_at = Column(String)
+
+    __table_args__ = (
+        Index("idx_chat_user_id", "user_id"),
+        Index("idx_chat_app_id", "app_id"),
+    )
+
+
 def _serialize_datetime(obj: Any) -> Any:
     """Helper function to serialize datetime objects to ISO format strings."""
     if isinstance(obj, datetime):
@@ -1581,6 +1599,73 @@ class PostgresDatabase(BaseDatabase):
 
         except Exception as e:
             logger.error(f"Error removing document from folder: {e}")
+            return False
+
+    async def get_chat_history(
+        self, conversation_id: str, user_id: Optional[str], app_id: Optional[str]
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Return stored chat history for *conversation_id*."""
+        if not self._initialized:
+            await self.initialize()
+
+        try:
+            async with self.async_session() as session:
+                result = await session.execute(
+                    select(ChatConversationModel).where(
+                        ChatConversationModel.conversation_id == conversation_id
+                    )
+                )
+                convo = result.scalar_one_or_none()
+                if not convo:
+                    return None
+                if user_id and convo.user_id and convo.user_id != user_id:
+                    return None
+                if app_id and convo.app_id and convo.app_id != app_id:
+                    return None
+                return convo.history
+        except Exception as e:
+            logger.error(f"Error getting chat history: {e}")
+            return None
+
+    async def upsert_chat_history(
+        self,
+        conversation_id: str,
+        user_id: Optional[str],
+        app_id: Optional[str],
+        history: List[Dict[str, Any]],
+    ) -> bool:
+        """Store or update chat history."""
+        if not self._initialized:
+            await self.initialize()
+
+        try:
+            now = datetime.now(UTC).isoformat()
+            async with self.async_session() as session:
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO chat_conversations (conversation_id, user_id, app_id, history, created_at, updated_at)
+                        VALUES (:cid, :uid, :aid, :hist, :now, :now)
+                        ON CONFLICT (conversation_id)
+                        DO UPDATE SET
+                            user_id = EXCLUDED.user_id,
+                            app_id = EXCLUDED.app_id,
+                            history = EXCLUDED.history,
+                            updated_at = :now
+                        """
+                    ),
+                    {
+                        "cid": conversation_id,
+                        "uid": user_id,
+                        "aid": app_id,
+                        "hist": json.dumps(history),
+                        "now": now,
+                    },
+                )
+                await session.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error upserting chat history: {e}")
             return False
 
     def _check_folder_access(self, folder: Folder, auth: AuthContext, permission: str = "read") -> bool:

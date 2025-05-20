@@ -391,6 +391,7 @@ class AsyncFolder:
             prompt_overrides,
             effective_folder,
             None,
+            chat_id,
             schema,
         )
 
@@ -925,6 +926,7 @@ class AsyncUserScope:
             prompt_overrides,
             effective_folder,
             self._end_user_id,
+            chat_id,
             schema,
         )
 
@@ -1549,6 +1551,7 @@ class AsyncMorphik:
         include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
+        chat_id: Optional[str] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> CompletionResponse:
         """
@@ -1654,6 +1657,7 @@ class AsyncMorphik:
             prompt_overrides,
             effective_folder,
             None,
+            chat_id,
             schema,
         )
 

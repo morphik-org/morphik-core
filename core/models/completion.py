@@ -1,5 +1,7 @@
 from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 
+from .chat import ChatMessage
+
 from pydantic import BaseModel
 
 # Type variable for any Pydantic model
@@ -35,3 +37,4 @@ class CompletionRequest(BaseModel):
     folder_name: Optional[str] = None
     end_user_id: Optional[str] = None
     schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None
+    chat_history: Optional[List[ChatMessage]] = None

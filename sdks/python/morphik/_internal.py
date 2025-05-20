@@ -251,6 +251,7 @@ class _MorphikClientLogic:
         prompt_overrides: Optional[Dict],
         folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
+        chat_id: Optional[str] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Prepare request for query endpoint"""
@@ -271,6 +272,8 @@ class _MorphikClientLogic:
             payload["folder_name"] = folder_name
         if end_user_id:
             payload["end_user_id"] = end_user_id
+        if chat_id:
+            payload["chat_id"] = chat_id
 
         # Add schema to payload if provided
         if schema:
