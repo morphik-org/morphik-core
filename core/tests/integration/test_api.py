@@ -3729,3 +3729,33 @@ async def test_ingest_empty_file_sets_failed_status(client: AsyncClient):
 
     assert status_info["status"] == "failed"
     assert "error" in status_info and "No content chunks" in status_info["error"]
+
+
+@pytest.mark.asyncio
+async def test_chat_persistence(client: AsyncClient):
+    """Ensure chat history is persisted across queries."""
+    headers = create_auth_header()
+    chat_id = str(uuid.uuid4())
+
+    await test_ingest_text_document(client, content="Chat persistence doc")
+
+    resp1 = await client.post(
+        "/query",
+        json={"query": "first", "chat_id": chat_id},
+        headers=headers,
+    )
+    assert resp1.status_code == 200
+
+    resp2 = await client.post(
+        "/query",
+        json={"query": "second", "chat_id": chat_id},
+        headers=headers,
+    )
+    assert resp2.status_code == 200
+
+    hist = await client.get(f"/chat/{chat_id}", headers=headers)
+    assert hist.status_code == 200
+    history = hist.json()
+    assert len(history) >= 4
+    assert history[0]["role"] == "user"
+    assert history[1]["role"] == "assistant"

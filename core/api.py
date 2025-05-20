@@ -38,6 +38,7 @@ from core.models.request import (
     SetFolderRuleRequest,
     UpdateGraphRequest,
 )
+from core.models.chat import ChatMessage
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, storage
 
@@ -745,7 +746,11 @@ async def batch_get_chunks(request: Dict[str, Any], auth: AuthContext = Depends(
 
 @app.post("/query", response_model=CompletionResponse)
 @telemetry.track(operation_type="query", metadata_resolver=telemetry.query_metadata)
-async def query_completion(request: CompletionQueryRequest, auth: AuthContext = Depends(verify_token)):
+async def query_completion(
+    request: CompletionQueryRequest,
+    auth: AuthContext = Depends(verify_token),
+    redis: arq.ArqRedis = Depends(get_redis_pool),
+):
     """
     Generate completion using relevant chunks as context.
 
@@ -777,14 +782,34 @@ async def query_completion(request: CompletionQueryRequest, auth: AuthContext = 
     try:
         # Validate prompt overrides before proceeding
         if request.prompt_overrides:
-            validate_prompt_overrides_with_http_exception(request.prompt_overrides, operation_type="query")
+            validate_prompt_overrides_with_http_exception(
+                request.prompt_overrides, operation_type="query"
+            )
+
+        history_key = None
+        history: List[Dict[str, Any]] = []
+        if request.chat_id:
+            history_key = f"chat:{request.chat_id}"
+            stored = await redis.get(history_key)
+            if stored:
+                try:
+                    history = json.loads(stored)
+                except Exception:
+                    history = []
+            history.append(
+                {
+                    "role": "user",
+                    "content": request.query,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
 
         # Check query limits if in cloud mode
         if settings.MODE == "cloud" and auth.user_id:
             # Check limits before proceeding
             await check_and_increment_limits(auth, "query", 1)
 
-        return await document_service.query(
+        response = await document_service.query(
             request.query,
             auth,
             request.filters,
@@ -802,10 +827,40 @@ async def query_completion(request: CompletionQueryRequest, auth: AuthContext = 
             request.end_user_id,
             request.schema,
         )
+
+        if history_key:
+            history.append(
+                {
+                    "role": "assistant",
+                    "content": response.completion,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
+            await redis.set(history_key, json.dumps(history))
+
+        return response
     except ValueError as e:
         validate_prompt_overrides_with_http_exception(operation_type="query", error=e)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.get("/chat/{chat_id}", response_model=List[ChatMessage])
+async def get_chat_history(
+    chat_id: str,
+    auth: AuthContext = Depends(verify_token),
+    redis: arq.ArqRedis = Depends(get_redis_pool),
+):
+    """Return stored chat history for *chat_id* if available."""
+    history_key = f"chat:{chat_id}"
+    stored = await redis.get(history_key)
+    if not stored:
+        return []
+    try:
+        data = json.loads(stored)
+        return [ChatMessage(**m) for m in data]
+    except Exception:
+        return []
 
 
 @app.post("/agent", response_model=Dict[str, Any])
