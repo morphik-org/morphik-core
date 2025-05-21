@@ -83,9 +83,13 @@ class Settings(BaseSettings):
     RULES_BATCH_SIZE: int = 4096
 
     # Graph configuration
+    GRAPH_MODE: Literal["local", "api"] = "local"
     GRAPH_PROVIDER: Literal["litellm"] = "litellm"
-    GRAPH_MODEL: str
-    ENABLE_ENTITY_RESOLUTION: bool = True
+    GRAPH_MODEL: Optional[str] = None
+    ENABLE_ENTITY_RESOLUTION: Optional[bool] = None
+    # Graph API configuration
+    MORPHIK_GRAPH_API_KEY: Optional[str] = None
+    MORPHIK_GRAPH_BASE_URL: Optional[str] = None
 
     # Reranker configuration
     USE_RERANKING: bool
@@ -325,10 +329,19 @@ def get_settings() -> Settings:
         }
 
     # load graph config
-    graph_config = {
-        "GRAPH_PROVIDER": "litellm",
-        "ENABLE_ENTITY_RESOLUTION": config["graph"].get("enable_entity_resolution", True),
-    }
+    graph_config = (
+        {
+            "GRAPH_MODE": "local",
+            "GRAPH_PROVIDER": "litellm",
+            "ENABLE_ENTITY_RESOLUTION": config["graph"].get("enable_entity_resolution", True),
+        }
+        if config["graph"].get("mode", "local") == "local"
+        else {
+            "GRAPH_MODE": "api",
+            "MORPHIK_GRAPH_BASE_URL": config["graph"].get("base_url", "https://graph-api.morphik.ai"),
+            "MORPHIK_GRAPH_API_KEY": os.environ.get("MORPHIK_GRAPH_API_KEY", None),
+        }
+    )
 
     # Set the model key for LiteLLM
     if "model" not in config["graph"]:

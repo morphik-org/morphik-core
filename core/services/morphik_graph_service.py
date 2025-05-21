@@ -391,6 +391,8 @@ class MorphikGraphService:
         system_filters: Optional[Dict[str, Any]] = None,  # For graph retrieval in self.retrieve
         folder_name: Optional[Union[str, List[str]]] = None,  # For document_service and CompletionRequest
         end_user_id: Optional[str] = None,  # For document_service and CompletionRequest
+        hop_depth: Optional[int] = None,  # maintain signature
+        include_paths: Optional[bool] = None,  # maintain signature
     ) -> CompletionResponse:
         """Generate completion using combined context from an external graph API and standard document retrieval.
 
