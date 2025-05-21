@@ -155,6 +155,45 @@ class MorphikGraphService:
 
         return graph
 
+    async def get_graph_visualization(self, graph_name: str, auth: AuthContext) -> Dict[str, Any]:
+        """
+        Retrieves the visualization data (nodes and links) for a given graph.
+
+        Args:
+            graph_name: The name of the graph.
+            auth: The authentication context.
+
+        Returns:
+            A dictionary containing 'nodes' and 'links' for the graph visualization,
+            or raises an exception if the API call fails.
+        """
+        logger.debug(f"Attempting to find graph '{graph_name}' for visualization.")
+        graph = await self._find_graph(graph_name, auth, system_filters=None)
+        # _find_graph raises ValueError if graph not found or PermissionError if no access
+
+        logger.debug(f"Found graph with ID '{graph.id}'. Preparing API request for visualization.")
+        request_data = {"graph_id": graph.id}
+
+        try:
+            visualization_data = await self._make_api_request(
+                method="POST",
+                endpoint="/graph",  # Target endpoint for graph visualization
+                auth=auth,
+                json_data=request_data,
+            )
+            logger.info(f"Successfully retrieved visualization data for graph ID '{graph.id}'.")
+            # Basic validation of the response structure
+            if not isinstance(visualization_data, dict) or "nodes" not in visualization_data or "links" not in visualization_data:
+                logger.warning(f"Visualization data for graph ID '{graph.id}' has unexpected format: {visualization_data}")
+                # Depending on requirements, one might raise an error here or return the data as is.
+                # For now, returning as is, as the external API's contract is what defines the output.
+            return visualization_data
+        except Exception as e:
+            # _make_api_request already logs details of HTTPStatusError, RequestError, JSONDecodeError
+            logger.error(f"API call for graph visualization failed for graph ID '{graph.id}'. Error: {e}")
+            # Re-raise the exception to be handled by the calling layer (e.g., API endpoint)
+            raise
+
     async def _get_new_document_ids(
         self,
         auth: AuthContext,

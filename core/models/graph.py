@@ -65,3 +65,19 @@ class Graph(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     owner: Dict[str, str] = Field(default_factory=dict)
     access_control: Dict[str, List[str]] = Field(default_factory=lambda: {"readers": [], "writers": [], "admins": []})
+
+
+class GraphVisualizationNode(BaseModel):
+    id: str
+    # Add any other relevant fields for a node if needed, e.g., label, type
+
+
+class GraphVisualizationLink(BaseModel):
+    source: str
+    target: str
+    # Add any other relevant fields for a link if needed, e.g., type, properties
+
+
+class GraphVisualizationResponse(BaseModel):
+    nodes: List[GraphVisualizationNode]
+    links: List[GraphVisualizationLink]

@@ -25,7 +25,7 @@ from core.models.auth import AuthContext, EntityType
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentResult
 from core.models.folders import Folder, FolderCreate
-from core.models.graph import Graph
+from core.models.graph import Graph, GraphVisualizationResponse  # Added GraphVisualizationResponse
 from core.models.prompts import validate_prompt_overrides_with_http_exception
 from core.models.request import (
     AgentQueryRequest,
@@ -1620,6 +1620,39 @@ async def get_graph(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/graph/{name}/visualize", response_model=GraphVisualizationResponse)
+@telemetry.track(operation_type="get_graph_visualization", metadata_resolver=telemetry.get_graph_metadata)
+async def get_graph_visualization(
+    name: str,
+    auth: AuthContext = Depends(verify_token),
+) -> GraphVisualizationResponse:
+    """
+    Get a graph visualization by name.
+
+    This endpoint retrieves a graph visualization by its name if the user has access to it.
+
+    Args:
+        name: Name of the graph to retrieve visualization for
+        auth: Authentication context
+
+    Returns:
+        GraphVisualizationResponse: The graph visualization data
+    """
+    try:
+        # Assuming document_service has a graph_service attribute which has get_graph_visualization method
+        visualization_data = await document_service.graph_service.get_graph_visualization(name, auth)
+        if not visualization_data:
+            raise HTTPException(status_code=404, detail=f"Graph visualization for '{name}' not found or access denied")
+        return visualization_data
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except HTTPException: # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error getting graph visualization for {name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
