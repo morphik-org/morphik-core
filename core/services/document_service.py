@@ -27,6 +27,7 @@ from core.database.base_database import BaseDatabase
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
+from core.models.chat import ChatMessage
 from core.models.chunk import Chunk, DocumentChunk
 from core.models.completion import ChunkSource, CompletionRequest, CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentContent, DocumentResult, StorageFileInfo
@@ -506,6 +507,7 @@ class DocumentService:
         folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
+        chat_history: Optional[List[ChatMessage]] = None,
     ) -> CompletionResponse:
         """Generate completion using relevant chunks as context.
 
@@ -578,6 +580,7 @@ class DocumentService:
             temperature=temperature,
             prompt_template=custom_prompt_template,
             schema=schema,
+            chat_history=chat_history,
         )
 
         response = await self.completion_model.complete(request)

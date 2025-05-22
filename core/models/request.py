@@ -40,6 +40,10 @@ class CompletionQueryRequest(RetrieveRequest):
         None,
         description="Schema for structured output, can be a Pydantic model or JSON schema dict",
     )
+    chat_id: Optional[str] = Field(
+        None,
+        description="Optional chat session ID for persisting conversation history",
+    )
 
 
 class IngestTextRequest(BaseModel):

@@ -22,6 +22,7 @@ from core.database.postgres_database import PostgresDatabase
 from core.dependencies import get_redis_pool
 from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
 from core.models.auth import AuthContext, EntityType
+from core.models.chat import ChatMessage
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentResult
 from core.models.folders import Folder, FolderCreate
@@ -745,7 +746,11 @@ async def batch_get_chunks(request: Dict[str, Any], auth: AuthContext = Depends(
 
 @app.post("/query", response_model=CompletionResponse)
 @telemetry.track(operation_type="query", metadata_resolver=telemetry.query_metadata)
-async def query_completion(request: CompletionQueryRequest, auth: AuthContext = Depends(verify_token)):
+async def query_completion(
+    request: CompletionQueryRequest,
+    auth: AuthContext = Depends(verify_token),
+    redis: arq.ArqRedis = Depends(get_redis_pool),
+):
     """
     Generate completion using relevant chunks as context.
 
@@ -779,12 +784,35 @@ async def query_completion(request: CompletionQueryRequest, auth: AuthContext = 
         if request.prompt_overrides:
             validate_prompt_overrides_with_http_exception(request.prompt_overrides, operation_type="query")
 
+        history_key = None
+        history: List[Dict[str, Any]] = []
+        if request.chat_id:
+            history_key = f"chat:{request.chat_id}"
+            stored = await redis.get(history_key)
+            if stored:
+                try:
+                    history = json.loads(stored)
+                except Exception:
+                    history = []
+            else:
+                db_hist = await document_service.db.get_chat_history(request.chat_id, auth.user_id, auth.app_id)
+                if db_hist:
+                    history = db_hist
+
+            history.append(
+                {
+                    "role": "user",
+                    "content": request.query,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
+
         # Check query limits if in cloud mode
         if settings.MODE == "cloud" and auth.user_id:
             # Check limits before proceeding
             await check_and_increment_limits(auth, "query", 1)
 
-        return await document_service.query(
+        response = await document_service.query(
             request.query,
             auth,
             request.filters,
@@ -801,11 +829,51 @@ async def query_completion(request: CompletionQueryRequest, auth: AuthContext = 
             request.folder_name,
             request.end_user_id,
             request.schema,
+            history,
         )
+
+        if history_key:
+            history.append(
+                {
+                    "role": "assistant",
+                    "content": response.completion,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
+            await redis.set(history_key, json.dumps(history))
+            await document_service.db.upsert_chat_history(
+                request.chat_id,
+                auth.user_id,
+                auth.app_id,
+                history,
+            )
+
+        return response
     except ValueError as e:
         validate_prompt_overrides_with_http_exception(operation_type="query", error=e)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.get("/chat/{chat_id}", response_model=List[ChatMessage])
+async def get_chat_history(
+    chat_id: str,
+    auth: AuthContext = Depends(verify_token),
+    redis: arq.ArqRedis = Depends(get_redis_pool),
+):
+    """Return stored chat history for *chat_id* if available."""
+    history_key = f"chat:{chat_id}"
+    stored = await redis.get(history_key)
+    if not stored:
+        db_hist = await document_service.db.get_chat_history(chat_id, auth.user_id, auth.app_id)
+        if not db_hist:
+            return []
+        return [ChatMessage(**m) for m in db_hist]
+    try:
+        data = json.loads(stored)
+        return [ChatMessage(**m) for m in data]
+    except Exception:
+        return []
 
 
 @app.post("/agent", response_model=Dict[str, Any])
@@ -2144,3 +2212,26 @@ async def delete_cloud_app(
         "documents_deleted": deleted,
         "folders_deleted": folder_ids_deleted,
     }
+
+
+@app.get("/chats", response_model=List[Dict[str, Any]])
+async def list_chat_conversations(
+    auth: AuthContext = Depends(verify_token),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """List chat conversations for the current user (and app scope).
+
+    Returns the most recently updated conversations first with a short
+    preview of the last message so that the UI can show a conversation
+    selector.
+    """
+    try:
+        convos = await document_service.db.list_chat_conversations(
+            user_id=auth.user_id,
+            app_id=auth.app_id,
+            limit=limit,
+        )
+        return convos
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error listing chat conversations: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to list chat conversations")
