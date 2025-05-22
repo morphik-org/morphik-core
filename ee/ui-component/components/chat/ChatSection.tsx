@@ -7,7 +7,7 @@ import { generateUUID } from "@/lib/utils";
 import type { QueryOptions } from "@/components/types";
 import type { UIMessage } from "./ChatMessages";
 
-import { Settings, Spin, ArrowUp } from "./icons";
+import { Settings, Spin, ArrowUp, Sparkles } from "./icons";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -417,6 +417,25 @@ const ChatSection: React.FC<ChatSectionProps> = ({
               {/* Settings & Agent Buttons */}
               {!isReadonly && (
                 <div className="mt-4 flex justify-center gap-2">
+                  <Button
+                    variant={isAgentMode ? "default" : "outline"}
+                    size="sm"
+                    className={`group relative overflow-hidden text-xs ${isAgentMode ? "bg-primary hover:bg-primary/90" : "hover:border-primary/50"}`}
+                    title="Goes deeper, reasons across documents and may return image-grounded answers"
+                    onClick={() => {
+                      setIsAgentMode(prev => !prev);
+                      setAgentStatus("idle");
+                      setShowSettings(false);
+                    }}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      {!isAgentMode && <Sparkles className="h-3.5 w-3.5 text-amber-400 dark:text-amber-300" />}
+                      <span>{isAgentMode ? "Back to Chat" : "Agent Mode"}</span>
+                    </span>
+                    {!isAgentMode && (
+                      <span className="absolute inset-0 -z-10 translate-x-[-100%] bg-gradient-to-r from-transparent via-primary/10 to-transparent group-hover:animate-shimmer" />
+                    )}
+                  </Button>
                   {!isAgentMode && (
                     <Button
                       variant="outline"
@@ -434,19 +453,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                       <span>{showSettings ? "Hide Settings" : "Show Settings"}</span>
                     </Button>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs"
-                    title="Goes deeper, reasons across documents and may return image-grounded answers"
-                    onClick={() => {
-                      setIsAgentMode(prev => !prev);
-                      setAgentStatus("idle");
-                      setShowSettings(false);
-                    }}
-                  >
-                    {isAgentMode ? "Back to Chat" : "Agent Mode"}
-                  </Button>
                 </div>
               )}
 
