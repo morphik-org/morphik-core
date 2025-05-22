@@ -54,6 +54,7 @@ def should_ignore_directory(dirname: str) -> bool:
         "dist",
         "node_modules",
         ".next",
+        "storage",
     }
     return dirname in ignore_dirs
 
@@ -87,7 +88,7 @@ def aggregate_files(root_dir: str, output_file: str, script_name: str, mode: str
     tree = DirectoryTree()
     target_dirs = get_target_directories(mode, root_dir)
 
-    print(f"\nProcessing Python files in {mode} mode...")
+    print(f"\nProcessing files in {mode} mode...")
     print(f"Target directories: {', '.join(target_dirs)}")
 
     with open(output_file, "w", encoding="utf-8") as outfile:
@@ -127,7 +128,14 @@ Root Directory: {root_dir}
                 relevant_files = [
                     f
                     for f in filenames
-                    if f.endswith(relevant_extensions) and f != "__init__.py" and f != script_name and f != output_file
+                    if (
+                        f.endswith(relevant_extensions)
+                        or f.lower() == "dockerfile"
+                        or f.lower() == "docker-compose.yml"
+                    )
+                    and f != "__init__.py"
+                    and f != script_name
+                    and f != output_file
                 ]
 
                 for file_name in relevant_files:
@@ -155,12 +163,19 @@ Root Directory: {root_dir}
                 if mode == "ui-component":
                     relevant_extensions = (".js", ".jsx", ".ts", ".tsx", ".css", ".html", ".json")
                 else:
-                    relevant_extensions = (".py",)
+                    relevant_extensions = (".py", ".toml", ".yaml", ".yml")
 
                 relevant_files = [
                     f
                     for f in filenames
-                    if f.endswith(relevant_extensions) and f != "__init__.py" and f != script_name and f != output_file
+                    if (
+                        f.endswith(relevant_extensions)
+                        or f.lower() == "dockerfile"
+                        or f.lower() == "docker-compose.yml"
+                    )
+                    and f != "__init__.py"
+                    and f != script_name
+                    and f != output_file
                 ]
 
                 for file_name in relevant_files:

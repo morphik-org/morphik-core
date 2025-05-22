@@ -43,6 +43,7 @@ dependencies = [
     "pytest>=8.3.5",
     "pytest-asyncio>=0.26.0",
     "python-multipart>=0.0.20",
+    "pyzotero>=1.6.11",
     "requests>=2.32.3",
     "sqlalchemy>=2.0.40",
     "stripe>=12.1.0",
@@ -53,6 +54,7 @@ dependencies = [
     "torchvision==0.20.1",
     "transformers==4.51.3",
     "twine>=6.1.0",
+    "ty>=0.0.1a6",
     "unstructured[pdf]>=0.17.2",
     "uvicorn>=0.34.2",
 ]
