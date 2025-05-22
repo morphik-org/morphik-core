@@ -110,6 +110,19 @@ app.include_router(ingest_router)
 # Single MorphikAgent instance (tool definitions cached)
 morphik_agent = MorphikAgent(document_service=document_service)
 
+
+# Helper function to normalize folder_name parameter
+def normalize_folder_name(folder_name: Optional[Union[str, List[str]]]) -> Optional[Union[str, List[str]]]:
+    """Convert string 'null' to None for folder_name parameter."""
+    if folder_name is None:
+        return None
+    if isinstance(folder_name, str):
+        return None if folder_name.lower() == "null" else folder_name
+    if isinstance(folder_name, list):
+        return [None if f.lower() == "null" else f for f in folder_name]
+    return folder_name
+
+
 # Enterprise-only routes (optional)
 try:
     from ee.routers import init_app as _init_ee_app  # type: ignore  # noqa: E402
@@ -225,8 +238,9 @@ async def batch_get_documents(request: Dict[str, Any], auth: AuthContext = Depen
 
         # Create system filters for folder and user scoping
         system_filters = {}
-        if folder_name:
-            system_filters["folder_name"] = folder_name
+        if folder_name is not None:
+            normalized_folder_name = normalize_folder_name(folder_name)
+            system_filters["folder_name"] = normalized_folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
         if auth.app_id:
@@ -274,8 +288,9 @@ async def batch_get_chunks(request: Dict[str, Any], auth: AuthContext = Depends(
 
         # Create system filters for folder and user scoping
         system_filters = {}
-        if folder_name:
-            system_filters["folder_name"] = folder_name
+        if folder_name is not None:
+            normalized_folder_name = normalize_folder_name(folder_name)
+            system_filters["folder_name"] = normalized_folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
         if auth.app_id:
@@ -456,7 +471,7 @@ async def list_documents(
     skip: int = 0,
     limit: int = 10000,
     filters: Optional[Dict[str, Any]] = None,
-    folder_name: Optional[Union[str, List[str]]] = None,
+    folder_name: Optional[Union[str, List[str]]] = Query(None),
     end_user_id: Optional[str] = None,
 ):
     """
@@ -475,8 +490,11 @@ async def list_documents(
     """
     # Create system filters for folder and user scoping
     system_filters = {}
-    if folder_name:
-        system_filters["folder_name"] = folder_name
+
+    # Normalize folder_name parameter (convert string "null" to None)
+    if folder_name is not None:
+        normalized_folder_name = normalize_folder_name(folder_name)
+        system_filters["folder_name"] = normalized_folder_name
     if end_user_id:
         system_filters["end_user_id"] = end_user_id
     if auth.app_id:
@@ -596,8 +614,9 @@ async def get_document_by_filename(
     try:
         # Create system filters for folder and user scoping
         system_filters = {}
-        if folder_name:
-            system_filters["folder_name"] = folder_name
+        if folder_name is not None:
+            normalized_folder_name = normalize_folder_name(folder_name)
+            system_filters["folder_name"] = normalized_folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
 
@@ -981,8 +1000,9 @@ async def create_graph(
         # Build system filters
         # --------------------
         system_filters: Dict[str, Any] = {}
-        if request.folder_name:
-            system_filters["folder_name"] = request.folder_name
+        if request.folder_name is not None:
+            normalized_folder_name = normalize_folder_name(request.folder_name)
+            system_filters["folder_name"] = normalized_folder_name
         if request.end_user_id:
             system_filters["end_user_id"] = request.end_user_id
 
@@ -1319,8 +1339,9 @@ async def get_graph(
     try:
         # Create system filters for folder and user scoping
         system_filters = {}
-        if folder_name:
-            system_filters["folder_name"] = folder_name
+        if folder_name is not None:
+            normalized_folder_name = normalize_folder_name(folder_name)
+            system_filters["folder_name"] = normalized_folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
 
@@ -1357,8 +1378,9 @@ async def list_graphs(
     try:
         # Create system filters for folder and user scoping
         system_filters = {}
-        if folder_name:
-            system_filters["folder_name"] = folder_name
+        if folder_name is not None:
+            normalized_folder_name = normalize_folder_name(folder_name)
+            system_filters["folder_name"] = normalized_folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
 
@@ -1403,8 +1425,9 @@ async def update_graph(
 
         # Create system filters for folder and user scoping
         system_filters = {}
-        if request.folder_name:
-            system_filters["folder_name"] = request.folder_name
+        if request.folder_name is not None:
+            normalized_folder_name = normalize_folder_name(request.folder_name)
+            system_filters["folder_name"] = normalized_folder_name
         if request.end_user_id:
             system_filters["end_user_id"] = request.end_user_id
 

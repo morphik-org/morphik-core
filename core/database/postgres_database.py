@@ -881,26 +881,30 @@ class PostgresDatabase(BaseDatabase):
         key_clauses: List[str] = []
 
         for key, value in system_filters.items():
-            if value is None:
-                continue
-
             # Normalise to a list for uniform processing.
             values = value if isinstance(value, list) else [value]
-            if not values:
+            if not values and value is not None:
                 continue
 
             value_clauses = []
             for item in values:
-                # New approach: Use JSONB containment operator @>
-                # This allows matching native JSON types (boolean, number, string)
-                # and leverages the GIN index on the system_metadata column.
-                json_filter_object = {key: item}
-                # json.dumps will correctly format item as a JSON string, number, or boolean
-                json_string_for_sql = json.dumps(json_filter_object)
-                # Escape single quotes within the generated JSON string for SQL literal
-                sql_escaped_json_string = json_string_for_sql.replace("'", "''")
+                if item is None:
+                    # Special handling for None values - check for null in JSON
+                    json_filter_object = {key: None}
+                    json_string_for_sql = json.dumps(json_filter_object)
+                    sql_escaped_json_string = json_string_for_sql.replace("'", "''")
+                    value_clauses.append(f"system_metadata @> '{sql_escaped_json_string}'::jsonb")
+                else:
+                    # Use JSONB containment operator @>
+                    # This allows matching native JSON types (boolean, number, string)
+                    # and leverages the GIN index on the system_metadata column.
+                    json_filter_object = {key: item}
+                    # json.dumps will correctly format item as a JSON string, number, or boolean
+                    json_string_for_sql = json.dumps(json_filter_object)
+                    # Escape single quotes within the generated JSON string for SQL literal
+                    sql_escaped_json_string = json_string_for_sql.replace("'", "''")
 
-                value_clauses.append(f"system_metadata @> '{sql_escaped_json_string}'::jsonb")
+                    value_clauses.append(f"system_metadata @> '{sql_escaped_json_string}'::jsonb")
 
             # OR all alternative values for this key, wrap in parentheses.
             key_clauses.append("(" + " OR ".join(value_clauses) + ")")

@@ -624,11 +624,11 @@ class DocumentService:
             },
         )
 
-        # Add folder_name and end_user_id to system_metadata if provided
-        if folder_name:
-            doc.system_metadata["folder_name"] = folder_name
+        # Always add folder_name to system_metadata (None if not provided)
+        doc.system_metadata["folder_name"] = folder_name
 
-            # Check if the folder exists, if not create it
+        # Check if the folder exists, if not create it (only when folder_name is provided)
+        if folder_name:
             await self._ensure_folder_exists(folder_name, doc.external_id, auth)
 
         if end_user_id:

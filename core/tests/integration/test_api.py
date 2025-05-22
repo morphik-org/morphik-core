@@ -3635,6 +3635,109 @@ async def test_multi_folder_list_scoping(client: AsyncClient):
     assert all(src["document_id"] in {doc1_id, doc2_id} for src in result["sources"])
 
 
+@pytest.mark.asyncio
+async def test_documents_not_in_folder(client: AsyncClient):
+    """Test retrieving documents that are not in any folder (folder_name is null)."""
+    headers = create_auth_header()
+
+    # Ingest a document without a folder
+    no_folder_content = "This document is not in any folder"
+    doc_no_folder_id = await test_ingest_text_document(client, content=no_folder_content)
+
+    # Ingest a document with a folder
+    folder_name = "test_folder_for_null_check"
+    folder_content = "This document is in a folder"
+    doc_with_folder_id = await test_ingest_text_document_folder_user(
+        client,
+        content=folder_content,
+        metadata={"test": "value"},
+        folder_name=folder_name,
+        end_user_id=None,
+    )
+
+    # Wait a bit for ingestion to complete
+    await asyncio.sleep(2)
+
+    # Test listing documents not in any folder (folder_name=null)
+    response = await client.post("/documents", json={}, headers=headers, params={"folder_name": "null"})
+    assert response.status_code == 200
+    docs = response.json()
+
+    # Check that we get exactly our documents with null folder_name
+    found_doc_ids = {doc["external_id"] for doc in docs}
+
+    # The document without folder should be in the results
+    assert doc_no_folder_id in found_doc_ids, "Document without folder should be found when filtering by null folder"
+
+    # The document with folder should NOT be in the results
+    assert (
+        doc_with_folder_id not in found_doc_ids
+    ), "Document with folder should NOT be found when filtering by null folder"
+
+    # Verify the returned document has null folder_name
+    for doc in docs:
+        if doc["external_id"] == doc_no_folder_id:
+            assert doc["system_metadata"]["folder_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_documents_in_folder_or_no_folder(client: AsyncClient):
+    """Test retrieving documents either in a specific folder OR not in any folder."""
+    headers = create_auth_header()
+
+    # Ingest a document without a folder
+    no_folder_content = "Document with no folder"
+    doc_no_folder_id = await test_ingest_text_document(client, content=no_folder_content)
+
+    # Ingest a document in folder A
+    folder_a_name = "folder_a_for_mixed_test"
+    folder_a_content = "Document in folder A"
+    doc_folder_a_id = await test_ingest_text_document_folder_user(
+        client,
+        content=folder_a_content,
+        metadata={"test": "folder_a"},
+        folder_name=folder_a_name,
+        end_user_id=None,
+    )
+
+    # Ingest a document in folder B
+    folder_b_name = "folder_b_for_mixed_test"
+    folder_b_content = "Document in folder B"
+    doc_folder_b_id = await test_ingest_text_document_folder_user(
+        client,
+        content=folder_b_content,
+        metadata={"test": "folder_b"},
+        folder_name=folder_b_name,
+        end_user_id=None,
+    )
+
+    # Wait a bit for ingestion to complete
+    await asyncio.sleep(2)
+
+    # Test listing documents in folder A OR not in any folder
+    response = await client.post(
+        "/documents", json={}, headers=headers, params={"folder_name": [folder_a_name, "null"]}
+    )
+    assert response.status_code == 200
+    docs = response.json()
+
+    # Track which documents we found
+    found_doc_ids = {doc["external_id"] for doc in docs}
+
+    # Should find: doc_no_folder_id and doc_folder_a_id
+    # Should NOT find: doc_folder_b_id
+    assert doc_no_folder_id in found_doc_ids, "Document without folder should be found"
+    assert doc_folder_a_id in found_doc_ids, "Document in folder A should be found"
+    assert doc_folder_b_id not in found_doc_ids, "Document in folder B should NOT be found"
+
+    # Verify the folder_name values
+    for doc in docs:
+        if doc["external_id"] == doc_no_folder_id:
+            assert doc["system_metadata"]["folder_name"] is None
+        elif doc["external_id"] == doc_folder_a_id:
+            assert doc["system_metadata"]["folder_name"] == folder_a_name
+
+
 # ---------------------------------------------------------------------------
 # Utility – wait for background graph builds to complete
 # ---------------------------------------------------------------------------
