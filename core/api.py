@@ -1,15 +1,13 @@
 import asyncio
-import base64
 import json
 import logging
-import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Optional, Union
 
 import arq
 import jwt
 import tomli
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware  # Import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from starlette.middleware.sessions import SessionMiddleware
@@ -20,7 +18,7 @@ from core.auth_utils import verify_token
 from core.config import get_settings
 from core.database.postgres_database import PostgresDatabase
 from core.dependencies import get_redis_pool
-from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
+from core.limits_utils import check_and_increment_limits
 from core.models.auth import AuthContext, EntityType
 from core.models.chat import ChatMessage
 from core.models.completion import ChunkSource, CompletionResponse
@@ -30,7 +28,6 @@ from core.models.graph import Graph
 from core.models.prompts import validate_prompt_overrides_with_http_exception
 from core.models.request import (
     AgentQueryRequest,
-    BatchIngestResponse,
     CompletionQueryRequest,
     CreateGraphRequest,
     GenerateUriRequest,
@@ -39,8 +36,9 @@ from core.models.request import (
     SetFolderRuleRequest,
     UpdateGraphRequest,
 )
+from core.routes.ingest import router as ingest_router
 from core.services.telemetry import TelemetryService
-from core.services_init import document_service, storage
+from core.services_init import document_service
 
 # Initialize FastAPI app
 logger = logging.getLogger(__name__)
@@ -106,6 +104,9 @@ async def ping_health():
 app.state.document_service = document_service
 logger.info("Document service initialized and stored on app.state")
 
+# Register ingest router
+app.include_router(ingest_router)
+
 # Single MorphikAgent instance (tool definitions cached)
 morphik_agent = MorphikAgent(document_service=document_service)
 
@@ -121,466 +122,6 @@ except ImportError as exc:
     logger.error("Failed to import init_app from ee.routers: %s", exc, exc_info=True)
 except Exception as exc:  # noqa: BLE001
     logger.error("An unexpected error occurred during EE app initialization: %s", exc, exc_info=True)
-
-
-@app.post("/ingest/text", response_model=Document)
-@telemetry.track(operation_type="ingest_text", metadata_resolver=telemetry.ingest_text_metadata)
-async def ingest_text(
-    request: IngestTextRequest,
-    auth: AuthContext = Depends(verify_token),
-) -> Document:
-    """
-    Ingest a text document.
-
-    Args:
-        request: IngestTextRequest containing:
-            - content: Text content to ingest
-            - filename: Optional filename to help determine content type
-            - metadata: Optional metadata dictionary
-            - rules: Optional list of rules. Each rule should be either:
-                   - MetadataExtractionRule: {"type": "metadata_extraction", "schema": {...}}
-                   - NaturalLanguageRule: {"type": "natural_language", "prompt": "..."}
-            - folder_name: Optional folder to scope the document to
-            - end_user_id: Optional end-user ID to scope the document to
-        auth: Authentication context
-
-    Returns:
-        Document: Metadata of ingested document
-    """
-    try:
-        # Verify limits before processing - this will call the function from limits_utils
-        if settings.MODE == "cloud" and auth.user_id:
-            num_pages_estimated = estimate_pages_by_chars(len(request.content))
-            await check_and_increment_limits(
-                auth,
-                "ingest",
-                num_pages_estimated,
-                verify_only=True,  # This initial check in API remains verify_only=True
-                # Final recording will be done in DocumentService.ingest_text
-            )
-
-        return await document_service.ingest_text(
-            content=request.content,
-            filename=request.filename,
-            metadata=request.metadata,
-            rules=request.rules,
-            use_colpali=request.use_colpali,
-            auth=auth,
-            folder_name=request.folder_name,
-            end_user_id=request.end_user_id,
-        )
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-
-
-@app.post("/ingest/file", response_model=Document)
-@telemetry.track(operation_type="queue_ingest_file", metadata_resolver=telemetry.ingest_file_metadata)
-async def ingest_file(
-    file: UploadFile,
-    metadata: str = Form("{}"),
-    rules: str = Form("[]"),
-    auth: AuthContext = Depends(verify_token),
-    use_colpali: Optional[bool] = Form(None),
-    folder_name: Optional[str] = Form(None),
-    end_user_id: Optional[str] = Form(None),
-    redis: arq.ArqRedis = Depends(get_redis_pool),
-) -> Document:
-    """
-    Ingest a file document asynchronously.
-
-    Args:
-        file: File to ingest
-        metadata: JSON string of metadata
-        rules: JSON string of rules list. Each rule should be either:
-               - MetadataExtractionRule: {"type": "metadata_extraction", "schema": {...}}
-               - NaturalLanguageRule: {"type": "natural_language", "prompt": "..."}
-        auth: Authentication context
-        use_colpali: Whether to use ColPali embedding model
-        folder_name: Optional folder to scope the document to
-        end_user_id: Optional end-user ID to scope the document to
-        redis: Redis connection pool for background tasks
-
-    Returns:
-        Document with processing status that can be used to check progress
-    """
-    try:
-        # Parse metadata and rules
-        metadata_dict = json.loads(metadata)
-        rules_list = json.loads(rules)
-
-        # Fix bool conversion: ensure string "false" is properly converted to False
-        def str2bool(v):
-            return v if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}
-
-        use_colpali_bool = str2bool(use_colpali)  # Renamed to avoid conflict
-
-        # Ensure user has write permission
-        if "write" not in auth.permissions:
-            raise PermissionError("User does not have write permission")
-
-        logger.debug(f"API: Queueing file ingestion with use_colpali: {use_colpali_bool}")
-
-        # Create a document with processing status
-        doc = Document(
-            content_type=file.content_type,
-            filename=file.filename,
-            metadata=metadata_dict,
-            owner={"type": auth.entity_type.value, "id": auth.entity_id},
-            access_control={
-                "readers": [auth.entity_id],
-                "writers": [auth.entity_id],
-                "admins": [auth.entity_id],
-                "user_id": [auth.user_id if auth.user_id else []],
-                "app_access": ([auth.app_id] if auth.app_id else []),
-            },
-            system_metadata={"status": "processing"},
-        )
-
-        # Add folder_name and end_user_id to system_metadata if provided
-        if folder_name:
-            doc.system_metadata["folder_name"] = folder_name
-        if end_user_id:
-            doc.system_metadata["end_user_id"] = end_user_id
-        if auth.app_id:
-            doc.system_metadata["app_id"] = auth.app_id
-
-        # Set processing status
-        doc.system_metadata["status"] = "processing"
-
-        # Store the document in the *per-app* database that verify_token has
-        # already routed to (document_service.db).  Using the global
-        # *database* here would put the row into the control-plane DB and the
-        # ingestion worker – which connects to the per-app DB – would never
-        # find it.
-        app_db = document_service.db
-
-        success = await app_db.store_document(doc)
-        if not success:
-            raise Exception("Failed to store document metadata")
-
-        # If folder_name is provided, ensure the folder exists and add document to it
-        if folder_name:
-            try:
-                await document_service._ensure_folder_exists(folder_name, doc.external_id, auth)
-                logger.debug(f"Ensured folder '{folder_name}' exists and contains document {doc.external_id}")
-            except Exception as e:
-                # Log error but don't raise - we want document ingestion to continue even if folder operation fails
-                logger.error(f"Error ensuring folder exists: {e}")
-
-        # Read file content
-        file_content = await file.read()
-
-        # --------------------------------------------
-        # Enforce storage limits (file & size) early
-        # This check remains verify_only=True here, final recording in worker.
-        # --------------------------------------------
-        if settings.MODE == "cloud" and auth.user_id:
-            await check_and_increment_limits(auth, "storage_file", 1, verify_only=True)
-            await check_and_increment_limits(auth, "storage_size", len(file_content), verify_only=True)
-            # Ingest limit pre-check will be done in the worker after parsing.
-
-        # Generate a unique key for the file
-        file_key = f"ingest_uploads/{uuid.uuid4()}/{file.filename}"
-
-        # Store the file in the dedicated bucket for this app (if any)
-        file_content_base64 = base64.b64encode(file_content).decode()
-
-        bucket_override = await document_service._get_bucket_for_app(auth.app_id)
-
-        bucket, stored_key = await storage.upload_from_base64(
-            file_content_base64,
-            file_key,
-            file.content_type,
-            bucket=bucket_override or "",
-        )
-        logger.debug(f"Stored file in bucket {bucket} with key {stored_key}")
-
-        # Update document with storage info
-        doc.storage_info = {"bucket": bucket, "key": stored_key}
-
-        # Initialize storage_files array with the first file
-        from datetime import UTC, datetime
-
-        from core.models.documents import StorageFileInfo
-
-        # Create a StorageFileInfo for the initial file
-        initial_file_info = StorageFileInfo(
-            bucket=bucket,
-            key=stored_key,
-            version=1,
-            filename=file.filename,
-            content_type=file.content_type,
-            timestamp=datetime.now(UTC),
-        )
-        doc.storage_files = [initial_file_info]
-
-        # Log storage files
-        logger.debug(f"Initial storage_files for {doc.external_id}: {doc.storage_files}")
-
-        # Update both storage_info and storage_files
-        await app_db.update_document(
-            document_id=doc.external_id,
-            updates={"storage_info": doc.storage_info, "storage_files": doc.storage_files},
-            auth=auth,
-        )
-
-        # ------------------------------------------------------------------
-        # Record storage usage now that the upload succeeded (cloud mode)
-        # ------------------------------------------------------------------
-        if settings.MODE == "cloud" and auth.user_id:
-            try:
-                await check_and_increment_limits(auth, "storage_file", 1)
-                await check_and_increment_limits(auth, "storage_size", len(file_content))
-            except Exception as rec_exc:  # noqa: BLE001
-                logger.error("Failed to record storage usage in ingest_file: %s", rec_exc)
-
-        # Convert auth context to a dictionary for serialization
-        auth_dict = {
-            "entity_type": auth.entity_type.value,
-            "entity_id": auth.entity_id,
-            "app_id": auth.app_id,
-            "permissions": list(auth.permissions),
-            "user_id": auth.user_id,
-        }
-
-        # Enqueue the background job
-        job = await redis.enqueue_job(
-            "process_ingestion_job",
-            document_id=doc.external_id,
-            file_key=stored_key,
-            bucket=bucket,
-            original_filename=file.filename,
-            content_type=file.content_type,
-            metadata_json=metadata,
-            auth_dict=auth_dict,
-            rules_list=rules_list,
-            use_colpali=use_colpali_bool,  # Pass the boolean
-            folder_name=folder_name,
-            end_user_id=end_user_id,
-        )
-
-        logger.info(f"File ingestion job queued with ID: {job.job_id} for document: {doc.external_id}")
-
-        return doc
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error during file ingestion: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error during file ingestion: {str(e)}")
-
-
-@app.post("/ingest/files", response_model=BatchIngestResponse)
-@telemetry.track(operation_type="queue_batch_ingest", metadata_resolver=telemetry.batch_ingest_metadata)
-async def batch_ingest_files(
-    files: List[UploadFile] = File(...),
-    metadata: str = Form("{}"),
-    rules: str = Form("[]"),
-    use_colpali: Optional[bool] = Form(None),  # Keep Optional[bool] for Form
-    parallel: Optional[bool] = Form(True),
-    folder_name: Optional[str] = Form(None),
-    end_user_id: Optional[str] = Form(None),
-    auth: AuthContext = Depends(verify_token),
-    redis: arq.ArqRedis = Depends(get_redis_pool),
-) -> BatchIngestResponse:
-    """
-    Batch ingest multiple files using the task queue.
-
-    Args:
-        files: List of files to ingest
-        metadata: JSON string of metadata (either a single dict or list of dicts)
-        rules: JSON string of rules list. Can be either:
-               - A single list of rules to apply to all files
-               - A list of rule lists, one per file
-        use_colpali: Whether to use ColPali-style embedding
-        folder_name: Optional folder to scope the documents to
-        end_user_id: Optional end-user ID to scope the documents to
-        auth: Authentication context
-        redis: Redis connection pool for background tasks
-
-    Returns:
-        BatchIngestResponse containing:
-            - documents: List of created documents with processing status
-            - errors: List of errors that occurred during the batch operation
-    """
-    if not files:
-        raise HTTPException(status_code=400, detail="No files provided for batch ingestion")
-
-    try:
-        metadata_value = json.loads(metadata)
-        rules_list = json.loads(rules)
-
-        # Fix bool conversion: ensure string "false" is properly converted to False
-        def str2bool(v):
-            return str(v).lower() in {"true", "1", "yes"}
-
-        use_colpali_bool = str2bool(use_colpali)  # Renamed for clarity
-
-        # Ensure user has write permission
-        if "write" not in auth.permissions:
-            raise PermissionError("User does not have write permission")
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-
-    # Validate metadata if it's a list
-    if isinstance(metadata_value, list) and len(metadata_value) != len(files):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Number of metadata items ({len(metadata_value)}) must match number of files ({len(files)})",
-        )
-
-    # Validate rules if it's a list of lists
-    if isinstance(rules_list, list) and rules_list and isinstance(rules_list[0], list):
-        if len(rules_list) != len(files):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Number of rule lists ({len(rules_list)}) must match number of files ({len(files)})",
-            )
-
-    # Convert auth context to a dictionary for serialization
-    auth_dict = {
-        "entity_type": auth.entity_type.value,
-        "entity_id": auth.entity_id,
-        "app_id": auth.app_id,
-        "permissions": list(auth.permissions),
-        "user_id": auth.user_id,
-    }
-
-    created_documents = []
-
-    try:
-        for i, file in enumerate(files):
-            # Get the metadata and rules for this file
-            metadata_item = metadata_value[i] if isinstance(metadata_value, list) else metadata_value
-            file_rules = (
-                rules_list[i]
-                if isinstance(rules_list, list) and rules_list and isinstance(rules_list[0], list)
-                else rules_list
-            )
-
-            # Create a document with processing status
-            doc = Document(
-                content_type=file.content_type,
-                filename=file.filename,
-                metadata=metadata_item,
-                owner={"type": auth.entity_type.value, "id": auth.entity_id},
-                access_control={
-                    "readers": [auth.entity_id],
-                    "writers": [auth.entity_id],
-                    "admins": [auth.entity_id],
-                    "user_id": [auth.user_id] if auth.user_id else [],
-                    "app_access": ([auth.app_id] if auth.app_id else []),
-                },
-            )
-
-            # Add folder_name and end_user_id to system_metadata if provided
-            if folder_name:
-                doc.system_metadata["folder_name"] = folder_name
-            if end_user_id:
-                doc.system_metadata["end_user_id"] = end_user_id
-            if auth.app_id:
-                doc.system_metadata["app_id"] = auth.app_id
-
-            # Set processing status
-            doc.system_metadata["status"] = "processing"
-
-            # Store the document in the *per-app* database that verify_token has
-            # already routed to (document_service.db).  Using the global
-            # *database* here would put the row into the control-plane DB and the
-            # ingestion worker – which connects to the per-app DB – would never
-            # find it.
-            app_db = document_service.db
-
-            success = await app_db.store_document(doc)
-            if not success:
-                raise Exception(f"Failed to store document metadata for {file.filename}")
-
-            # If folder_name is provided, ensure the folder exists and add document to it
-            if folder_name:
-                try:
-                    await document_service._ensure_folder_exists(folder_name, doc.external_id, auth)
-                    logger.debug(f"Ensured folder '{folder_name}' exists and contains document {doc.external_id}")
-                except Exception as e:
-                    # Log error but don't raise - we want document ingestion to continue even if folder operation fails
-                    logger.error(f"Error ensuring folder exists: {e}")
-
-            # Read file content
-            file_content = await file.read()
-
-            # --------------------------------------------
-            # Enforce storage limits (file & size) early
-            # This check remains verify_only=True here.
-            # --------------------------------------------
-            if settings.MODE == "cloud" and auth.user_id:
-                await check_and_increment_limits(auth, "storage_file", 1, verify_only=True)
-                await check_and_increment_limits(auth, "storage_size", len(file_content), verify_only=True)
-                # Ingest limit pre-check will be done in the worker after parsing for each file.
-
-            # Generate a unique key for the file
-            file_key = f"ingest_uploads/{uuid.uuid4()}/{file.filename}"
-
-            # Store the file in the dedicated bucket for this app (if any)
-            file_content_base64 = base64.b64encode(file_content).decode()
-
-            bucket_override = await document_service._get_bucket_for_app(auth.app_id)
-
-            bucket, stored_key = await storage.upload_from_base64(
-                file_content_base64,
-                file_key,
-                file.content_type,
-                bucket=bucket_override or "",
-            )
-            logger.debug(f"Stored file in bucket {bucket} with key {stored_key}")
-
-            # Update document with storage info
-            doc.storage_info = {"bucket": bucket, "key": stored_key}
-            await app_db.update_document(
-                document_id=doc.external_id, updates={"storage_info": doc.storage_info}, auth=auth
-            )
-
-            # ------------------------------------------------------------------
-            # Record storage usage now that the upload succeeded (cloud mode)
-            # ------------------------------------------------------------------
-            if settings.MODE == "cloud" and auth.user_id:
-                try:
-                    await check_and_increment_limits(auth, "storage_file", 1)
-                    await check_and_increment_limits(auth, "storage_size", len(file_content))
-                except Exception as rec_exc:  # noqa: BLE001
-                    logger.error("Failed to record storage usage in ingest_file: %s", rec_exc)
-
-            # Convert metadata to JSON string for job
-            metadata_json = json.dumps(metadata_item)
-
-            # Enqueue the background job
-            job = await redis.enqueue_job(
-                "process_ingestion_job",
-                document_id=doc.external_id,
-                file_key=stored_key,
-                bucket=bucket,
-                original_filename=file.filename,
-                content_type=file.content_type,
-                metadata_json=metadata_json,
-                auth_dict=auth_dict,
-                rules_list=file_rules,
-                use_colpali=use_colpali_bool,  # Pass the boolean
-                folder_name=folder_name,
-                end_user_id=end_user_id,
-            )
-
-            logger.info(f"File ingestion job queued with ID: {job.job_id} for document: {doc.external_id}")
-
-            # Add document to the list
-            created_documents.append(doc)
-
-        # Return information about created documents
-        return BatchIngestResponse(documents=created_documents, errors=[])
-
-    except Exception as e:
-        logger.error(f"Error queueing batch file ingestion: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error queueing batch file ingestion: {str(e)}")
 
 
 @app.post("/retrieve/chunks", response_model=List[ChunkResult])
@@ -707,6 +248,7 @@ async def batch_get_chunks(request: Dict[str, Any], auth: AuthContext = Depends(
             - sources: List of ChunkSource objects (with document_id and chunk_number)
             - folder_name: Optional folder to scope the operation to
             - end_user_id: Optional end-user ID to scope the operation to
+            - use_colpali: Whether to use ColPali-style embedding
         auth: Authentication context
 
     Returns:
@@ -774,6 +316,7 @@ async def query_completion(
             - folder_name: Optional folder to scope the operation to
             - end_user_id: Optional end-user ID to scope the operation to
             - schema: Optional schema for structured output
+            - chat_id: Optional chat conversation identifier for maintaining history
         auth: Authentication context
 
     Returns:
@@ -861,7 +404,17 @@ async def get_chat_history(
     auth: AuthContext = Depends(verify_token),
     redis: arq.ArqRedis = Depends(get_redis_pool),
 ):
-    """Return stored chat history for *chat_id* if available."""
+    """Retrieve the message history for a chat conversation.
+
+    Args:
+        chat_id: Identifier of the conversation whose history should be loaded.
+        auth: Authentication context used to verify access to the conversation.
+        redis: Redis connection where chat messages are stored.
+
+    Returns:
+        A list of :class:`ChatMessage` objects or an empty list if no history
+        exists.
+    """
     history_key = f"chat:{chat_id}"
     stored = await redis.get(history_key)
     if not stored:
@@ -879,8 +432,14 @@ async def get_chat_history(
 @app.post("/agent", response_model=Dict[str, Any])
 @telemetry.track(operation_type="agent_query")
 async def agent_query(request: AgentQueryRequest, auth: AuthContext = Depends(verify_token)):
-    """
-    Process a natural language query using the MorphikAgent and return the response.
+    """Execute an agent-style query using the :class:`MorphikAgent`.
+
+    Args:
+        request: The query payload containing the natural language question.
+        auth: Authentication context used to enforce limits and access control.
+
+    Returns:
+        A dictionary with the agent's full response.
     """
     # Check free-tier agent call limits in cloud mode
     if settings.MODE == "cloud" and auth.user_id:
@@ -928,7 +487,15 @@ async def list_documents(
 
 @app.get("/documents/{document_id}", response_model=Document)
 async def get_document(document_id: str, auth: AuthContext = Depends(verify_token)):
-    """Get document by ID."""
+    """Retrieve a single document by its external identifier.
+
+    Args:
+        document_id: External ID of the document to fetch.
+        auth: Authentication context used to verify access rights.
+
+    Returns:
+        The :class:`Document` metadata if found.
+    """
     try:
         doc = await document_service.db.get_document(document_id, auth)
         logger.debug(f"Found document: {doc}")
@@ -1059,6 +626,7 @@ async def update_document_text(
         document_id: ID of the document to update
         request: Text content and metadata for the update
         update_strategy: Strategy for updating the document (default: 'add')
+        auth: Authentication context
 
     Returns:
         Document: Updated document metadata
@@ -1105,6 +673,7 @@ async def update_document_file(
         rules: JSON string of rules to apply to the content
         update_strategy: Strategy for updating the document (default: 'add')
         use_colpali: Whether to use multi-vector embedding
+        auth: Authentication context
 
     Returns:
         Document: Updated document metadata
@@ -1149,6 +718,7 @@ async def update_document_metadata(
     Args:
         document_id: ID of the document to update
         metadata: New metadata to merge with existing metadata
+        auth: Authentication context
 
     Returns:
         Document: Updated document metadata
@@ -1178,7 +748,14 @@ async def update_document_metadata(
 @app.get("/usage/stats")
 @telemetry.track(operation_type="get_usage_stats", metadata_resolver=telemetry.usage_stats_metadata)
 async def get_usage_stats(auth: AuthContext = Depends(verify_token)) -> Dict[str, int]:
-    """Get usage statistics for the authenticated user."""
+    """Get usage statistics for the authenticated user.
+
+    Args:
+        auth: Authentication context identifying the caller.
+
+    Returns:
+        A mapping of operation types to token usage counts.
+    """
     if not auth.permissions or "admin" not in auth.permissions:
         return telemetry.get_user_usage(auth.entity_id)
     return telemetry.get_user_usage(auth.entity_id)
@@ -1192,7 +769,18 @@ async def get_recent_usage(
     since: Optional[datetime] = None,
     status: Optional[str] = None,
 ) -> List[Dict]:
-    """Get recent usage records."""
+    """Retrieve recent telemetry records for the user or application.
+
+    Args:
+        auth: Authentication context; admin users receive global records.
+        operation_type: Optional operation type to filter by.
+        since: Only return records newer than this timestamp.
+        status: Optional status filter (e.g. ``success`` or ``error``).
+
+    Returns:
+        A list of usage entries sorted by timestamp, each represented as a
+        dictionary.
+    """
     if not auth.permissions or "admin" not in auth.permissions:
         records = telemetry.get_recent_usage(
             user_id=auth.entity_id, operation_type=operation_type, since=since, status=status
@@ -1225,7 +813,19 @@ async def create_cache(
     docs: Optional[List[str]] = None,
     auth: AuthContext = Depends(verify_token),
 ) -> Dict[str, Any]:
-    """Create a new cache with specified configuration."""
+    """Create a persistent cache for low-latency completions.
+
+    Args:
+        name: Unique identifier for the cache.
+        model: The model name to use when generating completions.
+        gguf_file: Path to the ``gguf`` weights file to load.
+        filters: Optional metadata filters used to select documents.
+        docs: Explicit list of document IDs to include in the cache.
+        auth: Authentication context used for permission checks.
+
+    Returns:
+        A dictionary describing the created cache.
+    """
     try:
         # Check cache creation limits if in cloud mode
         if settings.MODE == "cloud" and auth.user_id:
@@ -1250,7 +850,16 @@ async def create_cache(
 @app.get("/cache/{name}")
 @telemetry.track(operation_type="get_cache", metadata_resolver=telemetry.cache_get_metadata)
 async def get_cache(name: str, auth: AuthContext = Depends(verify_token)) -> Dict[str, Any]:
-    """Get cache configuration by name."""
+    """Retrieve information about a specific cache.
+
+    Args:
+        name: Name of the cache to inspect.
+        auth: Authentication context used to authorize the request.
+
+    Returns:
+        A dictionary with a boolean ``exists`` field indicating whether the
+        cache is loaded.
+    """
     try:
         exists = await document_service.load_cache(name)
         return {"exists": exists}
@@ -1261,7 +870,15 @@ async def get_cache(name: str, auth: AuthContext = Depends(verify_token)) -> Dic
 @app.post("/cache/{name}/update")
 @telemetry.track(operation_type="update_cache", metadata_resolver=telemetry.cache_update_metadata)
 async def update_cache(name: str, auth: AuthContext = Depends(verify_token)) -> Dict[str, bool]:
-    """Update cache with new documents matching its filter."""
+    """Refresh an existing cache with newly available documents.
+
+    Args:
+        name: Identifier of the cache to update.
+        auth: Authentication context used for permission checks.
+
+    Returns:
+        A dictionary indicating whether any documents were added.
+    """
     try:
         if name not in document_service.active_caches:
             exists = await document_service.load_cache(name)
@@ -1278,7 +895,16 @@ async def update_cache(name: str, auth: AuthContext = Depends(verify_token)) -> 
 @app.post("/cache/{name}/add_docs")
 @telemetry.track(operation_type="add_docs_to_cache", metadata_resolver=telemetry.cache_add_docs_metadata)
 async def add_docs_to_cache(name: str, docs: List[str], auth: AuthContext = Depends(verify_token)) -> Dict[str, bool]:
-    """Add specific documents to the cache."""
+    """Manually add documents to an existing cache.
+
+    Args:
+        name: Name of the target cache.
+        docs: List of document IDs to insert.
+        auth: Authentication context used for authorization.
+
+    Returns:
+        A dictionary indicating whether the documents were queued for addition.
+    """
     try:
         cache = document_service.active_caches[name]
         docs_to_add = [
@@ -1298,7 +924,18 @@ async def query_cache(
     temperature: Optional[float] = None,
     auth: AuthContext = Depends(verify_token),
 ) -> CompletionResponse:
-    """Query the cache with a prompt."""
+    """Generate a completion using a pre-populated cache.
+
+    Args:
+        name: Name of the cache to query.
+        query: Prompt text to send to the model.
+        max_tokens: Optional maximum number of tokens to generate.
+        temperature: Optional sampling temperature for the model.
+        auth: Authentication context for permission checks.
+
+    Returns:
+        A :class:`CompletionResponse` object containing the model output.
+    """
     try:
         # Check cache query limits if in cloud mode
         if settings.MODE == "cloud" and auth.user_id:
@@ -1318,12 +955,18 @@ async def create_graph(
     request: CreateGraphRequest,
     auth: AuthContext = Depends(verify_token),
 ) -> Graph:
-    """
-    Create a graph from documents **asynchronously**.
+    """Create a new graph based on document contents.
 
-    Instead of blocking on the potentially slow entity/relationship extraction, we immediately
-    create a placeholder graph with `status = "processing"`. A background task then fills in
-    entities/relationships and marks the graph as completed.
+    The graph is created asynchronously. A stub graph record is returned with
+    ``status = "processing"`` while a background task extracts entities and
+    relationships.
+
+    Args:
+        request: Graph creation parameters including name and optional filters.
+        auth: Authentication context authorizing the operation.
+
+    Returns:
+        The placeholder :class:`Graph` object which clients can poll for status.
     """
     try:
         # Validate prompt overrides before proceeding
@@ -1787,7 +1430,16 @@ async def generate_local_uri(
     name: str = Form("admin"),
     expiry_days: int = Form(30),
 ) -> Dict[str, str]:
-    """Generate a local URI for development. This endpoint is unprotected."""
+    """Generate a development URI for running Morphik locally.
+
+    Args:
+        name: Developer name to embed in the token payload.
+        expiry_days: Number of days the generated token should remain valid.
+
+    Returns:
+        A dictionary containing the ``uri`` that can be used to connect to the
+        local instance.
+    """
     try:
         # Clean name
         name = name.replace(" ", "_").lower()
@@ -1821,7 +1473,15 @@ async def generate_cloud_uri(
     request: GenerateUriRequest,
     authorization: str = Header(None),
 ) -> Dict[str, str]:
-    """Generate a URI for cloud hosted applications."""
+    """Generate an authenticated URI for a cloud-hosted Morphik application.
+
+    Args:
+        request: Parameters for URI generation including ``app_id`` and ``name``.
+        authorization: Bearer token of the user requesting the URI.
+
+    Returns:
+        A dictionary with the generated ``uri`` and associated ``app_id``.
+    """
     try:
         app_id = request.app_id
         name = request.name
@@ -2121,13 +1781,14 @@ async def delete_cloud_app(
     app_name: str = Query(..., description="Name of the application to delete"),
     auth: AuthContext = Depends(verify_token),
 ) -> Dict[str, Any]:
-    """Delete *all* resources associated with *app_name* for the calling user.
+    """Delete all resources associated with a given cloud application.
 
-    This removes:
-    • All documents linked to the application's ``app_id`` (includes chunks & S3
-      via existing delete_document flow).
-    • The *apps* table entry.
-    • The reference in *user_limits.app_ids*.
+    Args:
+        app_name: Name of the application whose data should be removed.
+        auth: Authentication context of the requesting user.
+
+    Returns:
+        A summary describing how many documents and folders were removed.
     """
 
     user_id = auth.user_id or auth.entity_id
@@ -2219,11 +1880,15 @@ async def list_chat_conversations(
     auth: AuthContext = Depends(verify_token),
     limit: int = Query(100, ge=1, le=500),
 ):
-    """List chat conversations for the current user (and app scope).
+    """List chat conversations available to the current user.
 
-    Returns the most recently updated conversations first with a short
-    preview of the last message so that the UI can show a conversation
-    selector.
+    Args:
+        auth: Authentication context containing user and app identifiers.
+        limit: Maximum number of conversations to return.
+
+    Returns:
+        A list of dictionaries describing each conversation, ordered by most
+        recent activity.
     """
     try:
         convos = await document_service.db.list_chat_conversations(
