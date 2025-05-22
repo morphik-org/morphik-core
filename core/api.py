@@ -394,6 +394,7 @@ async def batch_ingest_files(
                - A single list of rules to apply to all files
                - A list of rule lists, one per file
         use_colpali: Whether to use ColPali-style embedding
+        parallel: Whether to ingest files concurrently
         folder_name: Optional folder to scope the documents to
         end_user_id: Optional end-user ID to scope the documents to
         auth: Authentication context
@@ -707,6 +708,7 @@ async def batch_get_chunks(request: Dict[str, Any], auth: AuthContext = Depends(
             - sources: List of ChunkSource objects (with document_id and chunk_number)
             - folder_name: Optional folder to scope the operation to
             - end_user_id: Optional end-user ID to scope the operation to
+            - use_colpali: Whether to use ColPali-style embedding
         auth: Authentication context
 
     Returns:
@@ -774,6 +776,7 @@ async def query_completion(
             - folder_name: Optional folder to scope the operation to
             - end_user_id: Optional end-user ID to scope the operation to
             - schema: Optional schema for structured output
+            - chat_id: Optional chat conversation identifier for maintaining history
         auth: Authentication context
 
     Returns:
@@ -861,7 +864,17 @@ async def get_chat_history(
     auth: AuthContext = Depends(verify_token),
     redis: arq.ArqRedis = Depends(get_redis_pool),
 ):
-    """Return stored chat history for *chat_id* if available."""
+    """Retrieve the message history for a chat conversation.
+
+    Args:
+        chat_id: Identifier of the conversation whose history should be loaded.
+        auth: Authentication context used to verify access to the conversation.
+        redis: Redis connection where chat messages are stored.
+
+    Returns:
+        A list of :class:`ChatMessage` objects or an empty list if no history
+        exists.
+    """
     history_key = f"chat:{chat_id}"
     stored = await redis.get(history_key)
     if not stored:
@@ -879,8 +892,14 @@ async def get_chat_history(
 @app.post("/agent", response_model=Dict[str, Any])
 @telemetry.track(operation_type="agent_query")
 async def agent_query(request: AgentQueryRequest, auth: AuthContext = Depends(verify_token)):
-    """
-    Process a natural language query using the MorphikAgent and return the response.
+    """Execute an agent-style query using the :class:`MorphikAgent`.
+
+    Args:
+        request: The query payload containing the natural language question.
+        auth: Authentication context used to enforce limits and access control.
+
+    Returns:
+        A dictionary with the agent's full response.
     """
     # Check free-tier agent call limits in cloud mode
     if settings.MODE == "cloud" and auth.user_id:
@@ -928,7 +947,15 @@ async def list_documents(
 
 @app.get("/documents/{document_id}", response_model=Document)
 async def get_document(document_id: str, auth: AuthContext = Depends(verify_token)):
-    """Get document by ID."""
+    """Retrieve a single document by its external identifier.
+
+    Args:
+        document_id: External ID of the document to fetch.
+        auth: Authentication context used to verify access rights.
+
+    Returns:
+        The :class:`Document` metadata if found.
+    """
     try:
         doc = await document_service.db.get_document(document_id, auth)
         logger.debug(f"Found document: {doc}")
@@ -1059,6 +1086,7 @@ async def update_document_text(
         document_id: ID of the document to update
         request: Text content and metadata for the update
         update_strategy: Strategy for updating the document (default: 'add')
+        auth: Authentication context
 
     Returns:
         Document: Updated document metadata
@@ -1105,6 +1133,7 @@ async def update_document_file(
         rules: JSON string of rules to apply to the content
         update_strategy: Strategy for updating the document (default: 'add')
         use_colpali: Whether to use multi-vector embedding
+        auth: Authentication context
 
     Returns:
         Document: Updated document metadata
@@ -1149,6 +1178,7 @@ async def update_document_metadata(
     Args:
         document_id: ID of the document to update
         metadata: New metadata to merge with existing metadata
+        auth: Authentication context
 
     Returns:
         Document: Updated document metadata
@@ -1178,7 +1208,14 @@ async def update_document_metadata(
 @app.get("/usage/stats")
 @telemetry.track(operation_type="get_usage_stats", metadata_resolver=telemetry.usage_stats_metadata)
 async def get_usage_stats(auth: AuthContext = Depends(verify_token)) -> Dict[str, int]:
-    """Get usage statistics for the authenticated user."""
+    """Get usage statistics for the authenticated user.
+
+    Args:
+        auth: Authentication context identifying the caller.
+
+    Returns:
+        A mapping of operation types to token usage counts.
+    """
     if not auth.permissions or "admin" not in auth.permissions:
         return telemetry.get_user_usage(auth.entity_id)
     return telemetry.get_user_usage(auth.entity_id)
@@ -1192,7 +1229,18 @@ async def get_recent_usage(
     since: Optional[datetime] = None,
     status: Optional[str] = None,
 ) -> List[Dict]:
-    """Get recent usage records."""
+    """Retrieve recent telemetry records for the user or application.
+
+    Args:
+        auth: Authentication context; admin users receive global records.
+        operation_type: Optional operation type to filter by.
+        since: Only return records newer than this timestamp.
+        status: Optional status filter (e.g. ``success`` or ``error``).
+
+    Returns:
+        A list of usage entries sorted by timestamp, each represented as a
+        dictionary.
+    """
     if not auth.permissions or "admin" not in auth.permissions:
         records = telemetry.get_recent_usage(
             user_id=auth.entity_id, operation_type=operation_type, since=since, status=status
@@ -1225,7 +1273,19 @@ async def create_cache(
     docs: Optional[List[str]] = None,
     auth: AuthContext = Depends(verify_token),
 ) -> Dict[str, Any]:
-    """Create a new cache with specified configuration."""
+    """Create a persistent cache for low-latency completions.
+
+    Args:
+        name: Unique identifier for the cache.
+        model: The model name to use when generating completions.
+        gguf_file: Path to the ``gguf`` weights file to load.
+        filters: Optional metadata filters used to select documents.
+        docs: Explicit list of document IDs to include in the cache.
+        auth: Authentication context used for permission checks.
+
+    Returns:
+        A dictionary describing the created cache.
+    """
     try:
         # Check cache creation limits if in cloud mode
         if settings.MODE == "cloud" and auth.user_id:
@@ -1250,7 +1310,16 @@ async def create_cache(
 @app.get("/cache/{name}")
 @telemetry.track(operation_type="get_cache", metadata_resolver=telemetry.cache_get_metadata)
 async def get_cache(name: str, auth: AuthContext = Depends(verify_token)) -> Dict[str, Any]:
-    """Get cache configuration by name."""
+    """Retrieve information about a specific cache.
+
+    Args:
+        name: Name of the cache to inspect.
+        auth: Authentication context used to authorize the request.
+
+    Returns:
+        A dictionary with a boolean ``exists`` field indicating whether the
+        cache is loaded.
+    """
     try:
         exists = await document_service.load_cache(name)
         return {"exists": exists}
@@ -1261,7 +1330,15 @@ async def get_cache(name: str, auth: AuthContext = Depends(verify_token)) -> Dic
 @app.post("/cache/{name}/update")
 @telemetry.track(operation_type="update_cache", metadata_resolver=telemetry.cache_update_metadata)
 async def update_cache(name: str, auth: AuthContext = Depends(verify_token)) -> Dict[str, bool]:
-    """Update cache with new documents matching its filter."""
+    """Refresh an existing cache with newly available documents.
+
+    Args:
+        name: Identifier of the cache to update.
+        auth: Authentication context used for permission checks.
+
+    Returns:
+        A dictionary indicating whether any documents were added.
+    """
     try:
         if name not in document_service.active_caches:
             exists = await document_service.load_cache(name)
@@ -1278,7 +1355,16 @@ async def update_cache(name: str, auth: AuthContext = Depends(verify_token)) -> 
 @app.post("/cache/{name}/add_docs")
 @telemetry.track(operation_type="add_docs_to_cache", metadata_resolver=telemetry.cache_add_docs_metadata)
 async def add_docs_to_cache(name: str, docs: List[str], auth: AuthContext = Depends(verify_token)) -> Dict[str, bool]:
-    """Add specific documents to the cache."""
+    """Manually add documents to an existing cache.
+
+    Args:
+        name: Name of the target cache.
+        docs: List of document IDs to insert.
+        auth: Authentication context used for authorization.
+
+    Returns:
+        A dictionary indicating whether the documents were queued for addition.
+    """
     try:
         cache = document_service.active_caches[name]
         docs_to_add = [
@@ -1298,7 +1384,18 @@ async def query_cache(
     temperature: Optional[float] = None,
     auth: AuthContext = Depends(verify_token),
 ) -> CompletionResponse:
-    """Query the cache with a prompt."""
+    """Generate a completion using a pre-populated cache.
+
+    Args:
+        name: Name of the cache to query.
+        query: Prompt text to send to the model.
+        max_tokens: Optional maximum number of tokens to generate.
+        temperature: Optional sampling temperature for the model.
+        auth: Authentication context for permission checks.
+
+    Returns:
+        A :class:`CompletionResponse` object containing the model output.
+    """
     try:
         # Check cache query limits if in cloud mode
         if settings.MODE == "cloud" and auth.user_id:
@@ -1318,12 +1415,18 @@ async def create_graph(
     request: CreateGraphRequest,
     auth: AuthContext = Depends(verify_token),
 ) -> Graph:
-    """
-    Create a graph from documents **asynchronously**.
+    """Create a new graph based on document contents.
 
-    Instead of blocking on the potentially slow entity/relationship extraction, we immediately
-    create a placeholder graph with `status = "processing"`. A background task then fills in
-    entities/relationships and marks the graph as completed.
+    The graph is created asynchronously. A stub graph record is returned with
+    ``status = "processing"`` while a background task extracts entities and
+    relationships.
+
+    Args:
+        request: Graph creation parameters including name and optional filters.
+        auth: Authentication context authorizing the operation.
+
+    Returns:
+        The placeholder :class:`Graph` object which clients can poll for status.
     """
     try:
         # Validate prompt overrides before proceeding
@@ -1787,7 +1890,16 @@ async def generate_local_uri(
     name: str = Form("admin"),
     expiry_days: int = Form(30),
 ) -> Dict[str, str]:
-    """Generate a local URI for development. This endpoint is unprotected."""
+    """Generate a development URI for running Morphik locally.
+
+    Args:
+        name: Developer name to embed in the token payload.
+        expiry_days: Number of days the generated token should remain valid.
+
+    Returns:
+        A dictionary containing the ``uri`` that can be used to connect to the
+        local instance.
+    """
     try:
         # Clean name
         name = name.replace(" ", "_").lower()
@@ -1821,7 +1933,15 @@ async def generate_cloud_uri(
     request: GenerateUriRequest,
     authorization: str = Header(None),
 ) -> Dict[str, str]:
-    """Generate a URI for cloud hosted applications."""
+    """Generate an authenticated URI for a cloud-hosted Morphik application.
+
+    Args:
+        request: Parameters for URI generation including ``app_id`` and ``name``.
+        authorization: Bearer token of the user requesting the URI.
+
+    Returns:
+        A dictionary with the generated ``uri`` and associated ``app_id``.
+    """
     try:
         app_id = request.app_id
         name = request.name
@@ -2121,13 +2241,14 @@ async def delete_cloud_app(
     app_name: str = Query(..., description="Name of the application to delete"),
     auth: AuthContext = Depends(verify_token),
 ) -> Dict[str, Any]:
-    """Delete *all* resources associated with *app_name* for the calling user.
+    """Delete all resources associated with a given cloud application.
 
-    This removes:
-    • All documents linked to the application's ``app_id`` (includes chunks & S3
-      via existing delete_document flow).
-    • The *apps* table entry.
-    • The reference in *user_limits.app_ids*.
+    Args:
+        app_name: Name of the application whose data should be removed.
+        auth: Authentication context of the requesting user.
+
+    Returns:
+        A summary describing how many documents and folders were removed.
     """
 
     user_id = auth.user_id or auth.entity_id
@@ -2219,11 +2340,15 @@ async def list_chat_conversations(
     auth: AuthContext = Depends(verify_token),
     limit: int = Query(100, ge=1, le=500),
 ):
-    """List chat conversations for the current user (and app scope).
+    """List chat conversations available to the current user.
 
-    Returns the most recently updated conversations first with a short
-    preview of the last message so that the UI can show a conversation
-    selector.
+    Args:
+        auth: Authentication context containing user and app identifiers.
+        limit: Maximum number of conversations to return.
+
+    Returns:
+        A list of dictionaries describing each conversation, ordered by most
+        recent activity.
     """
     try:
         convos = await document_service.db.list_chat_conversations(
