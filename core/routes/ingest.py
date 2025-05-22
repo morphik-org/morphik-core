@@ -149,8 +149,8 @@ async def ingest_file(
             system_metadata={"status": "processing"},
         )
 
-        if folder_name:
-            doc.system_metadata["folder_name"] = folder_name
+        # Always set folder_name in system_metadata (None if not provided)
+        doc.system_metadata["folder_name"] = folder_name
         if end_user_id:
             doc.system_metadata["end_user_id"] = end_user_id
         if auth.app_id:
@@ -365,8 +365,8 @@ async def batch_ingest_files(
                 },
             )
 
-            if folder_name:
-                doc.system_metadata["folder_name"] = folder_name
+            # Always set folder_name in system_metadata (None if not provided)
+            doc.system_metadata["folder_name"] = folder_name
             if end_user_id:
                 doc.system_metadata["end_user_id"] = end_user_id
             if auth.app_id:
