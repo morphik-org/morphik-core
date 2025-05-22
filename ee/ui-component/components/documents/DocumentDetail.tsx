@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Info } from "lucide-react";
+import { Info, Calendar, Clock } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Image from "next/image";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
@@ -50,6 +50,45 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
   }
 
   const currentFolder = selectedDocument.system_metadata?.folder_name as string | undefined;
+  const status = selectedDocument.system_metadata?.status as string | undefined;
+  const createdAt = selectedDocument.system_metadata?.created_at as string | undefined;
+  const updatedAt = selectedDocument.system_metadata?.updated_at as string | undefined;
+  const version = selectedDocument.system_metadata?.version as number | undefined;
+
+  // Format dates for display
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return "N/A";
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString();
+    } catch {
+      return dateString;
+    }
+  };
+
+  // Get status badge variant
+  const getStatusBadge = (status?: string) => {
+    if (!status) return <Badge variant="outline">Unknown</Badge>;
+
+    switch (status.toLowerCase()) {
+      case "completed":
+        return (
+          <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+            Completed
+          </Badge>
+        );
+      case "processing":
+        return (
+          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100">
+            Processing
+          </Badge>
+        );
+      case "failed":
+        return <Badge variant="destructive">Failed</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
 
   const handleDeleteConfirm = async () => {
     if (selectedDocument) {
@@ -142,9 +181,15 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
             <p>{selectedDocument.filename || "N/A"}</p>
           </div>
 
-          <div>
-            <h3 className="mb-1 font-medium">Content Type</h3>
-            <Badge variant="secondary">{selectedDocument.content_type}</Badge>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <h3 className="mb-1 font-medium">Content Type</h3>
+              <Badge variant="secondary">{selectedDocument.content_type}</Badge>
+            </div>
+            <div>
+              <h3 className="mb-1 font-medium">Status</h3>
+              {getStatusBadge(status)}
+            </div>
           </div>
 
           <div>
@@ -171,10 +216,34 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <h3 className="mb-1 flex items-center gap-1 font-medium">
+                <Calendar className="h-4 w-4" />
+                Created
+              </h3>
+              <p className="text-sm">{formatDate(createdAt)}</p>
+            </div>
+            <div>
+              <h3 className="mb-1 flex items-center gap-1 font-medium">
+                <Clock className="h-4 w-4" />
+                Updated
+              </h3>
+              <p className="text-sm">{formatDate(updatedAt)}</p>
+            </div>
+          </div>
+
           <div>
             <h3 className="mb-1 font-medium">Document ID</h3>
             <p className="font-mono text-xs">{selectedDocument.external_id}</p>
           </div>
+
+          {version !== undefined && (
+            <div>
+              <h3 className="mb-1 font-medium">Version</h3>
+              <p>{version}</p>
+            </div>
+          )}
 
           <Accordion type="single" collapsible>
             <AccordionItem value="metadata">
@@ -187,19 +256,10 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
             </AccordionItem>
 
             <AccordionItem value="system-metadata">
-              <AccordionTrigger>System Metadata</AccordionTrigger>
+              <AccordionTrigger>Text</AccordionTrigger>
               <AccordionContent>
                 <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">
-                  {JSON.stringify(selectedDocument.system_metadata, null, 2)}
-                </pre>
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value="additional-metadata">
-              <AccordionTrigger>Additional Metadata</AccordionTrigger>
-              <AccordionContent>
-                <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">
-                  {JSON.stringify(selectedDocument.additional_metadata, null, 2)}
+                  {JSON.stringify(selectedDocument.system_metadata.content, null, 2)}
                 </pre>
               </AccordionContent>
             </AccordionItem>

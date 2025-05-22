@@ -290,12 +290,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     } finally {
       setFoldersLoading(false);
     }
-  }, [effectiveApiUrl, authToken, documents.length]);
-
-  // Function to refresh documents based on current folder state
-  const refreshDocuments = useCallback(async () => {
-    await fetchDocuments("refreshDocuments call");
-  }, [fetchDocuments]);
+  }, [effectiveApiUrl, authToken]);
 
   // Fetch folders initially
   useEffect(() => {
@@ -377,32 +372,69 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     }
   }, [foldersLoading, folders, selectedFolder, fetchDocuments, initialFolder]); // Keep fetchDocuments dependency
 
-  // Poll for document status if any document is processing *and* user is not viewing details
+  // ---------------------------------------------------------------------
+  // Fine-grained polling – update status of documents that are processing
+  // ---------------------------------------------------------------------
   useEffect(() => {
-    const hasProcessing = documents.some(doc => doc.system_metadata?.status === "processing");
+    // Identify docs still processing
+    const processingDocs = documents.filter(doc => doc.system_metadata?.status === "processing");
 
-    // Only poll if there are processing documents AND no document detail view is open
-    if (hasProcessing && selectedDocument === null) {
-      console.log("Polling for document status (list view active)...");
-      const intervalId = setInterval(() => {
-        console.log("Polling interval: calling refreshDocuments");
-        refreshDocuments(); // Fetch documents again to check status
-      }, 5000); // Poll every 5 seconds
-
-      return () => {
-        console.log("Clearing polling interval (list view or processing done)");
-        clearInterval(intervalId);
-      };
-    } else {
-      // Log why polling is not active
-      if (hasProcessing && selectedDocument !== null) {
-        console.log("Polling paused: Document detail view is open.");
-      } else if (!hasProcessing) {
-        console.log("Polling stopped: No documents are processing.");
-      }
+    // If none, skip polling
+    if (processingDocs.length === 0) {
+      return;
     }
-    // Add selectedDocument to dependencies
-  }, [documents, refreshDocuments, selectedDocument]);
+
+    const intervalId = setInterval(async () => {
+      try {
+        // Fetch status for each processing document in parallel
+        const updates = await Promise.all(
+          processingDocs.map(async doc => {
+            try {
+              const resp = await fetch(`${effectiveApiUrl}/documents/${doc.external_id}/status`, {
+                method: "GET",
+                headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+              });
+              if (!resp.ok) {
+                throw new Error(resp.statusText);
+              }
+              const data = await resp.json();
+              return {
+                id: data.document_id as string,
+                status: data.status as string,
+                updatedAt: data.updated_at as string | undefined,
+              };
+            } catch (err) {
+              console.error("Status poll error for", doc.external_id, err);
+              return null;
+            }
+          })
+        );
+
+        // Update documents state with new statuses
+        setDocuments(prevDocs =>
+          prevDocs.map(d => {
+            const upd = updates.find(u => u && u.id === d.external_id);
+            if (upd && upd.status && upd.status !== d.system_metadata?.status) {
+              return {
+                ...d,
+                system_metadata: {
+                  ...d.system_metadata,
+                  status: upd.status,
+                  updated_at: upd.updatedAt ?? d.system_metadata?.updated_at,
+                },
+              } as Document;
+            }
+            return d;
+          })
+        );
+      } catch (err) {
+        console.error("Error polling document statuses:", err);
+      }
+    }, 5000); // Poll every 5 seconds
+
+    // Cleanup on unmount or when processingDocs changes
+    return () => clearInterval(intervalId);
+  }, [documents, effectiveApiUrl, authToken]);
 
   // Collapse sidebar when a folder is selected
   useEffect(() => {
@@ -1064,14 +1096,8 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
   // Function to trigger refresh
   const handleRefresh = () => {
-    console.log("Manual refresh triggered");
     // Invoke callback
     onRefresh?.();
-
-    showAlert("Refreshing documents and folders...", {
-      type: "info",
-      duration: 1500,
-    });
 
     setLoading(true);
 
@@ -1222,8 +1248,8 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               selectedDocument ? "md:w-2/3" : "md:w-full"
             )}
           >
-            {loading ? (
-              // Skeleton Loader for Document List (within the correct layout)
+            {loading && documents.length === 0 ? (
+              // Initial skeleton only when no docs are yet loaded
               <div className="flex-1 space-y-3 p-4">
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-8 w-3/4" />
@@ -1232,7 +1258,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 <Skeleton className="h-8 w-full" />
               </div>
             ) : documents.length === 0 ? (
-              // Empty State (moved here, ensure it fills space)
+              // Empty State (kept as-is)
               <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed py-8 text-center">
                 <div>
                   <Upload className="mx-auto mb-2 h-12 w-12 text-muted-foreground" />
@@ -1241,21 +1267,30 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 </div>
               </div>
             ) : (
-              // Actual Document List
-              <DocumentList
-                documents={documents}
-                selectedDocument={selectedDocument}
-                selectedDocuments={selectedDocuments}
-                handleDocumentClick={handleDocumentClick}
-                handleCheckboxChange={handleCheckboxChange}
-                getSelectAllState={getSelectAllState}
-                setSelectedDocuments={setSelectedDocuments}
-                setDocuments={setDocuments}
-                loading={loading}
-                apiBaseUrl={effectiveApiUrl}
-                authToken={authToken}
-                selectedFolder={selectedFolder}
-              />
+              // Document list with subtle background refresh indicator
+              <div className={cn("relative transition-opacity", loading && documents.length > 0 ? "opacity-60" : "")}>
+                {/* Tiny corner spinner instead of full overlay */}
+                {loading && documents.length > 0 && (
+                  <div className="absolute left-2 top-2 z-10 flex items-center">
+                    <div className="\\ h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  </div>
+                )}
+
+                <DocumentList
+                  documents={documents}
+                  selectedDocument={selectedDocument}
+                  selectedDocuments={selectedDocuments}
+                  handleDocumentClick={handleDocumentClick}
+                  handleCheckboxChange={handleCheckboxChange}
+                  getSelectAllState={getSelectAllState}
+                  setSelectedDocuments={setSelectedDocuments}
+                  setDocuments={setDocuments}
+                  loading={loading}
+                  apiBaseUrl={effectiveApiUrl}
+                  authToken={authToken}
+                  selectedFolder={selectedFolder}
+                />
+              </div>
             )}
           </div>
 
