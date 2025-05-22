@@ -5,7 +5,6 @@ import { Sidebar } from "@/components/ui/sidebar";
 import DocumentsSection from "@/components/documents/DocumentsSection";
 import SearchSection from "@/components/search/SearchSection";
 import ChatSection from "@/components/chat/ChatSection";
-import AgentChatSection from "@/components/chat/AgentChatSection";
 import GraphSection from "@/components/GraphSection";
 import { ConnectorList } from "@/components/connectors/ConnectorList";
 import { AlertSystem } from "@/components/ui/alert-system";
@@ -35,7 +34,6 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
   onFolderClick,
   onSearchSubmit,
   onChatSubmit,
-  onAgentSubmit,
   onGraphClick,
   onGraphCreate,
   onGraphUpdate,
@@ -49,7 +47,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
   }, [connectionUri]);
 
   // Valid section types, now matching the updated MorphikUIProps
-  type SectionType = "documents" | "search" | "chat" | "graphs" | "agent" | "connections";
+  type SectionType = "documents" | "search" | "chat" | "graphs" | "connections";
 
   useEffect(() => {
     // Ensure initialSection from props is a valid SectionType before setting
@@ -80,7 +78,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
 
   // Wrapper for section change to match expected type
   const handleSectionChange = (section: string) => {
-    if (["documents", "search", "chat", "graphs", "agent", "connections"].includes(section)) {
+    if (["documents", "search", "chat", "graphs", "connections"].includes(section)) {
       // Added "connections"
       setActiveSection(section as SectionType); // Use SectionType here
     }
@@ -130,14 +128,6 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
             apiBaseUrl={effectiveApiBaseUrl}
             authToken={authToken}
             onChatSubmit={onChatSubmit}
-          />
-        )}
-        {activeSection === "agent" && (
-          <AgentChatSection
-            key={`agent-${effectiveApiBaseUrl}`}
-            apiBaseUrl={effectiveApiBaseUrl}
-            authToken={authToken}
-            onAgentSubmit={onAgentSubmit}
           />
         )}
         {activeSection === "graphs" && (
