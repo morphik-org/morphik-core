@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "morphik"
-version = "0.1.9"
+version = "0.2.0"
 authors = [
     { name = "Morphik", email = "founders@morphik.ai" },
 ]
