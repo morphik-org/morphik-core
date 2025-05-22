@@ -1,7 +1,9 @@
+
 import os
+import re
 from collections import ChainMap
 from functools import lru_cache
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 import tomli
 from dotenv import load_dotenv
@@ -140,6 +142,28 @@ def get_settings() -> Settings:
     """Get cached settings instance."""
     load_dotenv(override=True)
 
+        # Function to substitute environment variables in string values
+    def substitute_env_vars(value: Any) -> Any:
+
+        if isinstance(value, str):
+            env_var_pattern = r'\${([A-Za-z0-9_]+)}'
+            matches = re.findall(env_var_pattern, value)
+            if matches:
+                result = value
+                for var_name in matches:
+                    if var_name in os.environ:
+                        result = result.replace(f"${{{var_name}}}", os.environ[var_name])
+                    else:
+                        print(f"Warning: Environment variable '{var_name}' used in config but not found in environment")
+                return result
+            return value
+        elif isinstance(value, dict):
+            return {k: substitute_env_vars(v) for k, v in value.items()}
+        elif isinstance(value, list):
+            return [substitute_env_vars(item) for item in value]
+        else:
+            return value
+    
     # Load config.toml
     with open("morphik.toml", "rb") as f:
         config = tomli.load(f)
@@ -179,7 +203,8 @@ def get_settings() -> Settings:
     # Load registered models if available
     registered_models = {}
     if "registered_models" in config:
-        registered_models = {"REGISTERED_MODELS": config["registered_models"]}
+        processed_models = substitute_env_vars(config["registered_models"])
+        registered_models = {"REGISTERED_MODELS": processed_models}
 
     # load completion config
     completion_config = {
@@ -189,10 +214,10 @@ def get_settings() -> Settings:
     # Set the model key for LiteLLM
     if "model" not in config["completion"]:
         raise ValueError("'model' is required in the completion configuration")
-    completion_config["COMPLETION_MODEL"] = config["completion"]["model"]
+    completion_config["COMPLETION_MODEL"] = substitute_env_vars(config["completion"]["model"])
 
     # load agent config
-    agent_config = {"AGENT_MODEL": config["agent"]["model"]}
+    agent_config = {"AGENT_MODEL": substitute_env_vars(config["agent"]["model"])}
     if "model" not in config["agent"]:
         raise ValueError("'model' is required in the agent configuration")
 
@@ -229,7 +254,7 @@ def get_settings() -> Settings:
     # Set the model key for LiteLLM
     if "model" not in config["embedding"]:
         raise ValueError("'model' is required in the embedding configuration")
-    embedding_config["EMBEDDING_MODEL"] = config["embedding"]["model"]
+    embedding_config["EMBEDDING_MODEL"] = substitute_env_vars(config["embedding"]["model"])
 
     # load parser config
     parser_config = {
@@ -301,7 +326,7 @@ def get_settings() -> Settings:
     # Set the model key for LiteLLM
     if "model" not in config["rules"]:
         raise ValueError("'model' is required in the rules configuration")
-    rules_config["RULES_MODEL"] = config["rules"]["model"]
+    rules_config["RULES_MODEL"] = substitute_env_vars(config["rules"]["model"])
 
     # load morphik config
     morphik_config = {
@@ -333,12 +358,12 @@ def get_settings() -> Settings:
     # Set the model key for LiteLLM
     if "model" not in config["graph"]:
         raise ValueError("'model' is required in the graph configuration")
-    graph_config["GRAPH_MODEL"] = config["graph"]["model"]
+    graph_config["GRAPH_MODEL"] = substitute_env_vars(config["graph"]["model"])
 
     # load document analysis config
     document_analysis_config = {}
     if "document_analysis" in config:
-        document_analysis_config = {"DOCUMENT_ANALYSIS_MODEL": config["document_analysis"]["model"]}
+        document_analysis_config = {"DOCUMENT_ANALYSIS_MODEL": substitute_env_vars(config["document_analysis"]["model"])}
 
     # load telemetry config
     telemetry_config = {}
