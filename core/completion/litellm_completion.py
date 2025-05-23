@@ -277,7 +277,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
 
             # Add images if available
             if image_urls:
-                NUM_IMAGES = min(3, len(image_urls))
+                NUM_IMAGES = min(5, len(image_urls))
                 for img_url in image_urls[:NUM_IMAGES]:
                     content_list.append({"type": "image_url", "image_url": {"url": img_url}})
 
@@ -342,13 +342,8 @@ class LiteLLMCompletionModel(BaseCompletionModel):
 
         # Add images directly to the user message if available
         if ollama_image_data:
-            if len(ollama_image_data) > 1:
-                logger.warning(
-                    f"Ollama model {self.model_config['model_name']} only supports one image per message. "
-                    "Using the first image and ignoring others."
-                )
-            # Add 'images' key inside the user message dictionary
-            user_message_data["images"] = [ollama_image_data[0]]
+            # Add all images to the user message
+            user_message_data["images"] = ollama_image_data
 
         ollama_messages = [system_message] + history_messages + [user_message_data]
 
@@ -395,7 +390,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         include_images = image_urls  # Use the collected full data URIs
 
         if include_images:
-            NUM_IMAGES = min(3, len(image_urls))
+            NUM_IMAGES = min(5, len(image_urls))
             for img_url in image_urls[:NUM_IMAGES]:
                 content_list.append({"type": "image_url", "image_url": {"url": img_url}})
 

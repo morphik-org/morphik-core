@@ -13,10 +13,8 @@ dev_permissions = ["read", "write", "admin"]  # Default dev permissions
 #### Registered models
 [registered_models]
 # OpenAI models
-openai_gpt4 = { model_name = "gpt-4" }
 openai_gpt4-1 = { model_name = "gpt-4.1" }
-openai_gpt4o = { model_name = "gpt-4o" }
-openai_gpt4o_mini = { model_name = "gpt-4o-mini" }
+openai_gpt4-1-mini = { model_name = "gpt-4.1-mini" }
 
 # Azure OpenAI models
 azure_gpt4 = { model_name = "gpt-4", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "gpt-4-deployment" }
@@ -26,33 +24,26 @@ azure_gpt35 = { model_name = "gpt-3.5-turbo", api_base = "YOUR_AZURE_URL_HERE", 
 claude_opus = { model_name = "claude-3-opus-20240229" }
 claude_sonnet = { model_name = "claude-3-7-sonnet-latest" }
 
-# Ollama models
-ollama_llama = {model_name = "claude-3-7-sonnet-latest"} # { model_name = "ollama_chat/llama3.2", api_base = "http://localhost:11434" }
+# Ollama models (modify api_base based on your deployment)
+# - Local Ollama: "http://localhost:11434" (default)
+# - Morphik in Docker, Ollama local: "http://host.docker.internal:11434"
+# - Both in Docker: "http://ollama:11434"
+ollama_qwen_vision = { model_name = "ollama_chat/qwen2.5vl:latest", api_base = "http://localhost:11434", vision = true }
 ollama_llama_vision = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://localhost:11434", vision = true }
-# If you are running on docker, but running ollama locally use the following
-ollama_llama_docker = { model_name = "ollama_chat/llama3.2", api_base = "http://host.docker.internal:11434" }
-ollama_llama_vision_docker = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://host.docker.internal:11434", vision = true }
-# If you are running on docker and ollama is also running on docker use the following
-ollama_llama_docker_docker = { model_name = "ollama_chat/llama3.2", api_base = "http://ollama:11434" }
-ollama_llama_vision_docker_docker = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://ollama:11434", vision = true }
+ollama_embedding = { model_name = "ollama/nomic-embed-text", api_base = "http://localhost:11434" }
 
-# Embedding models
 openai_embedding = { model_name = "text-embedding-3-small" }
 openai_embedding_large = { model_name = "text-embedding-3-large" }
 azure_embedding = { model_name = "text-embedding-ada-002", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "embedding-ada-002" }
-ollama_embedding = { model_name = "ollama/nomic-embed-text", api_base = "http://localhost:11434" }
-# If you are running on docker, but running ollama locally use the following
-ollama_embedding_docker = { model_name = "ollama/nomic-embed-text", api_base = "http://host.docker.internal:11434" }
-# If you are running on docker and ollama is also running on docker use the following
-ollama_embedding_docker_docker = { model_name = "ollama/nomic-embed-text", api_base = "http://ollama:11434" }
+
 
 #### Component configurations ####
 
 [agent]
-model = "ollama_llama" # Model for the agent logic
+model = "ollama_qwen_vision" # Model for the agent logic
 
 [completion]
-model = "ollama_llama" #"openai_gpt4o"  # Reference to a key in registered_models
+model = "ollama_qwen_vision" #"openai_gpt4-1-mini"  # Reference to a key in registered_models
 default_max_tokens = "1000"
 default_temperature = 0.5
 
@@ -77,13 +68,13 @@ chunk_size = 6000
 chunk_overlap = 300
 use_unstructured_api = false
 use_contextual_chunking = false
-contextual_chunking_model = "ollama_llama"  # Reference to a key in registered_models
+contextual_chunking_model = "ollama_qwen_vision"  # Reference to a key in registered_models
 
 [document_analysis]
-model = "ollama_llama"  # Reference to a key in registered_models
+model = "ollama_qwen_vision"  # Reference to a key in registered_models
 
 [parser.vision]
-model = "ollama_llama"  # Reference to a key in registered_models
+model = "ollama_qwen_vision"  # Reference to a key in registered_models
 frame_sample_rate = -1  # Set to -1 to disable frame captioning
 
 [reranker]
@@ -108,7 +99,7 @@ storage_path = "./storage"
 provider = "pgvector"
 
 [rules]
-model = "ollama_llama"
+model = "ollama_qwen_vision"
 batch_size = 4096
 
 [morphik]
@@ -124,8 +115,7 @@ host = "localhost"  # use "redis" for docker
 port = 6379
 
 [graph]
-mode="local"
-model = "ollama_llama"
+model = "ollama_qwen_vision"
 enable_entity_resolution = true
 
 # [graph]
