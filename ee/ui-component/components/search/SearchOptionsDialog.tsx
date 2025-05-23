@@ -72,7 +72,11 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
             </Label>
             <Textarea
               id="search-filters"
-              value={searchOptions.filters || ""}
+              value={
+                typeof searchOptions.filters === "object"
+                  ? JSON.stringify(searchOptions.filters, null, 2)
+                  : searchOptions.filters || ""
+              }
               onChange={e => updateSearchOption("filters", e.target.value)}
               placeholder='{"key": "value"}'
               rows={3}

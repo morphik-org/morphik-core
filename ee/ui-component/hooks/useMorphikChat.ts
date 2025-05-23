@@ -27,7 +27,7 @@ interface UseMorphikChatReturn {
   handleSubmit: (e?: React.FormEvent<HTMLFormElement>) => void;
   attachments?: Attachment[];
   setAttachments?: React.Dispatch<React.SetStateAction<Attachment[]>>;
-  updateQueryOption?: (key: keyof QueryOptions, value: string | number | boolean | undefined) => void;
+  updateQueryOption?: (key: keyof QueryOptions, value: QueryOptions[keyof QueryOptions]) => void;
   status?: string;
 }
 
@@ -95,7 +95,7 @@ export function useMorphikChat({
 
   const status = isLoading ? "loading" : "idle";
 
-  const updateQueryOption = useCallback((key: keyof QueryOptions, value: string | number | boolean | undefined) => {
+  const updateQueryOption = useCallback((key: keyof QueryOptions, value: QueryOptions[keyof QueryOptions]) => {
     setQueryOptions(prev => ({ ...prev, [key]: value }));
   }, []);
 

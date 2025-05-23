@@ -4,7 +4,7 @@ import type { UIMessage } from "./chat/ChatMessages";
 export interface SearchOptions {
   k?: number;
   min_score?: number;
-  filters?: string; // JSON string or object?
+  filters?: string | object; // JSON string or object with external_id array
   use_reranking?: boolean;
   use_colpali?: boolean;
 }
@@ -13,8 +13,8 @@ export interface QueryOptions extends SearchOptions {
   max_tokens?: number;
   temperature?: number;
   graph_name?: string;
-  folder_name?: string;
-  // Note: Consider if streaming or other UI options should be here
+  folder_name?: string | string[]; // Support single folder or array of folders
+  // external_id removed - should be in filters object as external_id: string[]
 }
 
 // Common types used across multiple components

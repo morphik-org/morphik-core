@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { PreviewMessage } from "./ChatMessages";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
@@ -25,6 +26,14 @@ interface ChatSectionProps {
   initialMessages?: UIMessage[];
   isReadonly?: boolean;
   onChatSubmit?: (query: string, options: QueryOptions, initialMessages?: UIMessage[]) => void;
+}
+
+// Interface for document API response
+interface ApiDocumentResponse {
+  external_id?: string;
+  id?: string;
+  filename?: string;
+  name?: string;
 }
 
 /**
@@ -59,6 +68,27 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     [updateQueryOption]
   );
 
+  // Helper to update filters with external_id
+  const updateDocumentFilter = useCallback(
+    (selectedDocumentIds: string[]) => {
+      if (updateQueryOption) {
+        const currentFilters = queryOptions.filters || {};
+        const parsedFilters = typeof currentFilters === "string" ? JSON.parse(currentFilters || "{}") : currentFilters;
+
+        const newFilters = {
+          ...parsedFilters,
+          external_id: selectedDocumentIds.length > 0 ? selectedDocumentIds : undefined,
+        };
+
+        // Remove undefined values
+        Object.keys(newFilters).forEach(key => newFilters[key] === undefined && delete newFilters[key]);
+
+        updateQueryOption("filters", newFilters);
+      }
+    },
+    [updateQueryOption, queryOptions.filters]
+  );
+
   // Derive safe option values with sensible defaults to avoid undefined issues in UI
   const safeQueryOptions: Required<Pick<QueryOptions, "k" | "min_score" | "temperature" | "max_tokens">> &
     QueryOptions = {
@@ -78,6 +108,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   const [loadingGraphs, setLoadingGraphs] = useState(false);
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [folders, setFolders] = useState<Folder[]>([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [documents, setDocuments] = useState<{ id: string; filename: string }[]>([]);
 
   // Agent mode toggle and state
   const [isAgentMode, setIsAgentMode] = useState(false);
@@ -148,6 +180,54 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     }
   }, [apiBaseUrl, authToken]);
 
+  // Fetch documents
+  const fetchDocuments = useCallback(async () => {
+    if (!apiBaseUrl) return;
+
+    setLoadingDocuments(true);
+    try {
+      console.log(`Fetching documents from: ${apiBaseUrl}/documents`);
+      const response = await fetch(`${apiBaseUrl}/documents`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify({}), // Empty body to fetch all docs
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch documents: ${response.status} ${response.statusText}`);
+      }
+
+      const documentsData = await response.json();
+      console.log("Documents data received:", documentsData);
+
+      if (Array.isArray(documentsData)) {
+        // Transform documents to the format we need (id and filename)
+        const transformedDocs = documentsData
+          .map((doc: ApiDocumentResponse) => {
+            const id = doc.external_id || doc.id;
+            if (!id) return null; // Skip documents without valid IDs
+
+            return {
+              id,
+              filename: doc.filename || doc.name || `Document ${id}`,
+            };
+          })
+          .filter((doc): doc is { id: string; filename: string } => doc !== null);
+
+        setDocuments(transformedDocs);
+      } else {
+        console.error("Expected array for documents data but received:", typeof documentsData);
+      }
+    } catch (err) {
+      console.error("Error fetching documents:", err);
+    } finally {
+      setLoadingDocuments(false);
+    }
+  }, [apiBaseUrl, authToken]);
+
   // Fetch graphs and folders when component mounts
   useEffect(() => {
     // Define a function to handle data fetching
@@ -156,11 +236,12 @@ const ChatSection: React.FC<ChatSectionProps> = ({
         console.log("ChatSection: Fetching data with auth token:", !!authToken);
         await fetchGraphs();
         await fetchFolders();
+        await fetchDocuments();
       }
     };
 
     fetchData();
-  }, [authToken, apiBaseUrl, fetchGraphs, fetchFolders]);
+  }, [authToken, apiBaseUrl, fetchGraphs, fetchFolders, fetchDocuments]);
 
   // Text area ref and adjustment functions
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -284,6 +365,23 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     }
   }, [messages, agentMessages]);
 
+  // Get current selected values
+  const getCurrentSelectedFolders = (): string[] => {
+    const folderName = safeQueryOptions.folder_name;
+    if (!folderName) return [];
+    const folders = Array.isArray(folderName) ? folderName : [folderName];
+    return folders.filter(f => f !== "__none__");
+  };
+
+  const getCurrentSelectedDocuments = (): string[] => {
+    const filters = safeQueryOptions.filters || {};
+    const parsedFilters = typeof filters === "string" ? JSON.parse(filters || "{}") : filters;
+    const externalId = parsedFilters.external_id;
+    if (!externalId) return [];
+    const documents = Array.isArray(externalId) ? externalId : [externalId];
+    return documents.filter(d => d !== "__none__");
+  };
+
   return (
     <div className="relative flex h-full w-full overflow-hidden bg-background">
       {/* Sidebar */}
@@ -351,6 +449,104 @@ const ChatSection: React.FC<ChatSectionProps> = ({
         {/* Input Area */}
         <div className="sticky bottom-0 w-full bg-background">
           <div className="mx-auto max-w-4xl px-4 sm:px-6">
+            {/* Controls Row - Folder Selection and Agent Mode */}
+            {!isReadonly && (
+              <div className="pb-3 pt-2">
+                <div className="flex items-center justify-between gap-4">
+                  {/* Left side - Folder and Document Selection (only in chat mode) */}
+                  {!isAgentMode && (
+                    <div className="flex items-center gap-4">
+                      {/* Folder Selection */}
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="folder_name" className="whitespace-nowrap text-sm text-muted-foreground">
+                          Folder:
+                        </Label>
+                        <MultiSelect
+                          options={[
+                            { label: "All Folders", value: "__none__" },
+                            ...(loadingFolders ? [{ label: "Loading folders...", value: "loading" }] : []),
+                            ...folders.map(folder => ({
+                              label: folder.name,
+                              value: folder.name,
+                            })),
+                          ]}
+                          selected={getCurrentSelectedFolders()}
+                          onChange={(value: string[]) => {
+                            const filteredValues = value.filter(v => v !== "__none__");
+                            safeUpdateOption("folder_name", filteredValues.length > 0 ? filteredValues : undefined);
+                          }}
+                          placeholder="All folders"
+                          className="w-[200px]"
+                        />
+                      </div>
+
+                      {/* Document Selection */}
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="document_filter" className="whitespace-nowrap text-sm text-muted-foreground">
+                          Document:
+                        </Label>
+                        <MultiSelect
+                          options={[
+                            { label: "All Documents", value: "__none__" },
+                            ...(loadingDocuments ? [{ label: "Loading documents...", value: "loading" }] : []),
+                            ...documents.map(doc => ({
+                              label: doc.filename,
+                              value: doc.id,
+                            })),
+                          ]}
+                          selected={getCurrentSelectedDocuments()}
+                          onChange={(value: string[]) => {
+                            const filteredValues = value.filter(v => v !== "__none__");
+                            updateDocumentFilter(filteredValues);
+                          }}
+                          placeholder="All documents"
+                          className="w-[220px]"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Right side - Agent Mode and Settings */}
+                  <div className={`flex items-center gap-2 ${isAgentMode ? "ml-auto" : ""}`}>
+                    <Button
+                      variant={isAgentMode ? "default" : "outline"}
+                      size="sm"
+                      className="text-xs font-medium"
+                      title="Goes deeper, reasons across documents and may return image-grounded answers"
+                      onClick={() => {
+                        setIsAgentMode(prev => !prev);
+                        setAgentStatus("idle");
+                        setShowSettings(false);
+                      }}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {!isAgentMode && <Sparkles className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400" />}
+                        <span>{isAgentMode ? "Chat Mode" : "Agent Mode"}</span>
+                      </span>
+                    </Button>
+                    {!isAgentMode && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-1 text-xs font-medium"
+                        onClick={() => {
+                          setShowSettings(!showSettings);
+                          if (!showSettings && authToken) {
+                            fetchGraphs();
+                            fetchFolders();
+                            fetchDocuments();
+                          }
+                        }}
+                      >
+                        <Settings className="h-3.5 w-3.5" />
+                        <span>{showSettings ? "Hide" : "Settings"}</span>
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <form
               className="pb-6"
               onSubmit={e => {
@@ -359,7 +555,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
               }}
             >
               <div className="relative w-full">
-                <div className="pointer-events-none absolute -top-20 left-0 right-0 h-24 bg-gradient-to-t from-background to-transparent" />
                 <div className="relative flex items-end">
                   <Textarea
                     ref={textareaRef}
@@ -414,53 +609,11 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                 </div>
               </div>
 
-              {/* Settings & Agent Buttons */}
-              {!isReadonly && (
-                <div className="mt-4 flex justify-center gap-2">
-                  <Button
-                    variant={isAgentMode ? "default" : "outline"}
-                    size="sm"
-                    className={`group relative overflow-hidden text-xs ${isAgentMode ? "bg-primary hover:bg-primary/90" : "hover:border-primary/50"}`}
-                    title="Goes deeper, reasons across documents and may return image-grounded answers"
-                    onClick={() => {
-                      setIsAgentMode(prev => !prev);
-                      setAgentStatus("idle");
-                      setShowSettings(false);
-                    }}
-                  >
-                    <span className="flex items-center gap-1.5">
-                      {!isAgentMode && <Sparkles className="h-3.5 w-3.5 text-amber-400 dark:text-amber-300" />}
-                      <span>{isAgentMode ? "Back to Chat" : "Agent Mode"}</span>
-                    </span>
-                    {!isAgentMode && (
-                      <span className="absolute inset-0 -z-10 translate-x-[-100%] bg-gradient-to-r from-transparent via-primary/10 to-transparent group-hover:animate-shimmer" />
-                    )}
-                  </Button>
-                  {!isAgentMode && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => {
-                        setShowSettings(!showSettings);
-                        if (!showSettings && authToken) {
-                          fetchGraphs();
-                          fetchFolders();
-                        }
-                      }}
-                    >
-                      <Settings className="h-3.5 w-3.5" />
-                      <span>{showSettings ? "Hide Settings" : "Show Settings"}</span>
-                    </Button>
-                  )}
-                </div>
-              )}
-
               {/* Settings Panel */}
               {showSettings && !isAgentMode && !isReadonly && (
                 <div className="mt-4 rounded-xl border bg-muted/30 p-4 duration-300 animate-in fade-in slide-in-from-bottom-2">
                   <div className="mb-4 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">Chat Settings</h3>
+                    <h3 className="text-sm font-semibold">Advanced Settings</h3>
                     <Button variant="ghost" size="sm" className="text-xs" onClick={() => setShowSettings(false)}>
                       Done
                     </Button>
@@ -520,40 +673,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                             ) : (
                               <SelectItem value="none_available" disabled>
                                 No graphs available
-                              </SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="folder_name" className="block text-sm">
-                          Scope to Folder
-                        </Label>
-                        <Select
-                          value={safeQueryOptions.folder_name || "__none__"}
-                          onValueChange={value =>
-                            safeUpdateOption("folder_name", value === "__none__" ? undefined : value)
-                          }
-                        >
-                          <SelectTrigger className="w-full" id="folder_name">
-                            <SelectValue placeholder="Select a folder" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">All Folders</SelectItem>
-                            {loadingFolders ? (
-                              <SelectItem value="loading" disabled>
-                                Loading folders...
-                              </SelectItem>
-                            ) : folders.length > 0 ? (
-                              folders.map(folder => (
-                                <SelectItem key={folder.id || folder.name} value={folder.name}>
-                                  {folder.name}
-                                </SelectItem>
-                              ))
-                            ) : (
-                              <SelectItem value="none_available" disabled>
-                                No folders available
                               </SelectItem>
                             )}
                           </SelectContent>

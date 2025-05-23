@@ -92,6 +92,16 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
       setLoading(true);
       setSearchResults([]);
 
+      // Handle filters - convert to object if needed
+      let filtersObject = {};
+      if (currentSearchOptions.filters) {
+        if (typeof currentSearchOptions.filters === "string") {
+          filtersObject = JSON.parse(currentSearchOptions.filters);
+        } else {
+          filtersObject = currentSearchOptions.filters;
+        }
+      }
+
       const response = await fetch(`${apiBaseUrl}/retrieve/chunks`, {
         method: "POST",
         headers: {
@@ -100,7 +110,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
         },
         body: JSON.stringify({
           query: searchQuery,
-          filters: JSON.parse(currentSearchOptions.filters || "{}"),
+          filters: filtersObject,
           k: currentSearchOptions.k,
           min_score: currentSearchOptions.min_score,
           use_reranking: currentSearchOptions.use_reranking,

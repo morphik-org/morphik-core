@@ -225,9 +225,7 @@ export function Sidebar({
           <div className="mx-4 mb-3">
             <div className="text-[10px] text-muted-foreground">
               {isConnected && connectionHost && !connectionHost.includes("localhost") ? (
-                <span className="truncate font-mono">
-                  Connected to: {connectionHost}
-                </span>
+                <span className="truncate font-mono">Connected to: {connectionHost}</span>
               ) : (
                 <span>Connected to: localhost:8000</span>
               )}

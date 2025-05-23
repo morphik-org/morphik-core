@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, ArrowLeft, MessageSquare } from "lucide-react";
+import { PlusCircle, ArrowLeft, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -146,45 +146,16 @@ const FolderList: React.FC<FolderListProps> = ({
             {/* Show action buttons if documents are selected */}
             {selectedDocuments && selectedDocuments.length > 0 && (
               <div className="ml-4 flex gap-2">
-                {/* Chat with selected button */}
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    // Build proper URL path
-                    let path = "/";
-                    if (typeof window !== "undefined") {
-                      const currentPath = window.location.pathname;
-                      if (currentPath !== "/") {
-                        path = currentPath;
-                      }
-                    }
-
-                    // Create filter with external_id which is the correct field name
-                    const filter = JSON.stringify({ external_id: selectedDocuments });
-                    const filtersParam = encodeURIComponent(filter);
-
-                    // Navigate to chat with selected documents
-                    // Use window.location to force a full page reload
-                    if (typeof window !== "undefined") {
-                      window.location.href = `${path}?section=chat&filters=${filtersParam}`;
-                    } else {
-                      router.push(`${path}?section=chat&filters=${filtersParam}`);
-                    }
-                  }}
-                  className="flex items-center gap-1 border-primary text-primary hover:bg-primary/10"
-                >
-                  <MessageSquare size={16} />
-                  Chat with {selectedDocuments.length} selected
-                </Button>
-
                 {/* Delete button */}
                 {handleDeleteMultipleDocuments && (
                   <Button
                     variant="outline"
+                    size="icon"
                     onClick={handleDeleteMultipleDocuments}
-                    className="border-red-500 text-red-500 hover:bg-red-50"
+                    className="h-8 w-8 border-red-200 text-red-500 hover:border-red-300 hover:bg-red-50"
+                    title={`Delete ${selectedDocuments.length} selected document${selectedDocuments.length > 1 ? "s" : ""}`}
                   >
-                    Delete {selectedDocuments.length} selected
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 )}
               </div>
