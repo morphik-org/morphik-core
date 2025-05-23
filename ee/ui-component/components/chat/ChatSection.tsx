@@ -62,7 +62,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   // Derive safe option values with sensible defaults to avoid undefined issues in UI
   const safeQueryOptions: Required<Pick<QueryOptions, "k" | "min_score" | "temperature" | "max_tokens">> &
     QueryOptions = {
-    k: queryOptions.k ?? 10,
+    k: queryOptions.k ?? 5,
     min_score: queryOptions.min_score ?? 0.7,
     temperature: queryOptions.temperature ?? 0.7,
     max_tokens: queryOptions.max_tokens ?? 1024,
