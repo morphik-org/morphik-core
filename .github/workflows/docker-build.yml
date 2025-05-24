@@ -46,3 +46,61 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           # Remove cache-to for PR builds to save disk space 
+          
+      - name: Test Docker container
+        run: |
+          # Get the first tag from the metadata output
+          IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+          echo "Testing image: $IMAGE_TAG"
+          
+          # Start container in detached mode
+          CONTAINER_ID=$(docker run -d -p 8000:8000 \
+            -e POSTGRES_URI="" \
+            "$IMAGE_TAG")
+          
+          echo "Started container: $CONTAINER_ID"
+          
+          # Wait for server to be ready with 60 second timeout
+          timeout=60
+          interval=2
+          elapsed=0
+          
+          echo "Waiting for server to be ready..."
+          while [ $elapsed -lt $timeout ]; do
+            if curl -f -s http://localhost:8000/ping > /dev/null 2>&1; then
+              echo "✅ Server is responding to /ping endpoint"
+              break
+            fi
+            
+            echo "⏳ Waiting for server... (${elapsed}s/${timeout}s)"
+            sleep $interval
+            elapsed=$((elapsed + interval))
+          done
+          
+          # Check if we timed out
+          if [ $elapsed -ge $timeout ]; then
+            echo "❌ Server failed to respond within ${timeout} seconds"
+            echo "Container logs:"
+            docker logs "$CONTAINER_ID"
+            docker stop "$CONTAINER_ID"
+            docker rm "$CONTAINER_ID"
+            exit 1
+          fi
+          
+          # Verify the response is actually 200
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/ping)
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Health check passed - /ping returned HTTP $HTTP_CODE"
+          else
+            echo "❌ Health check failed - /ping returned HTTP $HTTP_CODE"
+            docker logs "$CONTAINER_ID"
+            docker stop "$CONTAINER_ID"
+            docker rm "$CONTAINER_ID"
+            exit 1
+          fi
+          
+          # Clean up
+          echo "🧹 Cleaning up container"
+          docker stop "$CONTAINER_ID"
+          docker rm "$CONTAINER_ID"
+          echo "✅ Test completed successfully" 
