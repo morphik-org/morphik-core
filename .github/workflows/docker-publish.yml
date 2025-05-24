@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - feat/issue-158-publish-docker-image
+      # - feat/issue-158-publish-docker-image
 
 permissions:
   contents: read
@@ -17,7 +17,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          sudo docker builder prune -a --force
+          df -h
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         
@@ -47,4 +57,4 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max 
+          cache-to: type=gha,mode=min 
