@@ -160,23 +160,9 @@ jobs:
           model = "openai_gpt4-1"
           enable_entity_resolution = true
           
-          [telemetry]
-          enabled = true
-          honeycomb_enabled = true
-          honeycomb_endpoint = "https://api.honeycomb.io"
-          honeycomb_proxy_endpoint = "https://otel-proxy.onrender.com"
-          service_name = "databridge-core"
-          otlp_timeout = 10
-          otlp_max_retries = 3
-          otlp_retry_delay = 1
-          otlp_max_export_batch_size = 512
-          otlp_schedule_delay_millis = 5000
-          otlp_max_queue_size = 2048
-          EOF
-          
           # Start container in detached mode with config mounted
           CONTAINER_ID=$(docker run -d -p 8000:8000 \
-            -e POSTGRES_URI="" \
+            -e POSTGRES_URI="postgresql://morphik:morphik@localhost:5432/morphik" \
             -v "$(pwd)/morphik.toml.test:/app/morphik.toml" \
             "$IMAGE_TAG")
           
