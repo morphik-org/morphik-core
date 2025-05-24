@@ -1,17 +1,8 @@
 name: Build Docker Image
 
 on:
-  pull_request:
-    paths:
-      - 'dockerfile'
-      - 'postgres.dockerfile'
-      - 'docker-compose.yml'
-      - 'pyproject.toml'
-      - 'uv.lock'
-      - 'core/**'
-      - 'ee/**'
-      - 'start_server.py'
-
+  pull_request
+  
 permissions:
   contents: read
 
