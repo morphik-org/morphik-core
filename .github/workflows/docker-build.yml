@@ -31,7 +31,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ vars.ORG_NAME }}/morphik-core
+          images: ghcr.io/${{ github.repository_owner }}/morphik-core
           tags: |
             type=ref,event=pr
             type=sha,prefix=pr-{{branch}}-
