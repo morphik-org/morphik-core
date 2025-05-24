@@ -49,7 +49,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/ribera-ai/morphik-core
+          images: ghcr.io/${{ vars.ORG_NAME }}/morphik-core
           tags: |
             type=ref,event=branch
             type=sha,prefix={{branch}}-
