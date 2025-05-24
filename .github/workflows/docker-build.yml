@@ -1,0 +1,44 @@
+name: Build Docker Image
+
+on:
+  pull_request:
+    paths:
+      - 'dockerfile'
+      - 'postgres.dockerfile'
+      - 'docker-compose.yml'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'core/**'
+      - 'ee/**'
+      - 'start_server.py'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+          
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/morphik-core
+          tags: |
+            type=ref,event=pr
+            type=sha,prefix=pr-{{branch}}-
+            
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./dockerfile
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max 
