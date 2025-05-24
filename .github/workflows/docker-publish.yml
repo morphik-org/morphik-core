@@ -11,7 +11,7 @@ permissions:
   packages: write
 
 jobs:
-  build-and-publish:
+  docker-publish:
     runs-on: ubuntu-latest
     
     steps:
