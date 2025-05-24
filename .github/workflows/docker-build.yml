@@ -92,6 +92,9 @@ jobs:
           default_max_tokens = "1000"
           default_temperature = 0.5
           
+          [document_analysis]
+          model = "openai_gpt4-1"
+          
           [database]
           provider = "postgres"
           # Connection pool settings
