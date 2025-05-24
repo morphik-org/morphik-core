@@ -42,15 +42,18 @@ jobs:
           context: .
           file: ./dockerfile
           push: false
-          tags: ${{ steps.meta.outputs.tags }}
+          load: true
+          tags: |
+            ${{ steps.meta.outputs.tags }}
+            morphik-core:test
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           # Remove cache-to for PR builds to save disk space 
           
       - name: Test Docker container
         run: |
-          # Get the first tag from the metadata output
-          IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+          # Use the local test tag instead of the registry tag
+          IMAGE_TAG="morphik-core:test"
           echo "Testing image: $IMAGE_TAG"
           
           # Start container in detached mode
