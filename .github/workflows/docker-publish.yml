@@ -18,6 +18,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Debug GitHub context
+        run: |
+          echo "Repository: ${{ github.repository }}"
+          echo "Repository Owner: ${{ github.repository_owner }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Ref: ${{ github.ref }}"
+
       - name: Free up disk space
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -42,7 +49,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/morphik-core
+          images: ghcr.io/ribera-ai/morphik-core
           tags: |
             type=ref,event=branch
             type=sha,prefix={{branch}}-
