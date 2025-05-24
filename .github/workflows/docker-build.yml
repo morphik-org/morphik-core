@@ -84,6 +84,9 @@ jobs:
           
           #### Component configurations ####
           
+          [agent]
+          model = "openai_gpt4-1"
+          
           [completion]
           model = "openai_gpt4o"
           default_max_tokens = "1000"
