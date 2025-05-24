@@ -1,4 +1,4 @@
-name: Build and Publish Docker Image
+name: Publish Docker Image
 
 on:
   push:
@@ -42,7 +42,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/morphik-core
+          images: ghcr.io/morphik-core
           tags: |
             type=ref,event=branch
             type=sha,prefix={{branch}}-
