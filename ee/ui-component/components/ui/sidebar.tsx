@@ -15,6 +15,7 @@ import {
   Check,
   ArrowLeft,
   PlugZap,
+  Link,
 } from "lucide-react";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Input } from "@/components/ui/input";
@@ -194,7 +195,7 @@ export function Sidebar({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 px-2 text-[10px]"
+                  className="h-5 px-2 py-0.5 text-[10px]"
                   onClick={() => {
                     if (connectionUri) {
                       navigator.clipboard.writeText(connectionUri);
@@ -211,7 +212,7 @@ export function Sidebar({
                   }}
                   title="Copy connection URI"
                 >
-                  <Copy className="mr-1 h-3 w-3" />
+                  <Copy className="mr-1 h-2.5 w-2.5" />
                   Copy URI
                 </Button>
               </div>
@@ -223,12 +224,47 @@ export function Sidebar({
         {/* Connection status display - always visible when not collapsed */}
         {!isCollapsed && !isEditingUri && (
           <div className="mx-4 mb-3">
-            <div className="text-[10px] text-muted-foreground">
-              {isConnected && connectionHost && !connectionHost.includes("localhost") ? (
-                <span className="truncate font-mono">Connected to: {connectionHost}</span>
-              ) : (
-                <span>Connected to: localhost:8000</span>
-              )}
+            <div className="flex items-center justify-between gap-2">
+              <div className="truncate text-[10px] text-muted-foreground">
+                {isConnected && connectionHost && !connectionHost.includes("localhost") ? (
+                  <span className="flex items-center gap-1 font-mono">
+                    <Link className="h-2.5 w-2.5" />
+                    {connectionHost}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1">
+                    <Link className="h-2.5 w-2.5" />
+                    localhost:8000
+                  </span>
+                )}
+              </div>
+              {/* Copy button - always show */}
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-4 w-4 shrink-0"
+                  onClick={() => {
+                    const uriToCopy = connectionUri || "http://localhost:8000";
+                    navigator.clipboard.writeText(uriToCopy);
+                    const event = new CustomEvent("morphik:alert", {
+                      detail: {
+                        type: "success",
+                        title: "Copied!",
+                        message: connectionUri
+                          ? "Connection URI copied to clipboard"
+                          : "Localhost URL copied to clipboard",
+                        duration: 3000,
+                      },
+                    });
+                    window.dispatchEvent(event);
+                  }}
+                  title="Copy connection URI"
+                >
+                  <Copy className="h-2.5 w-2.5" />
+                </Button>
+                <span className="text-[9px] text-muted-foreground">URI</span>
+              </div>
             </div>
           </div>
         )}
