@@ -1462,3 +1462,71 @@ class GraphService:
             }
 
         return response
+
+    async def get_graph_visualization_data(
+        self,
+        graph_name: str,
+        auth: AuthContext,
+        system_filters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Get graph visualization data for local graphs.
+
+        Args:
+            graph_name: Name of the graph to visualize
+            auth: Authentication context
+            system_filters: Optional system filters for graph retrieval
+
+        Returns:
+            Dict containing nodes and links for visualization
+        """
+        # Initialize system_filters if None
+        if system_filters is None:
+            system_filters = {}
+
+        graph = await self.db.get_graph(graph_name, auth, system_filters=system_filters)
+        if not graph:
+            logger.warning(f"Graph '{graph_name}' not found or not accessible")
+            return {"nodes": [], "links": []}
+
+        # Transform entities to nodes format
+        nodes = []
+        for entity in graph.entities:
+            nodes.append(
+                {
+                    "id": entity.id,
+                    "label": entity.label,
+                    "type": entity.type,
+                    "properties": entity.properties,
+                    "color": self._get_node_color(entity.type),
+                }
+            )
+
+        # Transform relationships to links format
+        links = []
+        entity_id_set = {entity.id for entity in graph.entities}
+        for relationship in graph.relationships:
+            # Only include relationships where both source and target exist
+            if relationship.source_id in entity_id_set and relationship.target_id in entity_id_set:
+                links.append(
+                    {"source": relationship.source_id, "target": relationship.target_id, "type": relationship.type}
+                )
+
+        return {"nodes": nodes, "links": links}
+
+    def _get_node_color(self, node_type: str) -> str:
+        """Get color for a node type to match the UI color scheme."""
+        color_map = {
+            "person": "#4f46e5",  # Indigo
+            "organization": "#06b6d4",  # Cyan
+            "location": "#10b981",  # Emerald
+            "date": "#f59e0b",  # Amber
+            "concept": "#8b5cf6",  # Violet
+            "event": "#ec4899",  # Pink
+            "product": "#ef4444",  # Red
+            "entity": "#4f46e5",  # Indigo (for generic entities)
+            "attribute": "#f59e0b",  # Amber
+            "relationship": "#ec4899",  # Pink
+            "high_level_element": "#10b981",  # Emerald
+            "semantic_unit": "#8b5cf6",  # Violet
+        }
+        return color_map.get(node_type.lower(), "#6b7280")  # Gray as default

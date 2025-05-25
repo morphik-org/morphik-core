@@ -109,7 +109,37 @@ const ForceGraphComponent: React.FC<ForceGraphComponentProps> = ({
                 type: link.type,
               })),
             })
-            .nodeLabel((node: NodeObject) => `${node.label} (${node.type})`)
+            .nodeLabel((node: NodeObject) => {
+              // Create rich tooltip content using the detailed properties from the 7 storage files
+              const props = node.properties || {};
+
+              let tooltip = `<div style="max-width: 300px; font-family: system-ui;">`;
+              tooltip += `<strong>${node.label}</strong><br/>`;
+              tooltip += `<em>Type: ${node.type}</em><br/>`;
+
+              // Add context if available (this comes from the mapper across all 7 storage files)
+              if (props.context) {
+                const context = String(props.context);
+                const shortContext = context.length > 150 ? context.substring(0, 150) + "..." : context;
+                tooltip += `<br/><strong>Context:</strong><br/>${shortContext}<br/>`;
+              }
+
+              // Add PageRank score for importance
+              if (props.pagerank_score) {
+                tooltip += `<br/><strong>Importance:</strong> ${Number(props.pagerank_score).toFixed(4)}`;
+              }
+
+              // Add any additional interesting properties from the storage files
+              const interestingProps = ['weight', 'human_readable_id'];
+              for (const prop of interestingProps) {
+                if (props[prop] && props[prop] !== props.context) {
+                  tooltip += `<br/><strong>${prop.replace('_', ' ')}:</strong> ${String(props[prop]).substring(0, 100)}`;
+                }
+              }
+
+              tooltip += `</div>`;
+              return tooltip;
+            })
             .nodeColor((node: NodeObject) => node.color)
             .linkLabel((link: LinkObject) => link.type)
             .linkDirectionalArrowLength(3)

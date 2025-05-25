@@ -59,6 +59,20 @@ interface Relationship {
   target_id: string;
 }
 
+interface NodeObject {
+  id: string;
+  label: string;
+  type: string;
+  properties: Record<string, unknown>;
+  color: string;
+}
+
+interface LinkObject {
+  source: string;
+  target: string;
+  type: string;
+}
+
 interface GraphSectionProps {
   apiBaseUrl: string;
   onSelectGraph?: (graphName: string | undefined) => void;
@@ -121,13 +135,44 @@ const GraphSection: React.FC<GraphSectionProps> = ({
   const [showLinkLabels, setShowLinkLabels] = useState(true);
   const [showVisualization, setShowVisualization] = useState(false);
   const [graphDimensions, setGraphDimensions] = useState({ width: 0, height: 0 });
+  const [graphData, setGraphData] = useState<{ nodes: NodeObject[]; links: LinkObject[] }>({ nodes: [], links: [] });
+  const [loadingVisualization, setLoadingVisualization] = useState(false);
 
   // Refs for graph visualization
   const graphContainerRef = useRef<HTMLDivElement>(null);
   // Removed graphInstance ref as it's not needed with the dynamic component
 
   // Prepare data for force-graph
-  const prepareGraphData = useCallback((graph: Graph | null) => {
+  const prepareGraphData = useCallback(async (graph: Graph | null) => {
+    if (!graph) return { nodes: [], links: [] };
+
+    try {
+      // Fetch visualization data from the API
+      const headers = createHeaders();
+      const response = await fetch(`${apiBaseUrl}/graph/${encodeURIComponent(graph.name)}/visualization`, {
+        headers,
+      });
+
+      if (!response.ok) {
+        console.error(`Failed to fetch visualization data: ${response.statusText}`);
+        // Fallback to local data if API fails
+        return prepareLocalGraphData(graph);
+      }
+
+      const visualizationData = await response.json();
+      return {
+        nodes: visualizationData.nodes || [],
+        links: visualizationData.links || []
+      };
+    } catch (error) {
+      console.error("Error fetching visualization data:", error);
+      // Fallback to local data if API fails
+      return prepareLocalGraphData(graph);
+    }
+  }, [apiBaseUrl, createHeaders]);
+
+  // Fallback function for local graph data (when API fails or for local graphs)
+  const prepareLocalGraphData = useCallback((graph: Graph | null) => {
     if (!graph) return { nodes: [], links: [] };
 
     const nodes = graph.entities.map(entity => ({
@@ -154,6 +199,26 @@ const GraphSection: React.FC<GraphSectionProps> = ({
   }, []);
 
   // Removed initializeGraph function as it's no longer needed
+
+  // Load graph data when visualization is shown
+  useEffect(() => {
+    const loadGraphData = async () => {
+      if (!showVisualization || !selectedGraph) return;
+
+      setLoadingVisualization(true);
+      try {
+        const data = await prepareGraphData(selectedGraph);
+        setGraphData(data);
+      } catch (error) {
+        console.error("Error loading graph data:", error);
+        setGraphData({ nodes: [], links: [] });
+      } finally {
+        setLoadingVisualization(false);
+      }
+    };
+
+    loadGraphData();
+  }, [showVisualization, selectedGraph, prepareGraphData]);
 
   // Observe graph container size changes
   useEffect(() => {
@@ -440,15 +505,22 @@ const GraphSection: React.FC<GraphSectionProps> = ({
 
         {/* Graph visualization container */}
         <div ref={graphContainerRef} className="relative flex-1">
-          {graphDimensions.width > 0 && graphDimensions.height > 0 && (
+          {loadingVisualization ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+                <p className="text-sm text-muted-foreground">Loading graph visualization...</p>
+              </div>
+            </div>
+          ) : graphDimensions.width > 0 && graphDimensions.height > 0 ? (
             <ForceGraphComponent
-              data={prepareGraphData(selectedGraph)}
+              data={graphData}
               width={graphDimensions.width}
               height={graphDimensions.height}
               showNodeLabels={showNodeLabels}
               showLinkLabels={showLinkLabels}
             />
-          )}
+          ) : null}
         </div>
       </div>
     );

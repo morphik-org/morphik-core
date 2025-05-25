@@ -1391,6 +1391,43 @@ async def list_graphs(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/graph/{name}/visualization", response_model=Dict[str, Any])
+@telemetry.track(operation_type="get_graph_visualization", metadata_resolver=telemetry.get_graph_metadata)
+async def get_graph_visualization(
+    name: str,
+    auth: AuthContext = Depends(verify_token),
+    folder_name: Optional[Union[str, List[str]]] = None,
+    end_user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Get graph visualization data.
+
+    This endpoint retrieves the nodes and links data needed for graph visualization.
+    It works with both local and API-based graph services.
+
+    Args:
+        name: Name of the graph to visualize
+        auth: Authentication context
+        folder_name: Optional folder to scope the operation to
+        end_user_id: Optional end-user ID to scope the operation to
+
+    Returns:
+        Dict: Visualization data containing nodes and links arrays
+    """
+    try:
+        return await document_service.get_graph_visualization_data(
+            name=name,
+            auth=auth,
+            folder_name=folder_name,
+            end_user_id=end_user_id,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error getting graph visualization data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/graph/{name}/update", response_model=Graph)
 @telemetry.track(operation_type="update_graph", metadata_resolver=telemetry.update_graph_metadata)
 async def update_graph(
@@ -1425,9 +1462,8 @@ async def update_graph(
 
         # Create system filters for folder and user scoping
         system_filters = {}
-        if request.folder_name is not None:
-            normalized_folder_name = normalize_folder_name(request.folder_name)
-            system_filters["folder_name"] = normalized_folder_name
+        if request.folder_name:
+            system_filters["folder_name"] = request.folder_name
         if request.end_user_id:
             system_filters["end_user_id"] = request.end_user_id
 
@@ -1907,7 +1943,7 @@ async def list_chat_conversations(
 
     Args:
         auth: Authentication context containing user and app identifiers.
-        limit: Maximum number of conversations to return.
+        limit: Maximum number of conversations to return (1-500)
 
     Returns:
         A list of dictionaries describing each conversation, ordered by most

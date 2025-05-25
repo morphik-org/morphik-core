@@ -374,6 +374,97 @@ class MorphikGraphService:
             # Depending on requirements, either re-raise or return an error message / empty string
             raise  # Re-raise the exception to be handled by the caller
 
+    async def get_graph_visualization_data(
+        self,
+        graph_name: str,
+        auth: AuthContext,
+        system_filters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Get graph visualization data from the external graph API.
+
+        Args:
+            graph_name: Name of the graph to visualize
+            auth: Authentication context
+            system_filters: Optional system filters for graph retrieval
+
+        Returns:
+            Dict containing nodes and links for visualization
+        """
+        graph = await self._find_graph(graph_name, auth, system_filters)
+        graph_id = graph.id
+
+        request_data = {"graph_id": graph_id}
+        try:
+            api_response = await self._make_api_request(
+                method="POST",
+                endpoint="/visualization",
+                auth=auth,
+                json_data=request_data,
+            )
+            logger.info(f"Visualization API call for graph_id {graph_id} successful.")
+
+            # The API should return a structure like:
+            # {
+            #   "nodes": [{"id": "...", "label": "...", "type": "...", "properties": {...}}, ...],
+            #   "links": [{"source": "...", "target": "...", "type": "..."}, ...]
+            # }
+
+            if isinstance(api_response, dict):
+                # Ensure we have the expected structure
+                nodes = api_response.get("nodes", [])
+                links = api_response.get("links", [])
+
+                # Transform to match the expected format for the UI
+                formatted_nodes = []
+                for node in nodes:
+                    formatted_nodes.append(
+                        {
+                            "id": node.get("id", ""),
+                            "label": node.get("label", ""),
+                            "type": node.get("type", "unknown"),
+                            "properties": node.get("properties", {}),
+                            "color": self._get_node_color(node.get("type", "unknown")),
+                        }
+                    )
+
+                formatted_links = []
+                for link in links:
+                    formatted_links.append(
+                        {
+                            "source": link.get("source", ""),
+                            "target": link.get("target", ""),
+                            "type": link.get("type", ""),
+                        }
+                    )
+
+                return {"nodes": formatted_nodes, "links": formatted_links}
+            else:
+                logger.warning(f"Unexpected response format from visualization API: {type(api_response)}")
+                return {"nodes": [], "links": []}
+
+        except Exception as e:
+            logger.error(f"Failed to call visualization API for graph_id {graph_id}: {e}")
+            # Return empty visualization data on error
+            return {"nodes": [], "links": []}
+
+    def _get_node_color(self, node_type: str) -> str:
+        """Get color for a node type to match the UI color scheme."""
+        color_map = {
+            "person": "#4f46e5",  # Indigo
+            "organization": "#06b6d4",  # Cyan
+            "location": "#10b981",  # Emerald
+            "date": "#f59e0b",  # Amber
+            "concept": "#8b5cf6",  # Violet
+            "event": "#ec4899",  # Pink
+            "product": "#ef4444",  # Red
+            "entity": "#4f46e5",  # Indigo (for generic entities)
+            "attribute": "#f59e0b",  # Amber
+            "relationship": "#ec4899",  # Pink
+            "high_level_element": "#10b981",  # Emerald
+            "semantic_unit": "#8b5cf6",  # Violet
+        }
+        return color_map.get(node_type.lower(), "#6b7280")  # Gray as default
+
     async def query_with_graph(
         self,
         query: str,
