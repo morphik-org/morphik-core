@@ -27,6 +27,11 @@ const ForceGraphComponent = dynamic(() => import("@/components/ForceGraphCompone
   ssr: false,
 });
 
+// Import the NodeDetailsSidebar component
+const NodeDetailsSidebar = dynamic(() => import("@/components/NodeDetailsSidebar"), {
+  ssr: false,
+});
+
 // Define interfaces
 interface Graph {
   id: string;
@@ -137,39 +142,12 @@ const GraphSection: React.FC<GraphSectionProps> = ({
   const [graphDimensions, setGraphDimensions] = useState({ width: 0, height: 0 });
   const [graphData, setGraphData] = useState<{ nodes: NodeObject[]; links: LinkObject[] }>({ nodes: [], links: [] });
   const [loadingVisualization, setLoadingVisualization] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<NodeObject | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Refs for graph visualization
   const graphContainerRef = useRef<HTMLDivElement>(null);
   // Removed graphInstance ref as it's not needed with the dynamic component
-
-  // Prepare data for force-graph
-  const prepareGraphData = useCallback(async (graph: Graph | null) => {
-    if (!graph) return { nodes: [], links: [] };
-
-    try {
-      // Fetch visualization data from the API
-      const headers = createHeaders();
-      const response = await fetch(`${apiBaseUrl}/graph/${encodeURIComponent(graph.name)}/visualization`, {
-        headers,
-      });
-
-      if (!response.ok) {
-        console.error(`Failed to fetch visualization data: ${response.statusText}`);
-        // Fallback to local data if API fails
-        return prepareLocalGraphData(graph);
-      }
-
-      const visualizationData = await response.json();
-      return {
-        nodes: visualizationData.nodes || [],
-        links: visualizationData.links || []
-      };
-    } catch (error) {
-      console.error("Error fetching visualization data:", error);
-      // Fallback to local data if API fails
-      return prepareLocalGraphData(graph);
-    }
-  }, [apiBaseUrl, createHeaders]);
 
   // Fallback function for local graph data (when API fails or for local graphs)
   const prepareLocalGraphData = useCallback((graph: Graph | null) => {
@@ -198,7 +176,37 @@ const GraphSection: React.FC<GraphSectionProps> = ({
     return { nodes, links };
   }, []);
 
-  // Removed initializeGraph function as it's no longer needed
+  // Prepare data for force-graph
+  const prepareGraphData = useCallback(
+    async (graph: Graph | null) => {
+      if (!graph) return { nodes: [], links: [] };
+
+      try {
+        // Fetch visualization data from the API
+        const headers = createHeaders();
+        const response = await fetch(`${apiBaseUrl}/graph/${encodeURIComponent(graph.name)}/visualization`, {
+          headers,
+        });
+
+        if (!response.ok) {
+          console.error(`Failed to fetch visualization data: ${response.statusText}`);
+          // Fallback to local data if API fails
+          return prepareLocalGraphData(graph);
+        }
+
+        const visualizationData = await response.json();
+        return {
+          nodes: visualizationData.nodes || [],
+          links: visualizationData.links || [],
+        };
+      } catch (error) {
+        console.error("Error fetching visualization data:", error);
+        // Fallback to local data if API fails
+        return prepareLocalGraphData(graph);
+      }
+    },
+    [apiBaseUrl, createHeaders, prepareLocalGraphData]
+  );
 
   // Load graph data when visualization is shown
   useEffect(() => {
@@ -279,43 +287,46 @@ const GraphSection: React.FC<GraphSectionProps> = ({
   }, [fetchGraphs]);
 
   // Fetch a specific graph
-  const fetchGraph = async (graphName: string) => {
-    try {
-      setLoading(true);
-      setError(null); // Clear previous errors
-      const headers = createHeaders();
-      const response = await fetch(`${apiBaseUrl}/graph/${encodeURIComponent(graphName)}`, {
-        headers,
-      });
+  const fetchGraph = useCallback(
+    async (graphName: string) => {
+      try {
+        setLoading(true);
+        setError(null); // Clear previous errors
+        const headers = createHeaders();
+        const response = await fetch(`${apiBaseUrl}/graph/${encodeURIComponent(graphName)}`, {
+          headers,
+        });
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch graph: ${response.statusText}`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch graph: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        setSelectedGraph(data);
+        setActiveTab("details"); // Set tab to details view
+
+        // Call the callback if provided
+        if (onSelectGraph) {
+          onSelectGraph(graphName);
+        }
+
+        return data;
+      } catch (err: unknown) {
+        const error = err as Error;
+        setError(`Error fetching graph: ${error.message}`);
+        console.error("Error fetching graph:", err);
+        setSelectedGraph(null); // Reset selected graph on error
+        setActiveTab("list"); // Go back to list view on error
+        if (onSelectGraph) {
+          onSelectGraph(undefined);
+        }
+        return null;
+      } finally {
+        setLoading(false);
       }
-
-      const data = await response.json();
-      setSelectedGraph(data);
-      setActiveTab("details"); // Set tab to details view
-
-      // Call the callback if provided
-      if (onSelectGraph) {
-        onSelectGraph(graphName);
-      }
-
-      return data;
-    } catch (err: unknown) {
-      const error = err as Error;
-      setError(`Error fetching graph: ${error.message}`);
-      console.error("Error fetching graph:", err);
-      setSelectedGraph(null); // Reset selected graph on error
-      setActiveTab("list"); // Go back to list view on error
-      if (onSelectGraph) {
-        onSelectGraph(undefined);
-      }
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    [apiBaseUrl, createHeaders, onSelectGraph]
+  );
 
   // Handle graph click
   const handleGraphClick = (graph: Graph) => {
@@ -462,10 +473,22 @@ const GraphSection: React.FC<GraphSectionProps> = ({
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(id);
-  }, [graphs, selectedGraph, fetchGraphs]);
+  }, [graphs, selectedGraph, fetchGraphs, fetchGraph]);
 
   // Conditional rendering based on visualization state
   if (showVisualization && selectedGraph) {
+    // Handle node click for sidebar
+    const handleNodeClick = (node: NodeObject | null) => {
+      setSelectedNode(node);
+      setSidebarOpen(!!node);
+    };
+
+    // Handle sidebar close
+    const handleSidebarClose = () => {
+      setSelectedNode(null);
+      setSidebarOpen(false);
+    };
+
     return (
       <div className="fixed inset-0 z-50 flex flex-col bg-background">
         {/* Visualization header */}
@@ -506,9 +529,9 @@ const GraphSection: React.FC<GraphSectionProps> = ({
         {/* Graph visualization container */}
         <div ref={graphContainerRef} className="relative flex-1">
           {loadingVisualization ? (
-            <div className="flex items-center justify-center h-full">
+            <div className="flex h-full items-center justify-center">
               <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+                <div className="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
                 <p className="text-sm text-muted-foreground">Loading graph visualization...</p>
               </div>
             </div>
@@ -519,9 +542,13 @@ const GraphSection: React.FC<GraphSectionProps> = ({
               height={graphDimensions.height}
               showNodeLabels={showNodeLabels}
               showLinkLabels={showLinkLabels}
+              onNodeClick={handleNodeClick}
             />
           ) : null}
         </div>
+
+        {/* Node Details Sidebar */}
+        {selectedNode && <NodeDetailsSidebar node={selectedNode} onClose={handleSidebarClose} isOpen={sidebarOpen} />}
       </div>
     );
   }
