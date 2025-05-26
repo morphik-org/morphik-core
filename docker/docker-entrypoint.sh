@@ -48,7 +48,8 @@ check_postgres() {
         echo "PostgreSQL is ready!"
         
         # Verify database connection
-        if ! PGPASSWORD=$PASS psql -h $HOST -p $PORT -U $USER -d $DB -c "SELECT 1" > /dev/null 2>&1; then
+        # NOTE: preserve stderr for debugging
+        if ! PGPASSWORD=$PASS psql -h $HOST -p $PORT -U $USER -d $DB -c "SELECT 1"; then
             echo "Error: Could not connect to PostgreSQL database"
             exit 1
         fi
