@@ -18,7 +18,7 @@ check_postgres() {
         echo "Waiting for PostgreSQL..."
         max_retries=30
         retries=0
-        until PGPASSWORD=$PASS pg_isready -h $HOST -p $PORT -U $USER -d $DB; do
+        until PGPASSWORD=$PG_PASS pg_isready -h $PG_HOST -p $PG_PORT -U $PG_USER -d $PG_DB; do
             retries=$((retries + 1))
             if [ $retries -eq $max_retries ]; then
                 echo "Error: PostgreSQL did not become ready in time"
@@ -31,14 +31,14 @@ check_postgres() {
         
         # Verify database connection
         # NOTE: preserve stderr for debugging
-        if ! PGPASSWORD=$PASS psql -h $HOST -p $PORT -U $USER -d $DB -c "SELECT 1"; then
+        if ! PGPASSWORD=$PG_PASS psql -h $PG_HOST -p $PG_PORT -U $PG_USER -d $PG_DB -c "SELECT 1"; then
             echo "Error: Could not connect to PostgreSQL database"
             echo "POSTGRES_URI: $POSTGRES_URI"
-            echo "USER: $USER"
-            echo "PASS: $PASS"
-            echo "HOST: $HOST"
-            echo "PORT: $PORT"
-            echo "DB: $DB"
+            echo "USER: $PG_USER"
+            echo "PASS: $PG_PASS"
+            echo "HOST: $PG_HOST"
+            echo "PORT: $PG_PORT"
+            echo "DB: $PG_DB"
             exit 1
         fi
         echo "PostgreSQL connection verified!"

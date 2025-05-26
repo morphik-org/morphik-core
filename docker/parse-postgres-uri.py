@@ -80,11 +80,11 @@ def main():
         sys.exit(1)
     
     # Print default empty values first (for compatibility with original script)
-    print('USER=""')
-    print('PASS=""')
-    print('HOST=""')
-    print('PORT=""')
-    print('DB=""')
+    print('PG_USER=""')
+    print('PG_PASS=""')
+    print('PG_HOST=""')
+    print('PG_PORT=""')
+    print('PG_DB=""')
     
     # Parse the URI and print the results
     try:
@@ -92,7 +92,7 @@ def main():
         for key, value in components.items():
             # Escape special characters in the value for shell compatibility
             escaped_value = value.replace('"', '\\"').replace('`', '\\`').replace('$', '\\$')
-            print(f'{key}="{escaped_value}"')
+            print(f'PG_{key}="{escaped_value}"')
     except Exception as e:
         print(f'Error parsing PostgreSQL URI: {e}', file=sys.stderr)
         print('POSTGRES_URI_PARSE_FAILURE=1')
