@@ -50,23 +50,4 @@ echo "$1" | awk -F'postgresql' '{print $2}' | awk '{
             printf "PORT=\"5432\"\n";  # Default port
         }
     }
-}' | awk '{
-    # Decode URI escapes
-    result = $0;
-    while (match(result, /%[0-9A-Fa-f]{2}/)) {
-        hex = tolower(substr(result, RSTART + 1, 2));
-        # Convert hex to decimal using a more portable method
-        dec = 0;
-        for (i = 1; i <= 2; i++) {
-            c = substr(hex, i, 1);
-            if (c ~ /[0-9]/) {
-                val = index("0123456789", c) - 1;
-            } else {
-                val = index("abcdef", c) + 9;
-            }
-            dec = dec * 16 + val;
-        }
-        result = substr(result, 1, RSTART - 1) sprintf("%c", dec) substr(result, RSTART + 3);
-    }
-    print result
-}' || echo "POSTGRES_URI_PARSE_FAILURE=1"
+}' | perl -pe 's/%([0-9a-fA-F]{2})/chr(hex($1))/ge' || echo "POSTGRES_URI_PARSE_FAILURE=1"
