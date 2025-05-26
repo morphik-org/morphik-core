@@ -203,26 +203,26 @@ jobs:
             -e POSTGRES_URI="postgresql+asyncpg://morphik:morphik@pgvector-test:5432/morphik" \
             -v "$(pwd)/morphik.toml:/app/morphik.toml" \
             "$IMAGE_TAG")
-          
+
           echo "Started container: $CONTAINER_ID"
-          
-          # Wait for server to be ready with 60 second timeout
-          timeout=60
+
+          # Wait for server to be ready
+          timeout=300  # long timeout required to load checkpoint shards
           interval=2
           elapsed=0
-          
+
           echo "Waiting for server to be ready..."
           while [ $elapsed -lt $timeout ]; do
             if curl -f -s http://localhost:8000/ping > /dev/null 2>&1; then
               echo "✅ Server is responding to /ping endpoint"
               break
             fi
-            
+
             echo "⏳ Waiting for server... (${elapsed}s/${timeout}s)"
             sleep $interval
             elapsed=$((elapsed + interval))
           done
-          
+
           # Check if we timed out
           if [ $elapsed -ge $timeout ]; then
             echo "❌ Server failed to respond within ${timeout} seconds"
@@ -235,7 +235,7 @@ jobs:
             docker network rm "$NETWORK_NAME" || true
             exit 1
           fi
-          
+
           # Verify the response is actually 200
           response_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/ping)
           if [ "$response_code" -ne 200 ]; then
@@ -249,7 +249,7 @@ jobs:
             docker network rm "$NETWORK_NAME" || true
             exit 1
           fi
-          
+
           echo "✅ Tests passed!"
           docker stop "$CONTAINER_ID" "$DB_CONTAINER_ID" || true
           docker rm "$CONTAINER_ID" "$DB_CONTAINER_ID" || true
