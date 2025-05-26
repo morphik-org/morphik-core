@@ -159,11 +159,49 @@ jobs:
           [graph]
           model = "openai_gpt4-1"
           enable_entity_resolution = true
+          EOF
           
-          # Start container in detached mode with config mounted
-          CONTAINER_ID=$(docker run -d -p 8000:8000 \
-            -e POSTGRES_URI="postgresql://morphik:morphik@localhost:5432/morphik" \
-            -v "$(pwd)/morphik.toml.test:/app/morphik.toml" \
+          # Create a custom network for the containers to communicate
+          NETWORK_NAME="morphik-test-network"
+          docker network create $NETWORK_NAME
+
+          # Start pgvector PostgreSQL container
+          echo "Starting pgvector PostgreSQL container..."
+          DB_CONTAINER_ID=$(docker run -d \
+            --name pgvector-test \
+            --network $NETWORK_NAME \
+            -e POSTGRES_USER=morphik \
+            -e POSTGRES_PASSWORD=morphik \
+            -e POSTGRES_DB=morphik \
+            -p 5432:5432 \
+            ankane/pgvector:latest)
+
+          # Wait for PostgreSQL to be ready
+          echo "Waiting for PostgreSQL to be ready..."
+          for i in {1..30}; do
+            if docker exec $DB_CONTAINER_ID pg_isready -U morphik -d morphik; then
+              echo "PostgreSQL is ready!"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "PostgreSQL failed to start"
+              docker logs $DB_CONTAINER_ID
+              exit 1
+            fi
+            sleep 1
+          done
+
+          # Enable pgvector extension
+          echo "Enabling pgvector extension..."
+          docker exec $DB_CONTAINER_ID psql -U morphik -d morphik -c 'CREATE EXTENSION IF NOT EXISTS vector;'
+
+          # Start application container
+          echo "Starting application container..."
+          CONTAINER_ID=$(docker run -d \
+            --network $NETWORK_NAME \
+            -p 8000:8000 \
+            -e POSTGRES_URI="postgresql://morphik:morphik@pgvector-test:5432/morphik" \
+            -v "$(pwd)/morphik.toml:/app/morphik.toml" \
             "$IMAGE_TAG")
           
           echo "Started container: $CONTAINER_ID"
@@ -190,25 +228,30 @@ jobs:
             echo "❌ Server failed to respond within ${timeout} seconds"
             echo "Container logs:"
             docker logs "$CONTAINER_ID"
-            docker stop "$CONTAINER_ID"
-            docker rm "$CONTAINER_ID"
+            echo "Database logs:"
+            docker logs "$DB_CONTAINER_ID"
+            docker stop "$CONTAINER_ID" "$DB_CONTAINER_ID" || true
+            docker rm "$CONTAINER_ID" "$DB_CONTAINER_ID" || true
+            docker network rm "$NETWORK_NAME" || true
             exit 1
           fi
           
           # Verify the response is actually 200
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/ping)
-          if [ "$HTTP_CODE" = "200" ]; then
-            echo "✅ Health check passed - /ping returned HTTP $HTTP_CODE"
-          else
-            echo "❌ Health check failed - /ping returned HTTP $HTTP_CODE"
+          response_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/ping)
+          if [ "$response_code" -ne 200 ]; then
+            echo "❌ Unexpected response code: $response_code"
+            echo "Container logs:"
             docker logs "$CONTAINER_ID"
-            docker stop "$CONTAINER_ID"
-            docker rm "$CONTAINER_ID"
+            echo "Database logs:"
+            docker logs "$DB_CONTAINER_ID"
+            docker stop "$CONTAINER_ID" "$DB_CONTAINER_ID" || true
+            docker rm "$CONTAINER_ID" "$DB_CONTAINER_ID" || true
+            docker network rm "$NETWORK_NAME" || true
             exit 1
           fi
           
-          # Clean up
-          echo "🧹 Cleaning up container"
-          docker stop "$CONTAINER_ID"
-          docker rm "$CONTAINER_ID"
-          echo "✅ Test completed successfully" 
+          echo "✅ Tests passed!"
+          docker stop "$CONTAINER_ID" "$DB_CONTAINER_ID" || true
+          docker rm "$CONTAINER_ID" "$DB_CONTAINER_ID" || true
+          docker network rm "$NETWORK_NAME" || true
+          echo "✅ Test completed successfully"
