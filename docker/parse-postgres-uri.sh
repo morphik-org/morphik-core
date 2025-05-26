@@ -5,11 +5,11 @@ set -euo pipefail
 
 # Make sure all variables are ultimately set to avoid downstream failures in
 # scripts that require defined variables.
-echo USER=""
-echo PASS=""
-echo HOST=""
-echo PORT=""
-echo DB=""
+echo 'USER=""'
+echo 'PASS=""'
+echo 'HOST=""'
+echo 'PORT=""'
+echo 'DB=""'
 
 echo "$1" | awk -F'postgresql' '{print $2}' | awk '{
     # Remove the +asyncpg if present and get the URI part after ://
@@ -59,4 +59,4 @@ echo "$1" | awk -F'postgresql' '{print $2}' | awk '{
         result = substr(result, 1, RSTART - 1) dec substr(result, RSTART + 3);
     }
     print result
-}'
+}' || echo "POSTGRES_URI_PARSE_FAILURE=1"
