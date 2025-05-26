@@ -195,10 +195,10 @@ jobs:
           echo "Enabling pgvector extension..."
           docker exec $DB_CONTAINER_ID psql -U morphik -d morphik -c 'CREATE EXTENSION IF NOT EXISTS vector;'
 
-          # Start Redis container
+          # Start Redis container (NOTE: must be named "redis")
           echo "Starting Redis container..."
           REDIS_CONTAINER_ID=$(docker run -d \
-            --name redis-test \
+            --name redis \
             --network $NETWORK_NAME \
             -p 6379:6379 \
             -v redis_data:/data \
@@ -226,8 +226,6 @@ jobs:
             --network $NETWORK_NAME \
             -p 8000:8000 \
             -e POSTGRES_URI="postgresql+asyncpg://morphik:morphik@pgvector-test:5432/morphik" \
-            -e REDIS_HOST="redis-test" \
-            -e REDIS_PORT=6379 \
             -v "$(pwd)/morphik.toml:/app/morphik.toml" \
             "$IMAGE_TAG")
 
