@@ -3,6 +3,14 @@ set -euo pipefail
 
 # Usage: eval $(parse-postgres-uri.sh "postgresql://user:pass@host:port/db")
 
+# Make sure all variables are ultimately set to avoid downstream failures in
+# scripts that require defined variables.
+echo USER=""
+echo PASS=""
+echo HOST=""
+echo PORT=""
+echo DB=""
+
 echo "$1" | awk -F'postgresql' '{print $2}' | awk '{
     # Remove the +asyncpg if present and get the URI part after ://
     sub(/^[+a-z]*:\/\//, "");

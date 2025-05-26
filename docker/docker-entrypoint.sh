@@ -22,11 +22,6 @@ check_postgres() {
         echo "PORT: $PORT"
         echo "DB: $DB"
 
-        if [ -z "$PASS" ]; then
-            echo "Error: POSTGRES_URI does not contain a password"
-            exit 1
-        fi
-
         echo "Waiting for PostgreSQL..."
         max_retries=30
         retries=0
