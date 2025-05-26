@@ -221,14 +221,12 @@ jobs:
           done
 
           # Start application container
-          [[ -e morphik.toml.test ]] || cp morphik.toml morphik.toml.test
-
           echo "Starting application container..."
           CONTAINER_ID=$(docker run -d \
             --network $NETWORK_NAME \
             -p 8000:8000 \
             -e POSTGRES_URI="postgresql+asyncpg://morphik:morphik@pgvector-test:5432/morphik" \
-            -v "morphik.toml.test:/app/morphik.toml" \
+            -v "$(pwd)/morphik.toml.test:/app/morphik.toml" \
             "$IMAGE_TAG")
 
           echo "Started container: $CONTAINER_ID"
