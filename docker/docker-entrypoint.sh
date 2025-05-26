@@ -15,13 +15,6 @@ check_postgres() {
         # Using awk for more robust URI parsing that handles special characters
         eval $(./parse-postgres-uri.py "$POSTGRES_URI")
 
-        echo "POSTGRES_URI: $POSTGRES_URI"
-        echo "USER: $USER"
-        echo "PASS: $PASS"
-        echo "HOST: $HOST"
-        echo "PORT: $PORT"
-        echo "DB: $DB"
-
         echo "Waiting for PostgreSQL..."
         max_retries=30
         retries=0
@@ -40,6 +33,12 @@ check_postgres() {
         # NOTE: preserve stderr for debugging
         if ! PGPASSWORD=$PASS psql -h $HOST -p $PORT -U $USER -d $DB -c "SELECT 1"; then
             echo "Error: Could not connect to PostgreSQL database"
+            echo "POSTGRES_URI: $POSTGRES_URI"
+            echo "USER: $USER"
+            echo "PASS: $PASS"
+            echo "HOST: $HOST"
+            echo "PORT: $PORT"
+            echo "DB: $DB"
             exit 1
         fi
         echo "PostgreSQL connection verified!"
