@@ -200,7 +200,7 @@ jobs:
           CONTAINER_ID=$(docker run -d \
             --network $NETWORK_NAME \
             -p 8000:8000 \
-            -e POSTGRES_URI="postgresql://morphik:morphik@pgvector-test:5432/morphik" \
+            -e POSTGRES_URI="postgresql+asyncpg://morphik:morphik@pgvector-test:5432/morphik" \
             -v "$(pwd)/morphik.toml:/app/morphik.toml" \
             "$IMAGE_TAG")
           
