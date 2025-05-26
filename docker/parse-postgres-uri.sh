@@ -2,11 +2,15 @@
 set -euo pipefail
 
 # Usage: eval $(parse-postgres-uri.sh "postgresql://user:pass@host:port/db")
+
 echo "$1" | awk -F'postgresql' '{print $2}' | awk '{
     # Remove the +asyncpg if present and get the URI part after ://
     sub(/^[+a-z]*:\/\//, "");
     uri = $0;
-    
+
+    # Remove query parameters
+    sub(/\?.*$/, "", uri);
+
     # Split into user:pass@host:port/db
     if (match(uri, /([^@]+)@([^\/]+)(\/(.*))?/, m)) {
         # Handle user:password
@@ -38,4 +42,13 @@ echo "$1" | awk -F'postgresql' '{print $2}' | awk '{
             printf "PORT=\"5432\"\n";  # Default port
         }
     }
+}' | awk '{
+    # Decode URI escapes
+    result = $0;
+    while (match(result, /%[0-9A-Fa-f]{2}/)) {
+        hex = substr(result, RSTART + 1, 2);
+        dec = sprintf("%c", strtonum("0x" hex));
+        result = substr(result, 1, RSTART - 1) dec substr(result, RSTART + 3);
+    }
+    print result
 }'
