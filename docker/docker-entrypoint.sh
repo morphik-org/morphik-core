@@ -1,0 +1,58 @@
+#!/bin/bash
+set -e
+
+# Copy default config if none exists
+if [ ! -f /app/morphik.toml ]; then
+    cp /app/morphik.toml.default /app/morphik.toml
+fi
+
+# Function to check PostgreSQL
+check_postgres() {
+    if [ -n "$POSTGRES_URI" ]; then
+        # Extract connection details from POSTGRES_URI, which can be
+        # postgresql:// or postgresql+asyncpg://
+
+        # Using awk for more robust URI parsing that handles special characters
+        eval $(./parse-postgres-uri.py "$POSTGRES_URI")
+
+        echo "Waiting for PostgreSQL..."
+        max_retries=30
+        retries=0
+        until PGPASSWORD=$PG_PASS pg_isready -h $PG_HOST -p $PG_PORT -U $PG_USER -d $PG_DB; do
+            retries=$((retries + 1))
+            if [ $retries -eq $max_retries ]; then
+                echo "Error: PostgreSQL did not become ready in time"
+                exit 1
+            fi
+            echo "Waiting for PostgreSQL... (Attempt $retries/$max_retries)"
+            sleep 2
+        done
+        echo "PostgreSQL is ready!"
+        
+        # Verify database connection
+        # NOTE: preserve stderr for debugging
+        if ! PGPASSWORD=$PG_PASS psql -h $PG_HOST -p $PG_PORT -U $PG_USER -d $PG_DB -c "SELECT 1"; then
+            echo "Error: Could not connect to PostgreSQL database"
+            echo "POSTGRES_URI: $POSTGRES_URI"
+            echo "USER: $PG_USER"
+            echo "PASS: $PG_PASS"
+            echo "HOST: $PG_HOST"
+            echo "PORT: $PG_PORT"
+            echo "DB: $PG_DB"
+            exit 1
+        fi
+        echo "PostgreSQL connection verified!"
+    fi
+}
+
+# Check PostgreSQL
+check_postgres
+
+# Check if command arguments were passed ($# is the number of arguments)
+if [ $# -gt 0 ]; then
+    # If arguments exist, execute them (e.g., execute "arq core.workers...")
+    exec "$@"
+else
+    # Otherwise, execute the default command (uv run start_server.py)
+    exec uv run uvicorn core.api:app --host $HOST --port $PORT --loop asyncio --http auto --ws auto --lifespan auto
+fi
