@@ -104,8 +104,8 @@ ENV PATH="/app/.venv/bin:/usr/local/bin:${PATH}"
 COPY docker/morphik.toml.default /app/morphik.toml.default
 
 # Create startup script
+COPY docker/parse-postgres-uri.sh /app/parse-postgres-uri.sh
 COPY docker/docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
 
 # Copy application code
 # pyproject.toml is needed for uv to identify the project context for `uv run`
