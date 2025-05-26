@@ -104,7 +104,7 @@ ENV PATH="/app/.venv/bin:/usr/local/bin:${PATH}"
 COPY docker/morphik.toml.default /app/morphik.toml.default
 
 # Create startup script
-COPY docker/parse-postgres-uri.sh /app/parse-postgres-uri.sh
+COPY docker/parse-postgres-uri.py /app/parse-postgres-uri.py
 COPY docker/docker-entrypoint.sh /app/docker-entrypoint.sh
 
 # Copy application code

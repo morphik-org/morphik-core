@@ -13,7 +13,7 @@ check_postgres() {
         # postgresql:// or postgresql+asyncpg://
 
         # Using awk for more robust URI parsing that handles special characters
-        eval $(./parse-postgres-uri.sh "$POSTGRES_URI")
+        eval $(./parse-postgres-uri.py "$POSTGRES_URI")
 
         echo "POSTGRES_URI: $POSTGRES_URI"
         echo "USER: $USER"
