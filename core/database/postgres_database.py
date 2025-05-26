@@ -717,6 +717,28 @@ class PostgresDatabase(BaseDatabase):
                 if doc_model:
                     await session.delete(doc_model)
                     await session.commit()
+
+                    # --------------------------------------------------------------------------------
+                    # Maintain referential integrity: remove the deleted document ID from any folders
+                    # that still list it in their document_ids JSONB array.  This prevents the UI from
+                    # requesting stale IDs after a delete.
+                    # --------------------------------------------------------------------------------
+                    try:
+                        await session.execute(
+                            text(
+                                """
+                                UPDATE folders
+                                SET document_ids = document_ids - :doc_id
+                                WHERE document_ids ? :doc_id
+                                """
+                            ),
+                            {"doc_id": document_id},
+                        )
+                        await session.commit()
+                    except Exception as upd_err:  # noqa: BLE001
+                        # Non-fatal – log but keep the document deleted so user doesn't see it any more.
+                        logger.error("Failed to remove deleted document %s from folders: %s", document_id, upd_err)
+
                     return True
                 return False
 

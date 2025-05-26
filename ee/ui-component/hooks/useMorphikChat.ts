@@ -83,12 +83,12 @@ export function useMorphikChat({
 
   const [queryOptions, setQueryOptions] = useState<QueryOptions>({
     filters: initialQueryOptions.filters ?? "{}",
-    k: initialQueryOptions.k ?? 10,
+    k: initialQueryOptions.k ?? 5,
     min_score: initialQueryOptions.min_score ?? 0.7,
     use_reranking: initialQueryOptions.use_reranking ?? false,
     use_colpali: initialQueryOptions.use_colpali ?? true,
     max_tokens: initialQueryOptions.max_tokens ?? 1024,
-    temperature: initialQueryOptions.temperature ?? 0.7,
+    temperature: initialQueryOptions.temperature ?? 0.5,
     graph_name: initialQueryOptions.graph_name,
     folder_name: initialQueryOptions.folder_name,
   });

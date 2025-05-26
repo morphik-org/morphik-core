@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -8,6 +9,7 @@ import numpy as np
 import psycopg
 import torch
 from pgvector.psycopg import Bit, register_vector
+from psycopg_pool import ConnectionPool
 
 from core.models.chunk import DocumentChunk
 
@@ -36,7 +38,10 @@ class MultiVectorStore(BaseVectorStore):
         if uri.startswith("postgresql+asyncpg://"):
             uri = uri.replace("postgresql+asyncpg://", "postgresql://")
         self.uri = uri
-        self.conn = None
+        # Shared connection pool – re-uses sockets across jobs, avoids TLS
+        # handshakes and auth for every INSERT call.  A small pool is enough
+        # because inserts are short-lived.
+        self.pool: ConnectionPool = ConnectionPool(conninfo=self.uri, min_size=1, max_size=10, timeout=60)
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         # Don't initialize here - initialization will be handled separately
@@ -57,20 +62,22 @@ class MultiVectorStore(BaseVectorStore):
         # Try to establish a new connection with retries
         while attempt < self.max_retries:
             try:
-                # Always create a fresh connection for critical operations
-                conn = psycopg.connect(self.uri, autocommit=True)
-                # Register vector extension on every new connection
-                register_vector(conn)
+                # Borrow a pooled connection (blocking wait). Autocommit stays
+                # disabled so we can batch-commit.
+                conn = self.pool.getconn()
 
                 try:
                     yield conn
                     return
                 finally:
-                    # Always close connections after use
+                    # Release connection back to the pool
                     try:
-                        conn.close()
+                        self.pool.putconn(conn)
                     except Exception:
-                        pass
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
             except psycopg.OperationalError as e:
                 last_error = e
                 attempt += 1
@@ -246,16 +253,8 @@ class MultiVectorStore(BaseVectorStore):
         if not rows:
             return True, []
 
-        with self.get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.executemany(
-                    """
-                    INSERT INTO multi_vector_embeddings
-                    (document_id, chunk_number, content, chunk_metadata, embeddings)
-                    VALUES (%s, %s, %s, %s, %s)
-                    """,
-                    rows,
-                )
+        # Off-load blocking DB I/O to a thread so we don't block the event loop
+        await asyncio.to_thread(self._bulk_insert_rows, rows)
 
         stored_ids = [f"{r[0]}-{r[1]}" for r in rows]
         logger.debug(f"{len(stored_ids)} multi-vector embeddings added in bulk")
@@ -272,30 +271,37 @@ class MultiVectorStore(BaseVectorStore):
         # Convert query embeddings to binary format
         binary_query_embeddings = self._binary_quantize(query_embedding)
 
-        # Build query
-        query = """
-            SELECT id, document_id, chunk_number, content, chunk_metadata,
-                    max_sim(embeddings, %s) AS similarity
-            FROM multi_vector_embeddings
-        """
+        def _bit_raw(b: Bit) -> str:
+            """Return raw bit string without 'Bit(...)' wrapper"""
+            s = str(b)
+            # Expected formats: "Bit('1010')" or "Bit(1010)"
+            if s.startswith("Bit("):
+                s = s[4:-1]  # strip wrapper
+                s = s.strip("'")
+            return s
 
-        params = [binary_query_embeddings]
+        bit_strings = [_bit_raw(b) for b in binary_query_embeddings]
+        array_literal = "ARRAY[" + ",".join(f"B'{s}'" for s in bit_strings) + "]::bit(128)[]"
 
-        # Add document filter if needed with proper parameterization
+        # Start query with inlined array literal (internal usage only)
+        query = (
+            "SELECT id, document_id, chunk_number, content, chunk_metadata, "
+            f"max_sim(embeddings, {array_literal}) AS similarity "
+            "FROM multi_vector_embeddings"
+        )
+
+        params: List = []
+
         if doc_ids:
-            # Use placeholders for each document ID
             placeholders = ", ".join(["%s"] * len(doc_ids))
             query += f" WHERE document_id IN ({placeholders})"
-            # Add document IDs to params
             params.extend(doc_ids)
 
-        # Add ordering and limit
         query += " ORDER BY similarity DESC LIMIT %s"
         params.append(k)
 
-        # Execute query with retry logic
         with self.get_connection() as conn:
-            result = conn.execute(query, params).fetchall()
+            result = conn.execute(query, tuple(params)).fetchall()
 
         # Convert to DocumentChunks
         chunks = []
@@ -404,9 +410,25 @@ class MultiVectorStore(BaseVectorStore):
 
     def close(self):
         """Close the database connection."""
-        if self.conn:
-            try:
-                self.conn.close()
-                self.conn = None
-            except Exception as e:
-                logger.error(f"Error closing connection: {str(e)}")
+        # Close pool gracefully – this will close all underlying connections
+        try:
+            self.pool.close()
+        except Exception as e:
+            logger.error(f"Error closing connection pool: {e}")
+
+    # ----------------- internal helpers -----------------
+
+    def _bulk_insert_rows(self, rows: List[Tuple]):
+        """Sync helper executed in a worker thread to avoid blocking."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO multi_vector_embeddings
+                    (document_id, chunk_number, content, chunk_metadata, embeddings)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    rows,
+                )
+                # Single commit for all rows – very fast
+                conn.commit()
