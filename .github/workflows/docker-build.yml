@@ -221,6 +221,8 @@ jobs:
           done
 
           # Start application container
+          [[ -e morphik.toml.test ]] || cp morphik.toml morphik.toml.test
+
           echo "Starting application container..."
           CONTAINER_ID=$(docker run -d \
             --network $NETWORK_NAME \
