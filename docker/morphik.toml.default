@@ -1,0 +1,41 @@
+[api]
+host = "0.0.0.0"
+port = 8000
+reload = false
+
+[auth]
+jwt_algorithm = "HS256"
+dev_mode = true
+dev_entity_id = "dev_user"
+dev_entity_type = "developer"
+dev_permissions = ["read", "write", "admin"]
+
+[completion]
+provider = "ollama"
+model_name = "llama2"
+base_url = "http://localhost:11434"
+
+[database]
+provider = "postgres"
+
+[embedding]
+provider = "ollama"
+model_name = "nomic-embed-text"
+dimensions = 768
+similarity_metric = "cosine"
+base_url = "http://localhost:11434"
+
+[parser]
+chunk_size = 1000
+chunk_overlap = 200
+use_unstructured_api = false
+
+[reranker]
+use_reranker = false
+
+[storage]
+provider = "local"
+storage_path = "/app/storage"
+
+[vector_store]
+provider = "pgvector"
