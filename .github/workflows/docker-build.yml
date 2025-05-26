@@ -226,7 +226,7 @@ jobs:
             --network $NETWORK_NAME \
             -p 8000:8000 \
             -e POSTGRES_URI="postgresql+asyncpg://morphik:morphik@pgvector-test:5432/morphik" \
-            -v "$(pwd)/morphik.toml:/app/morphik.toml" \
+            -v "morphik.toml.test:/app/morphik.toml" \
             "$IMAGE_TAG")
 
           echo "Started container: $CONTAINER_ID"
