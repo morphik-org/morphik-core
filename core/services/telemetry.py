@@ -37,20 +37,23 @@ settings = get_settings()
 
 # Telemetry configuration - use settings directly from TOML
 TELEMETRY_ENABLED = settings.TELEMETRY_ENABLED
-HONEYCOMB_ENABLED = settings.HONEYCOMB_ENABLED
+LOGFIRE_ENABLED = settings.LOGFIRE_ENABLED
 
-# Honeycomb configuration - using proxy to avoid exposing API key in code
-# Default to localhost:8080 for the proxy, but allow override from settings
-HONEYCOMB_PROXY_ENDPOINT = getattr(settings, "HONEYCOMB_PROXY_ENDPOINT", "https://otel-proxy.onrender.com")
-HONEYCOMB_PROXY_ENDPOINT = (
-    HONEYCOMB_PROXY_ENDPOINT
-    if isinstance(HONEYCOMB_PROXY_ENDPOINT, str) and len(HONEYCOMB_PROXY_ENDPOINT) > 0
+# Logfire configuration - using proxy to avoid exposing API key in code
+# Default to otel-proxy.onrender.com for the proxy, but allow override from settings
+LOGFIRE_PROXY_ENDPOINT = getattr(settings, "LOGFIRE_PROXY_ENDPOINT", "https://otel-proxy.onrender.com")
+LOGFIRE_PROXY_ENDPOINT = (
+    LOGFIRE_PROXY_ENDPOINT
+    if isinstance(LOGFIRE_PROXY_ENDPOINT, str) and len(LOGFIRE_PROXY_ENDPOINT) > 0
     else "https://otel-proxy.onrender.com"
 )
 SERVICE_NAME = settings.SERVICE_NAME
 
 # Headers for OTLP - no API key needed as the proxy will add it
-OTLP_HEADERS = {"Content-Type": "application/x-protobuf"}
+OTLP_HEADERS = {
+    "Content-Type": "application/x-protobuf"
+    # Logfire doesn't need a dataset header like Honeycomb
+}
 
 # Configure timeouts and retries directly from TOML config
 OTLP_TIMEOUT = settings.OTLP_TIMEOUT
@@ -60,9 +63,9 @@ OTLP_MAX_EXPORT_BATCH_SIZE = settings.OTLP_MAX_EXPORT_BATCH_SIZE
 OTLP_SCHEDULE_DELAY_MILLIS = settings.OTLP_SCHEDULE_DELAY_MILLIS
 OTLP_MAX_QUEUE_SIZE = settings.OTLP_MAX_QUEUE_SIZE
 
-# OTLP endpoints - using our proxy instead of direct Honeycomb connection
-OTLP_TRACES_ENDPOINT = f"{HONEYCOMB_PROXY_ENDPOINT}/v1/traces"
-OTLP_METRICS_ENDPOINT = f"{HONEYCOMB_PROXY_ENDPOINT}/v1/metrics"
+# OTLP endpoints - using our proxy instead of direct Logfire connection
+OTLP_TRACES_ENDPOINT = f"{LOGFIRE_PROXY_ENDPOINT}/v1/traces"
+OTLP_METRICS_ENDPOINT = f"{LOGFIRE_PROXY_ENDPOINT}/v1/metrics"
 
 # Enable debug logging for OpenTelemetry
 os.environ["OTEL_PYTHON_LOGGING_LEVEL"] = "INFO"  # Changed from DEBUG to reduce verbosity
@@ -295,14 +298,14 @@ class RetryingOTLPSpanExporter:
                     # Use exponential backoff
                     delay = self.retry_delay * (2 ** (retries - 1))
                     self.logger.warning(
-                        f"Honeycomb trace export attempt {retries} failed: {str(e)}. " f"Retrying in {delay}s..."
+                        f"Logfire trace export attempt {retries} failed: {str(e)}. " f"Retrying in {delay}s..."
                     )
                     time.sleep(delay)
                 else:
-                    self.logger.error(f"Failed to export traces to Honeycomb after {retries} attempts: {str(e)}")
+                    self.logger.error(f"Failed to export traces to Logfire after {retries} attempts: {str(e)}")
             except Exception as e:
                 # For non-connection errors, don't retry
-                self.logger.error(f"Unexpected error exporting traces to Honeycomb: {str(e)}")
+                self.logger.error(f"Unexpected error exporting traces to Logfire: {str(e)}")
                 return False
 
         # If we get here, all retries failed
@@ -482,8 +485,8 @@ class TelemetryService:
         file_span_processor = BatchSpanProcessor(FileSpanExporter(str(log_dir)))
         tracer_provider.add_span_processor(file_span_processor)
 
-        # Add Honeycomb OTLP exporter with retry logic
-        if HONEYCOMB_ENABLED:
+        # Add Logfire OTLP exporter with retry logic
+        if LOGFIRE_ENABLED:
             # Create BatchSpanProcessor with improved configuration
             otlp_span_processor = BatchSpanProcessor(
                 RetryingOTLPSpanExporter(
@@ -510,8 +513,8 @@ class TelemetryService:
             ),
         ]
 
-        # Add Honeycomb metrics reader if API key is available
-        if HONEYCOMB_ENABLED:
+        # Add Logfire metrics reader if API key is available
+        if LOGFIRE_ENABLED:
             try:
                 # Configure the OTLP metric exporter with improved error handling
                 otlp_metric_exporter = RetryingOTLPMetricExporter(
@@ -529,7 +532,7 @@ class TelemetryService:
                     )
                 )
             except Exception as e:
-                print(f"Failed to configure Honeycomb metrics exporter: {str(e)}")
+                print(f"Failed to configure Logfire metrics exporter: {str(e)}")
 
         meter_provider = MeterProvider(resource=resource, metric_readers=metric_readers)
         metrics.set_meter_provider(meter_provider)

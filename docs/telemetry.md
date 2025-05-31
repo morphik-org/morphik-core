@@ -1,6 +1,6 @@
-# Morphik Telemetry
+# Morphik Telemetry with Logfire
 
-Morphik includes an anonymous telemetry system to help us understand how the library is being used and to improve its functionality. We take privacy very seriously and ensure that no personally identifiable information (PII) is ever collected.
+Morphik uses [Pydantic Logfire](https://logfire.pydantic.dev) for telemetry, which is built on OpenTelemetry. We collect anonymous telemetry to help us understand how the library is being used and to improve its functionality. We take privacy very seriously and ensure that no personally identifiable information (PII) is ever collected.
 
 ## What We Collect
 
@@ -39,19 +39,40 @@ os.environ["DATABRIDGE_TELEMETRY_ENABLED"] = "0"
 ## Data Storage and Retention
 
 All telemetry data is:
-- Stored securely
+- Stored securely in Logfire (by Pydantic)
 - Automatically anonymized before transmission
 - Used only for improving Morphik
 - Never shared with third parties
-- Retained for a maximum of 90 days
+- Retained according to Logfire's data retention policies
 
 ## Technical Details
 
-The telemetry system uses OpenTelemetry to collect metrics and traces. In development mode, data is stored locally in `logs/telemetry/`. In production, data is sent to our secure collector endpoint.
+The telemetry system uses OpenTelemetry to collect metrics and traces. In development mode, data is stored locally in `logs/telemetry/`. In production, data is sent to Logfire through our secure proxy endpoint.
 
 You can inspect the telemetry data being collected by looking at the local log files in development mode:
 - `logs/telemetry/traces.log`
 - `logs/telemetry/metrics.log`
+
+## Setting up Logfire
+
+To view telemetry data in Logfire:
+
+1. Sign up for a Logfire account at [logfire.pydantic.dev](https://logfire.pydantic.dev)
+2. Create a new project
+3. Get your API token from the project settings
+4. Set the token in your environment:
+   ```bash
+   export LOGFIRE_TOKEN=your_token_here
+   ```
+
+## Why We Use Logfire
+
+Logfire provides:
+- Built on OpenTelemetry standards
+- Excellent Python integration
+- Advanced querying and visualization
+- Privacy-focused design
+- Easy integration with existing OpenTelemetry tooling
 
 ## Why We Collect Telemetry
 

@@ -127,9 +127,9 @@ class Settings(BaseSettings):
 
     # Telemetry configuration
     TELEMETRY_ENABLED: bool = True
-    HONEYCOMB_ENABLED: bool = True
-    HONEYCOMB_ENDPOINT: str = "https://api.honeycomb.io"
-    HONEYCOMB_PROXY_ENDPOINT: str = "https://otel-proxy.onrender.com/"
+    LOGFIRE_ENABLED: bool = True
+    LOGFIRE_ENDPOINT: str = "https://logfire-api.pydantic.dev"
+    LOGFIRE_PROXY_ENDPOINT: str = "https://otel-proxy.onrender.com/"
     SERVICE_NAME: str = "morphik-core"
     OTLP_TIMEOUT: int = 10
     OTLP_MAX_RETRIES: int = 3
@@ -358,8 +358,11 @@ def get_settings() -> Settings:
     if "telemetry" in config:
         telemetry_config = {
             "TELEMETRY_ENABLED": config["telemetry"].get("enabled", True),
-            "HONEYCOMB_ENABLED": config["telemetry"].get("honeycomb_enabled", True),
-            "HONEYCOMB_ENDPOINT": config["telemetry"].get("honeycomb_endpoint", "https://api.honeycomb.io"),
+            "LOGFIRE_ENABLED": config["telemetry"].get("logfire_enabled", True),
+            "LOGFIRE_ENDPOINT": config["telemetry"].get("logfire_endpoint", "https://logfire-api.pydantic.dev"),
+            "LOGFIRE_PROXY_ENDPOINT": config["telemetry"].get(
+                "logfire_proxy_endpoint", "https://otel-proxy.onrender.com"
+            ),
             "SERVICE_NAME": config["telemetry"].get("service_name", "morphik-core"),
             "OTLP_TIMEOUT": config["telemetry"].get("otlp_timeout", 10),
             "OTLP_MAX_RETRIES": config["telemetry"].get("otlp_max_retries", 3),

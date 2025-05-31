@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Test script to verify that telemetry data is being properly sent through the proxy.
-This script will generate a test span and metric and send it to Honeycomb via the proxy.
+This script will generate a test span and metric and send it to Logfire via the proxy.
 """
 
 import asyncio
@@ -25,8 +25,8 @@ async def run_test():
 
     # Log the current configuration
     logger.info(f"Telemetry enabled: {settings.TELEMETRY_ENABLED}")
-    logger.info(f"Honeycomb enabled: {settings.HONEYCOMB_ENABLED}")
-    logger.info(f"Honeycomb proxy endpoint: {settings.HONEYCOMB_PROXY_ENDPOINT}")
+    logger.info(f"Logfire enabled: {settings.LOGFIRE_ENABLED}")
+    logger.info(f"Logfire proxy endpoint: {settings.LOGFIRE_PROXY_ENDPOINT}")
 
     # Get the telemetry service
     telemetry_service = TelemetryService()
@@ -45,7 +45,7 @@ async def run_test():
         metadata={
             "test": True,
             "timestamp": datetime.now().isoformat(),
-            "proxy_test": "Honeycomb proxy test",
+            "proxy_test": "Logfire proxy test",
         },
     ) as span:
         # Simulate some work
@@ -63,7 +63,7 @@ async def run_test():
     logger.info("Waiting for telemetry data to be sent...")
     await asyncio.sleep(5)
 
-    logger.info("Test completed. Check Honeycomb for the telemetry data.")
+    logger.info("Test completed. Check Logfire for the telemetry data.")
     logger.info(f"Look for operation_type='test_proxy' and user_id='{test_user_id}'")
 
 

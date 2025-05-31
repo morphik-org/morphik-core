@@ -114,19 +114,20 @@ colpali_mode = "local" # "off", "local", or "api"
 host = "localhost"  # use "redis" for docker
 port = 6379
 
-[graph]
-model = "ollama_qwen_vision"
-enable_entity_resolution = true
-
 # [graph]
-# mode="api"
-# base_url="https://graph-api.morphik.ai"
+# model = "ollama_qwen_vision"
+# enable_entity_resolution = true
+
+[graph]
+mode="api"
+model = "ollama_qwen_vision"
+base_url="https://graph-api.morphik.ai"
 
 [telemetry]
 enabled = true
-honeycomb_enabled = true
-honeycomb_endpoint = "https://api.honeycomb.io"
-honeycomb_proxy_endpoint = "https://otel-proxy.onrender.com"
+logfire_enabled = true
+logfire_endpoint = "https://logfire-api.pydantic.dev"
+logfire_proxy_endpoint = "https://otel-proxy.onrender.com"
 service_name = "databridge-core"
 otlp_timeout = 10
 otlp_max_retries = 3
