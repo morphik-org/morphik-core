@@ -49,7 +49,9 @@ services:
       - .env
 
   worker:
-    build: .
+    build:
+      context: .
+      dockerfile: dockerfile
     command: arq core.workers.ingestion_worker.WorkerSettings
     environment:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
