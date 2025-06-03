@@ -17,6 +17,7 @@ from core.auth_utils import AuthContext, verify_token
 from core.completion.litellm_completion import LiteLLMCompletionModel
 from core.config import get_settings
 from core.dependencies import get_document_service
+from core.limits_utils import check_and_increment_limits
 from core.models.chat import ChatMessage
 from core.models.completion import CompletionRequest
 from core.models.openai_compat import (
@@ -96,6 +97,10 @@ async def list_models(auth_context: AuthContext = Depends(verify_token)) -> Open
     """List available models in OpenAI format."""
     try:
         settings = get_settings()
+        
+        # Apply rate limiting (consistent with query endpoints)
+        if settings.MODE == "cloud" and auth_context.user_id:
+            await check_and_increment_limits(auth_context, "query", 1)
         models = []
         
         # Add registered models
@@ -142,6 +147,10 @@ async def create_chat_completion(
     """Create a chat completion in OpenAI format."""
     try:
         settings = get_settings()
+        
+        # Apply rate limiting (consistent with query endpoints)
+        if settings.MODE == "cloud" and auth_context.user_id:
+            await check_and_increment_limits(auth_context, "query", 1)
         
         # Validate model
         if request.model not in settings.REGISTERED_MODELS:

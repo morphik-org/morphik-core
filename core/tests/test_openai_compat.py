@@ -5,6 +5,7 @@ Tests for OpenAI SDK compatibility functionality.
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
+from fastapi import HTTPException
 
 from core.api import app
 from core.models.openai_compat import (
@@ -300,3 +301,197 @@ class TestOpenAICompatibilityAsync:
         assert any("Hello" in chunk for chunk in chunks)
         assert any("[DONE]" in chunk for chunk in chunks)
         assert all(chunk.startswith("data: ") for chunk in chunks)
+
+
+class TestOpenAIRateLimiting:
+    """Test suite for OpenAI API rate limiting."""
+    
+    @patch("core.routes.openai_compat.verify_token")
+    @patch("core.routes.openai_compat.get_settings")
+    @patch("core.routes.openai_compat.check_and_increment_limits")
+    def test_models_endpoint_rate_limiting_cloud_mode(
+        self, 
+        mock_check_limits, 
+        mock_get_settings, 
+        mock_verify_token, 
+        client
+    ):
+        """Test that /v1/models endpoint applies rate limiting in cloud mode."""
+        # Setup auth context with user_id
+        mock_auth_context = MagicMock()
+        mock_auth_context.user_id = "test_user"
+        mock_verify_token.return_value = mock_auth_context
+        
+        # Setup cloud mode
+        mock_settings = MagicMock()
+        mock_settings.MODE = "cloud"
+        mock_settings.REGISTERED_MODELS = {"gpt-4": {}}
+        mock_get_settings.return_value = mock_settings
+        
+        # Make request
+        response = client.get("/v1/models")
+        
+        # Verify rate limiting was called
+        mock_check_limits.assert_called_once_with(mock_auth_context, "query", 1)
+        assert response.status_code == 200
+    
+    @patch("core.routes.openai_compat.verify_token")
+    @patch("core.routes.openai_compat.get_settings")
+    @patch("core.routes.openai_compat.check_and_increment_limits")
+    def test_models_endpoint_no_rate_limiting_self_hosted(
+        self, 
+        mock_check_limits, 
+        mock_get_settings, 
+        mock_verify_token, 
+        client
+    ):
+        """Test that /v1/models endpoint skips rate limiting in self-hosted mode."""
+        # Setup auth context with user_id
+        mock_auth_context = MagicMock()
+        mock_auth_context.user_id = "test_user"
+        mock_verify_token.return_value = mock_auth_context
+        
+        # Setup self-hosted mode
+        mock_settings = MagicMock()
+        mock_settings.MODE = "self_hosted"
+        mock_settings.REGISTERED_MODELS = {"gpt-4": {}}
+        mock_get_settings.return_value = mock_settings
+        
+        # Make request
+        response = client.get("/v1/models")
+        
+        # Verify rate limiting was NOT called
+        mock_check_limits.assert_not_called()
+        assert response.status_code == 200
+    
+    @patch("core.routes.openai_compat.verify_token")
+    @patch("core.routes.openai_compat.get_settings")
+    @patch("core.routes.openai_compat.check_and_increment_limits")
+    @patch("core.routes.openai_compat.get_document_service")
+    @patch("core.routes.openai_compat.LiteLLMCompletionModel")
+    def test_chat_completions_rate_limiting_cloud_mode(
+        self, 
+        mock_completion_model_class,
+        mock_get_document_service,
+        mock_check_limits, 
+        mock_get_settings, 
+        mock_verify_token, 
+        client
+    ):
+        """Test that /v1/chat/completions endpoint applies rate limiting in cloud mode."""
+        # Setup auth context with user_id
+        mock_auth_context = MagicMock()
+        mock_auth_context.user_id = "test_user"
+        mock_auth_context.app_id = "test_app"
+        mock_auth_context.entity_type = "user"
+        mock_auth_context.entity_id = "test_user"
+        mock_verify_token.return_value = mock_auth_context
+        
+        # Setup cloud mode
+        mock_settings = MagicMock()
+        mock_settings.MODE = "cloud"
+        mock_settings.REGISTERED_MODELS = {"gpt-4": {}}
+        mock_get_settings.return_value = mock_settings
+        
+        # Mock document service
+        mock_document_service = MagicMock()
+        mock_get_document_service.return_value = mock_document_service
+        
+        # Mock completion model
+        mock_completion_model = MagicMock()
+        mock_completion_response = MagicMock()
+        mock_completion_response.completion = "Test response"
+        mock_completion_response.usage = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+        mock_completion_response.finish_reason = "stop"
+        mock_completion_model.complete = AsyncMock(return_value=mock_completion_response)
+        mock_completion_model_class.return_value = mock_completion_model
+        
+        request_data = {
+            "model": "gpt-4",
+            "messages": [{"role": "user", "content": "Hello"}]
+        }
+        
+        # Make request
+        response = client.post("/v1/chat/completions", json=request_data)
+        
+        # Verify rate limiting was called
+        mock_check_limits.assert_called_once_with(mock_auth_context, "query", 1)
+        assert response.status_code == 200
+    
+    @patch("core.routes.openai_compat.verify_token")
+    @patch("core.routes.openai_compat.get_settings")
+    @patch("core.routes.openai_compat.check_and_increment_limits")
+    def test_models_rate_limit_exceeded(
+        self, 
+        mock_check_limits, 
+        mock_get_settings, 
+        mock_verify_token, 
+        client
+    ):
+        """Test that rate limit exceeded returns 429 error."""
+        # Setup auth context with user_id
+        mock_auth_context = MagicMock()
+        mock_auth_context.user_id = "test_user"
+        mock_verify_token.return_value = mock_auth_context
+        
+        # Setup cloud mode
+        mock_settings = MagicMock()
+        mock_settings.MODE = "cloud"
+        mock_get_settings.return_value = mock_settings
+        
+        # Mock rate limit exceeded
+        mock_check_limits.side_effect = HTTPException(
+            status_code=429, 
+            detail="Query limit exceeded for your free tier. Please upgrade to remove limits."
+        )
+        
+        # Make request
+        response = client.get("/v1/models")
+        
+        # Verify 429 status
+        assert response.status_code == 429
+        assert "Query limit exceeded" in response.json()["detail"]
+    
+    @patch("core.routes.openai_compat.verify_token")
+    @patch("core.routes.openai_compat.get_settings")
+    @patch("core.routes.openai_compat.check_and_increment_limits")
+    @patch("core.routes.openai_compat.get_document_service")
+    @patch("core.routes.openai_compat.LiteLLMCompletionModel")
+    def test_chat_completions_rate_limit_exceeded(
+        self,
+        mock_completion_model_class,
+        mock_get_document_service,
+        mock_check_limits, 
+        mock_get_settings, 
+        mock_verify_token, 
+        client
+    ):
+        """Test that rate limit exceeded for chat completions returns 429 error."""
+        # Setup auth context with user_id
+        mock_auth_context = MagicMock()
+        mock_auth_context.user_id = "test_user"
+        mock_verify_token.return_value = mock_auth_context
+        
+        # Setup cloud mode
+        mock_settings = MagicMock()
+        mock_settings.MODE = "cloud"
+        mock_settings.REGISTERED_MODELS = {"gpt-4": {}}
+        mock_get_settings.return_value = mock_settings
+        
+        # Mock rate limit exceeded
+        mock_check_limits.side_effect = HTTPException(
+            status_code=429, 
+            detail="Query limit exceeded for your free tier. Please upgrade to remove limits."
+        )
+        
+        request_data = {
+            "model": "gpt-4",
+            "messages": [{"role": "user", "content": "Hello"}]
+        }
+        
+        # Make request
+        response = client.post("/v1/chat/completions", json=request_data)
+        
+        # Verify 429 status
+        assert response.status_code == 429
+        assert "Query limit exceeded" in response.json()["detail"]
