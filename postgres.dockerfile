@@ -4,8 +4,8 @@ FROM postgres:15-alpine
 RUN apk add --no-cache \
     git \
     build-base \
-    clang \
-    llvm \
+    clang19 \
+    llvm19 \
     postgresql-dev
 
 # Clone and build pgvector
@@ -15,7 +15,7 @@ RUN git clone --branch v0.5.1 https://github.com/pgvector/pgvector.git \
     && make install
 
 # Cleanup
-RUN apk del git build-base clang llvm postgresql-dev \
+RUN apk del git build-base clang19 llvm19 postgresql-dev \
     && rm -rf /pgvector
 
 # Copy data dump
