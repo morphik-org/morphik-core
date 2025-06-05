@@ -151,3 +151,7 @@ class AgentQueryRequest(BaseModel):
     """Request model for agent queries"""
 
     query: str = Field(..., description="Natural language query for the Morphik agent")
+    chat_id: Optional[str] = Field(
+        None,
+        description="Optional chat session ID for persisting conversation history",
+    )

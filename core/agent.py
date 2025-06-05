@@ -197,14 +197,22 @@ when citing different sources. Use markdown formatting for text content to impro
             case _:
                 raise ValueError(f"Unknown tool: {name}")
 
-    async def run(self, query: str, auth: AuthContext) -> str:
+    async def run(self, query: str, auth: AuthContext, conversation_history: list = None) -> str:
         """Synchronously run the agent and return the final answer."""
         # Per-run state to avoid cross-request leakage
         source_map: dict = {}
         messages = [
             {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": query},
         ]
+
+        # Add conversation history if provided
+        if conversation_history:
+            for msg in conversation_history[:-1]:  # Exclude the last message (current user query)
+                messages.append({"role": msg["role"], "content": msg["content"]})
+
+        # Add the current user query
+        messages.append({"role": "user", "content": query})
+
         tool_history = []  # Initialize tool history list
         # Get the full model name from the registered models config
         settings = get_settings()
@@ -370,8 +378,28 @@ when citing different sources. Use markdown formatting for text content to impro
 
                 # Return final content, tool history, display objects and sources
                 display_objects = crop_images_in_display_objects(display_objects)
+
+                # Generate a user-friendly response text from display objects
+                response_text = ""
+                if display_objects:
+                    # Extract text content from display objects for a clean response
+                    text_contents = []
+                    for obj in display_objects:
+                        if obj.get("type") == "text" and obj.get("content"):
+                            text_contents.append(obj["content"])
+
+                    if text_contents:
+                        # Join text contents with proper spacing
+                        response_text = "\n\n".join(text_contents)
+                    else:
+                        # If no text objects, provide a generic response
+                        response_text = "I've found relevant information in the documents. Please see the display objects above for details."
+                else:
+                    # Fallback to original content if no display objects
+                    response_text = msg.content
+
                 return {
-                    "response": msg.content,
+                    "response": response_text,
                     "tool_history": tool_history,
                     "display_objects": display_objects,
                     "sources": sources,

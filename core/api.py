@@ -626,21 +626,75 @@ async def get_chat_history(
 
 @app.post("/agent", response_model=Dict[str, Any])
 @telemetry.track(operation_type="agent_query")
-async def agent_query(request: AgentQueryRequest, auth: AuthContext = Depends(verify_token)):
+async def agent_query(
+    request: AgentQueryRequest,
+    auth: AuthContext = Depends(verify_token),
+    redis: arq.ArqRedis = Depends(get_redis_pool),
+):
     """Execute an agent-style query using the :class:`MorphikAgent`.
 
     Args:
-        request: The query payload containing the natural language question.
+        request: The query payload containing the natural language question and optional chat_id.
         auth: Authentication context used to enforce limits and access control.
+        redis: Redis connection for chat history storage.
 
     Returns:
         A dictionary with the agent's full response.
     """
+    # Chat history retrieval
+    history_key = None
+    history: List[Dict[str, Any]] = []
+    if request.chat_id:
+        history_key = f"chat:{request.chat_id}"
+        stored = await redis.get(history_key)
+        if stored:
+            try:
+                history = json.loads(stored)
+            except Exception:
+                history = []
+        else:
+            db_hist = await document_service.db.get_chat_history(request.chat_id, auth.user_id, auth.app_id)
+            if db_hist:
+                history = db_hist
+
+        history.append(
+            {
+                "role": "user",
+                "content": request.query,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
+
     # Check free-tier agent call limits in cloud mode
     if settings.MODE == "cloud" and auth.user_id:
         await check_and_increment_limits(auth, "agent", 1)
+
     # Use the shared MorphikAgent instance; per-run state is now isolated internally
-    response = await morphik_agent.run(request.query, auth)
+    response = await morphik_agent.run(request.query, auth, history)
+
+    # Chat history storage
+    if history_key:
+        # Store the full agent response with structured data
+        agent_message = {
+            "role": "assistant",
+            "content": response.get("response", ""),
+            "timestamp": datetime.now(UTC).isoformat(),
+            # Store agent-specific structured data
+            "agent_data": {
+                "display_objects": response.get("display_objects", []),
+                "tool_history": response.get("tool_history", []),
+                "sources": response.get("sources", []),
+            },
+        }
+        history.append(agent_message)
+        await redis.set(history_key, json.dumps(history))
+        await document_service.db.upsert_chat_history(
+            request.chat_id,
+            auth.user_id,
+            auth.app_id,
+            history,
+        )
+
     # Return the complete response dictionary
     return response
 

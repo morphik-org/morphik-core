@@ -120,6 +120,54 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   const [agentMessages, setAgentMessages] = useState<AgentUIMessage[]>([]);
   const [agentStatus, setAgentStatus] = useState<"idle" | "submitted" | "completed">("idle");
 
+  // Load agent messages from chat history when switching to agent mode
+  useEffect(() => {
+    const loadAgentHistory = async () => {
+      if (isAgentMode && chatId && apiBaseUrl && (authToken || apiBaseUrl.includes("localhost"))) {
+        try {
+          const response = await fetch(`${apiBaseUrl}/chat/${chatId}`, {
+            headers: {
+              ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+            },
+          });
+          if (response.ok) {
+            const data = await response.json();
+            const agentMessagesFromHistory = data.map((m: any) => {
+              const baseMessage = {
+                id: generateUUID(),
+                role: m.role,
+                content: m.content,
+                createdAt: new Date(m.timestamp),
+              };
+
+              // If this is an assistant message with agent_data, reconstruct experimental_agentData
+              if (m.role === "assistant" && m.agent_data) {
+                return {
+                  ...baseMessage,
+                  experimental_agentData: {
+                    tool_history: m.agent_data.tool_history || [],
+                    displayObjects: m.agent_data.display_objects || [],
+                    sources: m.agent_data.sources || [],
+                  },
+                };
+              }
+
+              return baseMessage;
+            });
+            setAgentMessages(agentMessagesFromHistory);
+          }
+        } catch (err) {
+          console.error("Failed to load agent chat history", err);
+        }
+      } else if (!isAgentMode) {
+        // Clear agent messages when switching back to regular chat mode
+        setAgentMessages([]);
+      }
+    };
+
+    loadAgentHistory();
+  }, [isAgentMode, chatId, apiBaseUrl, authToken]);
+
   // Fetch available graphs for dropdown
   const fetchGraphs = useCallback(async () => {
     if (!apiBaseUrl) return;
@@ -308,7 +356,10 @@ const ChatSection: React.FC<ChatSectionProps> = ({
           "Content-Type": "application/json",
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body: JSON.stringify({ query: userMessage.content }),
+        body: JSON.stringify({
+          query: userMessage.content,
+          chat_id: chatId,
+        }),
       });
 
       if (!response.ok) {

@@ -16,6 +16,7 @@ interface AgentChatSectionProps {
   initialMessages?: ChatMessage[];
   isReadonly?: boolean;
   onAgentSubmit?: (query: string) => void;
+  chatId?: string;
 }
 
 /**
@@ -27,6 +28,7 @@ const AgentChatSection: React.FC<AgentChatSectionProps> = ({
   initialMessages = [],
   isReadonly = false,
   onAgentSubmit,
+  chatId,
 }) => {
   // State for managing chat
   const [messages, setMessages] = useState<AgentUIMessage[]>(
@@ -44,6 +46,54 @@ const AgentChatSection: React.FC<AgentChatSectionProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Load agent messages from chat history when component mounts or chatId changes
+  useEffect(() => {
+    const loadAgentHistory = async () => {
+      if (chatId && apiBaseUrl && (authToken || apiBaseUrl.includes("localhost"))) {
+        try {
+          const response = await fetch(`${apiBaseUrl}/chat/${chatId}`, {
+            headers: {
+              ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+            },
+          });
+          if (response.ok) {
+            const data = await response.json();
+            const agentMessagesFromHistory = data.map((m: any) => {
+              const baseMessage = {
+                id: generateUUID(),
+                role: m.role,
+                content: m.content,
+                createdAt: new Date(m.timestamp),
+              };
+
+              // If this is an assistant message with agent_data, reconstruct experimental_agentData
+              if (m.role === "assistant" && m.agent_data) {
+                return {
+                  ...baseMessage,
+                  experimental_agentData: {
+                    tool_history: m.agent_data.tool_history || [],
+                    displayObjects: m.agent_data.display_objects || [],
+                    sources: m.agent_data.sources || [],
+                  },
+                };
+              }
+
+              return baseMessage;
+            });
+            setMessages(agentMessagesFromHistory);
+          }
+        } catch (err) {
+          console.error("Failed to load agent chat history", err);
+        }
+      }
+    };
+
+    // Only load if we don't have initial messages
+    if (initialMessages.length === 0) {
+      loadAgentHistory();
+    }
+  }, [chatId, apiBaseUrl, authToken, initialMessages.length]);
 
   // Function to handle form submission
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -92,6 +142,7 @@ const AgentChatSection: React.FC<AgentChatSectionProps> = ({
         },
         body: JSON.stringify({
           query: userMessage.content,
+          chat_id: chatId,
         }),
       });
 
