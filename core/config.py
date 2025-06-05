@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
     ASSEMBLYAI_API_KEY: Optional[str] = None
+    # Milvus configuration
+    MILVUS_URI: Optional[str] = None
+    MILVUS_API_KEY: Optional[str] = None
 
     # API configuration
     HOST: str
@@ -107,8 +110,12 @@ class Settings(BaseSettings):
     S3_BUCKET: Optional[str] = None
 
     # Vector store configuration
-    VECTOR_STORE_PROVIDER: Literal["pgvector"]
+    VECTOR_STORE_PROVIDER: Literal["pgvector", "milvus"]
     VECTOR_STORE_DATABASE_NAME: Optional[str] = None
+
+    # Multi-vector store configuration
+    MULTIVECTOR_PROVIDER: Literal["postgres", "milvus"] = "postgres"
+    MILVUS_BATCH_SIZE: int = 500  # Batch size for Milvus multivector insertions
 
     # Colpali configuration
     ENABLE_COLPALI: bool
@@ -288,13 +295,54 @@ def get_settings() -> Settings:
 
     # load vector store config
     vector_store_config = {"VECTOR_STORE_PROVIDER": config["vector_store"]["provider"]}
-    if vector_store_config["VECTOR_STORE_PROVIDER"] != "pgvector":
+    if vector_store_config["VECTOR_STORE_PROVIDER"] not in ["pgvector", "milvus"]:
         prov = vector_store_config["VECTOR_STORE_PROVIDER"]
         raise ValueError(f"Unknown vector store provider selected: '{prov}'")
 
-    if "POSTGRES_URI" not in os.environ:
-        msg = em.format(missing_value="POSTGRES_URI", field="vector_store.provider", value="pgvector")
-        raise ValueError(msg)
+    # Validate required environment variables based on vector store provider
+    if vector_store_config["VECTOR_STORE_PROVIDER"] == "pgvector":
+        if "POSTGRES_URI" not in os.environ:
+            msg = em.format(missing_value="POSTGRES_URI", field="vector_store.provider", value="pgvector")
+            raise ValueError(msg)
+    elif vector_store_config["VECTOR_STORE_PROVIDER"] == "milvus":
+        if "MILVUS_URI" not in os.environ:
+            msg = em.format(missing_value="MILVUS_URI", field="vector_store.provider", value="milvus")
+            raise ValueError(msg)
+        vector_store_config.update(
+            {
+                "MILVUS_URI": os.environ["MILVUS_URI"],
+                "MILVUS_API_KEY": os.environ.get("MILVUS_API_KEY"),  # API key is optional for some Milvus setups
+            }
+        )
+
+    # load multivector store config
+    multivector_store_config = {}
+    if "multivector_store" in config:
+        multivector_store_config = {
+            "MULTIVECTOR_PROVIDER": config["multivector_store"]["provider"],
+            "MILVUS_BATCH_SIZE": config["multivector_store"].get("milvus_batch_size", 500),  # Default to 500
+        }
+        if multivector_store_config["MULTIVECTOR_PROVIDER"] not in ["postgres", "milvus"]:
+            prov = multivector_store_config["MULTIVECTOR_PROVIDER"]
+            raise ValueError(f"Unknown multivector store provider selected: '{prov}'")
+
+        # Validate required environment variables based on multivector store provider
+        if multivector_store_config["MULTIVECTOR_PROVIDER"] == "postgres":
+            if "POSTGRES_URI" not in os.environ:
+                msg = em.format(missing_value="POSTGRES_URI", field="multivector_store.provider", value="postgres")
+                raise ValueError(msg)
+        elif multivector_store_config["MULTIVECTOR_PROVIDER"] == "milvus":
+            if "MILVUS_URI" not in os.environ:
+                msg = em.format(missing_value="MILVUS_URI", field="multivector_store.provider", value="milvus")
+                raise ValueError(msg)
+            # Add Milvus credentials to config if not already added
+            if "MILVUS_URI" not in vector_store_config:
+                multivector_store_config.update(
+                    {
+                        "MILVUS_URI": os.environ["MILVUS_URI"],
+                        "MILVUS_API_KEY": os.environ.get("MILVUS_API_KEY"),
+                    }
+                )
 
     # load rules config
     rules_config = {
@@ -382,6 +430,7 @@ def get_settings() -> Settings:
             reranker_config,
             storage_config,
             vector_store_config,
+            multivector_store_config,
             rules_config,
             morphik_config,
             redis_config,

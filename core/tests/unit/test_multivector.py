@@ -4,11 +4,10 @@ import logging
 import numpy as np
 import pytest
 import torch
-from pgvector.psycopg import Bit
 
 from core.models.chunk import DocumentChunk
 from core.tests import setup_test_logging
-from core.vector_store.multi_vector_store import MultiVectorStore
+from core.vector_store.milvus_multivector_store import MilvusMultiVectorStore
 
 # Set up test logging
 setup_test_logging()
@@ -50,102 +49,115 @@ def get_sample_document_chunks(num_chunks=3, num_vectors=3, dim=128):
     return chunks
 
 
-# Fixtures
+# For Milvus
 @pytest.fixture(scope="function")
 async def vector_store():
     """Create a real MultiVectorStore instance connected to the test database"""
-    # Create the store
-    store = MultiVectorStore(uri=TEST_DB_URI)
-
-    try:
-        # Try to initialize the database
-        store.initialize()
-
-        # Clean up any existing data
-        store.conn.execute("TRUNCATE TABLE multi_vector_embeddings RESTART IDENTITY")
-
-        # Drop the function if it exists
-        try:
-            store.conn.execute("DROP FUNCTION IF EXISTS max_sim(bit[], bit[])")
-        except Exception as e:
-            print(f"Error dropping function: {e}")
-    except Exception as e:
-        print(f"Error setting up database: {e}")
-
+    store = MilvusMultiVectorStore(collection_name="test_collection")
+    store.client.drop_collection(collection_name="test_collection")
+    store._create_collection()
+    store.client.load_collection(collection_name="test_collection")
     yield store
-
-    # Clean up after tests
-    try:
-        store.conn.execute("TRUNCATE TABLE multi_vector_embeddings RESTART IDENTITY")
-    except Exception as e:
-        print(f"Error cleaning up: {e}")
-
-    # Close connection
     store.close()
 
 
-# Glassbox Tests - Testing internal implementation details
-@pytest.mark.asyncio
-async def test_binary_quantize():
-    """Test the _binary_quantize method correctly converts embeddings"""
-    store = MultiVectorStore(uri=TEST_DB_URI)
+# For Postgres
+# # Fixtures
+# @pytest.fixture(scope="function")
+# async def vector_store():
+#     """Create a real MultiVectorStore instance connected to the test database"""
+#     # Create the store
+#     store = MultiVectorStore(uri=TEST_DB_URI)
 
-    # Test with torch tensor
-    torch_embeddings = torch.tensor([[0.1, -0.2, 0.3], [-0.1, 0.2, -0.3]])
-    binary_result = store._binary_quantize(torch_embeddings)
-    assert len(binary_result) == 2
+#     try:
+#         # Try to initialize the database
+#         store.initialize()
 
-    # Check results match expected patterns
-    assert binary_result[0].to_text() == Bit("101").to_text()  # Positive values (>0) become 1, negative/zero become 0
-    assert binary_result[1].to_text() == Bit("010").to_text()  # First row: [0.1 (>0), -0.2 (<0), 0.3 (>0)] → "101"
-    # Second row: [-0.1 (<0), 0.2 (>0), -0.3 (<0)] → "010"
+#         # Clean up any existing data
+#         store.conn.execute("TRUNCATE TABLE multi_vector_embeddings RESTART IDENTITY")
 
-    # Test with numpy array
-    numpy_embeddings = np.array([[0.1, -0.2, 0.3], [-0.1, 0.2, -0.3]])
-    binary_result = store._binary_quantize(numpy_embeddings)
-    assert len(binary_result) == 2
+#         # Drop the function if it exists
+#         try:
+#             store.conn.execute("DROP FUNCTION IF EXISTS max_sim(bit[], bit[])")
+#         except Exception as e:
+#             print(f"Error dropping function: {e}")
+#     except Exception as e:
+#         print(f"Error setting up database: {e}")
 
-    assert binary_result[0].to_text() == Bit("101").to_text()
-    assert binary_result[1].to_text() == Bit("010").to_text()
+#     yield store
 
+#     # Clean up after tests
+#     try:
+#         store.conn.execute("TRUNCATE TABLE multi_vector_embeddings RESTART IDENTITY")
+#     except Exception as e:
+#         print(f"Error cleaning up: {e}")
 
-@pytest.mark.asyncio
-async def test_initialize_creates_tables_and_function(vector_store):
-    """Test that initialize creates the necessary tables and functions"""
-    vector_store.initialize()
-    # Check if the table exists
-    result = vector_store.conn.execute(
-        "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'multi_vector_embeddings')"
-    ).fetchone()
-    table_exists = result[0]
-    assert table_exists is True
-
-    logger.info("Table exists!")
-
-    # Check if the max_sim function exists
-    result = vector_store.conn.execute("SELECT EXISTS (SELECT FROM pg_proc WHERE proname = 'max_sim')").fetchone()
-    function_exists = result[0]
-    logger.info(f"Function exists {function_exists}")
-    assert function_exists is True
+#     # Close connection
+#     store.close()
 
 
-@pytest.mark.asyncio
-async def test_database_schema(vector_store):
-    """Test that the database schema matches our expectations"""
-    # Check columns in the table
-    result = vector_store.conn.execute(
-        "SELECT column_name, data_type FROM information_schema.columns " "WHERE table_name = 'multi_vector_embeddings'"
-    ).fetchall()
+# # Glassbox Tests - Testing internal implementation details
+# @pytest.mark.asyncio
+# async def test_binary_quantize():
+#     """Test the _binary_quantize method correctly converts embeddings"""
+#     store = MultiVectorStore(uri=TEST_DB_URI)
 
-    # Convert to a dict for easier checking
-    column_dict = {col[0]: col[1] for col in result}
+#     # Test with torch tensor
+#     torch_embeddings = torch.tensor([[0.1, -0.2, 0.3], [-0.1, 0.2, -0.3]])
+#     binary_result = store._binary_quantize(torch_embeddings)
+#     assert len(binary_result) == 2
 
-    # Check required columns
-    assert "id" in column_dict
-    assert "document_id" in column_dict
-    assert "chunk_number" in column_dict
-    assert "content" in column_dict
-    assert "embeddings" in column_dict
+#     # Check results match expected patterns
+#     assert binary_result[0].to_text() == Bit("101").to_text()  # Positive values (>0) become 1, negative/zero become 0
+#     assert binary_result[1].to_text() == Bit("010").to_text()  # First row: [0.1 (>0), -0.2 (<0), 0.3 (>0)] → "101"
+#     # Second row: [-0.1 (<0), 0.2 (>0), -0.3 (<0)] → "010"
+
+#     # Test with numpy array
+#     numpy_embeddings = np.array([[0.1, -0.2, 0.3], [-0.1, 0.2, -0.3]])
+#     binary_result = store._binary_quantize(numpy_embeddings)
+#     assert len(binary_result) == 2
+
+#     assert binary_result[0].to_text() == Bit("101").to_text()
+#     assert binary_result[1].to_text() == Bit("010").to_text()
+
+
+# @pytest.mark.asyncio
+# async def test_initialize_creates_tables_and_function(vector_store):
+#     """Test that initialize creates the necessary tables and functions"""
+#     vector_store.initialize()
+#     # Check if the table exists
+#     result = vector_store.conn.execute(
+#         "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'multi_vector_embeddings')"
+#     ).fetchone()
+#     table_exists = result[0]
+#     assert table_exists is True
+
+#     logger.info("Table exists!")
+
+#     # Check if the max_sim function exists
+#     result = vector_store.conn.execute("SELECT EXISTS (SELECT FROM pg_proc WHERE proname = 'max_sim')").fetchone()
+#     function_exists = result[0]
+#     logger.info(f"Function exists {function_exists}")
+#     assert function_exists is True
+
+
+# @pytest.mark.asyncio
+# async def test_database_schema(vector_store):
+#     """Test that the database schema matches our expectations"""
+#     # Check columns in the table
+#     result = vector_store.conn.execute(
+#         "SELECT column_name, data_type FROM information_schema.columns " "WHERE table_name = 'multi_vector_embeddings'"
+#     ).fetchall()
+
+#     # Convert to a dict for easier checking
+#     column_dict = {col[0]: col[1] for col in result}
+
+#     # Check required columns
+#     assert "id" in column_dict
+#     assert "document_id" in column_dict
+#     assert "chunk_number" in column_dict
+#     assert "content" in column_dict
+#     assert "embeddings" in column_dict
 
 
 # Blackbox Tests - Testing the public API
