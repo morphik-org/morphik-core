@@ -66,10 +66,14 @@ async def _resolve_connection_uri(app_id: str) -> Optional[str]:
     subsequent calls are O(1) dictionary look-ups which avoids the overhead
     of repeatedly creating a new SQLAlchemy engine *and* running the query.
     """
+    import logging
 
     # Fast path –> in-memory cache hit
     if app_id in _CONN_URI_CACHE:
         return _CONN_URI_CACHE[app_id]
+
+    logger = logging.getLogger(__name__)
+    logger.debug(f"Looking up connection URI for app_id: {app_id}")
 
     global _RESOLVE_ENGINE, _RESOLVE_SESSION  # noqa: PLW0603 – module-level cache
 
@@ -91,9 +95,22 @@ async def _resolve_connection_uri(app_id: str) -> Optional[str]:
     # At this point the sessionmaker is guaranteed to be initialised
     assert _RESOLVE_SESSION is not None  # mypy / static checkers
 
-    async with _RESOLVE_SESSION() as sess:
-        result = await sess.execute(select(AppMetadataModel.connection_uri).where(AppMetadataModel.id == app_id))
-        connection_uri: Optional[str] = result.scalar_one_or_none()
+    try:
+        import asyncio
+
+        # Add a timeout to prevent hanging on slow database connections
+        async def _do_lookup():
+            async with _RESOLVE_SESSION() as sess:
+                result = await sess.execute(
+                    select(AppMetadataModel.connection_uri).where(AppMetadataModel.id == app_id)
+                )
+                return result.scalar_one_or_none()
+
+        connection_uri = await asyncio.wait_for(_do_lookup(), timeout=5.0)
+        logger.debug(f"Found connection URI for app_id {app_id}: {'Yes' if connection_uri else 'No'}")
+    except Exception as e:
+        logger.warning(f"Failed to lookup connection URI for app_id {app_id}: {e}. Falling back to None.")
+        connection_uri = None
 
     # Store (even None) so that we don't hit the DB again for invalid IDs
     _CONN_URI_CACHE[app_id] = connection_uri

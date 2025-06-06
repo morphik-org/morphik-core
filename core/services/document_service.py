@@ -231,14 +231,44 @@ class DocumentService:
         else:
             parallel_start = time.time()
 
-        results = await asyncio.gather(
-            asyncio.gather(*embedding_tasks),
-            self.db.find_authorized_and_filtered_documents(auth, filters, system_filters),
+        # Time each operation separately - always do this regardless of perf_tracker
+        embedding_start = time.time()
+        auth_start = time.time()
+
+        # Create coroutines that will track their own timing
+        async def timed_embeddings():
+            nonlocal embedding_start
+            embedding_start = time.time()
+            result = await asyncio.gather(*embedding_tasks)
+            embedding_time = time.time() - embedding_start
+            logger.info(f"Embedding generation took {embedding_time:.2f}s")
+            return result, embedding_time
+
+        async def timed_auth():
+            nonlocal auth_start
+            auth_start = time.time()
+            result = await self.db.find_authorized_and_filtered_documents(auth, filters, system_filters)
+            auth_time = time.time() - auth_start
+            logger.info(f"Document authorization took {auth_time:.2f}s")
+            return result, auth_time
+
+        # Run both operations in parallel and collect timing info
+        parallel_results = await asyncio.gather(
+            timed_embeddings(),
+            timed_auth(),
         )
 
-        embedding_results, doc_ids = results
+        (embedding_results, embedding_time), (doc_ids, auth_time) = parallel_results
         query_embedding_regular = embedding_results[0]
         query_embedding_multivector = embedding_results[1] if len(embedding_results) > 1 else None
+
+        # Always log the detailed breakdown regardless of perf_tracker
+        total_parallel_time = max(embedding_time, auth_time)  # Since they run in parallel
+        logger.info("=== Parallel Operation Breakdown ===")
+        logger.info(f"Embedding generation: {embedding_time:.2f}s")
+        logger.info(f"Document authorization: {auth_time:.2f}s")
+        logger.info(f"Total parallel time: {total_parallel_time:.2f}s")
+        logger.info("======================================")
 
         if not perf_tracker:
             phase_times["embeddings_and_auth"] = time.time() - parallel_start

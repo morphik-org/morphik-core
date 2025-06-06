@@ -179,7 +179,11 @@ async def process_ingestion_job(
             try:
                 # Use the enterprise routing helper to get the appropriate multivector store
                 # This will respect the configuration settings (postgres vs milvus)
+                logger.debug(f"Getting multi-vector store for app_id: {auth.app_id}")
+                colpali_start_time = time.time()
                 colpali_vector_store = await get_multi_vector_store_for_app(auth.app_id)
+                colpali_lookup_time = time.time() - colpali_start_time
+                logger.debug(f"Multi-vector store lookup took {colpali_lookup_time:.3f}s for app_id: {auth.app_id}")
 
                 # Initialize the store if it has an initialize method (PostgreSQL-based stores)
                 if colpali_vector_store and hasattr(colpali_vector_store, "initialize"):
