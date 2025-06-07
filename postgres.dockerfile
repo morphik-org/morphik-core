@@ -1,4 +1,4 @@
-FROM postgres:15-alpine
+FROM postgres:16-alpine
 
 # Install build dependencies
 RUN apk add --no-cache \
@@ -9,7 +9,7 @@ RUN apk add --no-cache \
     postgresql-dev
 
 # Clone and build pgvector
-RUN git clone --branch v0.5.1 https://github.com/pgvector/pgvector.git \
+RUN git clone --branch v0.8.0 https://github.com/pgvector/pgvector.git \
     && cd pgvector \
     && make OPTFLAGS="" \
     && make install

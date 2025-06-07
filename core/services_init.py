@@ -33,6 +33,66 @@ from core.vector_store.pgvector_store import PGVectorStore
 
 logger = logging.getLogger(__name__)
 
+
+def _ensure_max_sim_function():
+    """Ensure max_sim function exists in the database for ColPali functionality."""
+    try:
+        import psycopg
+        
+        # Use synchronous connection for this one-time setup
+        conn = psycopg.connect(settings.POSTGRES_URI.replace("postgresql+asyncpg://", "postgresql://"))
+        
+        with conn:
+            # Check if function exists
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM pg_proc 
+                        WHERE proname = 'max_sim' 
+                        AND pg_get_function_arguments(oid) = 'document bit[], query bit[]'
+                    )
+                """)
+                exists = cur.fetchone()[0]
+                
+                if not exists:
+                    logger.info("Creating max_sim function for ColPali multi-vector functionality")
+                    cur.execute("""
+                        CREATE OR REPLACE FUNCTION public.max_sim(document bit[], query bit[]) 
+                        RETURNS double precision 
+                        LANGUAGE SQL
+                        IMMUTABLE
+                        PARALLEL SAFE
+                        AS $$
+                            WITH queries AS (
+                                SELECT row_number() OVER () AS query_number, *
+                                FROM (SELECT unnest(query) AS query) AS foo
+                            ),
+                            documents AS (
+                                SELECT unnest(document) AS document
+                            ),
+                            similarities AS (
+                                SELECT
+                                    query_number,
+                                    1.0 - (bit_count(document # query)::float /
+                                        greatest(bit_length(query), 1)::float) AS similarity
+                                FROM queries CROSS JOIN documents
+                            ),
+                            max_similarities AS (
+                                SELECT MAX(similarity) AS max_similarity FROM similarities GROUP BY query_number
+                            )
+                            SELECT COALESCE(SUM(max_similarity), 0.0) FROM max_similarities
+                        $$
+                    """)
+                    conn.commit()
+                    logger.info("Successfully created max_sim function")
+                else:
+                    logger.debug("max_sim function already exists")
+        
+        conn.close()
+    except Exception as e:
+        logger.error(f"Failed to ensure max_sim function: {e}")
+        # Don't raise - this is a best-effort attempt
+
 # ---------------------------------------------------------------------------
 # Global settings
 # ---------------------------------------------------------------------------
@@ -127,10 +187,14 @@ match settings.COLPALI_MODE:
         colpali_vector_store = None
     case "local":
         colpali_embedding_model = ColpaliEmbeddingModel()
-        colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI)
+        colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI, auto_initialize=False)
+        # Ensure max_sim function exists for local mode
+        _ensure_max_sim_function()
     case "api":
         colpali_embedding_model = ColpaliApiEmbeddingModel()
-        colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI)
+        colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI, auto_initialize=False)
+        # Ensure max_sim function exists for API mode
+        _ensure_max_sim_function()
     case _:
         raise ValueError(f"Unsupported COLPALI_MODE: {settings.COLPALI_MODE}")
 

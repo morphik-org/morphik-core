@@ -350,6 +350,65 @@ class PostgresDatabase(BaseDatabase):
 
                 logger.info("Created indexes for folder_name, end_user_id, and app_id in system_metadata")
 
+                # Create max_sim function for multi-vector functionality if needed
+                # This is a database schema component, not an application feature
+                from core.config import get_settings
+                app_settings = get_settings()
+                
+                # Create function if multi-vector functionality is enabled (any mode except "off")
+                if hasattr(app_settings, 'COLPALI_MODE') and app_settings.COLPALI_MODE != "off":
+                    logger.info("Creating max_sim function for multi-vector functionality")
+                    
+                    # Check if function already exists
+                    result = await conn.execute(
+                        text(
+                            """
+                            SELECT EXISTS (
+                                SELECT 1 FROM pg_proc 
+                                WHERE proname = 'max_sim' 
+                                AND pg_get_function_arguments(oid) = 'document bit[], query bit[]'
+                            )
+                            """
+                        )
+                    )
+                    function_exists = result.scalar()
+                    
+                    if not function_exists:
+                        await conn.execute(
+                            text(
+                                """
+                                CREATE OR REPLACE FUNCTION public.max_sim(document bit[], query bit[]) 
+                                RETURNS double precision 
+                                LANGUAGE SQL
+                                IMMUTABLE
+                                PARALLEL SAFE
+                                AS $$
+                                    WITH queries AS (
+                                        SELECT row_number() OVER () AS query_number, *
+                                        FROM (SELECT unnest(query) AS query) AS foo
+                                    ),
+                                    documents AS (
+                                        SELECT unnest(document) AS document
+                                    ),
+                                    similarities AS (
+                                        SELECT
+                                            query_number,
+                                            1.0 - (bit_count(document # query)::float /
+                                                greatest(bit_length(query), 1)::float) AS similarity
+                                        FROM queries CROSS JOIN documents
+                                    ),
+                                    max_similarities AS (
+                                        SELECT MAX(similarity) AS max_similarity FROM similarities GROUP BY query_number
+                                    )
+                                    SELECT COALESCE(SUM(max_similarity), 0.0) FROM max_similarities
+                                $$
+                            """
+                            )
+                        )
+                        logger.info("Created max_sim function successfully")
+                    else:
+                        logger.debug("max_sim function already exists")
+
             logger.info("PostgreSQL tables and indexes created successfully")
             self._initialized = True
             return True

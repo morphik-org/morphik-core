@@ -186,45 +186,59 @@ class MultiVectorStore(BaseVectorStore):
                 # Log index creation failure but continue
                 logger.warning(f"Failed to create index: {str(e)}")
 
+            # Fallback safety check: ensure max_sim function exists
+            # Primary creation should happen in PostgresDatabase.initialize()
             try:
-                # First, try to drop the existing function if it exists
                 with self.get_connection() as conn:
-                    conn.execute(
+                    exists_check = conn.execute(
                         """
-                        DROP FUNCTION IF EXISTS max_sim(bit[], bit[])
+                        SELECT EXISTS (
+                            SELECT 1 FROM pg_proc 
+                            WHERE proname = 'max_sim' 
+                            AND pg_get_function_arguments(oid) = 'document bit[], query bit[]'
+                        )
                     """
-                    )
-                    logger.info("Dropped existing max_sim function")
-
-                    # Create max_sim function
-                    conn.execute(
+                    ).fetchone()[0]
+                    
+                    if not exists_check:
+                        logger.warning("max_sim function not found, creating as fallback (should be created in database initialization)")
+                        conn.execute(
+                            """
+                            CREATE OR REPLACE FUNCTION public.max_sim(document bit[], query bit[]) 
+                            RETURNS double precision 
+                            LANGUAGE SQL
+                            IMMUTABLE
+                            PARALLEL SAFE
+                            AS $$
+                                WITH queries AS (
+                                    SELECT row_number() OVER () AS query_number, *
+                                    FROM (SELECT unnest(query) AS query) AS foo
+                                ),
+                                documents AS (
+                                    SELECT unnest(document) AS document
+                                ),
+                                similarities AS (
+                                    SELECT
+                                        query_number,
+                                        1.0 - (bit_count(document # query)::float /
+                                            greatest(bit_length(query), 1)::float) AS similarity
+                                    FROM queries CROSS JOIN documents
+                                ),
+                                max_similarities AS (
+                                    SELECT MAX(similarity) AS max_similarity FROM similarities GROUP BY query_number
+                                )
+                                SELECT COALESCE(SUM(max_similarity), 0.0) FROM max_similarities
+                            $$
                         """
-                        CREATE OR REPLACE FUNCTION max_sim(document bit[], query bit[]) RETURNS double precision AS $$
-                            WITH queries AS (
-                                SELECT row_number() OVER () AS query_number, *
-                                FROM (SELECT unnest(query) AS query) AS foo
-                            ),
-                            documents AS (
-                                SELECT unnest(document) AS document
-                            ),
-                            similarities AS (
-                                SELECT
-                                    query_number,
-                                    1.0 - (bit_count(document # query)::float /
-                                        greatest(bit_length(query), 1)::float) AS similarity
-                                FROM queries CROSS JOIN documents
-                            ),
-                            max_similarities AS (
-                                SELECT MAX(similarity) AS max_similarity FROM similarities GROUP BY query_number
-                            )
-                            SELECT SUM(max_similarity) FROM max_similarities
-                        $$ LANGUAGE SQL
-                    """
-                    )
-                    logger.info("Created max_sim function successfully")
+                        )
+                        conn.commit()
+                        logger.info("Created max_sim function as fallback")
+                    else:
+                        logger.debug("max_sim function verified to exist")
+                        
             except Exception as e:
-                logger.error(f"Error creating max_sim function: {str(e)}")
-                # Continue even if function creation fails - it might already exist and be usable
+                logger.error(f"Error in max_sim function fallback check: {str(e)}")
+                # Continue - we'll get a runtime error if the function is actually missing
 
             logger.info("MultiVectorStore initialized successfully")
             return True
@@ -279,7 +293,6 @@ class MultiVectorStore(BaseVectorStore):
         doc_ids: Optional[List[str]] = None,
     ) -> List[DocumentChunk]:
         """Find similar chunks using the max_sim function for multi-vectors."""
-        # try:
         # Convert query embeddings to binary format
         binary_query_embeddings = self._binary_quantize(query_embedding)
 
