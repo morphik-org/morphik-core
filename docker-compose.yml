@@ -1,5 +1,3 @@
-version: '3.8'
-
 x-ollama-check: &ollama-check
   # This command reads the toml file and checks if any provider is set to "ollama"
   command: >
@@ -140,3 +138,4 @@ volumes:
   ollama_data:
   huggingface_cache:
   redis_data:
+ 
