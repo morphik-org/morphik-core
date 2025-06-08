@@ -20,5 +20,3 @@ RUN apk del git build-base clang19 llvm19 postgresql-dev \
 
 # Copy data dump
 COPY dump.sql /tmp/dump.sql
-
-# (No database init script necessary — schema is created by the application at runtime)
