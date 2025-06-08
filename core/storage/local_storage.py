@@ -1,6 +1,6 @@
 import base64
 from pathlib import Path
-from typing import BinaryIO, Optional, Tuple
+from typing import Optional, Tuple
 
 from .base_storage import BaseStorage
 
@@ -12,12 +12,15 @@ class LocalStorage(BaseStorage):
         # Create storage directory if it doesn't exist
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
-    async def download_file(self, bucket: str, key: str) -> BinaryIO:
+    async def download_file(self, bucket: str, key: str) -> bytes:
         """Download a file from local storage."""
-        file_path = self.storage_path / key
+        # Construct full key including bucket, consistent with upload_from_base64
+        full_key = f"{bucket}/{key}" if (bucket and bucket != "storage") else key
+        file_path = self.storage_path / full_key
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
-        return open(file_path, "rb")
+        with open(file_path, "rb") as f:
+            return f.read()
 
     async def upload_from_base64(
         self, content: str, key: str, content_type: Optional[str] = None, bucket: str = ""
@@ -27,7 +30,7 @@ class LocalStorage(BaseStorage):
         # Decode base64 content
         file_content = base64.b64decode(base64_content)
 
-        key = f"{bucket}/{key}" if bucket else key
+        key = f"{bucket}/{key}" if (bucket and bucket != "storage") else key
         # Create file path
         file_path = self.storage_path / key
 
@@ -41,14 +44,18 @@ class LocalStorage(BaseStorage):
 
     async def get_download_url(self, bucket: str, key: str) -> str:
         """Get local file path as URL."""
-        file_path = self.storage_path / key
+        # Construct full key including bucket, consistent with other methods
+        full_key = f"{bucket}/{key}" if (bucket and bucket != "storage") else key
+        file_path = self.storage_path / full_key
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
         return f"file://{file_path.absolute()}"
 
     async def delete_file(self, bucket: str, key: str) -> bool:
         """Delete a file from local storage."""
-        file_path = self.storage_path / key
+        # Construct full key including bucket, consistent with other methods
+        full_key = f"{bucket}/{key}" if (bucket and bucket != "storage") else key
+        file_path = self.storage_path / full_key
         if file_path.exists():
             file_path.unlink()
         return True
