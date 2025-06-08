@@ -53,6 +53,21 @@ async def lifespan(app_instance: FastAPI):
             exc_info=True,
         )
 
+    # Initialize ColPali vector store if it exists
+    # Note: max_sim function creation happens in MultiVectorStore.initialize()
+    logger.info("Lifespan: Initializing ColPali Vector Store…")
+    try:
+        from core.services_init import colpali_vector_store
+        if colpali_vector_store and hasattr(colpali_vector_store, "initialize"):
+            colpali_vector_store.initialize()  # This is sync method
+        logger.info("Lifespan: ColPali Vector Store initialization successful (or not applicable).")
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "Lifespan: CRITICAL - Failed to initialize ColPali Vector Store: %s",
+            exc,
+            exc_info=True,
+        )
+
     logger.info("Lifespan: Attempting to initialize Redis connection pool…")
     global _global_redis_pool  # pylint: disable=global-statement
     try:
