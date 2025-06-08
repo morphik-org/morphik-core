@@ -50,6 +50,7 @@ dependencies = [
     "stripe>=12.1.0",
     "toml>=0.10.2",
     "tomli>=2.2.1",
+    "tomli-w>=1.2.0",
     "torch==2.5.1",
     "torchaudio==2.5.1",
     "torchvision==0.20.1",
