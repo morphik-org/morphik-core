@@ -7,7 +7,8 @@ import SearchSection from "@/components/search/SearchSection";
 import ChatSection from "@/components/chat/ChatSection";
 import GraphSection from "@/components/GraphSection";
 import { ConnectorList } from "@/components/connectors/ConnectorList";
-import { AlertSystem } from "@/components/ui/alert-system";
+import { PDFViewer } from "@/components/pdf/PDFViewer";
+import { PDFAPIService } from "@/components/pdf/PDFAPIService";
 import { extractTokenFromUri, getApiBaseUrlFromUri } from "@/lib/utils";
 import { MorphikUIProps } from "./types";
 import { cn } from "@/lib/utils";
@@ -47,7 +48,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
   }, [connectionUri]);
 
   // Valid section types, now matching the updated MorphikUIProps
-  type SectionType = "documents" | "search" | "chat" | "graphs" | "connections";
+  type SectionType = "documents" | "search" | "chat" | "graphs" | "connections" | "pdf";
 
   useEffect(() => {
     // Ensure initialSection from props is a valid SectionType before setting
@@ -78,79 +79,81 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
 
   // Wrapper for section change to match expected type
   const handleSectionChange = (section: string) => {
-    if (["documents", "search", "chat", "graphs", "connections"].includes(section)) {
-      // Added "connections"
+    if (["documents", "search", "chat", "graphs", "connections", "pdf"].includes(section)) {
+      // Added "connections" and "pdf"
       setActiveSection(section as SectionType); // Use SectionType here
     }
   };
 
   return (
-    <div className={cn("flex h-full w-full overflow-hidden")}>
-      <Sidebar
-        connectionUri={currentUri ?? undefined}
-        isReadOnlyUri={isReadOnlyUri}
-        onUriChange={handleUriChange}
-        activeSection={activeSection}
-        onSectionChange={handleSectionChange}
-        isCollapsed={isSidebarCollapsed}
-        setIsCollapsed={setIsSidebarCollapsed}
-        onBackClick={onBackClick}
-      />
+    <PDFAPIService>
+      <div className={cn("flex h-full w-full overflow-hidden")}>
+        <Sidebar
+          connectionUri={currentUri ?? undefined}
+          isReadOnlyUri={isReadOnlyUri}
+          onUriChange={handleUriChange}
+          activeSection={activeSection}
+          onSectionChange={handleSectionChange}
+          isCollapsed={isSidebarCollapsed}
+          setIsCollapsed={setIsSidebarCollapsed}
+          onBackClick={onBackClick}
+        />
 
-      <main className="flex flex-1 flex-col overflow-hidden">
-        {/* Render active section based on state */}
-        {activeSection === "documents" && (
-          <DocumentsSection
-            key={`docs-${effectiveApiBaseUrl}-${initialFolder}`}
-            apiBaseUrl={effectiveApiBaseUrl}
-            authToken={authToken}
-            initialFolder={initialFolder ?? undefined}
-            setSidebarCollapsed={setIsSidebarCollapsed}
-            onDocumentUpload={onDocumentUpload}
-            onDocumentDelete={onDocumentDelete}
-            onDocumentClick={onDocumentClick}
-            onFolderCreate={onFolderCreate}
-            onFolderClick={onFolderClick}
-            onRefresh={undefined}
-          />
-        )}
-        {activeSection === "search" && (
-          <SearchSection
-            key={`search-${effectiveApiBaseUrl}`}
-            apiBaseUrl={effectiveApiBaseUrl}
-            authToken={authToken}
-            onSearchSubmit={onSearchSubmit}
-          />
-        )}
-        {activeSection === "chat" && (
-          <ChatSection
-            key={`chat-${effectiveApiBaseUrl}`}
-            apiBaseUrl={effectiveApiBaseUrl}
-            authToken={authToken}
-            onChatSubmit={onChatSubmit}
-          />
-        )}
-        {activeSection === "graphs" && (
-          <GraphSection
-            key={`graphs-${effectiveApiBaseUrl}`}
-            apiBaseUrl={effectiveApiBaseUrl}
-            authToken={authToken}
-            onSelectGraph={onGraphClick}
-            onGraphCreate={onGraphCreate}
-            onGraphUpdate={onGraphUpdate}
-          />
-        )}
-        {activeSection === "connections" && (
-          <div className="h-full overflow-auto p-4 md:p-6">
-            {/* Wrapper div for consistent padding and full height */}
-            <ConnectorList apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} />
-          </div>
-        )}
-      </main>
-
-      {/* Global alert system - integrated directly in the component */}
-      <AlertSystem position="bottom-right" />
-    </div>
+        <main className="flex flex-1 flex-col overflow-hidden">
+          {/* Render active section based on state */}
+          {activeSection === "documents" && (
+            <DocumentsSection
+              key={`docs-${effectiveApiBaseUrl}-${initialFolder}`}
+              apiBaseUrl={effectiveApiBaseUrl}
+              authToken={authToken}
+              initialFolder={initialFolder ?? undefined}
+              setSidebarCollapsed={setIsSidebarCollapsed}
+              onDocumentUpload={onDocumentUpload}
+              onDocumentDelete={onDocumentDelete}
+              onDocumentClick={onDocumentClick}
+              onFolderCreate={onFolderCreate}
+              onFolderClick={onFolderClick}
+              onRefresh={undefined}
+            />
+          )}
+          {activeSection === "search" && (
+            <SearchSection
+              key={`search-${effectiveApiBaseUrl}`}
+              apiBaseUrl={effectiveApiBaseUrl}
+              authToken={authToken}
+              onSearchSubmit={onSearchSubmit}
+            />
+          )}
+          {activeSection === "chat" && (
+            <ChatSection
+              key={`chat-${effectiveApiBaseUrl}`}
+              apiBaseUrl={effectiveApiBaseUrl}
+              authToken={authToken}
+              onChatSubmit={onChatSubmit}
+            />
+          )}
+          {activeSection === "graphs" && (
+            <GraphSection
+              key={`graphs-${effectiveApiBaseUrl}`}
+              apiBaseUrl={effectiveApiBaseUrl}
+              authToken={authToken}
+              onSelectGraph={onGraphClick}
+              onGraphCreate={onGraphCreate}
+              onGraphUpdate={onGraphUpdate}
+            />
+          )}
+          {activeSection === "connections" && (
+            <div className="h-full overflow-auto p-4 md:p-6">
+              {/* Wrapper div for consistent padding and full height */}
+              <ConnectorList apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} />
+            </div>
+          )}
+          {activeSection === "pdf" && (
+            <PDFViewer key={`pdf-${effectiveApiBaseUrl}`} apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} />
+          )}
+        </main>
+      </div>
+    </PDFAPIService>
   );
 };
 

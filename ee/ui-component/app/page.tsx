@@ -4,8 +4,8 @@ import React, { Suspense } from "react";
 import MorphikUI from "@/components/MorphikUI";
 import { useSearchParams } from "next/navigation";
 
-type AllowedSection = "documents" | "search" | "chat" | "graphs" | "connections";
-const ALLOWED_SECTIONS: AllowedSection[] = ["documents", "search", "chat", "graphs", "connections"];
+type AllowedSection = "documents" | "search" | "chat" | "graphs" | "connections" | "pdf";
+const ALLOWED_SECTIONS: AllowedSection[] = ["documents", "search", "chat", "graphs", "connections", "pdf"];
 
 function isValidSection(section: string | null): section is AllowedSection {
   return section !== null && ALLOWED_SECTIONS.includes(section as AllowedSection);

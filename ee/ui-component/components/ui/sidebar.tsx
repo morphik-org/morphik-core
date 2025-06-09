@@ -15,12 +15,13 @@ import {
   Check,
   ArrowLeft,
   PlugZap,
+  File,
 } from "lucide-react";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Input } from "@/components/ui/input";
 
 // Define the specific section types the Sidebar expects
-export type SidebarSectionType = "documents" | "search" | "chat" | "graphs" | "connections";
+export type SidebarSectionType = "documents" | "search" | "chat" | "graphs" | "connections" | "pdf";
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   activeSection: SidebarSectionType; // Use the specific type
@@ -282,6 +283,16 @@ export function Sidebar({
           >
             <PlugZap className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
             {!isCollapsed && <span>Connections</span>}
+          </Button>
+          {/* PDF Viewer Nav Item */}
+          <Button
+            variant={activeSection === "pdf" ? "secondary" : "ghost"}
+            className={cn("w-full justify-start", isCollapsed && "justify-center")}
+            onClick={() => onSectionChange("pdf")}
+            title="PDF Viewer"
+          >
+            <File className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
+            {!isCollapsed && <span>PDF Viewer</span>}
           </Button>
         </div>
       </ScrollArea>
