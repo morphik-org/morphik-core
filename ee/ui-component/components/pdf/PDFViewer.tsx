@@ -101,6 +101,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<HTMLDivElement>(null);
 
@@ -159,7 +160,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
 
   // Handle chat message submission
   const handleChatSubmit = useCallback(async () => {
-    if (!chatInput.trim() || isChatLoading) return;
+    if (!chatInput.trim() || isChatLoading || !currentChatId) return;
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -173,8 +174,8 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
     setIsChatLoading(true);
 
     try {
-      // Generate a chat ID based on the current PDF file
-      const chatId = pdfState.file ? `pdf-${pdfState.file.name}-${Date.now()}` : `pdf-chat-${Date.now()}`;
+      // Use the consistent chat ID
+      const chatId = currentChatId;
 
       // Make API call to our document chat endpoint
       const response = await fetch(`${apiBaseUrl || "http://localhost:8000"}/document/chat/${chatId}/complete`, {
@@ -264,15 +265,17 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
       setChatMessages(prev => [...prev, errorMessage]);
       setIsChatLoading(false);
     }
-  }, [chatInput, isChatLoading, apiBaseUrl, authToken, pdfState.file]);
+  }, [chatInput, isChatLoading, apiBaseUrl, authToken, pdfState.file, currentChatId]);
 
   // Load chat history for the current PDF
   const loadChatHistory = useCallback(
     async (fileName: string) => {
-      if (!apiBaseUrl || !authToken) return;
+      if (!apiBaseUrl) return;
 
       try {
         const chatId = `pdf-${fileName}`;
+        setCurrentChatId(chatId); // Set the consistent chat ID
+
         const response = await fetch(`${apiBaseUrl}/document/chat/${chatId}`, {
           headers: {
             ...(authToken && { Authorization: `Bearer ${authToken}` }),
@@ -333,6 +336,11 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
     }
 
     setIsLoading(true);
+
+    // Reset chat state for new PDF
+    setChatMessages([]);
+    setCurrentChatId(null);
+
     try {
       // Create object URL for the PDF
       const pdfDataUrl = URL.createObjectURL(file);
@@ -979,7 +987,14 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
                 <Textarea
                   value={chatInput}
                   onChange={e => setChatInput(e.target.value)}
-                  placeholder="Ask a question about the PDF..."
+                  placeholder={
+                    !pdfState.file
+                      ? "Load a PDF to start chatting..."
+                      : !currentChatId
+                        ? "Loading chat..."
+                        : "Ask a question about the PDF..."
+                  }
+                  disabled={!pdfState.file || !currentChatId}
                   className="max-h-[120px] min-h-[40px] resize-none pr-12"
                   onKeyDown={e => {
                     if (e.key === "Enter" && !e.shiftKey) {
@@ -991,7 +1006,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
                 <Button
                   size="icon"
                   onClick={handleChatSubmit}
-                  disabled={!chatInput.trim() || isChatLoading}
+                  disabled={!chatInput.trim() || isChatLoading || !pdfState.file || !currentChatId}
                   className="absolute bottom-2 right-2 h-8 w-8"
                 >
                   <Send className="h-4 w-4" />
