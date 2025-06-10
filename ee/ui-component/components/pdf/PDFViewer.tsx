@@ -23,9 +23,15 @@ import {
   X,
   GripVertical,
   Send,
+  FolderOpen,
+  Clock,
+  CheckCircle,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 
 // Configure PDF.js worker - use CDN for reliability
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -46,6 +52,7 @@ interface PDFState {
   rotation: number;
   pdfDataUrl: string | null;
   controlMode: "manual" | "api"; // New mode toggle
+  documentName?: string; // Add document name for selected documents
 }
 
 interface ZoomBounds {
@@ -73,6 +80,15 @@ interface ApiChatMessage {
   content: string;
   timestamp: string;
   agent_data?: AgentData;
+}
+
+interface PDFDocument {
+  id: string;
+  filename: string;
+  download_url: string;
+  created_at?: string;
+  folder_name?: string;
+  status: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -104,6 +120,11 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<HTMLDivElement>(null);
+
+  // Document selection state
+  const [availableDocuments, setAvailableDocuments] = useState<PDFDocument[]>([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [isDocumentSelectorOpen, setIsDocumentSelectorOpen] = useState(false);
 
   // Memoize PDF options to prevent unnecessary reloads
   const pdfOptions = useMemo(
@@ -186,7 +207,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
         },
         body: JSON.stringify({
           message: userMessage.content,
-          document_id: pdfState.file?.name, // For now, use filename as document ID
+          document_id: pdfState.documentName || pdfState.file?.name, // Use document name or filename as document ID
         }),
       });
 
@@ -265,7 +286,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
       setChatMessages(prev => [...prev, errorMessage]);
       setIsChatLoading(false);
     }
-  }, [chatInput, isChatLoading, apiBaseUrl, authToken, pdfState.file, currentChatId]);
+  }, [chatInput, isChatLoading, apiBaseUrl, authToken, pdfState.file, pdfState.documentName, currentChatId]);
 
   // Load chat history for the current PDF
   const loadChatHistory = useCallback(
@@ -311,10 +332,10 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
 
       // Load chat history for this PDF
       if (pdfState.file) {
-        loadChatHistory(pdfState.file.name);
+        loadChatHistory(pdfState.documentName || pdfState.file.name);
       }
     },
-    [pdfState.file, loadChatHistory]
+    [pdfState.file, pdfState.documentName, loadChatHistory]
   );
 
   // Handle PDF load error
@@ -590,6 +611,149 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
     };
   }, [goToPage, zoomToY, zoomToX, pdfState.file, pdfState.controlMode, pdfState]);
 
+  // Fetch available PDF documents
+  const fetchAvailableDocuments = useCallback(async () => {
+    if (!apiBaseUrl) return;
+
+    setIsLoadingDocuments(true);
+    try {
+      console.log("Fetching documents from:", `${apiBaseUrl}/documents`);
+      const response = await fetch(`${apiBaseUrl}/documents`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken && { Authorization: `Bearer ${authToken}` }),
+        },
+        body: JSON.stringify({}), // Empty body to fetch all documents
+      });
+
+      if (response.ok) {
+        const allDocuments = await response.json();
+        console.log("All documents received:", allDocuments.length);
+
+        // Filter for PDF documents only
+        const pdfDocuments: PDFDocument[] = allDocuments
+          .filter((doc: { content_type: string }) => doc.content_type === "application/pdf")
+          .map(
+            (doc: {
+              external_id: string;
+              filename?: string;
+              system_metadata?: {
+                created_at?: string;
+                folder_name?: string;
+                status?: string;
+              };
+            }) => ({
+              id: doc.external_id,
+              filename: doc.filename || `Document ${doc.external_id}`,
+              download_url: "", // We'll generate this when needed
+              created_at: doc.system_metadata?.created_at,
+              folder_name: doc.system_metadata?.folder_name,
+              status: doc.system_metadata?.status || "unknown",
+            })
+          );
+
+        console.log("PDF documents filtered:", pdfDocuments);
+        console.log(
+          "PDF document IDs:",
+          pdfDocuments.map(d => d.id)
+        );
+        setAvailableDocuments(pdfDocuments);
+      } else {
+        console.error("Failed to fetch documents:", response.statusText);
+      }
+    } catch (error) {
+      console.error("Error fetching documents:", error);
+    } finally {
+      setIsLoadingDocuments(false);
+    }
+  }, [apiBaseUrl, authToken]);
+
+  // Load selected document from the system
+  const handleDocumentSelect = useCallback(
+    async (document: PDFDocument) => {
+      console.log("Document selected:", document);
+      setIsLoading(true);
+      setIsDocumentSelectorOpen(false);
+
+      // Reset chat state for new PDF
+      setChatMessages([]);
+      setCurrentChatId(null);
+
+      try {
+        // First, get the download URL for this document
+        const downloadUrlEndpoint = `${apiBaseUrl}/documents/${document.id}/download_url`;
+        console.log("Fetching download URL from:", downloadUrlEndpoint);
+
+        const downloadUrlResponse = await fetch(downloadUrlEndpoint, {
+          headers: {
+            ...(authToken && { Authorization: `Bearer ${authToken}` }),
+          },
+        });
+
+        if (!downloadUrlResponse.ok) {
+          console.error("Download URL request failed:", downloadUrlResponse.status, downloadUrlResponse.statusText);
+          throw new Error("Failed to get download URL");
+        }
+
+        const downloadData = await downloadUrlResponse.json();
+        console.log("Download URL response:", downloadData);
+
+        let downloadUrl = downloadData.download_url;
+
+        // Check if it's a local file URL (file://) which browsers can't access
+        if (downloadUrl.startsWith("file://")) {
+          console.log("Detected file:// URL, switching to direct file endpoint");
+          // Use our direct file endpoint instead for local storage
+          downloadUrl = `${apiBaseUrl}/documents/${document.id}/file`;
+        }
+
+        console.log("Final download URL:", downloadUrl);
+
+        // Use the download URL to load the document
+        const response = await fetch(downloadUrl, {
+          headers: {
+            ...(authToken && { Authorization: `Bearer ${authToken}` }),
+          },
+        });
+
+        if (!response.ok) {
+          console.error("Document download failed:", response.status, response.statusText);
+          throw new Error("Failed to download document");
+        }
+
+        const blob = await response.blob();
+        console.log("Document downloaded successfully, blob size:", blob.size);
+
+        const file = new File([blob], document.filename, { type: "application/pdf" });
+
+        // Create object URL for the PDF
+        const pdfDataUrl = URL.createObjectURL(blob);
+
+        setPdfState(prev => ({
+          ...prev,
+          file,
+          pdfDataUrl,
+          currentPage: 1,
+          totalPages: 0, // Will be set in onDocumentLoadSuccess
+          scale: 1.0,
+          rotation: 0,
+          documentName: document.filename,
+        }));
+      } catch (error) {
+        console.error("Error loading selected document:", error);
+        setIsLoading(false);
+      }
+    },
+    [apiBaseUrl, authToken]
+  );
+
+  // Open document selector and fetch documents
+  const openDocumentSelector = useCallback(() => {
+    setIsDocumentSelectorOpen(true);
+    fetchAvailableDocuments();
+  }, [fetchAvailableDocuments]);
+
   if (!pdfState.file) {
     return (
       <div className="flex h-full flex-col bg-white dark:bg-slate-900">
@@ -616,47 +780,166 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
 
         {/* Clean Upload Area */}
         <div className="flex flex-1 items-center justify-center p-8">
-          <div className="w-full max-w-md">
-            <Card
-              className={cn(
-                "border-2 border-dashed p-8 text-center transition-colors",
-                dragActive
-                  ? "border-slate-400 bg-slate-50 dark:border-slate-500 dark:bg-slate-800"
-                  : "border-slate-300 hover:border-slate-400 dark:border-slate-600 dark:hover:border-slate-500"
-              )}
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-            >
-              <div className="flex flex-col items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-                  <Upload className="h-6 w-6 text-slate-600 dark:text-slate-400" />
+          <div className="w-full max-w-2xl">
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Upload New PDF Card */}
+              <Card
+                className={cn(
+                  "border-2 border-dashed p-8 text-center transition-colors",
+                  dragActive
+                    ? "border-slate-400 bg-slate-50 dark:border-slate-500 dark:bg-slate-800"
+                    : "border-slate-300 hover:border-slate-400 dark:border-slate-600 dark:hover:border-slate-500"
+                )}
+                onDragEnter={handleDrag}
+                onDragLeave={handleDrag}
+                onDragOver={handleDrag}
+                onDrop={handleDrop}
+              >
+                <div className="flex flex-col items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                    <Upload className="h-6 w-6 text-slate-600 dark:text-slate-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100">
+                      {dragActive ? "Drop your PDF here" : "Upload New PDF"}
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Drag and drop or click to browse</p>
+                  </div>
+                  <Button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isLoading}
+                    className="bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
+                  >
+                    {isLoading ? "Loading..." : "Choose File"}
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
+                    className="hidden"
+                  />
                 </div>
-                <div>
-                  <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100">
-                    {dragActive ? "Drop your PDF here" : "Upload PDF"}
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Drag and drop or click to browse</p>
+              </Card>
+
+              {/* Select Existing Document Card */}
+              <Card className="border-2 border-slate-300 p-8 text-center transition-colors hover:border-slate-400 dark:border-slate-600 dark:hover:border-slate-500">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                    <FolderOpen className="h-6 w-6 text-slate-600 dark:text-slate-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100">Select Existing PDF</h3>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      Choose from previously uploaded documents
+                    </p>
+                  </div>
+                  <Button
+                    onClick={openDocumentSelector}
+                    disabled={isLoading}
+                    variant="outline"
+                    className="border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
+                  >
+                    {isLoadingDocuments ? "Loading..." : "Browse Documents"}
+                  </Button>
                 </div>
-                <Button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isLoading}
-                  className="bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
-                >
-                  {isLoading ? "Loading..." : "Choose File"}
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="application/pdf"
-                  onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
-                  className="hidden"
-                />
-              </div>
-            </Card>
+              </Card>
+            </div>
           </div>
         </div>
+
+        {/* Document Selection Dialog */}
+        <Dialog open={isDocumentSelectorOpen} onOpenChange={setIsDocumentSelectorOpen}>
+          <DialogContent className="max-h-[80vh] max-w-4xl overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>Select a PDF Document</DialogTitle>
+              <DialogDescription>
+                Choose from your previously uploaded PDF documents to load in the viewer.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-hidden">
+              {isLoadingDocuments ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent"></div>
+                    <span>Loading documents...</span>
+                  </div>
+                </div>
+              ) : availableDocuments.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <FileText className="mb-4 h-12 w-12 text-muted-foreground" />
+                  <h3 className="mb-2 text-lg font-medium">No PDF documents found</h3>
+                  <p className="mb-4 text-sm text-muted-foreground">
+                    Upload some PDF documents first to see them here.
+                  </p>
+                  <Button
+                    onClick={() => {
+                      setIsDocumentSelectorOpen(false);
+                      fileInputRef.current?.click();
+                    }}
+                    variant="outline"
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Upload New PDF
+                  </Button>
+                </div>
+              ) : (
+                <ScrollArea className="h-[400px] pr-4">
+                  <div className="grid gap-3">
+                    {availableDocuments.map(doc => (
+                      <Card
+                        key={doc.id}
+                        className="cursor-pointer p-4 transition-colors hover:bg-accent"
+                        onClick={() => handleDocumentSelect(doc)}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex min-w-0 flex-1 items-start gap-3">
+                            <FileText className="mt-0.5 h-5 w-5 flex-shrink-0 text-muted-foreground" />
+                            <div className="min-w-0 flex-1">
+                              <h4 className="truncate font-medium">{doc.filename}</h4>
+                              <div className="mt-1 flex items-center gap-4 text-sm text-muted-foreground">
+                                {doc.folder_name && (
+                                  <span className="flex items-center gap-1">
+                                    <FolderOpen className="h-3 w-3" />
+                                    {doc.folder_name}
+                                  </span>
+                                )}
+                                {doc.created_at && (
+                                  <span className="flex items-center gap-1">
+                                    <Clock className="h-3 w-3" />
+                                    {new Date(doc.created_at).toLocaleDateString()}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex flex-shrink-0 items-center gap-2">
+                            <Badge
+                              variant={
+                                doc.status === "completed"
+                                  ? "default"
+                                  : doc.status === "processing"
+                                    ? "secondary"
+                                    : "destructive"
+                              }
+                              className="text-xs"
+                            >
+                              {doc.status === "completed" && <CheckCircle className="mr-1 h-3 w-3" />}
+                              {doc.status === "processing" && <Clock className="mr-1 h-3 w-3" />}
+                              {doc.status === "failed" && <AlertCircle className="mr-1 h-3 w-3" />}
+                              {doc.status}
+                            </Badge>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Chat Sidebar - Empty State */}
         {isChatOpen && (
@@ -710,13 +993,19 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <FileText className="h-5 w-5 text-slate-600 dark:text-slate-400" />
-              <h2 className="text-lg font-medium text-slate-900 dark:text-slate-100">{pdfState.file.name}</h2>
+              <h2 className="text-lg font-medium text-slate-900 dark:text-slate-100">
+                {pdfState.documentName || pdfState.file.name}
+              </h2>
             </div>
 
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
                 <Upload className="mr-2 h-4 w-4" />
-                New PDF
+                Upload New
+              </Button>
+              <Button variant="outline" size="sm" onClick={openDocumentSelector}>
+                <FolderOpen className="mr-2 h-4 w-4" />
+                Browse Documents
               </Button>
               <Button variant="outline" size="sm">
                 <Download className="mr-2 h-4 w-4" />

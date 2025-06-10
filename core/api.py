@@ -872,6 +872,118 @@ async def get_document_by_filename(
         raise e
 
 
+@app.get("/documents/{document_id}/download_url")
+async def get_document_download_url(
+    document_id: str,
+    auth: AuthContext = Depends(verify_token),
+    expires_in: int = Query(3600, description="URL expiration time in seconds"),
+):
+    """
+    Get a download URL for a specific document.
+
+    Args:
+        document_id: External ID of the document
+        auth: Authentication context
+        expires_in: URL expiration time in seconds (default: 1 hour)
+
+    Returns:
+        Dictionary containing the download URL and metadata
+    """
+    try:
+        # Get the document
+        doc = await document_service.db.get_document(document_id, auth)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Check if document has storage info
+        if not doc.storage_info or not doc.storage_info.get("bucket") or not doc.storage_info.get("key"):
+            raise HTTPException(status_code=404, detail="Document file not found in storage")
+
+        # Generate download URL
+        download_url = await document_service.storage.get_download_url(
+            doc.storage_info["bucket"], doc.storage_info["key"], expires_in=expires_in
+        )
+
+        return {
+            "document_id": doc.external_id,
+            "filename": doc.filename,
+            "content_type": doc.content_type,
+            "download_url": download_url,
+            "expires_in": expires_in,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting download URL for document {document_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting download URL: {str(e)}")
+
+
+@app.get("/documents/{document_id}/file")
+async def download_document_file(document_id: str, auth: AuthContext = Depends(verify_token)):
+    """
+    Download the actual file content for a document.
+    This endpoint is used for local storage when file:// URLs cannot be accessed by browsers.
+
+    Args:
+        document_id: External ID of the document
+        auth: Authentication context
+
+    Returns:
+        StreamingResponse with the file content
+    """
+    try:
+        logger.info(f"Attempting to download file for document ID: {document_id}")
+        logger.info(f"Auth context: entity_id={auth.entity_id}, app_id={auth.app_id}")
+
+        # Get the document
+        doc = await document_service.db.get_document(document_id, auth)
+        logger.info(f"Document lookup result: {doc is not None}")
+
+        if not doc:
+            logger.warning(f"Document not found in database: {document_id}")
+            raise HTTPException(status_code=404, detail=f"Document not found: {document_id}")
+
+        logger.info(f"Found document: {doc.filename}, content_type: {doc.content_type}")
+        logger.info(f"Storage info: {doc.storage_info}")
+
+        # Check if document has storage info
+        if not doc.storage_info or not doc.storage_info.get("bucket") or not doc.storage_info.get("key"):
+            logger.warning(f"Document has no storage info: {document_id}")
+            raise HTTPException(status_code=404, detail="Document file not found in storage")
+
+        # Download file content from storage
+        logger.info(f"Downloading from bucket: {doc.storage_info['bucket']}, key: {doc.storage_info['key']}")
+        file_content = await document_service.storage.download_file(doc.storage_info["bucket"], doc.storage_info["key"])
+
+        logger.info(f"Successfully downloaded {len(file_content)} bytes")
+
+        # Create streaming response
+
+        from fastapi.responses import StreamingResponse
+
+        def generate():
+            yield file_content
+
+        return StreamingResponse(
+            generate(),
+            media_type=doc.content_type or "application/octet-stream",
+            headers={
+                "Content-Disposition": f"inline; filename=\"{doc.filename or 'document'}\"",
+                "Content-Length": str(len(file_content)),
+            },
+        )
+
+    except HTTPException:
+        raise
+    except FileNotFoundError as e:
+        logger.error(f"File not found in storage for document {document_id}: {e}")
+        raise HTTPException(status_code=404, detail=f"File not found in storage: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error downloading document file {document_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error downloading file: {str(e)}")
+
+
 @app.post("/documents/{document_id}/update_text", response_model=Document)
 @telemetry.track(operation_type="update_document_text", metadata_resolver=telemetry.document_update_text_metadata)
 async def update_document_text(
