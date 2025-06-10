@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
     ASSEMBLYAI_API_KEY: Optional[str] = None
+    GEMINI_API_KEY: Optional[str] = None
 
     # API configuration
     HOST: str

@@ -62,6 +62,19 @@ interface ChatMessage {
   timestamp: Date;
 }
 
+interface AgentData {
+  display_objects?: unknown[];
+  tool_history?: unknown[];
+  sources?: unknown[];
+}
+
+interface ApiChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+  agent_data?: AgentData;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
   const [pdfState, setPdfState] = useState<PDFState>({
@@ -159,31 +172,147 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
     setChatInput("");
     setIsChatLoading(true);
 
-    // Simulate AI response (replace with actual API call)
-    setTimeout(() => {
+    try {
+      // Generate a chat ID based on the current PDF file
+      const chatId = pdfState.file ? `pdf-${pdfState.file.name}-${Date.now()}` : `pdf-chat-${Date.now()}`;
+
+      // Make API call to our document chat endpoint
+      const response = await fetch(`${apiBaseUrl || "http://localhost:8000"}/document/chat/${chatId}/complete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken && { Authorization: `Bearer ${authToken}` }),
+        },
+        body: JSON.stringify({
+          message: userMessage.content,
+          document_id: pdfState.file?.name, // For now, use filename as document ID
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      // Handle streaming response
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("No response body reader available");
+      }
+
+      let assistantContent = "";
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
-        content: `I understand you're asking about "${userMessage.content}". Based on the PDF content you're viewing, here's my analysis...
-
-This is a sample response that would come from your AI system. You can ask me questions about the PDF content, request explanations, or get help with understanding specific sections.`,
+        content: "",
         timestamp: new Date(),
       };
 
+      // Add the assistant message to the chat immediately
       setChatMessages(prev => [...prev, assistantMessage]);
+
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.content) {
+                assistantContent += data.content;
+                // Update the assistant message content in real-time
+                setChatMessages(prev =>
+                  prev.map(msg => (msg.id === assistantMessage.id ? { ...msg, content: assistantContent } : msg))
+                );
+              }
+
+              if (data.done) {
+                setIsChatLoading(false);
+                return;
+              }
+
+              if (data.error) {
+                throw new Error(data.error);
+              }
+            } catch (parseError) {
+              // Ignore parsing errors for incomplete JSON
+              console.debug("JSON parse error (likely incomplete):", parseError);
+            }
+          }
+        }
+      }
+
       setIsChatLoading(false);
-    }, 1500);
-  }, [chatInput, isChatLoading]);
+    } catch (error) {
+      console.error("Error in chat submission:", error);
+
+      // Add error message to chat
+      const errorMessage: ChatMessage = {
+        id: `error-${Date.now()}`,
+        role: "assistant",
+        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : "Unknown error"}. Please try again.`,
+        timestamp: new Date(),
+      };
+
+      setChatMessages(prev => [...prev, errorMessage]);
+      setIsChatLoading(false);
+    }
+  }, [chatInput, isChatLoading, apiBaseUrl, authToken, pdfState.file]);
+
+  // Load chat history for the current PDF
+  const loadChatHistory = useCallback(
+    async (fileName: string) => {
+      if (!apiBaseUrl || !authToken) return;
+
+      try {
+        const chatId = `pdf-${fileName}`;
+        const response = await fetch(`${apiBaseUrl}/document/chat/${chatId}`, {
+          headers: {
+            ...(authToken && { Authorization: `Bearer ${authToken}` }),
+          },
+        });
+
+        if (response.ok) {
+          const history: ApiChatMessage[] = await response.json();
+          const formattedMessages: ChatMessage[] = history.map((msg: ApiChatMessage) => ({
+            id: `${msg.role}-${msg.timestamp}`,
+            role: msg.role,
+            content: msg.content,
+            timestamp: new Date(msg.timestamp),
+          }));
+          setChatMessages(formattedMessages);
+        }
+      } catch (error) {
+        console.error("Error loading chat history:", error);
+      }
+    },
+    [apiBaseUrl, authToken]
+  );
 
   // Handle PDF load success
-  const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
-    setPdfState(prev => ({
-      ...prev,
-      totalPages: numPages,
-      currentPage: 1,
-    }));
-    setIsLoading(false);
-  }, []);
+  const onDocumentLoadSuccess = useCallback(
+    ({ numPages }: { numPages: number }) => {
+      setPdfState(prev => ({
+        ...prev,
+        totalPages: numPages,
+        currentPage: 1,
+      }));
+      setIsLoading(false);
+
+      // Load chat history for this PDF
+      if (pdfState.file) {
+        loadChatHistory(pdfState.file.name);
+      }
+    },
+    [pdfState.file, loadChatHistory]
+  );
 
   // Handle PDF load error
   const onDocumentLoadError = useCallback(

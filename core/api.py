@@ -18,10 +18,10 @@ from core.agent import MorphikAgent
 from core.app_factory import lifespan
 from core.auth_utils import verify_token
 from core.config import get_settings
-from core.logging_config import setup_logging
 from core.database.postgres_database import PostgresDatabase
 from core.dependencies import get_redis_pool
 from core.limits_utils import check_and_increment_limits
+from core.logging_config import setup_logging
 from core.models.auth import AuthContext, EntityType
 from core.models.chat import ChatMessage
 from core.models.completion import ChunkSource, CompletionResponse
@@ -39,6 +39,7 @@ from core.models.request import (
     SetFolderRuleRequest,
     UpdateGraphRequest,
 )
+from core.routes.document import router as document_router
 from core.routes.ingest import router as ingest_router
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
@@ -162,6 +163,9 @@ logger.info("Document service initialized and stored on app.state")
 
 # Register ingest router
 app.include_router(ingest_router)
+
+# Register document router
+app.include_router(document_router)
 
 # Single MorphikAgent instance (tool definitions cached)
 morphik_agent = MorphikAgent(document_service=document_service)
