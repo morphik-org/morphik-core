@@ -27,11 +27,13 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
+  Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { usePDFChatSessions } from "@/hooks/useChatSessions";
 
 // Configure PDF.js worker - use CDN for reliability
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -117,9 +119,16 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
-  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<HTMLDivElement>(null);
+
+  // Use the new PDF chat sessions hook
+  const { currentChatId, createNewSession } = usePDFChatSessions({
+    apiBaseUrl: apiBaseUrl || "http://localhost:8000",
+    authToken: authToken || null,
+    documentName: pdfState.documentName || pdfState.file?.name,
+  });
 
   // Document selection state
   const [availableDocuments, setAvailableDocuments] = useState<PDFDocument[]>([]);
@@ -288,15 +297,15 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
     }
   }, [chatInput, isChatLoading, apiBaseUrl, authToken, pdfState.file, pdfState.documentName, currentChatId]);
 
-  // Load chat history for the current PDF
-  const loadChatHistory = useCallback(
-    async (fileName: string) => {
-      if (!apiBaseUrl) return;
+  // Load chat messages for the current chat session
+  const loadChatMessages = useCallback(
+    async (chatId: string, forceReload = false) => {
+      if (!apiBaseUrl || !chatId) return;
+
+      // Don't reload if we're currently loading or if we already have messages and it's not a forced reload
+      if (isChatLoading || (!forceReload && chatMessages.length > 0)) return;
 
       try {
-        const chatId = `pdf-${fileName}`;
-        setCurrentChatId(chatId); // Set the consistent chat ID
-
         const response = await fetch(`${apiBaseUrl}/document/chat/${chatId}`, {
           headers: {
             ...(authToken && { Authorization: `Bearer ${authToken}` }),
@@ -305,38 +314,51 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
 
         if (response.ok) {
           const history: ApiChatMessage[] = await response.json();
-          const formattedMessages: ChatMessage[] = history.map((msg: ApiChatMessage) => ({
-            id: `${msg.role}-${msg.timestamp}`,
-            role: msg.role,
-            content: msg.content,
-            timestamp: new Date(msg.timestamp),
-          }));
-          setChatMessages(formattedMessages);
+          // Only set messages if we actually have history
+          if (history && history.length > 0) {
+            const formattedMessages: ChatMessage[] = history.map((msg: ApiChatMessage) => ({
+              id: `${msg.role}-${msg.timestamp}`,
+              role: msg.role,
+              content: msg.content,
+              timestamp: new Date(msg.timestamp),
+            }));
+            setChatMessages(formattedMessages);
+          } else {
+            // If no history exists, start with empty messages
+            setChatMessages([]);
+          }
+        } else {
+          // If no history exists, start with empty messages
+          setChatMessages([]);
         }
       } catch (error) {
-        console.error("Error loading chat history:", error);
+        console.error("Error loading chat messages:", error);
+        setChatMessages([]);
       }
     },
-    [apiBaseUrl, authToken]
+    [apiBaseUrl, authToken, isChatLoading, chatMessages.length]
   );
+
+  // Load chat messages when currentChatId changes
+  useEffect(() => {
+    if (currentChatId) {
+      // Load messages for the current session
+      loadChatMessages(currentChatId, true);
+    } else {
+      // No session, clear messages
+      setChatMessages([]);
+    }
+  }, [currentChatId, loadChatMessages]);
 
   // Handle PDF load success
-  const onDocumentLoadSuccess = useCallback(
-    ({ numPages }: { numPages: number }) => {
-      setPdfState(prev => ({
-        ...prev,
-        totalPages: numPages,
-        currentPage: 1,
-      }));
-      setIsLoading(false);
-
-      // Load chat history for this PDF
-      if (pdfState.file) {
-        loadChatHistory(pdfState.documentName || pdfState.file.name);
-      }
-    },
-    [pdfState.file, pdfState.documentName, loadChatHistory]
-  );
+  const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
+    setPdfState(prev => ({
+      ...prev,
+      totalPages: numPages,
+      currentPage: 1,
+    }));
+    setIsLoading(false);
+  }, []);
 
   // Handle PDF load error
   const onDocumentLoadError = useCallback(
@@ -360,7 +382,6 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
 
     // Reset chat state for new PDF
     setChatMessages([]);
-    setCurrentChatId(null);
 
     try {
       // Create object URL for the PDF
@@ -678,7 +699,6 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
 
       // Reset chat state for new PDF
       setChatMessages([]);
-      setCurrentChatId(null);
 
       try {
         // First, get the download URL for this document
@@ -942,7 +962,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
         </Dialog>
 
         {/* Chat Sidebar - Empty State */}
-        {isChatOpen && (
+        {isChatOpen && !pdfState.file && (
           <div
             className="fixed right-0 top-0 z-50 h-full border-l bg-background shadow-2xl transition-transform duration-300"
             style={{ width: `${chatWidth}px` }}
@@ -961,10 +981,25 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
             <div className="flex h-full flex-col pl-2">
               {/* Chat Header */}
               <div className="flex items-center justify-between border-b p-4">
-                <h3 className="font-semibold">PDF Chat</h3>
-                <Button variant="ghost" size="icon" onClick={() => setIsChatOpen(false)}>
-                  <X className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold">PDF Chat</h3>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      console.log("+ button clicked (empty state), current chatId:", currentChatId);
+                      alert("Please upload a PDF first to start a chat session!");
+                    }}
+                    title="New Chat Session"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => setIsChatOpen(false)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
 
               {/* Chat Content */}
@@ -994,7 +1029,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
             <div className="flex items-center gap-3">
               <FileText className="h-5 w-5 text-slate-600 dark:text-slate-400" />
               <h2 className="text-lg font-medium text-slate-900 dark:text-slate-100">
-                {pdfState.documentName || pdfState.file.name}
+                {pdfState.documentName || pdfState.file?.name}
               </h2>
             </div>
 
@@ -1179,7 +1214,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
       </div>
 
       {/* Chat Sidebar */}
-      {isChatOpen && (
+      {isChatOpen && pdfState.file && (
         <div
           className="fixed right-0 top-0 z-50 h-full border-l bg-background shadow-2xl transition-transform duration-300"
           style={{ width: `${chatWidth}px` }}
@@ -1198,10 +1233,29 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
           <div className="flex h-full flex-col pl-2">
             {/* Chat Header */}
             <div className="flex items-center justify-between border-b p-4">
-              <h3 className="font-semibold">PDF Chat</h3>
-              <Button variant="ghost" size="icon" onClick={() => setIsChatOpen(false)}>
-                <X className="h-4 w-4" />
-              </Button>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold">PDF Chat</h3>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    console.log("+ button clicked, current chatId:", currentChatId);
+                    console.log("Current chatMessages length:", chatMessages.length);
+                    // Clear messages first, then create new session
+                    setChatMessages([]);
+                    const newChatId = createNewSession();
+                    console.log("New chat session created:", newChatId);
+                  }}
+                  title="New Chat Session"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => setIsChatOpen(false)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
 
             {/* Chat Messages */}
@@ -1283,12 +1337,14 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
                         ? "Loading chat..."
                         : "Ask a question about the PDF..."
                   }
-                  disabled={!pdfState.file || !currentChatId}
+                  disabled={!pdfState.file || !currentChatId || isChatLoading}
                   className="max-h-[120px] min-h-[40px] resize-none pr-12"
                   onKeyDown={e => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
-                      handleChatSubmit();
+                      if (!isChatLoading) {
+                        handleChatSubmit();
+                      }
                     }
                   }}
                 />

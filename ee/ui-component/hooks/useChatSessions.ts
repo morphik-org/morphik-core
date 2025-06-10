@@ -70,3 +70,67 @@ export function useChatSessions({ apiBaseUrl, authToken, limit = 100 }: UseChatS
 
   return { sessions, isLoading, reload: fetchSessions };
 }
+
+// New hook for PDF-specific chat session management
+
+interface UsePDFChatSessionsProps {
+  apiBaseUrl: string;
+  authToken: string | null;
+  documentName?: string;
+}
+
+interface UsePDFChatSessionsReturn {
+  currentChatId: string | null;
+  createNewSession: () => string;
+}
+
+export function usePDFChatSessions({
+  apiBaseUrl,
+  authToken,
+  documentName,
+}: UsePDFChatSessionsProps): UsePDFChatSessionsReturn {
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+
+  // Create a new chat session for the current document
+  const createNewSession = useCallback(() => {
+    if (!documentName) return "";
+
+    // Generate a truly unique chat ID for each new session
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substr(2, 9);
+    const chatId = `pdf-${documentName}-${timestamp}-${randomId}`;
+
+    setCurrentChatId(chatId);
+    return chatId;
+  }, [documentName]);
+
+  // Initialize current session when document loads
+  useEffect(() => {
+    if (documentName && !currentChatId) {
+      // Check if there's a saved active chat for this document in this browser session
+      const activeKey = `morphik-active-chat-${documentName}`;
+      const savedActiveChatId = sessionStorage.getItem(activeKey);
+
+      if (savedActiveChatId) {
+        // Resume the saved active chat
+        setCurrentChatId(savedActiveChatId);
+      } else {
+        // Create a new session for this document
+        createNewSession();
+      }
+    }
+  }, [documentName, currentChatId, createNewSession]);
+
+  // Save the current active chat ID to sessionStorage
+  useEffect(() => {
+    if (documentName && currentChatId) {
+      const activeKey = `morphik-active-chat-${documentName}`;
+      sessionStorage.setItem(activeKey, currentChatId);
+    }
+  }, [documentName, currentChatId]);
+
+  return {
+    currentChatId,
+    createNewSession,
+  };
+}
