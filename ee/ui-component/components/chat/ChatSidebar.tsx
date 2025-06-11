@@ -114,7 +114,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
 
   if (collapsed) {
     return (
-      <div className="flex w-8 flex-col items-center border-r bg-muted/40">
+      <div className="flex w-10 flex-col items-center border-r bg-muted/40">
         <Button variant="ghost" size="icon" className="mt-2" onClick={onToggle} title="Expand">
           <ChevronsRight className="h-4 w-4" />
         </Button>
@@ -140,7 +140,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
       </div>
       <ScrollArea className="flex-1">
         <ul className="p-1">
-          {isLoading && <li className="py-1 text-xs text-center">Loading…</li>}
+          {isLoading && <li className="py-1 text-xs text-center text-muted-foreground">Loading…</li>}
           {!isLoading && sessions.length === 0 && (
             <li className="px-2 py-1 text-xs text-muted-foreground text-center">No chats yet</li>
           )}
