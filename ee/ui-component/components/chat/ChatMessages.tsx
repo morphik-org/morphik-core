@@ -100,12 +100,12 @@ export function PreviewMessage({ message }: Pick<MessageProps, "message">) {
 
   return (
     <div className="group relative flex px-4 py-3">
-      <div className={`flex w-full flex-col ${message.role === "user" ? "items-end" : "items-start"}`}>
-        <div className="flex w-full max-w-3xl items-start gap-4">
-          <div className={`flex-1 space-y-2 overflow-hidden ${message.role === "user" ? "" : ""}`}>
+      <div className={` w-full `}>
+        <div className={`mx-auto flex w-full flex-col max-w-4xl gap-4 ${message.role === "user" ? "items-end" : "items-start"}`}>
+          <div className={`space-y-2 overflow-hidden max-w-3xl ${message.role === "user" ? "" : ""}`}>
             <div
-              className={`relative rounded-xl p-4 ${
-                message.role === "user" ? "ml-auto bg-primary text-primary-foreground" : "bg-muted"
+              className={`relative rounded-xl p-4  ${
+                message.role === "user" ? "ml-auto bg-primary text-primary-foreground " : "bg-muted pr-10"
               }`}
             >
               {message.role === "assistant" && (

@@ -515,7 +515,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
 
         {/* Input Area */}
         <div className="sticky bottom-0 w-full bg-background">
-          <div className="mx-auto max-w-4xl px-4 sm:px-6">
+          <div className="mx-auto max-w-4xl">
             {/* Controls Row - Folder Selection and Agent Mode */}
             {!isReadonly && (
               <div className="pb-3 pt-2">
