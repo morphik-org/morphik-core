@@ -242,6 +242,32 @@ PDF_VIEWER_TOOLS = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_page_summary",
+            "description": "Get a summary of a specific page in the PDF. Useful for understanding page content before navigating to it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "page_number": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "The page number to get summary for (0-indexed)",
+                    }
+                },
+                "required": ["page_number"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_total_pages",
+            "description": "Get the total number of pages in the PDF document.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
 
 

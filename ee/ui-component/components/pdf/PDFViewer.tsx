@@ -67,7 +67,7 @@ interface ZoomBounds {
 
 interface ChatMessage {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
   timestamp: Date;
 }
@@ -79,7 +79,7 @@ interface AgentData {
 }
 
 interface ApiChatMessage {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
   timestamp: string;
   agent_data?: AgentData;
@@ -232,15 +232,8 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
       }
 
       let assistantContent = "";
-      const assistantMessage: ChatMessage = {
-        id: `assistant-${Date.now()}`,
-        role: "assistant",
-        content: "",
-        timestamp: new Date(),
-      };
-
-      // Add the assistant message to the chat immediately
-      setChatMessages(prev => [...prev, assistantMessage]);
+      let assistantMessage: ChatMessage | null = null;
+      const toolMessages: ChatMessage[] = []; // Track tool messages separately
 
       const decoder = new TextDecoder();
 
@@ -259,10 +252,44 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
 
               if (data.content) {
                 assistantContent += data.content;
-                // Update the assistant message content in real-time
-                setChatMessages(prev =>
-                  prev.map(msg => (msg.id === assistantMessage.id ? { ...msg, content: assistantContent } : msg))
-                );
+
+                // Create assistant message if it doesn't exist yet
+                if (!assistantMessage) {
+                  assistantMessage = {
+                    id: `assistant-${Date.now()}`,
+                    role: "assistant",
+                    content: assistantContent,
+                    timestamp: new Date(),
+                  };
+                  setChatMessages(prev => [...prev, assistantMessage!]);
+                } else {
+                  // Update existing assistant message
+                  setChatMessages(prev => {
+                    const messageIndex = prev.findIndex(msg => msg.id === assistantMessage!.id);
+                    if (messageIndex !== -1) {
+                      const newMessages = [...prev];
+                      newMessages[messageIndex] = { ...newMessages[messageIndex], content: assistantContent };
+                      return newMessages;
+                    }
+                    return prev;
+                  });
+                }
+              }
+
+              if (data.tool_call && data.result) {
+                // Create and add tool message
+                const toolMessage: ChatMessage = {
+                  id: `tool-${Date.now()}-${Math.random()}`,
+                  role: "system",
+                  content: `🔧 Executed ${data.tool_call}: ${data.result}`,
+                  timestamp: new Date(),
+                };
+
+                // Track tool message
+                toolMessages.push(toolMessage);
+
+                // Add tool message to chat
+                setChatMessages(prev => [...prev, toolMessage]);
               }
 
               if (data.done) {
@@ -296,7 +323,16 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
       setChatMessages(prev => [...prev, errorMessage]);
       setIsChatLoading(false);
     }
-  }, [chatInput, isChatLoading, apiBaseUrl, authToken, pdfState.file, pdfState.documentName, pdfState.documentId, currentChatId]);
+  }, [
+    chatInput,
+    isChatLoading,
+    apiBaseUrl,
+    authToken,
+    pdfState.file,
+    pdfState.documentName,
+    pdfState.documentId,
+    currentChatId,
+  ]);
 
   // Load chat messages for the current chat session
   const loadChatMessages = useCallback(
@@ -1275,6 +1311,12 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
                         {message.role === "user" ? (
                           <div className="w-full">
                             <div className="w-full rounded-lg border border-border/50 bg-muted p-3 text-sm">
+                              {message.content}
+                            </div>
+                          </div>
+                        ) : message.role === "system" ? (
+                          <div className="w-full">
+                            <div className="w-full rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
                               {message.content}
                             </div>
                           </div>
