@@ -55,6 +55,7 @@ interface PDFState {
   pdfDataUrl: string | null;
   controlMode: "manual" | "api"; // New mode toggle
   documentName?: string; // Add document name for selected documents
+  documentId?: string; // Add document ID for selected documents
 }
 
 interface ZoomBounds {
@@ -127,7 +128,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
   const { currentChatId, createNewSession } = usePDFChatSessions({
     apiBaseUrl: apiBaseUrl || "http://localhost:8000",
     authToken: authToken || null,
-    documentName: pdfState.documentName || pdfState.file?.name,
+    documentName: pdfState.documentId || pdfState.documentName || pdfState.file?.name,
   });
 
   // Document selection state
@@ -216,7 +217,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
         },
         body: JSON.stringify({
           message: userMessage.content,
-          document_id: pdfState.documentName || pdfState.file?.name, // Use document name or filename as document ID
+          document_id: pdfState.documentId || pdfState.file?.name, // Use document ID for selected documents, filename for uploaded files
         }),
       });
 
@@ -295,7 +296,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
       setChatMessages(prev => [...prev, errorMessage]);
       setIsChatLoading(false);
     }
-  }, [chatInput, isChatLoading, apiBaseUrl, authToken, pdfState.file, pdfState.documentName, currentChatId]);
+  }, [chatInput, isChatLoading, apiBaseUrl, authToken, pdfState.file, pdfState.documentName, pdfState.documentId, currentChatId]);
 
   // Load chat messages for the current chat session
   const loadChatMessages = useCallback(
@@ -759,6 +760,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
           scale: 1.0,
           rotation: 0,
           documentName: document.filename,
+          documentId: document.id,
         }));
       } catch (error) {
         console.error("Error loading selected document:", error);
