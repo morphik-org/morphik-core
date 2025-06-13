@@ -37,7 +37,7 @@ const AlertInstance = ({ id, type, title, message, dismissible = true, onDismiss
       )}
 
       {title && <AlertTitle className={dismissible ? "pr-5" : ""}>{title}</AlertTitle>}
-      <AlertDescription>{message}</AlertDescription>
+      <AlertDescription className={`${!title} && pr-5`}>{message}</AlertDescription>
     </Alert>
   );
 };

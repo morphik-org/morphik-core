@@ -563,6 +563,24 @@ class DocumentService:
             logger.error(f"Error during parallel chunk retrieval: {e}", exc_info=True)
             return []
 
+        # Create a mapping of original scores from ChunkSource objects (O(n) time)
+        score_map = {
+            (source.document_id, source.chunk_number): source.score 
+            for source in authorized_sources 
+            if source.score is not None
+        }
+        
+        # Apply original scores to the retrieved chunks (O(m) time with O(1) lookups)
+        for chunk in chunks:
+            key = (chunk.document_id, chunk.chunk_number)
+            if key in score_map:
+                chunk.score = score_map[key]
+                logger.debug(f"Restored score {chunk.score} for chunk {key}")
+
+        # Sort chunks by score in descending order (highest score first)
+        chunks.sort(key=lambda x: x.score, reverse=True)
+        logger.debug(f"Sorted {len(chunks)} chunks by score")
+
         # Convert to chunk results
         results = await self._create_chunk_results(auth, chunks)
         logger.info(f"Batch retrieved {len(results)} chunks out of {len(chunk_ids)} requested")
