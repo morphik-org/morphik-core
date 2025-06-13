@@ -1,34 +1,69 @@
-"use client";
+import { useEffect, createContext, useContext } from "react";
 
-import { useEffect } from "react";
+interface PDFViewerControls {
+  changePage: (page: number) => void;
+  zoomToY: (bounds: { top: number; bottom: number }) => void;
+  zoomToX: (bounds: { left: number; right: number }) => void;
+  getCurrentState: () => unknown;
+  getMode: () => "manual" | "api";
+}
+
+declare global {
+  interface Window {
+    pdfViewerControls?: PDFViewerControls;
+  }
+}
+
+interface PDFSessionContext {
+  sessionId: string;
+  userId: string;
+}
+
+const PDFSessionContext = createContext<PDFSessionContext | null>(null);
+
+export function usePDFSession() {
+  const context = useContext(PDFSessionContext);
+  if (!context) {
+    throw new Error("usePDFSession must be used within a PDFAPIService");
+  }
+  return context;
+}
 
 interface PDFAPIServiceProps {
   children: React.ReactNode;
+  sessionId?: string;
+  userId?: string;
 }
 
-export function PDFAPIService({ children }: PDFAPIServiceProps) {
+export function PDFAPIService({ children, sessionId = "default", userId = "anonymous" }: PDFAPIServiceProps) {
   useEffect(() => {
-    console.log("Setting up PDF API service...");
+    console.log(`Starting PDF API service with session: ${sessionId}, user: ${userId}`);
+
     let eventSource: EventSource | null = null;
-    let reconnectTimer: NodeJS.Timeout | null = null;
-    let connectionAttempts = 0;
-    const maxReconnectAttempts = 5;
-    const baseReconnectDelay = 1000; // 1 second
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let isConnected = false;
+    console.log("PDFAPIService: Starting with session:", sessionId, "and user:", userId, "connected:", isConnected);
 
     const connectToEventSource = () => {
       try {
-        console.log(`Attempting to connect to EventSource (attempt ${connectionAttempts + 1}/${maxReconnectAttempts})`);
+        console.log("Connecting to PDF events stream...");
 
-        if (eventSource) {
-          eventSource.close();
-        }
+        // Include session and user info in the URL
+        const url = new URL("/api/pdf/events", window.location.origin);
+        url.searchParams.set("sessionId", sessionId);
+        url.searchParams.set("userId", userId);
 
-        eventSource = new EventSource("/api/pdf/events");
-        console.log("EventSource created for /api/pdf/events");
+        eventSource = new EventSource(url.toString());
+        console.log("EventSource created for URL:", url.toString());
 
         eventSource.onopen = () => {
-          console.log("PDF API EventSource connection opened successfully");
-          connectionAttempts = 0; // Reset counter on successful connection
+          console.log("PDF events stream connected successfully");
+          isConnected = true;
+          // Clear any pending reconnection attempts
+          if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = null;
+          }
         };
 
         eventSource.onmessage = event => {
@@ -36,6 +71,12 @@ export function PDFAPIService({ children }: PDFAPIServiceProps) {
           try {
             const command = JSON.parse(event.data);
             console.log("Parsed command:", command);
+
+            // Verify the command is for our session
+            if (command.sessionId && command.sessionId !== sessionId) {
+              console.log(`Ignoring command for different session: ${command.sessionId} (ours: ${sessionId})`);
+              return;
+            }
 
             if (window.pdfViewerControls) {
               const mode = window.pdfViewerControls.getMode ? window.pdfViewerControls.getMode() : "unknown";
@@ -73,30 +114,26 @@ export function PDFAPIService({ children }: PDFAPIServiceProps) {
         };
 
         eventSource.onerror = error => {
-          console.error("PDF API EventSource error:", error);
+          console.error("PDF events stream error:", error);
+          isConnected = false;
 
+          // Close the current connection
           if (eventSource) {
             eventSource.close();
             eventSource = null;
           }
 
-          // Attempt reconnection with exponential backoff
-          if (connectionAttempts < maxReconnectAttempts) {
-            connectionAttempts++;
-            const delay = baseReconnectDelay * Math.pow(2, connectionAttempts - 1);
-            console.log(
-              `Attempting to reconnect in ${delay}ms (attempt ${connectionAttempts}/${maxReconnectAttempts})`
-            );
-
-            reconnectTimer = setTimeout(() => {
+          // Attempt to reconnect after a delay
+          if (!reconnectTimeout) {
+            console.log("Attempting to reconnect in 3 seconds...");
+            reconnectTimeout = setTimeout(() => {
+              reconnectTimeout = null;
               connectToEventSource();
-            }, delay);
-          } else {
-            console.error("Max reconnection attempts reached. PDF API service unavailable.");
+            }, 3000);
           }
         };
       } catch (error) {
-        console.error("Error setting up PDF API service:", error);
+        console.error("Error creating PDF events stream:", error);
       }
     };
 
@@ -105,20 +142,15 @@ export function PDFAPIService({ children }: PDFAPIServiceProps) {
 
     // Cleanup function
     return () => {
-      console.log("Cleaning up PDF API service...");
-
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
+      console.log("Cleaning up PDF API service");
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
       }
-
       if (eventSource) {
-        console.log("Closing PDF API EventSource");
         eventSource.close();
-        eventSource = null;
       }
     };
-  }, []);
+  }, [sessionId, userId]);
 
-  return <>{children}</>;
+  return <PDFSessionContext.Provider value={{ sessionId, userId }}>{children}</PDFSessionContext.Provider>;
 }

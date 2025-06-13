@@ -33,6 +33,7 @@ import ReactMarkdown from "react-markdown";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { usePDFChatSessions } from "@/hooks/useChatSessions";
+import { usePDFSession } from "@/components/pdf/PDFAPIService";
 
 // Configure PDF.js worker - use CDN for reliability
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -120,6 +121,12 @@ interface PDFDocument {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewerProps) {
+  // Get session information from PDF API service context (optional)
+  const pdfSession = usePDFSession() || {
+    sessionId: `fallback-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    userId: "anonymous",
+  };
+
   const [pdfState, setPdfState] = useState<PDFState>({
     file: null,
     currentPage: 1,
@@ -148,7 +155,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
 
   // Use the new PDF chat sessions hook
   const { currentChatId, createNewSession } = usePDFChatSessions({
-    apiBaseUrl: apiBaseUrl || "http://localhost:8000",
+    apiBaseUrl: apiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000",
     authToken: authToken || null,
     documentName: pdfState.documentId || pdfState.documentName || pdfState.file?.name,
   });
@@ -231,17 +238,21 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
       const chatId = currentChatId;
 
       // Make API call to our document chat endpoint
-      const response = await fetch(`${apiBaseUrl || "http://localhost:8000"}/document/chat/${chatId}/complete`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(authToken && { Authorization: `Bearer ${authToken}` }),
-        },
-        body: JSON.stringify({
-          message: userMessage.content,
-          document_id: pdfState.documentId || pdfState.file?.name, // Use document ID for selected documents, filename for uploaded files
-        }),
-      });
+      const response = await fetch(
+        `${apiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"}/document/chat/${chatId}/complete`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(authToken && { Authorization: `Bearer ${authToken}` }),
+          },
+          body: JSON.stringify({
+            message: userMessage.content,
+            document_id: pdfState.documentId || pdfState.file?.name, // Use document ID for selected documents, filename for uploaded files
+            session_id: pdfSession?.sessionId, // Include session ID for PDF viewer scoping
+          }),
+        }
+      );
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -353,7 +364,16 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
       setChatMessages(prev => [...prev, errorMessage]);
       setIsChatLoading(false);
     }
-  }, [chatInput, isChatLoading, apiBaseUrl, authToken, pdfState.file, pdfState.documentId, currentChatId]);
+  }, [
+    chatInput,
+    isChatLoading,
+    apiBaseUrl,
+    authToken,
+    pdfState.file,
+    pdfState.documentId,
+    currentChatId,
+    pdfSession?.sessionId,
+  ]);
 
   // Load chat messages for the current chat session
   const loadChatMessages = useCallback(

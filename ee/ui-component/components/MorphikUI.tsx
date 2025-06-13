@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Sidebar } from "@/components/ui/sidebar";
 import DocumentsSection from "@/components/documents/DocumentsSection";
 import SearchSection from "@/components/search/SearchSection";
@@ -72,11 +72,34 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
   // Derive API base URL from the URI if provided
   const effectiveApiBaseUrl = getApiBaseUrlFromUri(currentUri ?? undefined, apiBaseUrl);
 
+  // Generate session and user information for PDF viewer scoping
+  const pdfSessionInfo = useMemo(() => {
+    // Generate a unique session ID for this UI instance
+    const sessionId = `ui-session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Try to extract user ID from auth token or use a fallback
+    let userId = "anonymous";
+    if (authToken) {
+      try {
+        // Try to decode JWT token to get user info (basic decode, not verification)
+        const payload = JSON.parse(atob(authToken.split(".")[1]));
+        userId = payload.sub || payload.user_id || payload.id || "authenticated";
+      } catch (error) {
+        console.error("MorphikUI: Error parsing auth token:", error);
+        // If token parsing fails, use a generic authenticated user ID
+        userId = "authenticated";
+      }
+    }
+
+    return { sessionId, userId };
+  }, [authToken]); // Regenerate if auth token changes
+
   // Log the effective API URL for debugging
   useEffect(() => {
     console.log("MorphikUI: Using API URL:", effectiveApiBaseUrl);
     console.log("MorphikUI: Auth token present:", !!authToken);
-  }, [effectiveApiBaseUrl, authToken]);
+    console.log("MorphikUI: PDF session info:", pdfSessionInfo);
+  }, [effectiveApiBaseUrl, authToken, pdfSessionInfo]);
 
   // Wrapper for section change to match expected type
   const handleSectionChange = (section: string) => {
@@ -100,7 +123,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
   }, [activeSection]);
 
   return (
-    <PDFAPIService>
+    <PDFAPIService sessionId={pdfSessionInfo.sessionId} userId={pdfSessionInfo.userId}>
       <div className={cn("flex h-full w-full overflow-hidden")}>
         <Sidebar
           connectionUri={currentUri ?? undefined}

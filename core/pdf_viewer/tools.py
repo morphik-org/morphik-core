@@ -1,4 +1,5 @@
 import base64
+import uuid
 from io import BytesIO
 from typing import List
 
@@ -13,22 +14,36 @@ SUMMARY_PROMPT += "Your summaries will be used as an *index* to allow an agent t
 class PDFViewer:
     """A state machine for navigating and viewing PDF pages."""
 
-    def __init__(self, images: List[ImageType]):
+    def __init__(self, images: List[ImageType], api_base_url: str = None, session_id: str = None, user_id: str = None):
         self.current_page: int = 0
         self.total_pages: int = len(images)
         self.images: List[ImageType] = images
         self.current_frame: str = self._create_page_url(self.current_page)
-        self.api_base_url: str = "http://localhost:3000/api/pdf"
+        # Use provided api_base_url or fall back to localhost for development
+        self.api_base_url: str = api_base_url or "http://localhost:3000/api/pdf"
+        # Generate session and user IDs if not provided
+        self.session_id: str = session_id or str(uuid.uuid4())
+        self.user_id: str = user_id or "anonymous"
         self.client = httpx.Client(base_url=self.api_base_url)
         # Execute summarization in parallel batches of 10
-        self.summaries: List[str] = [self._summarize_page(i) for i in range(self.total_pages)]
+        self.summaries: List[str] = []  # [self._summarize_page(i) for i in range(self.total_pages)]
 
     def _make_api_call(self, method: str, endpoint: str, json_data: dict = None) -> httpx.Response:
-        """Make API call to PDF viewer for UI side effects."""
+        """Make API call to PDF viewer for UI side effects with session and user scoping."""
+        # Add session and user info to the request
+        if json_data is None:
+            json_data = {}
+
+        # Add scoping information
+        json_data.update({"sessionId": self.session_id, "userId": self.user_id})
+
+        # Also add as headers for redundancy
+        headers = {"x-session-id": self.session_id, "x-user-id": self.user_id, "Content-Type": "application/json"}
+
         if method.upper() == "POST":
-            return self.client.post(endpoint, json=json_data)
+            return self.client.post(endpoint, json=json_data, headers=headers)
         elif method.upper() == "GET":
-            return self.client.get(endpoint)
+            return self.client.get(endpoint, headers=headers)
 
     def _create_page_url(self, page_number: int) -> str:
         """Convert a PIL image to base64 data URL."""
@@ -43,6 +58,10 @@ class PDFViewer:
         """Get the current frame as a base64 data URL."""
         return self.current_frame
 
+    def get_session_info(self) -> dict:
+        """Get session and user information."""
+        return {"session_id": self.session_id, "user_id": self.user_id, "api_base_url": self.api_base_url}
+
     def get_next_page(self) -> str:
         """Navigate to the next page and update state."""
         if self.current_page + 1 >= self.total_pages:
@@ -52,7 +71,12 @@ class PDFViewer:
         self.current_frame = self._create_page_url(self.current_page)
 
         # Propagate page change to UI
-        self._make_api_call("POST", f"/change-page/{self.current_page + 1}")
+        try:
+            response = self._make_api_call("POST", f"/change-page/{self.current_page + 1}")
+            if response.status_code != 200:
+                print(f"Warning: API call failed with status {response.status_code}")
+        except Exception as e:
+            print(f"Warning: Failed to sync with UI: {e}")
 
         return f"Successfully navigated to page {self.current_page + 1} of {self.total_pages}"
 
@@ -65,7 +89,12 @@ class PDFViewer:
         self.current_frame = self._create_page_url(self.current_page)
 
         # Propagate page change to UI
-        self._make_api_call("POST", f"/change-page/{self.current_page + 1}")
+        try:
+            response = self._make_api_call("POST", f"/change-page/{self.current_page + 1}")
+            if response.status_code != 200:
+                print(f"Warning: API call failed with status {response.status_code}")
+        except Exception as e:
+            print(f"Warning: Failed to sync with UI: {e}")
 
         return f"Successfully navigated to page {self.current_page + 1} of {self.total_pages}"
 
@@ -78,7 +107,12 @@ class PDFViewer:
         self.current_frame = self._create_page_url(self.current_page)
 
         # Propagate page change to UI (API uses 1-indexed)
-        self._make_api_call("POST", f"/change-page/{self.current_page + 1}")
+        try:
+            response = self._make_api_call("POST", f"/change-page/{self.current_page + 1}")
+            if response.status_code != 200:
+                print(f"Warning: API call failed with status {response.status_code}")
+        except Exception as e:
+            print(f"Warning: Failed to sync with UI: {e}")
 
         return f"Successfully navigated to page {self.current_page + 1} of {self.total_pages}"
 
@@ -133,8 +167,13 @@ class PDFViewer:
         self.current_frame = "data:image/png;base64," + image_base64
 
         # Propagate zoom to UI
-        self._make_api_call("POST", "/zoom/y", {"top": y1, "bottom": y2})
-        self._make_api_call("POST", "/zoom/x", {"left": x1, "right": x2})
+        try:
+            y_response = self._make_api_call("POST", "/zoom/y", {"top": y1, "bottom": y2})
+            x_response = self._make_api_call("POST", "/zoom/x", {"left": x1, "right": x2})
+            if y_response.status_code != 200 or x_response.status_code != 200:
+                print(f"Warning: Zoom API calls failed - Y: {y_response.status_code}, X: {x_response.status_code}")
+        except Exception as e:
+            print(f"Warning: Failed to sync zoom with UI: {e}")
 
         return f"Successfully zoomed into region [{x1}, {y1}, {x2}, {y2}]"
 
@@ -143,8 +182,13 @@ class PDFViewer:
         self.current_frame = self._create_page_url(self.current_page)
 
         # Propagate full page zoom to UI (reset to full bounds)
-        self._make_api_call("POST", "/zoom/x", {"left": 0, "right": 1000})
-        self._make_api_call("POST", "/zoom/y", {"top": 0, "bottom": 1000})
+        try:
+            x_response = self._make_api_call("POST", "/zoom/x", {"left": 0, "right": 1000})
+            y_response = self._make_api_call("POST", "/zoom/y", {"top": 0, "bottom": 1000})
+            if x_response.status_code != 200 or y_response.status_code != 200:
+                print(f"Warning: Zoom out API calls failed - X: {x_response.status_code}, Y: {y_response.status_code}")
+        except Exception as e:
+            print(f"Warning: Failed to sync zoom out with UI: {e}")
 
         return "Successfully zoomed out to full page view"
 

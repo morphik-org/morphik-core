@@ -29,13 +29,26 @@ class DocumentChatRequest(BaseModel):
 
     message: str
     document_id: Optional[str] = None
+    session_id: Optional[str] = None
 
 
-async def get_pdf_viewer(document_id: str, auth: AuthContext) -> PDFViewer:
+async def get_pdf_viewer(
+    document_id: str, auth: AuthContext, api_base_url: str = None, session_id: str = None
+) -> PDFViewer:
     document = await document_service.db.get_document(document_id, auth)
     as_bytes = await document_service.storage.download_file(**document.storage_info)
     images = convert_from_bytes(as_bytes)
-    return PDFViewer(images)
+
+    # Generate session ID if not provided
+    if session_id is None:
+        import uuid
+
+        session_id = str(uuid.uuid4())
+
+    # Use user ID from auth context
+    user_id = auth.user_id if auth and hasattr(auth, "user_id") else "anonymous"
+
+    return PDFViewer(images, api_base_url=api_base_url, session_id=session_id, user_id=user_id)
 
 
 @router.get("/chat/{chat_id}")
@@ -146,7 +159,12 @@ async def complete_document_chat(
         history.append(user_message)
 
         # Get PDF viewer instance
-        pdf_viewer = await get_pdf_viewer(request.document_id, auth)
+        # For production, this should be the frontend URL where the PDF viewer is hosted
+        # For development, it defaults to localhost:3000
+        frontend_api_url = getattr(settings, "PDF_VIEWER_FRONTEND_URL", None)
+        pdf_viewer = await get_pdf_viewer(
+            request.document_id, auth, api_base_url=frontend_api_url, session_id=request.session_id
+        )
 
         # Get PDF viewer tools
         tools = get_pdf_viewer_tools_for_litellm()

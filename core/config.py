@@ -122,6 +122,9 @@ class Settings(BaseSettings):
     # API configuration
     API_DOMAIN: str = "api.morphik.ai"
 
+    # PDF Viewer configuration
+    PDF_VIEWER_FRONTEND_URL: Optional[str] = "https://morphik.ai/api/pdf"
+
     # Redis configuration
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
@@ -321,6 +324,13 @@ def get_settings() -> Settings:
         ),
     }
 
+    # load pdf viewer config
+    pdf_viewer_config = {}
+    if "pdf_viewer" in config:
+        pdf_viewer_config = {
+            "PDF_VIEWER_FRONTEND_URL": config["pdf_viewer"].get("frontend_url", "https://morphik.ai/api/pdf")
+        }
+
     # load redis config
     redis_config = {}
     if "redis" in config:
@@ -385,6 +395,7 @@ def get_settings() -> Settings:
             vector_store_config,
             rules_config,
             morphik_config,
+            pdf_viewer_config,
             redis_config,
             graph_config,
             document_analysis_config,

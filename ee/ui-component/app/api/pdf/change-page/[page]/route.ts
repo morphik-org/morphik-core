@@ -9,17 +9,28 @@ export async function POST(request: NextRequest, { params }: { params: { page: s
       return NextResponse.json({ error: "Invalid page number" }, { status: 400 });
     }
 
-    // Broadcast command to all connected PDF viewers
-    broadcastPDFCommand({
-      type: "changePage",
-      page: page,
-      timestamp: new Date().toISOString(),
-    });
+    // Get session and user info from request headers or body
+    const body = await request.json().catch(() => ({}));
+    const sessionId = body.sessionId || request.headers.get("x-session-id") || "default";
+    const userId = body.userId || request.headers.get("x-user-id") || "anonymous";
+
+    // Broadcast command to all connected PDF viewers in this session
+    broadcastPDFCommand(
+      {
+        type: "changePage",
+        page: page,
+        timestamp: new Date().toISOString(),
+      },
+      sessionId,
+      userId
+    );
 
     return NextResponse.json({
       success: true,
       message: `Changed to page ${page}`,
       page,
+      sessionId,
+      userId,
     });
   } catch (error) {
     console.error("Error changing PDF page:", error);
