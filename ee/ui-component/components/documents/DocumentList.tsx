@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Wand2, Upload, Filter } from "lucide-react";
+import { Plus, Wand2, Upload, Filter, Eye, Download, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { showAlert } from "@/components/ui/alert-system";
 
@@ -48,6 +48,9 @@ interface DocumentListProps {
   apiBaseUrl: string;
   authToken: string | null;
   selectedFolder?: string | null;
+  onViewInPDFViewer?: (documentId: string) => void; // Add PDF viewer navigation
+  onDownloadDocument?: (documentId: string) => void; // Add download functionality
+  onDeleteDocument?: (documentId: string) => void; // Add delete functionality
 }
 
 // Filter Dialog Component
@@ -278,6 +281,9 @@ const DocumentList: React.FC<DocumentListProps> = ({
   apiBaseUrl,
   authToken,
   selectedFolder,
+  onViewInPDFViewer,
+  onDownloadDocument,
+  onDeleteDocument,
 }) => {
   const [customColumns, setCustomColumns] = useState<CustomColumn[]>([]);
   const [showAddColumnDialog, setShowAddColumnDialog] = useState(false);
@@ -528,7 +534,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
         <div
           className="grid w-full items-center"
           style={{
-            gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px ${allColumns.map(() => "140px").join(" ")}`,
+            gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px ${allColumns.map(() => "140px").join(" ")} 120px`,
           }}
         >
           <div className="flex items-center justify-center p-3">
@@ -602,6 +608,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
               </div>
             </div>
           ))}
+          <div className="p-3 text-right text-sm font-semibold">Actions</div>
         </div>
 
         {/* Render dialogs separately */}
@@ -650,7 +657,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
                 : "hover:bg-muted/70"
             }`}
             style={{
-              gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px ${allColumns.map(() => "140px").join(" ")}`,
+              gridTemplateColumns: `48px minmax(200px, 350px) 100px 120px ${allColumns.map(() => "140px").join(" ")} 120px`,
             }}
           >
             <div className="flex items-center justify-center p-3">
@@ -708,6 +715,51 @@ const DocumentList: React.FC<DocumentListProps> = ({
                 {String(doc.metadata?.[column.name] ?? "-")}
               </div>
             ))}
+            {/* Actions column - moved to the right */}
+            <div className="flex items-center justify-end gap-1 p-3">
+              {doc.content_type === "application/pdf" && onViewInPDFViewer && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={e => {
+                    e.stopPropagation();
+                    onViewInPDFViewer(doc.external_id);
+                  }}
+                  className="h-8 w-8 p-0"
+                  title="View in PDF Viewer"
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
+              )}
+              {onDownloadDocument && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={e => {
+                    e.stopPropagation();
+                    onDownloadDocument(doc.external_id);
+                  }}
+                  className="h-8 w-8 p-0"
+                  title="Download Document"
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+              )}
+              {onDeleteDocument && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={e => {
+                    e.stopPropagation();
+                    onDeleteDocument(doc.external_id);
+                  }}
+                  className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                  title="Delete Document"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
         ))}
 

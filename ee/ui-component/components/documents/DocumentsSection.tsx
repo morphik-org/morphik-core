@@ -86,6 +86,7 @@ interface DocumentsSectionProps {
   onFolderClick?: (folderName: string | null) => void;
   onFolderCreate?: (folderName: string) => void;
   onRefresh?: () => void;
+  onViewInPDFViewer?: (documentId: string) => void; // Add PDF viewer navigation
 }
 
 // Debug render counter
@@ -103,6 +104,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   onFolderClick,
   onFolderCreate,
   onRefresh,
+  onViewInPDFViewer,
 }) => {
   // Increment render counter for debugging
   renderCount++;
@@ -525,6 +527,62 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     setItemToDelete(documentId);
     setItemsToDeleteCount(0); // Ensure this is 0 for single delete scenario
     setShowDeleteModal(true);
+  };
+
+  // Handle document download
+  const handleDownloadDocument = async (documentId: string) => {
+    try {
+      // Get the download URL for this document
+      const downloadUrlEndpoint = `${effectiveApiUrl}/documents/${documentId}/download_url`;
+      console.log("Fetching download URL from:", downloadUrlEndpoint);
+
+      const downloadUrlResponse = await fetch(downloadUrlEndpoint, {
+        headers: {
+          ...(authToken && { Authorization: `Bearer ${authToken}` }),
+        },
+      });
+
+      if (!downloadUrlResponse.ok) {
+        console.error("Download URL request failed:", downloadUrlResponse.status, downloadUrlResponse.statusText);
+        throw new Error("Failed to get download URL");
+      }
+
+      const downloadData = await downloadUrlResponse.json();
+      console.log("Download URL response:", downloadData);
+
+      let downloadUrl = downloadData.download_url;
+
+      // Check if it's a local file URL (file://) which browsers can't access
+      if (downloadUrl.startsWith("file://")) {
+        console.log("Detected file:// URL, switching to direct file endpoint");
+        // Use our direct file endpoint instead for local storage
+        downloadUrl = `${effectiveApiUrl}/documents/${documentId}/file`;
+      }
+
+      console.log("Final download URL:", downloadUrl);
+
+      // Create a temporary link to trigger download
+      const link = window.document.createElement("a");
+      link.href = downloadUrl;
+
+      // Get the document name for the download
+      const docToDownload = documents.find(doc => doc.external_id === documentId);
+      if (docToDownload?.filename) {
+        link.download = docToDownload.filename;
+      }
+
+      window.document.body.appendChild(link);
+      link.click();
+      window.document.body.removeChild(link);
+
+      console.log("Download initiated successfully");
+    } catch (error) {
+      console.error("Error downloading document:", error);
+      showAlert("Error downloading document. Please try again.", {
+        type: "error",
+        duration: 3000,
+      });
+    }
   };
 
   const confirmDeleteSingleDocument = async () => {
@@ -1289,6 +1347,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                   apiBaseUrl={effectiveApiUrl}
                   authToken={authToken}
                   selectedFolder={selectedFolder}
+                  onViewInPDFViewer={onViewInPDFViewer}
+                  onDownloadDocument={handleDownloadDocument}
+                  onDeleteDocument={handleDeleteDocument}
                 />
               </div>
             )}
@@ -1307,6 +1368,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 refreshFolders={fetchFolders}
                 loading={loading}
                 onClose={() => setSelectedDocument(null)}
+                onViewInPDFViewer={onViewInPDFViewer}
               />
             </div>
           )}

@@ -64,6 +64,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
 
   const [activeSection, setActiveSection] = useState<SectionType>(initialSection as SectionType);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [pdfViewerDocumentId, setPdfViewerDocumentId] = useState<string | undefined>(undefined);
 
   // Extract auth token and API URL from connection URI if provided
   const authToken = currentUri ? extractTokenFromUri(currentUri) : null;
@@ -84,6 +85,19 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
       setActiveSection(section as SectionType); // Use SectionType here
     }
   };
+
+  // Handle navigation to PDF viewer with specific document
+  const handleViewInPDFViewer = (documentId: string) => {
+    setPdfViewerDocumentId(documentId);
+    setActiveSection("pdf");
+  };
+
+  // Clear PDF viewer document ID when switching away from PDF section
+  useEffect(() => {
+    if (activeSection !== "pdf") {
+      setPdfViewerDocumentId(undefined);
+    }
+  }, [activeSection]);
 
   return (
     <PDFAPIService>
@@ -114,6 +128,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
               onFolderCreate={onFolderCreate}
               onFolderClick={onFolderClick}
               onRefresh={undefined}
+              onViewInPDFViewer={handleViewInPDFViewer}
             />
           )}
           {activeSection === "search" && (
@@ -149,7 +164,12 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
             </div>
           )}
           {activeSection === "pdf" && (
-            <PDFViewer key={`pdf-${effectiveApiBaseUrl}`} apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} />
+            <PDFViewer
+              key={`pdf-${effectiveApiBaseUrl}-${pdfViewerDocumentId}`}
+              apiBaseUrl={effectiveApiBaseUrl}
+              authToken={authToken}
+              initialDocumentId={pdfViewerDocumentId}
+            />
           )}
         </main>
       </div>

@@ -22,6 +22,7 @@ interface DocumentDetailProps {
   refreshFolders: () => void;
   loading: boolean;
   onClose: () => void;
+  onViewInPDFViewer?: (documentId: string) => void; // Add navigation callback
 }
 
 const DocumentDetail: React.FC<DocumentDetailProps> = ({
@@ -34,6 +35,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
   refreshFolders,
   loading,
   onClose,
+  onViewInPDFViewer,
 }) => {
   const [isMovingToFolder, setIsMovingToFolder] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -191,6 +193,34 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
               {getStatusBadge(status)}
             </div>
           </div>
+
+          {/* PDF Viewer Button - only show for PDF documents */}
+          {selectedDocument.content_type === "application/pdf" && onViewInPDFViewer && (
+            <div>
+              <Button
+                onClick={() => onViewInPDFViewer(selectedDocument.external_id)}
+                className="w-full"
+                disabled={loading}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="mr-2"
+                >
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                View in PDF Viewer
+              </Button>
+            </div>
+          )}
 
           <div>
             <h3 className="mb-1 font-medium">Folder</h3>

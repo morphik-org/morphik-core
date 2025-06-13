@@ -8,7 +8,6 @@ import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Upload,
   ZoomIn,
   ZoomOut,
   RotateCw,
@@ -44,6 +43,7 @@ import "react-pdf/dist/Page/TextLayer.css";
 interface PDFViewerProps {
   apiBaseUrl?: string;
   authToken?: string | null;
+  initialDocumentId?: string; // Add prop to load a specific document on initialization
 }
 
 interface PDFState {
@@ -119,7 +119,7 @@ interface PDFDocument {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
+export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewerProps) {
   const [pdfState, setPdfState] = useState<PDFState>({
     file: null,
     currentPage: 1,
@@ -130,11 +130,9 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
     controlMode: "manual", // Default to manual control
   });
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
+  const [, setIsLoading] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [zoomBounds, setZoomBounds] = useState<ZoomBounds>({});
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
   // Chat-related state
@@ -355,16 +353,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
       setChatMessages(prev => [...prev, errorMessage]);
       setIsChatLoading(false);
     }
-  }, [
-    chatInput,
-    isChatLoading,
-    apiBaseUrl,
-    authToken,
-    pdfState.file,
-    pdfState.documentName,
-    pdfState.documentId,
-    currentChatId,
-  ]);
+  }, [chatInput, isChatLoading, apiBaseUrl, authToken, pdfState.file, pdfState.documentId, currentChatId]);
 
   // Load chat messages for the current chat session
   const loadChatMessages = useCallback(
@@ -443,61 +432,6 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
     [pdfState.pdfDataUrl]
   );
 
-  // Handle file upload
-  const handleFileUpload = useCallback(async (file: File) => {
-    if (!file || file.type !== "application/pdf") {
-      console.error("Please select a valid PDF file");
-      return;
-    }
-
-    setIsLoading(true);
-
-    // Reset chat state for new PDF
-    setChatMessages([]);
-
-    try {
-      // Create object URL for the PDF
-      const pdfDataUrl = URL.createObjectURL(file);
-
-      setPdfState(prev => ({
-        ...prev,
-        file,
-        pdfDataUrl,
-        currentPage: 1,
-        totalPages: 0, // Will be set in onDocumentLoadSuccess
-        scale: 1.0,
-        rotation: 0,
-      }));
-    } catch (error) {
-      console.error("Error loading PDF:", error);
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Handle drag and drop
-  const handleDrag = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  }, []);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setDragActive(false);
-
-      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        handleFileUpload(e.dataTransfer.files[0]);
-      }
-    },
-    [handleFileUpload]
-  );
-
   // PDF Controls
   const goToPage = useCallback(
     (page: number) => {
@@ -563,7 +497,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
     const aspectRatio = 842 / 595; // Standard A4 aspect ratio
     const basePdfHeight = basePdfWidth * aspectRatio;
     const boundsHeightPixels = relativeHeight * basePdfHeight;
-    const newScale = Math.min(3.0, Math.max(0.5, containerHeight / boundsHeightPixels * 0.9)); // 0.9 for some padding
+    const newScale = Math.min(3.0, Math.max(0.5, (containerHeight / boundsHeightPixels) * 0.9)); // 0.9 for some padding
 
     console.log("Scale calculation:", { containerHeight, basePdfHeight, boundsHeightPixels, newScale });
 
@@ -592,14 +526,15 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
         const containerPadding = 16; // p-4 = 16px
 
         // Center the bounds in the viewport
-        const targetScrollTop = boundsTopPixels + containerPadding - (scrollArea.clientHeight / 2) + (boundsHeightPixels * newScale / 2);
+        const targetScrollTop =
+          boundsTopPixels + containerPadding - scrollArea.clientHeight / 2 + (boundsHeightPixels * newScale) / 2;
 
         console.log("Scroll calculation:", {
           scaledPageHeight,
           boundsTopPixels,
           boundsCenterPixels,
           targetScrollTop,
-          scrollAreaHeight: scrollArea.clientHeight
+          scrollAreaHeight: scrollArea.clientHeight,
         });
 
         scrollArea.scrollTop = Math.max(0, targetScrollTop);
@@ -636,7 +571,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
     // Calculate scale to fit the bounds width in the container
     const containerWidth = container.clientWidth - 32; // Account for padding
     const boundsWidthPixels = relativeWidth * basePdfWidth;
-    const newScale = Math.min(3.0, Math.max(0.5, containerWidth / boundsWidthPixels * 0.9)); // 0.9 for some padding
+    const newScale = Math.min(3.0, Math.max(0.5, (containerWidth / boundsWidthPixels) * 0.9)); // 0.9 for some padding
 
     console.log("Scale calculation:", { containerWidth, basePdfWidth, boundsWidthPixels, newScale });
 
@@ -659,7 +594,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
         // Wait for the PDF to be rendered at the new scale
         setTimeout(() => {
           // Get the PDF page element after scaling
-          const pdfPage = container.querySelector('.react-pdf__Page') as HTMLElement;
+          const pdfPage = container.querySelector(".react-pdf__Page") as HTMLElement;
           if (!pdfPage) {
             console.warn("PDF page not found");
             return;
@@ -678,7 +613,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
           const boundsCenterPixels = relativeCenter * scaledPageWidth;
 
           // Calculate target scroll position to center the bounds
-          const targetScrollLeft = pageOffsetLeft + boundsCenterPixels - (scrollArea.clientWidth / 2);
+          const targetScrollLeft = pageOffsetLeft + boundsCenterPixels - scrollArea.clientWidth / 2;
 
           console.log("Scroll calculation:", {
             scaledPageWidth,
@@ -688,7 +623,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
             targetScrollLeft,
             scrollAreaWidth: scrollArea.clientWidth,
             pageRect,
-            scrollAreaRect
+            scrollAreaRect,
           });
 
           scrollArea.scrollLeft = Math.max(0, targetScrollLeft);
@@ -890,6 +825,33 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
     fetchAvailableDocuments();
   }, [fetchAvailableDocuments]);
 
+  // Load initial document if provided
+  useEffect(() => {
+    if (initialDocumentId && !pdfState.file) {
+      // Find and load the document with the given ID
+      fetchAvailableDocuments().then(() => {
+        // This will be handled in the next useEffect when availableDocuments is updated
+      });
+    }
+  }, [initialDocumentId, pdfState.file, fetchAvailableDocuments]);
+
+  // Handle loading initial document when availableDocuments is populated
+  useEffect(() => {
+    if (initialDocumentId && availableDocuments.length > 0 && !pdfState.file) {
+      const documentToLoad = availableDocuments.find(doc => doc.id === initialDocumentId);
+      if (documentToLoad) {
+        handleDocumentSelect(documentToLoad);
+      }
+    }
+  }, [initialDocumentId, availableDocuments, pdfState.file, handleDocumentSelect]);
+
+  // Load documents when component mounts (for the document list)
+  useEffect(() => {
+    if (!pdfState.file) {
+      fetchAvailableDocuments();
+    }
+  }, [fetchAvailableDocuments, pdfState.file]);
+
   if (!pdfState.file) {
     return (
       <div className="flex h-full flex-col bg-white dark:bg-slate-900">
@@ -914,73 +876,82 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
           </div>
         </div>
 
-        {/* Clean Upload Area */}
-        <div className="flex flex-1 items-center justify-center p-8">
-          <div className="w-full max-w-2xl">
-            <div className="grid gap-6 md:grid-cols-2">
-              {/* Upload New PDF Card */}
-              <Card
-                className={cn(
-                  "border-2 border-dashed p-8 text-center transition-colors",
-                  dragActive
-                    ? "border-slate-400 bg-slate-50 dark:border-slate-500 dark:bg-slate-800"
-                    : "border-slate-300 hover:border-slate-400 dark:border-slate-600 dark:hover:border-slate-500"
-                )}
-                onDragEnter={handleDrag}
-                onDragLeave={handleDrag}
-                onDragOver={handleDrag}
-                onDrop={handleDrop}
-              >
-                <div className="flex flex-col items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-                    <Upload className="h-6 w-6 text-slate-600 dark:text-slate-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100">
-                      {dragActive ? "Drop your PDF here" : "Upload New PDF"}
-                    </h3>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Drag and drop or click to browse</p>
-                  </div>
-                  <Button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isLoading}
-                    className="bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
-                  >
-                    {isLoading ? "Loading..." : "Choose File"}
-                  </Button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="application/pdf"
-                    onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
-                    className="hidden"
-                  />
-                </div>
-              </Card>
-
-              {/* Select Existing Document Card */}
-              <Card className="border-2 border-slate-300 p-8 text-center transition-colors hover:border-slate-400 dark:border-slate-600 dark:hover:border-slate-500">
-                <div className="flex flex-col items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-                    <FolderOpen className="h-6 w-6 text-slate-600 dark:text-slate-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100">Select Existing PDF</h3>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      Choose from previously uploaded documents
-                    </p>
-                  </div>
-                  <Button
-                    onClick={openDocumentSelector}
-                    disabled={isLoading}
-                    variant="outline"
-                    className="border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
-                  >
-                    {isLoadingDocuments ? "Loading..." : "Browse Documents"}
-                  </Button>
-                </div>
-              </Card>
+        {/* Document List Area */}
+        <div className="flex flex-1 flex-col p-8">
+          <div className="mx-auto w-full max-w-4xl">
+            <div className="mb-6 text-center">
+              <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Select a PDF Document</h3>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                Choose from your uploaded PDF documents to view and chat about
+              </p>
             </div>
+
+            {isLoadingDocuments ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent"></div>
+                  <span>Loading documents...</span>
+                </div>
+              </div>
+            ) : availableDocuments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <FileText className="mb-4 h-16 w-16 text-muted-foreground" />
+                <h3 className="mb-2 text-lg font-medium">No PDF documents found</h3>
+                <p className="mb-4 text-sm text-muted-foreground">
+                  Upload some PDF documents in the Documents section first to view them here.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {availableDocuments.map(doc => (
+                  <Card
+                    key={doc.id}
+                    className="cursor-pointer p-6 transition-colors hover:bg-accent"
+                    onClick={() => handleDocumentSelect(doc)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex min-w-0 flex-1 items-start gap-4">
+                        <FileText className="mt-1 h-6 w-6 flex-shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <h4 className="truncate text-lg font-medium">{doc.filename}</h4>
+                          <div className="mt-2 flex items-center gap-6 text-sm text-muted-foreground">
+                            {doc.folder_name && (
+                              <span className="flex items-center gap-1">
+                                <FolderOpen className="h-4 w-4" />
+                                {doc.folder_name}
+                              </span>
+                            )}
+                            {doc.created_at && (
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-4 w-4" />
+                                {new Date(doc.created_at).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-shrink-0 items-center gap-2">
+                        <Badge
+                          variant={
+                            doc.status === "completed"
+                              ? "default"
+                              : doc.status === "processing"
+                                ? "secondary"
+                                : "destructive"
+                          }
+                          className="text-xs"
+                        >
+                          {doc.status === "completed" && <CheckCircle className="mr-1 h-3 w-3" />}
+                          {doc.status === "processing" && <Clock className="mr-1 h-3 w-3" />}
+                          {doc.status === "failed" && <AlertCircle className="mr-1 h-3 w-3" />}
+                          {doc.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1009,16 +980,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
                   <p className="mb-4 text-sm text-muted-foreground">
                     Upload some PDF documents first to see them here.
                   </p>
-                  <Button
-                    onClick={() => {
-                      setIsDocumentSelectorOpen(false);
-                      fileInputRef.current?.click();
-                    }}
-                    variant="outline"
-                  >
-                    <Upload className="mr-2 h-4 w-4" />
-                    Upload New PDF
-                  </Button>
+                  <p className="text-sm text-muted-foreground">Go to the Documents section to upload new PDF files.</p>
                 </div>
               ) : (
                 <ScrollArea className="h-[400px] pr-4">
@@ -1106,7 +1068,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
                     size="icon"
                     onClick={() => {
                       console.log("+ button clicked (empty state), current chatId:", currentChatId);
-                      alert("Please upload a PDF first to start a chat session!");
+                      alert("Please select a PDF document first to start a chat session!");
                     }}
                     title="New Chat Session"
                   >
@@ -1122,7 +1084,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
               <div className="flex flex-1 items-center justify-center p-8">
                 <div className="text-center text-muted-foreground">
                   <MessageSquare className="mx-auto mb-4 h-12 w-12" />
-                  <p>Upload a PDF to start chatting about its content</p>
+                  <p>Select a PDF document to start chatting about its content</p>
                 </div>
               </div>
             </div>
@@ -1150,10 +1112,6 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
             </div>
 
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-                <Upload className="mr-2 h-4 w-4" />
-                Upload New
-              </Button>
               <Button variant="outline" size="sm" onClick={openDocumentSelector}>
                 <FolderOpen className="mr-2 h-4 w-4" />
                 Browse Documents
@@ -1318,15 +1276,6 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
             </div>
           </div>
         </div>
-
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="application/pdf"
-          onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
-          className="hidden"
-        />
       </div>
 
       {/* Chat Sidebar */}
@@ -1418,7 +1367,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
                                   <span className="text-amber-600 dark:text-amber-400">⚡</span>
                                   <div className="flex-1">
                                     <span className="font-medium">Using tools:</span>
-                                    {message.tool_calls.map((tc, idx) => (
+                                    {message.tool_calls.map(tc => (
                                       <div key={tc.id} className="mt-1">
                                         • {tc.function.name}
                                       </div>
