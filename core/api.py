@@ -40,6 +40,7 @@ from core.models.request import (
     UpdateGraphRequest,
 )
 from core.routes.ingest import router as ingest_router
+from core.routes.openai_compat import router as openai_router
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
 
@@ -162,6 +163,9 @@ logger.info("Document service initialized and stored on app.state")
 
 # Register ingest router
 app.include_router(ingest_router)
+
+# Register OpenAI compatibility router
+app.include_router(openai_router)
 
 # Single MorphikAgent instance (tool definitions cached)
 morphik_agent = MorphikAgent(document_service=document_service)
