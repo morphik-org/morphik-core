@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Info, Calendar, Clock } from "lucide-react";
+import { Info, Calendar, Clock, Copy, Check } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Image from "next/image";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
@@ -39,6 +39,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
 }) => {
   const [isMovingToFolder, setIsMovingToFolder] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [copiedDocumentId, setCopiedDocumentId] = useState(false);
 
   if (!selectedDocument) {
     return (
@@ -65,6 +66,17 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
       return date.toLocaleString();
     } catch {
       return dateString;
+    }
+  };
+
+  // Copy document ID to clipboard
+  const copyDocumentId = async () => {
+    try {
+      await navigator.clipboard.writeText(selectedDocument.external_id);
+      setCopiedDocumentId(true);
+      setTimeout(() => setCopiedDocumentId(false), 2000); // Reset after 2 seconds
+    } catch (err) {
+      console.error("Failed to copy document ID:", err);
     }
   };
 
@@ -156,7 +168,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
   return (
     <div className="rounded-lg border">
       <div className="sticky top-0 flex items-center justify-between border-b bg-muted px-4 py-3">
-        <h3 className="text-lg font-semibold">Document Details</h3>
+        <h3 className="text-sm font-semibold">Document Details</h3>
         <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full hover:bg-background/80">
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -265,7 +277,18 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
 
           <div>
             <h3 className="mb-1 font-medium">Document ID</h3>
-            <p className="font-mono text-xs">{selectedDocument.external_id}</p>
+            <button
+              onClick={copyDocumentId}
+              className="group flex items-center gap-2 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
+              title="Click to copy Document ID"
+            >
+              <span>{selectedDocument.external_id}</span>
+              {copiedDocumentId ? (
+                <Check className="h-3 w-3 text-green-500" />
+              ) : (
+                <Copy className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
+              )}
+            </button>
           </div>
 
           {version !== undefined && (
