@@ -21,6 +21,7 @@ from core.services_init import document_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/document", tags=["document"])
+litellm.drop_params = True
 
 
 class DocumentChatRequest(BaseModel):
@@ -154,15 +155,35 @@ async def complete_document_chat(
         async def generate_stream():
             full_response = ""
             conversation_messages = []
-            tool_executions = []  # Track tool executions for history
+            all_messages_for_history = []  # Track all messages in order for history
 
             try:
-                # Prepare initial messages for LiteLLM (filter out timestamp for API)
-                conversation_messages = [
-                    {"role": msg["role"], "content": msg["content"]}
-                    for msg in history
-                    if msg["role"] in ["user", "assistant", "system"]  # Include system messages
-                ]
+                # Prepare initial messages for LiteLLM
+                conversation_messages = []
+
+                for msg in history:
+                    if msg["role"] == "user":
+                        # User messages - just copy role and content
+                        conversation_messages.append({"role": msg["role"], "content": msg["content"]})
+                    elif msg["role"] == "assistant":
+                        # Assistant messages - include tool_calls if present
+                        assistant_msg = {"role": msg["role"], "content": msg.get("content", "")}
+                        if "tool_calls" in msg and msg["tool_calls"]:
+                            assistant_msg["tool_calls"] = msg["tool_calls"]
+                        conversation_messages.append(assistant_msg)
+                    elif msg["role"] == "tool":
+                        # Tool response messages - include all required fields
+                        conversation_messages.append(
+                            {
+                                "role": msg["role"],
+                                "tool_call_id": msg["tool_call_id"],
+                                "name": msg["name"],
+                                "content": msg["content"],
+                            }
+                        )
+                    elif msg["role"] == "system":
+                        # System messages
+                        conversation_messages.append({"role": msg["role"], "content": msg["content"]})
 
                 # Add system message if none exists
                 if not conversation_messages or conversation_messages[0]["role"] != "system":
@@ -201,6 +222,8 @@ async def complete_document_chat(
                         "stream": False,  # Use non-streaming for tool calls
                         "num_retries": 3,
                     }
+                    if str(model_params["model"]).startswith("gemini"):
+                        model_params["api_key"] = settings.GEMINI_API_KEY
 
                     # Add any additional model config parameters
                     for key, value in model_config.items():
@@ -244,20 +267,38 @@ async def complete_document_chat(
                                 # Small delay to make streaming visible
                                 await asyncio.sleep(0.01)
 
+                        # Store the assistant message with tool calls in history
+                        assistant_message_with_tools = {
+                            "role": "assistant",
+                            "content": response_message.content or "",
+                            "tool_calls": [
+                                {
+                                    "id": tc.id,
+                                    "type": tc.type,
+                                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                                }
+                                for tc in response_message.tool_calls
+                            ],
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        }
+                        all_messages_for_history.append(assistant_message_with_tools)
+
                         # Execute each tool call
                         for tool_call in response_message.tool_calls:
                             # Execute the tool and get result
                             tool_result = await execute_pdf_tool(pdf_viewer, tool_call)
 
-                            # Track tool execution for history
-                            tool_execution = {
-                                "role": "system",
-                                "content": f"🔧 Executed {tool_call.function.name}: {tool_result}",
+                            # Add tool response to history in native format
+                            tool_response = {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": tool_call.function.name,
+                                "content": tool_result,
                                 "timestamp": datetime.now(UTC).isoformat(),
                             }
-                            tool_executions.append(tool_execution)
+                            all_messages_for_history.append(tool_response)
 
-                            # Add tool response to conversation
+                            # Add tool response to conversation (without timestamp)
                             conversation_messages.append(
                                 {
                                     "tool_call_id": tool_call.id,
@@ -301,6 +342,9 @@ async def complete_document_chat(
                         if response_message.content:
                             # Stream the final response character by character for better UX
                             content = response_message.content
+
+                            # Don't add to history yet, we'll add the complete response at the end
+
                             full_response += content
 
                             # Stream in chunks for better user experience
@@ -320,19 +364,23 @@ async def complete_document_chat(
                     full_response = fallback_message
                     yield f"data: {json.dumps({'content': fallback_message})}\n\n"
 
-                # Add assistant message to history
-                assistant_message = {
-                    "role": "assistant",
-                    "content": full_response,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                }
+                # Add the final assistant message if we have a response without tool calls
+                # or if this is a continuation after tool calls
+                if full_response and not (
+                    all_messages_for_history
+                    and all_messages_for_history[-1]["role"] == "assistant"
+                    and all_messages_for_history[-1].get("content") == full_response
+                ):
+                    final_assistant_message = {
+                        "role": "assistant",
+                        "content": full_response,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                    all_messages_for_history.append(final_assistant_message)
 
-                # Add tool executions to history (before assistant message)
-                for tool_execution in tool_executions:
-                    history.append(tool_execution)
-
-                # Add assistant message to history
-                history.append(assistant_message)
+                # Add all messages to history in order
+                for msg in all_messages_for_history:
+                    history.append(msg)
 
                 # Store updated history in Redis
                 await redis.set(history_key, json.dumps(history))

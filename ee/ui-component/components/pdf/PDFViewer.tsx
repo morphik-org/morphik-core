@@ -67,9 +67,21 @@ interface ZoomBounds {
 
 interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "tool";
   content: string;
   timestamp: Date;
+  // For assistant messages with tool calls
+  tool_calls?: Array<{
+    id: string;
+    type: string;
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
+  // For tool response messages
+  tool_call_id?: string;
+  name?: string;
 }
 
 interface AgentData {
@@ -79,10 +91,22 @@ interface AgentData {
 }
 
 interface ApiChatMessage {
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "tool";
   content: string;
   timestamp: string;
   agent_data?: AgentData;
+  // For assistant messages with tool calls
+  tool_calls?: Array<{
+    id: string;
+    type: string;
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
+  // For tool response messages
+  tool_call_id?: string;
+  name?: string;
 }
 
 interface PDFDocument {
@@ -231,9 +255,9 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
         throw new Error("No response body reader available");
       }
 
+      let currentAssistantMessage: ChatMessage | null = null;
       let assistantContent = "";
-      let assistantMessage: ChatMessage | null = null;
-      const toolMessages: ChatMessage[] = []; // Track tool messages separately
+      let messageIdCounter = 0;
 
       const decoder = new TextDecoder();
 
@@ -251,21 +275,21 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
               const data = JSON.parse(line.slice(6));
 
               if (data.content) {
-                assistantContent += data.content;
-
-                // Create assistant message if it doesn't exist yet
-                if (!assistantMessage) {
-                  assistantMessage = {
-                    id: `assistant-${Date.now()}`,
+                // If we don't have a current assistant message, create one
+                if (!currentAssistantMessage) {
+                  currentAssistantMessage = {
+                    id: `assistant-${Date.now()}-${messageIdCounter++}`,
                     role: "assistant",
-                    content: assistantContent,
+                    content: data.content,
                     timestamp: new Date(),
                   };
-                  setChatMessages(prev => [...prev, assistantMessage!]);
+                  assistantContent = data.content;
+                  setChatMessages(prev => [...prev, currentAssistantMessage!]);
                 } else {
-                  // Update existing assistant message
+                  // Update the current assistant message
+                  assistantContent += data.content;
                   setChatMessages(prev => {
-                    const messageIndex = prev.findIndex(msg => msg.id === assistantMessage!.id);
+                    const messageIndex = prev.findIndex(msg => msg.id === currentAssistantMessage!.id);
                     if (messageIndex !== -1) {
                       const newMessages = [...prev];
                       newMessages[messageIndex] = { ...newMessages[messageIndex], content: assistantContent };
@@ -277,19 +301,27 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
               }
 
               if (data.tool_call && data.result) {
+                // If we have a current assistant message with content, finalize it
+                if (currentAssistantMessage && assistantContent) {
+                  currentAssistantMessage = null;
+                  assistantContent = "";
+                }
+
                 // Create and add tool message
                 const toolMessage: ChatMessage = {
-                  id: `tool-${Date.now()}-${Math.random()}`,
-                  role: "system",
-                  content: `🔧 Executed ${data.tool_call}: ${data.result}`,
+                  id: `tool-${Date.now()}-${messageIdCounter++}`,
+                  role: "tool",
+                  content: data.result,
+                  name: data.tool_call,
                   timestamp: new Date(),
                 };
 
-                // Track tool message
-                toolMessages.push(toolMessage);
-
                 // Add tool message to chat
                 setChatMessages(prev => [...prev, toolMessage]);
+
+                // Reset for potential next assistant message
+                currentAssistantMessage = null;
+                assistantContent = "";
               }
 
               if (data.done) {
@@ -358,6 +390,9 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
               role: msg.role,
               content: msg.content,
               timestamp: new Date(msg.timestamp),
+              tool_calls: msg.tool_calls,
+              tool_call_id: msg.tool_call_id,
+              name: msg.name,
             }));
             setChatMessages(formattedMessages);
           } else {
@@ -520,17 +555,21 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
 
     console.log("Relative coords:", { relativeTop, relativeBottom, relativeHeight, relativeCenter });
 
-    // Calculate scale to fit the bounds height in the container
-    const containerHeight = container.clientHeight;
-    const pdfPageHeight = 842; // Standard PDF page height (A4 aspect ratio)
-    const boundsHeightPixels = relativeHeight * pdfPageHeight;
-    const newScale = Math.max(0.1, containerHeight / boundsHeightPixels);
+    // Base PDF width that we use for scaling
+    const basePdfWidth = 600;
 
-    console.log("Scale calculation:", { containerHeight, pdfPageHeight, boundsHeightPixels, newScale });
+    // Calculate scale to fit the bounds height in the container
+    const containerHeight = container.clientHeight - 32; // Account for padding
+    const aspectRatio = 842 / 595; // Standard A4 aspect ratio
+    const basePdfHeight = basePdfWidth * aspectRatio;
+    const boundsHeightPixels = relativeHeight * basePdfHeight;
+    const newScale = Math.min(3.0, Math.max(0.5, containerHeight / boundsHeightPixels * 0.9)); // 0.9 for some padding
+
+    console.log("Scale calculation:", { containerHeight, basePdfHeight, boundsHeightPixels, newScale });
 
     setPdfState(prev => ({ ...prev, scale: newScale }));
 
-    // Find the scroll container - try multiple selectors
+    // Find the scroll container and scroll to the bounds
     setTimeout(() => {
       const scrollContainers = [
         container.closest("[data-radix-scroll-area-viewport]"),
@@ -544,26 +583,36 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
       if (scrollContainers.length > 0) {
         const scrollArea = scrollContainers[0] as HTMLElement;
 
-        // Calculate scroll position to center the bounds
-        const scaledPageHeight = pdfPageHeight * newScale;
-        const centerPositionPixels = relativeCenter * scaledPageHeight;
-        const targetScrollTop = centerPositionPixels - containerHeight / 2;
+        // Calculate the position of the bounds within the scaled page
+        const scaledPageHeight = basePdfHeight * newScale;
+        const boundsTopPixels = relativeTop * scaledPageHeight;
+        const boundsCenterPixels = relativeCenter * scaledPageHeight;
 
-        console.log("Scroll calculation:", { scaledPageHeight, centerPositionPixels, targetScrollTop });
-        console.log("Current scroll top:", scrollArea.scrollTop);
+        // Account for padding
+        const containerPadding = 16; // p-4 = 16px
+
+        // Center the bounds in the viewport
+        const targetScrollTop = boundsTopPixels + containerPadding - (scrollArea.clientHeight / 2) + (boundsHeightPixels * newScale / 2);
+
+        console.log("Scroll calculation:", {
+          scaledPageHeight,
+          boundsTopPixels,
+          boundsCenterPixels,
+          targetScrollTop,
+          scrollAreaHeight: scrollArea.clientHeight
+        });
 
         scrollArea.scrollTop = Math.max(0, targetScrollTop);
-
         console.log("New scroll top:", scrollArea.scrollTop);
       } else {
         console.warn("No scroll container found");
       }
-    }, 100);
+    }, 200); // Give time for the scale to be applied
 
     setZoomBounds(prev => ({
       ...prev,
-      y: relativeTop * pdfPageHeight,
-      height: relativeHeight * pdfPageHeight,
+      y: relativeTop * basePdfHeight,
+      height: relativeHeight * basePdfHeight,
     }));
   }, []);
 
@@ -581,17 +630,19 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
 
     console.log("Relative coords:", { relativeLeft, relativeRight, relativeWidth, relativeCenter });
 
-    // Calculate scale to fit the bounds width in the container
-    const containerWidth = container.clientWidth;
-    const pdfPageWidth = 595; // Standard PDF page width (A4 aspect ratio)
-    const boundsWidthPixels = relativeWidth * pdfPageWidth;
-    const newScale = Math.max(0.1, containerWidth / boundsWidthPixels);
+    // Base PDF width that we use for scaling
+    const basePdfWidth = 600;
 
-    console.log("Scale calculation:", { containerWidth, pdfPageWidth, boundsWidthPixels, newScale });
+    // Calculate scale to fit the bounds width in the container
+    const containerWidth = container.clientWidth - 32; // Account for padding
+    const boundsWidthPixels = relativeWidth * basePdfWidth;
+    const newScale = Math.min(3.0, Math.max(0.5, containerWidth / boundsWidthPixels * 0.9)); // 0.9 for some padding
+
+    console.log("Scale calculation:", { containerWidth, basePdfWidth, boundsWidthPixels, newScale });
 
     setPdfState(prev => ({ ...prev, scale: newScale }));
 
-    // Find the scroll container - try multiple selectors
+    // Find the scroll container and scroll to the bounds
     setTimeout(() => {
       const scrollContainers = [
         container.closest("[data-radix-scroll-area-viewport]"),
@@ -605,26 +656,53 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
       if (scrollContainers.length > 0) {
         const scrollArea = scrollContainers[0] as HTMLElement;
 
-        // Calculate scroll position to center the bounds
-        const scaledPageWidth = pdfPageWidth * newScale;
-        const centerPositionPixels = relativeCenter * scaledPageWidth;
-        const targetScrollLeft = centerPositionPixels - containerWidth / 2;
+        // Wait for the PDF to be rendered at the new scale
+        setTimeout(() => {
+          // Get the PDF page element after scaling
+          const pdfPage = container.querySelector('.react-pdf__Page') as HTMLElement;
+          if (!pdfPage) {
+            console.warn("PDF page not found");
+            return;
+          }
 
-        console.log("Scroll calculation:", { scaledPageWidth, centerPositionPixels, targetScrollLeft });
-        console.log("Current scroll left:", scrollArea.scrollLeft);
+          // Get the actual position of the PDF page
+          const pageRect = pdfPage.getBoundingClientRect();
+          const scrollAreaRect = scrollArea.getBoundingClientRect();
 
-        scrollArea.scrollLeft = Math.max(0, targetScrollLeft);
+          // Calculate the horizontal offset of the PDF page relative to scroll area
+          const pageOffsetLeft = pageRect.left - scrollAreaRect.left + scrollArea.scrollLeft;
 
-        console.log("New scroll left:", scrollArea.scrollLeft);
+          // Calculate the position of the bounds within the page
+          const scaledPageWidth = basePdfWidth * newScale;
+          const boundsLeftPixels = relativeLeft * scaledPageWidth;
+          const boundsCenterPixels = relativeCenter * scaledPageWidth;
+
+          // Calculate target scroll position to center the bounds
+          const targetScrollLeft = pageOffsetLeft + boundsCenterPixels - (scrollArea.clientWidth / 2);
+
+          console.log("Scroll calculation:", {
+            scaledPageWidth,
+            boundsLeftPixels,
+            boundsCenterPixels,
+            pageOffsetLeft,
+            targetScrollLeft,
+            scrollAreaWidth: scrollArea.clientWidth,
+            pageRect,
+            scrollAreaRect
+          });
+
+          scrollArea.scrollLeft = Math.max(0, targetScrollLeft);
+          console.log("New scroll left:", scrollArea.scrollLeft);
+        }, 100); // Additional delay to ensure PDF is rendered
       } else {
         console.warn("No scroll container found");
       }
-    }, 100);
+    }, 200); // Give time for the scale to be applied
 
     setZoomBounds(prev => ({
       ...prev,
-      x: relativeLeft * pdfPageWidth,
-      width: relativeWidth * pdfPageWidth,
+      x: relativeLeft * basePdfWidth,
+      width: relativeWidth * basePdfWidth,
     }));
   }, []);
 
@@ -1104,8 +1182,8 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
               ref={pdfContainerRef}
               className="flex justify-center p-4 pb-24"
               style={{
-                transform: `scale(${pdfState.scale}) rotate(${pdfState.rotation}deg)`,
-                transformOrigin: "center top",
+                transform: `rotate(${pdfState.rotation}deg)`,
+                transformOrigin: "center center",
               }}
             >
               {pdfState.pdfDataUrl && (
@@ -1145,7 +1223,7 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
                           <div className="text-red-500 dark:text-red-400">Error loading page</div>
                         </div>
                       }
-                      width={600}
+                      width={600 * pdfState.scale}
                       renderTextLayer={true}
                       renderAnnotationLayer={true}
                     />
@@ -1320,35 +1398,65 @@ export function PDFViewer({ apiBaseUrl, authToken }: PDFViewerProps) {
                               {message.content}
                             </div>
                           </div>
+                        ) : message.role === "tool" ? (
+                          <div className="w-full">
+                            <div className="w-full rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
+                              <div className="flex items-start gap-2">
+                                <span className="text-green-600 dark:text-green-400">🔧</span>
+                                <div className="flex-1">
+                                  <span className="font-medium">{message.name}:</span> {message.content}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         ) : (
                           <div className="w-full text-sm">
-                            <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
-                              <ReactMarkdown
-                                components={{
-                                  p: ({ children }) => (
-                                    <p className="mb-4 text-sm leading-relaxed last:mb-0">{children}</p>
-                                  ),
-                                  strong: ({ children }) => (
-                                    <strong className="text-sm font-semibold">{children}</strong>
-                                  ),
-                                  ul: ({ children }) => (
-                                    <ul className="mb-4 list-disc space-y-1 pl-6 text-sm">{children}</ul>
-                                  ),
-                                  ol: ({ children }) => (
-                                    <ol className="mb-4 list-decimal space-y-1 pl-6 text-sm">{children}</ol>
-                                  ),
-                                  li: ({ children }) => <li className="text-sm leading-relaxed">{children}</li>,
-                                  h1: ({ children }) => <h1 className="mb-3 text-base font-semibold">{children}</h1>,
-                                  h2: ({ children }) => <h2 className="mb-2 text-sm font-semibold">{children}</h2>,
-                                  h3: ({ children }) => <h3 className="mb-2 text-sm font-semibold">{children}</h3>,
-                                  code: ({ children }) => (
-                                    <code className="rounded bg-muted px-1 py-0.5 text-xs">{children}</code>
-                                  ),
-                                }}
-                              >
-                                {message.content}
-                              </ReactMarkdown>
-                            </div>
+                            {/* Show tool calls if present */}
+                            {message.tool_calls && message.tool_calls.length > 0 && (
+                              <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                                <div className="flex items-start gap-2">
+                                  <span className="text-amber-600 dark:text-amber-400">⚡</span>
+                                  <div className="flex-1">
+                                    <span className="font-medium">Using tools:</span>
+                                    {message.tool_calls.map((tc, idx) => (
+                                      <div key={tc.id} className="mt-1">
+                                        • {tc.function.name}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {/* Show assistant content if present */}
+                            {message.content && (
+                              <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
+                                <ReactMarkdown
+                                  components={{
+                                    p: ({ children }) => (
+                                      <p className="mb-4 text-sm leading-relaxed last:mb-0">{children}</p>
+                                    ),
+                                    strong: ({ children }) => (
+                                      <strong className="text-sm font-semibold">{children}</strong>
+                                    ),
+                                    ul: ({ children }) => (
+                                      <ul className="mb-4 list-disc space-y-1 pl-6 text-sm">{children}</ul>
+                                    ),
+                                    ol: ({ children }) => (
+                                      <ol className="mb-4 list-decimal space-y-1 pl-6 text-sm">{children}</ol>
+                                    ),
+                                    li: ({ children }) => <li className="text-sm leading-relaxed">{children}</li>,
+                                    h1: ({ children }) => <h1 className="mb-3 text-base font-semibold">{children}</h1>,
+                                    h2: ({ children }) => <h2 className="mb-2 text-sm font-semibold">{children}</h2>,
+                                    h3: ({ children }) => <h3 className="mb-2 text-sm font-semibold">{children}</h3>,
+                                    code: ({ children }) => (
+                                      <code className="rounded bg-muted px-1 py-0.5 text-xs">{children}</code>
+                                    ),
+                                  }}
+                                >
+                                  {message.content}
+                                </ReactMarkdown>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
