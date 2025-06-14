@@ -99,7 +99,7 @@ export function PreviewMessage({ message }: Pick<MessageProps, "message">) {
   const sources = message.experimental_customData?.sources;
 
   return (
-    <div className="group relative flex px-4 py-3">
+    <div className="group relative flex  py-3">
       <div className={`w-full`}>
         <div
           className={`mx-auto flex w-full max-w-4xl flex-col gap-4 ${message.role === "user" ? "items-end" : "items-start"}`}
