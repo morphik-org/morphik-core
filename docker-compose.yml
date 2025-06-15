@@ -13,6 +13,20 @@ services:
       - ./morphik.toml:/morphik.toml
     <<: *ollama-check
 
+  ui:
+    build:
+      context: ./ee/ui-component
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://morphik:8000
+    depends_on:
+      morphik:
+        condition: service_started
+    networks:
+      - morphik-network
+
   morphik:
     build: .
     ports:
@@ -104,7 +118,7 @@ services:
       - POSTGRES_DB=morphik
       - PGDATA=/var/lib/postgresql/data/pgdata
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
