@@ -118,7 +118,7 @@ services:
       - POSTGRES_DB=morphik
       - PGDATA=/var/lib/postgresql/data/pgdata
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
