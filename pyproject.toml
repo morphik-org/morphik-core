@@ -58,7 +58,7 @@ dependencies = [
     "transformers==4.51.3",
     "twine>=6.1.0",
     "ty>=0.0.1a6",
-    "unstructured[pdf]>=0.17.2",
+    "unstructured[pdf,docx,pptx,xlsx]>=0.17.2",
     "uvicorn>=0.34.2",
 ]
 

@@ -79,6 +79,7 @@ RUN apt-get update && apt-get install -y \
     cmake \
     python3-dev \
     git \
+    libreoffice-nogui \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the virtual environment from the builder stage

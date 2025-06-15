@@ -159,6 +159,9 @@ class DocumentService:
 
         # MultiVectorStore initialization is now handled in the FastAPI startup event
         # so we don't need to initialize it here again
+        
+        # Check soffice availability on initialization
+        self._check_soffice_availability()
 
         # Cache-related data structures
         # Maps cache name to active cache object
@@ -1157,6 +1160,92 @@ class DocumentService:
 
         return doc
 
+    def _check_soffice_availability(self):
+        """Check if soffice (LibreOffice) is available for document conversion."""
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["soffice", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                logger.info(f"LibreOffice detected: {result.stdout.strip()}")
+            else:
+                logger.warning(
+                    "LibreOffice (soffice) not found or not working properly. "
+                    "Office document conversion (DOCX, PPTX) will fall back to text extraction."
+                )
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
+            logger.warning(
+                f"LibreOffice (soffice) not available: {str(e)}. "
+                "Office document conversion (DOCX, PPTX) will fall back to text extraction."
+            )
+
+    def _convert_office_to_pdf(self, file_content: bytes, file_extension: str) -> Optional[bytes]:
+        """Convert Office documents to PDF using LibreOffice.
+        
+        Args:
+            file_content: The office document content
+            file_extension: File extension (e.g., '.docx', '.pptx')
+            
+        Returns:
+            PDF content as bytes, or None if conversion fails
+        """
+        with tempfile.NamedTemporaryFile(suffix=file_extension, delete=False) as temp_input:
+            temp_input.write(file_content)
+            temp_input_path = temp_input.name
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf:
+            temp_pdf_path = temp_pdf.name
+
+        try:
+            import subprocess
+
+            # Get the base filename without extension
+            base_filename = os.path.splitext(os.path.basename(temp_input_path))[0]
+            output_dir = os.path.dirname(temp_pdf_path)
+            expected_pdf_path = os.path.join(output_dir, f"{base_filename}.pdf")
+
+            result = subprocess.run(
+                [
+                    "soffice",
+                    "--headless",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    output_dir,
+                    temp_input_path,
+                ],
+                capture_output=True,
+                text=True,
+            )
+
+            if result.returncode != 0:
+                logger.error(f"Failed to convert {file_extension} to PDF: {result.stderr}")
+                return None
+
+            # LibreOffice creates the PDF with the same base name in the output directory
+            if not os.path.exists(expected_pdf_path) or os.path.getsize(expected_pdf_path) == 0:
+                logger.error(f"Generated PDF is empty or doesn't exist at expected path: {expected_pdf_path}")
+                return None
+
+            # Read the PDF content
+            with open(expected_pdf_path, "rb") as pdf_file:
+                return pdf_file.read()
+                
+        except Exception as e:
+            logger.error(f"Error converting {file_extension} document: {str(e)}")
+            return None
+        finally:
+            # Clean up temporary files
+            for path in [temp_input_path, temp_pdf_path]:
+                if os.path.exists(path):
+                    os.unlink(path)
+            if 'expected_pdf_path' in locals() and os.path.exists(expected_pdf_path) and expected_pdf_path != temp_pdf_path:
+                os.unlink(expected_pdf_path)
+
     def img_to_base64_str(self, img: Image):
         buffered = BytesIO()
         img.save(buffered, format="PNG")
@@ -1229,115 +1318,109 @@ class DocumentService:
                         Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
                         for chunk in chunks
                     ]
-
-                # Convert Word document to PDF first
-                with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as temp_docx:
-                    temp_docx.write(file_content)
-                    temp_docx_path = temp_docx.name
-
-                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf:
-                    temp_pdf_path = temp_pdf.name
-
-                try:
-                    # Convert Word to PDF
-                    import subprocess
-
-                    # Get the base filename without extension
-                    base_filename = os.path.splitext(os.path.basename(temp_docx_path))[0]
-                    output_dir = os.path.dirname(temp_pdf_path)
-                    expected_pdf_path = os.path.join(output_dir, f"{base_filename}.pdf")
-
-                    result = subprocess.run(
-                        [
-                            "soffice",
-                            "--headless",
-                            "--convert-to",
-                            "pdf",
-                            "--outdir",
-                            output_dir,
-                            temp_docx_path,
-                        ],
-                        capture_output=True,
-                        text=True,
-                    )
-
-                    if result.returncode != 0:
-                        logger.error(f"Failed to convert Word to PDF: {result.stderr}")
-                        return [
-                            Chunk(
-                                content=chunk.content,
-                                metadata=(chunk.metadata | {"is_image": False}),
-                            )
-                            for chunk in chunks
-                        ]
-
-                    # LibreOffice creates the PDF with the same base name in the output directory
-                    # Check if the expected PDF file exists
-                    if not os.path.exists(expected_pdf_path) or os.path.getsize(expected_pdf_path) == 0:
-                        logger.error(f"Generated PDF is empty or doesn't exist at expected path: {expected_pdf_path}")
-                        return [
-                            Chunk(
-                                content=chunk.content,
-                                metadata=(chunk.metadata | {"is_image": False}),
-                            )
-                            for chunk in chunks
-                        ]
-
-                    # Now process the PDF using the correct path
-                    with open(expected_pdf_path, "rb") as pdf_file:
-                        pdf_content = pdf_file.read()
-
-                    try:
-                        images = pdf2image.convert_from_bytes(pdf_content)
-                        if not images:
-                            logger.warning("No images extracted from PDF")
-                            return [
-                                Chunk(
-                                    content=chunk.content,
-                                    metadata=(chunk.metadata | {"is_image": False}),
-                                )
-                                for chunk in chunks
-                            ]
-
-                        images_b64 = [self.img_to_base64_str(image) for image in images]
-                        return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
-                    except Exception as pdf_error:
-                        logger.error(f"Error converting PDF to images: {str(pdf_error)}")
-                        return [
-                            Chunk(
-                                content=chunk.content,
-                                metadata=(chunk.metadata | {"is_image": False}),
-                            )
-                            for chunk in chunks
-                        ]
-                except Exception as e:
-                    logger.error(f"Error processing Word document: {str(e)}")
+                
+                # Convert to PDF using helper method
+                pdf_content = self._convert_office_to_pdf(file_content, ".docx")
+                if not pdf_content:
+                    logger.warning("Failed to convert Word document to PDF, falling back to text")
                     return [
                         Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
                         for chunk in chunks
                     ]
-                finally:
-                    # Clean up temporary files
-                    if os.path.exists(temp_docx_path):
-                        os.unlink(temp_docx_path)
-                    if os.path.exists(temp_pdf_path):
-                        os.unlink(temp_pdf_path)
-                    # Also clean up the expected PDF path if it exists and is different from temp_pdf_path
-                    if (
-                        "expected_pdf_path" in locals()
-                        and os.path.exists(expected_pdf_path)
-                        and expected_pdf_path != temp_pdf_path
-                    ):
-                        os.unlink(expected_pdf_path)
+                
+                # Process the PDF
+                try:
+                    images = pdf2image.convert_from_bytes(pdf_content)
+                    if not images:
+                        logger.warning("No images extracted from PDF")
+                        return [
+                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            for chunk in chunks
+                        ]
+                    
+                    images_b64 = [self.img_to_base64_str(image) for image in images]
+                    return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                except Exception as e:
+                    logger.error(f"Error converting PDF to images: {str(e)}")
+                    return [
+                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        for chunk in chunks
+                    ]
+                    
+            case "application/vnd.openxmlformats-officedocument.presentationml.presentation" | "application/vnd.ms-powerpoint":
+                logger.info("Working with PowerPoint presentation!")
+                if not file_content or len(file_content) == 0:
+                    logger.error("PowerPoint document content is empty")
+                    return [
+                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        for chunk in chunks
+                    ]
+                
+                # Convert to PDF using helper method
+                pdf_content = self._convert_office_to_pdf(file_content, ".pptx")
+                if not pdf_content:
+                    logger.warning("Failed to convert PowerPoint to PDF, falling back to text")
+                    return [
+                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        for chunk in chunks
+                    ]
+                
+                # Process the PDF
+                try:
+                    images = pdf2image.convert_from_bytes(pdf_content)
+                    if not images:
+                        logger.warning("No images extracted from PDF")
+                        return [
+                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            for chunk in chunks
+                        ]
+                    
+                    images_b64 = [self.img_to_base64_str(image) for image in images]
+                    return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                except Exception as e:
+                    logger.error(f"Error converting PDF to images: {str(e)}")
+                    return [
+                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        for chunk in chunks
+                    ]
+                    
+            case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" | "application/vnd.ms-excel":
+                logger.info("Working with Excel spreadsheet!")
+                if not file_content or len(file_content) == 0:
+                    logger.error("Excel document content is empty")
+                    return [
+                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        for chunk in chunks
+                    ]
+                
+                # Convert to PDF using helper method
+                pdf_content = self._convert_office_to_pdf(file_content, ".xlsx")
+                if not pdf_content:
+                    logger.warning("Failed to convert Excel to PDF, falling back to text")
+                    return [
+                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        for chunk in chunks
+                    ]
+                
+                # Process the PDF
+                try:
+                    images = pdf2image.convert_from_bytes(pdf_content)
+                    if not images:
+                        logger.warning("No images extracted from PDF")
+                        return [
+                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            for chunk in chunks
+                        ]
+                    
+                    images_b64 = [self.img_to_base64_str(image) for image in images]
+                    return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                except Exception as e:
+                    logger.error(f"Error converting PDF to images: {str(e)}")
+                    return [
+                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        for chunk in chunks
+                    ]
 
-            # case filetype.get_type(ext="txt"):
-            #     logger.info(f"Found text input: chunks for multivector embedding")
-            #     return chunks.copy()
-            # TODO: Add support for office documents
-            # case document.Xls | document.Xlsx | document.Ods |document.Odp:
-            #     logger.warning(f"Colpali is not supported for file type {file_type.mime} - skipping")
-            # case file_type if file_type in DOCUMENT:
-            #     pass
             case _:
                 logger.warning(f"Colpali is not supported for file type {file_type.mime} - skipping")
                 return [
