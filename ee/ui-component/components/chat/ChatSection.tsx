@@ -481,7 +481,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
               </div>
             )}
 
-            <div className="flex flex-col pb-[80px] pt-4 md:pb-[120px]">
+            <div className="flex flex-col pb-[80px] pt-4 md:pb-[120px]  max-w-4xl  mx-auto">
               {(isAgentMode ? agentMessages : messages).map(msg =>
                 isAgentMode ? (
                   <AgentPreviewMessage key={msg.id} message={msg as AgentUIMessage} />
@@ -494,7 +494,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                 ? agentStatus === "submitted" &&
                   agentMessages.length > 0 &&
                   agentMessages[agentMessages.length - 1].role === "user" && (
-                    <div className="flex h-12 items-center justify-center text-center text-xs text-muted-foreground">
+                    <div className="flex h-12 items-center justify-start text-start text-sm text-muted-foreground pl-4">
                       <Spin className="mr-2 animate-spin" />
                       Agent thinking...
                     </div>
@@ -502,7 +502,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                 : status === "loading" &&
                   messages.length > 0 &&
                   messages[messages.length - 1].role === "user" && (
-                    <div className="flex h-12 items-center justify-center text-center text-xs text-muted-foreground">
+                    <div className="flex h-12 items-center justify-start text-start text-sm text-muted-foreground pl-4">
                       <Spin className="mr-2 animate-spin" />
                       Thinking...
                     </div>
@@ -524,8 +524,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                   {!isAgentMode && (
                     <div className="flex items-center gap-4">
                       {/* Folder Selection */}
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor="folder_name" className="whitespace-nowrap text-sm text-muted-foreground">
+                      <div className="flex items-start  gap-2">
+                        <Label htmlFor="folder_name" className="whitespace-nowrap text-sm text-muted-foreground py-1.5">
                           Folder:
                         </Label>
                         <MultiSelect
@@ -548,8 +548,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                       </div>
 
                       {/* Document Selection */}
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor="document_filter" className="whitespace-nowrap text-sm text-muted-foreground">
+                      <div className="flex items-start gap-2">
+                        <Label htmlFor="document_filter" className="whitespace-nowrap text-sm text-muted-foreground py-1.5">
                           Document:
                         </Label>
                         <MultiSelect
