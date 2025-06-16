@@ -12,7 +12,7 @@ class Folder(BaseModel):
     name: str
     description: Optional[str] = None
     owner: Dict[str, str]
-    document_ids: List[str] = Field(default_factory=list)
+    document_ids: List[str] | None = Field(default_factory=list)
     system_metadata: Dict[str, Any] = Field(
         default_factory=lambda: {
             "created_at": datetime.now(UTC),
@@ -36,3 +36,18 @@ class FolderCreate(BaseModel):
 
     name: str
     description: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Lightweight projection used by the `/folders/summary` endpoint.  This keeps
+# payloads tiny by excluding the expansive *document_ids* array while still
+# providing enough metadata for the UI.
+# ---------------------------------------------------------------------------
+
+
+class FolderSummary(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    doc_count: int = 0
+    updated_at: Optional[str] = None

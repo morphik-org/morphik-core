@@ -57,7 +57,7 @@ class GraphModel(Base):
     __tablename__ = "graphs"
 
     id = Column(String, primary_key=True)
-    name = Column(String, index=True)  # Not unique globally anymore
+    name = Column(String)  # Not unique globally anymore
     entities = Column(JSONB, default=list)
     relationships = Column(JSONB, default=list)
     graph_metadata = Column(JSONB, default=dict)  # Renamed from 'metadata' to avoid conflict
@@ -86,7 +86,7 @@ class FolderModel(Base):
     __tablename__ = "folders"
 
     id = Column(String, primary_key=True)
-    name = Column(String, index=True)
+    name = Column(String)
     description = Column(String, nullable=True)
     owner = Column(JSONB)
     document_ids = Column(JSONB, default=list)
@@ -116,11 +116,11 @@ class ChatConversationModel(Base):
     created_at = Column(String)
     updated_at = Column(String)
 
-    __table_args__ = (
-        Index("idx_chat_user_id", "user_id"),
-        Index("idx_chat_app_id", "app_id"),
-        Index("idx_chat_conversation_id", "conversation_id"),
-    )
+    # Avoid duplicate indexes – SQLAlchemy already creates BTREE indexes for
+    # columns declared with `index=True` and the primary-key column has an
+    # implicit index.  Removing the explicit duplicates prevents bloat and
+    # guarantees they won't be re-added after we dropped them in production.
+    __table_args__ = ()
 
 
 def _serialize_datetime(obj: Any) -> Any:
@@ -1445,7 +1445,7 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error getting folder by name: {e}")
             return None
 
-    async def list_folders(self, auth: AuthContext) -> List[Folder]:
+    async def list_folders(self, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> List[Folder]:
         """List all folders the user has access to by building a dynamic SQL query."""
         try:
             where_filters = []  # For top-level AND conditions (e.g., app_id)
@@ -1799,3 +1799,39 @@ class PostgresDatabase(BaseDatabase):
                 return True
 
         return False
+
+    # ------------------------------------------------------------------
+    # PERFORMANCE: lightweight folder summaries (id, name, description)
+    # ------------------------------------------------------------------
+
+    async def list_folders_summary(self, auth: AuthContext) -> List[Dict[str, Any]]:  # noqa: D401 – returns plain dicts
+        """Return folder summaries without the heavy *document_ids* payload.
+
+        The UI only needs *id* and *name* to render the folder grid / sidebar.
+        Excluding the potentially thousands-element ``document_ids`` array keeps
+        the JSON response tiny and dramatically improves load time.
+        """
+
+        try:
+            # Re-use the complex access logic of *list_folders* but post-process
+            # the results to strip the large field.  This avoids duplicating
+            # query-builder logic while still improving network payload size.
+            full_folders = await self.list_folders(auth)
+
+            summaries: List[Dict[str, Any]] = []
+            for f in full_folders:
+                summaries.append(
+                    {
+                        "id": f.id,
+                        "name": f.name,
+                        "description": getattr(f, "description", None),
+                        "updated_at": (f.system_metadata or {}).get("updated_at"),
+                        "doc_count": len(f.document_ids or []),
+                    }
+                )
+
+            return summaries
+
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Error building folder summary list: %s", exc)
+            return []

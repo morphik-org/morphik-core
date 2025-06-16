@@ -19,7 +19,7 @@ import { Plus, Wand2, Upload, Filter, Eye, Download, Trash2, Copy, Check } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { showAlert } from "@/components/ui/alert-system";
 
-import { Document, Folder } from "@/components/types";
+import { Document, Folder, FolderSummary } from "@/components/types";
 
 type ColumnType = "string" | "int" | "float" | "bool" | "Date" | "json";
 
@@ -51,6 +51,7 @@ interface DocumentListProps {
   onViewInPDFViewer?: (documentId: string) => void; // Add PDF viewer navigation
   onDownloadDocument?: (documentId: string) => void; // Add download functionality
   onDeleteDocument?: (documentId: string) => void; // Add delete functionality
+  folders: FolderSummary[];
 }
 
 // Filter Dialog Component
@@ -384,7 +385,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
       setIsExtracting(true);
 
       // First, get folders to find the current folder ID
-      const foldersResponse = await fetch(`${apiBaseUrl}/folders`, {
+      const foldersResponse = await fetch(`${apiBaseUrl}/folders/summary`, {
         headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
       });
 
@@ -393,10 +394,22 @@ const DocumentList: React.FC<DocumentListProps> = ({
       }
 
       const folders = await foldersResponse.json();
-      const currentFolder = folders.find((folder: Folder) => folder.name === selectedFolder);
+      const currentFolder = folders.find((folder: FolderSummary) => folder.name === selectedFolder);
 
       if (!currentFolder) {
         throw new Error(`Folder "${selectedFolder}" not found`);
+      }
+
+      // Ensure we have document_ids – fetch folder detail if missing
+      let docIds: string[] = Array.isArray(currentFolder.document_ids) ? currentFolder.document_ids : [];
+      if (docIds.length === 0) {
+        const detailRes = await fetch(`${apiBaseUrl}/folders/${currentFolder.id}`, {
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        });
+        if (detailRes.ok) {
+          const detail: Folder = await detailRes.json();
+          docIds = Array.isArray(detail.document_ids) ? detail.document_ids : [];
+        }
       }
 
       // Convert columns to metadata extraction rule
@@ -445,7 +458,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
         try {
           console.log("Performing fresh refresh after setting extraction rule");
           // Clear folder data to force a clean refresh
-          const folderResponse = await fetch(`${apiBaseUrl}/folders`, {
+          const folderResponse = await fetch(`${apiBaseUrl}/folders/summary`, {
             method: "GET",
             headers: {
               ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
@@ -462,14 +475,22 @@ const DocumentList: React.FC<DocumentListProps> = ({
           // Now fetch documents based on the current folder
           if (selectedFolder && selectedFolder !== "all") {
             // Find the folder by name
-            const targetFolder = freshFolders.find((folder: Folder) => folder.name === selectedFolder);
+            const targetFolder = freshFolders.find((folder: FolderSummary) => folder.name === selectedFolder);
 
             if (targetFolder) {
               console.log(`Rule: Found folder ${targetFolder.name} in fresh data`);
 
-              // Get the document IDs from the folder
-              const documentIds = Array.isArray(targetFolder.document_ids) ? targetFolder.document_ids : [];
-              console.log(`Rule: Folder has ${documentIds.length} documents`);
+              // Ensure we have document IDs (may be missing in summary response)
+              let documentIds = Array.isArray(targetFolder.document_ids) ? targetFolder.document_ids : [];
+              if (documentIds.length === 0 && targetFolder.id) {
+                const detResp = await fetch(`${apiBaseUrl}/folders/${targetFolder.id}`, {
+                  headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+                });
+                if (detResp.ok) {
+                  const det: Folder = await detResp.json();
+                  documentIds = Array.isArray(det.document_ids) ? det.document_ids : [];
+                }
+              }
 
               if (documentIds.length > 0) {
                 // Fetch document details for the IDs

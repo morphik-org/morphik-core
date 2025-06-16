@@ -18,7 +18,7 @@ import {
 import { Settings } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-import { SearchOptions, Folder } from "@/components/types";
+import { SearchOptions, FolderSummary } from "@/components/types";
 
 // Define an extended search options type that includes folder_name
 interface ExtendedSearchOptions extends SearchOptions {
@@ -30,7 +30,7 @@ interface SearchOptionsDialogProps {
   setShowSearchAdvanced: (show: boolean) => void;
   searchOptions: ExtendedSearchOptions;
   updateSearchOption: <K extends keyof SearchOptions>(key: K, value: SearchOptions[K]) => void;
-  folders: Folder[];
+  folders: FolderSummary[];
 }
 
 const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({

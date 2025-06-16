@@ -47,7 +47,6 @@ services:
       # - ./morphik.toml:/app/morphik.toml:ro
       - ./storage:/app/storage
       - ./logs:/app/logs
-      - ./morphik.toml:/app/morphik.toml:ro
       - huggingface_cache:/root/.cache/huggingface
     depends_on:
       postgres:

@@ -59,16 +59,21 @@ export interface Document {
   additional_metadata: Record<string, unknown>;
 }
 
-export interface Folder {
+export interface FolderSummary {
   id: string;
   name: string;
   description?: string;
+  doc_count?: number;
+  updated_at?: string;
+}
+
+export interface Folder extends FolderSummary {
   owner: string;
-  document_ids: string[];
+  document_ids?: string[];
   system_metadata: Record<string, unknown>;
   access_control?: Record<string, unknown>;
   created_at?: string;
-  updated_at?: string;
+  // updated_at inherited
 }
 
 export interface SearchResult {
