@@ -251,6 +251,12 @@ def main():
         action="store_true",
         help="Skip Ollama availability check",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=os.cpu_count(),
+        help="Number of worker processes for Uvicorn (default: CPU count)",
+    )
     args = parser.parse_args()
 
     # Set up logging first with specified level
@@ -310,6 +316,7 @@ def main():
         port=settings.PORT,
         loop="asyncio",
         log_level=args.log,
+        workers=args.workers,
         # reload=settings.RELOAD # Reload might interfere with subprocess management
     )
 

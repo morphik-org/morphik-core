@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 from io import BytesIO, IOBase
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Optional, Type, Union
@@ -1827,7 +1828,7 @@ class Morphik:
 
         The agent can autonomously use various tools to answer complex queries including:
         - Searching and retrieving relevant documents
-        - Analyzing document content 
+        - Analyzing document content
         - Performing calculations and data processing
         - Creating summaries and reports
         - Managing knowledge graphs
@@ -2763,3 +2764,94 @@ class Morphik:
                 raise RuntimeError(graph.error or "Graph processing failed")
             time.sleep(check_interval_seconds)
         raise TimeoutError("Timed out waiting for graph completion")
+
+    def ping(self) -> Dict[str, Any]:
+        """Simple health-check call to the server (``/ping``).
+
+        Returns
+        -------
+        Dict[str, Any]
+            The JSON payload returned by the server, typically
+            ``{"status": "ok", "message": "Server is running"}``.
+        """
+        return self._request("GET", "ping")
+
+    # ------------------------------------------------------------------
+    # Chat API ----------------------------------------------------------
+    # ------------------------------------------------------------------
+    def get_chat_history(self, chat_id: str) -> List[Dict[str, Any]]:
+        """Return the full message history for the given *chat_id*.
+
+        Parameters
+        ----------
+        chat_id:
+            Identifier of the chat conversation returned by previous
+            calls that used ``chat_id``.
+        """
+        return self._request("GET", f"chat/{chat_id}")
+
+    def list_chat_conversations(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """List recent chat conversations available to the current user.
+
+        Parameters
+        ----------
+        limit:
+            Maximum number of conversations to return (1-500).
+        """
+        limit_capped = max(1, min(limit, 500))
+        return self._request("GET", "chats", params={"limit": limit_capped})
+
+    # ------------------------------------------------------------------
+    # Usage API ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    def get_usage_stats(self) -> Dict[str, int]:
+        """Return cumulative usage statistics for the authenticated user."""
+        return self._request("GET", "usage/stats")
+
+    def get_recent_usage(
+        self,
+        operation_type: Optional[str] = None,
+        since: Optional["datetime"] = None,
+        status: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return recent usage records with optional filtering."""
+        from datetime import datetime  # Local import ensures small dependency surface
+
+        params: Dict[str, Any] = {}
+        if operation_type:
+            params["operation_type"] = operation_type
+        if since:
+            # Accept either ``str`` or ``datetime`` for *since*
+            params["since"] = since.isoformat() if isinstance(since, datetime) else str(since)
+        if status:
+            params["status"] = status
+        return self._request("GET", "usage/recent", params=params)
+
+    # ------------------------------------------------------------------
+    # Graph helpers -----------------------------------------------------
+    # ------------------------------------------------------------------
+    def get_graph_visualization(
+        self,
+        name: str,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        end_user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Fetch nodes & links for visualising *name* graph."""
+        params: Dict[str, Any] = {}
+        if folder_name is not None:
+            params["folder_name"] = folder_name
+        if end_user_id is not None:
+            params["end_user_id"] = end_user_id
+        return self._request("GET", f"graph/{name}/visualization", params=params)
+
+    def check_workflow_status(self, workflow_id: str, run_id: Optional[str] = None) -> Dict[str, Any]:
+        """Poll the status of an asynchronous graph build/update workflow."""
+        params = {"run_id": run_id} if run_id else None
+        return self._request("GET", f"graph/workflow/{workflow_id}/status", params=params)
+
+    # ------------------------------------------------------------------
+    # Document download helpers ----------------------------------------
+    # ------------------------------------------------------------------
+    def get_document_download_url(self, document_id: str, expires_in: int = 3600) -> Dict[str, Any]:
+        """Generate a presigned download URL for a document stored remotely."""
+        return self._request("GET", f"documents/{document_id}/download_url", params={"expires_in": expires_in})
