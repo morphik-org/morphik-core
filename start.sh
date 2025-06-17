@@ -30,9 +30,16 @@ PORT=8000
 LOG_LEVEL=DEBUG
 REDIS_HOST=redis
 REDIS_PORT=6379
+OPENAI_API_KEY=
 EOL
         echo ".env file created successfully."
     fi
+}
+
+# Function to create morphik.toml if it doesn't exist
+create_morphik_toml() {
+    echo "Syncing morphik.toml with morphik.docker.toml..."
+    cp -f morphik.docker.toml morphik.toml
 }
 
 # Function to create necessary directories
@@ -49,6 +56,7 @@ check_docker_compose
 
 # Create necessary files and directories
 create_env_file
+create_morphik_toml
 create_directories
 
 # Build and start the containers
@@ -69,4 +77,4 @@ fi
 echo "Morphik is now running!"
 echo "API is available at http://localhost:8000"
 echo "To view logs, run: docker compose logs -f"
-echo "To stop the services, run: docker compose down" 
+echo "To stop the services, run: docker compose down"

@@ -9,7 +9,7 @@ import { showAlert } from "@/components/ui/alert-system";
 import SearchOptionsDialog from "./SearchOptionsDialog";
 import SearchResultCard from "./SearchResultCard";
 
-import { SearchResult, SearchOptions, Folder } from "@/components/types";
+import { SearchResult, SearchOptions, FolderSummary } from "@/components/types";
 
 interface SearchSectionProps {
   apiBaseUrl: string;
@@ -30,7 +30,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [showSearchAdvanced, setShowSearchAdvanced] = useState(false);
-  const [folders, setFolders] = useState<Folder[]>([]);
+  const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [searchOptions, setSearchOptions] = useState<SearchOptions>(defaultSearchOptions);
 
   // Update search options
@@ -49,7 +49,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
     // Fetch available folders
     const fetchFolders = async () => {
       try {
-        const response = await fetch(`${apiBaseUrl}/folders`, {
+        const response = await fetch(`${apiBaseUrl}/folders/summary`, {
           headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
         });
 

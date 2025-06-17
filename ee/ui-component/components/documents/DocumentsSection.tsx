@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 
-import { Document, Folder } from "@/components/types";
+import { Document, Folder, FolderSummary } from "@/components/types";
 
 // Custom hook for drag and drop functionality
 function useDragAndDrop({ onDrop, disabled = false }: { onDrop: (files: File[]) => void; disabled?: boolean }) {
@@ -123,7 +123,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
   // State for documents and folders
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [folders, setFolders] = useState<Folder[]>([]);
+  const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(initialFolder);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
@@ -151,6 +151,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     },
     disabled: !selectedFolder || selectedFolder === null,
   });
+
+  // Cache for folder details (document_ids) to avoid duplicate network calls
+  const folderDetailsCache = useRef<Record<string, string[]>>({});
 
   // No need for a separate header function, use authToken directly
 
@@ -202,33 +205,46 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           console.log(`fetchDocuments: Fetching documents for folder: ${selectedFolder}`);
           const targetFolder = folders.find(folder => folder.name === selectedFolder);
 
-          if (targetFolder && Array.isArray(targetFolder.document_ids) && targetFolder.document_ids.length > 0) {
-            // Folder found and has documents, fetch them by ID
-            console.log(
-              `fetchDocuments: Folder found with ${targetFolder.document_ids.length} IDs. Fetching details...`
-            );
-            const response = await fetch(`${effectiveApiUrl}/batch/documents`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-              },
-              body: JSON.stringify({ document_ids: targetFolder.document_ids }),
-            });
-            if (!response.ok) {
-              throw new Error(`Failed to fetch batch documents: ${response.statusText}`);
-            }
-            documentsToFetch = await response.json();
-            console.log(`fetchDocuments: Fetched details for ${documentsToFetch.length} documents`);
-          } else {
-            // Folder not found, or folder is empty
-            if (targetFolder) {
-              console.log(`fetchDocuments: Folder ${selectedFolder} found but is empty.`);
-            } else {
-              console.log(`fetchDocuments: Folder ${selectedFolder} not found in current state.`);
-            }
-            // In either case, the folder contains no documents to display
+          if (!targetFolder) {
+            console.log(`fetchDocuments: Folder ${selectedFolder} not found in summary list.`);
             documentsToFetch = [];
+          } else {
+            // Resolve the document_ids – first from cache, otherwise fetch detail
+            let docIds = folderDetailsCache.current[targetFolder.id];
+
+            if (!docIds) {
+              console.log(`fetchDocuments: Fetching folder details for id=${targetFolder.id}`);
+              const detailResp = await fetch(`${effectiveApiUrl}/folders/${targetFolder.id}`, {
+                headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+              });
+              if (!detailResp.ok) {
+                throw new Error(`Failed to fetch folder detail: ${detailResp.statusText}`);
+              }
+              const detail: Folder = await detailResp.json();
+              docIds = Array.isArray(detail.document_ids) ? detail.document_ids : [];
+              // Cache for future use
+              folderDetailsCache.current[targetFolder.id] = docIds;
+            }
+
+            if (docIds.length === 0) {
+              console.log(`fetchDocuments: Folder ${selectedFolder} is empty.`);
+              documentsToFetch = [];
+            } else {
+              console.log(`fetchDocuments: Fetching ${docIds.length} documents via batch API`);
+              const response = await fetch(`${effectiveApiUrl}/batch/documents`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+                },
+                body: JSON.stringify({ document_ids: docIds }),
+              });
+              if (!response.ok) {
+                throw new Error(`Failed to fetch batch documents: ${response.statusText}`);
+              }
+              documentsToFetch = await response.json();
+              console.log(`fetchDocuments: Fetched details for ${documentsToFetch.length} documents`);
+            }
           }
         }
 
@@ -269,7 +285,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     console.log("fetchFolders called");
     setFoldersLoading(true);
     try {
-      const response = await fetch(`${effectiveApiUrl}/folders`, {
+      const response = await fetch(`${effectiveApiUrl}/folders/summary`, {
         method: "GET",
         headers: {
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
@@ -278,7 +294,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       if (!response.ok) {
         throw new Error(`Failed to fetch folders: ${response.statusText}`);
       }
-      const data = await response.json();
+      const data = (await response.json()) as FolderSummary[];
       console.log(`Fetched ${data.length} folders`);
       setFolders(data);
     } catch (err) {
@@ -1350,6 +1366,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                   onViewInPDFViewer={onViewInPDFViewer}
                   onDownloadDocument={handleDownloadDocument}
                   onDeleteDocument={handleDeleteDocument}
+                  folders={folders}
                 />
               </div>
             )}

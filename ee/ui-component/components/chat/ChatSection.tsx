@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useMorphikChat } from "@/hooks/useMorphikChat";
-import { Folder } from "@/components/types";
 import { generateUUID } from "@/lib/utils";
 import type { QueryOptions } from "@/components/types";
 import type { UIMessage } from "./ChatMessages";
+import { FolderSummary } from "@/components/types";
 
 import { Settings, Spin, ArrowUp, Sparkles } from "./icons";
 import { Button } from "@/components/ui/button";
@@ -124,7 +124,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   const [availableGraphs, setAvailableGraphs] = useState<string[]>([]);
   const [loadingGraphs, setLoadingGraphs] = useState(false);
   const [loadingFolders, setLoadingFolders] = useState(false);
-  const [folders, setFolders] = useState<Folder[]>([]);
+  const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [documents, setDocuments] = useState<{ id: string; filename: string }[]>([]);
 
@@ -218,8 +218,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
 
     setLoadingFolders(true);
     try {
-      console.log(`Fetching folders from: ${apiBaseUrl}/folders`);
-      const response = await fetch(`${apiBaseUrl}/folders`, {
+      console.log(`Fetching folders from: ${apiBaseUrl}/folders/summary`);
+      const response = await fetch(`${apiBaseUrl}/folders/summary`, {
         headers: {
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },

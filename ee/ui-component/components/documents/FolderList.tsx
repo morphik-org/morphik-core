@@ -15,12 +15,12 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Folder } from "@/components/types";
+import { FolderSummary } from "@/components/types";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 
 interface FolderListProps {
-  folders: Folder[];
+  folders: FolderSummary[];
   selectedFolder: string | null;
   setSelectedFolder: (folderName: string | null) => void;
   apiBaseUrl: string;

@@ -10,12 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import Image from "next/image";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 
-import { Document, Folder } from "@/components/types";
+import { Document, FolderSummary } from "@/components/types";
 
 interface DocumentDetailProps {
   selectedDocument: Document | null;
   handleDeleteDocument: (documentId: string) => Promise<void>;
-  folders: Folder[];
+  folders: FolderSummary[];
   apiBaseUrl: string;
   authToken: string | null;
   refreshDocuments: () => void;

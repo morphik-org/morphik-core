@@ -16,11 +16,13 @@ DO \$\$
 DECLARE
     r RECORD;
 BEGIN
-    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'vector_embeddings') LOOP
         EXECUTE 'TRUNCATE TABLE ' || quote_ident(r.tablename) || ' CASCADE';
     END LOOP;
-END \$\$;
-"
+END \$\$;"
+
+# SQL command to drop and recreate vector table
+DROP_VECTOR_TABLE="DROP TABLE IF EXISTS vector_embeddings CASCADE;"
 
 if [ "$ENV" = "docker" ]; then
     # Get the Postgres container ID
@@ -34,6 +36,10 @@ if [ "$ENV" = "docker" ]; then
     # Execute the command in docker container
     if ! docker exec -it $POSTGRES_CONTAINER psql -U morphik -d morphik -c "$TRUNCATE_CMD"; then
         echo "Error: Failed to clear tables in docker environment"
+        exit 1
+    fi
+    if ! docker exec -it $POSTGRES_CONTAINER psql -U morphik -d morphik -c "$DROP_VECTOR_TABLE"; then
+        echo "Error: Failed to drop vector_embeddings table in docker environment"
         exit 1
     fi
 else
@@ -67,6 +73,7 @@ else
 
     # Execute the command using parsed connection details
     PGPASSWORD=$PASS psql -h $HOST -p $PORT -U $USER -d $DB -c "$TRUNCATE_CMD"
+    PGPASSWORD=$PASS psql -h $HOST -p $PORT -U $USER -d $DB -c "$DROP_VECTOR_TABLE"
     if [ $? -ne 0 ]; then
         echo "Error: Failed to clear tables in local environment"
         exit 1

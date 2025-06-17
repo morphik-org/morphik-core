@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -99,6 +100,42 @@ async def get_document_with_retry(document_service, document_id, auth, max_retri
                 return None
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Profiling helpers (worker-level)
+# ---------------------------------------------------------------------------
+
+if os.getenv("ENABLE_PROFILING") == "1":
+    try:
+        import yappi  # type: ignore
+    except ImportError:
+        yappi = None
+else:
+    yappi = None
+
+
+@contextlib.asynccontextmanager
+async def _profile_ctx(label: str):  # type: ignore
+    if yappi is None:
+        yield
+        return
+
+    yappi.clear_stats()
+    yappi.set_clock_type("cpu")
+    yappi.start()
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        duration = time.perf_counter() - t0
+        fname = f"logs/worker_{label}_{int(t0)}.prof"
+        yappi.stop()
+        try:
+            yappi.get_func_stats().save(fname, type="pstat")
+            logger.info("Saved worker profile %s (%.2fs) to %s", label, duration, fname)
+        except Exception as exc:
+            logger.warning("Could not save worker profile: %s", exc)
 
 
 async def process_ingestion_job(
@@ -562,12 +599,11 @@ async def process_ingestion_job(
                     colpali_chunks_count=colpali_count_for_limit_fn,
                 )
             except Exception as rec_exc:
-                # Log error but don't fail the job at this point
                 logger.error("Failed to record ingest usage after completion: %s", rec_exc)
 
         # 14. Return document ID
         return {
-            "document_id": doc.external_id,
+            "document_id": document_id,
             "status": "completed",
             "filename": original_filename,
             "content_type": content_type,
@@ -575,6 +611,7 @@ async def process_ingestion_job(
         }
 
     except Exception as e:
+        # ... (rest of the function remains the same)
         logger.error(f"Error processing ingestion job for file {original_filename}: {str(e)}")
 
         # ------------------------------------------------------------------

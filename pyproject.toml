@@ -60,6 +60,11 @@ dependencies = [
     "ty>=0.0.1a6",
     "unstructured[pdf]>=0.17.2",
     "uvicorn>=0.34.2",
+    # --- profiling & analysis ---
+    "yappi>=1.6.0",
+    "snakeviz>=2.2.0",
+    "pyprof2calltree>=1.4.5",
+    "line_profiler>=4.1.2",
 ]
 
 [tool.black]

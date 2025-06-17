@@ -101,48 +101,7 @@ ENV VIRTUAL_ENV=/app/.venv
 ENV PATH="/app/.venv/bin:/usr/local/bin:${PATH}"
 
 # Create default configuration
-RUN echo '[api]\n\
-host = "0.0.0.0"\n\
-port = 8000\n\
-reload = false\n\
-\n\
-[auth]\n\
-jwt_algorithm = "HS256"\n\
-dev_mode = true\n\
-dev_entity_id = "dev_user"\n\
-dev_entity_type = "developer"\n\
-dev_permissions = ["read", "write", "admin"]\n\
-\n\
-[completion]\n\
-provider = "ollama"\n\
-model_name = "llama2"\n\
-base_url = "http://localhost:11434"\n\
-\n\
-[database]\n\
-provider = "postgres"\n\
-\n\
-[embedding]\n\
-provider = "ollama"\n\
-model_name = "nomic-embed-text"\n\
-dimensions = 768\n\
-similarity_metric = "cosine"\n\
-base_url = "http://localhost:11434"\n\
-\n\
-[parser]\n\
-chunk_size = 1000\n\
-chunk_overlap = 200\n\
-use_unstructured_api = false\n\
-\n\
-[reranker]\n\
-use_reranker = false\n\
-\n\
-[storage]\n\
-provider = "local"\n\
-storage_path = "/app/storage"\n\
-\n\
-[vector_store]\n\
-provider = "pgvector"\n\
-' > /app/morphik.toml.default
+COPY morphik.docker.toml /app/morphik.toml.default
 
 # Create startup script
 RUN echo '#!/bin/bash\n\

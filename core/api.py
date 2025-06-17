@@ -22,11 +22,12 @@ from core.database.postgres_database import PostgresDatabase
 from core.dependencies import get_redis_pool
 from core.limits_utils import check_and_increment_limits
 from core.logging_config import setup_logging
+from core.middleware.profiling import ProfilingMiddleware
 from core.models.auth import AuthContext, EntityType
 from core.models.chat import ChatMessage
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentResult
-from core.models.folders import Folder, FolderCreate
+from core.models.folders import Folder, FolderCreate, FolderSummary
 from core.models.graph import Graph
 from core.models.prompts import validate_prompt_overrides_with_http_exception
 from core.models.request import (
@@ -104,6 +105,12 @@ class PerformanceTracker:
 # ---------------------------------------------------------------------------
 
 app = FastAPI(lifespan=lifespan)
+
+# --------------------------------------------------------
+# Optional per-request profiler (ENABLE_PROFILING=1)
+# --------------------------------------------------------
+
+app.add_middleware(ProfilingMiddleware)
 
 # Add CORS middleware (same behaviour as before refactor)
 app.add_middleware(
@@ -1523,6 +1530,19 @@ async def list_folders(
     except Exception as e:
         logger.error(f"Error listing folders: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/folders/summary", response_model=List[FolderSummary])
+@telemetry.track(operation_type="list_folders_summary")
+async def list_folder_summaries(auth: AuthContext = Depends(verify_token)) -> List[FolderSummary]:
+    """Return compact folder list (id, name, doc_count, updated_at)."""
+
+    try:
+        summaries = await document_service.db.list_folders_summary(auth)
+        return summaries  # type: ignore[return-value]
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error listing folder summaries: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/folders/{folder_id}", response_model=Folder)
