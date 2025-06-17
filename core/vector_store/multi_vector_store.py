@@ -233,19 +233,19 @@ class MultiVectorStore(BaseVectorStore):
                     exists_check = conn.execute(
                         """
                         SELECT EXISTS (
-                            SELECT 1 FROM pg_proc 
-                            WHERE proname = 'max_sim' 
+                            SELECT 1 FROM pg_proc
+                            WHERE proname = 'max_sim'
                             AND pg_get_function_arguments(oid) = 'document bit[], query bit[]'
                         )
                     """
                     ).fetchone()[0]
-                    
+
                     if not exists_check:
                         logger.info("Creating max_sim function for multi-vector similarity search")
                         conn.execute(
                             """
-                            CREATE OR REPLACE FUNCTION public.max_sim(document bit[], query bit[]) 
-                            RETURNS double precision 
+                            CREATE OR REPLACE FUNCTION public.max_sim(document bit[], query bit[])
+                            RETURNS double precision
                             LANGUAGE SQL
                             IMMUTABLE
                             PARALLEL SAFE
@@ -275,7 +275,7 @@ class MultiVectorStore(BaseVectorStore):
                         logger.info("Created max_sim function successfully")
                     else:
                         logger.debug("max_sim function already exists")
-                        
+
             except Exception as e:
                 logger.error(f"Error creating or checking max_sim function: {str(e)}")
                 # Continue - we'll get a runtime error if the function is actually missing
@@ -397,12 +397,12 @@ class MultiVectorStore(BaseVectorStore):
             # Download content from storage
             logger.debug(f"Downloading from bucket: {MULTIVECTOR_CHUNKS_BUCKET}, key: {storage_key}")
             if isinstance(self.storage, S3Storage):
-                storage_key = f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}"
+                attempted_key = f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}"
             try:
-                content_bytes = await self.storage.download_file(bucket=MULTIVECTOR_CHUNKS_BUCKET, key=storage_key)
+                content_bytes = await self.storage.download_file(bucket=MULTIVECTOR_CHUNKS_BUCKET, key=attempted_key)
             except Exception:
-                storage_key = f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}.txt"
-                content_bytes = await self.storage.download_file(bucket=MULTIVECTOR_CHUNKS_BUCKET, key=storage_key)
+                attempted_key = f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}.txt"
+                content_bytes = await self.storage.download_file(bucket=MULTIVECTOR_CHUNKS_BUCKET, key=attempted_key)
 
             if not content_bytes:
                 logger.error(f"No content downloaded for storage key: {storage_key}")
