@@ -22,10 +22,18 @@ def extract_display_object(item: dict, source_map: dict):
         case "text":
             return {"type": item["type"], "source": item.get("source", "agent-response"), "content": item["content"]}
         case "image":
+            source_id = item.get("source", "agent-response")
+            # Get image content from source_map if available
+            if source_id in source_map and "content" in source_map[source_id]:
+                image_content = source_map[source_id]["content"]
+            else:
+                # Fallback to empty string if source not found
+                image_content = ""
+
             return {
                 "type": item["type"],
-                "source": item.get("source", "agent-response"),
-                "content": source_map[item.get("source", {"content": ""})]["content"],
+                "source": source_id,
+                "content": image_content,
                 "caption": item["content"],
             }
         case _:

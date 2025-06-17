@@ -47,7 +47,15 @@ async def get_pdf_viewer(
     # Use user ID from auth context
     user_id = auth.user_id if auth and hasattr(auth, "user_id") else "anonymous"
 
-    return PDFViewer(images, api_base_url=api_base_url, session_id=session_id, user_id=user_id)
+    return PDFViewer(
+        images,
+        api_base_url=api_base_url,
+        session_id=session_id,
+        user_id=user_id,
+        document_id=document_id,
+        document_service=document_service,
+        auth=auth,
+    )
 
 
 @router.get("/chat/{chat_id}")
@@ -80,35 +88,72 @@ async def get_document_chat_history(
         return []
 
 
-async def execute_pdf_tool(pdf_viewer: PDFViewer, tool_call) -> str:
-    """Execute a PDF viewer tool call and return the result message."""
+async def execute_pdf_tool(pdf_viewer: PDFViewer, tool_call) -> dict:
+    """Execute a PDF viewer tool call and return the result with additional metadata."""
     function_name = tool_call.function.name
     function_args = json.loads(tool_call.function.arguments)
 
     try:
+        result = {
+            "message": "",
+            "tool_name": function_name,
+            "args": function_args,
+            "current_frame": None,
+            "metadata": {},
+        }
+
         if function_name == "get_next_page":
-            return pdf_viewer.get_next_page()
+            result["message"] = pdf_viewer.get_next_page()
+            result["current_frame"] = pdf_viewer.get_current_frame()
+            result["metadata"] = {"page": pdf_viewer.current_page + 1, "total_pages": pdf_viewer.total_pages}
         elif function_name == "get_previous_page":
-            return pdf_viewer.get_previous_page()
+            result["message"] = pdf_viewer.get_previous_page()
+            result["current_frame"] = pdf_viewer.get_current_frame()
+            result["metadata"] = {"page": pdf_viewer.current_page + 1, "total_pages": pdf_viewer.total_pages}
         elif function_name == "go_to_page":
             page_number = function_args.get("page_number", 0)
-            return pdf_viewer.go_to_page(page_number)
+            result["message"] = pdf_viewer.go_to_page(page_number)
+            result["current_frame"] = pdf_viewer.get_current_frame()
+            result["metadata"] = {"page": pdf_viewer.current_page + 1, "total_pages": pdf_viewer.total_pages}
         elif function_name == "zoom_in":
             box_2d = function_args.get("box_2d", [])
-            return pdf_viewer.zoom_in(box_2d)
+            result["message"] = pdf_viewer.zoom_in(box_2d)
+            result["current_frame"] = pdf_viewer.get_current_frame()
+            result["metadata"] = {"zoom_region": box_2d, "page": pdf_viewer.current_page + 1}
         elif function_name == "zoom_out":
-            return pdf_viewer.zoom_out()
+            result["message"] = pdf_viewer.zoom_out()
+            result["current_frame"] = pdf_viewer.get_current_frame()
+            result["metadata"] = {"page": pdf_viewer.current_page + 1}
         elif function_name == "get_page_summary":
             page_number = function_args.get("page_number", 0)
-            return pdf_viewer.get_page_summary(page_number)
+            result["message"] = pdf_viewer.get_page_summary(page_number)
+            result["metadata"] = {"page": page_number + 1}
         elif function_name == "get_total_pages":
             total = pdf_viewer.get_total_pages()
-            return f"Total pages in PDF: {total}"
+            result["message"] = f"Total pages in PDF: {total}"
+            result["metadata"] = {"total_pages": total}
+        elif function_name == "find_most_relevant_page":
+            query = function_args.get("query", "")
+            result["message"] = await pdf_viewer.find_most_relevant_page(query)
+            result["current_frame"] = pdf_viewer.get_current_frame()
+            result["metadata"] = {
+                "query": query,
+                "page": pdf_viewer.current_page + 1,
+                "total_pages": pdf_viewer.total_pages,
+            }
         else:
-            return f"Unknown function: {function_name}"
+            result["message"] = f"Unknown function: {function_name}"
+
+        return result
     except Exception as e:
         logger.error(f"Error executing PDF tool {function_name}: {e}")
-        return f"Error executing {function_name}: {str(e)}"
+        return {
+            "message": f"Error executing {function_name}: {str(e)}",
+            "tool_name": function_name,
+            "args": function_args,
+            "current_frame": None,
+            "metadata": {"error": str(e)},
+        }
 
 
 @router.post("/chat/{chat_id}/complete")
@@ -130,6 +175,10 @@ async def complete_document_chat(
         StreamingResponse with the assistant's response.
     """
     try:
+        # Validate request
+        if not request.message or not request.message.strip():
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+
         # Validate request
         if not request.message or not request.message.strip():
             raise HTTPException(status_code=400, detail="Message cannot be empty")
@@ -161,11 +210,19 @@ async def complete_document_chat(
         }
         history.append(user_message)
         logger.debug(f"Added user message to history: {user_message['content'][:100]}...")
+        logger.debug(f"Added user message to history: {user_message['content'][:100]}...")
 
         # Get PDF viewer instance
         # For production, this should be the frontend URL where the PDF viewer is hosted
         # For development, it defaults to localhost:3000
         frontend_api_url = getattr(settings, "PDF_VIEWER_FRONTEND_URL", None)
+        try:
+            pdf_viewer = await get_pdf_viewer(
+                request.document_id, auth, api_base_url=frontend_api_url, session_id=request.session_id
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize PDF viewer: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to initialize PDF viewer: {str(e)}")
         try:
             pdf_viewer = await get_pdf_viewer(
                 request.document_id, auth, api_base_url=frontend_api_url, session_id=request.session_id
@@ -192,7 +249,13 @@ async def complete_document_chat(
                         # User messages - just copy role and content, ensure content is string
                         content = safe_content_to_string(msg.get("content"))
                         conversation_messages.append({"role": msg["role"], "content": content})
+                        # User messages - just copy role and content, ensure content is string
+                        content = safe_content_to_string(msg.get("content"))
+                        conversation_messages.append({"role": msg["role"], "content": content})
                     elif msg["role"] == "assistant":
+                        # Assistant messages - include tool_calls if present, ensure content is string
+                        content = safe_content_to_string(msg.get("content"))
+                        assistant_msg = {"role": msg["role"], "content": content}
                         # Assistant messages - include tool_calls if present, ensure content is string
                         content = safe_content_to_string(msg.get("content"))
                         assistant_msg = {"role": msg["role"], "content": content}
@@ -202,15 +265,21 @@ async def complete_document_chat(
                     elif msg["role"] == "tool":
                         # Tool response messages - include all required fields, ensure content is string
                         content = safe_content_to_string(msg.get("content"))
+                        # Tool response messages - include all required fields, ensure content is string
+                        content = safe_content_to_string(msg.get("content"))
                         conversation_messages.append(
                             {
                                 "role": msg["role"],
                                 "tool_call_id": msg["tool_call_id"],
                                 "name": msg["name"],
                                 "content": content,
+                                "content": content,
                             }
                         )
                     elif msg["role"] == "system":
+                        # System messages - ensure content is string
+                        content = safe_content_to_string(msg.get("content"))
+                        conversation_messages.append({"role": msg["role"], "content": content})
                         # System messages - ensure content is string
                         content = safe_content_to_string(msg.get("content"))
                         conversation_messages.append({"role": msg["role"], "content": content})
@@ -219,7 +288,7 @@ async def complete_document_chat(
                 if not conversation_messages or conversation_messages[0]["role"] != "system":
                     system_message = {
                         "role": "system",
-                        "content": "You are a helpful AI assistant that can navigate and analyze PDF documents. You have access to tools to navigate pages, zoom in/out, and view different parts of the document. When answering user questions:\n\n1. Always explain what you're going to do before using tools\n2. Describe what you see in the current view\n3. Use navigation tools when you need to see different parts of the document\n4. Provide detailed explanations of your findings\n5. Always give a comprehensive final answer based on what you've discovered\n\nBe conversational and explain your reasoning as you work through the document.",
+                        "content": "You are a helpful AI assistant that can navigate and analyze PDF documents. You have access to tools to navigate pages, zoom in/out, search the entire document, and view different parts of the document. When answering user questions:\n\n1. Always explain what you're going to do before using tools\n2. Describe what you see in the current view\n3. Use the 'find_most_relevant_page' tool to search the entire document when users ask about specific topics or content\n4. Use navigation tools when you need to see different parts of the document\n5. Provide detailed explanations of your findings\n6. Always give a comprehensive final answer based on what you've discovered\n\nBe conversational and explain your reasoning as you work through the document. When users ask about specific topics, use the search functionality to find the most relevant pages automatically.",
                     }
                     conversation_messages.insert(0, system_message)
 
@@ -295,6 +364,38 @@ async def complete_document_chat(
                                 f"Message {i}: role={msg.get('role')}, content_type={type(msg.get('content'))}, content={msg.get('content')}"
                             )
                         raise litellm_error
+                    try:
+                        # Log the messages being sent to help debug content issues
+                        logger.debug(f"Sending {len(conversation_messages)} messages to LiteLLM")
+                        for i, msg in enumerate(conversation_messages):
+                            content = msg.get("content")
+                            if content is None:
+                                logger.warning(f"Message {i} has null content: {msg}")
+                                # Fix null content on the spot
+                                msg["content"] = ""
+                            elif not isinstance(content, (str, list)):
+                                logger.warning(
+                                    f"Message {i} has non-string/non-list content type {type(content)}: {content}"
+                                )
+                                # Convert to string
+                                msg["content"] = str(content)
+
+                        # Final validation - ensure no message has null content
+                        for msg in conversation_messages:
+                            if msg.get("content") is None:
+                                msg["content"] = ""
+
+                        response = await litellm.acompletion(**model_params)
+                        response_message = response.choices[0].message
+                    except Exception as litellm_error:
+                        logger.error(f"LiteLLM error on iteration {iteration}: {litellm_error}")
+                        logger.error(f"Model params: {model_params}")
+                        # Log the problematic messages
+                        for i, msg in enumerate(conversation_messages):
+                            logger.error(
+                                f"Message {i}: role={msg.get('role')}, content_type={type(msg.get('content'))}, content={msg.get('content')}"
+                            )
+                        raise litellm_error
 
                     logger.debug(f"Model response - Content: {response_message.content}")
                     logger.debug(
@@ -310,7 +411,13 @@ async def complete_document_chat(
 
                         # 1️⃣ Create assistant stub with tool calls - defer sending until after tools finish
                         assistant_stub = {
+                        # Ensure content is never null - convert to empty string if None
+                        response_content = safe_content_to_string(response_message.content)
+
+                        # 1️⃣ Create assistant stub with tool calls - defer sending until after tools finish
+                        assistant_stub = {
                             "role": "assistant",
+                            "content": response_content,
                             "content": response_content,
                             "tool_calls": [
                                 {
@@ -338,39 +445,79 @@ async def complete_document_chat(
                         # Store the assistant message with tool calls in history
                         all_messages_for_history.append(assistant_stub)
 
+                        # Send a single SSE to announce the assistant message with tool calls
+                        yield f"data: {json.dumps({'type': 'assistant', 'content': assistant_stub['content'], 'tool_calls': assistant_stub['tool_calls']})}\n\n"
+
+                        # Add assistant message to conversation for LiteLLM
+                        conversation_messages.append(
+                            {
+                                "role": "assistant",
+                                "content": response_content,
+                                "tool_calls": response_message.tool_calls,
+                            }
+                        )
+
+                        # Store the assistant message with tool calls in history
+                        all_messages_for_history.append(assistant_stub)
+
                         # Execute each tool call
                         for tool_call in response_message.tool_calls:
+                            # Send tool call start event immediately
+                            tool_start_event = {
+                                "type": "tool_start",
+                                "id": tool_call.id,
+                                "name": tool_call.function.name,
+                                "args": json.loads(tool_call.function.arguments),
+                                "status": "executing",
+                            }
+                            yield f"data: {json.dumps(tool_start_event)}\n\n"
+
                             # Execute the tool and get result
-                            tool_result = await execute_pdf_tool(pdf_viewer, tool_call)
+                            tool_result_data = await execute_pdf_tool(pdf_viewer, tool_call)
 
-                            # Ensure tool result is never null
-                            tool_result = safe_content_to_string(tool_result)
-                            if not tool_result:  # If still empty after conversion
-                                tool_result = "Tool execution completed successfully"
+                            # Extract the message for LiteLLM and ensure it's never null
+                            tool_result_message = safe_content_to_string(tool_result_data.get("message", ""))
+                            if not tool_result_message:  # If still empty after conversion
+                                tool_result_message = "Tool execution completed successfully"
 
-                            # Send tool result as discrete event
-                            yield f"data: {json.dumps({'type': 'tool', 'name': tool_call.function.name, 'content': tool_result})}\n\n"
+                            # Send tool completion event with results
+                            tool_complete_event = {
+                                "type": "tool_complete",
+                                "id": tool_call.id,
+                                "name": tool_call.function.name,
+                                "content": tool_result_message,
+                                "metadata": tool_result_data.get("metadata", {}),
+                                "current_frame": tool_result_data.get("current_frame"),
+                                "args": tool_result_data.get("args", {}),
+                                "status": "completed",
+                            }
+                            yield f"data: {json.dumps(tool_complete_event)}\n\n"
 
-                            # Add tool response to history in native format
+                            # Add tool response to history in native format with metadata
                             tool_response = {
                                 "role": "tool",
                                 "tool_call_id": tool_call.id,
                                 "name": tool_call.function.name,
-                                "content": tool_result,
+                                "content": tool_result_message,
                                 "timestamp": datetime.now(UTC).isoformat(),
+                                "metadata": tool_result_data.get("metadata", {}),
+                                "current_frame": tool_result_data.get("current_frame"),
+                                "args": tool_result_data.get("args", {}),
                             }
                             all_messages_for_history.append(tool_response)
 
-                            # Add tool response to conversation (without timestamp)
+                            # Add tool response to conversation (without timestamp) - only message for LiteLLM
                             conversation_messages.append(
                                 {
                                     "tool_call_id": tool_call.id,
                                     "role": "tool",
                                     "name": tool_call.function.name,
-                                    "content": tool_result,
+                                    "content": tool_result_message,
                                 }
                             )
 
+                            # # Small delay to ensure tool message is visible
+                            # await asyncio.sleep(0.1)
                             # # Small delay to ensure tool message is visible
                             # await asyncio.sleep(0.1)
 
@@ -401,14 +548,19 @@ async def complete_document_chat(
                         # No tool calls, we have a final response
                         if response_message.content:
                             content = safe_content_to_string(response_message.content)
+                            content = safe_content_to_string(response_message.content)
                             full_response += content
 
+                            # Stream in larger chunks (~1KB) for better performance
+                            chunk_size = 100
                             # Stream in larger chunks (~1KB) for better performance
                             chunk_size = 100
                             for i in range(0, len(content), chunk_size):
                                 chunk = content[i : i + chunk_size]
                                 yield f"data: {json.dumps({'type': 'assistant', 'content': chunk})}\n\n"
+                                yield f"data: {json.dumps({'type': 'assistant', 'content': chunk})}\n\n"
                                 # Small delay to make streaming visible
+                                # await asyncio.sleep(0.01)
                                 # await asyncio.sleep(0.01)
                         break
 
@@ -418,6 +570,7 @@ async def complete_document_chat(
                         "I've completed the requested actions on the PDF. Please let me know if you need anything else!"
                     )
                     full_response = fallback_message
+                    yield f"data: {json.dumps({'type': 'assistant', 'content': fallback_message})}\n\n"
                     yield f"data: {json.dumps({'type': 'assistant', 'content': fallback_message})}\n\n"
 
                 # Add the final assistant message if we have a response without tool calls
@@ -443,9 +596,11 @@ async def complete_document_chat(
 
                 # Send completion signal
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
             except Exception as e:
                 logger.error(f"Error in streaming completion: {e}")
+                yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
                 yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
 
         return StreamingResponse(
@@ -461,6 +616,26 @@ async def complete_document_chat(
     except Exception as e:
         logger.error(f"Error in document chat completion: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def safe_content_to_string(content) -> str:
+    """
+    Safely convert content to string, handling None/null values.
+
+    Args:
+        content: Content that might be None, string, or other type
+
+    Returns:
+        String representation of content, empty string if None
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        # For multimodal content (text + images), return as-is
+        return content
+    return str(content)
 
 
 def safe_content_to_string(content) -> str:
