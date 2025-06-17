@@ -139,17 +139,18 @@ class PDFViewer:
             return "Error: Invalid box coordinates. x1 must be < x2 and y1 must be < y2"
 
         # Get current frame image by decoding the base64 data
-        if self.current_frame.startswith("data:image/png;base64,"):
-            base64_data = self.current_frame.split(",", 1)[1]
-            image_data = base64.b64decode(base64_data)
-            buffer = BytesIO(image_data)
-            from PIL import Image
+        # if self.current_frame.startswith("data:image/png;base64,"):
+        #     base64_data = self.current_frame.split(",", 1)[1]
+        #     image_data = base64.b64decode(base64_data)
+        #     buffer = BytesIO(image_data)
+        #     from PIL import Image
 
-            image = Image.open(buffer)
-        else:
-            # Fallback to original page if current_frame is not properly formatted
-            image = self.images[self.current_page]
+        #     image = Image.open(buffer)
+        # else:
+        #     # Fallback to original page if current_frame is not properly formatted
+        #     image = self.images[self.current_page]
 
+        image = self.images[self.current_page]
         width, height = image.size
 
         # Convert normalized coordinates (0-1000) to actual pixel coordinates

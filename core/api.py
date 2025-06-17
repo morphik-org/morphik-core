@@ -529,7 +529,7 @@ async def query_completion(
                         logger.info(f"Completion start to first token: {completion_start_to_first_token:.2f}s")
 
                     full_content += chunk
-                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+                    yield f"data: {json.dumps({'type': 'assistant', 'content': chunk})}\n\n"
 
                 # Convert sources to the format expected by frontend
                 sources_info = [
@@ -538,7 +538,7 @@ async def query_completion(
                 ]
 
                 # Send completion signal with sources
-                yield f"data: {json.dumps({'done': True, 'sources': sources_info})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'sources': sources_info})}\n\n"
 
                 # Handle chat history after streaming is complete
                 if history_key:

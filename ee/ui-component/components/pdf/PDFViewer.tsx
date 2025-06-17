@@ -36,7 +36,7 @@ import { usePDFChatSessions } from "@/hooks/useChatSessions";
 import { usePDFSession } from "@/components/pdf/PDFAPIService";
 
 // Configure PDF.js worker - use CDN for reliability
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -168,9 +168,9 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
   // Memoize PDF options to prevent unnecessary reloads
   const pdfOptions = useMemo(
     () => ({
-      cMapUrl: `//unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
+      cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
       cMapPacked: true,
-      standardFontDataUrl: `//unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
+      standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
     }),
     []
   );
@@ -272,7 +272,6 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
 
       while (true) {
         const { done, value } = await reader.read();
-
         if (done) break;
 
         const chunk = decoder.decode(value);
@@ -283,63 +282,122 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
             try {
               const data = JSON.parse(line.slice(6));
 
-              if (data.content) {
-                // If we don't have a current assistant message, create one
-                if (!currentAssistantMessage) {
-                  currentAssistantMessage = {
-                    id: `assistant-${Date.now()}-${messageIdCounter++}`,
-                    role: "assistant",
-                    content: data.content,
-                    timestamp: new Date(),
-                  };
-                  assistantContent = data.content;
-                  setChatMessages(prev => [...prev, currentAssistantMessage!]);
-                } else {
-                  // Update the current assistant message
-                  assistantContent += data.content;
-                  setChatMessages(prev => {
-                    const messageIndex = prev.findIndex(msg => msg.id === currentAssistantMessage!.id);
-                    if (messageIndex !== -1) {
-                      const newMessages = [...prev];
-                      newMessages[messageIndex] = { ...newMessages[messageIndex], content: assistantContent };
-                      return newMessages;
+              // Handle different event types
+              switch (data.type) {
+                case "assistant":
+                  if (data.tool_calls && data.tool_calls.length > 0) {
+                    // Assistant message with tool calls - create message with tool calls info
+                    const assistantMessage: ChatMessage = {
+                      id: `assistant-${Date.now()}-${messageIdCounter++}`,
+                      role: "assistant",
+                      content: data.content || "I'll help you with that. Let me use some tools to analyze the document.",
+                      tool_calls: data.tool_calls,
+                      timestamp: new Date(),
+                    };
+
+                    setChatMessages(prev => [...prev, assistantMessage]);
+                    currentAssistantMessage = assistantMessage;
+                    assistantContent = data.content || "";
+                  } else if (data.content) {
+                    // Regular assistant content - either create new message or update existing
+                    if (!currentAssistantMessage) {
+                      // Create new assistant message
+                      const assistantMessage: ChatMessage = {
+                        id: `assistant-${Date.now()}-${messageIdCounter++}`,
+                        role: "assistant",
+                        content: data.content,
+                        timestamp: new Date(),
+                      };
+
+                      setChatMessages(prev => [...prev, assistantMessage]);
+                      currentAssistantMessage = assistantMessage;
+                      assistantContent = data.content;
+                    } else {
+                      // Update existing assistant message
+                      assistantContent += data.content;
+                      const messageId = currentAssistantMessage.id;
+                      setChatMessages(prev =>
+                        prev.map(msg =>
+                          msg.id === messageId ? { ...msg, content: assistantContent } : msg
+                        )
+                      );
                     }
-                    return prev;
-                  });
-                }
-              }
+                  }
+                  break;
 
-              if (data.tool_call && data.result) {
-                // If we have a current assistant message with content, finalize it
-                if (currentAssistantMessage && assistantContent) {
-                  currentAssistantMessage = null;
-                  assistantContent = "";
-                }
+                case "tool":
+                  // Tool execution result - create tool message
+                  if (data.name && data.content) {
+                    const toolMessage: ChatMessage = {
+                      id: `tool-${Date.now()}-${messageIdCounter++}`,
+                      role: "tool",
+                      content: data.content,
+                      name: data.name,
+                      timestamp: new Date(),
+                    };
 
-                // Create and add tool message
-                const toolMessage: ChatMessage = {
-                  id: `tool-${Date.now()}-${messageIdCounter++}`,
-                  role: "tool",
-                  content: data.result,
-                  name: data.tool_call,
-                  timestamp: new Date(),
-                };
+                    setChatMessages(prev => [...prev, toolMessage]);
 
-                // Add tool message to chat
-                setChatMessages(prev => [...prev, toolMessage]);
+                    // Reset current assistant message so next assistant content creates new message
+                    currentAssistantMessage = null;
+                    assistantContent = "";
+                  }
+                  break;
 
-                // Reset for potential next assistant message
-                currentAssistantMessage = null;
-                assistantContent = "";
-              }
+                case "done":
+                  // Streaming complete
+                  setIsChatLoading(false);
+                  return;
 
-              if (data.done) {
-                setIsChatLoading(false);
-                return;
-              }
+                case "error":
+                  // Error occurred
+                  throw new Error(data.content || "Unknown error occurred");
 
-              if (data.error) {
-                throw new Error(data.error);
+                default:
+                  // Legacy format support - handle old format for backward compatibility
+                  if (data.content && !data.type) {
+                    if (!currentAssistantMessage) {
+                      const assistantMessage: ChatMessage = {
+                        id: `assistant-${Date.now()}-${messageIdCounter++}`,
+                        role: "assistant",
+                        content: data.content,
+                        timestamp: new Date(),
+                      };
+
+                      setChatMessages(prev => [...prev, assistantMessage]);
+                      currentAssistantMessage = assistantMessage;
+                      assistantContent = data.content;
+                    } else {
+                      assistantContent += data.content;
+                      const messageId = currentAssistantMessage.id;
+                      setChatMessages(prev =>
+                        prev.map(msg =>
+                          msg.id === messageId ? { ...msg, content: assistantContent } : msg
+                        )
+                      );
+                    }
+                  } else if (data.tool_call && data.result) {
+                    // Legacy tool format
+                    const toolMessage: ChatMessage = {
+                      id: `tool-${Date.now()}-${messageIdCounter++}`,
+                      role: "tool",
+                      content: data.result,
+                      name: data.tool_call,
+                      timestamp: new Date(),
+                    };
+
+                    setChatMessages(prev => [...prev, toolMessage]);
+                    currentAssistantMessage = null;
+                    assistantContent = "";
+                  } else if (data.done) {
+                    // Legacy done format
+                    setIsChatLoading(false);
+                    return;
+                  } else if (data.error) {
+                    // Legacy error format
+                    throw new Error(data.error);
+                  }
+                  break;
               }
             } catch (parseError) {
               // Ignore parsing errors for incomplete JSON
@@ -433,13 +491,16 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
 
   // Handle PDF load success
   const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
+    console.log("PDF document loaded successfully with", numPages, "pages");
+    console.log("Current PDF state:", pdfState);
     setPdfState(prev => ({
       ...prev,
       totalPages: numPages,
       currentPage: 1,
     }));
     setIsLoading(false);
-  }, []);
+    console.log("PDF loading state set to false");
+  }, [pdfState]);
 
   // Handle PDF load error
   const onDocumentLoadError = useCallback(
@@ -447,9 +508,21 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
       console.error("Error loading PDF:", error);
       console.error("PDF.js worker src:", pdfjs.GlobalWorkerOptions.workerSrc);
       console.error("PDF file URL:", pdfState.pdfDataUrl);
+      console.error("PDF file object:", pdfState.file);
+      console.error("PDF state:", pdfState);
+
+      // Additional debugging for common PDF.js issues
+      if (error.message.includes("Invalid PDF")) {
+        console.error("PDF appears to be corrupted or invalid");
+      } else if (error.message.includes("worker")) {
+        console.error("PDF.js worker issue - check network connectivity");
+      } else if (error.message.includes("fetch")) {
+        console.error("Network issue loading PDF - check CORS and URL accessibility");
+      }
+
       setIsLoading(false);
     },
-    [pdfState.pdfDataUrl]
+    [pdfState.pdfDataUrl, pdfState.file, pdfState]
   );
 
   // PDF Controls
@@ -770,6 +843,12 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
       // Reset chat state for new PDF
       setChatMessages([]);
 
+      // Set a timeout to detect if loading takes too long
+      const loadingTimeout = setTimeout(() => {
+        console.warn("PDF loading is taking longer than expected (30 seconds)");
+        console.warn("This might indicate a network issue or corrupted PDF");
+      }, 30000);
+
       try {
         // First, get the download URL for this document
         const downloadUrlEndpoint = `${apiBaseUrl}/documents/${document.id}/download_url`;
@@ -816,11 +895,29 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
 
         const blob = await response.blob();
         console.log("Document downloaded successfully, blob size:", blob.size);
+        console.log("Blob type:", blob.type);
+
+        // Validate that we have a valid PDF blob
+        if (blob.size === 0) {
+          throw new Error("Downloaded file is empty");
+        }
+
+        if (!blob.type.includes("pdf") && !blob.type.includes("application/octet-stream")) {
+          console.warn("Blob type is not PDF:", blob.type, "- proceeding anyway");
+        }
 
         const file = new File([blob], document.filename, { type: "application/pdf" });
 
         // Create object URL for the PDF
-        const pdfDataUrl = URL.createObjectURL(blob);
+        let pdfDataUrl: string;
+        try {
+          pdfDataUrl = URL.createObjectURL(blob);
+          console.log("Created PDF data URL:", pdfDataUrl);
+          console.log("PDF data URL length:", pdfDataUrl.length);
+        } catch (urlError) {
+          console.error("Failed to create object URL:", urlError);
+          throw new Error("Failed to create PDF data URL");
+        }
 
         setPdfState(prev => ({
           ...prev,
@@ -833,9 +930,15 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
           documentName: document.filename,
           documentId: document.id,
         }));
+
+        // Set loading to false after successfully setting up the PDF state
+        // Note: onDocumentLoadSuccess will also call setIsLoading(false) when PDF.js finishes loading
+        setIsLoading(false);
+        clearTimeout(loadingTimeout);
       } catch (error) {
         console.error("Error loading selected document:", error);
         setIsLoading(false);
+        clearTimeout(loadingTimeout);
       }
     },
     [apiBaseUrl, authToken]
@@ -873,6 +976,36 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
       fetchAvailableDocuments();
     }
   }, [fetchAvailableDocuments, pdfState.file]);
+
+  // Debug PDF state changes
+  useEffect(() => {
+    console.log("PDF state changed:", pdfState);
+    if (pdfState.pdfDataUrl) {
+      console.log("PDF data URL is available:", pdfState.pdfDataUrl);
+    }
+  }, [pdfState]);
+
+  // Test PDF.js worker accessibility
+  useEffect(() => {
+    const testWorker = async () => {
+      try {
+        console.log("Testing PDF.js worker accessibility...");
+        console.log("Worker URL:", pdfjs.GlobalWorkerOptions.workerSrc);
+
+        // Test if the worker URL is accessible
+        const response = await fetch(pdfjs.GlobalWorkerOptions.workerSrc);
+        if (response.ok) {
+          console.log("PDF.js worker is accessible");
+        } else {
+          console.error("PDF.js worker is not accessible:", response.status, response.statusText);
+        }
+      } catch (error) {
+        console.error("Error testing PDF.js worker:", error);
+      }
+    };
+
+    testWorker();
+  }, []);
 
   if (!pdfState.file) {
     return (
