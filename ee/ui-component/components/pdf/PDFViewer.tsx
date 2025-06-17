@@ -878,7 +878,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
     return (
       <div className="flex h-screen flex-col bg-white dark:bg-background">
         {/* Clean Header */}
-        <div className="border-b bg-white p-4  dark:bg-background">
+        <div className="border-b bg-white p-4 dark:bg-background">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <FileText className="h-5 w-5 text-muted-foreground" />
@@ -899,8 +899,8 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
         </div>
 
         {/* Document List Area */}
-        <div className="flex flex-1 flex-col p-8 min-h-0">
-          <div className="mx-auto w-full max-w-4xl flex flex-1 flex-col min-h-0">
+        <div className="flex min-h-0 flex-1 flex-col p-8">
+          <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col">
             <div className="mb-6 text-center">
               <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Select a PDF Document</h3>
               <p className="mt-2 text-sm text-muted-foreground">
@@ -924,57 +924,57 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
                 </p>
               </div>
             ) : (
-              <ScrollArea className="flex-1 min-h-0 px-4">
-              <div className="grid gap-4">
-                {availableDocuments.map(doc => (
-                  <Card
-                    key={doc.id}
-                    className="cursor-pointer p-6 transition-colors hover:bg-accent"
-                    onClick={() => handleDocumentSelect(doc)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex min-w-0 flex-1 items-start gap-4">
-                        <FileText className="mt-1 h-6 w-6 flex-shrink-0 text-muted-foreground" />
-                        <div className="min-w-0 flex-1">
-                          <h4 className="truncate text-lg font-medium">{doc.filename}</h4>
-                          <div className="mt-2 flex items-center gap-6 text-sm text-muted-foreground">
-                            {doc.folder_name && (
-                              <span className="flex items-center gap-1">
-                                <FolderOpen className="h-4 w-4" />
-                                {doc.folder_name}
-                              </span>
-                            )}
-                            {doc.created_at && (
-                              <span className="flex items-center gap-1">
-                                <Clock className="h-4 w-4" />
-                                {new Date(doc.created_at).toLocaleDateString()}
-                              </span>
-                            )}
+              <ScrollArea className="min-h-0 flex-1 px-4">
+                <div className="grid gap-4">
+                  {availableDocuments.map(doc => (
+                    <Card
+                      key={doc.id}
+                      className="cursor-pointer p-6 transition-colors hover:bg-accent"
+                      onClick={() => handleDocumentSelect(doc)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex min-w-0 flex-1 items-start gap-4">
+                          <FileText className="mt-1 h-6 w-6 flex-shrink-0 text-muted-foreground" />
+                          <div className="min-w-0 flex-1">
+                            <h4 className="truncate text-lg font-medium">{doc.filename}</h4>
+                            <div className="mt-2 flex items-center gap-6 text-sm text-muted-foreground">
+                              {doc.folder_name && (
+                                <span className="flex items-center gap-1">
+                                  <FolderOpen className="h-4 w-4" />
+                                  {doc.folder_name}
+                                </span>
+                              )}
+                              {doc.created_at && (
+                                <span className="flex items-center gap-1">
+                                  <Clock className="h-4 w-4" />
+                                  {new Date(doc.created_at).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
+                        <div className="flex flex-shrink-0 items-center gap-2">
+                          <Badge
+                            variant={
+                              doc.status === "completed"
+                                ? "default"
+                                : doc.status === "processing"
+                                  ? "secondary"
+                                  : "destructive"
+                            }
+                            className="text-xs"
+                          >
+                            {doc.status === "completed" && <CheckCircle className="mr-1 h-3 w-3" />}
+                            {doc.status === "processing" && <Clock className="mr-1 h-3 w-3" />}
+                            {doc.status === "failed" && <AlertCircle className="mr-1 h-3 w-3" />}
+                            {doc.status}
+                          </Badge>
+                        </div>
                       </div>
-                      <div className="flex flex-shrink-0 items-center gap-2">
-                        <Badge
-                          variant={
-                            doc.status === "completed"
-                              ? "default"
-                              : doc.status === "processing"
-                                ? "secondary"
-                                : "destructive"
-                          }
-                          className="text-xs"
-                        >
-                          {doc.status === "completed" && <CheckCircle className="mr-1 h-3 w-3" />}
-                          {doc.status === "processing" && <Clock className="mr-1 h-3 w-3" />}
-                          {doc.status === "failed" && <AlertCircle className="mr-1 h-3 w-3" />}
-                          {doc.status}
-                        </Badge>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            </ScrollArea>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
             )}
           </div>
         </div>
