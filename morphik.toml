@@ -25,7 +25,7 @@ claude_opus = { model_name = "claude-3-opus-20240229" }
 claude_sonnet = { model_name = "claude-3-7-sonnet-latest" }
 
 # Google Gemini models
-gemini_flash =  { model_name = "gpt-4.1" } # { model_name = "gemini/gemini-2.5-flash-preview-05-20" } # gemini-2.5-flash-preview-05-20
+gemini_flash = { model_name = "gemini/gemini-2.5-pro-preview-06-05" } #  { model_name = "gpt-4.1" } # { model_name = "gemini/gemini-2.5-flash-preview-05-20" } # gemini-2.5-flash-preview-05-20
 # gemini_flash = { model_name = "gemini/gemini-2.5-pro-preview-06-05" } # { model_name = "claude-4-sonnet-20250514"} # { model_name = "gpt-4.1" } # { model_name = "gemini/gemini-2.5-pro-preview-06-05" } # {model_name = "o3-2025-04-16"} #  { model_name = "claude-3-7-sonnet-latest"} #  { model_name = "gemini/gemini-2.5-flash-preview-05-20" } # gemini-2.5-flash-preview-05-20
 # gemini_flash = { model_name = "groq/meta-llama/llama-4-maverick-17b-128e-instruct"}
 
@@ -83,7 +83,7 @@ model = "ollama_qwen_vision"  # Reference to a key in registered_models
 frame_sample_rate = -1  # Set to -1 to disable frame captioning
 
 [reranker]
-use_reranker = true
+use_reranker = false
 provider = "flag"
 model_name = "BAAI/bge-reranker-large"
 query_max_length = 256

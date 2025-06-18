@@ -85,9 +85,9 @@ interface ChatMessage {
   tool_call_id?: string;
   name?: string;
   // For tool messages with additional data
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   current_frame?: string;
-  args?: Record<string, any>;
+  args?: Record<string, unknown>;
 }
 
 interface AgentData {
@@ -114,9 +114,9 @@ interface ApiChatMessage {
   tool_call_id?: string;
   name?: string;
   // For tool messages with additional data
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   current_frame?: string;
-  args?: Record<string, any>;
+  args?: Record<string, unknown>;
 }
 
 interface PDFDocument {
@@ -165,6 +165,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
 
   // Tool execution state tracking
   const [executingTools, setExecutingTools] = useState<Map<string, ChatMessage>>(new Map());
+  console.log("executingTools", executingTools);
 
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<HTMLDivElement>(null);
@@ -185,9 +186,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
   const pdfOptions = useMemo(
     () => ({
       cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
-      cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
       cMapPacked: true,
-      standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
       standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
     }),
     []
@@ -239,6 +238,9 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
   // Handle chat message submission
   const handleChatSubmit = useCallback(async () => {
     if (!chatInput.trim() || isChatLoading || !currentChatId) return;
+
+    // Automatically switch to API mode when chat is submitted
+    setPdfState(prev => ({ ...prev, controlMode: "api" }));
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -308,7 +310,8 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
                     const assistantMessage: ChatMessage = {
                       id: `assistant-${Date.now()}-${messageIdCounter++}`,
                       role: "assistant",
-                      content: data.content || "I'll help you with that. Let me use some tools to analyze the document.",
+                      content:
+                        data.content || "I'll help you with that. Let me use some tools to analyze the document.",
                       tool_calls: data.tool_calls,
                       timestamp: new Date(),
                     };
@@ -335,9 +338,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
                       assistantContent += data.content;
                       const messageId = currentAssistantMessage.id;
                       setChatMessages(prev =>
-                        prev.map(msg =>
-                          msg.id === messageId ? { ...msg, content: assistantContent } : msg
-                        )
+                        prev.map(msg => (msg.id === messageId ? { ...msg, content: assistantContent } : msg))
                       );
                     }
                   }
@@ -374,7 +375,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
                       content: data.content,
                       name: data.name,
                       timestamp: new Date(),
-                      metadata: data.metadata || {},
+                      metadata: { ...data.metadata, status: "completed" },
                       current_frame: data.current_frame,
                       args: data.args || {},
                     };
@@ -388,11 +389,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
 
                     // Update the chat message
                     setChatMessages(prev =>
-                      prev.map(msg =>
-                        msg.id === `tool-loading-${data.id}`
-                          ? completedToolMessage
-                          : msg
-                      )
+                      prev.map(msg => (msg.id === `tool-loading-${data.id}` ? completedToolMessage : msg))
                     );
 
                     // Reset current assistant message so next assistant content creates new message
@@ -450,9 +447,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
                       assistantContent += data.content;
                       const messageId = currentAssistantMessage.id;
                       setChatMessages(prev =>
-                        prev.map(msg =>
-                          msg.id === messageId ? { ...msg, content: assistantContent } : msg
-                        )
+                        prev.map(msg => (msg.id === messageId ? { ...msg, content: assistantContent } : msg))
                       );
                     }
                   } else if (data.tool_call && data.result) {
@@ -575,21 +570,22 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
   }, [currentChatId, loadChatMessages]);
 
   // Handle PDF load success
-  const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
-    console.log("PDF document loaded successfully with", numPages, "pages");
-    console.log("Current PDF state:", pdfState);
-    console.log("PDF document loaded successfully with", numPages, "pages");
-    console.log("Current PDF state:", pdfState);
-    setPdfState(prev => ({
-      ...prev,
-      totalPages: numPages,
-      currentPage: 1,
-    }));
-    setIsLoading(false);
-    console.log("PDF loading state set to false");
-  }, [pdfState]);
-    console.log("PDF loading state set to false");
-  }, [pdfState]);
+  const onDocumentLoadSuccess = useCallback(
+    ({ numPages }: { numPages: number }) => {
+      console.log("PDF document loaded successfully with", numPages, "pages");
+      console.log("Current PDF state:", pdfState);
+      console.log("PDF document loaded successfully with", numPages, "pages");
+      console.log("Current PDF state:", pdfState);
+      setPdfState(prev => ({
+        ...prev,
+        totalPages: numPages,
+        currentPage: 1,
+      }));
+      setIsLoading(false);
+      console.log("PDF loading state set to false");
+    },
+    [pdfState]
+  );
 
   // Handle PDF load error
   const onDocumentLoadError = useCallback(
@@ -609,21 +605,8 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
         console.error("Network issue loading PDF - check CORS and URL accessibility");
       }
 
-      console.error("PDF file object:", pdfState.file);
-      console.error("PDF state:", pdfState);
-
-      // Additional debugging for common PDF.js issues
-      if (error.message.includes("Invalid PDF")) {
-        console.error("PDF appears to be corrupted or invalid");
-      } else if (error.message.includes("worker")) {
-        console.error("PDF.js worker issue - check network connectivity");
-      } else if (error.message.includes("fetch")) {
-        console.error("Network issue loading PDF - check CORS and URL accessibility");
-      }
-
       setIsLoading(false);
     },
-    [pdfState.pdfDataUrl, pdfState.file, pdfState]
     [pdfState.pdfDataUrl, pdfState.file, pdfState]
   );
 
@@ -951,12 +934,6 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
         console.warn("This might indicate a network issue or corrupted PDF");
       }, 30000);
 
-      // Set a timeout to detect if loading takes too long
-      const loadingTimeout = setTimeout(() => {
-        console.warn("PDF loading is taking longer than expected (30 seconds)");
-        console.warn("This might indicate a network issue or corrupted PDF");
-      }, 30000);
-
       try {
         // First, get the download URL for this document
         const downloadUrlEndpoint = `${apiBaseUrl}/documents/${document.id}/download_url`;
@@ -1027,15 +1004,6 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
         const file = new File([blob], document.filename, { type: "application/pdf" });
 
         // Create object URL for the PDF
-        let pdfDataUrl: string;
-        try {
-          pdfDataUrl = URL.createObjectURL(blob);
-          console.log("Created PDF data URL:", pdfDataUrl);
-          console.log("PDF data URL length:", pdfDataUrl.length);
-        } catch (urlError) {
-          console.error("Failed to create object URL:", urlError);
-          throw new Error("Failed to create PDF data URL");
-        }
         let pdfDataUrl: string;
         try {
           pdfDataUrl = URL.createObjectURL(blob);
@@ -1405,82 +1373,76 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
                   <p>Select a PDF document to start chatting about its content</p>
                 </div>
               </div>
-                      </div>
-        </div>
-      )}
-
-      {/* Tool Detail Modal */}
-      <Dialog open={isToolDetailOpen} onOpenChange={setIsToolDetailOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <span className="text-green-600">🔧</span>
-              Tool: {selectedToolMessage?.name}
-            </DialogTitle>
-            <DialogDescription>
-              Tool execution details and results
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedToolMessage && (
-            <div className="space-y-4 overflow-y-auto">
-              {/* Tool Arguments */}
-              {selectedToolMessage.args && Object.keys(selectedToolMessage.args).length > 0 && (
-                <div>
-                  <h4 className="font-medium mb-2">Arguments:</h4>
-                  <div className="bg-muted p-3 rounded-lg text-sm">
-                    <pre className="whitespace-pre-wrap">
-                      {JSON.stringify(selectedToolMessage.args, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              )}
-
-              {/* Tool Result */}
-              <div>
-                <h4 className="font-medium mb-2">Result:</h4>
-                <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 p-3 rounded-lg text-sm">
-                  {selectedToolMessage.content}
-                </div>
-              </div>
-
-              {/* Metadata */}
-              {selectedToolMessage.metadata && Object.keys(selectedToolMessage.metadata).length > 0 && (
-                <div>
-                  <h4 className="font-medium mb-2">Metadata:</h4>
-                  <div className="bg-muted p-3 rounded-lg text-sm">
-                    <pre className="whitespace-pre-wrap">
-                      {JSON.stringify(selectedToolMessage.metadata, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              )}
-
-              {/* Current Frame Image */}
-              {selectedToolMessage.current_frame && (
-                <div>
-                  <h4 className="font-medium mb-2">Visual Result:</h4>
-                  <div className="border rounded-lg overflow-hidden">
-                    <img
-                      src={selectedToolMessage.current_frame}
-                      alt="Tool result visualization"
-                      className="w-full h-auto max-h-96 object-contain"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Timestamp */}
-              <div className="text-xs text-muted-foreground">
-                Executed at: {selectedToolMessage.timestamp.toLocaleString()}
-              </div>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
+          </div>
+        )}
+
+        {/* Tool Detail Modal */}
+        <Dialog open={isToolDetailOpen} onOpenChange={setIsToolDetailOpen}>
+          <DialogContent className="max-h-[80vh] max-w-4xl overflow-hidden">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <span className="text-green-600">🔧</span>
+                Tool: {selectedToolMessage?.name}
+              </DialogTitle>
+              <DialogDescription>Tool execution details and results</DialogDescription>
+            </DialogHeader>
+
+            {selectedToolMessage && (
+              <div className="space-y-4 overflow-y-auto">
+                {/* Tool Arguments */}
+                {selectedToolMessage.args && Object.keys(selectedToolMessage.args).length > 0 && (
+                  <div>
+                    <h4 className="mb-2 font-medium">Arguments:</h4>
+                    <div className="rounded-lg bg-muted p-3 text-sm">
+                      <pre className="whitespace-pre-wrap">{JSON.stringify(selectedToolMessage.args, null, 2)}</pre>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tool Result */}
+                <div>
+                  <h4 className="mb-2 font-medium">Result:</h4>
+                  <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm dark:border-green-800 dark:bg-green-950">
+                    {selectedToolMessage.content}
+                  </div>
+                </div>
+
+                {/* Metadata */}
+                {selectedToolMessage.metadata && Object.keys(selectedToolMessage.metadata).length > 0 && (
+                  <div>
+                    <h4 className="mb-2 font-medium">Metadata:</h4>
+                    <div className="rounded-lg bg-muted p-3 text-sm">
+                      <pre className="whitespace-pre-wrap">{JSON.stringify(selectedToolMessage.metadata, null, 2)}</pre>
+                    </div>
+                  </div>
+                )}
+
+                {/* Current Frame Image */}
+                {selectedToolMessage.current_frame && (
+                  <div>
+                    <h4 className="mb-2 font-medium">Visual Result:</h4>
+                    <div className="overflow-hidden rounded-lg border">
+                      <img
+                        src={selectedToolMessage.current_frame}
+                        alt="Tool result visualization"
+                        className="h-auto max-h-96 w-full object-contain"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Timestamp */}
+                <div className="text-xs text-muted-foreground">
+                  Executed at: {selectedToolMessage.timestamp.toLocaleString()}
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full bg-white dark:bg-slate-900">
@@ -1579,9 +1541,9 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
             </div>
           </ScrollArea>
 
-          {/* Bottom Floating Control Bar */}
-          <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 transform">
-            <div className="flex items-center gap-4 border border-slate-200 bg-white px-4 py-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          {/* Bottom Floating Control Bar - Fixed to viewport center */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center">
+            <div className="pointer-events-auto flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
               {/* Control Mode Toggle */}
               <div
                 onClick={toggleControlMode}
@@ -1739,36 +1701,46 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
                           <div className="w-full">
                             <div
                               className={`w-full rounded-lg border p-2 text-xs transition-colors ${
-                                message.metadata?.status === "executing"
+                                message.metadata?.status === "executing" || message.content === "Executing..."
                                   ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
-                                  : "border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200 cursor-pointer hover:bg-green-100 dark:hover:bg-green-900"
+                                  : "cursor-pointer border-green-200 bg-green-50 text-green-800 hover:bg-green-100 dark:border-green-800 dark:bg-green-950 dark:text-green-200 dark:hover:bg-green-900"
                               }`}
                               onClick={() => {
-                                if (message.metadata?.status !== "executing") {
+                                if (message.metadata?.status !== "executing" && message.content !== "Executing...") {
                                   setSelectedToolMessage(message);
                                   setIsToolDetailOpen(true);
                                 }
                               }}
-                              title={message.metadata?.status === "executing" ? "Tool is executing..." : "Click to view tool details"}
+                              title={
+                                message.metadata?.status === "executing" || message.content === "Executing..."
+                                  ? "Tool is executing..."
+                                  : "Click to view tool details"
+                              }
                             >
                               <div className="flex items-center gap-2">
-                                <span className={message.metadata?.status === "executing" ? "text-amber-600 dark:text-amber-400" : "text-green-600 dark:text-green-400"}>
+                                <span
+                                  className={
+                                    message.metadata?.status === "executing" || message.content === "Executing..."
+                                      ? "text-amber-600 dark:text-amber-400"
+                                      : "text-green-600 dark:text-green-400"
+                                  }
+                                >
                                   🔧
                                 </span>
-                                <div className="flex-1 min-w-0">
+                                <div className="min-w-0 flex-1">
                                   <span className="font-medium">{message.name}</span>
-                                  {message.metadata?.status === "executing" ? (
-                                    <div className="inline-block ml-2">
+                                  {message.metadata?.status === "executing" || message.content === "Executing..." ? (
+                                    <div className="ml-2 inline-block">
                                       <div className="relative overflow-hidden">
                                         <span className="text-amber-600 dark:text-amber-400">⚡ Executing</span>
-                                        <div className="absolute inset-0 -skew-x-12 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                                        <div className="absolute inset-0 -skew-x-12 animate-shimmer bg-gradient-to-r from-transparent via-white/30 to-transparent"></div>
                                       </div>
                                     </div>
                                   ) : (
-                                    <span className="text-green-600 dark:text-green-400 ml-1">✓</span>
+                                    <span className="ml-1 text-green-600 dark:text-green-400">✓</span>
                                   )}
                                 </div>
-                                {message.current_frame && message.metadata?.status !== "executing" && (
+                                {message.current_frame && message.metadata?.status !== "executing" && message.content !== "Executing..." && (
                                   <span className="text-green-600 dark:text-green-400">🖼️</span>
                                 )}
                               </div>
