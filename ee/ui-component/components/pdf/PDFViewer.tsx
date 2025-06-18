@@ -1140,12 +1140,12 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
 
   if (!pdfState.file) {
     return (
-      <div className="flex h-full flex-col bg-white dark:bg-slate-900">
+      <div className="flex h-screen flex-col bg-white dark:bg-background">
         {/* Clean Header */}
-        <div className="border-b border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+        <div className="border-b bg-white p-4 dark:bg-background">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <FileText className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+              <FileText className="h-5 w-5 text-muted-foreground" />
               <h2 className="text-lg font-medium text-slate-900 dark:text-slate-100">PDF Viewer</h2>
             </div>
             <div className="flex items-center gap-2">
@@ -1163,24 +1163,24 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
         </div>
 
         {/* Document List Area */}
-        <div className="flex flex-1 flex-col p-8">
-          <div className="mx-auto w-full max-w-4xl">
+        <div className="flex min-h-0 flex-1 flex-col p-8">
+          <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col">
             <div className="mb-6 text-center">
               <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Select a PDF Document</h3>
-              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              <p className="mt-2 text-sm text-muted-foreground">
                 Choose from your uploaded PDF documents to view and chat about
               </p>
             </div>
 
             {isLoadingDocuments ? (
-              <div className="flex items-center justify-center py-12">
+              <div className="flex flex-1 items-center justify-center py-12">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent"></div>
                   <span>Loading documents...</span>
                 </div>
               </div>
             ) : availableDocuments.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
                 <FileText className="mb-4 h-16 w-16 text-muted-foreground" />
                 <h3 className="mb-2 text-lg font-medium">No PDF documents found</h3>
                 <p className="mb-4 text-sm text-muted-foreground">
@@ -1188,55 +1188,57 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
                 </p>
               </div>
             ) : (
-              <div className="grid gap-4">
-                {availableDocuments.map(doc => (
-                  <Card
-                    key={doc.id}
-                    className="cursor-pointer p-6 transition-colors hover:bg-accent"
-                    onClick={() => handleDocumentSelect(doc)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex min-w-0 flex-1 items-start gap-4">
-                        <FileText className="mt-1 h-6 w-6 flex-shrink-0 text-muted-foreground" />
-                        <div className="min-w-0 flex-1">
-                          <h4 className="truncate text-lg font-medium">{doc.filename}</h4>
-                          <div className="mt-2 flex items-center gap-6 text-sm text-muted-foreground">
-                            {doc.folder_name && (
-                              <span className="flex items-center gap-1">
-                                <FolderOpen className="h-4 w-4" />
-                                {doc.folder_name}
-                              </span>
-                            )}
-                            {doc.created_at && (
-                              <span className="flex items-center gap-1">
-                                <Clock className="h-4 w-4" />
-                                {new Date(doc.created_at).toLocaleDateString()}
-                              </span>
-                            )}
+              <ScrollArea className="min-h-0 flex-1 px-4">
+                <div className="grid gap-4">
+                  {availableDocuments.map(doc => (
+                    <Card
+                      key={doc.id}
+                      className="cursor-pointer p-6 transition-colors hover:bg-accent"
+                      onClick={() => handleDocumentSelect(doc)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex min-w-0 flex-1 items-start gap-4">
+                          <FileText className="mt-1 h-6 w-6 flex-shrink-0 text-muted-foreground" />
+                          <div className="min-w-0 flex-1">
+                            <h4 className="truncate text-lg font-medium">{doc.filename}</h4>
+                            <div className="mt-2 flex items-center gap-6 text-sm text-muted-foreground">
+                              {doc.folder_name && (
+                                <span className="flex items-center gap-1">
+                                  <FolderOpen className="h-4 w-4" />
+                                  {doc.folder_name}
+                                </span>
+                              )}
+                              {doc.created_at && (
+                                <span className="flex items-center gap-1">
+                                  <Clock className="h-4 w-4" />
+                                  {new Date(doc.created_at).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
+                        <div className="flex flex-shrink-0 items-center gap-2">
+                          <Badge
+                            variant={
+                              doc.status === "completed"
+                                ? "default"
+                                : doc.status === "processing"
+                                  ? "secondary"
+                                  : "destructive"
+                            }
+                            className="text-xs"
+                          >
+                            {doc.status === "completed" && <CheckCircle className="mr-1 h-3 w-3" />}
+                            {doc.status === "processing" && <Clock className="mr-1 h-3 w-3" />}
+                            {doc.status === "failed" && <AlertCircle className="mr-1 h-3 w-3" />}
+                            {doc.status}
+                          </Badge>
+                        </div>
                       </div>
-                      <div className="flex flex-shrink-0 items-center gap-2">
-                        <Badge
-                          variant={
-                            doc.status === "completed"
-                              ? "default"
-                              : doc.status === "processing"
-                                ? "secondary"
-                                : "destructive"
-                          }
-                          className="text-xs"
-                        >
-                          {doc.status === "completed" && <CheckCircle className="mr-1 h-3 w-3" />}
-                          {doc.status === "processing" && <Clock className="mr-1 h-3 w-3" />}
-                          {doc.status === "failed" && <AlertCircle className="mr-1 h-3 w-3" />}
-                          {doc.status}
-                        </Badge>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
             )}
           </div>
         </div>
