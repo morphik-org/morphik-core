@@ -18,7 +18,7 @@
 
 > **Migration Required for Existing Installations**: If you installed Morphik before June 8, 2025, our most recent changes affect the way content is stored in the multivector chunks. Please run the `scripts/migrate_multivector_to_external_storage.py` script before launching Morphik.
 
-## Morphik is an open-source AI-native knowledge base.
+## Morphik is a AI-native toolset for visually rich documents and multimodal data
 
 [Morphik](https://morphik.ai) provides developers the tools to ingest, search (deep and shallow), transform, and manage unstructured and multimodal documents. Some of our features include:
 
@@ -32,20 +32,19 @@ The best part? Morphik has a [free tier](https://www.morphik.ai/pricing) and is 
 
 ## Table of Contents
 - [Getting Started with Morphik](#getting-started-with-morphik-recommended)
-- [Self-hosting the open-source version](#self-hosting-the-open-source-version)
+- [Self-hosting Morphik](#self-hosting-the-open-source-version)
 - [Using Morphik](#using-morphik)
 - [Contributing](#contributing)
-- [Open source vs paid](#open-source-vs-paid)
+- [Open source vs paid](#License)
 
 ## Getting Started with Morphik (Recommended)
 
 The fastest and easiest way to get started with Morphik is by signing up for free at [Morphik](https://www.morphik.ai/signup). We have a generous free tier and transparent, compute-usage based pricing if you're looking to ingest a lot of data.
 
-## Self-hosting the open-source version
-
+## Self-hosting Morphik
 If you'd like to self-host Morphik, you can find the dedicated instruction [here](https://morphik.ai/docs/getting-started). We offer options for direct installation and installation via docker.
 
-**Important**: Due to limited resources, we cannot provide full support for open-source deployments. We have an installation guide, and a [Discord community](https://discord.gg/BwMtv3Zaju) to help, but we can't guarantee full support.
+**Important**: Due to limited resources, we cannot provide full support for self-hosted deployments. We have an installation guide, and a [Discord community](https://discord.gg/BwMtv3Zaju) to help, but we can't guarantee full support.
 
 ## Using Morphik
 
@@ -85,9 +84,17 @@ You're welcome to contribute to the project! We love:
 
 Currently, we're focused on improving speed, integrating with more tools, and finding the research papers that provide the most value to our users. If you have thoughts, let us know in the discord or in GitHub!
 
-## Open source vs paid
+## License
 
-Certain features - such as Morphik Console - are not available in the open-source version. Any feature in the `ee` namespace is not available in the open-source version and carries a different license. Any feature outside that is open source under the MIT expat license.
+Morphik Core is **source-available** under the [Business Source License 1.1](./LICENSE).
+
+- **Personal / Indie use**: free.
+- **Commercial production use**: free if your Morphik deployment generates < $2 000/month in gross revenue.  
+  Otherwise purchase a commercial key at <https://morphik.ai/pricing>.
+- **Future open source**: each code version automatically re-licenses to Apache 2.0 exactly four years after its first release.
+
+See the full licence text for details.
+
 
 ## Contributors
 

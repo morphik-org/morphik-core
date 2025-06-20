@@ -394,8 +394,12 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   // Fine-grained polling – update status of documents that are processing
   // ---------------------------------------------------------------------
   useEffect(() => {
-    // Identify docs still processing
-    const processingDocs = documents.filter(doc => doc.system_metadata?.status === "processing");
+    // Identify docs still processing or recently failed (to capture error info)
+    const processingDocs = documents.filter(
+      doc =>
+        doc.system_metadata?.status === "processing" ||
+        (doc.system_metadata?.status === "failed" && !doc.system_metadata?.error)
+    );
 
     // If none, skip polling
     if (processingDocs.length === 0) {
@@ -420,6 +424,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 id: data.document_id as string,
                 status: data.status as string,
                 updatedAt: data.updated_at as string | undefined,
+                error: data.error as string | undefined,
               };
             } catch (err) {
               console.error("Status poll error for", doc.external_id, err);
@@ -432,13 +437,14 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         setDocuments(prevDocs =>
           prevDocs.map(d => {
             const upd = updates.find(u => u && u.id === d.external_id);
-            if (upd && upd.status && upd.status !== d.system_metadata?.status) {
+            if (upd && upd.status && (upd.status !== d.system_metadata?.status || upd.error)) {
               return {
                 ...d,
                 system_metadata: {
                   ...d.system_metadata,
                   status: upd.status,
                   updated_at: upd.updatedAt ?? d.system_metadata?.updated_at,
+                  ...(upd.error && { error: upd.error }),
                 },
               } as Document;
             }

@@ -214,7 +214,13 @@ when citing different sources. Use markdown formatting for text content to impro
         # Add conversation history if provided
         if conversation_history:
             for msg in conversation_history[:-1]:  # Exclude the last message (current user query)
-                messages.append({"role": msg["role"], "content": msg["content"]})
+                # Properly handle all message types including tool messages and assistant messages with tool calls
+                if isinstance(msg, dict):
+                    # Copy the entire message to preserve all fields (tool_call_id, name, tool_calls, etc.)
+                    messages.append(msg)
+                else:
+                    # Fallback for simple message objects
+                    messages.append({"role": msg["role"], "content": msg["content"]})
 
         # Add the current user query
         messages.append({"role": "user", "content": query})
@@ -278,51 +284,81 @@ when citing different sources. Use markdown formatting for text content to impro
                     # Check if the response is JSON formatted
                     import re
 
-                    # Try to extract JSON content if present using a regex pattern for common JSON formats
-                    json_pattern = r'\[\s*{.*}\s*\]|\{\s*".*"\s*:.*\}'
-                    json_match = re.search(json_pattern, msg.content, re.DOTALL)
+                    from core.utils.agent_helpers import parse_json
 
-                    if json_match:
-                        potential_json = json_match.group(0)
-                        parsed_content = json.loads(potential_json)
+                    # First try to parse the entire response as JSON
+                    content_to_parse = msg.content.strip()
+
+                    # Check if it's wrapped in markdown code blocks
+                    if content_to_parse.startswith("```json") and content_to_parse.endswith("```"):
+                        content_to_parse = parse_json(content_to_parse)
+                    elif content_to_parse.startswith("```") and content_to_parse.endswith("```"):
+                        # Extract content from any code block
+                        lines = content_to_parse.split("\n")
+                        if len(lines) > 2:
+                            content_to_parse = "\n".join(lines[1:-1])
+
+                    # Try to parse as complete JSON first
+                    try:
+                        parsed_content = json.loads(content_to_parse)
 
                         # Handle both array and object formats
                         if isinstance(parsed_content, list):
                             for item in parsed_content:
                                 if isinstance(item, dict) and "type" in item and "content" in item:
-                                    # Convert to standardized display object format
-                                    # display_obj = {
-                                    #     "type": item.get("type", "text"),
-                                    #     "content": item.get("content", ""),
-                                    #     "source": item.get("source", "agent-response"),
-                                    # }
-                                    # if "caption" in item and item["type"] == "image":
-                                    #     display_obj["caption"] = item["caption"]
-                                    # if item["type"] == "image" and item.get("source") in source_map:
-                                    #     display_obj["content"] = source_map[item["source"]]["content"]
                                     display_obj = extract_display_object(item, source_map)
-                                    display_objects.append(display_obj)
+                                    if not display_obj.get("invalid"):
+                                        display_objects.append(display_obj)
                         elif (
                             isinstance(parsed_content, dict)
                             and "type" in parsed_content
                             and "content" in parsed_content
                         ):
-                            # # Single display object
-                            # display_obj = {
-                            #     "type": parsed_content.get("type", "text"),
-                            #     "content": parsed_content.get("content", ""),
-                            #     "source": parsed_content.get("source", "agent-response"),
-                            # }
-                            # if "caption" in parsed_content and parsed_content["type"] == "image":
-                            #     display_obj["caption"] = parsed_content["caption"]
-                            # if parsed_content.get("type") == "image" and parsed_content.get("source") in source_map:
-                            #     display_obj["content"] = source_map[parsed_content["source"]]["content"]
                             display_obj = extract_display_object(parsed_content, source_map)
-                            display_objects.append(display_obj)
+                            if not display_obj.get("invalid"):
+                                display_objects.append(display_obj)
+
+                    except json.JSONDecodeError:
+                        # If complete parsing fails, try to extract JSON arrays or objects
+                        json_array_pattern = r'\[\s*\{[^}]*"type"\s*:[^}]*"content"\s*:[^}]*\}[^]]*\]'
+                        json_object_pattern = r'\{\s*"type"\s*:[^}]*"content"\s*:[^}]*\}'
+
+                        # Try array pattern first
+                        array_match = re.search(json_array_pattern, content_to_parse, re.DOTALL)
+                        if array_match:
+                            try:
+                                parsed_content = json.loads(array_match.group(0))
+                                if isinstance(parsed_content, list):
+                                    for item in parsed_content:
+                                        if isinstance(item, dict) and "type" in item and "content" in item:
+                                            display_obj = extract_display_object(item, source_map)
+                                            if not display_obj.get("invalid"):
+                                                display_objects.append(display_obj)
+                            except json.JSONDecodeError:
+                                pass
+
+                        # Try object pattern if array didn't work
+                        if not display_objects:
+                            object_matches = re.findall(json_object_pattern, content_to_parse, re.DOTALL)
+                            for match in object_matches:
+                                try:
+                                    parsed_content = json.loads(match)
+                                    if (
+                                        isinstance(parsed_content, dict)
+                                        and "type" in parsed_content
+                                        and "content" in parsed_content
+                                    ):
+                                        display_obj = extract_display_object(parsed_content, source_map)
+                                        if not display_obj.get("invalid"):
+                                            display_objects.append(display_obj)
+                                except json.JSONDecodeError:
+                                    continue
+
                     # If no display objects were created, treat the entire content as text
                     if not display_objects:
                         default_text = msg.content
-                except (json.JSONDecodeError, ValueError) as e:
+
+                except Exception as e:
                     logger.warning(f"Failed to parse response as JSON: {e}")
                     default_text = msg.content
 
@@ -411,28 +447,30 @@ when citing different sources. Use markdown formatting for text content to impro
                     "sources": sources,
                 }
 
-            call = msg.tool_calls[0]
-            name = call.function.name
-            args = json.loads(call.function.arguments)
-            logger.info(f"Tool call detected: {name} with args: {_truncate_for_log(args)}")
+            # Process ALL tool calls in the assistant message
+            logger.info(f"Tool calls detected: {len(msg.tool_calls)} calls")
 
-            # Append assistant text and execute tool
-            # logger.info(f"Appending assistant text: {msg}")
-            # if msg.content:
-            #     messages.append({'role': 'assistant', 'content': msg.content})
+            # Add the assistant message with tool calls to conversation
             messages.append(msg.to_dict(exclude_none=True))
-            logger.info(f"Executing tool: {name}")
-            result = await self._execute_tool(name, args, auth, source_map)
-            logger.info(f"Tool execution result: {_truncate_for_log(result)}")
 
-            # Add tool call and result to history
-            tool_history.append({"tool_name": name, "tool_args": args, "tool_result": result})
+            # Execute each tool call and add responses
+            for call in msg.tool_calls:
+                name = call.function.name
+                args = json.loads(call.function.arguments)
+                logger.info(f"Tool call detected: {name} with args: {_truncate_for_log(args)}")
 
-            # Append raw tool output (string or structured data)
-            content = [{"type": "text", "text": result}] if isinstance(result, str) else result
-            messages.append({"role": "tool", "name": name, "content": content, "tool_call_id": call.id})
+                logger.info(f"Executing tool: {name}")
+                result = await self._execute_tool(name, args, auth, source_map)
+                logger.info(f"Tool execution result: {_truncate_for_log(result)}")
 
-            logger.info("Added tool result to conversation, continuing...")
+                # Add tool call and result to history
+                tool_history.append({"tool_name": name, "tool_args": args, "tool_result": result})
+
+                # Append raw tool output (string or structured data)
+                content = [{"type": "text", "text": result}] if isinstance(result, str) else result
+                messages.append({"role": "tool", "name": name, "content": content, "tool_call_id": call.id})
+
+            logger.info("Added all tool results to conversation, continuing...")
 
     def stream(self, query: str):
         """

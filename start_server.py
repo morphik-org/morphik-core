@@ -254,7 +254,7 @@ def main():
     parser.add_argument(
         "--workers",
         type=int,
-        default=os.cpu_count(),
+        default=1,
         help="Number of worker processes for Uvicorn (default: CPU count)",
     )
     args = parser.parse_args()

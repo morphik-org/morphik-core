@@ -14,7 +14,16 @@ SUMMARY_PROMPT += "Your summaries will be used as an *index* to allow an agent t
 class PDFViewer:
     """A state machine for navigating and viewing PDF pages."""
 
-    def __init__(self, images: List[ImageType], api_base_url: str = None, session_id: str = None, user_id: str = None):
+    def __init__(
+        self,
+        images: List[ImageType],
+        api_base_url: str = None,
+        session_id: str = None,
+        user_id: str = None,
+        document_id: str = None,
+        document_service=None,
+        auth=None,
+    ):
         self.current_page: int = 0
         self.total_pages: int = len(images)
         self.images: List[ImageType] = images
@@ -29,6 +38,11 @@ class PDFViewer:
         self.summaries: List[str] = [
             ""
         ] * self.total_pages  # [self._summarize_page(i) for i in range(self.total_pages)]
+
+        # For document retrieval functionality
+        self.document_id: str = document_id
+        self.document_service = document_service
+        self.auth = auth
 
     def _make_api_call(self, method: str, endpoint: str, json_data: dict = None) -> httpx.Response:
         """Make API call to PDF viewer for UI side effects with session and user scoping."""
@@ -139,17 +153,18 @@ class PDFViewer:
             return "Error: Invalid box coordinates. x1 must be < x2 and y1 must be < y2"
 
         # Get current frame image by decoding the base64 data
-        if self.current_frame.startswith("data:image/png;base64,"):
-            base64_data = self.current_frame.split(",", 1)[1]
-            image_data = base64.b64decode(base64_data)
-            buffer = BytesIO(image_data)
-            from PIL import Image
+        # if self.current_frame.startswith("data:image/png;base64,"):
+        #     base64_data = self.current_frame.split(",", 1)[1]
+        #     image_data = base64.b64decode(base64_data)
+        #     buffer = BytesIO(image_data)
+        #     from PIL import Image
 
-            image = Image.open(buffer)
-        else:
-            # Fallback to original page if current_frame is not properly formatted
-            image = self.images[self.current_page]
+        #     image = Image.open(buffer)
+        # else:
+        #     # Fallback to original page if current_frame is not properly formatted
+        #     image = self.images[self.current_page]
 
+        image = self.images[self.current_page]
         width, height = image.size
 
         # Convert normalized coordinates (0-1000) to actual pixel coordinates
@@ -202,6 +217,71 @@ class PDFViewer:
         # if 0 <= page_number < self.total_pages:
         #     return self.summaries[page_number]
         # return f"Invalid page number. Must be between 0 and {self.total_pages - 1}"
+
+    async def find_most_relevant_page(self, query: str) -> str:
+        """Find and navigate to the most relevant page based on a search query."""
+        if not self.document_service or not self.auth or not self.document_id:
+            return "Error: Document search functionality not available. Missing document service, authentication, or document ID."
+
+        try:
+            # Search for relevant chunks in this specific document
+            chunks = await self.document_service.retrieve_chunks(
+                query=query,
+                auth=self.auth,
+                filters={"external_id": self.document_id},  # Filter to only this document
+                k=5,  # Get top 5 chunks to find the best page
+                min_score=0.0,
+                use_colpali=True,  # Use multimodal search for better PDF results
+            )
+
+            if not chunks:
+                return f"No relevant content found for query: '{query}'"
+
+            # Find the chunk with the highest score
+            best_chunk = max(chunks, key=lambda x: x.score)
+
+            # Extract page information from chunk metadata
+            # Chunk numbers typically correspond to pages, but we need to be careful about 0-indexing
+            target_page = best_chunk.chunk_number
+
+            # Ensure the page number is valid (0-indexed)
+            if target_page < 0 or target_page >= self.total_pages:
+                return f"Error: Found relevant content on page {target_page + 1}, but this page is out of range (1-{self.total_pages})"
+
+            # Navigate to the most relevant page
+            old_page = self.current_page + 1  # Convert to 1-indexed for display
+            self.current_page = target_page
+            self.current_frame = self._create_page_url(self.current_page)
+
+            # Propagate page change to UI (API uses 1-indexed)
+            try:
+                response = self._make_api_call("POST", f"/change-page/{self.current_page + 1}")
+                if response.status_code != 200:
+                    print(f"Warning: API call failed with status {response.status_code}")
+            except Exception as e:
+                print(f"Warning: Failed to sync with UI: {e}")
+
+            # Create a detailed response with search results
+            result_summary = f"Found most relevant content on page {target_page + 1} (score: {best_chunk.score:.3f})"
+            if old_page != target_page + 1:
+                result_summary += f". Navigated from page {old_page} to page {target_page + 1}."
+            else:
+                result_summary += ". Already on the most relevant page."
+
+            # Add preview of the found content
+            content_preview = best_chunk.content[:200] + "..." if len(best_chunk.content) > 200 else best_chunk.content
+            result_summary += f"\n\nRelevant content preview: {content_preview}"
+
+            # Add information about other relevant pages if found
+            if len(chunks) > 1:
+                other_pages = [str(chunk.chunk_number + 1) for chunk in chunks[1:] if chunk.chunk_number != target_page]
+                if other_pages:
+                    result_summary += f"\n\nOther relevant pages found: {', '.join(other_pages[:3])}"
+
+            return result_summary
+
+        except Exception as e:
+            return f"Error searching document: {str(e)}"
 
     def _summarize_page(self, page_number: int) -> str:
         """Summarize a page using Gemini 2.5 Flash model."""
@@ -315,6 +395,23 @@ PDF_VIEWER_TOOLS = [
             "name": "get_total_pages",
             "description": "Get the total number of pages in the PDF document.",
             "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_most_relevant_page",
+            "description": "Search the entire PDF document for content most relevant to a query and automatically navigate to that page. This tool performs semantic search across all pages and jumps to the most relevant one.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query to find relevant content in the PDF. Can be a question, topic, or keywords.",
+                    }
+                },
+                "required": ["query"],
+            },
         },
     },
 ]

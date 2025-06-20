@@ -54,6 +54,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
 
   const currentFolder = selectedDocument.system_metadata?.folder_name as string | undefined;
   const status = selectedDocument.system_metadata?.status as string | undefined;
+  const error = selectedDocument.system_metadata?.error as string | undefined;
   const createdAt = selectedDocument.system_metadata?.created_at as string | undefined;
   const updatedAt = selectedDocument.system_metadata?.updated_at as string | undefined;
   const version = selectedDocument.system_metadata?.version as number | undefined;
@@ -205,6 +206,14 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
               {getStatusBadge(status)}
             </div>
           </div>
+
+          {/* Error message for failed documents */}
+          {status === "failed" && error && (
+            <div className="rounded-lg bg-red-50 p-3 dark:bg-red-950/20">
+              <h3 className="mb-1 font-medium text-red-800 dark:text-red-200">Error</h3>
+              <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            </div>
+          )}
 
           {/* PDF Viewer Button - only show for PDF documents */}
           {selectedDocument.content_type === "application/pdf" && onViewInPDFViewer && (

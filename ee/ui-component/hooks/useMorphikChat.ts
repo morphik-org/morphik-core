@@ -210,58 +210,131 @@ export function useMorphikChat({
                   if (line.startsWith("data: ")) {
                     try {
                       const data = JSON.parse(line.slice(6));
-                      if (data.content) {
-                        fullContent += data.content;
-                        buffer += data.content;
 
-                        // Always flush on the very first token so the message appears immediately
-                        if (!assistantMessageId) {
-                          flushMessage();
-                          buffer = "";
-                          lastFlush = Date.now();
-                        } else if (Date.now() - lastFlush >= FLUSH_MS) {
-                          flushMessage();
-                          buffer = "";
-                          lastFlush = Date.now();
-                        }
-                      } else if (data.done) {
-                        // Streaming is complete, handle sources if provided
-                        const sourcesShallow = data.sources ?? [];
-                        // ensure final content flushed
-                        flushMessage();
+                      // Handle different event types
+                      switch (data.type) {
+                        case "assistant":
+                          if (data.content) {
+                            fullContent += data.content;
+                            buffer += data.content;
 
-                        // Enrich sources in background and attach
-                        if (sourcesShallow.length > 0 && assistantMessageId) {
-                          try {
-                            const enriched = await fetch(`${apiBaseUrl}/batch/chunks`, {
-                              method: "POST",
-                              headers: {
-                                ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-                                "Content-Type": "application/json",
-                              },
-                              body: JSON.stringify({
-                                sources: sourcesShallow,
-                                folder_name: queryOptions.folder_name,
-                                use_colpali: true,
-                              }),
-                            }).then(r => (r.ok ? r.json() : sourcesShallow));
-
-                            setMessages(prev =>
-                              prev.map(m =>
-                                m.id === assistantMessageId
-                                  ? { ...m, experimental_customData: { sources: enriched } }
-                                  : m
-                              )
-                            );
-                          } catch (err) {
-                            console.error("Failed to enrich sources: ", err);
+                            // Always flush on the very first token so the message appears immediately
+                            if (!assistantMessageId) {
+                              flushMessage();
+                              buffer = "";
+                              lastFlush = Date.now();
+                            } else if (Date.now() - lastFlush >= FLUSH_MS) {
+                              flushMessage();
+                              buffer = "";
+                              lastFlush = Date.now();
+                            }
                           }
-                        }
+                          break;
 
-                        // We received done – stop reading further
-                        await reader.cancel();
-                        streamFinished = true;
-                        break;
+                        case "tool":
+                          // Tool execution result - for now just log it
+                          // In the future, this could be used to show tool execution status
+                          console.log(`Tool executed: ${data.name} -> ${data.content}`);
+                          break;
+
+                        case "done":
+                          // Streaming is complete, handle sources if provided
+                          const sourcesShallow = data.sources ?? [];
+                          // ensure final content flushed
+                          flushMessage();
+
+                          // Enrich sources in background and attach
+                          if (sourcesShallow.length > 0 && assistantMessageId) {
+                            try {
+                              const enriched = await fetch(`${apiBaseUrl}/batch/chunks`, {
+                                method: "POST",
+                                headers: {
+                                  ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+                                  "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({
+                                  sources: sourcesShallow,
+                                  folder_name: queryOptions.folder_name,
+                                  use_colpali: true,
+                                }),
+                              }).then(r => (r.ok ? r.json() : sourcesShallow));
+
+                              setMessages(prev =>
+                                prev.map(m =>
+                                  m.id === assistantMessageId
+                                    ? { ...m, experimental_customData: { sources: enriched } }
+                                    : m
+                                )
+                              );
+                            } catch (err) {
+                              console.error("Failed to enrich sources: ", err);
+                            }
+                          }
+
+                          // We received done – stop reading further
+                          await reader.cancel();
+                          streamFinished = true;
+                          break;
+
+                        case "error":
+                          // Error occurred
+                          throw new Error(data.content || "Unknown error occurred");
+
+                        default:
+                          // Legacy format support - handle old format for backward compatibility
+                          if (data.content && !data.type) {
+                            fullContent += data.content;
+                            buffer += data.content;
+
+                            // Always flush on the very first token so the message appears immediately
+                            if (!assistantMessageId) {
+                              flushMessage();
+                              buffer = "";
+                              lastFlush = Date.now();
+                            } else if (Date.now() - lastFlush >= FLUSH_MS) {
+                              flushMessage();
+                              buffer = "";
+                              lastFlush = Date.now();
+                            }
+                          } else if (data.done) {
+                            // Legacy done format
+                            const sourcesShallow = data.sources ?? [];
+                            // ensure final content flushed
+                            flushMessage();
+
+                            // Enrich sources in background and attach
+                            if (sourcesShallow.length > 0 && assistantMessageId) {
+                              try {
+                                const enriched = await fetch(`${apiBaseUrl}/batch/chunks`, {
+                                  method: "POST",
+                                  headers: {
+                                    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+                                    "Content-Type": "application/json",
+                                  },
+                                  body: JSON.stringify({
+                                    sources: sourcesShallow,
+                                    folder_name: queryOptions.folder_name,
+                                    use_colpali: true,
+                                  }),
+                                }).then(r => (r.ok ? r.json() : sourcesShallow));
+
+                                setMessages(prev =>
+                                  prev.map(m =>
+                                    m.id === assistantMessageId
+                                      ? { ...m, experimental_customData: { sources: enriched } }
+                                      : m
+                                  )
+                                );
+                              } catch (err) {
+                                console.error("Failed to enrich sources: ", err);
+                              }
+                            }
+
+                            // We received done – stop reading further
+                            await reader.cancel();
+                            streamFinished = true;
+                          }
+                          break;
                       }
                     } catch (e) {
                       console.warn("Failed to parse streaming data:", line);
