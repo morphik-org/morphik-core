@@ -2568,3 +2568,108 @@ async def list_chat_conversations(
     except Exception as exc:  # noqa: BLE001
         logger.error("Error listing chat conversations: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to list chat conversations")
+
+
+@app.get("/chats/search", response_model=List[Dict[str, Any]])
+async def search_chat_conversations(
+    q: str = Query(..., description="Search query"),
+    auth: AuthContext = Depends(verify_token),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Search chat conversations by name and content.
+
+    Args:
+        q: Search query string
+        auth: Authentication context containing user and app identifiers.
+        limit: Maximum number of conversations to return (1-200)
+
+    Returns:
+        A list of matching conversations ordered by relevance.
+    """
+    try:
+        if not q.strip():
+            return []
+            
+        convos = await document_service.db.search_chat_conversations(
+            query=q.strip(),
+            user_id=auth.user_id,
+            app_id=auth.app_id,
+            limit=limit,
+        )
+        return convos
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error searching chat conversations: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to search chat conversations")
+
+
+@app.put("/chats/{chat_id}")
+async def rename_chat_conversation(
+    chat_id: str,
+    request: Dict[str, str],
+    auth: AuthContext = Depends(verify_token),
+):
+    """Rename a chat conversation.
+
+    Args:
+        chat_id: The ID of the conversation to rename
+        request: Dictionary containing the new name {"name": "New Chat Name"}
+        auth: Authentication context
+
+    Returns:
+        Success status
+    """
+    try:
+        new_name = request.get("name")
+        if not new_name:
+            raise HTTPException(status_code=400, detail="Name is required")
+            
+        success = await document_service.db.update_chat_conversation_name(
+            conversation_id=chat_id,
+            name=new_name,
+            user_id=auth.user_id,
+            app_id=auth.app_id,
+        )
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Conversation not found or access denied")
+            
+        return {"status": "success", "message": f"Chat {chat_id} renamed successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error renaming chat conversation: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to rename chat conversation")
+
+
+@app.delete("/chats/{chat_id}")
+async def delete_chat_conversation(
+    chat_id: str,
+    auth: AuthContext = Depends(verify_token),
+):
+    """Delete a chat conversation.
+
+    Args:
+        chat_id: The ID of the conversation to delete
+        auth: Authentication context
+
+    Returns:
+        Success status
+    """
+    try:
+        success = await document_service.db.delete_chat_conversation(
+            conversation_id=chat_id,
+            user_id=auth.user_id,
+            app_id=auth.app_id,
+        )
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Conversation not found or access denied")
+            
+        return {"status": "success", "message": f"Chat {chat_id} deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error deleting chat conversation: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to delete chat conversation")

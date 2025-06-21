@@ -1755,18 +1755,271 @@ class PostgresDatabase(BaseDatabase):
 
                 conversations: List[Dict[str, Any]] = []
                 for convo in convos:
-                    last_message = convo.history[-1] if convo.history else None
+                    # Extract the last actual message (not metadata)
+                    actual_messages = [h for h in (convo.history or []) if not (isinstance(h, dict) and h.get("type") == "metadata")]
+                    last_message = actual_messages[-1] if actual_messages else None
+                    
+                    # Extract the chat name from metadata if available
+                    chat_name = None
+                    for entry in (convo.history or []):
+                        if isinstance(entry, dict) and entry.get("type") == "metadata" and entry.get("action") == "rename":
+                            chat_name = entry.get("name")
+                    
                     conversations.append(
                         {
                             "chat_id": convo.conversation_id,
                             "updated_at": convo.updated_at,
                             "created_at": convo.created_at,
                             "last_message": last_message,
+                            "name": chat_name,
                         }
                     )
                 return conversations
         except Exception as exc:  # noqa: BLE001
             logger.error("Error listing chat conversations: %s", exc)
+            return []
+
+    async def update_chat_conversation_name(
+        self,
+        conversation_id: str,
+        name: str,
+        user_id: Optional[str],
+        app_id: Optional[str],
+    ) -> bool:
+        """Update the name of a chat conversation.
+        
+        Args:
+            conversation_id: The ID of the conversation to update
+            name: The new name for the conversation
+            user_id: The user ID for authorization
+            app_id: The app ID for authorization
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self._initialized:
+            await self.initialize()
+            
+        try:
+            async with self.async_session() as session:
+                # First verify the conversation exists and user has access
+                result = await session.execute(
+                    select(ChatConversationModel).where(
+                        ChatConversationModel.conversation_id == conversation_id
+                    )
+                )
+                convo = result.scalar_one_or_none()
+                
+                if not convo:
+                    logger.warning(f"Conversation {conversation_id} not found")
+                    return False
+                    
+                # Check authorization
+                if user_id and convo.user_id and convo.user_id != user_id:
+                    logger.warning(f"User {user_id} not authorized to update conversation {conversation_id}")
+                    return False
+                if app_id and convo.app_id and convo.app_id != app_id:
+                    logger.warning(f"App {app_id} not authorized to update conversation {conversation_id}")
+                    return False
+                
+                # Update the conversation name (stored in metadata)
+                # Since we don't have a name column, we'll store it in the history metadata
+                # We'll add a special metadata entry to track the conversation name
+                metadata_update = {
+                    "type": "metadata",
+                    "action": "rename",
+                    "name": name,
+                    "timestamp": datetime.now(UTC).isoformat()
+                }
+                
+                # Update the conversation with the new name in history
+                updated_history = convo.history.copy() if convo.history else []
+                # Remove any existing metadata entries for name
+                updated_history = [h for h in updated_history if not (isinstance(h, dict) and h.get("type") == "metadata" and h.get("action") == "rename")]
+                # Add the new metadata entry
+                updated_history.append(metadata_update)
+                
+                await session.execute(
+                    text(
+                        """
+                        UPDATE chat_conversations 
+                        SET history = :hist, updated_at = :now
+                        WHERE conversation_id = :cid
+                        """
+                    ),
+                    {
+                        "cid": conversation_id,
+                        "hist": json.dumps(updated_history),
+                        "now": datetime.now(UTC).isoformat(),
+                    }
+                )
+                await session.commit()
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error updating chat conversation name: {e}")
+            return False
+            
+    async def delete_chat_conversation(
+        self,
+        conversation_id: str,
+        user_id: Optional[str],
+        app_id: Optional[str],
+    ) -> bool:
+        """Delete a chat conversation.
+        
+        Args:
+            conversation_id: The ID of the conversation to delete
+            user_id: The user ID for authorization
+            app_id: The app ID for authorization
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self._initialized:
+            await self.initialize()
+            
+        try:
+            async with self.async_session() as session:
+                # First verify the conversation exists and user has access
+                result = await session.execute(
+                    select(ChatConversationModel).where(
+                        ChatConversationModel.conversation_id == conversation_id
+                    )
+                )
+                convo = result.scalar_one_or_none()
+                
+                if not convo:
+                    logger.warning(f"Conversation {conversation_id} not found")
+                    return False
+                    
+                # Check authorization
+                if user_id and convo.user_id and convo.user_id != user_id:
+                    logger.warning(f"User {user_id} not authorized to delete conversation {conversation_id}")
+                    return False
+                if app_id and convo.app_id and convo.app_id != app_id:
+                    logger.warning(f"App {app_id} not authorized to delete conversation {conversation_id}")
+                    return False
+                
+                # Delete the conversation
+                await session.execute(
+                    text("DELETE FROM chat_conversations WHERE conversation_id = :cid"),
+                    {"cid": conversation_id}
+                )
+                await session.commit()
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error deleting chat conversation: {e}")
+            return False
+
+    async def search_chat_conversations(
+        self,
+        query: str,
+        user_id: Optional[str],
+        app_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Search chat conversations by name and content.
+
+        Args:
+            query: Search query string
+            user_id: ID of the user that owns the conversation (required for cloud-mode privacy).
+            app_id: Optional application scope for developer tokens.
+            limit: Maximum number of conversations to return.
+
+        Returns:
+            A list of dictionaries containing matching conversations ordered by relevance.
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        try:
+            async with self.async_session() as session:
+                # Build the base query
+                stmt = select(ChatConversationModel).order_by(ChatConversationModel.updated_at.desc())
+
+                # Apply user and app filters
+                if user_id is not None:
+                    stmt = stmt.where(ChatConversationModel.user_id == user_id)
+                if app_id is not None:
+                    stmt = stmt.where(ChatConversationModel.app_id == app_id)
+
+                # Execute query to get all conversations for filtering
+                res = await session.execute(stmt)
+                convos = res.scalars().all()
+
+                # Filter and score conversations
+                scored_conversations = []
+                for convo in convos:
+                    score = 0
+                    matches = False
+                    
+                    # Extract chat name and last message
+                    chat_name = None
+                    actual_messages = []
+                    
+                    for entry in (convo.history or []):
+                        if isinstance(entry, dict):
+                            if entry.get("type") == "metadata" and entry.get("action") == "rename":
+                                chat_name = entry.get("name", "")
+                            else:
+                                actual_messages.append(entry)
+                    
+                    last_message = actual_messages[-1] if actual_messages else None
+                    
+                    # Score based on chat name match (highest priority)
+                    if chat_name and query.lower() in chat_name.lower():
+                        score += 100
+                        matches = True
+                        # Exact match gets even higher score
+                        if query.lower() == chat_name.lower():
+                            score += 50
+                    
+                    # Search in all message history for comprehensive results
+                    message_matches = 0
+                    for i, msg in enumerate(actual_messages):
+                        if isinstance(msg, dict):
+                            msg_content = str(msg.get("content", "")).lower()
+                            if query.lower() in msg_content:
+                                # Score recent messages higher
+                                if i >= len(actual_messages) - 3:  # Last 3 messages
+                                    score += 15
+                                elif i >= len(actual_messages) - 10:  # Last 10 messages
+                                    score += 10
+                                else:  # Older messages
+                                    score += 5
+                                matches = True
+                                message_matches += 1
+                                
+                                # Stop after finding 3 matches to avoid over-scoring
+                                if message_matches >= 3:
+                                    break
+                    
+                    if matches:
+                        scored_conversations.append((score, convo, chat_name, last_message))
+
+                # Sort by score (descending) and take top results
+                scored_conversations.sort(key=lambda x: x[0], reverse=True)
+                top_conversations = scored_conversations[:limit]
+
+                # Format results
+                conversations: List[Dict[str, Any]] = []
+                for _, convo, chat_name, last_message in top_conversations:
+                    conversations.append(
+                        {
+                            "chat_id": convo.conversation_id,
+                            "updated_at": convo.updated_at,
+                            "created_at": convo.created_at,
+                            "last_message": last_message,
+                            "name": chat_name,
+                        }
+                    )
+
+                return conversations
+
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Error searching chat conversations: %s", exc)
             return []
 
     def _check_folder_access(self, folder: Folder, auth: AuthContext, permission: str = "read") -> bool:
