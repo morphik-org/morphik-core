@@ -43,6 +43,7 @@ from core.models.request import (
 from core.routes.document import router as document_router
 from core.routes.ingest import router as ingest_router
 from core.routes.model_config import router as model_config_router
+from core.routes.models import router as models_router
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
 
@@ -243,6 +244,9 @@ app.include_router(document_router)
 
 # Register model config router
 app.include_router(model_config_router)
+
+# Register models router
+app.include_router(models_router)
 
 # Single MorphikAgent instance (tool definitions cached)
 morphik_agent = MorphikAgent(document_service=document_service)

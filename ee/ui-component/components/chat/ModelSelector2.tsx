@@ -53,24 +53,50 @@ export function ModelSelector2({
         if (mergedConfig.groq?.apiKey) providers.add("groq");
         if (mergedConfig.deepseek?.apiKey) providers.add("deepseek");
 
-        // Load custom models
-        const customModelsList = await api.listCustomModels();
-        const transformedCustomModels = customModelsList.map(
-          (model: { id: string; name: string; provider: string }) => ({
-            id: `custom_${model.id}`,
-            name: model.name,
-            provider: model.provider,
-            description: `Custom ${model.provider} model`,
-          })
-        );
-        setCustomModels(transformedCustomModels);
+        // Load custom models from new endpoint
+        try {
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://api.morphik.ai"}/models/custom`, {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          });
 
-        // Add custom model providers
-        customModelsList.forEach((model: { provider: string; config: { api_key?: string } }) => {
-          if (mergedConfig[model.provider]?.apiKey || model.config.api_key) {
-            providers.add(model.provider);
+          if (response.ok) {
+            const customModelsList = await response.json();
+            console.log("Loaded custom models from backend:", customModelsList);
+
+            const transformedCustomModels = customModelsList.map(
+              (model: { id: string; name: string; provider: string; config: Record<string, unknown> }) => ({
+                id: `custom_${model.id}`,
+                name: model.name,
+                provider: model.provider,
+                description: `Custom ${model.provider} model`,
+                config: model.config,
+              })
+            );
+            console.log("Transformed custom models:", transformedCustomModels);
+            setCustomModels(transformedCustomModels);
+
+            // Add custom model providers
+            customModelsList.forEach((model: { provider: string; config: { api_key?: string } }) => {
+              // Check if the provider has an API key in the merged config
+              // or if the model config contains an api_key
+              if (mergedConfig[model.provider]?.apiKey) {
+                providers.add(model.provider);
+              } else if (
+                model.config &&
+                typeof model.config === "object" &&
+                "api_key" in model.config &&
+                model.config.api_key
+              ) {
+                // Model has its own API key
+                providers.add(model.provider);
+              }
+            });
           }
-        });
+        } catch (err) {
+          console.error("Failed to load custom models from backend:", err);
+        }
       } catch (err) {
         console.error("Failed to load configurations:", err);
 
@@ -126,6 +152,7 @@ export function ModelSelector2({
       // Always add configured provider since it uses server-side keys
       providers.add("configured");
 
+      console.log("Final available providers:", Array.from(providers));
       setAvailableProviders(providers);
     };
 
@@ -155,6 +182,7 @@ export function ModelSelector2({
 
           // Combine server models with custom models
           const allModels = [...transformedModels, ...customModels];
+          console.log("All models (server + custom):", allModels);
           setModels(allModels);
 
           // If no model is selected, try to select the first available one
@@ -239,6 +267,7 @@ export function ModelSelector2({
           <div className="max-h-80 overflow-y-auto">
             {models.map(model => {
               const isAvailable = isModelAvailable(model);
+              console.log(`Model ${model.name} (${model.id}): provider=${model.provider}, available=${isAvailable}`);
 
               return (
                 <div

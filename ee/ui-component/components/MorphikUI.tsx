@@ -194,7 +194,9 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
               initialDocumentId={pdfViewerDocumentId}
             />
           )}
-          {activeSection === "settings" && <SettingsSection onBackClick={() => setActiveSection("chat")} />}
+          {activeSection === "settings" && (
+            <SettingsSection authToken={authToken} onBackClick={() => setActiveSection("chat")} />
+          )}
         </main>
       </div>
     </PDFAPIService>

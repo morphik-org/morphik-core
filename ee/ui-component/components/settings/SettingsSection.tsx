@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ModelManager } from "./ModelManager";
 
 interface SettingsSectionProps {
+  authToken?: string | null;
   onBackClick?: () => void;
   initialTab?: string;
 }
@@ -72,32 +73,120 @@ const PROVIDERS = [
   },
 ];
 
-export function SettingsSection({ onBackClick, initialTab = "api-keys" }: SettingsSectionProps) {
+export function SettingsSection({ authToken, onBackClick, initialTab = "api-keys" }: SettingsSectionProps) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [config, setConfig] = useState<APIKeyConfig>({});
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
 
-  // Load saved configuration from localStorage
+  // Load saved configuration from localStorage and backend
   useEffect(() => {
-    const savedConfig = localStorage.getItem("morphik_api_keys");
-    if (savedConfig) {
-      try {
-        setConfig(JSON.parse(savedConfig));
-      } catch (err) {
-        console.error("Failed to parse saved API keys:", err);
+    const loadConfig = async () => {
+      // First load from localStorage
+      const savedConfig = localStorage.getItem("morphik_api_keys");
+      if (savedConfig) {
+        try {
+          setConfig(JSON.parse(savedConfig));
+        } catch (err) {
+          console.error("Failed to parse saved API keys:", err);
+        }
       }
-    }
-  }, []);
 
-  const handleSave = () => {
+      // Then try to load from backend if we have authToken
+      if (authToken) {
+        try {
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://api.morphik.ai"}/api-keys`, {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          });
+
+          if (response.ok) {
+            const apiKeys = await response.json();
+            // Merge with local config, backend takes precedence
+            const mergedConfig: APIKeyConfig = {};
+
+            for (const [provider, providerData] of Object.entries(apiKeys)) {
+              const data = providerData as { configured?: boolean; baseUrl?: string };
+              if (data.configured) {
+                mergedConfig[provider] = {
+                  apiKey: (savedConfig && JSON.parse(savedConfig)[provider]?.apiKey) || "",
+                  baseUrl: data.baseUrl,
+                };
+              }
+            }
+
+            // Merge with any local-only keys
+            if (savedConfig) {
+              const localConfig = JSON.parse(savedConfig);
+              for (const [provider, data] of Object.entries(localConfig)) {
+                if (!mergedConfig[provider]) {
+                  mergedConfig[provider] = data as { apiKey?: string; baseUrl?: string; [key: string]: unknown };
+                }
+              }
+            }
+
+            setConfig(mergedConfig);
+          }
+        } catch (err) {
+          console.error("Failed to load API keys from backend:", err);
+        }
+      }
+    };
+
+    loadConfig();
+  }, [authToken]);
+
+  const handleSave = async () => {
     setSaving(true);
     try {
+      // Save to localStorage first
       localStorage.setItem("morphik_api_keys", JSON.stringify(config));
-      showAlert("API keys saved successfully", {
-        type: "success",
-        duration: 3000,
-      });
+
+      // If we have authToken, also save to backend
+      if (authToken) {
+        const savePromises = [];
+
+        for (const [provider, providerConfig] of Object.entries(config)) {
+          if (providerConfig.apiKey) {
+            savePromises.push(
+              fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://api.morphik.ai"}/api-keys`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${authToken}`,
+                },
+                body: JSON.stringify({
+                  provider,
+                  api_key: providerConfig.apiKey,
+                  base_url: providerConfig.baseUrl,
+                }),
+              })
+            );
+          }
+        }
+
+        const results = await Promise.allSettled(savePromises);
+        const failed = results.filter(r => r.status === "rejected");
+
+        if (failed.length > 0) {
+          console.error("Some API keys failed to save:", failed);
+          showAlert(`Saved locally. ${failed.length} provider(s) failed to sync to cloud.`, {
+            type: "warning",
+            duration: 5000,
+          });
+        } else {
+          showAlert("API keys saved successfully", {
+            type: "success",
+            duration: 3000,
+          });
+        }
+      } else {
+        showAlert("API keys saved locally", {
+          type: "success",
+          duration: 3000,
+        });
+      }
     } catch (err) {
       console.error("Failed to save API keys:", err);
       showAlert("Failed to save API keys", {
@@ -279,7 +368,7 @@ export function SettingsSection({ onBackClick, initialTab = "api-keys" }: Settin
               </>
             )}
 
-            {activeTab === "models" && <ModelManager apiKeys={config} />}
+            {activeTab === "models" && <ModelManager apiKeys={config} authToken={authToken} />}
           </div>
         </ScrollArea>
       </div>
