@@ -267,7 +267,7 @@ class MorphikParser(BaseParser):
         # slower.  A simple extension check covers the majority of cases.
         strategy = "hi_res"
         file_content_type: Optional[str] = None  # Default to None for auto-detection
-        if filename.lower().endswith((".pdf", ".doc", ".docx")):
+        if filename.lower().endswith((".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx")):
             strategy = "fast"
         elif filename.lower().endswith(".txt"):
             strategy = "fast"
@@ -285,13 +285,35 @@ class MorphikParser(BaseParser):
         )
 
         text = "\n\n".join(str(element) for element in elements if str(element).strip())
-        return {}, text
+        
+        # Sanitize text to remove null characters and other problematic Unicode
+        sanitized_text = self._sanitize_text(text)
+        return {}, sanitized_text
 
     async def parse_file_to_text(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
         """Parse file content into text based on file type"""
         if self._is_video_file(file, filename):
             return await self._parse_video(file)
         return await self._parse_document(file, filename)
+
+    def _sanitize_text(self, text: str) -> str:
+        """Remove null characters and other problematic Unicode that cause PostgreSQL JSON errors"""
+        if not text:
+            return text
+        
+        # Remove null bytes and other control characters that cause JSON/PostgreSQL issues
+        # Keep common whitespace (space, tab, newline, carriage return)
+        sanitized = ""
+        for char in text:
+            # Allow printable characters and common whitespace
+            if char.isprintable() or char in ('\n', '\r', '\t', ' '):
+                sanitized += char
+            elif ord(char) == 0:  # Null character
+                # Replace with space to maintain text flow
+                sanitized += ' '
+            # Skip other problematic control characters
+        
+        return sanitized
 
     async def split_text(self, text: str) -> List[Chunk]:
         """Split text into chunks using configured chunking strategy"""
