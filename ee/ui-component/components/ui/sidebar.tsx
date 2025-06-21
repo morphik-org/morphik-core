@@ -16,12 +16,13 @@ import {
   ArrowLeft,
   PlugZap,
   File,
+  Settings,
 } from "lucide-react";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Input } from "@/components/ui/input";
 
 // Define the specific section types the Sidebar expects
-export type SidebarSectionType = "documents" | "search" | "chat" | "graphs" | "connections" | "pdf";
+export type SidebarSectionType = "documents" | "search" | "chat" | "graphs" | "connections" | "pdf" | "settings";
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   activeSection: SidebarSectionType; // Use the specific type
@@ -293,6 +294,16 @@ export function Sidebar({
           >
             <File className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
             {!isCollapsed && <span>PDF Viewer</span>}
+          </Button>
+          {/* Settings Nav Item */}
+          <Button
+            variant={activeSection === "settings" ? "secondary" : "ghost"}
+            className={cn("w-full justify-start", isCollapsed && "justify-center")}
+            onClick={() => onSectionChange("settings")}
+            title="Settings"
+          >
+            <Settings className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
+            {!isCollapsed && <span>Settings</span>}
           </Button>
         </div>
       </ScrollArea>

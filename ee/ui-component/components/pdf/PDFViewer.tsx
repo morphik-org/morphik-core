@@ -14,7 +14,6 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
-  Download,
   Maximize2,
   User,
   Cpu,
@@ -588,27 +587,24 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
   );
 
   // Handle PDF load error
-  const onDocumentLoadError = useCallback(
-    (error: Error) => {
-      console.error("Error loading PDF:", error);
-      console.error("PDF.js worker src:", pdfjs.GlobalWorkerOptions.workerSrc);
-      console.error("PDF file URL:", pdfState.pdfDataUrl);
-      console.error("PDF file object:", pdfState.file);
-      console.error("PDF state:", pdfState);
+  const onDocumentLoadError = useCallback((error: Error) => {
+    console.error("Error loading PDF:", error);
+    console.error("PDF.js worker src:", pdfjs.GlobalWorkerOptions.workerSrc);
+    console.error("PDF file URL:", pdfState.pdfDataUrl);
+    console.error("PDF file object:", pdfState.file);
+    console.error("PDF state:", pdfState);
 
-      // Additional debugging for common PDF.js issues
-      if (error.message.includes("Invalid PDF")) {
-        console.error("PDF appears to be corrupted or invalid");
-      } else if (error.message.includes("worker")) {
-        console.error("PDF.js worker issue - check network connectivity");
-      } else if (error.message.includes("fetch")) {
-        console.error("Network issue loading PDF - check CORS and URL accessibility");
-      }
+    // Additional debugging for common PDF.js issues
+    if (error.message.includes("Invalid PDF")) {
+      console.error("PDF appears to be corrupted or invalid");
+    } else if (error.message.includes("worker")) {
+      console.error("PDF.js worker issue - check network connectivity");
+    } else if (error.message.includes("fetch")) {
+      console.error("Network issue loading PDF - check CORS and URL accessibility");
+    }
 
-      setIsLoading(false);
-    },
-    [pdfState.pdfDataUrl, pdfState.file, pdfState]
-  );
+    setIsLoading(false);
+  }, [pdfState]);
 
   // PDF Controls
   const goToPage = useCallback(
@@ -1045,11 +1041,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
     [apiBaseUrl, authToken]
   );
 
-  // Open document selector and fetch documents
-  const openDocumentSelector = useCallback(() => {
-    setIsDocumentSelectorOpen(true);
-    fetchAvailableDocuments();
-  }, [fetchAvailableDocuments]);
+  // Removed openDocumentSelector function since Browse Documents button was removed
 
   // Load initial document if provided
   useEffect(() => {
@@ -1425,6 +1417,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
                   <div>
                     <h4 className="mb-2 font-medium">Visual Result:</h4>
                     <div className="overflow-hidden rounded-lg border">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={selectedToolMessage.current_frame}
                         alt="Tool result visualization"
@@ -1447,14 +1440,14 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
   }
 
   return (
-    <div className="flex h-full bg-white dark:bg-slate-900">
+    <div className="flex h-full bg-white dark:bg-black">
       {/* Main PDF Area */}
       <div
         className="flex flex-1 flex-col transition-all duration-300"
         style={{ marginRight: isChatOpen ? `${chatWidth}px` : "0px" }}
       >
         {/* Clean Header */}
-        <div className="border-b border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+        <div className="border-b border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-black">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <FileText className="h-5 w-5 text-slate-600 dark:text-slate-400" />
@@ -1464,14 +1457,6 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
             </div>
 
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={openDocumentSelector}>
-                <FolderOpen className="mr-2 h-4 w-4" />
-                Browse Documents
-              </Button>
-              <Button variant="outline" size="sm">
-                <Download className="mr-2 h-4 w-4" />
-                Download
-              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -1497,14 +1482,14 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
               }}
             >
               {pdfState.pdfDataUrl && (
-                <div className="border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                <div className="border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-zinc-900">
                   <Document
                     file={pdfState.pdfDataUrl}
                     onLoadSuccess={onDocumentLoadSuccess}
                     onLoadError={onDocumentLoadError}
                     options={pdfOptions}
                     loading={
-                      <div className="flex h-[800px] w-[600px] items-center justify-center bg-white p-8 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                      <div className="flex h-[800px] w-[600px] items-center justify-center bg-white p-8 text-slate-500 dark:bg-zinc-900 dark:text-slate-400">
                         <div className="text-center">
                           <FileText className="mx-auto mb-4 h-16 w-16 animate-pulse" />
                           <p>Loading PDF...</p>
@@ -1512,7 +1497,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
                       </div>
                     }
                     error={
-                      <div className="flex h-[800px] w-[600px] items-center justify-center bg-white p-8 text-red-500 dark:bg-slate-800 dark:text-red-400">
+                      <div className="flex h-[800px] w-[600px] items-center justify-center bg-white p-8 text-red-500 dark:bg-zinc-900 dark:text-red-400">
                         <div className="text-center">
                           <FileText className="mx-auto mb-4 h-16 w-16" />
                           <p>Error loading PDF</p>
@@ -1524,12 +1509,12 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
                     <Page
                       pageNumber={pdfState.currentPage}
                       loading={
-                        <div className="flex h-[800px] w-[600px] items-center justify-center bg-slate-100 dark:bg-slate-700">
+                        <div className="flex h-[800px] w-[600px] items-center justify-center bg-slate-100 dark:bg-zinc-800">
                           <div className="text-slate-500 dark:text-slate-400">Loading page...</div>
                         </div>
                       }
                       error={
-                        <div className="flex h-[800px] w-[600px] items-center justify-center bg-slate-100 dark:bg-slate-700">
+                        <div className="flex h-[800px] w-[600px] items-center justify-center bg-slate-100 dark:bg-zinc-800">
                           <div className="text-red-500 dark:text-red-400">Error loading page</div>
                         </div>
                       }
@@ -1545,7 +1530,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
 
           {/* Bottom Floating Control Bar - Fixed to viewport center */}
           <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center">
-            <div className="pointer-events-auto flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+            <div className="pointer-events-auto flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-2 shadow-lg dark:border-slate-700 dark:bg-black">
               {/* Control Mode Toggle */}
               <div
                 onClick={toggleControlMode}
@@ -1553,7 +1538,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
                   "flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
                   pdfState.controlMode === "manual"
                     ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-                    : "bg-blue-600 text-white"
+                    : "bg-zinc-700 text-white dark:bg-zinc-800"
                 )}
               >
                 {pdfState.controlMode === "manual" ? <User className="h-4 w-4" /> : <Cpu className="h-4 w-4" />}
@@ -1695,7 +1680,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
                           </div>
                         ) : message.role === "system" ? (
                           <div className="w-full">
-                            <div className="w-full rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
+                            <div className="w-full rounded-lg border border-slate-200 bg-slate-100 p-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-zinc-900 dark:text-slate-300">
                               {message.content}
                             </div>
                           </div>

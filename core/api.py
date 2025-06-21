@@ -42,6 +42,7 @@ from core.models.request import (
 )
 from core.routes.document import router as document_router
 from core.routes.ingest import router as ingest_router
+from core.routes.model_config import router as model_config_router
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
 
@@ -159,6 +160,72 @@ async def ping_health():
     return {"status": "ok", "message": "Server is running"}
 
 
+@app.get("/models")
+async def get_available_models(auth: AuthContext = Depends(verify_token)):
+    """
+    Get list of available models from configuration.
+    
+    Returns models grouped by type (chat, embedding, etc.) with their metadata.
+    """
+    try:
+        # Load the morphik.toml file to get registered models
+        with open("morphik.toml", "rb") as f:
+            config = tomli.load(f)
+        
+        registered_models = config.get("registered_models", {})
+        
+        # Group models by their purpose
+        chat_models = []
+        embedding_models = []
+        
+        for model_key, model_config in registered_models.items():
+            model_info = {
+                "id": model_key,
+                "model": model_config.get("model_name", model_key),
+                "provider": _extract_provider(model_config.get("model_name", "")),
+                "config": model_config
+            }
+            
+            # Categorize models based on their names or configuration
+            if "embedding" in model_key.lower():
+                embedding_models.append(model_info)
+            else:
+                chat_models.append(model_info)
+        
+        # Also add the default configured models
+        default_models = {
+            "completion": config.get("completion", {}).get("model"),
+            "agent": config.get("agent", {}).get("model"),
+            "embedding": config.get("embedding", {}).get("model"),
+        }
+        
+        return {
+            "chat_models": chat_models,
+            "embedding_models": embedding_models,
+            "default_models": default_models,
+            "providers": ["openai", "anthropic", "google", "azure", "ollama", "custom"]
+        }
+    except Exception as e:
+        logger.error(f"Error loading models: {e}")
+        raise HTTPException(status_code=500, detail="Failed to load available models")
+
+
+def _extract_provider(model_name: str) -> str:
+    """Extract provider from model name."""
+    if model_name.startswith("gpt"):
+        return "openai"
+    elif model_name.startswith("claude"):
+        return "anthropic"
+    elif model_name.startswith("gemini"):
+        return "google"
+    elif model_name.startswith("ollama"):
+        return "ollama"
+    elif "azure" in model_name:
+        return "azure"
+    else:
+        return "custom"
+
+
 # ---------------------------------------------------------------------------
 # Core singletons (database, vector store, storage, parser, models …)
 # ---------------------------------------------------------------------------
@@ -173,6 +240,9 @@ app.include_router(ingest_router)
 
 # Register document router
 app.include_router(document_router)
+
+# Register model config router
+app.include_router(model_config_router)
 
 # Single MorphikAgent instance (tool definitions cached)
 morphik_agent = MorphikAgent(document_service=document_service)
@@ -516,6 +586,7 @@ async def query_completion(
             history,
             perf,  # Pass performance tracker
             request.stream_response,
+            request.llm_config,
         )
 
         # Handle streaming vs non-streaming responses
@@ -637,6 +708,93 @@ async def get_chat_history(
         return [ChatMessage(**m) for m in data]
     except Exception:
         return []
+
+
+@app.get("/models/available")
+async def get_available_models_for_selection(auth: AuthContext = Depends(verify_token)):
+    """Get list of available models for UI selection.
+    
+    Returns a list of models that can be used for queries. Each model includes:
+    - id: Model identifier to use in llm_config
+    - name: Display name for the model
+    - provider: The LLM provider (e.g., openai, anthropic, ollama)
+    - description: Optional description of the model
+    """
+    # For now, return some common models that work with LiteLLM
+    # In the future, this could be configurable or dynamically determined
+    models = [
+        {
+            "id": "gpt-4o",
+            "name": "GPT-4o",
+            "provider": "openai",
+            "description": "OpenAI's most capable model with vision support"
+        },
+        {
+            "id": "gpt-4o-mini",
+            "name": "GPT-4o Mini",
+            "provider": "openai",
+            "description": "Faster, more affordable GPT-4o variant"
+        },
+        {
+            "id": "claude-3-5-sonnet-20241022",
+            "name": "Claude 3.5 Sonnet",
+            "provider": "anthropic",
+            "description": "Anthropic's most intelligent model"
+        },
+        {
+            "id": "claude-3-5-haiku-20241022",
+            "name": "Claude 3.5 Haiku",
+            "provider": "anthropic",
+            "description": "Fast and affordable Claude model"
+        },
+        {
+            "id": "gemini/gemini-1.5-pro",
+            "name": "Gemini 1.5 Pro",
+            "provider": "google",
+            "description": "Google's advanced model with long context"
+        },
+        {
+            "id": "gemini/gemini-1.5-flash",
+            "name": "Gemini 1.5 Flash",
+            "provider": "google",
+            "description": "Fast and efficient Gemini model"
+        },
+        {
+            "id": "deepseek/deepseek-chat",
+            "name": "DeepSeek Chat",
+            "provider": "deepseek",
+            "description": "DeepSeek's conversational AI model"
+        },
+        {
+            "id": "groq/llama-3.3-70b-versatile",
+            "name": "Llama 3.3 70B",
+            "provider": "groq",
+            "description": "Fast inference with Groq"
+        },
+        {
+            "id": "groq/llama-3.1-8b-instant",
+            "name": "Llama 3.1 8B",
+            "provider": "groq",
+            "description": "Ultra-fast small model on Groq"
+        }
+    ]
+    
+    # Check if there's a configured model in settings to add to the list
+    if hasattr(settings, "COMPLETION_MODEL") and hasattr(settings, "REGISTERED_MODELS"):
+        configured_model = settings.COMPLETION_MODEL
+        if configured_model in settings.REGISTERED_MODELS:
+            config = settings.REGISTERED_MODELS[configured_model]
+            model_name = config.get("model_name", configured_model)
+            # Add the configured model if it's not already in the list
+            if not any(m["id"] == model_name for m in models):
+                models.insert(0, {
+                    "id": model_name,
+                    "name": f"{configured_model} (Configured)",
+                    "provider": "configured",
+                    "description": "Currently configured model in morphik.toml"
+                })
+    
+    return {"models": models}
 
 
 @app.post("/agent", response_model=Dict[str, Any])

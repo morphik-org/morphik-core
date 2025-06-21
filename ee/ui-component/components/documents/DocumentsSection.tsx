@@ -77,7 +77,6 @@ interface DocumentsSectionProps {
   apiBaseUrl: string;
   authToken: string | null;
   initialFolder?: string | null;
-  setSidebarCollapsed?: (collapsed: boolean) => void;
 
   // Callback props provided by parent
   onDocumentUpload?: (fileName: string, fileSize: number) => void;
@@ -96,7 +95,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   apiBaseUrl,
   authToken,
   initialFolder = null,
-  setSidebarCollapsed,
   // Destructure new props
   onDocumentUpload,
   onDocumentDelete,
@@ -460,14 +458,15 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     return () => clearInterval(intervalId);
   }, [documents, effectiveApiUrl, authToken]);
 
-  // Collapse sidebar when a folder is selected
-  useEffect(() => {
-    if (selectedFolder !== null && setSidebarCollapsed) {
-      setSidebarCollapsed(true);
-    } else if (setSidebarCollapsed) {
-      setSidebarCollapsed(false);
-    }
-  }, [selectedFolder, setSidebarCollapsed]);
+  // Removed automatic sidebar collapse when folder is selected
+  // The sidebar should only be controlled by the dedicated open/close button
+  // useEffect(() => {
+  //   if (selectedFolder !== null && setSidebarCollapsed) {
+  //     setSidebarCollapsed(true);
+  //   } else if (setSidebarCollapsed) {
+  //     setSidebarCollapsed(false);
+  //   }
+  // }, [selectedFolder, setSidebarCollapsed]);
 
   // Fetch a specific document by ID
   const fetchDocument = async (documentId: string) => {

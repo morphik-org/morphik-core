@@ -195,21 +195,21 @@ export function ConnectorCard({
       <CardContent className="space-y-4">
         {/* Simplified view for "Disconnected but Connectable" state */}
         {!isLoading && !error && authStatus && !authStatus.is_authenticated && authStatus.auth_url ? (
-          <div className="flex min-h-[60px] items-center justify-center rounded-lg border bg-gray-50 p-4 dark:bg-gray-800/30">
+          <div className="flex min-h-[60px] items-center justify-center rounded-lg border bg-gray-50 p-4 dark:bg-zinc-900/50">
             <Button onClick={handleConnect} disabled={isSubmitting || !authStatus.auth_url} size="lg">
               {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <PlugZap className="mr-2 h-5 w-5" />}
               Connect to {displayName}
             </Button>
           </div>
         ) : !isLoading && !error && authStatus && !authStatus.is_authenticated ? (
-          <div className="flex min-h-[60px] items-center justify-center rounded-lg border bg-gray-50 p-4 dark:bg-gray-800/30">
+          <div className="flex min-h-[60px] items-center justify-center rounded-lg border bg-gray-50 p-4 dark:bg-zinc-900/50">
             <Button onClick={handleConnect} disabled={isSubmitting} size="lg">
               {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <PlugZap className="mr-2 h-5 w-5" />}
               Connect to {displayName}
             </Button>
           </div>
         ) : (
-          <div className="rounded-lg border bg-gray-50 p-4 dark:bg-gray-800/30">
+          <div className="rounded-lg border bg-gray-50 p-4 dark:bg-zinc-900/50">
             <div className="flex items-center justify-between">
               <div className="space-y-1">
                 {isLoading && (
@@ -292,7 +292,7 @@ export function ConnectorCard({
           </DialogHeader>
           <div className="space-y-4 py-4">
             {credentialInstructions && (
-              <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">
+              <div className="rounded-md bg-slate-100 p-3 text-sm text-slate-700 dark:bg-zinc-900/50 dark:text-slate-300">
                 {credentialInstructions}
               </div>
             )}

@@ -14,6 +14,7 @@ from ..models.auth import AuthContext, EntityType
 from ..models.documents import Document, StorageFileInfo
 from ..models.folders import Folder
 from ..models.graph import Graph
+from ..models.model_config import ModelConfig
 from .base_database import BaseDatabase
 
 logger = logging.getLogger(__name__)
@@ -121,6 +122,25 @@ class ChatConversationModel(Base):
     # implicit index.  Removing the explicit duplicates prevents bloat and
     # guarantees they won't be re-added after we dropped them in production.
     __table_args__ = ()
+
+
+class ModelConfigModel(Base):
+    """SQLAlchemy model for user model configurations."""
+
+    __tablename__ = "model_configs"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, index=True, nullable=False)
+    app_id = Column(String, index=True, nullable=False)
+    provider = Column(String, nullable=False)
+    config_data = Column(JSONB, default=dict)
+    created_at = Column(String)
+    updated_at = Column(String)
+
+    __table_args__ = (
+        Index("idx_model_config_user_app", "user_id", "app_id"),
+        Index("idx_model_config_provider", "provider"),
+    )
 
 
 def _serialize_datetime(obj: Any) -> Any:
@@ -1835,3 +1855,141 @@ class PostgresDatabase(BaseDatabase):
         except Exception as exc:  # noqa: BLE001
             logger.error("Error building folder summary list: %s", exc)
             return []
+
+    # ------------------------------------------------------------------
+    # Model Configuration Methods
+    # ------------------------------------------------------------------
+
+    async def store_model_config(self, model_config: ModelConfig) -> bool:
+        """Store a model configuration."""
+        try:
+            config_dict = model_config.model_dump()
+            
+            # Serialize datetime objects
+            config_dict = _serialize_datetime(config_dict)
+            
+            async with self.async_session() as session:
+                config_model = ModelConfigModel(**config_dict)
+                session.add(config_model)
+                await session.commit()
+            
+            logger.info(f"Stored model config {model_config.id} for user {model_config.user_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error storing model config: {str(e)}")
+            return False
+
+    async def get_model_config(self, config_id: str, user_id: str, app_id: str) -> Optional[ModelConfig]:
+        """Get a model configuration by ID if user has access."""
+        try:
+            async with self.async_session() as session:
+                result = await session.execute(
+                    select(ModelConfigModel)
+                    .where(ModelConfigModel.id == config_id)
+                    .where(ModelConfigModel.user_id == user_id)
+                    .where(ModelConfigModel.app_id == app_id)
+                )
+                config_model = result.scalar_one_or_none()
+                
+                if config_model:
+                    return ModelConfig(
+                        id=config_model.id,
+                        user_id=config_model.user_id,
+                        app_id=config_model.app_id,
+                        provider=config_model.provider,
+                        config_data=config_model.config_data,
+                        created_at=config_model.created_at,
+                        updated_at=config_model.updated_at,
+                    )
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error getting model config: {str(e)}")
+            return None
+
+    async def get_model_configs(self, user_id: str, app_id: str) -> List[ModelConfig]:
+        """Get all model configurations for a user and app."""
+        try:
+            async with self.async_session() as session:
+                result = await session.execute(
+                    select(ModelConfigModel)
+                    .where(ModelConfigModel.user_id == user_id)
+                    .where(ModelConfigModel.app_id == app_id)
+                    .order_by(ModelConfigModel.updated_at.desc())
+                )
+                config_models = result.scalars().all()
+                
+                configs = []
+                for config_model in config_models:
+                    configs.append(ModelConfig(
+                        id=config_model.id,
+                        user_id=config_model.user_id,
+                        app_id=config_model.app_id,
+                        provider=config_model.provider,
+                        config_data=config_model.config_data,
+                        created_at=config_model.created_at,
+                        updated_at=config_model.updated_at,
+                    ))
+                
+                return configs
+                
+        except Exception as e:
+            logger.error(f"Error listing model configs: {str(e)}")
+            return []
+
+    async def update_model_config(self, config_id: str, user_id: str, app_id: str, updates: Dict[str, Any]) -> bool:
+        """Update a model configuration if user has access."""
+        try:
+            async with self.async_session() as session:
+                result = await session.execute(
+                    select(ModelConfigModel)
+                    .where(ModelConfigModel.id == config_id)
+                    .where(ModelConfigModel.user_id == user_id)
+                    .where(ModelConfigModel.app_id == app_id)
+                )
+                config_model = result.scalar_one_or_none()
+                
+                if not config_model:
+                    logger.error(f"Model config {config_id} not found or user does not have access")
+                    return False
+                
+                # Update fields
+                if "config_data" in updates:
+                    config_model.config_data = updates["config_data"]
+                
+                config_model.updated_at = datetime.now(UTC).isoformat()
+                
+                await session.commit()
+                logger.info(f"Updated model config {config_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error updating model config: {str(e)}")
+            return False
+
+    async def delete_model_config(self, config_id: str, user_id: str, app_id: str) -> bool:
+        """Delete a model configuration if user has access."""
+        try:
+            async with self.async_session() as session:
+                result = await session.execute(
+                    select(ModelConfigModel)
+                    .where(ModelConfigModel.id == config_id)
+                    .where(ModelConfigModel.user_id == user_id)
+                    .where(ModelConfigModel.app_id == app_id)
+                )
+                config_model = result.scalar_one_or_none()
+                
+                if not config_model:
+                    logger.error(f"Model config {config_id} not found or user does not have access")
+                    return False
+                
+                await session.delete(config_model)
+                await session.commit()
+                
+                logger.info(f"Deleted model config {config_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error deleting model config: {str(e)}")
+            return False

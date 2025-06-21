@@ -151,6 +151,7 @@ export function useMorphikChat({
           filters: parsedFilters ?? {},
           chat_id: chatId,
           stream_response: streamResponse,
+          llm_config: currentQueryOptions.llm_config,
         } as Record<string, unknown>;
 
         if (streamResponse) {

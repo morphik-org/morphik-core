@@ -1,0 +1,422 @@
+"use client";
+
+import React, { useState, useEffect, useMemo } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Plus, Trash2, Edit2, X, Copy, ExternalLink } from "lucide-react";
+import { showAlert } from "@/components/ui/alert-system";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { ModelConfigAPI } from "@/lib/modelConfigApi";
+import { CustomModel } from "@/components/types";
+
+interface ModelManagerProps {
+  apiKeys: Record<string, { apiKey?: string; baseUrl?: string; [key: string]: unknown }>;
+  authToken?: string | null;
+}
+
+const PROVIDER_INFO = {
+  openai: {
+    name: "OpenAI",
+    icon: "🟢",
+    exampleConfig: {
+      model: "gpt-4-turbo-preview",
+      temperature: 0.7,
+      max_tokens: 4096,
+    },
+    docsUrl: "https://docs.litellm.ai/docs/providers/openai",
+  },
+  anthropic: {
+    name: "Anthropic",
+    icon: "🔶",
+    exampleConfig: {
+      model: "claude-3-opus-20240229",
+      temperature: 0.7,
+      max_tokens: 4096,
+    },
+    docsUrl: "https://docs.litellm.ai/docs/providers/anthropic",
+  },
+  google: {
+    name: "Google",
+    icon: "🔵",
+    exampleConfig: {
+      model: "gemini/gemini-1.5-pro-latest",
+      temperature: 0.7,
+      max_tokens: 4096,
+    },
+    docsUrl: "https://docs.litellm.ai/docs/providers/vertex",
+  },
+  groq: {
+    name: "Groq",
+    icon: "⚡",
+    exampleConfig: {
+      model: "groq/mixtral-8x7b-32768",
+      temperature: 0.7,
+      max_tokens: 32768,
+    },
+    docsUrl: "https://docs.litellm.ai/docs/providers/groq",
+  },
+  deepseek: {
+    name: "DeepSeek",
+    icon: "🌊",
+    exampleConfig: {
+      model: "deepseek/deepseek-chat",
+      temperature: 0.7,
+      max_tokens: 4096,
+    },
+    docsUrl: "https://docs.litellm.ai/docs/providers",
+  },
+  ollama: {
+    name: "Ollama",
+    icon: "🦙",
+    exampleConfig: {
+      model: "ollama/llama2",
+      api_base: "http://localhost:11434",
+      temperature: 0.7,
+    },
+    docsUrl: "https://docs.litellm.ai/docs/providers/ollama",
+  },
+  together: {
+    name: "Together AI",
+    icon: "🤝",
+    exampleConfig: {
+      model: "together_ai/mistralai/Mixtral-8x7B-Instruct-v0.1",
+      temperature: 0.7,
+      max_tokens: 4096,
+    },
+    docsUrl: "https://docs.litellm.ai/docs/providers/togetherai",
+  },
+  azure: {
+    name: "Azure OpenAI",
+    icon: "☁️",
+    exampleConfig: {
+      model: "azure/gpt-4",
+      api_base: "https://your-resource.openai.azure.com",
+      api_version: "2023-05-15",
+      api_key: "your-azure-api-key",
+    },
+    docsUrl: "https://docs.litellm.ai/docs/providers/azure",
+  },
+};
+
+export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
+  const [models, setModels] = useState<CustomModel[]>([]);
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [editingModel, setEditingModel] = useState<string | null>(null);
+  const [newModel, setNewModel] = useState({
+    name: "",
+    provider: "",
+    config: "",
+  });
+
+  const api = useMemo(() => new ModelConfigAPI(authToken || null), [authToken]);
+
+  // Load saved models from backend or localStorage
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        if (authToken) {
+          const customModels = await api.listCustomModels();
+          setModels(customModels);
+        } else {
+          // Fall back to localStorage
+          const savedModels = localStorage.getItem("morphik_custom_models");
+          if (savedModels) {
+            try {
+              setModels(JSON.parse(savedModels));
+            } catch (err) {
+              console.error("Failed to parse saved models:", err);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load models:", err);
+        // Fall back to localStorage on error
+        const savedModels = localStorage.getItem("morphik_custom_models");
+        if (savedModels) {
+          try {
+            setModels(JSON.parse(savedModels));
+          } catch (parseErr) {
+            console.error("Failed to parse saved models:", parseErr);
+          }
+        }
+      }
+    };
+
+    loadModels();
+  }, [authToken, api]);
+
+  // Save models to backend and localStorage
+  const saveModels = async (updatedModels: CustomModel[]) => {
+    setModels(updatedModels);
+
+    // Always save to localStorage as fallback
+    localStorage.setItem("morphik_custom_models", JSON.stringify(updatedModels));
+
+    // Note: Individual model operations (add/delete) will handle backend updates
+  };
+
+  const handleAddModel = async () => {
+    if (!newModel.name || !newModel.provider || !newModel.config) {
+      showAlert("Please fill in all fields", { type: "error" });
+      return;
+    }
+
+    try {
+      const config = JSON.parse(newModel.config);
+
+      // Auto-inject API key if available for the provider
+      if (apiKeys[newModel.provider]?.apiKey && !config.api_key) {
+        config.api_key = apiKeys[newModel.provider].apiKey;
+      }
+
+      // Extract model_name from config
+      const model_name = config.model || config.model_name || "";
+
+      if (authToken) {
+        // Save to backend
+        const createdModel = await api.createCustomModel({
+          name: newModel.name,
+          provider: newModel.provider,
+          model_name,
+          config,
+        });
+
+        setModels([...models, createdModel]);
+      } else {
+        // Save to localStorage only
+        const model: CustomModel = {
+          id: `custom_${Date.now()}`,
+          name: newModel.name,
+          provider: newModel.provider,
+          model_name,
+          config,
+        };
+
+        saveModels([...models, model]);
+      }
+
+      setNewModel({ name: "", provider: "", config: "" });
+      setShowAddDialog(false);
+      showAlert("Model added successfully", { type: "success" });
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      if (errorMessage.includes("JSON")) {
+        showAlert("Invalid JSON configuration", { type: "error" });
+      } else {
+        showAlert(`Failed to add model: ${errorMessage}`, { type: "error" });
+      }
+    }
+  };
+
+  const handleDeleteModel = (id: string) => {
+    saveModels(models.filter(m => m.id !== id));
+    showAlert("Model deleted", { type: "success" });
+  };
+
+  const handleUpdateModel = (id: string, updates: Partial<CustomModel>) => {
+    saveModels(models.map(m => (m.id === id ? { ...m, ...updates } : m)));
+    setEditingModel(null);
+    showAlert("Model updated", { type: "success" });
+  };
+
+  const handleProviderChange = (provider: string) => {
+    setNewModel({
+      ...newModel,
+      provider,
+      config: JSON.stringify(PROVIDER_INFO[provider as keyof typeof PROVIDER_INFO]?.exampleConfig || {}, null, 2),
+    });
+  };
+
+  const availableProviders = Object.keys(apiKeys).filter(provider => apiKeys[provider]?.apiKey);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">Custom Models</h2>
+          <p className="text-sm text-muted-foreground">
+            Add custom LiteLLM-compatible models with your own configurations
+          </p>
+        </div>
+        <Button onClick={() => setShowAddDialog(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add Model
+        </Button>
+      </div>
+
+      {models.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <p className="mb-4 text-muted-foreground">No custom models configured</p>
+            <Button onClick={() => setShowAddDialog(true)} variant="outline">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Your First Model
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {models.map(model => (
+            <Card key={model.id}>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">
+                      {PROVIDER_INFO[model.provider as keyof typeof PROVIDER_INFO]?.icon || "🔧"}
+                    </span>
+                    {editingModel === model.id ? (
+                      <Input
+                        value={model.name}
+                        onChange={e => handleUpdateModel(model.id, { name: e.target.value })}
+                        className="h-8 w-48"
+                      />
+                    ) : (
+                      <CardTitle className="text-lg">{model.name}</CardTitle>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {editingModel === model.id ? (
+                      <>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingModel(null)}>
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingModel(model.id)}>
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteModel(model.id)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <CardDescription>
+                  Provider: {PROVIDER_INFO[model.provider as keyof typeof PROVIDER_INFO]?.name || model.provider}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-lg bg-muted/50 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">Configuration</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        navigator.clipboard.writeText(JSON.stringify(model.config, null, 2));
+                        showAlert("Configuration copied", { type: "success" });
+                      }}
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <pre className="overflow-x-auto text-xs">{JSON.stringify(model.config, null, 2)}</pre>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Add Model Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add Custom Model</DialogTitle>
+            <DialogDescription>Configure a custom LiteLLM-compatible model with your API key</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="model-name">Model Name</Label>
+              <Input
+                id="model-name"
+                placeholder="e.g., GPT-4 Turbo, Mixtral 8x7B"
+                value={newModel.name}
+                onChange={e => setNewModel({ ...newModel, name: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="provider">Provider</Label>
+              <Select value={newModel.provider} onValueChange={handleProviderChange}>
+                <SelectTrigger id="provider">
+                  <SelectValue placeholder="Select a provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableProviders.length === 0 ? (
+                    <SelectItem value="none" disabled>
+                      No API keys configured - add them in API Keys tab
+                    </SelectItem>
+                  ) : (
+                    availableProviders.map(provider => (
+                      <SelectItem key={provider} value={provider}>
+                        <div className="flex items-center gap-2">
+                          <span>{PROVIDER_INFO[provider as keyof typeof PROVIDER_INFO]?.icon || "🔧"}</span>
+                          <span>{PROVIDER_INFO[provider as keyof typeof PROVIDER_INFO]?.name || provider}</span>
+                        </div>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {newModel.provider && (
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="mt-1 h-auto p-0"
+                  onClick={() =>
+                    window.open(PROVIDER_INFO[newModel.provider as keyof typeof PROVIDER_INFO]?.docsUrl, "_blank")
+                  }
+                >
+                  View LiteLLM docs for {newModel.provider}
+                  <ExternalLink className="ml-1 h-3 w-3" />
+                </Button>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="config">Model Configuration (LiteLLM format)</Label>
+              <Textarea
+                id="config"
+                placeholder='{"model": "gpt-4", "temperature": 0.7}'
+                value={newModel.config}
+                onChange={e => setNewModel({ ...newModel, config: e.target.value })}
+                rows={10}
+                className="font-mono text-sm"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Enter a valid JSON configuration. The API key will be automatically added from your saved keys.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddModel}>Add Model</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

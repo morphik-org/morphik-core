@@ -15,6 +15,7 @@ export interface QueryOptions extends SearchOptions {
   graph_name?: string;
   folder_name?: string | string[]; // Support single folder or array of folders
   // external_id removed - should be in filters object as external_id: string[]
+  llm_config?: Record<string, unknown>; // LiteLLM-compatible model configuration
 }
 
 // Common types used across multiple components
@@ -102,4 +103,37 @@ export interface ChatMessage {
   content: string;
   timestamp?: string;
   sources?: Source[];
+}
+
+// Model Configuration Types
+export interface ModelConfigResponse {
+  id: string;
+  provider: string;
+  config_data: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ModelConfigCreate {
+  provider: string;
+  config_data: Record<string, unknown>;
+}
+
+export interface ModelConfigUpdate {
+  config_data: Record<string, unknown>;
+}
+
+export interface CustomModel {
+  id: string;
+  name: string;
+  provider: string;
+  model_name: string;
+  config: Record<string, unknown>;
+}
+
+export interface CustomModelCreate {
+  name: string;
+  provider: string;
+  model_name: string;
+  config: Record<string, unknown>;
 }

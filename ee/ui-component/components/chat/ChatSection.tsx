@@ -19,6 +19,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { AgentPreviewMessage, AgentUIMessage, DisplayObject, SourceObject, ToolCall } from "./AgentChatMessages";
+import { MessageSquare } from "lucide-react";
+import { ModelSelector2 } from "./ModelSelector2";
 
 interface ChatSectionProps {
   apiBaseUrl: string;
@@ -127,6 +129,9 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [documents, setDocuments] = useState<{ id: string; filename: string }[]>([]);
+
+  // Model selection state
+  const [selectedModel, setSelectedModel] = useState<string>("");
 
   // Agent mode toggle and state
   const [isAgentMode, setIsAgentMode] = useState(false);
@@ -449,6 +454,74 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     return documents.filter(d => d !== "__none__");
   };
 
+  // Handle model selection change
+  const handleModelChange = (modelId: string) => {
+    setSelectedModel(modelId);
+
+    // Check if this is a custom model
+    if (modelId.startsWith("custom_")) {
+      const savedModels = localStorage.getItem("morphik_custom_models");
+      if (savedModels) {
+        try {
+          const customModels = JSON.parse(savedModels);
+          const customModel = customModels.find((m: { id: string }) => `custom_${m.id}` === modelId);
+
+          if (customModel) {
+            // Use the custom model's config directly
+            safeUpdateOption("llm_config", customModel.config);
+            return;
+          }
+        } catch (err) {
+          console.error("Failed to parse custom models:", err);
+        }
+      }
+    }
+
+    // Get API keys from localStorage
+    const savedConfig = localStorage.getItem("morphik_api_keys");
+    if (savedConfig) {
+      try {
+        const config = JSON.parse(savedConfig);
+
+        // Build model_config based on selected model and saved API keys
+        const modelConfig: Record<string, unknown> = { model: modelId };
+
+        // Determine provider from model ID
+        if (modelId.startsWith("gpt")) {
+          if (config.openai?.apiKey) {
+            modelConfig.api_key = config.openai.apiKey;
+            if (config.openai.baseUrl) {
+              modelConfig.base_url = config.openai.baseUrl;
+            }
+          }
+        } else if (modelId.startsWith("claude")) {
+          if (config.anthropic?.apiKey) {
+            modelConfig.api_key = config.anthropic.apiKey;
+            if (config.anthropic.baseUrl) {
+              modelConfig.base_url = config.anthropic.baseUrl;
+            }
+          }
+        } else if (modelId.startsWith("gemini/")) {
+          if (config.google?.apiKey) {
+            modelConfig.api_key = config.google.apiKey;
+          }
+        } else if (modelId.startsWith("groq/")) {
+          if (config.groq?.apiKey) {
+            modelConfig.api_key = config.groq.apiKey;
+          }
+        } else if (modelId.startsWith("deepseek/")) {
+          if (config.deepseek?.apiKey) {
+            modelConfig.api_key = config.deepseek.apiKey;
+          }
+        }
+
+        safeUpdateOption("llm_config", modelConfig);
+      } catch (err) {
+        console.error("Failed to parse API keys:", err);
+      }
+    }
+  };
+
   return (
     <div className="relative flex h-full w-full overflow-hidden bg-background">
       {/* Sidebar */}
@@ -466,22 +539,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
         {/* Messages Area */}
         <div className="relative min-h-0 flex-1">
           <ScrollArea className="h-full" ref={messagesContainerRef}>
-            {(isAgentMode ? agentMessages.length === 0 : messages.length === 0) && (
-              <div className="flex flex-1 items-center justify-center p-8 text-center">
-                <div className="max-w-md space-y-2">
-                  <h2 className="text-xl font-semibold">
-                    {isAgentMode ? "Morphik Agent Chat" : "Welcome to Morphik Chat"}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    {isAgentMode
-                      ? "Ask a question to the agent to get started."
-                      : "Ask a question about your documents to get started."}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <div className="mx-auto flex max-w-4xl flex-col pb-[80px] pt-4 md:pb-[120px]">
+            <div className="mx-auto flex max-w-4xl flex-col pb-32 pt-8">
               {(isAgentMode ? agentMessages : messages).map(msg =>
                 isAgentMode ? (
                   <AgentPreviewMessage key={msg.id} message={msg as AgentUIMessage} />
@@ -495,16 +553,16 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                   agentMessages.length > 0 &&
                   agentMessages[agentMessages.length - 1].role === "user" && (
                     <div className="flex h-12 items-center justify-start pl-4 text-start text-sm text-muted-foreground">
-                      <Spin className="mr-2 animate-spin" />
-                      Agent thinking...
+                      <Spin className="mr-2 h-4 w-4 animate-spin" />
+                      <span>Agent thinking...</span>
                     </div>
                   )
                 : status === "loading" &&
                   messages.length > 0 &&
                   messages[messages.length - 1].role === "user" && (
                     <div className="flex h-12 items-center justify-start pl-4 text-start text-sm text-muted-foreground">
-                      <Spin className="mr-2 animate-spin" />
-                      Thinking...
+                      <Spin className="mr-2 h-4 w-4 animate-spin" />
+                      <span>Thinking...</span>
                     </div>
                   )}
             </div>
@@ -515,10 +573,25 @@ const ChatSection: React.FC<ChatSectionProps> = ({
 
         {/* Input Area */}
         <div className="sticky bottom-0 w-full bg-background">
-          <div className="mx-auto max-w-4xl">
+          {/* Empty state when no messages */}
+          {(isAgentMode ? agentMessages.length === 0 : messages.length === 0) && (
+            <div className="flex flex-col items-center justify-center py-12">
+              <MessageSquare className="mb-4 h-12 w-12 text-muted-foreground" />
+              <h2 className="mb-2 text-xl font-semibold text-foreground">
+                {isAgentMode ? "Morphik Agent Chat" : "Welcome to Morphik Chat"}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {isAgentMode
+                  ? "Ask a question to the agent to get started."
+                  : "Ask a question about your documents to get started."}
+              </p>
+            </div>
+          )}
+
+          <div className="mx-auto max-w-4xl px-4">
             {/* Controls Row - Folder Selection and Agent Mode */}
             {!isReadonly && (
-              <div className="pb-3 pt-2">
+              <div className="border-b border-border/50 pb-3 pt-3">
                 <div className="flex items-center justify-between gap-4">
                   {/* Left side - Folder and Document Selection (only in chat mode) */}
                   {!isAgentMode && (
@@ -543,7 +616,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                             safeUpdateOption("folder_name", filteredValues.length > 0 ? filteredValues : undefined);
                           }}
                           placeholder="All folders"
-                          className="w-[200px]"
+                          className="w-[200px] border-border/50 bg-background shadow-sm transition-colors hover:border-primary/50"
                         />
                       </div>
 
@@ -570,7 +643,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                             updateDocumentFilter(filteredValues);
                           }}
                           placeholder="All documents"
-                          className="w-[220px]"
+                          className="w-[220px] border-border/50 bg-background shadow-sm transition-colors hover:border-primary/50"
                         />
                       </div>
                     </div>
@@ -581,7 +654,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                     <Button
                       variant={isAgentMode ? "default" : "outline"}
                       size="sm"
-                      className="text-xs font-medium"
+                      className="text-xs font-medium transition-all hover:border-primary/50"
                       title="Goes deeper, reasons across documents and may return image-grounded answers"
                       onClick={() => {
                         setIsAgentMode(prev => !prev);
@@ -598,7 +671,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                       <Button
                         variant="outline"
                         size="sm"
-                        className="flex items-center gap-1 text-xs font-medium"
+                        className="flex items-center gap-1 text-xs font-medium transition-all hover:border-primary/50"
                         onClick={() => {
                           setShowSettings(!showSettings);
                           if (!showSettings && authToken) {
@@ -618,7 +691,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
             )}
 
             <form
-              className="pb-6"
+              className="pb-6 pt-4"
               onSubmit={e => {
                 e.preventDefault();
                 submitForm();
@@ -631,7 +704,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                     placeholder="Send a message..."
                     value={input}
                     onChange={handleInput}
-                    className="max-h-[400px] min-h-[48px] w-full resize-none overflow-hidden pr-16 text-base"
+                    className="max-h-[400px] min-h-[52px] w-full resize-none overflow-hidden rounded-lg border border-border bg-background pr-14 text-base transition-colors focus:border-primary"
                     rows={1}
                     autoFocus
                     onKeyDown={event => {
@@ -652,7 +725,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                       onClick={submitForm}
                       size="icon"
                       disabled={input.trim().length === 0 || (isAgentMode ? agentStatus !== "idle" : status !== "idle")}
-                      className="flex h-8 w-8 items-center justify-center rounded-full"
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-50"
                     >
                       {isAgentMode ? (
                         agentStatus === "submitted" ? (
@@ -679,12 +752,33 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                 </div>
               </div>
 
+              {/* Model Selector - below input */}
+              {!isAgentMode && (
+                <div className="mt-2 flex items-center justify-between px-2">
+                  <ModelSelector2
+                    apiBaseUrl={apiBaseUrl}
+                    authToken={authToken}
+                    selectedModel={selectedModel}
+                    onModelChange={handleModelChange}
+                    onRequestApiKey={() => {
+                      // Navigate to settings page with API keys tab
+                      window.location.href = "?section=settings";
+                    }}
+                  />
+                </div>
+              )}
+
               {/* Settings Panel */}
               {showSettings && !isAgentMode && !isReadonly && (
-                <div className="mt-4 rounded-xl border bg-muted/30 p-4 duration-300 animate-in fade-in slide-in-from-bottom-2">
+                <div className="mt-4 rounded-lg border border-border/50 bg-muted/20 p-4 shadow-sm duration-300 animate-in fade-in slide-in-from-bottom-2">
                   <div className="mb-4 flex items-center justify-between">
                     <h3 className="text-sm font-semibold">Advanced Settings</h3>
-                    <Button variant="ghost" size="sm" className="text-xs" onClick={() => setShowSettings(false)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs hover:bg-muted/50"
+                      onClick={() => setShowSettings(false)}
+                    >
                       Done
                     </Button>
                   </div>
@@ -692,9 +786,9 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {/* First Column - Core Settings */}
                     <div className="space-y-4">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <Label htmlFor="use_reranking" className="text-sm">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
+                          <Label htmlFor="use_reranking" className="text-sm font-medium">
                             Use Reranking
                           </Label>
                           <Switch
@@ -703,8 +797,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                             onCheckedChange={checked => safeUpdateOption("use_reranking", checked)}
                           />
                         </div>
-                        <div className="flex items-center justify-between">
-                          <Label htmlFor="use_colpali" className="text-sm">
+                        <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
+                          <Label htmlFor="use_colpali" className="text-sm font-medium">
                             Use Colpali
                           </Label>
                           <Switch
@@ -713,8 +807,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                             onCheckedChange={checked => safeUpdateOption("use_colpali", checked)}
                           />
                         </div>
-                        <div className="flex items-center justify-between">
-                          <Label htmlFor="streaming_enabled" className="text-sm">
+                        <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
+                          <Label htmlFor="streaming_enabled" className="text-sm font-medium">
                             Streaming Response
                           </Label>
                           <Switch
@@ -726,7 +820,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="graph_name" className="block text-sm">
+                        <Label htmlFor="graph_name" className="block text-sm font-medium">
                           Knowledge Graph
                         </Label>
                         <Select
@@ -735,7 +829,10 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                             safeUpdateOption("graph_name", value === "__none__" ? undefined : value)
                           }
                         >
-                          <SelectTrigger className="w-full" id="graph_name">
+                          <SelectTrigger
+                            className="w-full border-border/50 bg-background/50 shadow-sm transition-colors hover:border-primary/50"
+                            id="graph_name"
+                          >
                             <SelectValue placeholder="Select a knowledge graph" />
                           </SelectTrigger>
                           <SelectContent>
@@ -762,8 +859,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
 
                     {/* Second Column - Advanced Settings */}
                     <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="query-k" className="flex justify-between text-sm">
+                      <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                        <Label htmlFor="query-k" className="flex justify-between text-sm font-medium">
                           <span>Results (k)</span>
                           <span className="text-muted-foreground">{safeQueryOptions.k}</span>
                         </Label>
@@ -778,8 +875,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                         />
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="query-min-score" className="flex justify-between text-sm">
+                      <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                        <Label htmlFor="query-min-score" className="flex justify-between text-sm font-medium">
                           <span>Min Score</span>
                           <span className="text-muted-foreground">{safeQueryOptions.min_score.toFixed(2)}</span>
                         </Label>
@@ -794,8 +891,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                         />
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="query-temperature" className="flex justify-between text-sm">
+                      <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                        <Label htmlFor="query-temperature" className="flex justify-between text-sm font-medium">
                           <span>Temperature</span>
                           <span className="text-muted-foreground">{safeQueryOptions.temperature.toFixed(2)}</span>
                         </Label>
@@ -810,8 +907,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                         />
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="query-max-tokens" className="flex justify-between text-sm">
+                      <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                        <Label htmlFor="query-max-tokens" className="flex justify-between text-sm font-medium">
                           <span>Max Tokens</span>
                           <span className="text-muted-foreground">{safeQueryOptions.max_tokens}</span>
                         </Label>

@@ -48,6 +48,10 @@ class CompletionQueryRequest(RetrieveRequest):
         False,
         description="Whether to stream the response back in chunks",
     )
+    llm_config: Optional[Dict[str, Any]] = Field(
+        None,
+        description="LiteLLM-compatible model configuration (e.g., model name, API key, base URL)",
+    )
 
 
 class IngestTextRequest(BaseModel):

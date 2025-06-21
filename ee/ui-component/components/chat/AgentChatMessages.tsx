@@ -48,11 +48,11 @@ function AgentCopyButton({ content }: { content: string }) {
     <Button
       variant="ghost"
       size="sm"
-      className="h-8 w-8 p-0"
+      className="h-8 w-8 p-0 text-muted-foreground transition-colors hover:text-foreground"
       onClick={handleCopy}
       title={copied ? "Copied!" : "Copy message"}
     >
-      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+      {copied ? <Check className="h-4 w-4 text-green-600 dark:text-green-400" /> : <Copy className="h-4 w-4" />}
     </Button>
   );
 }
@@ -443,28 +443,24 @@ export function AgentPreviewMessage({ message }: AgentMessageProps) {
 
   // Show only display objects for assistant messages that have them
   return (
-    <div className="group relative flex px-4 py-3">
-      <div className="flex w-full flex-col items-start">
-        <div className="flex w-full max-w-3xl items-start gap-4">
-          <div className="flex-1 space-y-2 overflow-hidden">
-            <div className="relative rounded-xl bg-muted p-4">
-              <div className="absolute right-2 top-2">
-                <AgentCopyButton content={fullContent} />
-              </div>
-              <div className="space-y-3">
-                {displayObjects.map((obj, idx) => (
-                  <DisplayObjectRenderer key={idx} object={obj} />
-                ))}
-              </div>
-
-              {/* Render sources if available */}
-              {sources && sources.length > 0 && (
-                <div className="mt-4 border-t border-border pt-3">
-                  <SourcesRenderer sources={sources} />
-                </div>
-              )}
-            </div>
+    <div className="group relative py-6">
+      <div className="mx-auto w-full max-w-4xl">
+        <div className="relative">
+          <div className="absolute -right-2 -top-2">
+            <AgentCopyButton content={fullContent} />
           </div>
+          <div className="space-y-3">
+            {displayObjects.map((obj, idx) => (
+              <DisplayObjectRenderer key={idx} object={obj} />
+            ))}
+          </div>
+
+          {/* Render sources if available */}
+          {sources && sources.length > 0 && (
+            <div className="mt-4 border-t border-border/50 pt-3">
+              <SourcesRenderer sources={sources} />
+            </div>
+          )}
         </div>
       </div>
     </div>
