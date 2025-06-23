@@ -16,13 +16,14 @@ import {
   ArrowLeft,
   PlugZap,
   File,
+  Layers,
   Settings,
 } from "lucide-react";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Input } from "@/components/ui/input";
 
 // Define the specific section types the Sidebar expects
-export type SidebarSectionType = "documents" | "search" | "chat" | "graphs" | "connections" | "pdf" | "settings";
+export type SidebarSectionType = "documents" | "search" | "chat" | "graphs" | "workflows" | "connections" | "pdf" | "settings";
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   activeSection: SidebarSectionType; // Use the specific type
@@ -274,6 +275,16 @@ export function Sidebar({
           >
             <Network className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
             {!isCollapsed && <span>Graphs</span>}
+          </Button>
+          {/* Workflows Nav Item */}
+          <Button
+            variant={activeSection === "workflows" ? "secondary" : "ghost"}
+            className={cn("w-full justify-start", isCollapsed && "justify-center")}
+            onClick={() => onSectionChange("workflows")}
+            title="Workflows"
+          >
+            <Layers className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
+            {!isCollapsed && <span>Workflows</span>}
           </Button>
           {/* New Connections Nav Item */}
           <Button

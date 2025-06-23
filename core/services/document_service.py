@@ -86,6 +86,9 @@ class DocumentService:
                     success = await self.db.add_document_to_folder(folder.id, document_id, auth)
                     if not success:
                         logger.warning(f"Failed to add document {document_id} to existing folder {folder.name}")
+                    else:
+                        # Queue workflows associated with this folder
+                        await self._queue_folder_workflows(folder, document_id, auth)
                 return folder  # Folder already exists
 
             # Create a new folder
@@ -103,12 +106,57 @@ class DocumentService:
                 folder.system_metadata["app_id"] = auth.app_id
 
             await self.db.create_folder(folder)
+
+            # Note: Newly created folders don't have workflows yet, but we'll still call this
+            # in case workflows are added via API before document ingestion completes
+            await self._queue_folder_workflows(folder, document_id, auth)
+
             return folder
 
         except Exception as e:
             # Log error but don't raise - we want document ingestion to continue even if folder creation fails
             logger.error(f"Error ensuring folder exists: {e}")
             return None
+
+    async def _queue_folder_workflows(self, folder: Folder, document_id: str, auth: AuthContext) -> None:
+        """Queue all workflows associated with a folder for a newly added document.
+
+        Args:
+            folder: The folder containing workflows
+            document_id: ID of the document that was just added
+            auth: Authentication context
+        """
+        if not folder.workflow_ids:
+            return
+
+        try:
+            # Import workflow service locally to avoid circular dependency
+            from core.services_init import workflow_service
+
+            logger.info(
+                f"Queueing {len(folder.workflow_ids)} workflows for document {document_id} in folder {folder.name}"
+            )
+
+            for workflow_id in folder.workflow_ids:
+                try:
+                    # Queue the workflow run
+                    run = await workflow_service.queue_workflow_run(workflow_id, document_id, auth)
+                    logger.info(f"Queued workflow {workflow_id} for document {document_id}, run ID: {run.id}")
+
+                    # Execute workflow directly since we don't have access to request/Redis pool here
+                    # TODO: Consider passing Redis pool as a parameter if async execution is needed
+                    import asyncio
+
+                    asyncio.create_task(workflow_service.execute_workflow_run(run.id, auth))
+                    logger.info(f"Started workflow execution task for run {run.id}")
+
+                except Exception as e:
+                    logger.error(f"Failed to queue workflow {workflow_id} for document {document_id}: {e}")
+                    # Continue with other workflows even if one fails
+
+        except Exception as e:
+            logger.error(f"Error queueing folder workflows: {e}")
+            # Don't raise - we don't want to fail document ingestion due to workflow errors
 
     def __init__(
         self,
@@ -565,11 +613,11 @@ class DocumentService:
 
         # Create a mapping of original scores from ChunkSource objects (O(n) time)
         score_map = {
-            (source.document_id, source.chunk_number): source.score 
-            for source in authorized_sources 
+            (source.document_id, source.chunk_number): source.score
+            for source in authorized_sources
             if source.score is not None
         }
-        
+
         # Apply original scores to the retrieved chunks (O(m) time with O(1) lookups)
         for chunk in chunks:
             key = (chunk.document_id, chunk.chunk_number)

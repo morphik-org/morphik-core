@@ -6,6 +6,7 @@ import DocumentsSection from "@/components/documents/DocumentsSection";
 import SearchSection from "@/components/search/SearchSection";
 import ChatSection from "@/components/chat/ChatSection";
 import GraphSection from "@/components/GraphSection";
+import WorkflowSection from "@/components/workflows/WorkflowSection";
 import { ConnectorList } from "@/components/connectors/ConnectorList";
 import { PDFViewer } from "@/components/pdf/PDFViewer";
 import { PDFAPIService } from "@/components/pdf/PDFAPIService";
@@ -49,7 +50,7 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
   }, [connectionUri]);
 
   // Valid section types, now matching the updated MorphikUIProps
-  type SectionType = "documents" | "search" | "chat" | "graphs" | "connections" | "pdf" | "settings";
+  type SectionType = "documents" | "search" | "chat" | "graphs" | "workflows" | "connections" | "pdf" | "settings";
 
   useEffect(() => {
     // Ensure initialSection from props is a valid SectionType before setting
@@ -104,8 +105,8 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
 
   // Wrapper for section change to match expected type
   const handleSectionChange = (section: string) => {
-    if (["documents", "search", "chat", "graphs", "connections", "pdf", "settings"].includes(section)) {
-      // Added "connections", "pdf", and "settings"
+    if (["documents", "search", "chat", "graphs", "workflows", "connections", "pdf", "settings"].includes(section)) {
+      // Added "workflows"
       setActiveSection(section as SectionType); // Use SectionType here
     }
   };
@@ -178,6 +179,13 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
               onSelectGraph={onGraphClick}
               onGraphCreate={onGraphCreate}
               onGraphUpdate={onGraphUpdate}
+            />
+          )}
+          {activeSection === "workflows" && (
+            <WorkflowSection
+              key={`workflows-${effectiveApiBaseUrl}`}
+              apiBaseUrl={effectiveApiBaseUrl}
+              authToken={authToken}
             />
           )}
           {activeSection === "connections" && (

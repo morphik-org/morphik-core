@@ -3,12 +3,13 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Column, Index, String, and_, or_, select, text
+from sqlalchemy import Column, DateTime, Index, String, and_, func, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from core.config import get_settings
+from core.models.workflows import Workflow, WorkflowRun
 
 from ..models.auth import AuthContext, EntityType
 from ..models.documents import Document, StorageFileInfo
@@ -65,8 +66,8 @@ class GraphModel(Base):
     system_metadata = Column(JSONB, default=dict)  # For folder_name and end_user_id
     document_ids = Column(JSONB, default=list)
     filters = Column(JSONB, nullable=True)
-    created_at = Column(String)  # ISO format string
-    updated_at = Column(String)  # ISO format string
+    created_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now())
     owner = Column(JSONB)
     access_control = Column(JSONB, default=dict)
 
@@ -94,6 +95,7 @@ class FolderModel(Base):
     system_metadata = Column(JSONB, default=dict)
     access_control = Column(JSONB, default=dict)
     rules = Column(JSONB, default=list)
+    workflow_ids = Column(JSONB, default=list)
 
     # Create indexes
     __table_args__ = (
@@ -114,8 +116,8 @@ class ChatConversationModel(Base):
     user_id = Column(String, index=True, nullable=True)
     app_id = Column(String, index=True, nullable=True)
     history = Column(JSONB, default=list)
-    created_at = Column(String)
-    updated_at = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now())
 
     # Avoid duplicate indexes – SQLAlchemy already creates BTREE indexes for
     # columns declared with `index=True` and the primary-key column has an
@@ -141,6 +143,38 @@ class ModelConfigModel(Base):
         Index("idx_model_config_user_app", "user_id", "app_id"),
         Index("idx_model_config_provider", "provider"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Workflow models (JSONB payload) – persistent storage for workflow definitions
+#   and execution runs. Placed here so later PostgresDatabase code can import
+#   them without forward-reference issues or linter complaints.
+# ---------------------------------------------------------------------------
+
+
+class WorkflowModel(Base):
+    """SQLAlchemy model for workflow definitions stored as JSONB."""
+
+    __tablename__ = "workflows"
+
+    id = Column(String, primary_key=True)
+    data = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now())
+
+
+class WorkflowRunModel(Base):
+    """SQLAlchemy model for individual workflow execution runs."""
+
+    __tablename__ = "workflow_runs"
+
+    id = Column(String, primary_key=True)
+    workflow_id = Column(String, index=True, nullable=False)
+    data = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now())
+
+    __table_args__ = (Index("idx_workflow_runs_wf", "workflow_id"),)
 
 
 def _serialize_datetime(obj: Any) -> Any:
@@ -310,6 +344,28 @@ class PostgresDatabase(BaseDatabase):
                     )
                     logger.info("Added rules column to folders table")
 
+                # Add workflow_ids column to folders table if it doesn't exist
+                result = await conn.execute(
+                    text(
+                        """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'folders' AND column_name = 'workflow_ids'
+                    """
+                    )
+                )
+                if not result.first():
+                    # Add workflow_ids column to folders table
+                    await conn.execute(
+                        text(
+                            """
+                        ALTER TABLE folders
+                        ADD COLUMN IF NOT EXISTS workflow_ids JSONB DEFAULT '[]'::jsonb
+                        """
+                        )
+                    )
+                    logger.info("Added workflow_ids column to folders table")
+
                 # Create indexes for folders table
                 await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_name ON folders (name);"))
                 await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_owner ON folders USING gin (owner);"))
@@ -369,6 +425,10 @@ class PostgresDatabase(BaseDatabase):
                 )
 
                 logger.info("Created indexes for folder_name, end_user_id, and app_id in system_metadata")
+
+                # ORM models already include workflows tables – ensure they are created
+                await conn.run_sync(lambda c: WorkflowModel.__table__.create(c, checkfirst=True))
+                await conn.run_sync(lambda c: WorkflowRunModel.__table__.create(c, checkfirst=True))
 
             logger.info("PostgreSQL tables and indexes created successfully")
             self._initialized = True
@@ -1329,6 +1389,7 @@ class PostgresDatabase(BaseDatabase):
                     system_metadata=folder_dict.get("system_metadata", {}),
                     access_control=access_control,
                     rules=folder_dict.get("rules", []),
+                    workflow_ids=folder_dict.get("workflow_ids", []),
                 )
 
                 session.add(folder_model)
@@ -1364,6 +1425,7 @@ class PostgresDatabase(BaseDatabase):
                     "system_metadata": folder_model.system_metadata,
                     "access_control": folder_model.access_control,
                     "rules": folder_model.rules,
+                    "workflow_ids": getattr(folder_model, "workflow_ids", []),
                 }
 
                 folder = Folder(**folder_dict)
@@ -1407,6 +1469,7 @@ class PostgresDatabase(BaseDatabase):
                             "system_metadata": folder_row.system_metadata,
                             "access_control": folder_row.access_control,
                             "rules": folder_row.rules,
+                            "workflow_ids": getattr(folder_row, "workflow_ids", []),
                         }
 
                         folder = Folder(**folder_dict)
@@ -1450,6 +1513,7 @@ class PostgresDatabase(BaseDatabase):
                         "system_metadata": folder_row.system_metadata,
                         "access_control": folder_row.access_control,
                         "rules": folder_row.rules,
+                        "workflow_ids": getattr(folder_row, "workflow_ids", []),
                     }
 
                     folder = Folder(**folder_dict)
@@ -1539,6 +1603,7 @@ class PostgresDatabase(BaseDatabase):
                         "system_metadata": folder_model.system_metadata,
                         "access_control": folder_model.access_control,
                         "rules": folder_model.rules,
+                        "workflow_ids": getattr(folder_model, "workflow_ids", []),
                     }
                     folders.append(Folder(**folder_dict))
                 return folders
@@ -1864,18 +1929,18 @@ class PostgresDatabase(BaseDatabase):
         """Store a model configuration."""
         try:
             config_dict = model_config.model_dump()
-            
+
             # Serialize datetime objects
             config_dict = _serialize_datetime(config_dict)
-            
+
             async with self.async_session() as session:
                 config_model = ModelConfigModel(**config_dict)
                 session.add(config_model)
                 await session.commit()
-            
+
             logger.info(f"Stored model config {model_config.id} for user {model_config.user_id}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error storing model config: {str(e)}")
             return False
@@ -1891,7 +1956,7 @@ class PostgresDatabase(BaseDatabase):
                     .where(ModelConfigModel.app_id == app_id)
                 )
                 config_model = result.scalar_one_or_none()
-                
+
                 if config_model:
                     return ModelConfig(
                         id=config_model.id,
@@ -1903,7 +1968,7 @@ class PostgresDatabase(BaseDatabase):
                         updated_at=config_model.updated_at,
                     )
                 return None
-                
+
         except Exception as e:
             logger.error(f"Error getting model config: {str(e)}")
             return None
@@ -1919,21 +1984,23 @@ class PostgresDatabase(BaseDatabase):
                     .order_by(ModelConfigModel.updated_at.desc())
                 )
                 config_models = result.scalars().all()
-                
+
                 configs = []
                 for config_model in config_models:
-                    configs.append(ModelConfig(
-                        id=config_model.id,
-                        user_id=config_model.user_id,
-                        app_id=config_model.app_id,
-                        provider=config_model.provider,
-                        config_data=config_model.config_data,
-                        created_at=config_model.created_at,
-                        updated_at=config_model.updated_at,
-                    ))
-                
+                    configs.append(
+                        ModelConfig(
+                            id=config_model.id,
+                            user_id=config_model.user_id,
+                            app_id=config_model.app_id,
+                            provider=config_model.provider,
+                            config_data=config_model.config_data,
+                            created_at=config_model.created_at,
+                            updated_at=config_model.updated_at,
+                        )
+                    )
+
                 return configs
-                
+
         except Exception as e:
             logger.error(f"Error listing model configs: {str(e)}")
             return []
@@ -1949,21 +2016,21 @@ class PostgresDatabase(BaseDatabase):
                     .where(ModelConfigModel.app_id == app_id)
                 )
                 config_model = result.scalar_one_or_none()
-                
+
                 if not config_model:
                     logger.error(f"Model config {config_id} not found or user does not have access")
                     return False
-                
+
                 # Update fields
                 if "config_data" in updates:
                     config_model.config_data = updates["config_data"]
-                
+
                 config_model.updated_at = datetime.now(UTC).isoformat()
-                
+
                 await session.commit()
                 logger.info(f"Updated model config {config_id}")
                 return True
-                
+
         except Exception as e:
             logger.error(f"Error updating model config: {str(e)}")
             return False
@@ -1979,17 +2046,147 @@ class PostgresDatabase(BaseDatabase):
                     .where(ModelConfigModel.app_id == app_id)
                 )
                 config_model = result.scalar_one_or_none()
-                
+
                 if not config_model:
                     logger.error(f"Model config {config_id} not found or user does not have access")
                     return False
-                
+
                 await session.delete(config_model)
                 await session.commit()
-                
+
                 logger.info(f"Deleted model config {config_id}")
                 return True
-                
+
         except Exception as e:
             logger.error(f"Error deleting model config: {str(e)}")
             return False
+
+    # ------------------------------------------------------------------
+    # Workflow CRUD – delegated to repository (can later be DB-backed)
+    # ------------------------------------------------------------------
+
+    async def store_workflow(self, workflow: Workflow) -> bool:  # noqa: D401 – override
+        if not self._initialized:
+            await self.initialize()
+        try:
+            wf_json = _serialize_datetime(workflow.model_dump())
+            async with self.async_session() as session:
+                existing = await session.get(WorkflowModel, workflow.id)
+                if existing:
+                    existing.data = wf_json
+                    existing.updated_at = datetime.now(UTC)
+                else:
+                    session.add(WorkflowModel(id=workflow.id, data=wf_json))
+                await session.commit()
+            return True
+        except Exception as exc:
+            logger.error("Error storing workflow: %s", exc)
+            return False
+
+    async def list_workflows(self, auth: AuthContext) -> List[Workflow]:
+        try:
+            if not self._initialized:
+                await self.initialize()
+            async with self.async_session() as session:
+                res = await session.execute(select(WorkflowModel))
+                rows = res.scalars().all()
+                return [Workflow(**row.data) for row in rows]
+        except Exception as exc:
+            logger.error("Error listing workflows: %s", exc)
+            return []
+
+    async def get_workflow(self, workflow_id: str, auth: AuthContext) -> Optional[Workflow]:
+        try:
+            if not self._initialized:
+                await self.initialize()
+            async with self.async_session() as session:
+                wf_model = await session.get(WorkflowModel, workflow_id)
+                if wf_model:
+                    return Workflow(**wf_model.data)
+            return None
+        except Exception as exc:
+            logger.error("Error getting workflow: %s", exc)
+            return None
+
+    async def update_workflow(self, workflow_id: str, updates: Dict[str, Any], auth: AuthContext) -> Optional[Workflow]:
+        wf = await self.get_workflow(workflow_id, auth)
+        if not wf:
+            return None
+        wf_dict = wf.model_dump()
+        wf_dict.update(updates)
+        wf_updated = Workflow(**wf_dict)
+        await self.store_workflow(wf_updated)
+        return wf_updated
+
+    async def delete_workflow(self, workflow_id: str, auth: AuthContext) -> bool:
+        try:
+            if not self._initialized:
+                await self.initialize()
+            async with self.async_session() as session:
+                # First, remove workflow from all folders
+                folders_query = text(
+                    """
+                    UPDATE folders
+                    SET workflow_ids = workflow_ids - :workflow_id
+                    WHERE workflow_ids @> :workflow_id_json
+                """
+                )
+                await session.execute(
+                    folders_query, {"workflow_id": workflow_id, "workflow_id_json": json.dumps([workflow_id])}
+                )
+
+                # Delete the workflow
+                wf_model = await session.get(WorkflowModel, workflow_id)
+                if wf_model:
+                    await session.delete(wf_model)
+                    await session.commit()
+                    logger.info(f"Deleted workflow {workflow_id} and removed from all folders")
+                    return True
+                return False
+        except Exception as exc:
+            logger.error("Error deleting workflow: %s", exc)
+            return False
+
+    async def store_workflow_run(self, run: WorkflowRun) -> bool:
+        try:
+            if not self._initialized:
+                await self.initialize()
+            run_json = _serialize_datetime(run.model_dump())
+            async with self.async_session() as session:
+                existing = await session.get(WorkflowRunModel, run.id)
+                if existing:
+                    existing.data = run_json
+                    existing.workflow_id = run.workflow_id
+                    existing.updated_at = datetime.now(UTC)
+                else:
+                    session.add(WorkflowRunModel(id=run.id, workflow_id=run.workflow_id, data=run_json))
+                await session.commit()
+            return True
+        except Exception as exc:
+            logger.error("Error storing workflow run: %s", exc)
+            return False
+
+    async def get_workflow_run(self, run_id: str, auth: AuthContext) -> Optional[WorkflowRun]:
+        try:
+            if not self._initialized:
+                await self.initialize()
+            async with self.async_session() as session:
+                run_model = await session.get(WorkflowRunModel, run_id)
+                if run_model:
+                    return WorkflowRun(**run_model.data)
+            return None
+        except Exception as exc:
+            logger.error("Error getting workflow run: %s", exc)
+            return None
+
+    async def list_workflow_runs(self, workflow_id: str, auth: AuthContext) -> List[WorkflowRun]:
+        try:
+            if not self._initialized:
+                await self.initialize()
+            async with self.async_session() as session:
+                res = await session.execute(select(WorkflowRunModel).where(WorkflowRunModel.workflow_id == workflow_id))
+                rows = res.scalars().all()
+                return [WorkflowRun(**r.data) for r in rows]
+        except Exception as exc:
+            logger.error("Error listing workflow runs: %s", exc)
+            return []

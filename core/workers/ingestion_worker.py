@@ -582,6 +582,15 @@ async def process_ingestion_job(
 
         logger.debug(f"Successfully completed processing for document {doc.external_id}")
 
+        # 12. Add document to folder and trigger workflows if folder is specified
+        if folder_name:
+            try:
+                logger.info(f"Adding document {doc.external_id} to folder '{folder_name}' and triggering workflows")
+                await document_service._ensure_folder_exists(folder_name, doc.external_id, auth)
+            except Exception as folder_exc:
+                logger.error(f"Failed to add document to folder or trigger workflows: {folder_exc}")
+                # Don't fail the entire ingestion if folder/workflow processing fails
+
         # 13. Log successful completion
         logger.info(f"Successfully completed ingestion for {original_filename}, document ID: {doc.external_id}")
         # Performance summary

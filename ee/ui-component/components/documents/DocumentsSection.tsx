@@ -100,7 +100,7 @@ const generateTempId = () => `temp-${Date.now()}-${Math.random().toString(36).su
 const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   apiBaseUrl,
   authToken,
-  initialFolder = "all",
+  initialFolder = null,
   // Destructure new props
   onDocumentUpload,
   onDocumentDelete,
