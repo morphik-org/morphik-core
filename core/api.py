@@ -40,6 +40,7 @@ from core.models.request import (
     SetFolderRuleRequest,
     UpdateGraphRequest,
 )
+from core.routes.colpali import router as colpali_router
 from core.routes.document import router as document_router
 from core.routes.ingest import router as ingest_router
 from core.services.telemetry import TelemetryService
@@ -173,6 +174,9 @@ app.include_router(ingest_router)
 
 # Register document router
 app.include_router(document_router)
+
+# Register ColPali router
+app.include_router(colpali_router)
 
 # Single MorphikAgent instance (tool definitions cached)
 morphik_agent = MorphikAgent(document_service=document_service)

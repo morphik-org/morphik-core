@@ -334,9 +334,7 @@ class UserLimitsDatabase:
                     """
                 )
 
-                result = await session.execute(
-                    query, {"app_id": app_id, "now": now, "user_id": user_id}
-                )
+                result = await session.execute(query, {"app_id": app_id, "now": now, "user_id": user_id})
 
                 updated_app_ids = result.scalar()
                 logger.info(
@@ -422,6 +420,23 @@ class UserLimitsDatabase:
 
                 elif usage_type == "cache":
                     usage["cache_count"] = usage.get("cache_count", 0) + increment
+
+                elif usage_type == "colpali_embeddings":
+                    # ColPali embeddings: monthly counter with reset
+                    monthly_reset_str = usage.get("colpali_monthly_reset", "")
+                    if monthly_reset_str:
+                        monthly_reset = datetime.fromisoformat(monthly_reset_str)
+                        if now > monthly_reset + timedelta(days=30):
+                            usage["colpali_monthly_count"] = increment
+                            usage["colpali_monthly_reset"] = now_iso
+                        else:
+                            usage["colpali_monthly_count"] = usage.get("colpali_monthly_count", 0) + increment
+                    else:
+                        usage["colpali_monthly_count"] = increment
+                        usage["colpali_monthly_reset"] = now_iso
+
+                    # Also track lifetime total
+                    usage["colpali_lifetime_count"] = usage.get("colpali_lifetime_count", 0) + increment
 
                 elif usage_type == "agent":
                     # Agent call limits: hourly and monthly resets

@@ -34,9 +34,10 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         self.api_key = self.settings.MORPHIK_EMBEDDING_API_KEY
         if not self.api_key:
             raise ValueError("MORPHIK_EMBEDDING_API_KEY must be set in settings")
-        # Use the configured Morphik Embedding API domain
-        domain = self.settings.MORPHIK_EMBEDDING_API_DOMAIN
+        # Use the configured Morphik Embedding API domain, defaulting to the hosted service
+        domain = self.settings.MORPHIK_EMBEDDING_API_DOMAIN or "https://api.morphik.ai"
         self.endpoint = f"{domain.rstrip('/')}/embeddings"
+        logger.info(f"ColPali API endpoint configured: {self.endpoint}")
 
     async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> List[MultiVector]:
         # Normalize to list

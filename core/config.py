@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     # Morphik Embedding API server configuration
     MORPHIK_EMBEDDING_API_KEY: Optional[str] = None
     MORPHIK_EMBEDDING_API_DOMAIN: str
+    # Internal ColPali API key for proxying to colqwen service
+    COLPALI_API_KEY: Optional[str] = None
 
     # Auth configuration
     JWT_ALGORITHM: str
