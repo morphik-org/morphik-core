@@ -269,6 +269,14 @@ async def process_ingestion_job(
 
         parse_start = time.time()
         additional_metadata, text = await document_service.parser.parse_file_to_text(file_content, parse_filename)
+        # Clean the extracted text to remove problematic escape characters (e.g., null bytes)
+        # PostgreSQL does not allow \x00 (null byte) or \u0000 in text fields
+        import re
+
+        text = re.sub(r"[\x00\u0000]", "", text)
+        # Optionally, remove other non-printable or control characters except newlines/tabs
+        text = re.sub(r"[^\x09\x0A\x0D\x20-\x7E]", "", text)
+
         logger.debug(f"Parsed file into text of length {len(text)} (filename used: {parse_filename})")
         parse_time = time.time() - parse_start
         phase_times["parse_file"] = parse_time
