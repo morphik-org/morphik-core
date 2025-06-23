@@ -20,6 +20,19 @@
 
 ## Morphik is a AI-native toolset for visually rich documents and multimodal data
 
+We are building the best way for developers to integrate context (however complex and nuanced) into their AI applications. We offer a treasure chest of tools to store, represent, and search (shallow, and deep) unstructured data. End-to-End.
+
+## Why?
+
+Building AI applications that interact with data shouldn't require duct-taping together a dozen different tools just to get relevant results to your LLM.
+
+Traditional RAG approaches that work in proof-of-concepts often fail spectacularly in production. Cobbling together separate systems for text extraction, OCR, embeddings, vector databases, and retrieval creates fragile pipelines that break under real-world load. Each component brings its own APIs, configurations, and failure modes - what starts as a simple demo becomes an unmaintainable mess at scale.
+
+Even worse, these pipelines fundamentally fail at understanding visually rich documents. Charts become meaningless text fragments. Critical diagrams lose their spatial relationships. Tables get mangled into unreadable strings. Technical specifications with mixed text and visuals? Forget about accuracy.
+
+The result is AI applications that confidently return wrong answers because they never truly understood the documents. They miss crucial information embedded in images, misinterpret technical diagrams, and treat visual data as an afterthought. And performance? Watch your infrastructure costs explode as your LLM re-processes the same 500-page manual for every single query.
+
+## What?
 [Morphik](https://morphik.ai) provides developers the tools to ingest, search (deep and shallow), transform, and manage unstructured and multimodal documents. Some of our features include:
 
 - [Multimodal Search](https://morphik.ai/docs/concepts/colpali): We employ techniques such as ColPali to build search that actually *understands* the visual content of documents you provide. Search over images, PDFs, videos, and more with a single endpoint.
@@ -98,7 +111,4 @@ See the full licence text for details.
 
 ## Contributors
 
-Visit our special thanks page dedicated to our contributors [here](https://morphik.ai/docs/special-thanks).
-
-## PS
-We took inspiration from [PostHog](https://posthog.com) while writing this README. If you're from PostHog, thank you ❤️
+Visit our [special thanks page](https://morphik.ai/docs/special-thanks) dedicated to our contributors.

@@ -32,43 +32,77 @@ interface UseChatSessionsReturn {
   reload: () => void;
 }
 
+// Global cache for chat sessions
+const chatSessionsCache = new Map<string, { sessions: ChatSessionMeta[]; timestamp: number }>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+export const clearChatSessionsCache = (apiBaseUrl?: string) => {
+  if (apiBaseUrl) {
+    chatSessionsCache.delete(apiBaseUrl);
+  } else {
+    chatSessionsCache.clear();
+  }
+};
+
 export function useChatSessions({ apiBaseUrl, authToken, limit = 100 }: UseChatSessionsProps): UseChatSessionsReturn {
   const [sessions, setSessions] = useState<ChatSessionMeta[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const fetchSessions = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const res = await fetch(`${apiBaseUrl}/chats?limit=${limit}`, {
-        headers: {
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setSessions(
-          data.map((c: any) => ({
+  const fetchSessions = useCallback(
+    async (forceRefresh = false) => {
+      const cacheKey = `${apiBaseUrl}-${limit}`;
+      const cached = chatSessionsCache.get(cacheKey);
+
+      // Check if we have valid cached data
+      if (!forceRefresh && cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        setSessions(cached.sessions);
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const res = await fetch(`${apiBaseUrl}/chats?limit=${limit}`, {
+          headers: {
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const transformedSessions = data.map((c: any) => ({
             chatId: c.chat_id,
             createdAt: c.created_at,
             updatedAt: c.updated_at,
             lastMessage: c.last_message ?? null,
-          }))
-        );
-      } else {
-        console.error(`Failed to fetch chat sessions: ${res.status} ${res.statusText}`);
+          }));
+
+          // Update cache
+          chatSessionsCache.set(cacheKey, {
+            sessions: transformedSessions,
+            timestamp: Date.now(),
+          });
+
+          setSessions(transformedSessions);
+        } else {
+          console.error(`Failed to fetch chat sessions: ${res.status} ${res.statusText}`);
+        }
+      } catch (err) {
+        console.error("Failed to fetch chat sessions", err);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err) {
-      console.error("Failed to fetch chat sessions", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [apiBaseUrl, authToken, limit]);
+    },
+    [apiBaseUrl, authToken, limit]
+  );
 
   useEffect(() => {
     fetchSessions();
   }, [fetchSessions]);
 
-  return { sessions, isLoading, reload: fetchSessions };
+  const reload = useCallback(() => {
+    fetchSessions(true);
+  }, [fetchSessions]);
+
+  return { sessions, isLoading, reload };
 }
 
 // New hook for PDF-specific chat session management

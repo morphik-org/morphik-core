@@ -36,7 +36,7 @@ interface FolderListProps {
   onFolderCreate?: (folderName: string) => void;
 }
 
-const FolderList: React.FC<FolderListProps> = ({
+const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
   folders,
   selectedFolder,
   setSelectedFolder,
@@ -49,7 +49,7 @@ const FolderList: React.FC<FolderListProps> = ({
   handleDeleteMultipleDocuments,
   uploadDialogComponent,
   onFolderCreate,
-}) => {
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const [showNewFolderDialog, setShowNewFolderDialog] = React.useState(false);
@@ -313,6 +313,6 @@ const FolderList: React.FC<FolderListProps> = ({
       )}
     </div>
   );
-};
+});
 
 export default FolderList;

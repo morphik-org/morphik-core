@@ -1,8 +1,20 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { UIMessage } from "@/components/chat/ChatMessages";
 import { showAlert } from "@/components/ui/alert-system";
 import { generateUUID } from "@/lib/utils";
 import type { QueryOptions } from "@/components/types";
+
+// Cache for chat histories to avoid re-fetching
+const chatHistoryCache = new Map<string, UIMessage[]>();
+
+// Function to clear cache for a specific chat or all chats
+export const clearChatCache = (chatId?: string, apiBaseUrl?: string) => {
+  if (chatId && apiBaseUrl) {
+    chatHistoryCache.delete(`${apiBaseUrl}-${chatId}`);
+  } else {
+    chatHistoryCache.clear();
+  }
+};
 
 // Define a simple Attachment type for our purposes
 interface Attachment {
@@ -51,14 +63,43 @@ export function useMorphikChat({
   onChatSubmit,
   streamResponse = false,
 }: UseMorphikChatProps): UseMorphikChatReturn {
-  const [messages, setMessages] = useState<UIMessage[]>(initialMessages);
+  const [messages, setMessagesInternal] = useState<UIMessage[]>(initialMessages);
   const [isLoading, setIsLoading] = useState(false);
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
 
-  // Load existing chat history from server on mount
+  // Helper to update cache when messages change
+  const updateCache = useCallback(
+    (newMessages: UIMessage[]) => {
+      const cacheKey = `${apiBaseUrl}-${chatId}`;
+      chatHistoryCache.set(cacheKey, newMessages);
+    },
+    [apiBaseUrl, chatId]
+  );
+
+  // Custom setMessages that also updates cache
+  const setMessages = useCallback(
+    (newMessages: UIMessage[] | ((prev: UIMessage[]) => UIMessage[])) => {
+      setMessagesInternal(prev => {
+        const updated = typeof newMessages === "function" ? newMessages(prev) : newMessages;
+        updateCache(updated);
+        return updated;
+      });
+    },
+    [updateCache]
+  );
+
+  // Load existing chat history from server on mount with caching
   useEffect(() => {
     const fetchHistory = async () => {
+      // Check cache first
+      const cacheKey = `${apiBaseUrl}-${chatId}`;
+      const cached = chatHistoryCache.get(cacheKey);
+      if (cached) {
+        setMessages(cached);
+        return;
+      }
+
       try {
         const response = await fetch(`${apiBaseUrl}/chat/${chatId}`, {
           headers: {
@@ -67,14 +108,16 @@ export function useMorphikChat({
         });
         if (response.ok) {
           const data = await response.json();
-          setMessages(
-            data.map((m: any) => ({
-              id: generateUUID(),
-              role: m.role,
-              content: m.content,
-              createdAt: new Date(m.timestamp),
-            }))
-          );
+          const messages = data.map((m: any) => ({
+            id: generateUUID(),
+            role: m.role,
+            content: m.content,
+            createdAt: new Date(m.timestamp),
+          }));
+
+          // Cache the messages
+          chatHistoryCache.set(cacheKey, messages);
+          setMessages(messages);
         }
       } catch (err) {
         console.error("Failed to load chat history", err);

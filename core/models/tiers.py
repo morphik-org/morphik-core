@@ -40,7 +40,7 @@ TIER_LIMITS = {
         "app_limit": 5,  # Maximum number of applications
         # Storage limits
         "storage_file_limit": 1000,  # Maximum number of files in storage
-        "storage_size_limit_gb": 10,  # Maximum storage size in GB
+        "storage_size_limit_gb": 2,  # Maximum storage size in GB
         "ingest_limit": 1500,
         # Query limits
         "hourly_query_limit": 100,  # Maximum queries per hour
@@ -63,8 +63,8 @@ TIER_LIMITS = {
         "app_limit": 100,  # Maximum number of applications
         # Storage limits
         "storage_file_limit": 500000,  # Maximum number of files in storage
-        "storage_size_limit_gb": 50,  # Maximum storage size in GB
-        "ingest_limit": 15000,
+        "storage_size_limit_gb": 10,  # Maximum storage size in GB
+        "ingest_limit": 1000000,
         # Query limits
         "hourly_query_limit": 500,  # Maximum queries per hour
         "monthly_query_limit": 50000,  # Maximum queries per month
@@ -77,8 +77,8 @@ TIER_LIMITS = {
         "hourly_cache_query_limit": 1000,  # Maximum cache queries per hour
         "monthly_cache_query_limit": 50000,  # Maximum cache queries per month
         # Agent call limits
-        "hourly_agent_limit": 500,
-        "monthly_agent_limit": 10000,
+        "hourly_agent_limit": 100,
+        "monthly_agent_limit": 100,
     },
     AccountTier.SELF_HOSTED: {
         # Self-hosted has no limits

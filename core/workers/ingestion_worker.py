@@ -612,7 +612,10 @@ async def process_ingestion_job(
 
     except Exception as e:
         # ... (rest of the function remains the same)
+        import traceback
+
         logger.error(f"Error processing ingestion job for file {original_filename}: {str(e)}")
+        logger.error(traceback.format_exc())
 
         # ------------------------------------------------------------------
         # Ensure we update the *per-app* database where the document lives.

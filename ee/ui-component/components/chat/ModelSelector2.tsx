@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { ChevronDown, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ModelConfigAPI } from "@/lib/modelConfigApi";
+import { useModels } from "@/hooks/useModels";
 
 interface Model {
   id: string;
@@ -27,8 +28,7 @@ export function ModelSelector2({
   onModelChange,
   onRequestApiKey,
 }: ModelSelector2Props) {
-  const [models, setModels] = useState<Model[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { models: serverModels, loading: loadingServerModels } = useModels(apiBaseUrl, authToken);
   const [currentModel, setCurrentModel] = useState<string>(selectedModel || "");
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -36,11 +36,13 @@ export function ModelSelector2({
   // Get saved API keys to determine which models are available
   const [availableProviders, setAvailableProviders] = useState<Set<string>>(new Set());
   const [customModels, setCustomModels] = useState<Model[]>([]);
+  const [loadingCustomModels, setLoadingCustomModels] = useState(false);
 
   useEffect(() => {
     const loadAvailableProviders = async () => {
       const providers = new Set<string>();
       const api = new ModelConfigAPI(authToken);
+      setLoadingCustomModels(true);
 
       try {
         // Get config from backend and localStorage
@@ -154,6 +156,7 @@ export function ModelSelector2({
 
       console.log("Final available providers:", Array.from(providers));
       setAvailableProviders(providers);
+      setLoadingCustomModels(false);
     };
 
     if (isOpen) {
@@ -161,52 +164,28 @@ export function ModelSelector2({
     }
   }, [isOpen, authToken]); // Re-check when dropdown opens
 
+  // Combine server models with custom models
+  const models = useMemo(() => {
+    const allModels = [...serverModels, ...customModels];
+    console.log("All models (server + custom):", allModels);
+    return allModels;
+  }, [serverModels, customModels]);
+
+  // Handle initial model selection
   useEffect(() => {
-    const fetchModels = async () => {
-      try {
-        const response = await fetch(`${apiBaseUrl}/models`, {
-          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-        });
-        if (response.ok) {
-          const data = await response.json();
-
-          // Transform the chat_models to our expected format
-          const transformedModels = (data.chat_models || []).map(
-            (model: { config: { model_name?: string }; model: string; id: string; provider: string }) => ({
-              id: model.config.model_name || model.model,
-              name: model.id.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase()),
-              provider: model.provider,
-              description: `Model: ${model.model}`,
-            })
-          );
-
-          // Combine server models with custom models
-          const allModels = [...transformedModels, ...customModels];
-          console.log("All models (server + custom):", allModels);
-          setModels(allModels);
-
-          // If no model is selected, try to select the first available one
-          const allModelsForSelection = [...transformedModels, ...customModels];
-          if (!currentModel && allModelsForSelection.length > 0) {
-            const firstAvailable = allModelsForSelection.find(
-              (m: Model) => availableProviders.has(m.provider) || m.provider === "configured"
-            );
-            if (firstAvailable) {
-              const modelId = firstAvailable.id;
-              setCurrentModel(modelId);
-              onModelChange?.(modelId);
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Failed to fetch models:", err);
-      } finally {
-        setLoading(false);
+    if (!currentModel && models.length > 0 && availableProviders.size > 0) {
+      const firstAvailable = models.find(
+        (m: Model) => availableProviders.has(m.provider) || m.provider === "configured"
+      );
+      if (firstAvailable) {
+        const modelId = firstAvailable.id;
+        setCurrentModel(modelId);
+        onModelChange?.(modelId);
       }
-    };
+    }
+  }, [models, currentModel, availableProviders, onModelChange]);
 
-    fetchModels();
-  }, [apiBaseUrl, authToken, availableProviders, customModels, currentModel, onModelChange]);
+  const loading = loadingServerModels || loadingCustomModels;
 
   // Close dropdown when clicking outside
   useEffect(() => {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -51,7 +51,7 @@ interface DocumentListProps {
   onViewInPDFViewer?: (documentId: string) => void; // Add PDF viewer navigation
   onDownloadDocument?: (documentId: string) => void; // Add download functionality
   onDeleteDocument?: (documentId: string) => void; // Add delete functionality
-  folders: FolderSummary[];
+  folders?: FolderSummary[]; // Optional since it's fetched internally
 }
 
 // Filter Dialog Component
@@ -269,7 +269,7 @@ const AddColumnDialog = ({
   );
 };
 
-const DocumentList: React.FC<DocumentListProps> = ({
+const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentList({
   documents,
   selectedDocument,
   selectedDocuments,
@@ -285,17 +285,16 @@ const DocumentList: React.FC<DocumentListProps> = ({
   onViewInPDFViewer,
   onDownloadDocument,
   onDeleteDocument,
-}) => {
+}) {
   const [customColumns, setCustomColumns] = useState<CustomColumn[]>([]);
   const [showAddColumnDialog, setShowAddColumnDialog] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
-  const [filteredDocuments, setFilteredDocuments] = useState<Document[]>([]);
   const [copiedDocumentId, setCopiedDocumentId] = useState<string | null>(null);
 
   // Get unique metadata fields from all documents, excluding external_id
-  const existingMetadataFields = React.useMemo(() => {
+  const existingMetadataFields = useMemo(() => {
     const fields = new Set<string>();
     documents.forEach(doc => {
       if (doc.metadata) {
@@ -310,14 +309,13 @@ const DocumentList: React.FC<DocumentListProps> = ({
     return Array.from(fields);
   }, [documents]);
 
-  // Apply filter logic
-  useEffect(() => {
+  // Apply filter logic with memoization
+  const filteredDocuments = useMemo(() => {
     if (Object.keys(filterValues).length === 0) {
-      setFilteredDocuments(documents);
-      return;
+      return documents;
     }
 
-    const filtered = documents.filter(doc => {
+    return documents.filter(doc => {
       // Check if document matches all filter criteria
       return Object.entries(filterValues).every(([key, value]) => {
         if (!value || value.trim() === "") return true; // Skip empty filters
@@ -329,8 +327,6 @@ const DocumentList: React.FC<DocumentListProps> = ({
         return String(docValue).toLowerCase().includes(value.toLowerCase());
       });
     });
-
-    setFilteredDocuments(filtered);
   }, [documents, filterValues]);
 
   // Copy document ID to clipboard
@@ -346,7 +342,7 @@ const DocumentList: React.FC<DocumentListProps> = ({
   };
 
   // Combine existing metadata fields with custom columns
-  const allColumns = React.useMemo(() => {
+  const allColumns = useMemo(() => {
     const metadataColumns: CustomColumn[] = existingMetadataFields.map(field => ({
       name: field,
       description: `Extracted ${field}`,
@@ -367,13 +363,12 @@ const DocumentList: React.FC<DocumentListProps> = ({
     return mergedColumns;
   }, [existingMetadataFields, customColumns]);
 
-  const handleAddColumn = (column: CustomColumn) => {
-    setCustomColumns([...customColumns, column]);
-  };
+  const handleAddColumn = useCallback((column: CustomColumn) => {
+    setCustomColumns(prev => [...prev, column]);
+  }, []);
 
   // Handle data extraction
-
-  const handleExtract = async () => {
+  const handleExtract = useCallback(async () => {
     // First, find the folder object to get its ID
     if (!selectedFolder || customColumns.length === 0) {
       console.error("Cannot extract: No folder selected or no columns defined");
@@ -562,10 +557,13 @@ const DocumentList: React.FC<DocumentListProps> = ({
     } finally {
       setIsExtracting(false);
     }
-  };
+  }, [selectedFolder, customColumns, apiBaseUrl, authToken, setDocuments]);
 
   // Calculate how many filters are currently active
-  const activeFilterCount = Object.values(filterValues).filter(v => v && v.trim() !== "").length;
+  const activeFilterCount = useMemo(
+    () => Object.values(filterValues).filter(v => v && v.trim() !== "").length,
+    [filterValues]
+  );
 
   const DocumentListHeader = () => {
     return (
@@ -700,6 +698,8 @@ const DocumentList: React.FC<DocumentListProps> = ({
                       <div className="h-2 w-2 rounded-full bg-green-500" />
                     ) : doc.system_metadata?.status === "failed" ? (
                       <div className="h-2 w-2 rounded-full bg-red-500" />
+                    ) : doc.system_metadata?.status === "uploading" ? (
+                      <div className="h-2 w-2 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
                     ) : (
                       <div className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
                     )}
@@ -708,7 +708,9 @@ const DocumentList: React.FC<DocumentListProps> = ({
                         ? "Completed"
                         : doc.system_metadata?.status === "failed"
                           ? "Failed"
-                          : "Processing"}
+                          : doc.system_metadata?.status === "uploading"
+                            ? "Uploading"
+                            : "Processing"}
                     </div>
                   </div>
                   <span className="truncate font-medium">{doc.filename || "N/A"}</span>
@@ -888,6 +890,6 @@ const DocumentList: React.FC<DocumentListProps> = ({
       </div>
     </div>
   );
-};
+});
 
 export default DocumentList;

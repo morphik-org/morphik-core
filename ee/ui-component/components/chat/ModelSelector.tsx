@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sparkles, Settings, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useModels } from "@/hooks/useModels";
 
 interface Model {
   id: string;
@@ -34,35 +35,17 @@ export function ModelSelector({
   onModelChange,
   onOpenSettings,
 }: ModelSelectorProps) {
-  const [models, setModels] = useState<Model[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { models, loading } = useModels(apiBaseUrl, authToken);
   const [currentModel, setCurrentModel] = useState<string>(selectedModel || "");
 
   useEffect(() => {
-    const fetchModels = async () => {
-      try {
-        const response = await fetch(`${apiBaseUrl}/models`, {
-          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setModels(data.models || []);
-          // If no model is selected, select the first one
-          if (!currentModel && data.models?.length > 0) {
-            const defaultModel = data.models[0].id;
-            setCurrentModel(defaultModel);
-            onModelChange?.(defaultModel);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to fetch models:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchModels();
-  }, [apiBaseUrl, authToken, currentModel, onModelChange]);
+    // If no model is selected, select the first one
+    if (!currentModel && models.length > 0) {
+      const defaultModel = models[0].id;
+      setCurrentModel(defaultModel);
+      onModelChange?.(defaultModel);
+    }
+  }, [models, currentModel, onModelChange]);
 
   const selectedModelData = models.find(m => m.id === currentModel);
 

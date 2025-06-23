@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { useMorphikChat } from "@/hooks/useMorphikChat";
+import { useMorphikChat, clearChatCache } from "@/hooks/useMorphikChat";
 import { generateUUID } from "@/lib/utils";
 import type { QueryOptions } from "@/components/types";
 import type { UIMessage } from "./ChatMessages";
@@ -529,7 +529,11 @@ const ChatSection: React.FC<ChatSectionProps> = ({
         apiBaseUrl={apiBaseUrl}
         authToken={authToken}
         activeChatId={chatId}
-        onSelect={id => setChatId(id ?? generateUUID())}
+        onSelect={id => {
+          // Clear chat cache when switching to ensure fresh data
+          clearChatCache(chatId, apiBaseUrl);
+          setChatId(id ?? generateUUID());
+        }}
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(prev => !prev)}
       />

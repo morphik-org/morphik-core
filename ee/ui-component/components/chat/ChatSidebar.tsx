@@ -102,14 +102,14 @@ const generateMessagePreview = (content: string, lastMessage?: MessagePreviewCon
   return content.trim().slice(0, 35) || "chat response (text)";
 };
 
-export const ChatSidebar: React.FC<ChatSidebarProps> = ({
+export const ChatSidebar: React.FC<ChatSidebarProps> = React.memo(function ChatSidebar({
   apiBaseUrl,
   authToken,
   onSelect,
   activeChatId,
   collapsed,
   onToggle,
-}) => {
+}) {
   const { sessions, isLoading, reload } = useChatSessions({ apiBaseUrl, authToken });
 
   if (collapsed) {
@@ -169,4 +169,4 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
       </ScrollArea>
     </div>
   );
-};
+});
