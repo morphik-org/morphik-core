@@ -47,8 +47,8 @@ ACTION_DEFINITION = ActionDefinition(
 # ---------------------------------------------------------------------------
 
 
-def _wrap_schema(user_schema: Dict[str, Any]) -> Dict[str, Any]:
-    """Embed user_schema under the key 'extracted_data' for tool IO."""
+def _ensure_object_schema(user_schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure the schema has object type at root."""
 
     # Defensive: ensure object root
     if user_schema.get("type") != "object":
@@ -58,25 +58,20 @@ def _wrap_schema(user_schema: Dict[str, Any]) -> Dict[str, Any]:
             "required": ["value"],
         }
 
-    return {
-        "type": "object",
-        "properties": {"extracted_data": user_schema},
-        "required": ["extracted_data"],
-        "additionalProperties": False,
-    }
+    return user_schema
 
 
 def get_extraction_tools(user_schema: Dict[str, Any]):
-    """Return tool definition enforcing the wrapped schema."""
+    """Return tool definition enforcing the schema."""
 
-    wrapped = _wrap_schema(user_schema)
+    schema = _ensure_object_schema(user_schema)
     return [
         {
             "type": "function",
             "function": {
-                "name": "extract_data",
+                "name": "submit_extraction",
                 "description": ("Call exactly once and *only* when you are ready to provide the final extracted JSON."),
-                "parameters": wrapped,
+                "parameters": schema,
             },
         }
     ]
@@ -115,40 +110,58 @@ async def run(document_service, document_id: str, params: Dict[str, Any]) -> Dic
 
     settings = get_settings()
 
-    # Get workflow model configuration
-    workflow_config = getattr(settings, "WORKFLOWS", {})
-    workflow_model_key = workflow_config.get("model")
+    # Get workflow model from settings
+    model_name = "gpt-4o-mini"  # Default fallback
 
-    if workflow_model_key and hasattr(settings, "REGISTERED_MODELS"):
-        # Get the model configuration from registered models
-        model_config = settings.REGISTERED_MODELS.get(workflow_model_key, {})
-        model_name = model_config.get("model_name", "gpt-4o-mini")
+    # Use workflow model from settings if available
+    if hasattr(settings, "WORKFLOW_MODEL") and settings.WORKFLOW_MODEL:
+        workflow_model_key = settings.WORKFLOW_MODEL
+        if hasattr(settings, "REGISTERED_MODELS") and workflow_model_key in settings.REGISTERED_MODELS:
+            model_config = settings.REGISTERED_MODELS[workflow_model_key]
+            model_name = model_config.get("model_name", model_config.get("model", "gpt-4o-mini"))
+            logger.info(f"Using workflow model from settings: {workflow_model_key} -> {model_name}")
+        else:
+            logger.warning(f"Workflow model key '{workflow_model_key}' not found in registered models")
     else:
-        # Fallback to a good default model for extraction
-        model_name = "gpt-4o-mini"
+        logger.warning("No workflow model specified in settings, using default")
 
     # Create extraction agent
     agent = ExtractionAgent(document_service, document_id, auth_ctx)
     await agent.initialize()
 
     total_pages = agent.get_total_pages()
-    tools = get_extraction_tools(schema) + get_document_navigation_tools()
+    # Only include navigation tools that work purely on page images (avoid text-based search)
+    allowed_nav_tools = {"get_next_page", "get_previous_page", "go_to_page", "get_total_pages"}
+    navigation_tools = [t for t in get_document_navigation_tools() if t["function"]["name"] in allowed_nav_tools]
+
+    tools = get_extraction_tools(schema) + navigation_tools
 
     # Create system message
     system_message = {
         "role": "system",
         "content": (
-            "You are an expert information extraction agent. Your task is to extract information EXACTLY as it appears in the document.\n"
-            "CRITICAL RULES:\n"
-            "• You MUST explore the document thoroughly using the navigation tools before extraction\n"
-            "• Extract data EXACTLY as written - do NOT make up, infer, or modify any values\n"
-            "• If a field cannot be found in the document, use null or an empty string\n"
-            "• For the 'title' field, look for the document's actual title, NOT a random word\n"
-            "• Navigate through multiple pages if needed to find all required information\n"
-            "• Only call extract_data after you have thoroughly explored the document\n"
-            "• The extracted data MUST match the provided schema exactly\n"
-            "• Use the document navigation tools to view and analyze pages\n"
-            "• The document may contain images, tables, or formatted content"
+            "You are an expert document extraction agent. Your task is to extract ALL fields from the schema.\n\n"
+            "CRITICAL WORKFLOW:\n"
+            "1. First, understand the document structure:\n"
+            "   - Call get_total_pages() to see how many pages exist\n"
+            "   - Look at the current page carefully – extract ALL visible schema fields from it\n"
+            "   - Note which fields you found and which are still missing\n\n"
+            "2. For EACH page you visit:\n"
+            "   - Carefully examine the page image (you will ALWAYS receive the page as an image)\n"
+            "   - Extract EVERY schema field that appears on that page\n"
+            "   - Keep track of what you've found so far\n"
+            "   - Many fields may appear on the same page – GET THEM ALL before moving on\n\n"
+            "3. Navigation strategy:\n"
+            "   - Start at page 1. If fields are still missing after extraction, use get_next_page() to move forward sequentially\n"
+            "   - You can also use go_to_page() when you know the exact page number\n"
+            "   - Do NOT call any text-search tools; rely solely on visually inspecting each provided image\n"
+            "   - When all fields are captured, call submit_extraction exactly once\n\n"
+            "4. Extract data EXACTLY as shown:\n"
+            "   - No modifications or assumptions\n"
+            '   - Empty string "" for missing text fields\n'
+            "   - Empty object {} for missing object fields\n"
+            "   - Look across forms, tables, headers, footers, and body content on each image\n\n"
+            "IMPORTANT: Never navigate away until you've extracted everything visible on the current page!"
         ),
     }
 
@@ -156,18 +169,19 @@ async def run(document_service, document_id: str, params: Dict[str, Any]) -> Dic
     user_message = {
         "role": "user",
         "content": (
-            f"I need you to extract structured data from a document with {total_pages} pages.\n\n"
-            f"EXTRACTION SCHEMA:\n{json.dumps(schema, indent=2)}\n\n"
-            f"IMPORTANT: Start by viewing the first page to understand the document structure. "
-            f"For a 'title' field, look for the main document title (usually at the top of the first page). "
-            f"Use the navigation tools systematically:\n"
-            f"1. First check the total pages with get_total_pages()\n"
-            f"2. View each page to analyze its content (images, tables, text)\n"
-            f"3. Use get_current_page_content() if you need the extracted text\n"
-            f"4. Navigate to specific pages as needed with navigation tools\n"
-            f"5. Use find_most_relevant_page() to search for specific information\n"
-            f"6. Only extract data that you can actually see in the document\n"
-            f"7. Do NOT guess or make up values - leave fields empty if not found"
+            f"Extract these fields from the {total_pages}-page document:\n\n"
+            f"{json.dumps(schema, indent=2)}\n\n"
+            f"SMART EXTRACTION STRATEGY:\n"
+            f"1. First, check get_total_pages() to confirm {total_pages} pages\n"
+            f"2. Look at the current page (page 1) – extract ANY schema fields you can see\n"
+            f"3. Keep a mental note of what you found vs what's still missing\n"
+            f"4. If fields are still missing, sequentially navigate using get_next_page() (or go_to_page)\n"
+            f"5. Each time you navigate, extract ALL visible fields from the new page BEFORE moving again\n"
+            f"6. Continue until all fields are found or all pages are checked\n"
+            f"7. Finally, call submit_extraction exactly once with your findings\n\n"
+            f"Remember: Multiple fields often appear on the same page. Don't navigate away\n"
+            f"until you've extracted everything visible on the current page!\n\n"
+            f"Start by examining the first page carefully."
         ),
     }
 
@@ -191,14 +205,14 @@ async def run(document_service, document_id: str, params: Dict[str, Any]) -> Dic
         "model": model_name,
         "messages": messages,
         "tools": tools,
-        "tool_choice": "auto",
+        "tool_choice": "required",  # Force tool use on first call
         "max_tokens": 4096,
-        "temperature": 0.0,
+        "temperature": 0.1,  # Small temperature for better reasoning
     }
 
     # Extract data with retry logic
     extracted_data = None
-    max_iterations = 10
+    max_iterations = 20  # Increased to allow thorough document exploration
 
     for iteration in range(1, max_iterations + 1):
         logger.debug(f"Extraction iteration {iteration}/{max_iterations}")
@@ -207,16 +221,17 @@ async def run(document_service, document_id: str, params: Dict[str, Any]) -> Dic
         response = await litellm.acompletion(**model_params)
         response_message = response.choices[0].message
 
-        # Add assistant message to conversation
-        messages.append(
-            {
-                "role": "assistant",
-                "content": response_message.content or "",
-                "tool_calls": response_message.tool_calls,
-            }
-        )
+        # Attach any tool calls to the assistant message
+        assistant_msg = {
+            "role": "assistant",
+            "content": response_message.content or "",
+        }
+        if response_message.tool_calls:
+            assistant_msg["tool_calls"] = response_message.tool_calls
 
-        # Check if model wants to call tools
+        # Add assistant message to the conversation history right away
+        messages.append(assistant_msg)
+
         if response_message.tool_calls:
             logger.debug(f"Model requested {len(response_message.tool_calls)} tool calls")
 
@@ -224,22 +239,22 @@ async def run(document_service, document_id: str, params: Dict[str, Any]) -> Dic
                 function_name = tool_call.function.name
                 function_args = json.loads(tool_call.function.arguments)
 
-                logger.debug(f"Executing tool: {function_name} with args: {function_args}")
+                logger.info(f"Executing tool: {function_name} with args: {function_args}")
 
                 # Execute the tool
-                if function_name == "extract_data":
+                if function_name == "submit_extraction":
                     # Validate against schema
                     from jsonschema import ValidationError, validate
 
                     try:
-                        validate(function_args, _wrap_schema(schema))
-                        extracted_data = function_args["extracted_data"]
-                        logger.info("extract_data tool produced valid schema output")
+                        validate(function_args, _ensure_object_schema(schema))
+                        extracted_data = function_args
+                        logger.info("submit_extraction tool produced valid schema output")
                         tool_result = "Data extracted successfully"
                     except ValidationError as ve:
-                        logger.warning("extract_data validation failed: %s", ve)
+                        logger.warning("submit_extraction validation failed: %s", ve)
                         tool_result = (
-                            "Validation error – please call extract_data again with JSON that matches the schema"
+                            "Validation error – please call submit_extraction again with JSON that matches the schema"
                         )
                 elif function_name in [
                     "get_next_page",
@@ -252,33 +267,10 @@ async def run(document_service, document_id: str, params: Dict[str, Any]) -> Dic
                     # Execute document navigation tools
                     tool_result = await _execute_agent_tool(agent, function_name, function_args)
 
-                    # After navigation, add the current page image to the conversation
-                    if function_name in ["get_next_page", "get_previous_page", "go_to_page"]:
-                        page_image = agent.get_current_page_image()
-                        if page_image:
-                            # Add a message showing the current page
-                            messages.append(
-                                {
-                                    "role": "tool",
-                                    "name": function_name,
-                                    "tool_call_id": tool_call.id,
-                                    "content": tool_result,
-                                }
-                            )
-                            messages.append(
-                                {
-                                    "role": "user",
-                                    "content": [
-                                        {"type": "text", "text": "Here is the current page:"},
-                                        {"type": "image_url", "image_url": {"url": page_image}},
-                                    ],
-                                }
-                            )
-                            continue  # Skip the normal tool result addition
                 else:
                     tool_result = f"Unknown tool: {function_name}"
 
-                # Add tool result to conversation
+                # Always add tool result to conversation
                 messages.append(
                     {
                         "role": "tool",
@@ -288,8 +280,40 @@ async def run(document_service, document_id: str, params: Dict[str, Any]) -> Dic
                     }
                 )
 
+            # After processing all tool calls, add page images for navigation tools
+            # We need to check which was the last navigation tool called
+            last_nav_tool = None
+            for tool_call in response_message.tool_calls:
+                if tool_call.function.name in allowed_nav_tools:
+                    last_nav_tool = tool_call.function.name
+
+            # If there was a navigation tool, show the current page
+            if last_nav_tool:
+                page_image = agent.get_current_page_image()
+                if page_image:
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": (
+                                        "Here is the current page after navigation. "
+                                        "IMPORTANT: Extract ALL fields visible on this page before navigating away! "
+                                        "Look for names, emails, titles, IDs, and any other schema fields. "
+                                        "When ready, either navigate to find missing fields or call submit_extraction if you have everything."
+                                    ),
+                                },
+                                {"type": "image_url", "image_url": {"url": page_image}},
+                            ],
+                        }
+                    )
+
             # Update model params with new messages
             model_params["messages"] = messages
+            # After first iteration, allow auto tool choice
+            if iteration == 1:
+                model_params["tool_choice"] = "auto"
 
             # If we got extracted data, we can break
             if extracted_data is not None:
@@ -316,7 +340,7 @@ async def run(document_service, document_id: str, params: Dict[str, Any]) -> Dic
         return extracted_data
 
     # If we reach here extraction failed
-    raise RuntimeError("Structured extraction failed: model did not return extract_data tool output")
+    raise RuntimeError("Structured extraction failed: model did not return submit_extraction tool output")
 
 
 async def _execute_agent_tool(agent: ExtractionAgent, function_name: str, function_args: Dict[str, Any]) -> str:

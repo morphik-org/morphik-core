@@ -148,12 +148,6 @@ const AVAILABLE_ACTIONS: ActionDefinition[] = [
           description: "Whether to save output from previous step or all steps",
           default: "previous_step",
         },
-        merge_mode: {
-          type: "string",
-          enum: ["nested", "top_level"],
-          description: "Whether to nest under a key or merge at top level",
-          default: "nested",
-        },
       },
     },
     output_schema: { type: "object" },
@@ -181,6 +175,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
   const [selectedWorkflowForFolder, setSelectedWorkflowForFolder] = useState<Workflow | null>(null);
   const [workflowFolders, setWorkflowFolders] = useState<{ [key: string]: string[] }>({});
   const [isConfigPanelExpanded, setIsConfigPanelExpanded] = useState(false);
+  const [isWorkflowStepsExpanded, setIsWorkflowStepsExpanded] = useState(true);
 
   // Form states for workflow creation/editing
   const [workflowForm, setWorkflowForm] = useState<{
@@ -1135,10 +1130,10 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                     },
                                   })
                                 }
-                                placeholder="e.g., extracted_data"
+                                placeholder="e.g., document_info"
                               />
                               <p className="mt-1 text-xs text-muted-foreground">
-                                The key under which the output will be saved (optional for top-level mode).
+                                The key under which the output will be saved (leave empty to merge fields at top level).
                               </p>
                             </div>
                             <div>
@@ -1167,34 +1162,6 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                               <p className="mt-1 text-xs text-muted-foreground">
                                 Choose whether to save only the previous step&rsquo;s output or all steps&rsquo;
                                 outputs.
-                              </p>
-                            </div>
-                            <div>
-                              <Label>Save Mode</Label>
-                              <Select
-                                value={
-                                  (workflowForm.steps[selectedStepIndex].parameters.merge_mode as string) || "nested"
-                                }
-                                onValueChange={value =>
-                                  updateStep(selectedStepIndex, {
-                                    parameters: {
-                                      ...workflowForm.steps[selectedStepIndex].parameters,
-                                      merge_mode: value,
-                                    },
-                                  })
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="nested">Nested (under key)</SelectItem>
-                                  <SelectItem value="top_level">Top Level (merge fields)</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Choose whether to save under a specific key or merge extracted fields at the top level
-                                of metadata.
                               </p>
                             </div>
                           </div>
@@ -1329,253 +1296,253 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
 
         {/* Workflow Steps Visualization */}
         <Card className="border-border/50 bg-card">
-          <CardHeader>
-            <CardTitle className="text-foreground">Workflow Steps</CardTitle>
-            <CardDescription>
-              This workflow consists of {selectedWorkflow.steps.length} step
-              {selectedWorkflow.steps.length !== 1 ? "s" : ""}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4 overflow-x-auto pb-2">
-              {selectedWorkflow.steps.map((step, index) => {
-                const action = AVAILABLE_ACTIONS.find(a => a.id === step.action_id);
-                return (
-                  <React.Fragment key={index}>
-                    <div className="flex-shrink-0">
-                      <Card className="w-64 border-border/50 bg-card transition-all duration-200 hover:scale-105 hover:shadow-md">
-                        <CardHeader className="pb-2">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className={cn(
-                                "flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold",
-                                action?.id.includes("extract") && "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-                                action?.id.includes("instruction") &&
-                                  "bg-purple-500/10 text-purple-600 dark:text-purple-400",
-                                action?.id.includes("save") && "bg-green-500/10 text-green-600 dark:text-green-400"
-                              )}
-                            >
-                              {index + 1}
-                            </div>
-                            <CardTitle className="text-sm text-foreground">{action?.name}</CardTitle>
-                          </div>
-                        </CardHeader>
-                        <CardContent className="pt-2">
-                          <p className="line-clamp-2 text-xs text-muted-foreground">{action?.description}</p>
-                        </CardContent>
-                      </Card>
-                    </div>
-                    {index < selectedWorkflow.steps.length - 1 && (
-                      <ChevronRight className="h-5 w-5 flex-shrink-0 animate-pulse text-muted-foreground/70" />
-                    )}
-                  </React.Fragment>
-                );
-              })}
+          <CardHeader className="cursor-pointer" onClick={() => setIsWorkflowStepsExpanded(!isWorkflowStepsExpanded)}>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-foreground">Workflow Steps</CardTitle>
+                <CardDescription>
+                  This workflow consists of {selectedWorkflow.steps.length} step
+                  {selectedWorkflow.steps.length !== 1 ? "s" : ""}
+                </CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" className="p-2">
+                {isWorkflowStepsExpanded ? (
+                  <ChevronRight className="h-4 w-4 rotate-90" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+              </Button>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="overflow-hidden border-border/50 bg-card">
-          <CardHeader>
-            <CardTitle>Workflow Runs</CardTitle>
-            <CardDescription>All executions of this workflow on different documents</CardDescription>
           </CardHeader>
-          <CardContent>
-            {workflowRuns.length === 0 ? (
-              <div className="py-8 text-center">
-                <Clock className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
-                <p className="text-muted-foreground">
-                  No runs yet. Execute this workflow on a document to see results here.
-                </p>
+          {isWorkflowStepsExpanded && (
+            <CardContent>
+              <div className="flex items-center gap-4 overflow-x-auto pb-2">
+                {selectedWorkflow.steps.map((step, index) => {
+                  const action = AVAILABLE_ACTIONS.find(a => a.id === step.action_id);
+                  return (
+                    <React.Fragment key={index}>
+                      <div className="flex-shrink-0">
+                        <Card className="w-64 border-border/50 bg-card transition-all duration-200 hover:scale-105 hover:shadow-md">
+                          <CardHeader className="pb-2">
+                            <div className="flex items-center gap-2">
+                              <div
+                                className={cn(
+                                  "flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold",
+                                  action?.id.includes("extract") && "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+                                  action?.id.includes("instruction") &&
+                                    "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+                                  action?.id.includes("save") && "bg-green-500/10 text-green-600 dark:text-green-400"
+                                )}
+                              >
+                                {index + 1}
+                              </div>
+                              <CardTitle className="text-sm text-foreground">{action?.name}</CardTitle>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="pt-2">
+                            <p className="line-clamp-2 text-xs text-muted-foreground">{action?.description}</p>
+                          </CardContent>
+                        </Card>
+                      </div>
+                      {index < selectedWorkflow.steps.length - 1 && (
+                        <ChevronRight className="h-5 w-5 flex-shrink-0 animate-pulse text-muted-foreground/70" />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </div>
-            ) : (
-              <div className="relative rounded-md border border-border/50">
-                <div className="max-h-[600px] overflow-y-auto">
-                  <Table>
-                    <TableHeader className="sticky top-0 z-10 border-b bg-background">
-                      <TableRow>
-                        <TableHead className="w-[40%] py-3 text-foreground">Document</TableHead>
-                        <TableHead className="w-[20%] py-3 text-foreground">Date</TableHead>
-                        <TableHead className="w-[15%] py-3 text-foreground">Status</TableHead>
-                        <TableHead className="w-[25%] py-3 text-right text-foreground">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {workflowRuns.map(run => {
-                        const isExpanded = expandedRuns.has(run.id);
-                        const progress = runProgress[run.id] || 0;
-                        const doc = docs.find(d => d.external_id === run.document_id);
-
-                        return (
-                          <React.Fragment key={run.id}>
-                            <TableRow className="transition-colors hover:bg-muted/30">
-                              <TableCell className="py-4 font-medium">
-                                <div className="flex items-center gap-2">
-                                  <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                                  <span className="truncate text-foreground" title={doc?.filename || run.document_id}>
-                                    {doc?.filename || run.document_id}
-                                  </span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="py-4 text-sm text-muted-foreground">
-                                {(() => {
-                                  const dateStr = (run.started_at ?? run.created_at) as string | undefined;
-                                  if (!dateStr) return "Not started";
-                                  const d = new Date(dateStr);
-                                  return isNaN(d.getTime()) ? "-" : d.toLocaleString();
-                                })()}
-                              </TableCell>
-                              <TableCell className="py-4">
-                                <div className="flex items-center gap-2">
-                                  {getStatusBadge(run.status)}
-                                  {run.status === "running" && (
-                                    <Progress value={progress} className="h-2 w-20 bg-muted" />
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell className="py-4 text-right">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() =>
-                                    setExpandedRuns(prev => {
-                                      const newSet = new Set(prev);
-                                      if (newSet.has(run.id)) {
-                                        newSet.delete(run.id);
-                                      } else {
-                                        newSet.add(run.id);
-                                      }
-                                      return newSet;
-                                    })
-                                  }
-                                  className="transition-colors hover:bg-accent"
-                                >
-                                  {isExpanded ? (
-                                    <>
-                                      <EyeOff className="mr-2 h-4 w-4" />
-                                      Hide Details
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Eye className="mr-2 h-4 w-4" />
-                                      View Details
-                                    </>
-                                  )}
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                            {isExpanded && (
-                              <TableRow>
-                                <TableCell colSpan={4} className="p-0">
-                                  <div className="border-t bg-muted/20 p-6 dark:bg-muted/10">
-                                    <Tabs defaultValue="output" className="w-full">
-                                      <TabsList className="grid w-full max-w-[400px] grid-cols-3 bg-muted">
-                                        <TabsTrigger value="output" className="data-[state=active]:bg-background">
-                                          Output
-                                        </TabsTrigger>
-                                        <TabsTrigger value="steps" className="data-[state=active]:bg-background">
-                                          Step Results
-                                        </TabsTrigger>
-                                        <TabsTrigger
-                                          value="error"
-                                          disabled={!run.error}
-                                          className="data-[state=active]:bg-background"
-                                        >
-                                          Error Details
-                                        </TabsTrigger>
-                                      </TabsList>
-
-                                      <TabsContent value="output" className="mt-4">
-                                        {run.status === "completed" && run.final_output ? (
-                                          <div className="space-y-3">{renderExtractedData(run.final_output)}</div>
-                                        ) : run.status === "running" ? (
-                                          <div className="flex items-center gap-2 py-4 text-blue-600 dark:text-blue-400">
-                                            <Loader2 className="h-4 w-4 animate-spin" />
-                                            Processing document...
-                                          </div>
-                                        ) : run.status === "failed" ? (
-                                          <Alert
-                                            variant="destructive"
-                                            className="border-destructive/50 bg-destructive/10"
-                                          >
-                                            <AlertCircle className="h-4 w-4" />
-                                            <AlertTitle>Execution Failed</AlertTitle>
-                                            <AlertDescription>
-                                              The workflow failed to complete. Check the error details tab for more
-                                              information.
-                                            </AlertDescription>
-                                          </Alert>
-                                        ) : (
-                                          <p className="py-4 text-muted-foreground">No output available</p>
-                                        )}
-                                      </TabsContent>
-
-                                      <TabsContent value="steps" className="mt-4">
-                                        {run.results_per_step && run.results_per_step.length > 0 ? (
-                                          <div className="space-y-4">
-                                            {run.results_per_step.map((result, idx) => {
-                                              const step = selectedWorkflow.steps[idx];
-                                              const action = AVAILABLE_ACTIONS.find(a => a.id === step?.action_id);
-                                              return (
-                                                <Card key={idx} className="border-border/50 bg-card">
-                                                  <CardHeader className="pb-2">
-                                                    <div className="flex items-center gap-2">
-                                                      <Badge
-                                                        variant="outline"
-                                                        className="border-primary/20 bg-primary/10 text-xs text-primary"
-                                                      >
-                                                        Step {idx + 1}
-                                                      </Badge>
-                                                      <span className="text-sm font-medium text-foreground">
-                                                        {action?.name}
-                                                      </span>
-                                                    </div>
-                                                  </CardHeader>
-                                                  <CardContent>
-                                                    <div className="text-sm">{renderExtractedData(result, false)}</div>
-                                                  </CardContent>
-                                                </Card>
-                                              );
-                                            })}
-                                          </div>
-                                        ) : (
-                                          <p className="py-4 text-muted-foreground">
-                                            No intermediate results available
-                                          </p>
-                                        )}
-                                      </TabsContent>
-
-                                      <TabsContent value="error" className="mt-4">
-                                        {run.error && (
-                                          <Alert
-                                            variant="destructive"
-                                            className="border-destructive/50 bg-destructive/10"
-                                          >
-                                            <AlertCircle className="h-4 w-4" />
-                                            <AlertTitle>Error Details</AlertTitle>
-                                            <AlertDescription className="mt-2">
-                                              <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-xs">
-                                                {run.error}
-                                              </pre>
-                                            </AlertDescription>
-                                          </Alert>
-                                        )}
-                                      </TabsContent>
-                                    </Tabs>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            )}
-          </CardContent>
+            </CardContent>
+          )}
         </Card>
+
+        <div className="overflow-hidden rounded-md border border-border/50 bg-card shadow-sm">
+          <div className="border-b bg-card p-4">
+            <h3 className="text-lg font-semibold">Workflow Runs</h3>
+            <p className="text-sm text-muted-foreground">All executions of this workflow on different documents</p>
+          </div>
+
+          {workflowRuns.length === 0 ? (
+            <div className="py-16 text-center">
+              <Clock className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
+              <p className="text-muted-foreground">
+                No runs yet. Execute this workflow on a document to see results here.
+              </p>
+            </div>
+          ) : (
+            <ScrollArea className="h-[calc(100vh-500px)]">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 border-b bg-background">
+                  <TableRow>
+                    <TableHead className="w-[40%] py-3 text-foreground">Document</TableHead>
+                    <TableHead className="w-[20%] py-3 text-foreground">Date</TableHead>
+                    <TableHead className="w-[15%] py-3 text-foreground">Status</TableHead>
+                    <TableHead className="w-[25%] py-3 text-right text-foreground">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {workflowRuns.map(run => {
+                    const isExpanded = expandedRuns.has(run.id);
+                    const progress = runProgress[run.id] || 0;
+                    const doc = docs.find(d => d.external_id === run.document_id);
+
+                    return (
+                      <React.Fragment key={run.id}>
+                        <TableRow className="transition-colors hover:bg-muted/30">
+                          <TableCell className="py-4 font-medium">
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                              <span className="truncate text-foreground" title={doc?.filename || run.document_id}>
+                                {doc?.filename || run.document_id}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-4 text-sm text-muted-foreground">
+                            {(() => {
+                              const dateStr = (run.started_at ?? run.created_at) as string | undefined;
+                              if (!dateStr) return "Not started";
+                              const d = new Date(dateStr);
+                              return isNaN(d.getTime()) ? "-" : d.toLocaleString();
+                            })()}
+                          </TableCell>
+                          <TableCell className="py-4">
+                            <div className="flex items-center gap-2">
+                              {getStatusBadge(run.status)}
+                              {run.status === "running" && <Progress value={progress} className="h-2 w-20 bg-muted" />}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-4 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                setExpandedRuns(prev => {
+                                  const newSet = new Set(prev);
+                                  if (newSet.has(run.id)) {
+                                    newSet.delete(run.id);
+                                  } else {
+                                    newSet.add(run.id);
+                                  }
+                                  return newSet;
+                                })
+                              }
+                              className="transition-colors hover:bg-accent"
+                            >
+                              {isExpanded ? (
+                                <>
+                                  <EyeOff className="mr-2 h-4 w-4" />
+                                  Hide Details
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  View Details
+                                </>
+                              )}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                        {isExpanded && (
+                          <TableRow>
+                            <TableCell colSpan={4} className="p-0">
+                              <div className="border-t bg-muted/20 p-6 dark:bg-muted/10">
+                                <Tabs defaultValue="output" className="w-full">
+                                  <TabsList className="grid w-full max-w-[400px] grid-cols-3 bg-muted">
+                                    <TabsTrigger value="output" className="data-[state=active]:bg-background">
+                                      Output
+                                    </TabsTrigger>
+                                    <TabsTrigger value="steps" className="data-[state=active]:bg-background">
+                                      Step Results
+                                    </TabsTrigger>
+                                    <TabsTrigger
+                                      value="error"
+                                      disabled={!run.error}
+                                      className="data-[state=active]:bg-background"
+                                    >
+                                      Error Details
+                                    </TabsTrigger>
+                                  </TabsList>
+
+                                  <TabsContent value="output" className="mt-4">
+                                    {run.status === "completed" && run.final_output ? (
+                                      <div className="space-y-3">{renderExtractedData(run.final_output)}</div>
+                                    ) : run.status === "running" ? (
+                                      <div className="flex items-center gap-2 py-4 text-blue-600 dark:text-blue-400">
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        Processing document...
+                                      </div>
+                                    ) : run.status === "failed" ? (
+                                      <Alert variant="destructive" className="border-destructive/50 bg-destructive/10">
+                                        <AlertCircle className="h-4 w-4" />
+                                        <AlertTitle>Execution Failed</AlertTitle>
+                                        <AlertDescription>
+                                          The workflow failed to complete. Check the error details tab for more
+                                          information.
+                                        </AlertDescription>
+                                      </Alert>
+                                    ) : (
+                                      <p className="py-4 text-muted-foreground">No output available</p>
+                                    )}
+                                  </TabsContent>
+
+                                  <TabsContent value="steps" className="mt-4">
+                                    {run.results_per_step && run.results_per_step.length > 0 ? (
+                                      <div className="space-y-4">
+                                        {run.results_per_step.map((result, idx) => {
+                                          const step = selectedWorkflow.steps[idx];
+                                          const action = AVAILABLE_ACTIONS.find(a => a.id === step?.action_id);
+                                          return (
+                                            <Card key={idx} className="border-border/50 bg-card">
+                                              <CardHeader className="pb-2">
+                                                <div className="flex items-center gap-2">
+                                                  <Badge
+                                                    variant="outline"
+                                                    className="border-primary/20 bg-primary/10 text-xs text-primary"
+                                                  >
+                                                    Step {idx + 1}
+                                                  </Badge>
+                                                  <span className="text-sm font-medium text-foreground">
+                                                    {action?.name}
+                                                  </span>
+                                                </div>
+                                              </CardHeader>
+                                              <CardContent>
+                                                <div className="text-sm">{renderExtractedData(result, false)}</div>
+                                              </CardContent>
+                                            </Card>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <p className="py-4 text-muted-foreground">No intermediate results available</p>
+                                    )}
+                                  </TabsContent>
+
+                                  <TabsContent value="error" className="mt-4">
+                                    {run.error && (
+                                      <Alert variant="destructive" className="border-destructive/50 bg-destructive/10">
+                                        <AlertCircle className="h-4 w-4" />
+                                        <AlertTitle>Error Details</AlertTitle>
+                                        <AlertDescription className="mt-2">
+                                          <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-xs">
+                                            {run.error}
+                                          </pre>
+                                        </AlertDescription>
+                                      </Alert>
+                                    )}
+                                  </TabsContent>
+                                </Tabs>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          )}
+        </div>
 
         {/* Run Workflow Dialog */}
         <RunWorkflowDialog
@@ -1887,7 +1854,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                   },
                                 })
                               }
-                              placeholder="e.g., extracted_data"
+                              placeholder="e.g., document_info"
                             />
                             <p className="mt-1 text-xs text-muted-foreground">
                               The key under which the output will be saved (optional for top-level mode).
@@ -1918,34 +1885,6 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                             </Select>
                             <p className="mt-1 text-xs text-muted-foreground">
                               Choose whether to save only the previous step&rsquo;s output or all steps&rsquo; outputs.
-                            </p>
-                          </div>
-                          <div>
-                            <Label>Save Mode</Label>
-                            <Select
-                              value={
-                                (workflowForm.steps[selectedStepIndex].parameters.merge_mode as string) || "nested"
-                              }
-                              onValueChange={value =>
-                                updateStep(selectedStepIndex, {
-                                  parameters: {
-                                    ...workflowForm.steps[selectedStepIndex].parameters,
-                                    merge_mode: value,
-                                  },
-                                })
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="nested">Nested (under key)</SelectItem>
-                                <SelectItem value="top_level">Top Level (merge fields)</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Choose whether to save under a specific key or merge extracted fields at the top level of
-                              metadata.
                             </p>
                           </div>
                         </div>
@@ -1989,6 +1928,10 @@ const ExtractStructuredParams: React.FC<{
     }
     return [{ name: "title", type: "string", description: "Document title", required: true }];
   });
+
+  const [isJsonDialogOpen, setIsJsonDialogOpen] = useState(false);
+  const [jsonInput, setJsonInput] = useState("");
+  const [jsonError, setJsonError] = useState("");
 
   const addField = () => {
     setSchemaFields([...schemaFields, { name: "", type: "string", description: "", required: false }]);
@@ -2036,14 +1979,99 @@ const ExtractStructuredParams: React.FC<{
     };
   };
 
+  const inferFieldType = (value: unknown): SchemaField["type"] => {
+    if (value === null || value === undefined) return "string";
+    if (typeof value === "string") return "string";
+    if (typeof value === "number") return "number";
+    if (typeof value === "boolean") return "boolean";
+    if (Array.isArray(value)) return "array";
+    if (typeof value === "object") return "object";
+    return "string";
+  };
+
+  const parseJsonToFields = (json: string) => {
+    try {
+      const parsed = JSON.parse(json);
+      setJsonError("");
+
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        setJsonError("Please provide a JSON object (not an array or primitive value)");
+        return;
+      }
+
+      const fields: SchemaField[] = [];
+
+      // Check if it's a schema-like format with properties
+      if (parsed.properties && typeof parsed.properties === "object") {
+        // Handle JSON Schema format
+        Object.entries(parsed.properties).forEach(([key, prop]: [string, unknown]) => {
+          const propObj = prop as Record<string, unknown>;
+          fields.push({
+            name: key,
+            type: ((propObj.type as string) || "string") as SchemaField["type"],
+            description: (propObj.description as string) || "",
+            required: parsed.required?.includes(key) || false,
+          });
+        });
+      } else {
+        // Handle field definition format (only top-level)
+        Object.entries(parsed).forEach(([key, value]) => {
+          // Check if value is a field definition object
+          if (value && typeof value === "object" && !Array.isArray(value)) {
+            const valueObj = value as Record<string, unknown>;
+            if (valueObj.type || valueObj.description !== undefined) {
+              // This looks like a field definition
+              fields.push({
+                name: key,
+                type: ((valueObj.type as string) || "string") as SchemaField["type"],
+                description: (valueObj.description as string) || "",
+                required: (valueObj.required as boolean) || false,
+              });
+            } else {
+              // Regular value - infer type
+              fields.push({
+                name: key,
+                type: inferFieldType(value),
+                description: "",
+                required: false,
+              });
+            }
+          } else {
+            // Regular value - infer type
+            fields.push({
+              name: key,
+              type: inferFieldType(value),
+              description: "",
+              required: false,
+            });
+          }
+        });
+      }
+
+      setSchemaFields(fields);
+      const schema = generateSchema(fields);
+      onChange({ ...parameters, schema });
+      setIsJsonDialogOpen(false);
+      setJsonInput("");
+    } catch (error) {
+      setJsonError(`Invalid JSON: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <Label>Data Schema</Label>
-        <Button variant="outline" size="sm" onClick={addField}>
-          <Plus className="mr-1 h-3 w-3" />
-          Add Field
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setIsJsonDialogOpen(true)}>
+            <FileJson className="mr-1 h-3 w-3" />
+            Create from JSON
+          </Button>
+          <Button variant="outline" size="sm" onClick={addField}>
+            <Plus className="mr-1 h-3 w-3" />
+            Add Field
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -2112,6 +2140,57 @@ const ExtractStructuredParams: React.FC<{
           </div>
         ))}
       </div>
+
+      <Dialog open={isJsonDialogOpen} onOpenChange={setIsJsonDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Create Schema from JSON</DialogTitle>
+            <DialogDescription>
+              Paste your JSON object below. Fields will be automatically inferred from the structure.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="json-input">JSON Input</Label>
+              <Textarea
+                id="json-input"
+                value={jsonInput}
+                onChange={e => {
+                  setJsonInput(e.target.value);
+                  setJsonError("");
+                }}
+                placeholder={`Examples:
+1. Simple JSON: {"name": "John", "age": 30, "isActive": true}
+2. With descriptions: {"name": {"type": "string", "description": "Person's full name"}, "age": {"type": "number", "description": "Age in years"}}
+3. JSON Schema: {"properties": {"name": {"type": "string", "description": "Full name"}}, "required": ["name"]}`}
+                className="h-64 font-mono text-sm"
+              />
+              {jsonError && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{jsonError}</AlertDescription>
+                </Alert>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsJsonDialogOpen(false);
+                  setJsonInput("");
+                  setJsonError("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button onClick={() => parseJsonToFields(jsonInput)}>
+                <FileJson className="mr-2 h-4 w-4" />
+                Import Fields
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

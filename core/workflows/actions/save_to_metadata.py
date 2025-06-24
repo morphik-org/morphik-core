@@ -28,19 +28,13 @@ definition = ActionDefinition(
         "properties": {
             "metadata_key": {
                 "type": "string",
-                "description": "Key to store the data under in document metadata (use '__merge_top_level__' to merge at top level)",
+                "description": "Key to store the data under in document metadata (optional - if not provided, fields are merged at top level)",
             },
             "source": {
                 "type": "string",
                 "enum": ["previous_step", "all_steps"],
                 "description": "Whether to save output from previous step or all steps",
                 "default": "previous_step",
-            },
-            "merge_mode": {
-                "type": "string",
-                "enum": ["nested", "top_level"],
-                "description": "Whether to nest under a key or merge at top level",
-                "default": "nested",
             },
         },
         "required": [],
@@ -85,7 +79,6 @@ async def run(document_service, document_id: str, params: Dict[str, Any]) -> Dic
 
     metadata_key = params.get("metadata_key", "")
     source = params.get("source", "previous_step")
-    merge_mode = params.get("merge_mode", "nested")
     auth_ctx = params.get("auth")
     previous_outputs = params.get("_previous_outputs", [])
 
@@ -105,20 +98,16 @@ async def run(document_service, document_id: str, params: Dict[str, Any]) -> Dic
     # Update document metadata
     current_metadata = doc.metadata.copy() if doc.metadata else {}
 
-    if merge_mode == "top_level":
-        # Merge extracted data at top level
+    if metadata_key:
+        # Store under specified key
+        current_metadata[metadata_key] = data_to_save
+    else:
+        # No key specified - merge at top level if data is a dict
         if isinstance(data_to_save, dict):
             current_metadata.update(data_to_save)
         else:
-            # If not a dict, we still need to store it under a key
-            if not metadata_key:
-                metadata_key = "extracted_data"
-            current_metadata[metadata_key] = data_to_save
-    else:
-        # Nested mode - store under specified key
-        if not metadata_key:
-            metadata_key = "extracted_data"
-        current_metadata[metadata_key] = data_to_save
+            # If not a dict, we need to store it under a default key
+            current_metadata["data"] = data_to_save
 
     # Save to database
     updates = {"metadata": current_metadata}
@@ -127,21 +116,20 @@ async def run(document_service, document_id: str, params: Dict[str, Any]) -> Dic
     if not success:
         raise RuntimeError(f"Failed to update document {document_id} metadata")
 
-    if merge_mode == "top_level":
-        logger.info(
-            "Saved workflow output to document %s metadata at top level",
-            document_id,
-        )
-    else:
+    if metadata_key:
         logger.info(
             "Saved workflow output to document %s metadata under key '%s'",
             document_id,
             metadata_key,
         )
+    else:
+        logger.info(
+            "Saved workflow output to document %s metadata at top level",
+            document_id,
+        )
 
     return {
         "success": True,
-        "metadata_key": metadata_key if merge_mode == "nested" else "__top_level__",
-        "merge_mode": merge_mode,
+        "metadata_key": metadata_key or "__top_level__",
         "data_saved": data_to_save,
     }

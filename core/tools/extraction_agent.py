@@ -66,26 +66,9 @@ class ExtractionAgent:
             images = pdf2image.convert_from_bytes(pdf_bytes, dpi=150)
             self.pages = images
 
-            # Get text content from chunks if available
-            chunks = await self.document_service.db.get_chunks_for_document(self.document_id, self.auth)
-            if chunks:
-                # Group chunks by page
-                page_texts = {}
-                for chunk in chunks:
-                    page_num = chunk.metadata.get("page_number", 0)
-                    if page_num not in page_texts:
-                        page_texts[page_num] = []
-                    page_texts[page_num].append(chunk.content)
-
-                # Combine chunks for each page
-                for i in range(len(images)):
-                    if i in page_texts:
-                        self.page_contents.append("\n".join(page_texts[i]))
-                    else:
-                        self.page_contents.append("")
-            else:
-                # No chunks available
-                self.page_contents = [""] * len(images)
+            # For PDFs, we'll rely on the image content rather than text chunks
+            # This simplifies the extraction and avoids the missing get_chunks_for_document method
+            self.page_contents = [""] * len(images)
 
         except Exception as e:
             logger.error(f"Failed to load PDF: {e}")
