@@ -19,13 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class WorkflowService:
-    """High-level façade to manage `Workflow` objects.
-
-    NOTE: Storage is delegated to *BaseDatabase* which will get proper
-    persistence methods in follow-up commits.  For now we fallback to generic
-    `store_workflow`, `update_workflow` helpers if present – otherwise we keep
-    an in-memory map to unblock early integration & unit-tests.
-    """
+    """High-level façade to manage `Workflow` objects."""
 
     # ---------------------------------------------------------------------
     # Construction & helpers
@@ -36,11 +30,6 @@ class WorkflowService:
         # Weak ref to document_service to reuse models/storage, injected from services_init
         self._document_service_ref = document_service_ref
 
-        # Fallback in-memory storage when database does not implement workflow
-        # helpers yet – this avoids breaking imports/tests before migrations.
-        self._memory_store: Dict[str, Workflow] = {}
-        self._memory_runs: Dict[str, WorkflowRun] = {}
-
     # ------------------------------------------------------------------
     # Public CRUD operations
     # ------------------------------------------------------------------
@@ -49,13 +38,10 @@ class WorkflowService:
         """Persist *workflow* and return saved copy."""
         await self._enforce_write(auth)
 
-        # Persist – prefer real DB methods when available
-        if hasattr(self.db, "store_workflow"):
-            success = await self.db.store_workflow(workflow)
-            if not success:
-                raise RuntimeError("Failed to store workflow in database")
-        else:
-            self._memory_store[workflow.id] = workflow
+        # Persist to database
+        success = await self.db.store_workflow(workflow)
+        if not success:
+            raise RuntimeError("Failed to store workflow in database")
 
         logger.info("Workflow %s created by %s", workflow.id, auth.entity_id)
         return workflow
@@ -63,40 +49,22 @@ class WorkflowService:
     async def list_workflows(self, auth: AuthContext) -> List[Workflow]:
         """Return workflows visible to current *auth* scope."""
         # TODO – refine visibility rules (owner/app/user scoping)
-        if hasattr(self.db, "list_workflows"):
-            return await self.db.list_workflows(auth)
-        return list(self._memory_store.values())
+        return await self.db.list_workflows(auth)
 
     async def get_workflow(self, workflow_id: str, auth: AuthContext) -> Optional[Workflow]:
-        if hasattr(self.db, "get_workflow"):
-            return await self.db.get_workflow(workflow_id, auth)
-        return self._memory_store.get(workflow_id)
+        return await self.db.get_workflow(workflow_id, auth)
 
     async def update_workflow(self, workflow_id: str, updates: Dict[str, Any], auth: AuthContext) -> Workflow:
         await self._enforce_write(auth)
 
-        if hasattr(self.db, "update_workflow"):
-            wf = await self.db.update_workflow(workflow_id, updates, auth)
-            if wf is None:
-                raise RuntimeError("Failed to update workflow in database")
-            return wf
-
-        # Fallback memory update
-        wf = self._memory_store.get(workflow_id)
-        if not wf:
-            raise ValueError("Workflow not found")
-
-        wf_dict = wf.model_dump()
-        wf_dict.update(updates)
-        wf_updated = Workflow(**wf_dict)
-        self._memory_store[workflow_id] = wf_updated
-        return wf_updated
+        wf = await self.db.update_workflow(workflow_id, updates, auth)
+        if wf is None:
+            raise RuntimeError("Failed to update workflow in database")
+        return wf
 
     async def delete_workflow(self, workflow_id: str, auth: AuthContext) -> bool:
         await self._enforce_write(auth)
-        if hasattr(self.db, "delete_workflow"):
-            return await self.db.delete_workflow(workflow_id, auth)
-        return self._memory_store.pop(workflow_id, None) is not None
+        return await self.db.delete_workflow(workflow_id, auth)
 
     # ------------------------------------------------------------------
     # Background-friendly execution helpers
@@ -136,10 +104,7 @@ class WorkflowService:
         )
 
         # Persist the queued run
-        if hasattr(self.db, "store_workflow_run"):
-            await self.db.store_workflow_run(run)
-        else:
-            self._memory_runs[run.id] = run
+        await self.db.store_workflow_run(run)
 
         # Optimistically mark the document so the UI can show "processing"
         try:
@@ -195,7 +160,7 @@ class WorkflowService:
                     "metadata": {},  # Shared metadata
                 }
 
-                for i, step in enumerate(wf.steps):
+                for step in wf.steps:
                     runner = ACTION_REGISTRY.get_runner(step.action_id)
                     if not runner:
                         raise ValueError(f"Action {step.action_id} not found in registry")
@@ -247,11 +212,8 @@ class WorkflowService:
     # ------------------------------------------------------------------
 
     async def _persist_run(self, run: WorkflowRun):
-        """Persist *run* to whichever backend is available."""
-        if hasattr(self.db, "store_workflow_run"):
-            await self.db.store_workflow_run(run)
-        else:
-            self._memory_runs[run.id] = run
+        """Persist *run* to the database."""
+        await self.db.store_workflow_run(run)
 
     async def _safe_update_document_status(self, document_id: str, status: str, auth: AuthContext):
         """Best-effort update of document.workflow_status."""

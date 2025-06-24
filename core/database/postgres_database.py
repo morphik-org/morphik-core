@@ -2061,10 +2061,6 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error deleting model config: {str(e)}")
             return False
 
-    # ------------------------------------------------------------------
-    # Workflow CRUD – delegated to repository (can later be DB-backed)
-    # ------------------------------------------------------------------
-
     async def store_workflow(self, workflow: Workflow) -> bool:  # noqa: D401 – override
         if not self._initialized:
             await self.initialize()
