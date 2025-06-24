@@ -109,3 +109,15 @@ async def get_workflow_run(run_id: str, auth: AuthContext = Depends(verify_token
 async def get_workflow_runs(workflow_id: str, auth: AuthContext = Depends(verify_token)) -> List[WorkflowRun]:
     """Get all runs for a specific workflow."""
     return await workflow_service.list_workflow_runs(workflow_id, auth)
+
+
+@router.delete("/runs/{run_id}")
+async def delete_workflow_run(run_id: str, auth: AuthContext = Depends(verify_token)) -> Dict[str, str]:
+    """Delete a workflow run."""
+    try:
+        success = await workflow_service.delete_run(run_id, auth)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    if not success:
+        raise HTTPException(status_code=404, detail="Workflow run not found")
+    return {"success": "Workflow run deleted successfully"}

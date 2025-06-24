@@ -327,6 +327,17 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                 return newIntervals;
               });
             }
+          } else if (res.status === 404) {
+            // Run no longer exists – stop polling and remove it from state
+            if (pollingIntervals[runId]) {
+              clearInterval(pollingIntervals[runId]);
+              setPollingIntervals(prev => {
+                const newIntervals = { ...prev };
+                delete newIntervals[runId];
+                return newIntervals;
+              });
+            }
+            setWorkflowRuns(prev => prev.filter(r => r.id !== runId));
           }
         }
       } catch (error) {
@@ -1411,34 +1422,82 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                             </div>
                           </TableCell>
                           <TableCell className="py-4 text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                setExpandedRuns(prev => {
-                                  const newSet = new Set(prev);
-                                  if (newSet.has(run.id)) {
-                                    newSet.delete(run.id);
-                                  } else {
-                                    newSet.add(run.id);
-                                  }
-                                  return newSet;
-                                })
-                              }
-                              className="transition-colors hover:bg-accent"
-                            >
-                              {isExpanded ? (
-                                <>
-                                  <EyeOff className="mr-2 h-4 w-4" />
-                                  Hide Details
-                                </>
-                              ) : (
-                                <>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  View Details
-                                </>
-                              )}
-                            </Button>
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  setExpandedRuns(prev => {
+                                    const newSet = new Set(prev);
+                                    if (newSet.has(run.id)) {
+                                      newSet.delete(run.id);
+                                    } else {
+                                      newSet.add(run.id);
+                                    }
+                                    return newSet;
+                                  })
+                                }
+                                className="transition-colors hover:bg-accent"
+                              >
+                                {isExpanded ? (
+                                  <>
+                                    <EyeOff className="mr-2 h-4 w-4" />
+                                    Hide Details
+                                  </>
+                                ) : (
+                                  <>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    View Details
+                                  </>
+                                )}
+                              </Button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={async () => {
+                                      if (
+                                        confirm(
+                                          `Are you sure you want to delete this run? This will only delete the run record, not any data that was added to document metadata.`
+                                        )
+                                      ) {
+                                        try {
+                                          const response = await fetch(`${apiBaseUrl}/workflows/runs/${run.id}`, {
+                                            method: "DELETE",
+                                            headers: {
+                                              "Content-Type": "application/json",
+                                              ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+                                            },
+                                          });
+                                          if (response.ok) {
+                                            // Refresh the workflow runs
+                                            const runsResponse = await fetch(
+                                              `${apiBaseUrl}/workflows/${selectedWorkflow.id}/runs`,
+                                              {
+                                                headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+                                              }
+                                            );
+                                            if (runsResponse.ok) {
+                                              const runs = await runsResponse.json();
+                                              setWorkflowRuns(runs);
+                                            }
+                                          } else {
+                                            console.error("Failed to delete run");
+                                          }
+                                        } catch (error) {
+                                          console.error("Error deleting run:", error);
+                                        }
+                                      }
+                                    }}
+                                    className="text-destructive transition-colors hover:bg-destructive/10"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Delete Run</TooltipContent>
+                              </Tooltip>
+                            </div>
                           </TableCell>
                         </TableRow>
                         {isExpanded && (
@@ -1957,15 +2016,20 @@ const ExtractStructuredParams: React.FC<{
   };
 
   const generateSchema = (fields: SchemaField[]) => {
-    const properties: Record<string, { type: string; description: string }> = {};
+    const properties: Record<string, { type: string; description: string; items?: { type: string } }> = {};
     const required: string[] = [];
 
     fields.forEach(field => {
       if (field.name) {
-        properties[field.name] = {
+        const propertySchema: { type: string; description: string; items?: { type: string } } = {
           type: field.type,
           description: field.description || "",
         };
+        if (field.type === "array") {
+          // Default to array of strings if not specified. This avoids OpenAI schema errors.
+          propertySchema.items = { type: "string" };
+        }
+        properties[field.name] = propertySchema;
         if (field.required) {
           required.push(field.name);
         }

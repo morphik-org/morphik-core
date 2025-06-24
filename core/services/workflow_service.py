@@ -240,6 +240,11 @@ class WorkflowService:
         """List all runs for a specific workflow."""
         return await self.db.list_workflow_runs(workflow_id, auth)
 
+    async def delete_run(self, run_id: str, auth: AuthContext) -> bool:
+        """Delete a workflow run."""
+        await self._enforce_write(auth)
+        return await self.db.delete_workflow_run(run_id, auth)
+
     # ------------------------------------------------------------------
     # Misc helpers
     # ------------------------------------------------------------------

@@ -142,6 +142,9 @@ class Settings(BaseSettings):
     OTLP_SCHEDULE_DELAY_MILLIS: int = 5000
     OTLP_MAX_QUEUE_SIZE: int = 2048
 
+    # Workflows configuration
+    WORKFLOW_MODEL: Optional[str] = None
+
 
 @lru_cache()
 def get_settings() -> Settings:
@@ -375,6 +378,13 @@ def get_settings() -> Settings:
             "OTLP_MAX_QUEUE_SIZE": config["telemetry"].get("otlp_max_queue_size", 2048),
         }
 
+    # load workflows config
+    workflows_config = {}
+    if "workflows" in config and "model" in config["workflows"]:
+        workflows_config = {
+            "WORKFLOW_MODEL": config["workflows"]["model"],
+        }
+
     settings_dict = dict(
         ChainMap(
             api_config,
@@ -395,6 +405,7 @@ def get_settings() -> Settings:
             graph_config,
             document_analysis_config,
             telemetry_config,
+            workflows_config,
             openai_config,
         )
     )

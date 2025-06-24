@@ -47,8 +47,29 @@ ACTION_DEFINITION = ActionDefinition(
 # ---------------------------------------------------------------------------
 
 
+def _add_default_items(schema: Dict[str, Any]):
+    """Recursively add default `items` to array-typed properties without one.
+
+    Gemini / Vertex requires `items` for every array in JSON-schema. If the
+    user omitted it, we default to a simple string array so the schema remains
+    valid.
+    """
+    if not isinstance(schema, dict):
+        return
+
+    if schema.get("type") == "array" and "items" not in schema:
+        schema["items"] = {"type": "string"}
+
+    # Recurse into nested object/array definitions
+    if schema.get("type") == "object":
+        for prop in schema.get("properties", {}).values():
+            _add_default_items(prop)
+    elif schema.get("type") == "array":
+        _add_default_items(schema.get("items", {}))
+
+
 def _ensure_object_schema(user_schema: Dict[str, Any]) -> Dict[str, Any]:
-    """Ensure the schema has object type at root."""
+    """Ensure the schema has object type at root and fix common omissions."""
 
     # Defensive: ensure object root
     if user_schema.get("type") != "object":
@@ -57,6 +78,9 @@ def _ensure_object_schema(user_schema: Dict[str, Any]) -> Dict[str, Any]:
             "properties": {"value": user_schema},
             "required": ["value"],
         }
+
+    # Ensure all arrays have an `items` definition to satisfy Gemini/OAI schema requirements
+    _add_default_items(user_schema)
 
     return user_schema
 

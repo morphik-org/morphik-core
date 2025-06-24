@@ -332,3 +332,7 @@ class BaseDatabase(ABC):
     @abstractmethod
     async def list_workflow_runs(self, workflow_id: str, auth: AuthContext) -> List["WorkflowRun"]:
         """List all runs for a specific workflow."""
+
+    @abstractmethod
+    async def delete_workflow_run(self, run_id: str, auth: AuthContext) -> bool:
+        """Delete a workflow run."""

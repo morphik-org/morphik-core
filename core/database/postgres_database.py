@@ -2186,3 +2186,19 @@ class PostgresDatabase(BaseDatabase):
         except Exception as exc:
             logger.error("Error listing workflow runs: %s", exc)
             return []
+
+    async def delete_workflow_run(self, run_id: str, auth: AuthContext) -> bool:
+        try:
+            if not self._initialized:
+                await self.initialize()
+            async with self.async_session() as session:
+                run_model = await session.get(WorkflowRunModel, run_id)
+                if run_model:
+                    await session.delete(run_model)
+                    await session.commit()
+                    logger.info(f"Deleted workflow run {run_id}")
+                    return True
+                return False
+        except Exception as exc:
+            logger.error("Error deleting workflow run: %s", exc)
+            return False
