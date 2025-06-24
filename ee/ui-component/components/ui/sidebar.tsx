@@ -23,7 +23,15 @@ import { ModeToggle } from "@/components/mode-toggle";
 import { Input } from "@/components/ui/input";
 
 // Define the specific section types the Sidebar expects
-export type SidebarSectionType = "documents" | "search" | "chat" | "graphs" | "workflows" | "connections" | "pdf" | "settings";
+export type SidebarSectionType =
+  | "documents"
+  | "search"
+  | "chat"
+  | "graphs"
+  | "workflows"
+  | "connections"
+  | "pdf"
+  | "settings";
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   activeSection: SidebarSectionType; // Use the specific type

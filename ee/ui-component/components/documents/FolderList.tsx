@@ -38,6 +38,10 @@ interface FolderListProps {
   onFolderCreate?: (folderName: string) => void;
 }
 
+interface WorkflowStep {
+  action_id: string;
+}
+
 const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
   folders,
   selectedFolder,
@@ -58,10 +62,14 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
   const [newFolderName, setNewFolderName] = React.useState("");
   const [newFolderDescription, setNewFolderDescription] = React.useState("");
   const [isCreatingFolder, setIsCreatingFolder] = React.useState(false);
-  const [folderWorkflows, setFolderWorkflows] = React.useState<any[]>([]);
+  const [folderWorkflows, setFolderWorkflows] = React.useState<
+    { id: string; name: string; description?: string; steps?: WorkflowStep[] }[]
+  >([]);
   const [loadingWorkflows, setLoadingWorkflows] = React.useState(false);
   const [showWorkflowDialog, setShowWorkflowDialog] = React.useState(false);
-  const [availableWorkflows, setAvailableWorkflows] = React.useState<any[]>([]);
+  const [availableWorkflows, setAvailableWorkflows] = React.useState<
+    { id: string; name: string; description?: string; steps?: WorkflowStep[] }[]
+  >([]);
   const [showAddWorkflowDialog, setShowAddWorkflowDialog] = React.useState(false);
   const [selectedWorkflowToAdd, setSelectedWorkflowToAdd] = React.useState<string>("");
 
@@ -70,11 +78,11 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
     setSelectedFolder(folderName);
 
     // If we're on the workflows page, navigate back to documents
-    if (pathname === '/workflows') {
+    if (pathname === "/workflows") {
       if (folderName) {
         router.push(`/?folder=${encodeURIComponent(folderName)}`);
       } else {
-        router.push('/');
+        router.push("/");
       }
     } else {
       // Update URL to reflect the selected folder
@@ -87,26 +95,29 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
   };
 
   // Fetch workflows for the selected folder
-  const fetchFolderWorkflows = async (folderId: string) => {
-    setLoadingWorkflows(true);
-    try {
-      const response = await fetch(`${apiBaseUrl}/folders/${folderId}/workflows`, {
-        headers: {
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-        },
-      });
+  const fetchFolderWorkflows = React.useCallback(
+    async (folderId: string) => {
+      setLoadingWorkflows(true);
+      try {
+        const response = await fetch(`${apiBaseUrl}/folders/${folderId}/workflows`, {
+          headers: {
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
+        });
 
-      if (response.ok) {
-        const workflows = await response.json();
-        setFolderWorkflows(workflows);
+        if (response.ok) {
+          const workflows = await response.json();
+          setFolderWorkflows(workflows);
+        }
+      } catch (error) {
+        console.error("Failed to fetch folder workflows:", error);
+        setFolderWorkflows([]);
+      } finally {
+        setLoadingWorkflows(false);
       }
-    } catch (error) {
-      console.error("Failed to fetch folder workflows:", error);
-      setFolderWorkflows([]);
-    } finally {
-      setLoadingWorkflows(false);
-    }
-  };
+    },
+    [apiBaseUrl, authToken]
+  );
 
   // Fetch workflows when a folder is selected
   React.useEffect(() => {
@@ -119,7 +130,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
     } else {
       setFolderWorkflows([]);
     }
-  }, [selectedFolder, folders]);
+  }, [selectedFolder, folders, fetchFolderWorkflows]);
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
@@ -290,13 +301,13 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
               ) : folderWorkflows.length > 0 ? (
                 <div className="space-y-3">
                   <h4 className="text-sm font-medium">Active Workflows</h4>
-                  {folderWorkflows.map((workflow) => (
+                  {folderWorkflows.map(workflow => (
                     <div
                       key={workflow.id}
-                      className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50 transition-colors cursor-pointer"
+                      className="flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-colors hover:bg-muted/50"
                       onClick={() => {
                         // Navigate to workflow detail page, stay on current page if already on workflows
-                        if (pathname === '/workflows') {
+                        if (pathname === "/workflows") {
                           router.push(`/workflows?id=${workflow.id}`);
                         } else {
                           router.push(`/?section=workflows&id=${workflow.id}`);
@@ -316,9 +327,9 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                             <Badge variant="secondary" className="text-xs">
                               {workflow.steps?.length || 0} steps
                             </Badge>
-                            {workflow.steps?.map((step: any, idx: number) => (
+                            {workflow.steps?.map((step, idx: number) => (
                               <Badge key={idx} variant="outline" className="text-xs">
-                                {step.action_id?.split('.').pop()?.replace(/_/g, ' ')}
+                                {step.action_id?.split(".").pop()?.replace(/_/g, " ")}
                               </Badge>
                             ))}
                           </div>
@@ -328,7 +339,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={(e) => {
+                          onClick={e => {
                             e.stopPropagation();
                             window.location.href = `/workflows?id=${workflow.id}`;
                           }}
@@ -340,7 +351,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={async (e) => {
+                          onClick={async e => {
                             e.stopPropagation();
                             const folder = folders.find(f => f.name === selectedFolder);
                             if (folder && window.confirm(`Remove "${workflow.name}" from this folder?`)) {
@@ -348,7 +359,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                                 const response = await fetch(
                                   `${apiBaseUrl}/folders/${folder.id}/workflows/${workflow.id}`,
                                   {
-                                    method: 'DELETE',
+                                    method: "DELETE",
                                     headers: {
                                       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
                                     },
@@ -358,7 +369,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                                   fetchFolderWorkflows(folder.id);
                                 }
                               } catch (error) {
-                                console.error('Failed to remove workflow:', error);
+                                console.error("Failed to remove workflow:", error);
                               }
                             }
                           }}
@@ -373,14 +384,12 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
               ) : (
                 <div className="rounded-lg border border-dashed p-8 text-center">
                   <Layers className="mx-auto h-12 w-12 text-muted-foreground/50" />
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    No workflows associated with this folder yet.
-                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">No workflows associated with this folder yet.</p>
                 </div>
               )}
 
               {/* Add workflow button */}
-              <div className="flex justify-between items-center pt-4 border-t">
+              <div className="flex items-center justify-between border-t pt-4">
                 <p className="text-sm text-muted-foreground">
                   Add workflows to automatically process documents in this folder.
                 </p>
@@ -401,7 +410,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                           setShowAddWorkflowDialog(true);
                         }
                       } catch (error) {
-                        console.error('Failed to fetch workflows:', error);
+                        console.error("Failed to fetch workflows:", error);
                       }
                     }}
                     className="flex items-center gap-2"
@@ -411,7 +420,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                   </Button>
                   <Button
                     onClick={() => {
-                      window.location.href = '/workflows';
+                      window.location.href = "/workflows";
                     }}
                     className="flex items-center gap-2"
                   >
@@ -430,15 +439,15 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
             <DialogHeader>
               <DialogTitle>Add Workflow to Folder</DialogTitle>
               <DialogDescription>
-                Select a workflow to automatically run when documents are added to "{selectedFolder}".
+                Select a workflow to automatically run when documents are added to &quot;{selectedFolder}&quot;.
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
               {/* Available workflows */}
-              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              <div className="max-h-[300px] space-y-2 overflow-y-auto">
                 {availableWorkflows.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
+                  <div className="py-8 text-center text-muted-foreground">
                     No workflows available. Create workflows first.
                   </div>
                 ) : (
@@ -448,7 +457,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                       <div
                         key={workflow.id}
                         className={cn(
-                          "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all",
+                          "flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-all",
                           selectedWorkflowToAdd === workflow.id
                             ? "border-primary bg-primary/5"
                             : "hover:border-primary/50 hover:bg-muted/50"
@@ -473,7 +482,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
               </div>
 
               {/* Action buttons */}
-              <div className="flex justify-end gap-2 pt-4 border-t">
+              <div className="flex justify-end gap-2 border-t pt-4">
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -493,7 +502,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                           const response = await fetch(
                             `${apiBaseUrl}/folders/${folder.id}/workflows/${selectedWorkflowToAdd}`,
                             {
-                              method: 'POST',
+                              method: "POST",
                               headers: {
                                 ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
                               },
@@ -506,7 +515,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                             setSelectedWorkflowToAdd("");
                           }
                         } catch (error) {
-                          console.error('Failed to add workflow:', error);
+                          console.error("Failed to add workflow:", error);
                         }
                       }
                     }
@@ -518,7 +527,6 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
             </div>
           </DialogContent>
         </Dialog>
-
       </div>
     );
   }
@@ -662,10 +670,10 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
             ) : folderWorkflows.length > 0 ? (
               <div className="space-y-3">
                 <h4 className="text-sm font-medium">Active Workflows</h4>
-                {folderWorkflows.map((workflow) => (
+                {folderWorkflows.map(workflow => (
                   <div
                     key={workflow.id}
-                    className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50 transition-colors cursor-pointer"
+                    className="flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-colors hover:bg-muted/50"
                     onClick={() => {
                       // Navigate to workflow detail page
                       window.location.href = `/workflows?id=${workflow.id}`;
@@ -684,9 +692,9 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                           <Badge variant="secondary" className="text-xs">
                             {workflow.steps?.length || 0} steps
                           </Badge>
-                          {workflow.steps?.map((step: any, idx: number) => (
+                          {workflow.steps?.map((step: WorkflowStep, idx: number) => (
                             <Badge key={idx} variant="outline" className="text-xs">
-                              {step.action_id?.split('.').pop()?.replace(/_/g, ' ')}
+                              {step.action_id?.split(".").pop()?.replace(/_/g, " ")}
                             </Badge>
                           ))}
                         </div>
@@ -696,9 +704,9 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={(e) => {
+                        onClick={e => {
                           e.stopPropagation();
-                          if (pathname === '/workflows') {
+                          if (pathname === "/workflows") {
                             router.push(`/workflows?id=${workflow.id}`);
                           } else {
                             router.push(`/?section=workflows&id=${workflow.id}`);
@@ -712,27 +720,27 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={async (e) => {
+                        onClick={async e => {
                           e.stopPropagation();
-                        const folder = folders.find(f => f.name === selectedFolder);
-                        if (folder && window.confirm(`Remove "${workflow.name}" from this folder?`)) {
-                          try {
-                            const response = await fetch(
-                              `${apiBaseUrl}/folders/${folder.id}/workflows/${workflow.id}`,
-                              {
-                                method: 'DELETE',
-                                headers: {
-                                  ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-                                },
+                          const folder = folders.find(f => f.name === selectedFolder);
+                          if (folder && window.confirm(`Remove "${workflow.name}" from this folder?`)) {
+                            try {
+                              const response = await fetch(
+                                `${apiBaseUrl}/folders/${folder.id}/workflows/${workflow.id}`,
+                                {
+                                  method: "DELETE",
+                                  headers: {
+                                    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+                                  },
+                                }
+                              );
+                              if (response.ok) {
+                                fetchFolderWorkflows(folder.id);
                               }
-                            );
-                            if (response.ok) {
-                              fetchFolderWorkflows(folder.id);
+                            } catch (error) {
+                              console.error("Failed to remove workflow:", error);
                             }
-                          } catch (error) {
-                            console.error('Failed to remove workflow:', error);
                           }
-                        }
                         }}
                         className="h-8 w-8 text-destructive hover:text-destructive"
                       >
@@ -745,14 +753,12 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
             ) : (
               <div className="rounded-lg border border-dashed p-8 text-center">
                 <Layers className="mx-auto h-12 w-12 text-muted-foreground/50" />
-                <p className="mt-2 text-sm text-muted-foreground">
-                  No workflows associated with this folder yet.
-                </p>
+                <p className="mt-2 text-sm text-muted-foreground">No workflows associated with this folder yet.</p>
               </div>
             )}
 
             {/* Add workflow button */}
-            <div className="flex justify-between items-center pt-4 border-t">
+            <div className="flex items-center justify-between border-t pt-4">
               <p className="text-sm text-muted-foreground">
                 Add workflows to automatically process documents in this folder.
               </p>
@@ -773,7 +779,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                         setShowAddWorkflowDialog(true);
                       }
                     } catch (error) {
-                      console.error('Failed to fetch workflows:', error);
+                      console.error("Failed to fetch workflows:", error);
                     }
                   }}
                   className="flex items-center gap-2"
@@ -783,10 +789,10 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                 </Button>
                 <Button
                   onClick={() => {
-                    if (pathname === '/workflows') {
+                    if (pathname === "/workflows") {
                       setShowWorkflowDialog(false);
                     } else {
-                      router.push('/workflows');
+                      router.push("/workflows");
                     }
                   }}
                   className="flex items-center gap-2"
@@ -806,15 +812,15 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
           <DialogHeader>
             <DialogTitle>Add Workflow to Folder</DialogTitle>
             <DialogDescription>
-              Select a workflow to automatically run when documents are added to "{selectedFolder}".
+              Select a workflow to automatically run when documents are added to &quot;{selectedFolder}&quot;.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             {/* Available workflows */}
-            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+            <div className="max-h-[300px] space-y-2 overflow-y-auto">
               {availableWorkflows.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
+                <div className="py-8 text-center text-muted-foreground">
                   No workflows available. Create workflows first.
                 </div>
               ) : (
@@ -824,7 +830,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                     <div
                       key={workflow.id}
                       className={cn(
-                        "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all",
+                        "flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-all",
                         selectedWorkflowToAdd === workflow.id
                           ? "border-primary bg-primary/5"
                           : "hover:border-primary/50 hover:bg-muted/50"
@@ -849,7 +855,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
             </div>
 
             {/* Action buttons */}
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-2 border-t pt-4">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -869,7 +875,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                         const response = await fetch(
                           `${apiBaseUrl}/folders/${folder.id}/workflows/${selectedWorkflowToAdd}`,
                           {
-                            method: 'POST',
+                            method: "POST",
                             headers: {
                               ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
                             },
@@ -882,7 +888,7 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
                           setSelectedWorkflowToAdd("");
                         }
                       } catch (error) {
-                        console.error('Failed to add workflow:', error);
+                        console.error("Failed to add workflow:", error);
                       }
                     }
                   }

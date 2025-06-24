@@ -146,13 +146,13 @@ const AVAILABLE_ACTIONS: ActionDefinition[] = [
           type: "string",
           enum: ["previous_step", "all_steps"],
           description: "Whether to save output from previous step or all steps",
-          default: "previous_step"
+          default: "previous_step",
         },
         merge_mode: {
           type: "string",
           enum: ["nested", "top_level"],
           description: "Whether to nest under a key or merge at top level",
-          default: "nested"
+          default: "nested",
         },
       },
     },
@@ -202,7 +202,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
   // Handle URL query parameter for workflow ID
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const workflowId = urlParams.get('id');
+    const workflowId = urlParams.get("id");
     if (workflowId && workflows.length > 0) {
       const workflow = workflows.find(w => w.id === workflowId);
       if (workflow) {
@@ -215,7 +215,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
     try {
       const res = await fetch(`${apiBaseUrl}/workflows`, { headers });
       if (res.ok) {
-        const data = await res.json();
+        const data: Workflow[] = await res.json();
         setWorkflows(data);
       }
     } catch (error) {
@@ -243,7 +243,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
     try {
       const res = await fetch(`${apiBaseUrl}/workflows/${workflowId}/runs`, { headers });
       if (res.ok) {
-        const data = await res.json();
+        const data: WorkflowRun[] = await res.json();
         setWorkflowRuns(data);
       }
     } catch (error) {
@@ -264,21 +264,24 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
     }
   };
 
-  const fetchWorkflowFolders = async (workflowId: string) => {
-    try {
-      // Get all folders and check which ones have this workflow
-      const res = await fetch(`${apiBaseUrl}/folders`, { headers });
-      if (res.ok) {
-        const allFolders = await res.json();
-        const associatedFolderIds = allFolders
-          .filter((folder: FolderWithWorkflows) => folder.workflow_ids?.includes(workflowId))
-          .map((folder: FolderWithWorkflows) => folder.id);
-        setWorkflowFolders(prev => ({ ...prev, [workflowId]: associatedFolderIds }));
+  const fetchWorkflowFolders = useCallback(
+    async (workflowId: string) => {
+      try {
+        // Get all folders and check which ones have this workflow
+        const res = await fetch(`${apiBaseUrl}/folders`, { headers });
+        if (res.ok) {
+          const allFolders = await res.json();
+          const associatedFolderIds = allFolders
+            .filter((folder: FolderWithWorkflows) => folder.workflow_ids?.includes(workflowId))
+            .map((folder: FolderWithWorkflows) => folder.id);
+          setWorkflowFolders(prev => ({ ...prev, [workflowId]: associatedFolderIds }));
+        }
+      } catch (error) {
+        console.error("Failed to fetch workflow folders:", error);
       }
-    } catch (error) {
-      console.error("Failed to fetch workflow folders:", error);
-    }
-  };
+    },
+    [apiBaseUrl, headers]
+  );
 
   const toggleFolderWorkflow = async (folderId: string, workflowId: string, isAssociated: boolean) => {
     try {
@@ -511,7 +514,11 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                 onClick={() => copyToClipboard(stringValue, `${key}-${depth}`)}
                 className="h-6 w-6 p-0"
               >
-                {isCopied ? <CheckCircle className="h-3 w-3 text-green-600 dark:text-green-400" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
+                {isCopied ? (
+                  <CheckCircle className="h-3 w-3 text-green-600 dark:text-green-400" />
+                ) : (
+                  <Copy className="h-3 w-3 text-muted-foreground" />
+                )}
               </Button>
             </div>
           </div>
@@ -525,7 +532,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                 <Textarea
                   value={stringValue}
                   readOnly
-                  className="min-h-[60px] resize-none bg-muted/30 dark:bg-muted/20 font-mono text-sm text-foreground border-border/50"
+                  className="min-h-[60px] resize-none border-border/50 bg-muted/30 font-mono text-sm text-foreground dark:bg-muted/20"
                 />
               )}
             </div>
@@ -541,34 +548,38 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
     switch (status) {
       case "completed":
         return (
-          <Badge variant="default" className="bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20">
+          <Badge variant="default" className="border-green-500/20 bg-green-500/10 text-green-700 dark:text-green-400">
             <CheckCircle className="mr-1 h-3 w-3" />
             Completed
           </Badge>
         );
       case "running":
         return (
-          <Badge variant="secondary" className="bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20">
+          <Badge variant="secondary" className="border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-400">
             <Loader2 className="mr-1 h-3 w-3 animate-spin" />
             Running
           </Badge>
         );
       case "failed":
         return (
-          <Badge variant="destructive" className="bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20">
+          <Badge variant="destructive" className="border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-400">
             <AlertCircle className="mr-1 h-3 w-3" />
             Failed
           </Badge>
         );
       case "queued":
         return (
-          <Badge variant="outline" className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20">
+          <Badge variant="outline" className="border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400">
             <Clock className="mr-1 h-3 w-3" />
             Queued
           </Badge>
         );
       default:
-        return <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-muted-foreground/20">{status}</Badge>;
+        return (
+          <Badge variant="outline" className="border-muted-foreground/20 bg-muted/50 text-muted-foreground">
+            {status}
+          </Badge>
+        );
     }
   };
 
@@ -583,7 +594,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
               <p className="text-muted-foreground">Create and manage document processing workflows</p>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={fetchWorkflows} className="hover:bg-accent transition-colors">
+              <Button variant="outline" onClick={fetchWorkflows} className="transition-colors hover:bg-accent">
                 <RefreshCcw className="mr-2 h-4 w-4" />
                 Refresh
               </Button>
@@ -593,7 +604,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                   setSelectedStepIndex(null);
                   setIsCreateOpen(true);
                 }}
-                className="bg-primary hover:bg-primary/90 transition-colors"
+                className="bg-primary transition-colors hover:bg-primary/90"
               >
                 <Plus className="mr-2 h-4 w-4" />
                 New Workflow
@@ -606,11 +617,11 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
               <div className="col-span-full">
                 <Card className="border-2 border-dashed border-muted-foreground/25 bg-muted/5 dark:bg-muted/10">
                   <CardContent className="flex flex-col items-center justify-center py-16">
-                    <div className="rounded-full bg-primary/10 p-4 mb-4">
+                    <div className="mb-4 rounded-full bg-primary/10 p-4">
                       <Layers className="h-12 w-12 text-primary" />
                     </div>
-                    <h3 className="text-lg font-semibold mb-2 text-foreground">No workflows yet</h3>
-                    <p className="text-center text-muted-foreground mb-6 max-w-sm">
+                    <h3 className="mb-2 text-lg font-semibold text-foreground">No workflows yet</h3>
+                    <p className="mb-6 max-w-sm text-center text-muted-foreground">
                       Create your first workflow to automate document processing
                     </p>
                     <Button
@@ -628,138 +639,151 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                 </Card>
               </div>
             ) : (
-              workflows.map(workflow => (
-              <Card
-                key={workflow.id}
-                className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.02] hover:border-primary/50 group bg-card border-border/50"
-                onClick={() => {
-                  setSelectedWorkflow(workflow);
-                  // Add the workflow ID to the URL
-                  const url = new URL(window.location.href);
-                  url.searchParams.set('id', workflow.id);
-                  window.history.pushState({}, '', url.toString());
-                }}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg text-foreground">{workflow.name}</CardTitle>
-                    <div className="flex gap-1">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-accent"
-                            onClick={e => {
-                              e.stopPropagation();
-                              setWorkflowForm({
-                                name: workflow.name,
-                                description: workflow.description || "",
-                                steps: workflow.steps,
-                              });
-                              setSelectedWorkflow(workflow);
-                              setIsEditOpen(true);
-                            }}
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Edit Workflow</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-accent"
-                            onClick={e => {
-                              e.stopPropagation();
-                              setRunningWorkflow(workflow);
-                              setIsRunOpen(true);
-                            }}
-                          >
-                            <Play className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Run Workflow</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-accent"
-                            onClick={async e => {
-                              e.stopPropagation();
-                              setSelectedWorkflowForFolder(workflow);
-                              await fetchWorkflowFolders(workflow.id);
-                              setIsFolderDialogOpen(true);
-                            }}
-                          >
-                            <FolderPlus className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Manage Folder Associations</TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-destructive/10 text-destructive"
-                            onClick={async e => {
-                              e.stopPropagation();
-                              if (window.confirm(`Are you sure you want to delete "${workflow.name}"? This will remove it from all folders and delete all associated data.`)) {
-                                try {
-                                  const res = await fetch(`${apiBaseUrl}/workflows/${workflow.id}`, {
-                                    method: "DELETE",
-                                    headers,
-                                  });
-                                  if (res.ok) {
-                                    await fetchWorkflows();
-                                    // If we're viewing this workflow, go back to list
-                                    if (selectedWorkflow?.id === workflow.id) {
-                                      setSelectedWorkflow(null);
-                                      // Clear the URL query parameter
-                                      const url = new URL(window.location.href);
-                                      url.searchParams.delete('id');
-                                      window.history.pushState({}, '', url.toString());
+              workflows.map((workflow: Workflow) => (
+                <Card
+                  key={workflow.id}
+                  className="group cursor-pointer border-border/50 bg-card transition-all duration-200 hover:scale-[1.02] hover:border-primary/50 hover:shadow-lg"
+                  onClick={() => {
+                    setSelectedWorkflow(workflow);
+                    // Add the workflow ID to the URL
+                    const url = new URL(window.location.href);
+                    url.searchParams.set("id", workflow.id);
+                    window.history.pushState({}, "", url.toString());
+                  }}
+                >
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg text-foreground">{workflow.name}</CardTitle>
+                      <div className="flex gap-1">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="opacity-0 transition-opacity duration-200 hover:bg-accent group-hover:opacity-100"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setWorkflowForm({
+                                  name: workflow.name,
+                                  description: workflow.description || "",
+                                  steps: workflow.steps,
+                                });
+                                setSelectedWorkflow(workflow);
+                                setIsEditOpen(true);
+                              }}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Edit Workflow</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="opacity-0 transition-opacity duration-200 hover:bg-accent group-hover:opacity-100"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setRunningWorkflow(workflow);
+                                setIsRunOpen(true);
+                              }}
+                            >
+                              <Play className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Run Workflow</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="opacity-0 transition-opacity duration-200 hover:bg-accent group-hover:opacity-100"
+                              onClick={async e => {
+                                e.stopPropagation();
+                                setSelectedWorkflowForFolder(workflow);
+                                await fetchWorkflowFolders(workflow.id);
+                                setIsFolderDialogOpen(true);
+                              }}
+                            >
+                              <FolderPlus className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Manage Folder Associations</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive opacity-0 transition-opacity duration-200 hover:bg-destructive/10 group-hover:opacity-100"
+                              onClick={async e => {
+                                e.stopPropagation();
+                                if (
+                                  window.confirm(
+                                    `Are you sure you want to delete "${workflow.name}"? This will remove it from all folders and delete all associated data.`
+                                  )
+                                ) {
+                                  try {
+                                    const res = await fetch(`${apiBaseUrl}/workflows/${workflow.id}`, {
+                                      method: "DELETE",
+                                      headers,
+                                    });
+                                    if (res.ok) {
+                                      await fetchWorkflows();
+                                      // If we're viewing this workflow, go back to list
+                                      const deletedWorkflowId = workflow.id;
+                                      const currentWorkflow = selectedWorkflow as Workflow | null;
+                                      if (currentWorkflow && currentWorkflow.id === deletedWorkflowId) {
+                                        setSelectedWorkflow(null);
+                                        // Clear the URL query parameter
+                                        const url = new URL(window.location.href);
+                                        url.searchParams.delete("id");
+                                        window.history.pushState({}, "", url.toString());
+                                      }
+                                    } else {
+                                      console.error("Failed to delete workflow");
                                     }
-                                  } else {
-                                    console.error("Failed to delete workflow");
+                                  } catch (error) {
+                                    console.error("Error deleting workflow:", error);
                                   }
-                                } catch (error) {
-                                  console.error("Error deleting workflow:", error);
                                 }
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Delete Workflow</TooltipContent>
-                      </Tooltip>
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Delete Workflow</TooltipContent>
+                        </Tooltip>
+                      </div>
                     </div>
-                  </div>
-                  {workflow.description && <CardDescription>{workflow.description}</CardDescription>}
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="secondary" className="text-xs bg-secondary/50 text-secondary-foreground border-secondary">
-                      {workflow.steps.length} step{workflow.steps.length !== 1 ? "s" : ""}
-                    </Badge>
-                    {workflow.steps.map((step, idx) => {
-                      const action = AVAILABLE_ACTIONS.find(a => a.id === step.action_id);
-                      return action ? (
-                        <Badge key={idx} variant="outline" className="text-xs bg-primary/5 text-primary border-primary/20">
-                          {action.name}
-                        </Badge>
-                      ) : null;
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+                    {workflow.description && <CardDescription>{workflow.description}</CardDescription>}
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge
+                        variant="secondary"
+                        className="border-secondary bg-secondary/50 text-xs text-secondary-foreground"
+                      >
+                        {workflow.steps.length} step{workflow.steps.length !== 1 ? "s" : ""}
+                      </Badge>
+                      {workflow.steps.map((step, idx) => {
+                        const action = AVAILABLE_ACTIONS.find(a => a.id === step.action_id);
+                        return action ? (
+                          <Badge
+                            key={idx}
+                            variant="outline"
+                            className="border-primary/20 bg-primary/5 text-xs text-primary"
+                          >
+                            {action.name}
+                          </Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
             )}
           </div>
 
@@ -794,14 +818,14 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                 <div className="pointer-events-auto flex-1 overflow-hidden bg-background shadow-2xl">
                   <div className="h-full">
                     {/* Header */}
-                    <div className="border-b bg-muted/50 dark:bg-muted/20 px-6 py-4">
+                    <div className="border-b bg-muted/50 px-6 py-4 dark:bg-muted/20">
                       <div>
                         <h2 className="mb-3 text-lg font-semibold text-foreground">Create New Workflow</h2>
                         <Input
                           value={workflowForm.name}
                           onChange={e => setWorkflowForm(prev => ({ ...prev, name: e.target.value }))}
                           placeholder="Enter workflow name..."
-                          className="mb-2 border-0 bg-background text-lg font-medium shadow-sm text-foreground"
+                          className="mb-2 border-0 bg-background text-lg font-medium text-foreground shadow-sm"
                         />
                         <Textarea
                           value={workflowForm.description}
@@ -823,11 +847,17 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                   <div className="rounded-full bg-primary/10 p-4">
                                     <Layers className="h-12 w-12 text-primary" />
                                   </div>
-                                  <h3 className="mt-4 text-lg font-semibold text-foreground">Start Building Your Workflow</h3>
+                                  <h3 className="mt-4 text-lg font-semibold text-foreground">
+                                    Start Building Your Workflow
+                                  </h3>
                                   <p className="mt-2 text-center text-sm text-muted-foreground">
                                     Add actions to process your documents automatically
                                   </p>
-                                  <Button onClick={addStep} className="mt-6 bg-primary hover:bg-primary/90 transition-colors" size="lg">
+                                  <Button
+                                    onClick={addStep}
+                                    className="mt-6 bg-primary transition-colors hover:bg-primary/90"
+                                    size="lg"
+                                  >
                                     <Plus className="mr-2 h-4 w-4" />
                                     Add First Step
                                   </Button>
@@ -843,15 +873,17 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                 return (
                                   <div key={index} className="relative">
                                     {/* Connection Line */}
-                                    {index > 0 && <div className="absolute -top-4 left-8 h-4 w-0.5 bg-gradient-to-b from-transparent via-border to-border" />}
+                                    {index > 0 && (
+                                      <div className="absolute -top-4 left-8 h-4 w-0.5 bg-gradient-to-b from-transparent via-border to-border" />
+                                    )}
 
                                     {/* Step Node */}
                                     <div
                                       className={cn(
                                         "group relative cursor-pointer rounded-lg border-2 bg-card p-4 transition-all duration-200",
                                         isSelected
-                                          ? "border-primary shadow-lg scale-[1.02] bg-primary/5"
-                                          : "border-border hover:border-primary/50 hover:shadow-md hover:bg-muted/50"
+                                          ? "scale-[1.02] border-primary bg-primary/5 shadow-lg"
+                                          : "border-border hover:border-primary/50 hover:bg-muted/50 hover:shadow-md"
                                       )}
                                       onClick={() => setSelectedStepIndex(index)}
                                     >
@@ -863,12 +895,14 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                       </div>
 
                                       {/* Step Number */}
-                                      <div className={cn(
-                                        "absolute -left-5 top-4 flex h-10 w-10 items-center justify-center rounded-full border-2 text-sm font-medium transition-all duration-200",
-                                        isSelected
-                                          ? "border-primary bg-primary text-primary-foreground"
-                                          : "border-border bg-background group-hover:border-primary/50"
-                                      )}>
+                                      <div
+                                        className={cn(
+                                          "absolute -left-5 top-4 flex h-10 w-10 items-center justify-center rounded-full border-2 text-sm font-medium transition-all duration-200",
+                                          isSelected
+                                            ? "border-primary bg-primary text-primary-foreground"
+                                            : "border-border bg-background group-hover:border-primary/50"
+                                        )}
+                                      >
                                         {index + 1}
                                       </div>
 
@@ -892,7 +926,9 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                               </div>
                                             )}
                                             <div>
-                                              <h4 className="font-medium text-foreground">{action?.name || "Unknown Action"}</h4>
+                                              <h4 className="font-medium text-foreground">
+                                                {action?.name || "Unknown Action"}
+                                              </h4>
                                               <p className="text-sm text-muted-foreground">{action?.description}</p>
                                             </div>
                                           </div>
@@ -908,7 +944,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                                 setSelectedStepIndex(null);
                                               }
                                             }}
-                                            className="opacity-0 transition-all duration-200 group-hover:opacity-100 hover:bg-destructive/10"
+                                            className="opacity-0 transition-all duration-200 hover:bg-destructive/10 group-hover:opacity-100"
                                           >
                                             <Trash2 className="h-4 w-4 text-destructive" />
                                           </Button>
@@ -955,7 +991,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                 <Button
                                   variant="outline"
                                   onClick={addStep}
-                                  className="ml-3 border-dashed border-2 hover:border-primary hover:bg-primary/5 transition-all duration-200"
+                                  className="ml-3 border-2 border-dashed transition-all duration-200 hover:border-primary hover:bg-primary/5"
                                 >
                                   <Plus className="mr-2 h-4 w-4" />
                                   Add Step
@@ -968,7 +1004,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                     </div>
 
                     {/* Bottom Actions */}
-                    <div className="absolute bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur-sm p-4">
+                    <div className="absolute bottom-0 left-0 right-0 border-t bg-background/95 p-4 backdrop-blur-sm">
                       <div className="flex justify-end gap-2">
                         <Button
                           variant="outline"
@@ -977,14 +1013,14 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                             setWorkflowForm({ name: "", description: "", steps: [] });
                             setSelectedStepIndex(null);
                           }}
-                          className="hover:bg-accent transition-colors"
+                          className="transition-colors hover:bg-accent"
                         >
                           Cancel
                         </Button>
                         <Button
                           onClick={createWorkflow}
                           disabled={!workflowForm.name.trim() || workflowForm.steps.length === 0}
-                          className="bg-primary hover:bg-primary/90 transition-colors"
+                          className="bg-primary transition-colors hover:bg-primary/90"
                         >
                           Create Workflow
                         </Button>
@@ -995,12 +1031,14 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
 
                 {/* Right Panel - Step Configuration */}
                 {selectedStepIndex !== null && workflowForm.steps[selectedStepIndex] && (
-                  <div className={cn(
-                    "pointer-events-auto border-l bg-background shadow-xl transition-all duration-300",
-                    isConfigPanelExpanded ? "w-[600px]" : "w-96"
-                  )}>
+                  <div
+                    className={cn(
+                      "pointer-events-auto border-l bg-background shadow-xl transition-all duration-300",
+                      isConfigPanelExpanded ? "w-[600px]" : "w-96"
+                    )}
+                  >
                     <div className="h-full overflow-y-auto p-6">
-                      <div className="flex items-center justify-between mb-4">
+                      <div className="mb-4 flex items-center justify-between">
                         <h3 className="text-lg font-medium text-foreground">Configure Step {selectedStepIndex + 1}</h3>
                         <Button
                           variant="ghost"
@@ -1008,7 +1046,11 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                           onClick={() => setIsConfigPanelExpanded(!isConfigPanelExpanded)}
                           className="hover:bg-accent"
                         >
-                          {isConfigPanelExpanded ? <ChevronRight className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
+                          {isConfigPanelExpanded ? (
+                            <ChevronRight className="h-4 w-4" />
+                          ) : (
+                            <ArrowLeft className="h-4 w-4" />
+                          )}
                         </Button>
                       </div>
 
@@ -1025,12 +1067,16 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                               });
                             }}
                           >
-                            <SelectTrigger className="bg-background border-input">
+                            <SelectTrigger className="border-input bg-background">
                               <SelectValue placeholder="Select an action" />
                             </SelectTrigger>
-                            <SelectContent className="bg-popover border-border">
+                            <SelectContent className="border-border bg-popover">
                               {AVAILABLE_ACTIONS.map(action => (
-                                <SelectItem key={action.id} value={action.id} className="hover:bg-accent focus:bg-accent">
+                                <SelectItem
+                                  key={action.id}
+                                  value={action.id}
+                                  className="hover:bg-accent focus:bg-accent"
+                                >
                                   <div className="flex items-center gap-2">
                                     {action.id.includes("extract") && <FileJson className="h-4 w-4 text-blue-500" />}
                                     {action.id.includes("instruction") && <Edit2 className="h-4 w-4 text-purple-500" />}
@@ -1075,8 +1121,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                           </div>
                         )}
 
-                        {workflowForm.steps[selectedStepIndex].action_id ===
-                          "morphik.actions.save_to_metadata" && (
+                        {workflowForm.steps[selectedStepIndex].action_id === "morphik.actions.save_to_metadata" && (
                           <div className="space-y-4">
                             <div>
                               <Label>Metadata Key</Label>
@@ -1099,7 +1144,9 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                             <div>
                               <Label>Data Source</Label>
                               <Select
-                                value={(workflowForm.steps[selectedStepIndex].parameters.source as string) || "previous_step"}
+                                value={
+                                  (workflowForm.steps[selectedStepIndex].parameters.source as string) || "previous_step"
+                                }
                                 onValueChange={value =>
                                   updateStep(selectedStepIndex, {
                                     parameters: {
@@ -1118,13 +1165,16 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                 </SelectContent>
                               </Select>
                               <p className="mt-1 text-xs text-muted-foreground">
-                                Choose whether to save only the previous step's output or all steps' outputs.
+                                Choose whether to save only the previous step&rsquo;s output or all steps&rsquo;
+                                outputs.
                               </p>
                             </div>
                             <div>
                               <Label>Save Mode</Label>
                               <Select
-                                value={(workflowForm.steps[selectedStepIndex].parameters.merge_mode as string) || "nested"}
+                                value={
+                                  (workflowForm.steps[selectedStepIndex].parameters.merge_mode as string) || "nested"
+                                }
                                 onValueChange={value =>
                                   updateStep(selectedStepIndex, {
                                     parameters: {
@@ -1143,7 +1193,8 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                 </SelectContent>
                               </Select>
                               <p className="mt-1 text-xs text-muted-foreground">
-                                Choose whether to save under a specific key or merge extracted fields at the top level of metadata.
+                                Choose whether to save under a specific key or merge extracted fields at the top level
+                                of metadata.
                               </p>
                             </div>
                           </div>
@@ -1162,12 +1213,13 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
               <DialogHeader>
                 <DialogTitle>Manage Folder Associations</DialogTitle>
                 <DialogDescription>
-                  Select folders to automatically run "{selectedWorkflowForFolder?.name}" when documents are added
+                  Select folders to automatically run &ldquo;{selectedWorkflowForFolder?.name}&rdquo; when documents are
+                  added
                 </DialogDescription>
               </DialogHeader>
-              <div className="max-h-[400px] overflow-y-auto space-y-2 py-4">
+              <div className="max-h-[400px] space-y-2 overflow-y-auto py-4">
                 {folders.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">No folders available</p>
+                  <p className="py-8 text-center text-muted-foreground">No folders available</p>
                 ) : (
                   folders.map(folder => {
                     const isAssociated = selectedWorkflowForFolder
@@ -1188,11 +1240,13 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                       >
                         <CardContent className="flex items-center justify-between p-4">
                           <div className="flex items-center gap-3">
-                            <Folder className={cn("h-5 w-5", isAssociated ? "text-primary" : "text-muted-foreground")} />
+                            <Folder
+                              className={cn("h-5 w-5", isAssociated ? "text-primary" : "text-muted-foreground")}
+                            />
                             <div>
                               <p className="font-medium">{folder.name}</p>
                               <p className="text-sm text-muted-foreground">
-                                {folder.document_count} document{folder.document_count !== 1 ? 's' : ''}
+                                {folder.document_count} document{folder.document_count !== 1 ? "s" : ""}
                               </p>
                             </div>
                           </div>
@@ -1225,10 +1279,10 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
               setSelectedWorkflow(null);
               // Clear the URL query parameter
               const url = new URL(window.location.href);
-              url.searchParams.delete('id');
-              window.history.pushState({}, '', url.toString());
+              url.searchParams.delete("id");
+              window.history.pushState({}, "", url.toString());
             }}
-            className="p-2 hover:bg-accent transition-colors"
+            className="p-2 transition-colors hover:bg-accent"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -1237,7 +1291,11 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
             {selectedWorkflow.description && <p className="text-muted-foreground">{selectedWorkflow.description}</p>}
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => fetchWorkflowRuns(selectedWorkflow.id)} className="hover:bg-accent transition-colors">
+            <Button
+              variant="outline"
+              onClick={() => fetchWorkflowRuns(selectedWorkflow.id)}
+              className="transition-colors hover:bg-accent"
+            >
               <RefreshCcw className="mr-2 h-4 w-4" />
               Refresh
             </Button>
@@ -1251,7 +1309,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                 });
                 setIsEditOpen(true);
               }}
-              className="hover:bg-accent transition-colors"
+              className="transition-colors hover:bg-accent"
             >
               <Edit2 className="mr-2 h-4 w-4" />
               Edit
@@ -1261,7 +1319,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                 setRunningWorkflow(selectedWorkflow);
                 setIsRunOpen(true);
               }}
-              className="bg-primary hover:bg-primary/90 transition-colors"
+              className="bg-primary transition-colors hover:bg-primary/90"
             >
               <Play className="mr-2 h-4 w-4" />
               Run on Documents
@@ -1270,7 +1328,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
         </div>
 
         {/* Workflow Steps Visualization */}
-        <Card className="bg-card border-border/50">
+        <Card className="border-border/50 bg-card">
           <CardHeader>
             <CardTitle className="text-foreground">Workflow Steps</CardTitle>
             <CardDescription>
@@ -1285,27 +1343,30 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                 return (
                   <React.Fragment key={index}>
                     <div className="flex-shrink-0">
-                      <Card className="w-64 transition-all duration-200 hover:shadow-md hover:scale-105 bg-card border-border/50">
+                      <Card className="w-64 border-border/50 bg-card transition-all duration-200 hover:scale-105 hover:shadow-md">
                         <CardHeader className="pb-2">
                           <div className="flex items-center gap-2">
-                            <div className={cn(
-                              "flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold",
-                              action?.id.includes("extract") && "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-                              action?.id.includes("instruction") && "bg-purple-500/10 text-purple-600 dark:text-purple-400",
-                              action?.id.includes("save") && "bg-green-500/10 text-green-600 dark:text-green-400"
-                            )}>
+                            <div
+                              className={cn(
+                                "flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold",
+                                action?.id.includes("extract") && "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+                                action?.id.includes("instruction") &&
+                                  "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+                                action?.id.includes("save") && "bg-green-500/10 text-green-600 dark:text-green-400"
+                              )}
+                            >
                               {index + 1}
                             </div>
                             <CardTitle className="text-sm text-foreground">{action?.name}</CardTitle>
                           </div>
                         </CardHeader>
                         <CardContent className="pt-2">
-                          <p className="text-xs text-muted-foreground line-clamp-2">{action?.description}</p>
+                          <p className="line-clamp-2 text-xs text-muted-foreground">{action?.description}</p>
                         </CardContent>
                       </Card>
                     </div>
                     {index < selectedWorkflow.steps.length - 1 && (
-                      <ChevronRight className="h-5 w-5 flex-shrink-0 text-muted-foreground/70 animate-pulse" />
+                      <ChevronRight className="h-5 w-5 flex-shrink-0 animate-pulse text-muted-foreground/70" />
                     )}
                   </React.Fragment>
                 );
@@ -1314,7 +1375,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
           </CardContent>
         </Card>
 
-        <Card className="overflow-hidden bg-card border-border/50">
+        <Card className="overflow-hidden border-border/50 bg-card">
           <CardHeader>
             <CardTitle>Workflow Runs</CardTitle>
             <CardDescription>All executions of this workflow on different documents</CardDescription>
@@ -1331,7 +1392,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
               <div className="relative rounded-md border border-border/50">
                 <div className="max-h-[600px] overflow-y-auto">
                   <Table>
-                    <TableHeader className="sticky top-0 z-10 bg-background border-b">
+                    <TableHeader className="sticky top-0 z-10 border-b bg-background">
                       <TableRow>
                         <TableHead className="w-[40%] py-3 text-foreground">Document</TableHead>
                         <TableHead className="w-[20%] py-3 text-foreground">Date</TableHead>
@@ -1347,7 +1408,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
 
                         return (
                           <React.Fragment key={run.id}>
-                            <TableRow className="hover:bg-muted/30 transition-colors">
+                            <TableRow className="transition-colors hover:bg-muted/30">
                               <TableCell className="py-4 font-medium">
                                 <div className="flex items-center gap-2">
                                   <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
@@ -1368,10 +1429,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                 <div className="flex items-center gap-2">
                                   {getStatusBadge(run.status)}
                                   {run.status === "running" && (
-                                    <Progress
-                                      value={progress}
-                                      className="h-2 w-20 bg-muted"
-                                    />
+                                    <Progress value={progress} className="h-2 w-20 bg-muted" />
                                   )}
                                 </div>
                               </TableCell>
@@ -1390,7 +1448,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                       return newSet;
                                     })
                                   }
-                                  className="hover:bg-accent transition-colors"
+                                  className="transition-colors hover:bg-accent"
                                 >
                                   {isExpanded ? (
                                     <>
@@ -1409,12 +1467,20 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                             {isExpanded && (
                               <TableRow>
                                 <TableCell colSpan={4} className="p-0">
-                                  <div className="border-t bg-muted/20 dark:bg-muted/10 p-6">
+                                  <div className="border-t bg-muted/20 p-6 dark:bg-muted/10">
                                     <Tabs defaultValue="output" className="w-full">
                                       <TabsList className="grid w-full max-w-[400px] grid-cols-3 bg-muted">
-                                        <TabsTrigger value="output" className="data-[state=active]:bg-background">Output</TabsTrigger>
-                                        <TabsTrigger value="steps" className="data-[state=active]:bg-background">Step Results</TabsTrigger>
-                                        <TabsTrigger value="error" disabled={!run.error} className="data-[state=active]:bg-background">
+                                        <TabsTrigger value="output" className="data-[state=active]:bg-background">
+                                          Output
+                                        </TabsTrigger>
+                                        <TabsTrigger value="steps" className="data-[state=active]:bg-background">
+                                          Step Results
+                                        </TabsTrigger>
+                                        <TabsTrigger
+                                          value="error"
+                                          disabled={!run.error}
+                                          className="data-[state=active]:bg-background"
+                                        >
                                           Error Details
                                         </TabsTrigger>
                                       </TabsList>
@@ -1428,7 +1494,10 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                             Processing document...
                                           </div>
                                         ) : run.status === "failed" ? (
-                                          <Alert variant="destructive" className="border-destructive/50 bg-destructive/10">
+                                          <Alert
+                                            variant="destructive"
+                                            className="border-destructive/50 bg-destructive/10"
+                                          >
                                             <AlertCircle className="h-4 w-4" />
                                             <AlertTitle>Execution Failed</AlertTitle>
                                             <AlertDescription>
@@ -1448,13 +1517,18 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                               const step = selectedWorkflow.steps[idx];
                                               const action = AVAILABLE_ACTIONS.find(a => a.id === step?.action_id);
                                               return (
-                                                <Card key={idx} className="bg-card border-border/50">
+                                                <Card key={idx} className="border-border/50 bg-card">
                                                   <CardHeader className="pb-2">
                                                     <div className="flex items-center gap-2">
-                                                      <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/20">
+                                                      <Badge
+                                                        variant="outline"
+                                                        className="border-primary/20 bg-primary/10 text-xs text-primary"
+                                                      >
                                                         Step {idx + 1}
                                                       </Badge>
-                                                      <span className="text-sm font-medium text-foreground">{action?.name}</span>
+                                                      <span className="text-sm font-medium text-foreground">
+                                                        {action?.name}
+                                                      </span>
                                                     </div>
                                                   </CardHeader>
                                                   <CardContent>
@@ -1473,11 +1547,14 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
 
                                       <TabsContent value="error" className="mt-4">
                                         {run.error && (
-                                          <Alert variant="destructive" className="border-destructive/50 bg-destructive/10">
+                                          <Alert
+                                            variant="destructive"
+                                            className="border-destructive/50 bg-destructive/10"
+                                          >
                                             <AlertCircle className="h-4 w-4" />
                                             <AlertTitle>Error Details</AlertTitle>
                                             <AlertDescription className="mt-2">
-                                              <pre className="overflow-x-auto whitespace-pre-wrap text-xs font-mono">
+                                              <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-xs">
                                                 {run.error}
                                               </pre>
                                             </AlertDescription>
@@ -1615,7 +1692,9 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                           )}
                                           {action?.id.includes("save") && <Save className="h-5 w-5 text-green-500" />}
                                           <div>
-                                            <h4 className="font-medium text-foreground">{action?.name || "Unknown Action"}</h4>
+                                            <h4 className="font-medium text-foreground">
+                                              {action?.name || "Unknown Action"}
+                                            </h4>
                                             <p className="text-sm text-muted-foreground">{action?.description}</p>
                                           </div>
                                         </div>
@@ -1631,7 +1710,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                               setSelectedStepIndex(null);
                                             }
                                           }}
-                                          className="opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10"
+                                          className="opacity-0 transition-opacity hover:bg-destructive/10 group-hover:opacity-100"
                                         >
                                           <Trash2 className="h-4 w-4 text-destructive" />
                                         </Button>
@@ -1674,7 +1753,11 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                               {workflowForm.steps.length > 0 && (
                                 <div className="absolute left-8 top-0 h-4 w-0.5 bg-border/50" />
                               )}
-                              <Button variant="outline" onClick={addStep} className="ml-3 border-dashed hover:bg-accent hover:border-primary/50 transition-all">
+                              <Button
+                                variant="outline"
+                                onClick={addStep}
+                                className="ml-3 border-dashed transition-all hover:border-primary/50 hover:bg-accent"
+                              >
                                 <Plus className="mr-2 h-4 w-4" />
                                 Add Step
                               </Button>
@@ -1704,12 +1787,14 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
 
               {/* Right Panel - Step Configuration */}
               {selectedStepIndex !== null && workflowForm.steps[selectedStepIndex] && (
-                <div className={cn(
-                  "pointer-events-auto border-l bg-background shadow-xl transition-all duration-300",
-                  isConfigPanelExpanded ? "w-[600px]" : "w-96"
-                )}>
+                <div
+                  className={cn(
+                    "pointer-events-auto border-l bg-background shadow-xl transition-all duration-300",
+                    isConfigPanelExpanded ? "w-[600px]" : "w-96"
+                  )}
+                >
                   <div className="h-full overflow-y-auto p-6">
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="mb-4 flex items-center justify-between">
                       <h3 className="text-lg font-medium text-foreground">Configure Step {selectedStepIndex + 1}</h3>
                       <Button
                         variant="ghost"
@@ -1717,7 +1802,11 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                         onClick={() => setIsConfigPanelExpanded(!isConfigPanelExpanded)}
                         className="hover:bg-accent"
                       >
-                        {isConfigPanelExpanded ? <ChevronRight className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
+                        {isConfigPanelExpanded ? (
+                          <ChevronRight className="h-4 w-4" />
+                        ) : (
+                          <ArrowLeft className="h-4 w-4" />
+                        )}
                       </Button>
                     </div>
 
@@ -1784,8 +1873,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                         </div>
                       )}
 
-                      {workflowForm.steps[selectedStepIndex].action_id ===
-                        "morphik.actions.save_to_metadata" && (
+                      {workflowForm.steps[selectedStepIndex].action_id === "morphik.actions.save_to_metadata" && (
                         <div className="space-y-4">
                           <div>
                             <Label>Metadata Key</Label>
@@ -1808,7 +1896,9 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                           <div>
                             <Label>Data Source</Label>
                             <Select
-                              value={(workflowForm.steps[selectedStepIndex].parameters.source as string) || "previous_step"}
+                              value={
+                                (workflowForm.steps[selectedStepIndex].parameters.source as string) || "previous_step"
+                              }
                               onValueChange={value =>
                                 updateStep(selectedStepIndex, {
                                   parameters: {
@@ -1827,13 +1917,15 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                               </SelectContent>
                             </Select>
                             <p className="mt-1 text-xs text-muted-foreground">
-                              Choose whether to save only the previous step's output or all steps' outputs.
+                              Choose whether to save only the previous step&rsquo;s output or all steps&rsquo; outputs.
                             </p>
                           </div>
                           <div>
                             <Label>Save Mode</Label>
                             <Select
-                              value={(workflowForm.steps[selectedStepIndex].parameters.merge_mode as string) || "nested"}
+                              value={
+                                (workflowForm.steps[selectedStepIndex].parameters.merge_mode as string) || "nested"
+                              }
                               onValueChange={value =>
                                 updateStep(selectedStepIndex, {
                                   parameters: {
@@ -1852,7 +1944,8 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                               </SelectContent>
                             </Select>
                             <p className="mt-1 text-xs text-muted-foreground">
-                              Choose whether to save under a specific key or merge extracted fields at the top level of metadata.
+                              Choose whether to save under a specific key or merge extracted fields at the top level of
+                              metadata.
                             </p>
                           </div>
                         </div>
@@ -1962,7 +2055,7 @@ const ExtractStructuredParams: React.FC<{
                 value={field.name}
                 onChange={e => updateField(index, { name: e.target.value })}
                 placeholder="e.g., amount"
-                className="h-8 bg-background border-input"
+                className="h-8 border-input bg-background"
               />
             </div>
             <div className="w-32">
@@ -1971,10 +2064,10 @@ const ExtractStructuredParams: React.FC<{
                 value={field.type}
                 onValueChange={value => updateField(index, { type: value as SchemaField["type"] })}
               >
-                <SelectTrigger className="h-8 bg-background border-input">
+                <SelectTrigger className="h-8 border-input bg-background">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-popover border-border">
+                <SelectContent className="border-border bg-popover">
                   <SelectItem value="string">Text</SelectItem>
                   <SelectItem value="number">Number</SelectItem>
                   <SelectItem value="boolean">True/False</SelectItem>
@@ -1989,7 +2082,7 @@ const ExtractStructuredParams: React.FC<{
                 value={field.description || ""}
                 onChange={e => updateField(index, { description: e.target.value })}
                 placeholder="What to extract..."
-                className="h-8 bg-background border-input"
+                className="h-8 border-input bg-background"
               />
             </div>
             <div className="flex items-center gap-2">
@@ -2007,7 +2100,12 @@ const ExtractStructuredParams: React.FC<{
                 </TooltipTrigger>
                 <TooltipContent>Required field</TooltipContent>
               </Tooltip>
-              <Button variant="ghost" size="sm" onClick={() => removeField(index)} className="h-8 w-8 p-0 hover:bg-destructive/10 transition-colors">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => removeField(index)}
+                className="h-8 w-8 p-0 transition-colors hover:bg-destructive/10"
+              >
                 <Trash2 className="h-3 w-3" />
               </Button>
             </div>
@@ -2032,7 +2130,7 @@ const RunWorkflowDialog: React.FC<{
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden bg-background border-border">
+      <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden border-border bg-background">
         <DialogHeader>
           <DialogTitle className="text-foreground">Run Workflow: {workflow.name}</DialogTitle>
         </DialogHeader>
@@ -2041,17 +2139,27 @@ const RunWorkflowDialog: React.FC<{
             <div className="flex items-center justify-between px-1">
               <Label className="text-foreground">Select Documents ({selectedDocIds.length} selected)</Label>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => setSelectedDocIds(docs.map(d => d.external_id))} className="hover:bg-accent transition-colors">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedDocIds(docs.map(d => d.external_id))}
+                  className="transition-colors hover:bg-accent"
+                >
                   Select All
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setSelectedDocIds([])} className="hover:bg-accent transition-colors">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedDocIds([])}
+                  className="transition-colors hover:bg-accent"
+                >
                   Clear
                 </Button>
               </div>
             </div>
             <div className="h-64 overflow-y-auto rounded-md border border-border/50">
               <Table>
-                <TableHeader className="sticky top-0 bg-background border-b">
+                <TableHeader className="sticky top-0 border-b bg-background">
                   <TableRow>
                     <TableHead className="w-[50px] py-3 text-foreground">Select</TableHead>
                     <TableHead className="py-3 text-foreground">Document Name</TableHead>
@@ -2064,7 +2172,7 @@ const RunWorkflowDialog: React.FC<{
                     return (
                       <TableRow
                         key={doc.external_id}
-                        className="cursor-pointer hover:bg-muted/30 transition-colors"
+                        className="cursor-pointer transition-colors hover:bg-muted/30"
                         onClick={() => {
                           setSelectedDocIds(
                             checked
