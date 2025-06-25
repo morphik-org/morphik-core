@@ -119,7 +119,10 @@ class DocumentService:
             return None
 
     async def _queue_folder_workflows(self, folder: Folder, document_id: str, auth: AuthContext) -> None:
-        """Queue all workflows associated with a folder for a newly added document.
+        """Note which workflows need to run for a document added to a folder.
+
+        NOTE: This method no longer queues workflows. Actual execution happens after
+        document processing completes via execute_pending_workflows().
 
         Args:
             folder: The folder containing workflows
@@ -129,34 +132,68 @@ class DocumentService:
         if not folder.workflow_ids:
             return
 
+        # Just log that workflows will be executed later
+        logger.info(
+            f"Document {document_id} added to folder {folder.name} with {len(folder.workflow_ids)} workflows. "
+            f"Workflows will execute after processing completes."
+        )
+
+    async def execute_pending_workflows(self, document_id: str, auth: AuthContext) -> None:
+        """Execute all pending workflow runs for a document after processing is complete.
+
+        This is called from the ingestion worker after document processing completes.
+        It finds any workflows that were queued during folder operations and executes them.
+
+        Args:
+            document_id: ID of the document that just finished processing
+            auth: Authentication context
+        """
         try:
-            # Import workflow service locally to avoid circular dependency
-            from core.services_init import workflow_service
+            # Get the document to find its folder
+            doc = await self.db.get_document(document_id, auth)
+            if not doc:
+                logger.warning(f"Document {document_id} not found when trying to execute workflows")
+                return
+
+            folder_name = doc.system_metadata.get("folder_name")
+            if not folder_name:
+                logger.debug(f"Document {document_id} has no folder, no workflows to execute")
+                return
+
+            # Get the folder
+            folder = await self.db.get_folder_by_name(folder_name, auth)
+            if not folder or not folder.workflow_ids:
+                logger.debug(f"No workflows found for folder {folder_name}")
+                return
+
+            # Import workflow service
+            try:
+                from core.services_init import workflow_service
+            except Exception as import_error:
+                logger.error(f"Failed to import workflow service: {import_error}")
+                from core.services.workflow_service import WorkflowService
+
+                workflow_service = WorkflowService(database=self.db, document_service_ref=self)
 
             logger.info(
-                f"Queueing {len(folder.workflow_ids)} workflows for document {document_id} in folder {folder.name}"
+                f"Executing {len(folder.workflow_ids)} workflows for document {document_id} in folder {folder_name}"
             )
 
+            # Queue and execute each workflow
             for workflow_id in folder.workflow_ids:
                 try:
-                    # Queue the workflow run
+                    # Queue and execute the workflow
                     run = await workflow_service.queue_workflow_run(workflow_id, document_id, auth)
-                    logger.info(f"Queued workflow {workflow_id} for document {document_id}, run ID: {run.id}")
-
-                    # Execute workflow directly since we don't have access to request/Redis pool here
-                    # TODO: Consider passing Redis pool as a parameter if async execution is needed
-                    import asyncio
-
-                    asyncio.create_task(workflow_service.execute_workflow_run(run.id, auth))
-                    logger.info(f"Started workflow execution task for run {run.id}")
-
+                    logger.info(f"Executing workflow {workflow_id} for document {document_id}, run ID: {run.id}")
+                    await workflow_service.execute_workflow_run(run.id, auth)
+                    logger.info(f"Completed workflow execution for run {run.id}")
                 except Exception as e:
-                    logger.error(f"Failed to queue workflow {workflow_id} for document {document_id}: {e}")
-                    # Continue with other workflows even if one fails
+                    logger.error(f"Failed to execute workflow {workflow_id} for document {document_id}: {e}")
+                    # Continue with other workflows
 
         except Exception as e:
-            logger.error(f"Error queueing folder workflows: {e}")
-            # Don't raise - we don't want to fail document ingestion due to workflow errors
+            logger.error(f"Error executing pending workflows for document {document_id}: {e}")
+            # Don't raise - workflow failures shouldn't break anything else
 
     def __init__(
         self,

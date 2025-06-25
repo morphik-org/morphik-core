@@ -20,11 +20,9 @@ import {
   ChevronRight,
   Layers,
   FileJson,
-  Save,
   Info,
   Eye,
   EyeOff,
-  Grip,
   FolderPlus,
   Folder,
 } from "lucide-react";
@@ -33,12 +31,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { WorkflowCreateDialog } from "./WorkflowCreateDialog";
+import { WorkflowEditDialog } from "./WorkflowEditDialog";
 
 interface WorkflowSectionProps {
   apiBaseUrl: string;
@@ -162,7 +161,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isRunOpen, setIsRunOpen] = useState(false);
-  const [selectedStepIndex, setSelectedStepIndex] = useState<number | null>(null);
+  const [, setSelectedStepIndex] = useState<number | null>(null);
   const [runningWorkflow, setRunningWorkflow] = useState<Workflow | null>(null);
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
   const [copiedField, setCopiedField] = useState<string>("");
@@ -174,7 +173,6 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
   const [isFolderDialogOpen, setIsFolderDialogOpen] = useState(false);
   const [selectedWorkflowForFolder, setSelectedWorkflowForFolder] = useState<Workflow | null>(null);
   const [workflowFolders, setWorkflowFolders] = useState<{ [key: string]: string[] }>({});
-  const [isConfigPanelExpanded, setIsConfigPanelExpanded] = useState(false);
   const [isWorkflowStepsExpanded, setIsWorkflowStepsExpanded] = useState(true);
 
   // Form states for workflow creation/editing
@@ -367,27 +365,6 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
       Object.values(pollingIntervals).forEach(interval => clearInterval(interval));
     };
   }, [pollingIntervals]);
-
-  const addStep = () => {
-    setWorkflowForm(prev => ({
-      ...prev,
-      steps: [...prev.steps, { action_id: AVAILABLE_ACTIONS[0].id, parameters: {} }],
-    }));
-  };
-
-  const updateStep = (index: number, updates: Partial<ConfiguredAction>) => {
-    setWorkflowForm(prev => ({
-      ...prev,
-      steps: prev.steps.map((step, i) => (i === index ? { ...step, ...updates } : step)),
-    }));
-  };
-
-  const removeStep = (index: number) => {
-    setWorkflowForm(prev => ({
-      ...prev,
-      steps: prev.steps.filter((_, i) => i !== index),
-    }));
-  };
 
   const createWorkflow = async () => {
     if (!workflowForm.name.trim() || workflowForm.steps.length === 0) return;
@@ -805,385 +782,27 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
             isRunning={isRunning}
           />
 
-          {/* Create Workflow Sidebar */}
-          {isCreateOpen && (
-            <div className="fixed inset-0 z-50 flex">
-              {/* Backdrop - Click to close */}
-              <div
-                className="absolute inset-0 cursor-pointer bg-black/60 backdrop-blur-sm"
-                onClick={() => {
-                  setIsCreateOpen(false);
-                  setWorkflowForm({ name: "", description: "", steps: [] });
-                  setSelectedStepIndex(null);
-                }}
-              />
+          {/* Create Workflow Dialog */}
+          <WorkflowCreateDialog
+            isOpen={isCreateOpen}
+            onClose={() => setIsCreateOpen(false)}
+            workflowForm={workflowForm}
+            setWorkflowForm={setWorkflowForm}
+            availableActions={AVAILABLE_ACTIONS}
+            onCreateWorkflow={createWorkflow}
+            ExtractStructuredParams={ExtractStructuredParams}
+          />
 
-              {/* Main Content Area */}
-              <div className="pointer-events-none relative flex h-full w-full">
-                {/* Left Panel - Workflow Canvas */}
-                <div className="pointer-events-auto flex-1 overflow-hidden bg-background shadow-2xl">
-                  <div className="h-full">
-                    {/* Header */}
-                    <div className="border-b bg-muted/50 px-6 py-4 dark:bg-muted/20">
-                      <div>
-                        <h2 className="mb-3 text-lg font-semibold text-foreground">Create New Workflow</h2>
-                        <Input
-                          value={workflowForm.name}
-                          onChange={e => setWorkflowForm(prev => ({ ...prev, name: e.target.value }))}
-                          placeholder="Enter workflow name..."
-                          className="mb-2 border-0 bg-background text-lg font-medium text-foreground shadow-sm"
-                        />
-                        <Textarea
-                          value={workflowForm.description}
-                          onChange={e => setWorkflowForm(prev => ({ ...prev, description: e.target.value }))}
-                          placeholder="Describe what this workflow does..."
-                          className="h-16 resize-none border-0 bg-background text-sm text-muted-foreground shadow-sm"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Main Canvas */}
-                    <div className="p-6">
-                      <ScrollArea className="h-[calc(100vh-280px)]">
-                        <div className="relative min-h-full pb-20">
-                          {workflowForm.steps.length === 0 ? (
-                            <div className="flex h-[400px] items-center justify-center">
-                              <Card className="border-2 border-dashed border-muted-foreground/25 bg-card dark:bg-muted/10">
-                                <CardContent className="flex flex-col items-center justify-center p-16">
-                                  <div className="rounded-full bg-primary/10 p-4">
-                                    <Layers className="h-12 w-12 text-primary" />
-                                  </div>
-                                  <h3 className="mt-4 text-lg font-semibold text-foreground">
-                                    Start Building Your Workflow
-                                  </h3>
-                                  <p className="mt-2 text-center text-sm text-muted-foreground">
-                                    Add actions to process your documents automatically
-                                  </p>
-                                  <Button
-                                    onClick={addStep}
-                                    className="mt-6 bg-primary transition-colors hover:bg-primary/90"
-                                    size="lg"
-                                  >
-                                    <Plus className="mr-2 h-4 w-4" />
-                                    Add First Step
-                                  </Button>
-                                </CardContent>
-                              </Card>
-                            </div>
-                          ) : (
-                            <div className="space-y-4">
-                              {workflowForm.steps.map((step, index) => {
-                                const action = AVAILABLE_ACTIONS.find(a => a.id === step.action_id);
-                                const isSelected = selectedStepIndex === index;
-
-                                return (
-                                  <div key={index} className="relative">
-                                    {/* Connection Line */}
-                                    {index > 0 && (
-                                      <div className="absolute -top-4 left-8 h-4 w-0.5 bg-gradient-to-b from-transparent via-border to-border" />
-                                    )}
-
-                                    {/* Step Node */}
-                                    <div
-                                      className={cn(
-                                        "group relative cursor-pointer rounded-lg border-2 bg-card p-4 transition-all duration-200",
-                                        isSelected
-                                          ? "scale-[1.02] border-primary bg-primary/5 shadow-lg"
-                                          : "border-border hover:border-primary/50 hover:bg-muted/50 hover:shadow-md"
-                                      )}
-                                      onClick={() => setSelectedStepIndex(index)}
-                                    >
-                                      {/* Drag Handle */}
-                                      <div className="absolute -left-3 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100">
-                                        <div className="rounded-md bg-muted p-1">
-                                          <Grip className="h-4 w-4 text-muted-foreground" />
-                                        </div>
-                                      </div>
-
-                                      {/* Step Number */}
-                                      <div
-                                        className={cn(
-                                          "absolute -left-5 top-4 flex h-10 w-10 items-center justify-center rounded-full border-2 text-sm font-medium transition-all duration-200",
-                                          isSelected
-                                            ? "border-primary bg-primary text-primary-foreground"
-                                            : "border-border bg-background group-hover:border-primary/50"
-                                        )}
-                                      >
-                                        {index + 1}
-                                      </div>
-
-                                      {/* Step Content */}
-                                      <div className="ml-8">
-                                        <div className="flex items-start justify-between">
-                                          <div className="flex items-center gap-3">
-                                            {action?.id.includes("extract") && (
-                                              <div className="rounded-lg bg-blue-500/10 p-2">
-                                                <FileJson className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                                              </div>
-                                            )}
-                                            {action?.id.includes("instruction") && (
-                                              <div className="rounded-lg bg-purple-500/10 p-2">
-                                                <Edit2 className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                                              </div>
-                                            )}
-                                            {action?.id.includes("save") && (
-                                              <div className="rounded-lg bg-green-500/10 p-2">
-                                                <Save className="h-5 w-5 text-green-600 dark:text-green-400" />
-                                              </div>
-                                            )}
-                                            <div>
-                                              <h4 className="font-medium text-foreground">
-                                                {action?.name || "Unknown Action"}
-                                              </h4>
-                                              <p className="text-sm text-muted-foreground">{action?.description}</p>
-                                            </div>
-                                          </div>
-
-                                          {/* Delete Button */}
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={e => {
-                                              e.stopPropagation();
-                                              removeStep(index);
-                                              if (selectedStepIndex === index) {
-                                                setSelectedStepIndex(null);
-                                              }
-                                            }}
-                                            className="opacity-0 transition-all duration-200 hover:bg-destructive/10 group-hover:opacity-100"
-                                          >
-                                            <Trash2 className="h-4 w-4 text-destructive" />
-                                          </Button>
-                                        </div>
-
-                                        {/* Quick Preview of Configuration */}
-                                        {step.action_id === "morphik.actions.extract_structured" &&
-                                          step.parameters.schema && (
-                                            <div className="mt-2 text-sm text-muted-foreground">
-                                              Extracting:{" "}
-                                              {Object.keys(
-                                                typeof step.parameters.schema === "object" &&
-                                                  "properties" in step.parameters.schema
-                                                  ? step.parameters.schema.properties
-                                                  : {}
-                                              ).join(", ") || "No fields defined"}
-                                            </div>
-                                          )}
-                                        {step.action_id === "morphik.actions.apply_instruction" &&
-                                          step.parameters.prompt_template && (
-                                            <div className="mt-2 text-sm text-muted-foreground">
-                                              Instruction:{" "}
-                                              {(step.parameters.prompt_template as string).substring(0, 50)}
-                                              ...
-                                            </div>
-                                          )}
-                                        {step.action_id === "morphik.actions.save_to_metadata" &&
-                                          step.parameters.metadata_key && (
-                                            <div className="mt-2 text-sm text-muted-foreground">
-                                              Saving to: {step.parameters.metadata_key as string}
-                                            </div>
-                                          )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-
-                              {/* Add Step Button */}
-                              <div className="relative pl-5">
-                                {workflowForm.steps.length > 0 && (
-                                  <div className="absolute left-8 top-0 h-4 w-0.5 bg-gradient-to-b from-border via-border to-transparent" />
-                                )}
-                                <Button
-                                  variant="outline"
-                                  onClick={addStep}
-                                  className="ml-3 border-2 border-dashed transition-all duration-200 hover:border-primary hover:bg-primary/5"
-                                >
-                                  <Plus className="mr-2 h-4 w-4" />
-                                  Add Step
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </ScrollArea>
-                    </div>
-
-                    {/* Bottom Actions */}
-                    <div className="absolute bottom-0 left-0 right-0 border-t bg-background/95 p-4 backdrop-blur-sm">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            setIsCreateOpen(false);
-                            setWorkflowForm({ name: "", description: "", steps: [] });
-                            setSelectedStepIndex(null);
-                          }}
-                          className="transition-colors hover:bg-accent"
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          onClick={createWorkflow}
-                          disabled={!workflowForm.name.trim() || workflowForm.steps.length === 0}
-                          className="bg-primary transition-colors hover:bg-primary/90"
-                        >
-                          Create Workflow
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right Panel - Step Configuration */}
-                {selectedStepIndex !== null && workflowForm.steps[selectedStepIndex] && (
-                  <div
-                    className={cn(
-                      "pointer-events-auto border-l bg-background shadow-xl transition-all duration-300",
-                      isConfigPanelExpanded ? "w-[600px]" : "w-96"
-                    )}
-                  >
-                    <div className="h-full overflow-y-auto p-6">
-                      <div className="mb-4 flex items-center justify-between">
-                        <h3 className="text-lg font-medium text-foreground">Configure Step {selectedStepIndex + 1}</h3>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setIsConfigPanelExpanded(!isConfigPanelExpanded)}
-                          className="hover:bg-accent"
-                        >
-                          {isConfigPanelExpanded ? (
-                            <ChevronRight className="h-4 w-4" />
-                          ) : (
-                            <ArrowLeft className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-
-                      <div className="space-y-4">
-                        {/* Action Selection */}
-                        <div>
-                          <Label className="text-foreground">Action Type</Label>
-                          <Select
-                            value={workflowForm.steps[selectedStepIndex].action_id}
-                            onValueChange={value => {
-                              updateStep(selectedStepIndex, {
-                                action_id: value,
-                                parameters: {}, // Reset parameters when changing action
-                              });
-                            }}
-                          >
-                            <SelectTrigger className="border-input bg-background">
-                              <SelectValue placeholder="Select an action" />
-                            </SelectTrigger>
-                            <SelectContent className="border-border bg-popover">
-                              {AVAILABLE_ACTIONS.map(action => (
-                                <SelectItem
-                                  key={action.id}
-                                  value={action.id}
-                                  className="hover:bg-accent focus:bg-accent"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    {action.id.includes("extract") && <FileJson className="h-4 w-4 text-blue-500" />}
-                                    {action.id.includes("instruction") && <Edit2 className="h-4 w-4 text-purple-500" />}
-                                    {action.id.includes("save") && <Save className="h-4 w-4 text-green-500" />}
-                                    <span className="text-foreground">{action.name}</span>
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <Separator className="bg-border/50" />
-
-                        {/* Action-specific Parameters */}
-                        {workflowForm.steps[selectedStepIndex].action_id === "morphik.actions.extract_structured" && (
-                          <ExtractStructuredParams
-                            parameters={workflowForm.steps[selectedStepIndex].parameters as ExtractStructuredParameters}
-                            onChange={params => updateStep(selectedStepIndex, { parameters: params })}
-                          />
-                        )}
-
-                        {workflowForm.steps[selectedStepIndex].action_id === "morphik.actions.apply_instruction" && (
-                          <div>
-                            <Label>Instruction Template</Label>
-                            <Textarea
-                              value={(workflowForm.steps[selectedStepIndex].parameters.prompt_template as string) || ""}
-                              onChange={e =>
-                                updateStep(selectedStepIndex, {
-                                  parameters: {
-                                    ...workflowForm.steps[selectedStepIndex].parameters,
-                                    prompt_template: e.target.value,
-                                  },
-                                })
-                              }
-                              placeholder="Enter your instruction. Use {input_text} to reference the document content."
-                              className="min-h-32"
-                            />
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Use {"{input_text}"} to reference the document content in your instruction.
-                            </p>
-                          </div>
-                        )}
-
-                        {workflowForm.steps[selectedStepIndex].action_id === "morphik.actions.save_to_metadata" && (
-                          <div className="space-y-4">
-                            <div>
-                              <Label>Metadata Key</Label>
-                              <Input
-                                value={(workflowForm.steps[selectedStepIndex].parameters.metadata_key as string) || ""}
-                                onChange={e =>
-                                  updateStep(selectedStepIndex, {
-                                    parameters: {
-                                      ...workflowForm.steps[selectedStepIndex].parameters,
-                                      metadata_key: e.target.value,
-                                    },
-                                  })
-                                }
-                                placeholder="e.g., document_info"
-                              />
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                The key under which the output will be saved (leave empty to merge fields at top level).
-                              </p>
-                            </div>
-                            <div>
-                              <Label>Data Source</Label>
-                              <Select
-                                value={
-                                  (workflowForm.steps[selectedStepIndex].parameters.source as string) || "previous_step"
-                                }
-                                onValueChange={value =>
-                                  updateStep(selectedStepIndex, {
-                                    parameters: {
-                                      ...workflowForm.steps[selectedStepIndex].parameters,
-                                      source: value,
-                                    },
-                                  })
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="previous_step">Previous Step Output</SelectItem>
-                                  <SelectItem value="all_steps">All Steps Output</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Choose whether to save only the previous step&rsquo;s output or all steps&rsquo;
-                                outputs.
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+          {/* Edit Workflow Dialog */}
+          <WorkflowEditDialog
+            isOpen={isEditOpen}
+            onClose={() => setIsEditOpen(false)}
+            workflowForm={workflowForm}
+            setWorkflowForm={setWorkflowForm}
+            availableActions={AVAILABLE_ACTIONS}
+            onUpdateWorkflow={updateWorkflow}
+            ExtractStructuredParams={ExtractStructuredParams}
+          />
 
           {/* Folder Association Dialog */}
           <Dialog open={isFolderDialogOpen} onOpenChange={setIsFolderDialogOpen}>
@@ -1615,346 +1234,16 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
           isRunning={isRunning}
         />
 
-        {/* Edit Workflow Sidebar */}
-        {isEditOpen && (
-          <div className="fixed inset-0 z-50 flex">
-            {/* Backdrop - Click to close */}
-            <div
-              className="absolute inset-0 cursor-pointer bg-black/60 backdrop-blur-sm"
-              onClick={() => {
-                setIsEditOpen(false);
-                setSelectedStepIndex(null);
-              }}
-            />
-
-            {/* Main Content Area */}
-            <div className="pointer-events-none relative flex h-full w-full">
-              {/* Left Panel - Workflow Canvas */}
-              <div className="pointer-events-auto flex-1 overflow-hidden bg-background shadow-2xl">
-                <div className="h-full">
-                  {/* Header */}
-                  <div className="border-b bg-muted px-6 py-4">
-                    <div>
-                      <h2 className="mb-3 text-lg font-semibold">Edit Workflow</h2>
-                      <Input
-                        value={workflowForm.name}
-                        onChange={e => setWorkflowForm(prev => ({ ...prev, name: e.target.value }))}
-                        placeholder="Enter workflow name..."
-                        className="mb-2 border-0 bg-background text-lg font-medium shadow-sm"
-                      />
-                      <Textarea
-                        value={workflowForm.description}
-                        onChange={e => setWorkflowForm(prev => ({ ...prev, description: e.target.value }))}
-                        placeholder="Describe what this workflow does..."
-                        className="h-16 resize-none border-0 bg-background text-sm text-muted-foreground shadow-sm"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Main Canvas */}
-                  <div className="p-6">
-                    <ScrollArea className="h-[calc(100vh-280px)]">
-                      <div className="relative min-h-full pb-20">
-                        {workflowForm.steps.length === 0 ? (
-                          <div className="flex h-[400px] items-center justify-center">
-                            <Card className="border-2 border-dashed border-muted-foreground/25 bg-card">
-                              <CardContent className="flex flex-col items-center justify-center p-16">
-                                <div className="rounded-full bg-primary/10 p-4">
-                                  <Layers className="h-12 w-12 text-primary" />
-                                </div>
-                                <h3 className="mt-4 text-lg font-semibold">Start Building Your Workflow</h3>
-                                <p className="mt-2 text-center text-sm text-muted-foreground">
-                                  Add actions to process your documents automatically
-                                </p>
-                                <Button onClick={addStep} className="mt-6" size="lg">
-                                  <Plus className="mr-2 h-4 w-4" />
-                                  Add First Step
-                                </Button>
-                              </CardContent>
-                            </Card>
-                          </div>
-                        ) : (
-                          <div className="space-y-4">
-                            {workflowForm.steps.map((step, index) => {
-                              const action = AVAILABLE_ACTIONS.find(a => a.id === step.action_id);
-                              const isSelected = selectedStepIndex === index;
-
-                              return (
-                                <div key={index} className="relative">
-                                  {/* Connection Line */}
-                                  {index > 0 && <div className="absolute -top-4 left-8 h-4 w-0.5 bg-border" />}
-
-                                  {/* Step Node */}
-                                  <div
-                                    className={cn(
-                                      "group relative cursor-pointer rounded-lg border-2 bg-card p-4 transition-all hover:shadow-md",
-                                      isSelected
-                                        ? "border-primary shadow-md"
-                                        : "border-border hover:border-muted-foreground"
-                                    )}
-                                    onClick={() => setSelectedStepIndex(index)}
-                                  >
-                                    {/* Drag Handle */}
-                                    <div className="absolute -left-3 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100">
-                                      <div className="rounded-md bg-muted p-1">
-                                        <Grip className="h-4 w-4 text-muted-foreground" />
-                                      </div>
-                                    </div>
-
-                                    {/* Step Number */}
-                                    <div className="absolute -left-5 top-4 flex h-10 w-10 items-center justify-center rounded-full border-2 border-border bg-background text-sm font-medium">
-                                      {index + 1}
-                                    </div>
-
-                                    {/* Step Content */}
-                                    <div className="ml-8">
-                                      <div className="flex items-start justify-between">
-                                        <div className="flex items-center gap-3">
-                                          {action?.id.includes("extract") && (
-                                            <FileJson className="h-5 w-5 text-blue-500" />
-                                          )}
-                                          {action?.id.includes("instruction") && (
-                                            <Edit2 className="h-5 w-5 text-purple-500" />
-                                          )}
-                                          {action?.id.includes("save") && <Save className="h-5 w-5 text-green-500" />}
-                                          <div>
-                                            <h4 className="font-medium text-foreground">
-                                              {action?.name || "Unknown Action"}
-                                            </h4>
-                                            <p className="text-sm text-muted-foreground">{action?.description}</p>
-                                          </div>
-                                        </div>
-
-                                        {/* Delete Button */}
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={e => {
-                                            e.stopPropagation();
-                                            removeStep(index);
-                                            if (selectedStepIndex === index) {
-                                              setSelectedStepIndex(null);
-                                            }
-                                          }}
-                                          className="opacity-0 transition-opacity hover:bg-destructive/10 group-hover:opacity-100"
-                                        >
-                                          <Trash2 className="h-4 w-4 text-destructive" />
-                                        </Button>
-                                      </div>
-
-                                      {/* Quick Preview of Configuration */}
-                                      {step.action_id === "morphik.actions.extract_structured" &&
-                                        step.parameters.schema && (
-                                          <div className="mt-2 text-sm text-muted-foreground">
-                                            Extracting:{" "}
-                                            {Object.keys(
-                                              typeof step.parameters.schema === "object" &&
-                                                "properties" in step.parameters.schema
-                                                ? step.parameters.schema.properties
-                                                : {}
-                                            ).join(", ") || "No fields defined"}
-                                          </div>
-                                        )}
-                                      {step.action_id === "morphik.actions.apply_instruction" &&
-                                        step.parameters.prompt_template && (
-                                          <div className="mt-2 text-sm text-muted-foreground">
-                                            Instruction: {(step.parameters.prompt_template as string).substring(0, 50)}
-                                            ...
-                                          </div>
-                                        )}
-                                      {step.action_id === "morphik.actions.save_to_metadata" &&
-                                        step.parameters.metadata_key && (
-                                          <div className="mt-2 text-sm text-muted-foreground">
-                                            Saving to: {step.parameters.metadata_key as string}
-                                          </div>
-                                        )}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-
-                            {/* Add Step Button */}
-                            <div className="relative pl-5">
-                              {workflowForm.steps.length > 0 && (
-                                <div className="absolute left-8 top-0 h-4 w-0.5 bg-border/50" />
-                              )}
-                              <Button
-                                variant="outline"
-                                onClick={addStep}
-                                className="ml-3 border-dashed transition-all hover:border-primary/50 hover:bg-accent"
-                              >
-                                <Plus className="mr-2 h-4 w-4" />
-                                Add Step
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </div>
-
-                  {/* Bottom Actions */}
-                  <div className="absolute bottom-0 left-0 right-0 border-t bg-background p-4">
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" onClick={() => setIsEditOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={updateWorkflow}
-                        disabled={!workflowForm.name.trim() || workflowForm.steps.length === 0}
-                      >
-                        Save Workflow
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Panel - Step Configuration */}
-              {selectedStepIndex !== null && workflowForm.steps[selectedStepIndex] && (
-                <div
-                  className={cn(
-                    "pointer-events-auto border-l bg-background shadow-xl transition-all duration-300",
-                    isConfigPanelExpanded ? "w-[600px]" : "w-96"
-                  )}
-                >
-                  <div className="h-full overflow-y-auto p-6">
-                    <div className="mb-4 flex items-center justify-between">
-                      <h3 className="text-lg font-medium text-foreground">Configure Step {selectedStepIndex + 1}</h3>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setIsConfigPanelExpanded(!isConfigPanelExpanded)}
-                        className="hover:bg-accent"
-                      >
-                        {isConfigPanelExpanded ? (
-                          <ChevronRight className="h-4 w-4" />
-                        ) : (
-                          <ArrowLeft className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-
-                    <div className="space-y-4">
-                      {/* Action Selection */}
-                      <div>
-                        <Label>Action Type</Label>
-                        <Select
-                          value={workflowForm.steps[selectedStepIndex].action_id}
-                          onValueChange={value => {
-                            updateStep(selectedStepIndex, {
-                              action_id: value,
-                              parameters: {}, // Reset parameters when changing action
-                            });
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select an action" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {AVAILABLE_ACTIONS.map(action => (
-                              <SelectItem key={action.id} value={action.id}>
-                                <div className="flex items-center gap-2">
-                                  {action.id.includes("extract") && <FileJson className="h-4 w-4" />}
-                                  {action.id.includes("instruction") && <Edit2 className="h-4 w-4" />}
-                                  {action.id.includes("save") && <Save className="h-4 w-4" />}
-                                  {action.name}
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <Separator />
-
-                      {/* Action-specific Parameters */}
-                      {workflowForm.steps[selectedStepIndex].action_id === "morphik.actions.extract_structured" && (
-                        <ExtractStructuredParams
-                          parameters={workflowForm.steps[selectedStepIndex].parameters as ExtractStructuredParameters}
-                          onChange={params => updateStep(selectedStepIndex, { parameters: params })}
-                        />
-                      )}
-
-                      {workflowForm.steps[selectedStepIndex].action_id === "morphik.actions.apply_instruction" && (
-                        <div>
-                          <Label>Instruction Template</Label>
-                          <Textarea
-                            value={(workflowForm.steps[selectedStepIndex].parameters.prompt_template as string) || ""}
-                            onChange={e =>
-                              updateStep(selectedStepIndex, {
-                                parameters: {
-                                  ...workflowForm.steps[selectedStepIndex].parameters,
-                                  prompt_template: e.target.value,
-                                },
-                              })
-                            }
-                            placeholder="Enter your instruction. Use {input_text} to reference the document content."
-                            className="min-h-32"
-                          />
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Use {"{input_text}"} to reference the document content in your instruction.
-                          </p>
-                        </div>
-                      )}
-
-                      {workflowForm.steps[selectedStepIndex].action_id === "morphik.actions.save_to_metadata" && (
-                        <div className="space-y-4">
-                          <div>
-                            <Label>Metadata Key</Label>
-                            <Input
-                              value={(workflowForm.steps[selectedStepIndex].parameters.metadata_key as string) || ""}
-                              onChange={e =>
-                                updateStep(selectedStepIndex, {
-                                  parameters: {
-                                    ...workflowForm.steps[selectedStepIndex].parameters,
-                                    metadata_key: e.target.value,
-                                  },
-                                })
-                              }
-                              placeholder="e.g., document_info"
-                            />
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              The key under which the output will be saved (optional for top-level mode).
-                            </p>
-                          </div>
-                          <div>
-                            <Label>Data Source</Label>
-                            <Select
-                              value={
-                                (workflowForm.steps[selectedStepIndex].parameters.source as string) || "previous_step"
-                              }
-                              onValueChange={value =>
-                                updateStep(selectedStepIndex, {
-                                  parameters: {
-                                    ...workflowForm.steps[selectedStepIndex].parameters,
-                                    source: value,
-                                  },
-                                })
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="previous_step">Previous Step Output</SelectItem>
-                                <SelectItem value="all_steps">All Steps Output</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Choose whether to save only the previous step&rsquo;s output or all steps&rsquo; outputs.
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        {/* Edit Workflow Dialog */}
+        <WorkflowEditDialog
+          isOpen={isEditOpen}
+          onClose={() => setIsEditOpen(false)}
+          workflowForm={workflowForm}
+          setWorkflowForm={setWorkflowForm}
+          availableActions={AVAILABLE_ACTIONS}
+          onUpdateWorkflow={updateWorkflow}
+          ExtractStructuredParams={ExtractStructuredParams}
+        />
       </div>
     </TooltipProvider>
   );
@@ -1993,7 +1282,7 @@ const ExtractStructuredParams: React.FC<{
   const [jsonError, setJsonError] = useState("");
 
   const addField = () => {
-    setSchemaFields([...schemaFields, { name: "", type: "string", description: "", required: false }]);
+    setSchemaFields([...schemaFields, { name: "", type: "string", description: "", required: true }]);
   };
 
   const updateField = (index: number, field: Partial<SchemaField>) => {

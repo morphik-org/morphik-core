@@ -140,6 +140,43 @@ class WorkflowService:
             logger.error("Workflow %s not found for run %s", run.workflow_id, run_id)
             return
 
+        # Check if document is fully processed before executing workflow
+        document = await self._document_service_ref.db.get_document(run.document_id, auth)
+        if not document:
+            logger.error("Document %s not found for workflow run %s", run.document_id, run_id)
+            run.status = WorkflowRunStatus.failed
+            run.error = "Document not found"
+            run.completed_at = datetime.now(UTC)
+            await self._persist_run(run)
+            return
+
+        # Check document processing status
+        doc_status = document.system_metadata.get("status")
+        logger.info(f"Document {run.document_id} has status: {doc_status}")
+
+        # Check if document is ready for workflow execution
+        if doc_status == "failed":
+            logger.error("Cannot run workflow on failed document %s", run.document_id)
+            run.status = WorkflowRunStatus.failed
+            run.error = "Document processing previously failed"
+            run.completed_at = datetime.now(UTC)
+            await self._persist_run(run)
+            await self._safe_update_document_status(run.document_id, "failed", auth)
+            return
+        elif doc_status == "processing":
+            # This should not happen with our new architecture where workflows execute after processing
+            logger.error(
+                "Document %s is still processing - workflows should only execute after completion", run.document_id
+            )
+            run.status = WorkflowRunStatus.failed
+            run.error = "Document is still processing"
+            run.completed_at = datetime.now(UTC)
+            await self._persist_run(run)
+            return
+
+        # Document is ready (status is "completed" or None for text documents)
+        logger.info(f"Document {run.document_id} is ready for workflow execution")
+
         # Mark as running
         run.status = WorkflowRunStatus.running
         run.started_at = datetime.now(UTC)
