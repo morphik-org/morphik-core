@@ -53,10 +53,25 @@ interface Graph {
   };
 }
 
-interface WorkflowStatusResponse {
-  status: "running" | "completed" | "failed";
-  result?: Record<string, unknown>;
+// interface WorkflowStatusResponse {
+//   status: "running" | "completed" | "failed";
+//   result?: Record<string, unknown>;
+//   error?: string;
+//   pipeline_stage?: string;
+// }
+
+interface GraphStatusResponse {
+  name: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  workflow_id?: string;
+  run_id?: string;
+  pipeline_stage?: string;
   error?: string;
+  document_count?: number;
+  entity_count?: number;
+  relationship_count?: number;
 }
 
 interface Entity {
@@ -108,7 +123,7 @@ const entityTypeColors: Record<string, string> = {
   default: "#6b7280", // Gray
 };
 
-const POLL_INTERVAL_MS = 60000; // 1 minute
+const POLL_INTERVAL_MS = 2000; // 2 seconds
 
 // Interface for document API response
 interface ApiDocumentResponse {
@@ -401,34 +416,58 @@ const GraphSection: React.FC<GraphSectionProps> = ({
     [apiBaseUrl, createHeaders, onSelectGraph]
   );
 
-  // Check workflow status
-  const checkWorkflowStatus = useCallback(
-    async (workflowId: string, runId?: string): Promise<WorkflowStatusResponse> => {
+  // Check graph status using the new lightweight endpoint
+  const checkGraphStatus = useCallback(
+    async (graphName: string): Promise<GraphStatusResponse> => {
       try {
         const headers = createHeaders();
-        const params = new URLSearchParams();
-        if (runId) {
-          params.append("run_id", runId);
-        }
-
-        const url = `${apiBaseUrl}/graph/workflow/${encodeURIComponent(workflowId)}/status${params.toString() ? `?${params}` : ""}`;
+        const url = `${apiBaseUrl}/graph/${encodeURIComponent(graphName)}/status`;
         const response = await fetch(url, {
           method: "GET",
           headers,
         });
 
         if (!response.ok) {
-          throw new Error(`Failed to check workflow status: ${response.statusText}`);
+          throw new Error(`Failed to check graph status: ${response.statusText}`);
         }
 
         return await response.json();
       } catch (err) {
-        console.error("Error checking workflow status:", err);
+        console.error("Error checking graph status:", err);
         throw err;
       }
     },
     [apiBaseUrl, createHeaders]
   );
+
+  // // Check workflow status (legacy endpoint, kept for compatibility)
+  // const checkWorkflowStatus = useCallback(
+  //   async (workflowId: string, runId?: string): Promise<WorkflowStatusResponse> => {
+  //     try {
+  //       const headers = createHeaders();
+  //       const params = new URLSearchParams();
+  //       if (runId) {
+  //         params.append("run_id", runId);
+  //       }
+
+  //       const url = `${apiBaseUrl}/graph/workflow/${encodeURIComponent(workflowId)}/status${params.toString() ? `?${params}` : ""}`;
+  //       const response = await fetch(url, {
+  //         method: "GET",
+  //         headers,
+  //       });
+
+  //       if (!response.ok) {
+  //         throw new Error(`Failed to check workflow status: ${response.statusText}`);
+  //       }
+
+  //       return await response.json();
+  //     } catch (err) {
+  //       console.error("Error checking workflow status:", err);
+  //       throw err;
+  //     }
+  //   },
+  //   [apiBaseUrl, createHeaders]
+  // );
 
   // Handle graph click
   const handleGraphClick = (graph: Graph) => {
@@ -587,33 +626,52 @@ const GraphSection: React.FC<GraphSectionProps> = ({
 
   // Removed useEffect that depended on initializeGraph
 
-  // Poll for processing graphs and workflow status
+  // Poll for processing graphs using the new lightweight status endpoint
   useEffect(() => {
-    // Find graphs that are processing and have workflow_id
-    const processingGraphs = graphs.filter(
-      g => g.system_metadata?.status === "processing" && g.system_metadata?.workflow_id
-    );
+    // Find graphs that are processing
+    const processingGraphs = graphs.filter(g => g.system_metadata?.status === "processing");
 
     if (processingGraphs.length === 0) return; // No need to poll
 
     const id = setInterval(async () => {
-      // Check workflow status for each processing graph
+      // Check status for each processing graph using the new endpoint
       const statusChecks = processingGraphs.map(async graph => {
-        if (graph.system_metadata?.workflow_id) {
-          try {
-            const result = await checkWorkflowStatus(graph.system_metadata.workflow_id, graph.system_metadata.run_id);
+        try {
+          const result = await checkGraphStatus(graph.name);
 
-            // If workflow is completed or failed, refresh the graph list
-            if (result.status === "completed" || result.status === "failed") {
-              await fetchGraphs();
-              // If this is the selected graph, refresh it too
+          // If graph status has changed, refresh the graph list
+          if (result.status === "completed" || result.status === "failed") {
+            await fetchGraphs();
+            // If this is the selected graph, refresh it too
+            if (selectedGraph?.name === graph.name) {
+              await fetchGraph(graph.name);
+            }
+          } else if (result.status === "processing" && result.pipeline_stage) {
+            // Update pipeline stage without full refresh if stage has changed
+            const currentStage = graph.system_metadata?.pipeline_stage;
+            if (currentStage !== result.pipeline_stage) {
+              setGraphs(prevGraphs =>
+                prevGraphs.map(g =>
+                  g.name === graph.name
+                    ? { ...g, system_metadata: { ...g.system_metadata, pipeline_stage: result.pipeline_stage } }
+                    : g
+                )
+              );
+              // Update selected graph if it's the one being updated
               if (selectedGraph?.name === graph.name) {
-                await fetchGraph(graph.name);
+                setSelectedGraph(prev =>
+                  prev
+                    ? {
+                        ...prev,
+                        system_metadata: { ...prev.system_metadata, pipeline_stage: result.pipeline_stage },
+                      }
+                    : prev
+                );
               }
             }
-          } catch (err) {
-            console.error(`Error checking workflow status for graph ${graph.name}:`, err);
           }
+        } catch (err) {
+          console.error(`Error checking graph status for ${graph.name}:`, err);
         }
       });
 
@@ -621,7 +679,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(id);
-  }, [graphs, selectedGraph, fetchGraphs, fetchGraph, checkWorkflowStatus]);
+  }, [graphs, selectedGraph, fetchGraphs, fetchGraph, checkGraphStatus]);
 
   // Conditional rendering based on visualization state
   if (showVisualization && selectedGraph) {
@@ -857,8 +915,15 @@ const GraphSection: React.FC<GraphSectionProps> = ({
                       <Badge
                         variant="secondary"
                         className="mt-1 bg-yellow-400 text-[10px] text-black opacity-90 hover:bg-yellow-400"
+                        title={
+                          typeof graph.system_metadata?.pipeline_stage === "string"
+                            ? graph.system_metadata.pipeline_stage
+                            : "Processing"
+                        }
                       >
-                        Processing
+                        {typeof graph.system_metadata?.pipeline_stage === "string"
+                          ? graph.system_metadata.pipeline_stage
+                          : "Processing"}
                       </Badge>
                     )}
                   </div>
@@ -875,7 +940,11 @@ const GraphSection: React.FC<GraphSectionProps> = ({
               <Alert variant="default" className="mb-2">
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>Graph is processing</AlertTitle>
-                <AlertDescription>Entities and relationships are still being extracted.</AlertDescription>
+                <AlertDescription>
+                  {typeof selectedGraph.system_metadata?.pipeline_stage === "string"
+                    ? `Current stage: ${selectedGraph.system_metadata.pipeline_stage}`
+                    : "Entities and relationships are still being extracted."}
+                </AlertDescription>
               </Alert>
             )}
             {/* Header with back button */}

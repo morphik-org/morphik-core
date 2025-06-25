@@ -12,6 +12,7 @@ from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query, Upload
 from fastapi.middleware.cors import CORSMiddleware  # Import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
 from core.agent import MorphikAgent
@@ -40,12 +41,14 @@ from core.models.request import (
     SetFolderRuleRequest,
     UpdateGraphRequest,
 )
+from core.models.workflows import Workflow
 from core.routes.document import router as document_router
 from core.routes.ingest import router as ingest_router
 from core.routes.model_config import router as model_config_router
 from core.routes.models import router as models_router
+from core.routes.workflow import router as workflow_router
 from core.services.telemetry import TelemetryService
-from core.services_init import document_service
+from core.services_init import document_service, workflow_service
 
 # Set up logging configuration for Docker environment
 setup_logging()
@@ -165,46 +168,46 @@ async def ping_health():
 async def get_available_models(auth: AuthContext = Depends(verify_token)):
     """
     Get list of available models from configuration.
-    
+
     Returns models grouped by type (chat, embedding, etc.) with their metadata.
     """
     try:
         # Load the morphik.toml file to get registered models
         with open("morphik.toml", "rb") as f:
             config = tomli.load(f)
-        
+
         registered_models = config.get("registered_models", {})
-        
+
         # Group models by their purpose
         chat_models = []
         embedding_models = []
-        
+
         for model_key, model_config in registered_models.items():
             model_info = {
                 "id": model_key,
                 "model": model_config.get("model_name", model_key),
                 "provider": _extract_provider(model_config.get("model_name", "")),
-                "config": model_config
+                "config": model_config,
             }
-            
+
             # Categorize models based on their names or configuration
             if "embedding" in model_key.lower():
                 embedding_models.append(model_info)
             else:
                 chat_models.append(model_info)
-        
+
         # Also add the default configured models
         default_models = {
             "completion": config.get("completion", {}).get("model"),
             "agent": config.get("agent", {}).get("model"),
             "embedding": config.get("embedding", {}).get("model"),
         }
-        
+
         return {
             "chat_models": chat_models,
             "embedding_models": embedding_models,
             "default_models": default_models,
-            "providers": ["openai", "anthropic", "google", "azure", "ollama", "custom"]
+            "providers": ["openai", "anthropic", "google", "azure", "ollama", "custom"],
         }
     except Exception as e:
         logger.error(f"Error loading models: {e}")
@@ -241,6 +244,9 @@ app.include_router(ingest_router)
 
 # Register document router
 app.include_router(document_router)
+
+# Register workflow router (step-2)
+app.include_router(workflow_router)
 
 # Register model config router
 app.include_router(model_config_router)
@@ -717,7 +723,7 @@ async def get_chat_history(
 @app.get("/models/available")
 async def get_available_models_for_selection(auth: AuthContext = Depends(verify_token)):
     """Get list of available models for UI selection.
-    
+
     Returns a list of models that can be used for queries. Each model includes:
     - id: Model identifier to use in llm_config
     - name: Display name for the model
@@ -731,58 +737,58 @@ async def get_available_models_for_selection(auth: AuthContext = Depends(verify_
             "id": "gpt-4o",
             "name": "GPT-4o",
             "provider": "openai",
-            "description": "OpenAI's most capable model with vision support"
+            "description": "OpenAI's most capable model with vision support",
         },
         {
             "id": "gpt-4o-mini",
             "name": "GPT-4o Mini",
             "provider": "openai",
-            "description": "Faster, more affordable GPT-4o variant"
+            "description": "Faster, more affordable GPT-4o variant",
         },
         {
             "id": "claude-3-5-sonnet-20241022",
             "name": "Claude 3.5 Sonnet",
             "provider": "anthropic",
-            "description": "Anthropic's most intelligent model"
+            "description": "Anthropic's most intelligent model",
         },
         {
             "id": "claude-3-5-haiku-20241022",
             "name": "Claude 3.5 Haiku",
             "provider": "anthropic",
-            "description": "Fast and affordable Claude model"
+            "description": "Fast and affordable Claude model",
         },
         {
             "id": "gemini/gemini-1.5-pro",
             "name": "Gemini 1.5 Pro",
             "provider": "google",
-            "description": "Google's advanced model with long context"
+            "description": "Google's advanced model with long context",
         },
         {
             "id": "gemini/gemini-1.5-flash",
             "name": "Gemini 1.5 Flash",
             "provider": "google",
-            "description": "Fast and efficient Gemini model"
+            "description": "Fast and efficient Gemini model",
         },
         {
             "id": "deepseek/deepseek-chat",
             "name": "DeepSeek Chat",
             "provider": "deepseek",
-            "description": "DeepSeek's conversational AI model"
+            "description": "DeepSeek's conversational AI model",
         },
         {
             "id": "groq/llama-3.3-70b-versatile",
             "name": "Llama 3.3 70B",
             "provider": "groq",
-            "description": "Fast inference with Groq"
+            "description": "Fast inference with Groq",
         },
         {
             "id": "groq/llama-3.1-8b-instant",
             "name": "Llama 3.1 8B",
             "provider": "groq",
-            "description": "Ultra-fast small model on Groq"
-        }
+            "description": "Ultra-fast small model on Groq",
+        },
     ]
-    
+
     # Check if there's a configured model in settings to add to the list
     if hasattr(settings, "COMPLETION_MODEL") and hasattr(settings, "REGISTERED_MODELS"):
         configured_model = settings.COMPLETION_MODEL
@@ -791,13 +797,16 @@ async def get_available_models_for_selection(auth: AuthContext = Depends(verify_
             model_name = config.get("model_name", configured_model)
             # Add the configured model if it's not already in the list
             if not any(m["id"] == model_name for m in models):
-                models.insert(0, {
-                    "id": model_name,
-                    "name": f"{configured_model} (Configured)",
-                    "provider": "configured",
-                    "description": "Currently configured model in morphik.toml"
-                })
-    
+                models.insert(
+                    0,
+                    {
+                        "id": model_name,
+                        "name": f"{configured_model} (Configured)",
+                        "provider": "configured",
+                        "description": "Currently configured model in morphik.toml",
+                    },
+                )
+
     return {"models": models}
 
 
@@ -2036,6 +2045,115 @@ async def update_graph(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/graph/{name}/status", response_model=Dict[str, Any])
+@telemetry.track(operation_type="get_graph_status")
+async def get_graph_status(
+    name: str,
+    auth: AuthContext = Depends(verify_token),
+    folder_name: Optional[Union[str, List[str]]] = None,
+    end_user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Lightweight endpoint to check graph status with automatic status synchronization.
+
+    This endpoint:
+    1. First checks the local database for graph status
+    2. If status is 'processing' and has workflow_id, checks the external workflow status
+    3. Updates the local database if workflow has completed
+    4. Returns the current status and optionally pipeline stage information
+    """
+    try:
+        # Build system filters
+        system_filters = {}
+        if folder_name:
+            system_filters["folder_name"] = folder_name
+        if end_user_id:
+            system_filters["end_user_id"] = end_user_id
+
+        # Get graph from database
+        graph = await document_service.db.get_graph(name, auth, system_filters=system_filters)
+        if not graph:
+            raise HTTPException(status_code=404, detail=f"Graph '{name}' not found")
+
+        # Check if we need to sync status with external workflow
+        current_status = graph.system_metadata.get("status", "unknown")
+        workflow_id = graph.system_metadata.get("workflow_id")
+        run_id = graph.system_metadata.get("run_id")
+
+        # If graph is marked as processing and has workflow info, check external status
+        if current_status == "processing" and workflow_id:
+            try:
+                # Get the graph service
+                graph_service = document_service.graph_service
+                from core.services.morphik_graph_service import MorphikGraphService
+
+                if isinstance(graph_service, MorphikGraphService):
+                    # Check external workflow status
+                    workflow_result = await graph_service.check_workflow_status(
+                        workflow_id=workflow_id, run_id=run_id, auth=auth
+                    )
+
+                    external_status = workflow_result.get("status")
+
+                    # If external workflow is completed or failed, update local database
+                    if external_status in ["completed", "failed"]:
+                        graph.system_metadata["status"] = external_status
+                        if external_status == "completed":
+                            # Clear workflow tracking data
+                            graph.system_metadata.pop("workflow_id", None)
+                            graph.system_metadata.pop("run_id", None)
+                        elif external_status == "failed":
+                            # Store error information
+                            error_msg = workflow_result.get("error", "Workflow failed")
+                            graph.system_metadata["error"] = error_msg
+
+                        # Update database
+                        await document_service.db.update_graph(graph)
+                        current_status = external_status
+
+                        logger.info(f"Updated graph '{name}' status from processing to {external_status}")
+
+                    # Add pipeline stage information if available
+                    pipeline_stage = workflow_result.get("pipeline_stage")
+                    if pipeline_stage:
+                        graph.system_metadata["pipeline_stage"] = pipeline_stage
+
+            except Exception as e:
+                logger.warning(f"Failed to check workflow status for graph '{name}': {e}")
+                # Don't fail the request, just log the warning
+
+        # Return comprehensive status information
+        response = {
+            "name": graph.name,
+            "status": current_status,
+            "created_at": graph.created_at.isoformat(),
+            "updated_at": graph.updated_at.isoformat(),
+        }
+
+        # Add optional fields if available
+        if workflow_id:
+            response["workflow_id"] = workflow_id
+        if run_id:
+            response["run_id"] = run_id
+        if graph.system_metadata.get("pipeline_stage"):
+            response["pipeline_stage"] = graph.system_metadata["pipeline_stage"]
+        if graph.system_metadata.get("error"):
+            response["error"] = graph.system_metadata["error"]
+        if graph.document_ids:
+            response["document_count"] = len(graph.document_ids)
+        if graph.entities:
+            response["entity_count"] = len(graph.entities)
+        if graph.relationships:
+            response["relationship_count"] = len(graph.relationships)
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting graph status for '{name}': {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/graph/workflow/{workflow_id}/status", response_model=Dict[str, Any])
 @telemetry.track(operation_type="check_workflow_status", metadata_resolver=telemetry.workflow_status_metadata)
 async def check_workflow_status(
@@ -2083,9 +2201,26 @@ async def check_workflow_status(
                                 graph.system_metadata.pop("workflow_id", None)
                                 graph.system_metadata.pop("run_id", None)
                                 await document_service.db.update_graph(graph)
+                                logger.info(f"Auto-updated graph '{graph.name}' status to completed")
                                 break
                     except Exception as e:
                         logger.warning(f"Failed to update graph status after workflow completion: {e}")
+            elif result.get("status") == "failed":
+                # Also handle failed status updates
+                parts = workflow_id.split("-")
+                if len(parts) >= 3:
+                    graph_name = parts[2]
+                    try:
+                        graphs = await document_service.db.list_graphs(auth)
+                        for graph in graphs:
+                            if graph.name == graph_name or workflow_id in graph.system_metadata.get("workflow_id", ""):
+                                graph.system_metadata["status"] = "failed"
+                                graph.system_metadata["error"] = result.get("error", "Workflow failed")
+                                await document_service.db.update_graph(graph)
+                                logger.info(f"Auto-updated graph '{graph.name}' status to failed")
+                                break
+                    except Exception as e:
+                        logger.warning(f"Failed to update graph status after workflow failure: {e}")
 
             return result
         else:
@@ -2441,6 +2576,135 @@ async def set_folder_rule(
     except Exception as e:
         logger.error(f"Error setting folder rules: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Folder-Workflow Association Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/folders/{folder_id}/workflows/{workflow_id}")
+@telemetry.track(operation_type="associate_workflow_to_folder")
+async def associate_workflow_to_folder(
+    folder_id: str,
+    workflow_id: str,
+    auth: AuthContext = Depends(verify_token),
+) -> Dict[str, Any]:
+    """Associate a workflow with a folder for automatic execution on document ingestion."""
+    try:
+        # Get the folder
+        folder = await document_service.db.get_folder(folder_id, auth)
+        if not folder:
+            raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
+
+        # Check if user has write access to the folder
+        if not document_service.db._check_folder_access(folder, auth, "write"):
+            raise HTTPException(status_code=403, detail="You don't have write access to this folder")
+
+        # Get the workflow to verify it exists and is accessible
+        workflow = await workflow_service.get_workflow(workflow_id, auth)
+        if not workflow:
+            raise HTTPException(status_code=404, detail=f"Workflow {workflow_id} not found or not accessible")
+
+        # Check if workflow is already associated
+        if workflow_id in folder.workflow_ids:
+            return {"success": True, "message": "Workflow already associated with folder"}
+
+        # Add workflow to folder
+        workflow_ids = folder.workflow_ids.copy()
+        workflow_ids.append(workflow_id)
+
+        # Update the folder in the database
+        async with document_service.db.async_session() as session:
+            await session.execute(
+                text(
+                    """
+                    UPDATE folders
+                    SET workflow_ids = :workflow_ids
+                    WHERE id = :folder_id
+                    """
+                ),
+                {"folder_id": folder_id, "workflow_ids": json.dumps(workflow_ids)},
+            )
+            await session.commit()
+
+        logger.info(f"Associated workflow {workflow_id} with folder {folder_id}")
+        return {"success": True, "message": f"Successfully associated workflow {workflow_id} with folder {folder_id}"}
+
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+
+
+@app.delete("/folders/{folder_id}/workflows/{workflow_id}")
+@telemetry.track(operation_type="disassociate_workflow_from_folder")
+async def disassociate_workflow_from_folder(
+    folder_id: str,
+    workflow_id: str,
+    auth: AuthContext = Depends(verify_token),
+) -> Dict[str, Any]:
+    """Remove a workflow association from a folder."""
+    try:
+        # Get the folder
+        folder = await document_service.db.get_folder(folder_id, auth)
+        if not folder:
+            raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
+
+        # Check if user has write access to the folder
+        if not document_service.db._check_folder_access(folder, auth, "write"):
+            raise HTTPException(status_code=403, detail="You don't have write access to this folder")
+
+        # Check if workflow is associated
+        if workflow_id not in folder.workflow_ids:
+            return {"success": True, "message": "Workflow not associated with folder"}
+
+        # Remove workflow from folder
+        workflow_ids = [wid for wid in folder.workflow_ids if wid != workflow_id]
+
+        # Update the folder in the database
+        async with document_service.db.async_session() as session:
+            await session.execute(
+                text(
+                    """
+                    UPDATE folders
+                    SET workflow_ids = :workflow_ids
+                    WHERE id = :folder_id
+                    """
+                ),
+                {"folder_id": folder_id, "workflow_ids": json.dumps(workflow_ids)},
+            )
+            await session.commit()
+
+        logger.info(f"Removed workflow {workflow_id} from folder {folder_id}")
+        return {"success": True, "message": f"Successfully removed workflow {workflow_id} from folder {folder_id}"}
+
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+
+
+@app.get("/folders/{folder_id}/workflows", response_model=List[Workflow])
+@telemetry.track(operation_type="list_folder_workflows")
+async def list_folder_workflows(
+    folder_id: str,
+    auth: AuthContext = Depends(verify_token),
+) -> List[Workflow]:
+    """List all workflows associated with a folder."""
+    try:
+        # Get the folder
+        folder = await document_service.db.get_folder(folder_id, auth)
+        if not folder:
+            raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
+
+        # Get all workflows
+        workflows = []
+        for workflow_id in folder.workflow_ids:
+            workflow = await workflow_service.get_workflow(workflow_id, auth)
+            if workflow:
+                workflows.append(workflow)
+
+        return workflows
+
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
 
 
 # ---------------------------------------------------------------------------

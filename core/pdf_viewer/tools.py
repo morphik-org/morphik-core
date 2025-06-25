@@ -232,6 +232,7 @@ class PDFViewer:
                 k=5,  # Get top 5 chunks to find the best page
                 min_score=0.0,
                 use_colpali=True,  # Use multimodal search for better PDF results
+                use_reranking=False,
             )
 
             if not chunks:

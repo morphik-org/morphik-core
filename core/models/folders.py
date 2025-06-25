@@ -21,6 +21,9 @@ class Folder(BaseModel):
     )
     access_control: Dict[str, List[str]] = Field(default_factory=lambda: {"readers": [], "writers": [], "admins": []})
     rules: List[Dict[str, Any]] = Field(default_factory=list)
+    workflow_ids: List[str] = Field(
+        default_factory=list, description="List of workflow IDs to run on document ingestion"
+    )
 
     def __hash__(self):
         return hash(self.id)
