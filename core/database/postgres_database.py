@@ -1093,8 +1093,18 @@ class PostgresDatabase(BaseDatabase):
             if "metadata" in graph_dict:
                 graph_dict["graph_metadata"] = graph_dict.pop("metadata")
 
-            # Serialize datetime objects to ISO format strings
+            # Serialize datetime objects to ISO format strings, but preserve actual datetime objects
+            # for created_at and updated_at fields that SQLAlchemy expects as datetime instances
+            created_at = graph_dict.get("created_at")
+            updated_at = graph_dict.get("updated_at")
+
             graph_dict = _serialize_datetime(graph_dict)
+
+            # Restore datetime objects for SQLAlchemy columns
+            if created_at:
+                graph_dict["created_at"] = created_at
+            if updated_at:
+                graph_dict["updated_at"] = updated_at
 
             # Store the graph metadata in PostgreSQL
             async with self.async_session() as session:
@@ -1305,8 +1315,18 @@ class PostgresDatabase(BaseDatabase):
             if "metadata" in graph_dict:
                 graph_dict["graph_metadata"] = graph_dict.pop("metadata")
 
-            # Serialize datetime objects to ISO format strings
+            # Serialize datetime objects to ISO format strings, but preserve actual datetime objects
+            # for created_at and updated_at fields that SQLAlchemy expects as datetime instances
+            created_at = graph_dict.get("created_at")
+            updated_at = graph_dict.get("updated_at")
+
             graph_dict = _serialize_datetime(graph_dict)
+
+            # Restore datetime objects for SQLAlchemy columns
+            if created_at:
+                graph_dict["created_at"] = created_at
+            if updated_at:
+                graph_dict["updated_at"] = updated_at
 
             # Update the graph in PostgreSQL
             async with self.async_session() as session:
