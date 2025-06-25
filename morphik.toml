@@ -14,6 +14,7 @@ dev_permissions = ["read", "write", "admin"]  # Default dev permissions
 [registered_models]
 # OpenAI models
 openai_gpt4-1 = { model_name = "gpt-4.1" }
+# openai_gpt4-1-mini = { model_name = "gemini/gemini-2.5-flash-preview-05-20" } # { model_name = "gpt-4.1-mini" }
 openai_gpt4-1-mini = { model_name = "gpt-4.1-mini" }
 
 # Azure OpenAI models
