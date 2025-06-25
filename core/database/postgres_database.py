@@ -188,6 +188,23 @@ def _serialize_datetime(obj: Any) -> Any:
     return obj
 
 
+def _parse_datetime_field(value: Any) -> Any:
+    """Helper function to parse datetime fields from PostgreSQL."""
+    if isinstance(value, str):
+        try:
+            # Handle PostgreSQL datetime strings that might be missing timezone colon
+            # e.g., '2025-06-25 21:35:49.22022+00' -> '2025-06-25 21:35:49.22022+00:00'
+            if value.endswith("+00") and not value.endswith("+00:00"):
+                value = value[:-3] + "+00:00"
+            elif value.endswith("-00") and not value.endswith("-00:00"):
+                value = value[:-3] + "-00:00"
+            return datetime.fromisoformat(value)
+        except ValueError:
+            # If parsing fails, return the original value
+            return value
+    return value
+
+
 class PostgresDatabase(BaseDatabase):
     """PostgreSQL implementation for document metadata storage."""
 
@@ -1189,8 +1206,8 @@ class PostgresDatabase(BaseDatabase):
                         "system_metadata": graph_model.system_metadata or {},  # Include system_metadata
                         "document_ids": document_ids,  # Use possibly filtered document_ids
                         "filters": graph_model.filters,
-                        "created_at": graph_model.created_at,
-                        "updated_at": graph_model.updated_at,
+                        "created_at": _parse_datetime_field(graph_model.created_at),
+                        "updated_at": _parse_datetime_field(graph_model.updated_at),
                         "owner": graph_model.owner,
                         "access_control": graph_model.access_control,
                     }
@@ -1259,8 +1276,8 @@ class PostgresDatabase(BaseDatabase):
                                     system_metadata=graph_model.system_metadata or {},  # Include system_metadata
                                     document_ids=filtered_doc_ids,  # Use filtered document_ids
                                     filters=graph_model.filters,
-                                    created_at=graph_model.created_at,
-                                    updated_at=graph_model.updated_at,
+                                    created_at=_parse_datetime_field(graph_model.created_at),
+                                    updated_at=_parse_datetime_field(graph_model.updated_at),
                                     owner=graph_model.owner,
                                     access_control=graph_model.access_control,
                                 )
@@ -1277,8 +1294,8 @@ class PostgresDatabase(BaseDatabase):
                             system_metadata=graph.system_metadata or {},  # Include system_metadata
                             document_ids=graph.document_ids,
                             filters=graph.filters,
-                            created_at=graph.created_at,
-                            updated_at=graph.updated_at,
+                            created_at=_parse_datetime_field(graph.created_at),
+                            updated_at=_parse_datetime_field(graph.updated_at),
                             owner=graph.owner,
                             access_control=graph.access_control,
                         )
