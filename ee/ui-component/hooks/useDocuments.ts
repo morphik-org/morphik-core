@@ -45,6 +45,8 @@ export function useDocuments({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const isMountedRef = useRef(true);
+  const previousFoldersLength = useRef(folders.length);
+  const hasInitiallyFetched = useRef(false);
 
   const fetchDocuments = useCallback(
     async (forceRefresh = false) => {
@@ -166,14 +168,42 @@ export function useDocuments({
     [apiBaseUrl, authToken, selectedFolder, folders]
   );
 
+  // Reset the initial fetch flag when folder changes
+  useEffect(() => {
+    hasInitiallyFetched.current = false;
+  }, [selectedFolder]);
+
   useEffect(() => {
     isMountedRef.current = true;
-    fetchDocuments();
+
+    // Skip if we don't have a selected folder
+    if (!selectedFolder) {
+      return;
+    }
+
+    // For "all" documents, fetch immediately
+    if (selectedFolder === "all") {
+      if (!hasInitiallyFetched.current) {
+        fetchDocuments();
+        hasInitiallyFetched.current = true;
+      }
+    }
+    // For specific folders, only fetch if folders are loaded
+    else if (folders.length > 0) {
+      // Only fetch if we haven't fetched for this folder yet
+      if (!hasInitiallyFetched.current) {
+        fetchDocuments();
+        hasInitiallyFetched.current = true;
+      }
+    }
+
+    // Update the previous folders length
+    previousFoldersLength.current = folders.length;
 
     return () => {
       isMountedRef.current = false;
     };
-  }, [fetchDocuments]);
+  }, [fetchDocuments, selectedFolder, folders.length]);
 
   const refresh = useCallback(async () => {
     // Clear cache for current selection

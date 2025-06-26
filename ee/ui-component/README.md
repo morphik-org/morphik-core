@@ -66,12 +66,14 @@ npm run dev
 ## Features
 
 - **Document Management**
+
   - Upload various file types (PDF, TXT, MD, MP3)
   - View and manage uploaded documents
   - Real-time processing status
   - Collapsible document panel
 
 - **Chat Interface**
+
   - Real-time chat with your knowledge base
   - Support for long messages
   - Message history

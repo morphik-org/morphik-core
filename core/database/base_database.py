@@ -298,7 +298,7 @@ class BaseDatabase(ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
-    async def store_workflow(self, workflow: "Workflow") -> bool:  # noqa: D401 – forward reference
+    async def store_workflow(self, workflow: "Workflow", auth: AuthContext) -> bool:  # noqa: D401 – forward reference
         """Persist a Workflow definition."""
 
     @abstractmethod

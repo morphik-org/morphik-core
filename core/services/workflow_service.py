@@ -39,7 +39,7 @@ class WorkflowService:
         await self._enforce_write(auth)
 
         # Persist to database
-        success = await self.db.store_workflow(workflow)
+        success = await self.db.store_workflow(workflow, auth)
         if not success:
             raise RuntimeError("Failed to store workflow in database")
 
