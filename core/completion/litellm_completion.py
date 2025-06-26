@@ -278,7 +278,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
 
             # Add images if available
             if image_urls:
-                NUM_IMAGES = min(5, len(image_urls))
+                NUM_IMAGES = len(image_urls)
                 for img_url in image_urls[:NUM_IMAGES]:
                     content_list.append({"type": "image_url", "image_url": {"url": img_url}})
 
@@ -390,14 +390,14 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         # Use provided model_config or fall back to instance config
         config = model_config or self.model_config
         model_name = config.get("model", config.get("model_name", ""))
-        
+
         logger.debug(f"Using LiteLLM for model: {model_name}")
         # Build messages for LiteLLM
         content_list = [{"type": "text", "text": user_content}]
         include_images = image_urls  # Use the collected full data URIs
 
         if include_images:
-            NUM_IMAGES = min(5, len(image_urls))
+            NUM_IMAGES = len(image_urls)
             for img_url in image_urls[:NUM_IMAGES]:
                 content_list.append({"type": "image_url", "image_url": {"url": img_url}})
 
@@ -445,14 +445,14 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         # Use provided model_config or fall back to instance config
         config = model_config or self.model_config
         model_name = config.get("model", config.get("model_name", ""))
-        
+
         logger.debug(f"Using LiteLLM streaming for model: {model_name}")
         # Build messages for LiteLLM
         content_list = [{"type": "text", "text": user_content}]
         include_images = image_urls  # Use the collected full data URIs
 
         if include_images:
-            NUM_IMAGES = min(5, len(image_urls))
+            NUM_IMAGES = len(image_urls)
             for img_url in image_urls[:NUM_IMAGES]:
                 content_list.append({"type": "image_url", "image_url": {"url": img_url}})
 
@@ -550,7 +550,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             # Use the instance's pre-configured model
             model_config = self.model_config
             is_ollama = self.is_ollama
-        
+
         # Process context chunks and handle images
         context_text, image_urls, ollama_image_data = process_context_chunks(request.context_chunks, is_ollama)
 
@@ -630,4 +630,6 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         if is_ollama:
             return await self._handle_standard_ollama(user_content, ollama_image_data, request, history_messages)
         else:
-            return await self._handle_standard_litellm(user_content, image_urls, request, history_messages, model_config)
+            return await self._handle_standard_litellm(
+                user_content, image_urls, request, history_messages, model_config
+            )
