@@ -209,20 +209,18 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
 
               <ScrollArea className="flex-1">
                 <div className="space-y-6 pr-4">
-                  {groupedResults?.has_padding ? (
-                    // Display grouped results with carousel
-                    groupedResults.groups.map(group => (
-                      <SearchResultCardCarousel
-                        key={`${group.main_chunk.document_id}-${group.main_chunk.chunk_number}`}
-                        group={group}
-                      />
-                    ))
-                  ) : (
-                    // Display regular results
-                    searchResults.map(result => (
-                      <SearchResultCard key={`${result.document_id}-${result.chunk_number}`} result={result} />
-                    ))
-                  )}
+                  {groupedResults?.has_padding
+                    ? // Display grouped results with carousel
+                      groupedResults.groups.map(group => (
+                        <SearchResultCardCarousel
+                          key={`${group.main_chunk.document_id}-${group.main_chunk.chunk_number}`}
+                          group={group}
+                        />
+                      ))
+                    : // Display regular results
+                      searchResults.map(result => (
+                        <SearchResultCard key={`${result.document_id}-${result.chunk_number}`} result={result} />
+                      ))}
                 </div>
               </ScrollArea>
             </div>

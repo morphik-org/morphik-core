@@ -143,8 +143,6 @@ async def ingest_file(
                 "readers": [auth.entity_id],
                 "writers": [auth.entity_id],
                 "admins": [auth.entity_id],
-                "user_id": [auth.user_id] if auth.user_id else [],
-                "app_access": ([auth.app_id] if auth.app_id else []),
             },
             system_metadata={"status": "processing"},
         )
@@ -360,8 +358,6 @@ async def batch_ingest_files(
                     "readers": [auth.entity_id],
                     "writers": [auth.entity_id],
                     "admins": [auth.entity_id],
-                    "user_id": [auth.user_id] if auth.user_id else [],
-                    "app_access": ([auth.app_id] if auth.app_id else []),
                 },
             )
 

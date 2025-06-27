@@ -16,7 +16,10 @@
   <a href="https://morphik.ai/docs">Docs</a> - <a href="https://discord.gg/BwMtv3Zaju">Community</a> - <a href="https://morphik.ai/docs/blogs/gpt-vs-morphik-multimodal">Why Morphik?</a> - <a href="https://github.com/morphik-org/morphik-core/issues/new?assignees=&labels=bug&template=bug_report.md">Bug reports</a>
 </p>
 
-> **Migration Required for Existing Installations**: If you installed Morphik before June 8, 2025, our most recent changes affect the way content is stored in the multivector chunks. Please run the `scripts/migrate_multivector_to_external_storage.py` script before launching Morphik.
+> **Migration Required for Existing Installations**: If you installed Morphik before June 22nd, 2025, we've optimized our authentication system for 70-80% faster query performance. Please run the migration script before launching Morphik:
+> ```bash
+> python scripts/migrate_auth_columns_complete.py --postgres-uri "postgresql+asyncpg://user:pass@host:port/db"
+> ```
 
 ## Morphik is a AI-native toolset for visually rich documents and multimodal data
 
@@ -102,7 +105,7 @@ Currently, we're focused on improving speed, integrating with more tools, and fi
 Morphik Core is **source-available** under the [Business Source License 1.1](./LICENSE).
 
 - **Personal / Indie use**: free.
-- **Commercial production use**: free if your Morphik deployment generates < $2 000/month in gross revenue.  
+- **Commercial production use**: free if your Morphik deployment generates < $2 000/month in gross revenue.
   Otherwise purchase a commercial key at <https://morphik.ai/pricing>.
 - **Future open source**: each code version automatically re-licenses to Apache 2.0 exactly four years after its first release.
 

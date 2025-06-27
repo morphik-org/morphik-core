@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-import { ChunkGroup, SearchResult } from "@/components/types";
+import { ChunkGroup } from "@/components/types";
 
 interface SearchResultCardCarouselProps {
   group: ChunkGroup;
@@ -27,9 +27,8 @@ const SearchResultCardCarousel: React.FC<SearchResultCardCarouselProps> = ({ gro
           .sort((a, b) => a.chunk_number - b.chunk_number)
       );
 
-    return allChunks.findIndex(c =>
-      c.document_id === group.main_chunk.document_id &&
-      c.chunk_number === group.main_chunk.chunk_number
+    return allChunks.findIndex(
+      c => c.document_id === group.main_chunk.document_id && c.chunk_number === group.main_chunk.chunk_number
     );
   });
 
@@ -83,11 +82,11 @@ const SearchResultCardCarousel: React.FC<SearchResultCardCarouselProps> = ({ gro
   };
 
   const nextChunk = () => {
-    setCurrentIndex((prev) => (prev + 1) % allChunks.length);
+    setCurrentIndex(prev => (prev + 1) % allChunks.length);
   };
 
   const prevChunk = () => {
-    setCurrentIndex((prev) => (prev - 1 + allChunks.length) % allChunks.length);
+    setCurrentIndex(prev => (prev - 1 + allChunks.length) % allChunks.length);
   };
 
   return (
@@ -95,10 +94,18 @@ const SearchResultCardCarousel: React.FC<SearchResultCardCarouselProps> = ({ gro
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between">
           <div className="flex-1">
-            <CardTitle className="text-base flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-base">
               {currentChunk.filename || `Document ${currentChunk.document_id.substring(0, 8)}...`}
-              {isMainChunk && <Badge variant="default" className="text-xs">Match</Badge>}
-              {!isMainChunk && <Badge variant="secondary" className="text-xs">Context</Badge>}
+              {isMainChunk && (
+                <Badge variant="default" className="text-xs">
+                  Match
+                </Badge>
+              )}
+              {!isMainChunk && (
+                <Badge variant="secondary" className="text-xs">
+                  Context
+                </Badge>
+              )}
             </CardTitle>
             <CardDescription>
               Chunk {currentChunk.chunk_number} • Score: {currentChunk.score.toFixed(2)}
@@ -177,7 +184,7 @@ const SearchResultCardCarousel: React.FC<SearchResultCardCarouselProps> = ({ gro
                   {allChunks.map((chunk, index) => (
                     <div
                       key={`${chunk.document_id}-${chunk.chunk_number}`}
-                      className={`p-2 rounded border cursor-pointer transition-colors ${
+                      className={`cursor-pointer rounded border p-2 transition-colors ${
                         index === currentIndex
                           ? "border-primary bg-primary/5"
                           : "border-muted hover:border-muted-foreground/50"
@@ -187,8 +194,16 @@ const SearchResultCardCarousel: React.FC<SearchResultCardCarouselProps> = ({ gro
                       <div className="flex items-center justify-between text-sm">
                         <span>Chunk {chunk.chunk_number}</span>
                         <div className="flex gap-2">
-                          {!chunk.is_padding && <Badge variant="default" className="text-xs">Match</Badge>}
-                          {chunk.is_padding && <Badge variant="secondary" className="text-xs">Context</Badge>}
+                          {!chunk.is_padding && (
+                            <Badge variant="default" className="text-xs">
+                              Match
+                            </Badge>
+                          )}
+                          {chunk.is_padding && (
+                            <Badge variant="secondary" className="text-xs">
+                              Context
+                            </Badge>
+                          )}
                           <span className="text-muted-foreground">Score: {chunk.score.toFixed(2)}</span>
                         </div>
                       </div>

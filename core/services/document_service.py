@@ -1156,7 +1156,6 @@ class DocumentService:
                 "readers": [auth.entity_id],
                 "writers": [auth.entity_id],
                 "admins": [auth.entity_id],
-                "user_id": [auth.user_id if auth.user_id else []],  # user scoping
             },
         )
 
@@ -1345,8 +1344,6 @@ class DocumentService:
                 "readers": [auth.entity_id],
                 "writers": [auth.entity_id],
                 "admins": [auth.entity_id],
-                "user_id": [auth.user_id] if auth.user_id else [],
-                "app_access": ([auth.app_id] if auth.app_id else []),
             },
         )
 
