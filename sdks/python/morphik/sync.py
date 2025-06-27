@@ -289,6 +289,7 @@ class Folder:
         min_score: float = 0.0,
         use_colpali: bool = True,
         additional_folders: Optional[List[str]] = None,
+        padding: int = 0,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks within this folder.
@@ -300,21 +301,16 @@ class Folder:
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
             additional_folders: Optional list of extra folders to include in the scope
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
         """
         effective_folder = self._merge_folders(additional_folders)
-        request = {
-            "query": query,
-            "filters": filters,
-            "k": k,
-            "min_score": min_score,
-            "use_colpali": use_colpali,
-            "folder_name": effective_folder,
-        }
-
-        response = self._client._request("POST", "retrieve/chunks", request)
+        payload = self._client._logic._prepare_retrieve_chunks_request(
+            query, filters, k, min_score, use_colpali, effective_folder, None, padding
+        )
+        response = self._client._request("POST", "retrieve/chunks", payload)
         return self._client._logic._parse_chunk_result_list_response(response)
 
     def retrieve_docs(
@@ -864,6 +860,7 @@ class UserScope:
         min_score: float = 0.0,
         use_colpali: bool = True,
         additional_folders: Optional[List[str]] = None,
+        padding: int = 0,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks as this end user.
@@ -875,26 +872,16 @@ class UserScope:
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
             additional_folders: Optional list of extra folders to include in the scope
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
         """
         effective_folder = self._merge_folders(additional_folders)
-        request = {
-            "query": query,
-            "filters": filters,
-            "k": k,
-            "min_score": min_score,
-            "use_colpali": use_colpali,
-            "end_user_id": self._end_user_id,  # Add end user ID here
-            "folder_name": effective_folder,  # Add folder name if provided
-        }
-
-        # Add folder name if scoped to a folder
-        if self._folder_name:
-            request["folder_name"] = self._folder_name
-
-        response = self._client._request("POST", "retrieve/chunks", request)
+        payload = self._client._logic._prepare_retrieve_chunks_request(
+            query, filters, k, min_score, use_colpali, effective_folder, self._end_user_id, padding
+        )
+        response = self._client._request("POST", "retrieve/chunks", payload)
         return self._client._logic._parse_chunk_result_list_response(response)
 
     def retrieve_docs(
@@ -1623,6 +1610,7 @@ class Morphik:
         min_score: float = 0.0,
         use_colpali: bool = True,
         folder_name: Optional[Union[str, List[str]]] = None,
+        padding: int = 0,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks.
@@ -1634,6 +1622,7 @@ class Morphik:
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model to retrieve the chunks
                 (only works for documents ingested with `use_colpali=True`)
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
         Returns:
             List[ChunkResult]
 
@@ -1646,7 +1635,7 @@ class Morphik:
             ```
         """
         payload = self._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, folder_name, None
+            query, filters, k, min_score, use_colpali, folder_name, None, padding
         )
         response = self._request("POST", "retrieve/chunks", data=payload)
         return self._logic._parse_chunk_result_list_response(response)

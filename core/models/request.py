@@ -15,6 +15,11 @@ class RetrieveRequest(BaseModel):
     min_score: float = Field(default=0.0)
     use_reranking: Optional[bool] = None  # If None, use default from config
     use_colpali: Optional[bool] = None
+    padding: int = Field(
+        default=0,
+        ge=0,
+        description="Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only)",
+    )
     graph_name: Optional[str] = Field(
         None, description="Name of the graph to use for knowledge graph-enhanced retrieval"
     )

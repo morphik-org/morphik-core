@@ -5,8 +5,23 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Info, Calendar, Clock, Copy, Check } from "lucide-react";
+import {
+  Info,
+  Calendar,
+  Clock,
+  Copy,
+  Check,
+  Edit2,
+  Save,
+  X,
+  Plus,
+  Trash2,
+  ChevronRight,
+  ChevronDown,
+} from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { showAlert } from "@/components/ui/alert-system";
 import Image from "next/image";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 
@@ -23,6 +38,7 @@ interface DocumentDetailProps {
   loading: boolean;
   onClose: () => void;
   onViewInPDFViewer?: (documentId: string) => void; // Add navigation callback
+  onMetadataUpdate?: (documentId: string) => void; // Callback to refresh selected document
 }
 
 const DocumentDetail: React.FC<DocumentDetailProps> = ({
@@ -36,10 +52,17 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
   loading,
   onClose,
   onViewInPDFViewer,
+  onMetadataUpdate,
 }) => {
   const [isMovingToFolder, setIsMovingToFolder] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [copiedDocumentId, setCopiedDocumentId] = useState(false);
+  const [isEditingMetadata, setIsEditingMetadata] = useState(false);
+  const [editedMetadata, setEditedMetadata] = useState<Record<string, unknown>>({});
+  const [newMetadataKey, setNewMetadataKey] = useState("");
+  const [newMetadataValue, setNewMetadataValue] = useState("");
+  const [isSavingMetadata, setIsSavingMetadata] = useState(false);
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
   if (!selectedDocument) {
     return (
@@ -112,6 +135,154 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
     }
   };
 
+  // Helper function to toggle expanded state
+  const toggleExpanded = (key: string) => {
+    setExpandedKeys(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else {
+        newSet.add(key);
+      }
+      return newSet;
+    });
+  };
+
+  // Helper function to set value at a nested path
+  const setNestedValue = (obj: Record<string, unknown>, path: string[], value: unknown): Record<string, unknown> => {
+    const newObj = JSON.parse(JSON.stringify(obj)) as Record<string, unknown>; // Deep clone
+    let current = newObj as Record<string, unknown>;
+
+    for (let i = 0; i < path.length - 1; i++) {
+      if (!current[path[i]]) {
+        current[path[i]] = {};
+      }
+      current = current[path[i]] as Record<string, unknown>;
+    }
+
+    if (value === undefined) {
+      delete current[path[path.length - 1]];
+    } else {
+      current[path[path.length - 1]] = value;
+    }
+
+    return newObj;
+  };
+
+  // Helper function to check if value is a primitive
+  const isPrimitive = (value: unknown): boolean => {
+    return (
+      value === null ||
+      value === undefined ||
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    );
+  };
+
+  // Helper function to parse JSON safely
+  const parseJsonSafely = (value: string): unknown => {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  };
+
+  // Initialize edited metadata when starting to edit
+  const startEditingMetadata = () => {
+    setEditedMetadata(selectedDocument.metadata || {});
+    setIsEditingMetadata(true);
+    // Expand all first-level objects by default
+    const firstLevelObjects = Object.entries(selectedDocument.metadata || {})
+      .filter(([, value]) => !isPrimitive(value))
+      .map(([key]) => key);
+    setExpandedKeys(new Set(firstLevelObjects));
+  };
+
+  // Cancel metadata editing
+  const cancelEditingMetadata = () => {
+    setEditedMetadata({});
+    setNewMetadataKey("");
+    setNewMetadataValue("");
+    setIsEditingMetadata(false);
+    setExpandedKeys(new Set());
+  };
+
+  // Update a metadata field at a given path
+  const updateMetadataField = (path: string[], value: string) => {
+    const parsedValue = parseJsonSafely(value);
+    setEditedMetadata(prev => setNestedValue(prev as Record<string, unknown>, path, parsedValue));
+  };
+
+  // Delete a metadata field at a given path
+  const deleteMetadataField = (path: string[]) => {
+    setEditedMetadata(prev => setNestedValue(prev as Record<string, unknown>, path, undefined));
+  };
+
+  // Add a new field to an object at a given path
+  const addFieldToObject = (parentPath: string[], key: string, value: string) => {
+    const parsedValue = parseJsonSafely(value);
+    const newPath = [...parentPath, key];
+    setEditedMetadata(prev => setNestedValue(prev as Record<string, unknown>, newPath, parsedValue));
+  };
+
+  // Add new metadata field at root level
+  const addMetadataField = () => {
+    if (newMetadataKey.trim() && !editedMetadata.hasOwnProperty(newMetadataKey)) {
+      const parsedValue = parseJsonSafely(newMetadataValue);
+      setEditedMetadata(prev => ({
+        ...prev,
+        [newMetadataKey.trim()]: parsedValue,
+      }));
+      setNewMetadataKey("");
+      setNewMetadataValue("");
+    }
+  };
+
+  // Save metadata changes
+  const saveMetadata = async () => {
+    if (!selectedDocument) return;
+
+    setIsSavingMetadata(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/documents/${selectedDocument.external_id}/update_metadata`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify(editedMetadata),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to update metadata: ${response.statusText}`);
+      }
+
+      showAlert("Metadata updated successfully", { type: "success", duration: 3000 });
+
+      // Refresh documents to get the updated data
+      await refreshDocuments();
+
+      // Call the metadata update callback to refresh the selected document
+      if (onMetadataUpdate) {
+        onMetadataUpdate(selectedDocument.external_id);
+      }
+
+      // Exit edit mode
+      setIsEditingMetadata(false);
+      setEditedMetadata({});
+    } catch (error) {
+      console.error("Error updating metadata:", error);
+      showAlert(`Failed to update metadata: ${error instanceof Error ? error.message : String(error)}`, {
+        type: "error",
+        duration: 3000,
+      });
+    } finally {
+      setIsSavingMetadata(false);
+    }
+  };
+
   const handleMoveToFolder = async (folderName: string | null) => {
     if (isMovingToFolder || !selectedDocument) return;
 
@@ -164,6 +335,83 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
     } finally {
       setIsMovingToFolder(false);
     }
+  };
+
+  // Recursive component to render nested metadata
+  const MetadataEditor = ({ data, path = [], depth = 0 }: { data: unknown; path?: string[]; depth?: number }) => {
+    if (isPrimitive(data) || data === null || data === undefined) {
+      return null;
+    }
+
+    const isArray = Array.isArray(data);
+    const entries = isArray ? data.map((item, index) => [index.toString(), item]) : Object.entries(data);
+
+    return (
+      <div className={depth > 0 ? "ml-4 space-y-2" : "space-y-2"}>
+        {entries.map(([key, value]) => {
+          const currentPath = [...path, key];
+          const pathKey = currentPath.join(".");
+          const isExpanded = expandedKeys.has(pathKey);
+          const isObject = !isPrimitive(value) && value !== null;
+
+          return (
+            <div key={key} className="space-y-1">
+              <div className="flex items-center gap-2">
+                {isObject && (
+                  <Button variant="ghost" size="icon" onClick={() => toggleExpanded(pathKey)} className="h-6 w-6 p-0">
+                    {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                  </Button>
+                )}
+                {!isObject && <div className="w-6" />}
+
+                <Input value={key} disabled={isArray} className="h-8 w-[140px] flex-shrink-0 text-sm font-medium" />
+
+                {isPrimitive(value) ? (
+                  <Input
+                    value={String(value ?? "")}
+                    onChange={e => updateMetadataField(currentPath, e.target.value)}
+                    className="h-8 flex-1 text-sm"
+                    placeholder="Value"
+                  />
+                ) : (
+                  <div className="flex-1 rounded border bg-muted/30 px-2 py-1 text-sm text-muted-foreground">
+                    {Array.isArray(value) ? `Array[${value.length}]` : `Object{${Object.keys(value).length}}`}
+                  </div>
+                )}
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => deleteMetadataField(currentPath)}
+                  className="h-8 w-8 text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {isObject && isExpanded && <MetadataEditor data={value} path={currentPath} depth={depth + 1} />}
+
+              {isObject && isExpanded && !isArray && (
+                <div className="ml-10 flex items-center gap-2 border-t pt-2">
+                  <Input
+                    placeholder="New key"
+                    className="h-8 w-[140px] text-sm"
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                        const newKey = e.currentTarget.value.trim();
+                        addFieldToObject(currentPath, newKey, "");
+                        e.currentTarget.value = "";
+                      }
+                    }}
+                  />
+                  <span className="text-xs text-muted-foreground">Press Enter to add</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
@@ -307,18 +555,91 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
             </div>
           )}
 
-          <Accordion type="single" collapsible>
-            <AccordionItem value="metadata">
-              <AccordionTrigger>Metadata</AccordionTrigger>
-              <AccordionContent>
-                <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">
-                  {JSON.stringify(selectedDocument.metadata, null, 2)}
-                </pre>
-              </AccordionContent>
-            </AccordionItem>
+          {/* Metadata Section */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium">Metadata</h3>
+              {!isEditingMetadata ? (
+                <Button variant="ghost" size="sm" onClick={startEditingMetadata} className="h-8 px-2">
+                  <Edit2 className="mr-1 h-4 w-4" />
+                  Edit
+                </Button>
+              ) : (
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={cancelEditingMetadata}
+                    disabled={isSavingMetadata}
+                    className="h-8 px-2"
+                  >
+                    <X className="mr-1 h-4 w-4" />
+                    Cancel
+                  </Button>
+                  <Button size="sm" onClick={saveMetadata} disabled={isSavingMetadata} className="h-8 px-2">
+                    <Save className="mr-1 h-4 w-4" />
+                    {isSavingMetadata ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+              )}
+            </div>
 
+            <div className="rounded-lg border bg-muted/30 p-3">
+              {!isEditingMetadata ? (
+                // View mode
+                <div className="space-y-2">
+                  {selectedDocument.metadata && Object.keys(selectedDocument.metadata).length > 0 ? (
+                    Object.entries(selectedDocument.metadata).map(([key, value]) => (
+                      <div key={key} className="flex items-start gap-2">
+                        <span className="min-w-[120px] text-sm font-medium">{key}:</span>
+                        <span className="break-all text-sm text-muted-foreground">
+                          {typeof value === "object" ? JSON.stringify(value) : String(value)}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No metadata available</p>
+                  )}
+                </div>
+              ) : (
+                // Edit mode
+                <div className="space-y-3">
+                  <MetadataEditor data={editedMetadata} />
+
+                  {/* Add new field */}
+                  <div className="flex items-center gap-2 border-t pt-3">
+                    <Input
+                      value={newMetadataKey}
+                      onChange={e => setNewMetadataKey(e.target.value)}
+                      placeholder="New key"
+                      className="h-8 w-[140px] flex-shrink-0 text-sm"
+                      onKeyPress={e => e.key === "Enter" && addMetadataField()}
+                    />
+                    <Input
+                      value={newMetadataValue}
+                      onChange={e => setNewMetadataValue(e.target.value)}
+                      placeholder="New value (JSON supported)"
+                      className="h-8 flex-1 text-sm"
+                      onKeyPress={e => e.key === "Enter" && addMetadataField()}
+                    />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={addMetadataField}
+                      disabled={!newMetadataKey.trim()}
+                      className="h-8 w-8"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <Accordion type="single" collapsible>
             <AccordionItem value="system-metadata">
-              <AccordionTrigger>Text</AccordionTrigger>
+              <AccordionTrigger>Text Content</AccordionTrigger>
               <AccordionContent>
                 <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">
                   {JSON.stringify(selectedDocument.system_metadata.content, null, 2)}

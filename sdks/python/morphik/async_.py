@@ -288,6 +288,7 @@ class AsyncFolder:
         min_score: float = 0.0,
         use_colpali: bool = True,
         additional_folders: Optional[List[str]] = None,
+        padding: int = 0,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks within this folder.
@@ -299,13 +300,14 @@ class AsyncFolder:
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
             additional_folders: Optional list of additional folder names to further scope operations
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
         """
         effective_folder = self._merge_folders(additional_folders)
         payload = self._client._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, effective_folder, None
+            query, filters, k, min_score, use_colpali, effective_folder, None, padding
         )
         response = await self._client._request("POST", "retrieve/chunks", data=payload)
         return self._client._logic._parse_chunk_result_list_response(response)
@@ -826,6 +828,7 @@ class AsyncUserScope:
         min_score: float = 0.0,
         use_colpali: bool = True,
         additional_folders: Optional[List[str]] = None,
+        padding: int = 0,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks as this end user.
@@ -837,13 +840,14 @@ class AsyncUserScope:
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
             additional_folders: Optional list of additional folder names to further scope operations
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
         """
         effective_folder = self._merge_folders(additional_folders)
         payload = self._client._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, effective_folder, self._end_user_id
+            query, filters, k, min_score, use_colpali, effective_folder, self._end_user_id, padding
         )
         response = await self._client._request("POST", "retrieve/chunks", data=payload)
         return self._client._logic._parse_chunk_result_list_response(response)
@@ -1478,6 +1482,7 @@ class AsyncMorphik:
         min_score: float = 0.0,
         use_colpali: bool = True,
         folder_name: Optional[Union[str, List[str]]] = None,
+        padding: int = 0,
     ) -> List[FinalChunkResult]:
         """
         Search for relevant chunks.
@@ -1489,6 +1494,7 @@ class AsyncMorphik:
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model to retrieve chunks
                 (only works for documents ingested with `use_colpali=True`)
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
         Returns:
             List[FinalChunkResult]
 
@@ -1496,13 +1502,14 @@ class AsyncMorphik:
             ```python
             chunks = await db.retrieve_chunks(
                 "What are the key findings?",
-                filters={"department": "research"}
+                filters={"department": "research"},
+                padding=2  # Get 2 pages before and after each matched page
             )
             ```
         """
         effective_folder = folder_name if folder_name is not None else None
         payload = self._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, effective_folder, None
+            query, filters, k, min_score, use_colpali, effective_folder, None, padding
         )
         response = await self._request("POST", "retrieve/chunks", data=payload)
         return self._logic._parse_chunk_result_list_response(response)

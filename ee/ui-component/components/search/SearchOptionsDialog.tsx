@@ -129,6 +129,25 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
             />
           </div>
 
+          {searchOptions.use_colpali && (
+            <div>
+              <Label htmlFor="search-padding" className="mb-2 block">
+                Padding: {searchOptions.padding || 0}
+              </Label>
+              <Input
+                id="search-padding"
+                type="number"
+                min={0}
+                max={10}
+                value={searchOptions.padding || 0}
+                onChange={e => updateSearchOption("padding", parseInt(e.target.value) || 0)}
+              />
+              <p className="mt-1 text-sm text-muted-foreground">
+                Number of additional pages to retrieve before and after matched pages (ColPali only)
+              </p>
+            </div>
+          )}
+
           <div>
             <Label htmlFor="folderName" className="mb-2 block">
               Scope to Folder

@@ -862,10 +862,8 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
             </div>
             {/* Sticky Actions column */}
             <div
-              className={`sticky right-0 z-10 flex w-[120px] items-center justify-end gap-1 border-l border-border px-3 py-2 ${
-                doc.external_id === selectedDocument?.external_id
-                  ? "bg-primary/10 hover:bg-primary/15"
-                  : "bg-background hover:bg-muted/70"
+              className={`sticky right-0 z-20 flex w-[120px] items-center justify-end gap-1 border-l border-border px-3 py-2 ${
+                doc.external_id === selectedDocument?.external_id ? "bg-accent" : "bg-background"
               }`}
             >
               {doc.content_type === "application/pdf" && onViewInPDFViewer && (

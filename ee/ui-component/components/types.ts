@@ -7,6 +7,7 @@ export interface SearchOptions {
   filters?: string | object; // JSON string or object with external_id array
   use_reranking?: boolean;
   use_colpali?: boolean;
+  padding?: number; // Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only)
 }
 
 export interface QueryOptions extends SearchOptions {
@@ -85,6 +86,20 @@ export interface SearchResult {
   score: number;
   filename?: string;
   metadata: Record<string, unknown>;
+  is_padding?: boolean; // Whether this chunk was added as padding
+}
+
+export interface ChunkGroup {
+  main_chunk: SearchResult;
+  padding_chunks: SearchResult[];
+  total_chunks: number;
+}
+
+export interface GroupedSearchResponse {
+  chunks: SearchResult[]; // Flat list for backward compatibility
+  groups: ChunkGroup[]; // Grouped chunks for UI display
+  total_results: number;
+  has_padding: boolean;
 }
 
 export interface Source {

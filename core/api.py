@@ -27,7 +27,7 @@ from core.middleware.profiling import ProfilingMiddleware
 from core.models.auth import AuthContext, EntityType
 from core.models.chat import ChatMessage
 from core.models.completion import ChunkSource, CompletionResponse
-from core.models.documents import ChunkResult, Document, DocumentResult
+from core.models.documents import ChunkResult, Document, DocumentResult, GroupedChunkResponse
 from core.models.folders import Folder, FolderCreate, FolderSummary
 from core.models.graph import Graph
 from core.models.prompts import validate_prompt_overrides_with_http_exception
@@ -322,12 +322,57 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
             request.folder_name,
             request.end_user_id,
             perf,  # Pass performance tracker
+            request.padding,  # Pass padding parameter
         )
 
         # Log consolidated performance summary
         perf.log_summary(f"Retrieved {len(results)} chunks")
 
         return results
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.post("/retrieve/chunks/grouped", response_model=GroupedChunkResponse)
+@telemetry.track(operation_type="retrieve_chunks_grouped", metadata_resolver=telemetry.retrieve_chunks_metadata)
+async def retrieve_chunks_grouped(request: RetrieveRequest, auth: AuthContext = Depends(verify_token)):
+    """
+    Retrieve relevant chunks with grouped response format.
+
+    Returns both flat results (for backward compatibility) and grouped results (for UI).
+    When padding > 0, groups chunks by main matches and their padding chunks.
+
+    Args:
+        request: RetrieveRequest containing query, filters, padding, etc.
+        auth: Authentication context
+
+    Returns:
+        GroupedChunkResponse: Contains both flat chunks and grouped chunks
+    """
+    # Initialize performance tracker
+    perf = PerformanceTracker(f"Retrieve Chunks Grouped: '{request.query[:50]}...'")
+
+    try:
+        # Main retrieval operation
+        perf.start_phase("document_service_retrieve_chunks_grouped")
+        result = await document_service.retrieve_chunks_grouped(
+            request.query,
+            auth,
+            request.filters,
+            request.k,
+            request.min_score,
+            request.use_reranking,
+            request.use_colpali,
+            request.folder_name,
+            request.end_user_id,
+            perf,  # Pass performance tracker
+            request.padding,  # Pass padding parameter
+        )
+
+        # Log consolidated performance summary
+        perf.log_summary(f"Retrieved {len(result.chunks)} total chunks in {len(result.groups)} groups")
+
+        return result
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
@@ -597,6 +642,7 @@ async def query_completion(
             perf,  # Pass performance tracker
             request.stream_response,
             request.llm_config,
+            request.padding,  # Pass padding parameter
         )
 
         # Handle streaming vs non-streaming responses

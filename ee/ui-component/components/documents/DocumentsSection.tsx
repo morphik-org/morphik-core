@@ -1267,6 +1267,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 loading={loading}
                 onClose={() => setSelectedDocument(null)}
                 onViewInPDFViewer={onViewInPDFViewer}
+                onMetadataUpdate={fetchDocument}
               />
             </div>
           )}

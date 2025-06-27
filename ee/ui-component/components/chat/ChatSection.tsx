@@ -109,12 +109,13 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   );
 
   // Derive safe option values with sensible defaults to avoid undefined issues in UI
-  const safeQueryOptions: Required<Pick<QueryOptions, "k" | "min_score" | "temperature" | "max_tokens">> &
+  const safeQueryOptions: Required<Pick<QueryOptions, "k" | "min_score" | "temperature" | "max_tokens" | "padding">> &
     QueryOptions = {
     k: queryOptions.k ?? 5,
     min_score: queryOptions.min_score ?? 0.7,
     temperature: queryOptions.temperature ?? 0.3,
     max_tokens: queryOptions.max_tokens ?? 1024,
+    padding: queryOptions.padding ?? 0,
     ...queryOptions,
   };
 
@@ -811,6 +812,26 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                             onCheckedChange={checked => safeUpdateOption("use_colpali", checked)}
                           />
                         </div>
+                        {safeQueryOptions.use_colpali && (
+                          <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                            <Label htmlFor="query-padding" className="flex justify-between text-sm font-medium">
+                              <span>Padding</span>
+                              <span className="text-muted-foreground">{safeQueryOptions.padding || 0}</span>
+                            </Label>
+                            <Slider
+                              id="query-padding"
+                              min={0}
+                              max={10}
+                              step={1}
+                              value={[safeQueryOptions.padding || 0]}
+                              onValueChange={value => safeUpdateOption("padding", value[0])}
+                              className="w-full"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Additional pages to retrieve before and after matched pages
+                            </p>
+                          </div>
+                        )}
                         <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
                           <Label htmlFor="streaming_enabled" className="text-sm font-medium">
                             Streaming Response

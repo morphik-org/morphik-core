@@ -264,6 +264,7 @@ class DocumentService:
         folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
         perf_tracker: Optional[Any] = None,  # Performance tracker from API layer
+        padding: int = 0,  # Number of additional chunks to retrieve before and after matched chunks
     ) -> List[ChunkResult]:
         """Retrieve relevant chunks."""
 
@@ -411,6 +412,18 @@ class DocumentService:
         if not perf_tracker:
             phase_times["chunk_combination"] = time.time() - combination_start
 
+        # Apply padding if requested and using colpali
+        if padding > 0 and using_colpali:
+            if perf_tracker:
+                perf_tracker.start_phase("retrieve_padding")
+            else:
+                padding_start = time.time()
+
+            chunks = await self._apply_padding_to_chunks(chunks, padding, auth)
+
+            if not perf_tracker:
+                phase_times["padding"] = time.time() - padding_start
+
         # Create and return chunk results
         if perf_tracker:
             perf_tracker.start_phase("retrieve_result_creation")
@@ -505,6 +518,243 @@ class DocumentService:
         full_chunks = chunks + chunks_multivector
         full_chunks.sort(key=lambda x: x.score, reverse=True)
         return full_chunks
+
+    async def _apply_padding_to_chunks(
+        self,
+        chunks: List[DocumentChunk],
+        padding: int,
+        auth: AuthContext,
+    ) -> List[DocumentChunk]:
+        """
+        Apply padding to chunks by retrieving additional chunks before and after each matched chunk.
+        This is only relevant for ColPali retrieval path where chunks correspond to pages.
+        Only applies to image chunks - non-image chunks are filtered out when padding is enabled.
+
+        Args:
+            chunks: Original matched chunks
+            padding: Number of chunks to retrieve before and after each matched chunk
+            auth: Authentication context for access control
+
+        Returns:
+            List of image chunks with padding applied (deduplicated)
+        """
+        if not chunks or padding <= 0:
+            return chunks
+        logger.info(f"chunks: {[chunk.content[:100] for chunk in chunks]}")
+
+        # Filter to only image chunks when padding is enabled
+        image_chunks = [chunk for chunk in chunks if chunk.content.startswith("data")]
+
+        if not image_chunks:
+            # No image chunks to pad, return empty list since padding is only for images
+            logger.info("No image chunks found for padding, returning empty list")
+            return []
+
+        logger.info(
+            f"Applying padding of {padding} to {len(image_chunks)} image chunks (filtered from {len(chunks)} total chunks)"
+        )
+
+        # Group image chunks by document to apply padding efficiently
+        chunks_by_doc = {}
+        for chunk in image_chunks:
+            if chunk.document_id not in chunks_by_doc:
+                chunks_by_doc[chunk.document_id] = []
+            chunks_by_doc[chunk.document_id].append(chunk)
+
+        # Collect all chunk identifiers we need to retrieve (including padding)
+        chunk_identifiers_to_retrieve = set()
+
+        for doc_id, doc_chunks in chunks_by_doc.items():
+            for chunk in doc_chunks:
+                # Add the original chunk
+                chunk_identifiers_to_retrieve.add((doc_id, chunk.chunk_number))
+
+                # Add padding chunks before and after
+                for i in range(1, padding + 1):
+                    # Add chunks before (if chunk_number > i)
+                    if chunk.chunk_number >= i:
+                        chunk_identifiers_to_retrieve.add((doc_id, chunk.chunk_number - i))
+
+                    # Add chunks after
+                    chunk_identifiers_to_retrieve.add((doc_id, chunk.chunk_number + i))
+
+        logger.debug(f"Need to retrieve {len(chunk_identifiers_to_retrieve)} chunks total (including padding)")
+
+        # Convert to list for batch retrieval
+        chunk_identifiers = list(chunk_identifiers_to_retrieve)
+
+        # Use colpali vector store for retrieval since padding is only for colpali path
+        if self.colpali_vector_store:
+            try:
+                padded_chunks = await self.colpali_vector_store.get_chunks_by_id(chunk_identifiers)
+                logger.debug(f"Retrieved {len(padded_chunks)} chunks from colpali vector store")
+            except Exception as e:
+                logger.error(f"Error retrieving padded chunks from colpali vector store: {e}")
+                # Fallback to original image chunks if padding fails
+                return image_chunks
+        else:
+            logger.warning("ColPali vector store not available for padding, returning original image chunks")
+            return image_chunks
+
+        # Filter retrieved chunks to only image chunks (padding chunks should also be images)
+        padded_image_chunks = [chunk for chunk in padded_chunks if chunk.content.startswith("data")]
+        logger.debug(f"Filtered to {len(padded_image_chunks)} image chunks from {len(padded_chunks)} retrieved chunks")
+
+        # # Create a mapping to preserve original scores for matched chunks
+        # original_scores = {(chunk.document_id, chunk.chunk_number): chunk.score for chunk in image_chunks}
+
+        # # Apply original scores to matched chunks, set score to 0 for padding chunks
+        # for chunk in padded_image_chunks:
+        #     key = (chunk.document_id, chunk.chunk_number)
+        #     if key in original_scores:
+        #         chunk.score = original_scores[key]
+        #     else:
+        #         # This is a padding chunk, set a lower score
+        #         chunk.score = 0.0
+        chunk_id = set()
+        chunks = []
+        for chunk in padded_image_chunks:
+            if f"{chunk.document_id}-{chunk.chunk_number}" in chunk_id:
+                continue
+            chunks.append(chunk)
+            chunk_id.add(f"{chunk.document_id}-{chunk.chunk_number}")
+
+        # Sort by score (original matched chunks first, then padding chunks)
+        chunks.sort(key=lambda x: f"{x.document_id}-{x.chunk_number}", reverse=False)
+
+        logger.info(f"Applied padding: returning {len(chunks)} image chunks (was {len(image_chunks)} image chunks)")
+        return chunks
+
+    async def _create_grouped_chunk_response_from_results(
+        self,
+        original_chunk_results: List[ChunkResult],
+        final_chunk_results: List[ChunkResult],
+        padding: int,
+    ):  #  -> "GroupedChunkResponse"
+        """
+        Create a grouped response directly from ChunkResult objects.
+
+        Args:
+            original_chunk_results: The original matched chunks (before padding)
+            final_chunk_results: All chunks including padding
+            padding: The padding value used
+
+        Returns:
+            GroupedChunkResponse with both flat and grouped results
+        """
+        from core.models.documents import ChunkGroup, GroupedChunkResponse
+
+        # Create mapping of original chunks for easy lookup
+        original_chunk_keys = {(chunk.document_id, chunk.chunk_number) for chunk in original_chunk_results}
+
+        # Mark chunks as padding or not
+        for result in final_chunk_results:
+            result.is_padding = (result.document_id, result.chunk_number) not in original_chunk_keys
+
+        # If no padding was applied, return simple response
+        if padding == 0:
+            return GroupedChunkResponse(
+                chunks=final_chunk_results,
+                groups=[
+                    ChunkGroup(main_chunk=result, padding_chunks=[], total_chunks=1) for result in final_chunk_results
+                ],
+                total_results=len(final_chunk_results),
+                has_padding=False,
+            )
+
+        # Group chunks by main chunks
+        groups = []
+        processed_chunks = set()
+
+        # First, identify all main (non-padding) chunks
+        main_chunks = [result for result in final_chunk_results if not result.is_padding]
+
+        for main_chunk in main_chunks:
+            if (main_chunk.document_id, main_chunk.chunk_number) in processed_chunks:
+                continue
+
+            # Find all padding chunks for this main chunk
+            padding_chunks = []
+
+            # Look for chunks in the padding range
+            for i in range(1, padding + 1):
+                # Check chunks before
+                before_key = (main_chunk.document_id, main_chunk.chunk_number - i)
+                after_key = (main_chunk.document_id, main_chunk.chunk_number + i)
+
+                for result in final_chunk_results:
+                    result_key = (result.document_id, result.chunk_number)
+                    if result.is_padding and (result_key == before_key or result_key == after_key):
+                        padding_chunks.append(result)
+                        processed_chunks.add(result_key)
+
+            # Create group
+            group = ChunkGroup(
+                main_chunk=main_chunk, padding_chunks=padding_chunks, total_chunks=1 + len(padding_chunks)
+            )
+            groups.append(group)
+            processed_chunks.add((main_chunk.document_id, main_chunk.chunk_number))
+
+        return GroupedChunkResponse(
+            chunks=final_chunk_results, groups=groups, total_results=len(final_chunk_results), has_padding=padding > 0
+        )
+
+    async def retrieve_chunks_grouped(
+        self,
+        query: str,
+        auth: AuthContext,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 5,
+        min_score: float = 0.0,
+        use_reranking: Optional[bool] = None,
+        use_colpali: Optional[bool] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        end_user_id: Optional[str] = None,
+        perf_tracker: Optional[Any] = None,
+        padding: int = 0,
+    ):  #  -> "GroupedChunkResponse"
+        """
+        Retrieve chunks with grouped response format that differentiates main chunks from padding.
+
+        Returns both flat results (for backward compatibility) and grouped results (for UI).
+        """
+        # Get original chunks before padding (as ChunkResult objects)
+        original_chunk_results = await self.retrieve_chunks(
+            query,
+            auth,
+            filters,
+            k,
+            min_score,
+            use_reranking,
+            use_colpali,
+            folder_name,
+            end_user_id,
+            perf_tracker,
+            padding=0,  # No padding for original
+        )
+
+        # Get final chunks with padding (as ChunkResult objects)
+        if padding > 0 and use_colpali:
+            final_chunk_results = await self.retrieve_chunks(
+                query,
+                auth,
+                filters,
+                k,
+                min_score,
+                use_reranking,
+                use_colpali,
+                folder_name,
+                end_user_id,
+                perf_tracker,
+                padding,
+            )
+        else:
+            final_chunk_results = original_chunk_results
+
+        # Create grouped response directly from ChunkResult objects
+        return await self._create_grouped_chunk_response_from_results(
+            original_chunk_results, final_chunk_results, padding
+        )
 
     async def retrieve_docs(
         self,
@@ -693,6 +943,7 @@ class DocumentService:
         perf_tracker: Optional[Any] = None,  # Performance tracker from API layer
         stream_response: Optional[bool] = False,
         llm_config: Optional[Dict[str, Any]] = None,
+        padding: int = 0,  # Number of additional chunks to retrieve before and after matched chunks
     ) -> Union[CompletionResponse, tuple[AsyncGenerator[str, None], List[ChunkSource]]]:
         """Generate completion using relevant chunks as context.
 
@@ -763,7 +1014,17 @@ class DocumentService:
             chunk_retrieval_start = time.time()
 
         chunks = await self.retrieve_chunks(
-            query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, end_user_id, perf_tracker
+            query,
+            auth,
+            filters,
+            k,
+            min_score,
+            use_reranking,
+            use_colpali,
+            folder_name,
+            end_user_id,
+            perf_tracker,
+            padding,
         )
 
         if not perf_tracker:

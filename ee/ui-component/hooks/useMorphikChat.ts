@@ -132,6 +132,7 @@ export function useMorphikChat({
     min_score: initialQueryOptions.min_score ?? 0.7,
     use_reranking: initialQueryOptions.use_reranking ?? false,
     use_colpali: initialQueryOptions.use_colpali ?? true,
+    padding: initialQueryOptions.padding ?? 0,
     max_tokens: initialQueryOptions.max_tokens ?? 1024,
     temperature: initialQueryOptions.temperature ?? 0.3,
     graph_name: initialQueryOptions.graph_name,

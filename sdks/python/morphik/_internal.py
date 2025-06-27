@@ -303,6 +303,7 @@ class _MorphikClientLogic:
         use_colpali: bool,
         folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
+        padding: int = 0,
     ) -> Dict[str, Any]:
         """Prepare request for retrieve_chunks endpoint"""
         request = {
@@ -316,6 +317,8 @@ class _MorphikClientLogic:
             request["folder_name"] = folder_name
         if end_user_id:
             request["end_user_id"] = end_user_id
+        if padding > 0:
+            request["padding"] = padding
         return request
 
     def _prepare_retrieve_docs_request(
