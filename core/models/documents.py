@@ -32,7 +32,6 @@ class Document(BaseModel):
     """Represents a document stored in the database documents collection"""
 
     external_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    owner: Dict[str, str]
     content_type: str
     filename: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -46,16 +45,18 @@ class Document(BaseModel):
             "created_at": datetime.now(UTC),
             "updated_at": datetime.now(UTC),
             "version": 1,
-            "folder_name": None,
-            "end_user_id": None,
             "status": "processing",  # Status can be: processing, completed, failed
         }
     )
     """metadata such as creation date etc."""
     additional_metadata: Dict[str, Any] = Field(default_factory=dict)
     """metadata to help with querying eg. frame descriptions and time-stamped transcript for videos"""
-    access_control: Dict[str, List[str]] = Field(default_factory=lambda: {"readers": [], "writers": [], "admins": []})
     chunk_ids: List[str] = Field(default_factory=list)
+
+    # Flattened fields from system_metadata for performance
+    folder_name: Optional[str] = None
+    end_user_id: Optional[str] = None
+    app_id: Optional[str] = None
 
     # Ensure storage_info values are strings to maintain backward compatibility
     @field_validator("storage_info", mode="before")

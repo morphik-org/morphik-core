@@ -353,11 +353,11 @@ async def process_ingestion_job(
             "system_metadata": {**doc.system_metadata, "content": text},
         }
 
-        # Add folder_name and end_user_id to system_metadata if provided
+        # Add folder_name and end_user_id to updates if provided
         if folder_name:
-            updates["system_metadata"]["folder_name"] = folder_name
+            updates["folder_name"] = folder_name
         if end_user_id:
-            updates["system_metadata"]["end_user_id"] = end_user_id
+            updates["end_user_id"] = end_user_id
 
         # Update the document in the database
         update_start = time.time()

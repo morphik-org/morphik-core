@@ -1596,29 +1596,14 @@ async def create_graph(
 
         from core.models.graph import Graph
 
-        access_control = {
-            "readers": [auth.entity_id],
-            "writers": [auth.entity_id],
-            "admins": [auth.entity_id],
-        }
-        if auth.user_id:
-            access_control["user_id"] = [auth.user_id]
-
         graph_stub = Graph(
             id=str(uuid.uuid4()),
             name=request.name,
             filters=request.filters,
-            owner={"type": auth.entity_type.value, "id": auth.entity_id},
-            access_control=access_control,
+            folder_name=system_filters.get("folder_name"),
+            end_user_id=system_filters.get("end_user_id"),
+            app_id=auth.app_id,
         )
-
-        # Persist scoping info in system metadata
-        if system_filters.get("folder_name"):
-            graph_stub.system_metadata["folder_name"] = system_filters["folder_name"]
-        if system_filters.get("end_user_id"):
-            graph_stub.system_metadata["end_user_id"] = system_filters["end_user_id"]
-        if auth.app_id:
-            graph_stub.system_metadata["app_id"] = auth.app_id
 
         # Mark graph as processing
         graph_stub.system_metadata["status"] = "processing"
@@ -1626,7 +1611,7 @@ async def create_graph(
         graph_stub.system_metadata["updated_at"] = datetime.now(UTC)
 
         # Store the stub graph so clients can poll for status
-        success = await document_service.db.store_graph(graph_stub)
+        success = await document_service.db.store_graph(graph_stub, auth)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to create graph stub")
 
@@ -1690,33 +1675,12 @@ async def create_folder(
         logger.info(f"Creating folder with ID: {folder_id}, auth.user_id: {auth.user_id}")
 
         # Set up access control with user_id
-        access_control = {
-            "readers": [auth.entity_id],
-            "writers": [auth.entity_id],
-            "admins": [auth.entity_id],
-        }
-
-        if auth.user_id:
-            access_control["user_id"] = [auth.user_id]
-            logger.info(f"Adding user_id {auth.user_id} to folder access control")
-
         folder = Folder(
-            id=folder_id,
-            name=folder_create.name,
-            description=folder_create.description,
-            owner={
-                "type": auth.entity_type.value,
-                "id": auth.entity_id,
-            },
-            access_control=access_control,
+            id=folder_id, name=folder_create.name, description=folder_create.description, app_id=auth.app_id
         )
 
-        # Scope folder to the application ID for developer tokens
-        if auth.app_id:
-            folder.system_metadata["app_id"] = auth.app_id
-
         # Store in database
-        success = await document_service.db.create_folder(folder)
+        success = await document_service.db.create_folder(folder, auth)
 
         if not success:
             raise HTTPException(status_code=500, detail="Failed to create folder")

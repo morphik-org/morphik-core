@@ -138,7 +138,7 @@ export function useDocuments({
           if (!doc.system_metadata) {
             doc.system_metadata = {};
           }
-          if (!doc.system_metadata.status && doc.system_metadata.folder_name) {
+          if (!doc.system_metadata.status && doc.folder_name) {
             doc.system_metadata.status = "processing";
           }
           return doc;

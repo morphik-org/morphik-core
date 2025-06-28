@@ -20,10 +20,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 import { SearchOptions, FolderSummary } from "@/components/types";
 
-// Define an extended search options type that includes folder_name
-interface ExtendedSearchOptions extends SearchOptions {
-  folder_name?: string;
-}
+// ExtendedSearchOptions currently equals SearchOptions, kept for future extension.
+type ExtendedSearchOptions = SearchOptions;
 
 interface SearchOptionsDialogProps {
   showSearchAdvanced: boolean;
@@ -50,6 +48,10 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
       updateSearchOption("k", searchOptions.k);
     }
   };
+
+  const folderValue = Array.isArray(searchOptions.folder_name)
+    ? searchOptions.folder_name[0]
+    : searchOptions.folder_name;
 
   return (
     <Dialog open={showSearchAdvanced} onOpenChange={setShowSearchAdvanced}>
@@ -152,7 +154,7 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
             <Label htmlFor="folderName" className="mb-2 block">
               Scope to Folder
             </Label>
-            <Select value={searchOptions.folder_name || "__none__"} onValueChange={handleFolderChange}>
+            <Select value={folderValue || "__none__"} onValueChange={handleFolderChange}>
               <SelectTrigger className="w-full" id="folderName">
                 <SelectValue placeholder="Select a folder" />
               </SelectTrigger>

@@ -14,7 +14,7 @@ class BaseDatabase(ABC):
     """Base interface for document metadata storage."""
 
     @abstractmethod
-    async def store_document(self, document: Document) -> bool:
+    async def store_document(self, document: Document, auth: AuthContext) -> bool:
         """
         Store document metadata.
         Returns: Success status

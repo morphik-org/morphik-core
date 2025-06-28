@@ -93,19 +93,10 @@ class DocumentService:
 
             # Create a new folder
             folder = Folder(
-                name=folder_name,
-                owner={
-                    "type": auth.entity_type.value,
-                    "id": auth.entity_id,
-                },
-                document_ids=[document_id],  # Add document_id to the new folder
+                name=folder_name, document_ids=[document_id], app_id=auth.app_id  # Add document_id to the new folder
             )
 
-            # Scope folder to the application ID for developer tokens
-            if auth.app_id:
-                folder.system_metadata["app_id"] = auth.app_id
-
-            await self.db.create_folder(folder)
+            await self.db.create_folder(folder, auth)
 
             # Note: Newly created folders don't have workflows yet, but we'll still call this
             # in case workflows are added via API before document ingestion completes
@@ -155,7 +146,7 @@ class DocumentService:
                 logger.warning(f"Document {document_id} not found when trying to execute workflows")
                 return
 
-            folder_name = doc.system_metadata.get("folder_name")
+            folder_name = doc.folder_name
             if not folder_name:
                 logger.debug(f"Document {document_id} has no folder, no workflows to execute")
                 return
@@ -1151,27 +1142,14 @@ class DocumentService:
             content_type="text/plain",
             filename=filename,
             metadata=metadata or {},
-            owner={"type": auth.entity_type, "id": auth.entity_id},
-            access_control={
-                "readers": [auth.entity_id],
-                "writers": [auth.entity_id],
-                "admins": [auth.entity_id],
-            },
+            folder_name=folder_name,
+            end_user_id=end_user_id,
+            app_id=auth.app_id,
         )
-
-        # Always add folder_name to system_metadata (None if not provided)
-        doc.system_metadata["folder_name"] = folder_name
 
         # Check if the folder exists, if not create it (only when folder_name is provided)
         if folder_name:
             await self._ensure_folder_exists(folder_name, doc.external_id, auth)
-
-        if end_user_id:
-            doc.system_metadata["end_user_id"] = end_user_id
-
-        # Tag document with app_id for segmentation
-        if auth.app_id:
-            doc.system_metadata["app_id"] = auth.app_id
 
         logger.debug(f"Created text document record with ID {doc.external_id}")
 
@@ -1335,23 +1313,13 @@ class DocumentService:
         doc = Document(
             filename=filename,
             content_type=content_type,
-            owner={"type": auth.entity_type.value, "id": auth.entity_id},
             metadata=metadata or {},
             system_metadata={"status": "processing"},  # Initial status
             content_info={"type": "file", "mime_type": content_type},
-            # Ensure access_control is set similar to /ingest/file
-            access_control={
-                "readers": [auth.entity_id],
-                "writers": [auth.entity_id],
-                "admins": [auth.entity_id],
-            },
+            app_id=auth.app_id,
+            end_user_id=end_user_id,
+            folder_name=folder_name,
         )
-
-        if auth.app_id:
-            doc.system_metadata["app_id"] = auth.app_id
-        if end_user_id:
-            doc.system_metadata["end_user_id"] = end_user_id
-        # folder_name is handled later by _ensure_folder_exists if needed by background worker
 
         # --------------------------------------------------------
         # Verify quotas before incurring heavy compute or storage
@@ -1383,7 +1351,7 @@ class DocumentService:
 
         # 1. Create initial document record in DB
         # The app_db concept from core/api.py implies self.db is already app-specific if needed
-        await self.db.store_document(doc)
+        await self.db.store_document(doc, auth)
         logger.info(f"Initial document record created for {filename} (doc_id: {doc.external_id})")
 
         # 2. Save raw file to Storage
@@ -1793,7 +1761,7 @@ class DocumentService:
                             raise Exception("Failed to update document metadata")
                     else:
                         # For new documents, use store_document
-                        success = await self.db.store_document(doc)
+                        success = await self.db.store_document(doc, auth)
                         if not success:
                             raise Exception("Failed to store document metadata")
                     return success
@@ -2301,7 +2269,7 @@ class DocumentService:
         file_extension = os.path.splitext(file.filename)[1] if file.filename else ""
 
         # Route file uploads to the dedicated app bucket when available
-        bucket_override = await self._get_bucket_for_app(doc.system_metadata.get("app_id"))
+        bucket_override = await self._get_bucket_for_app(doc.app_id)
 
         storage_info_tuple = await self.storage.upload_from_base64(
             file_content_base64,

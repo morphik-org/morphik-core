@@ -28,14 +28,12 @@ class DocumentModel(Base):
     __tablename__ = "documents"
 
     external_id = Column(String, primary_key=True)
-    owner = Column(JSONB)
     content_type = Column(String)
     filename = Column(String, nullable=True)
     doc_metadata = Column(JSONB, default=dict)
     storage_info = Column(JSONB, default=dict)
     system_metadata = Column(JSONB, default=dict)
     additional_metadata = Column(JSONB, default=dict)
-    access_control = Column(JSONB, default=dict)
     chunk_ids = Column(JSONB, default=list)
     storage_files = Column(JSONB, default=list)
 
@@ -51,14 +49,13 @@ class DocumentModel(Base):
 
     # Create indexes
     __table_args__ = (
-        Index("idx_owner_id", "owner", postgresql_using="gin"),
-        Index("idx_access_control", "access_control", postgresql_using="gin"),
         Index("idx_system_metadata", "system_metadata", postgresql_using="gin"),
         Index("idx_doc_metadata_gin", "doc_metadata", postgresql_using="gin"),
-        Index("idx_doc_owner_text_id", text("(owner->>'id')")),
-        Index("idx_doc_system_metadata_app_id", text("(system_metadata->>'app_id')")),
-        Index("idx_doc_system_metadata_folder_name", text("(system_metadata->>'folder_name')")),
-        Index("idx_doc_system_metadata_end_user_id", text("(system_metadata->>'end_user_id')")),
+        # Flattened column indexes are created directly on the columns
+        Index("idx_doc_app_id", "app_id"),
+        Index("idx_doc_folder_name", "folder_name"),
+        Index("idx_doc_end_user_id", "end_user_id"),
+        Index("idx_doc_owner_id", "owner_id"),
     )
 
 
@@ -77,8 +74,6 @@ class GraphModel(Base):
     filters = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
     updated_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now())
-    owner = Column(JSONB)
-    access_control = Column(JSONB, default=dict)
 
     # Flattened auth columns for performance
     owner_id = Column(String)
@@ -93,11 +88,13 @@ class GraphModel(Base):
     # Create indexes
     __table_args__ = (
         Index("idx_graph_name", "name"),
-        Index("idx_graph_owner", "owner", postgresql_using="gin"),
-        Index("idx_graph_access_control", "access_control", postgresql_using="gin"),
         Index("idx_graph_system_metadata", "system_metadata", postgresql_using="gin"),
-        # Create a unique constraint on name scoped by owner ID
-        Index("idx_graph_owner_name", "name", text("(owner->>'id')"), unique=True),
+        # Create a unique constraint on name scoped by owner_id (flattened column)
+        Index("idx_graph_owner_name", "name", "owner_id", unique=True),
+        # Indexes on flattened columns
+        Index("idx_graph_app_id", "app_id"),
+        Index("idx_graph_folder_name", "folder_name"),
+        Index("idx_graph_end_user_id", "end_user_id"),
     )
 
 
@@ -109,10 +106,8 @@ class FolderModel(Base):
     id = Column(String, primary_key=True)
     name = Column(String)
     description = Column(String, nullable=True)
-    owner = Column(JSONB)
     document_ids = Column(JSONB, default=list)
     system_metadata = Column(JSONB, default=dict)
-    access_control = Column(JSONB, default=dict)
     rules = Column(JSONB, default=list)
     workflow_ids = Column(JSONB, default=list)
 
@@ -128,10 +123,10 @@ class FolderModel(Base):
     # Create indexes
     __table_args__ = (
         Index("idx_folder_name", "name"),
-        Index("idx_folder_owner", "owner", postgresql_using="gin"),
-        Index("idx_folder_access_control", "access_control", postgresql_using="gin"),
-        # Index to filter folders by app_id in system_metadata
-        Index("idx_folder_system_metadata_app_id", text("(system_metadata->>'app_id')")),
+        # Indexes on flattened columns
+        Index("idx_folder_app_id", "app_id"),
+        Index("idx_folder_owner_id", "owner_id"),
+        Index("idx_folder_end_user_id", "end_user_id"),
     )
 
 
@@ -255,17 +250,13 @@ class PostgresDatabase(BaseDatabase):
         """Delete a folder row if user has admin access."""
         try:
             # Fetch the folder to check permissions
-            folder = await self.get_folder(folder_id, auth)
-            if not folder:
-                logger.error(f"Folder {folder_id} not found or user does not have access")
-                return False
-            if not self._check_folder_access(folder, auth, "admin"):
-                logger.error(f"User does not have admin access to folder {folder_id}")
-                return False
             async with self.async_session() as session:
                 folder_model = await session.get(FolderModel, folder_id)
                 if not folder_model:
-                    logger.error(f"Folder {folder_id} not found in database")
+                    logger.error(f"Folder {folder_id} not found")
+                    return False
+                if not self._check_folder_model_access(folder_model, auth, "admin"):
+                    logger.error(f"User does not have admin access to folder {folder_id}")
                     return False
                 await session.delete(folder_model)
                 await session.commit()
@@ -373,10 +364,8 @@ class PostgresDatabase(BaseDatabase):
                         id TEXT PRIMARY KEY,
                         name TEXT,
                         description TEXT,
-                        owner JSONB,
                         document_ids JSONB DEFAULT '[]',
-                        system_metadata JSONB DEFAULT '{}',
-                        access_control JSONB DEFAULT '{}'
+                        system_metadata JSONB DEFAULT '{}'
                     );
                     """
                     )
@@ -428,10 +417,6 @@ class PostgresDatabase(BaseDatabase):
 
                 # Create indexes for folders table
                 await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_name ON folders (name);"))
-                await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_owner ON folders USING gin (owner);"))
-                await conn.execute(
-                    text("CREATE INDEX IF NOT EXISTS idx_folder_access_control ON folders USING gin (access_control);")
-                )
 
                 # Check if system_metadata column exists in graphs table
                 result = await conn.execute(
@@ -455,36 +440,8 @@ class PostgresDatabase(BaseDatabase):
                     )
                     logger.info("Added system_metadata column to graphs table")
 
-                # Create indexes for folder_name and end_user_id in system_metadata for graphs
-                await conn.execute(
-                    text(
-                        """
-                    CREATE INDEX IF NOT EXISTS idx_graph_system_metadata_folder_name
-                    ON graphs ((system_metadata->>'folder_name'));
-                    """
-                    )
-                )
-
-                await conn.execute(
-                    text(
-                        """
-                    CREATE INDEX IF NOT EXISTS idx_graph_system_metadata_end_user_id
-                    ON graphs ((system_metadata->>'end_user_id'));
-                    """
-                    )
-                )
-
-                # Create index for app_id in system_metadata for graphs to optimize developer-scoped queries
-                await conn.execute(
-                    text(
-                        """
-                    CREATE INDEX IF NOT EXISTS idx_graph_system_metadata_app_id
-                    ON graphs ((system_metadata->>'app_id'));
-                    """
-                    )
-                )
-
-                logger.info("Created indexes for folder_name, end_user_id, and app_id in system_metadata")
+                # Note: Indexes for folder_name, end_user_id, and app_id are created as direct column indexes
+                # in the flattened columns section below, so we don't need JSONB path indexes
 
                 # ORM models already include workflows tables – ensure they are created
                 await conn.run_sync(lambda c: WorkflowModel.__table__.create(c, checkfirst=True))
@@ -564,69 +521,17 @@ class PostgresDatabase(BaseDatabase):
                     )
                 )
 
-                # Add flattened auth columns for performance optimization
-                logger.info("Adding flattened auth columns for performance optimization...")
+                # ---------------------------------------------
+                # Legacy ALTER-TABLE loop removed: SQLAlchemy now
+                # creates flattened auth columns (owner_id,…, ACL
+                # arrays) during metadata.create_all().  We keep
+                # *tables_to_update* for the index creation block
+                # that follows, but skip redundant DDL.
+                # ---------------------------------------------
 
-                # Tables to update with flattened columns
                 tables_to_update = ["documents", "graphs", "folders"]
 
-                for table in tables_to_update:
-                    # Add owner columns
-                    for column_name, column_type in [
-                        ("owner_id", "VARCHAR(255)"),
-                        ("owner_type", "VARCHAR(50)"),
-                        ("app_id", "VARCHAR(255)"),
-                        ("folder_name", "VARCHAR(255)"),
-                        ("end_user_id", "VARCHAR(255)"),
-                    ]:
-                        # Skip folder_name for folders table (it already has a name column)
-                        if table == "folders" and column_name == "folder_name":
-                            continue
-
-                        result = await conn.execute(
-                            text(
-                                f"""
-                                SELECT column_name
-                                FROM information_schema.columns
-                                WHERE table_name = '{table}' AND column_name = '{column_name}'
-                            """
-                            )
-                        )
-                        if not result.first():
-                            await conn.execute(
-                                text(
-                                    f"""
-                                    ALTER TABLE {table}
-                                    ADD COLUMN IF NOT EXISTS {column_name} {column_type}
-                                """
-                                )
-                            )
-                            logger.info(f"Added {column_name} column to {table} table")
-
-                    # Add array columns for access control
-                    for column_name in ["readers", "writers", "admins"]:
-                        result = await conn.execute(
-                            text(
-                                f"""
-                                SELECT column_name
-                                FROM information_schema.columns
-                                WHERE table_name = '{table}' AND column_name = '{column_name}'
-                            """
-                            )
-                        )
-                        if not result.first():
-                            await conn.execute(
-                                text(
-                                    f"""
-                                    ALTER TABLE {table}
-                                    ADD COLUMN IF NOT EXISTS {column_name} TEXT[] DEFAULT '{{}}'
-                                """
-                                )
-                            )
-                            logger.info(f"Added {column_name} array column to {table} table")
-
-                # Create optimized indexes for the new columns
-                logger.info("Creating optimized indexes for flattened columns...")
+                logger.info("Creating optimised indexes for flattened columns …")
 
                 for table in tables_to_update:
                     # Create indexes for scalar columns
@@ -666,7 +571,7 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error creating PostgreSQL tables and indexes: {str(e)}")
             return False
 
-    async def store_document(self, document: Document) -> bool:
+    async def store_document(self, document: Document, auth: AuthContext) -> bool:
         """Store document metadata."""
         try:
             doc_dict = document.model_dump()
@@ -690,20 +595,21 @@ class PostgresDatabase(BaseDatabase):
             # Serialize datetime objects to ISO format strings
             doc_dict = _serialize_datetime(doc_dict)
 
-            # Populate flattened auth columns directly
-            if "owner" in doc_dict and doc_dict["owner"]:
-                doc_dict["owner_id"] = doc_dict["owner"].get("id")
-                doc_dict["owner_type"] = doc_dict["owner"].get("type")
+            # Set owner information from auth context
+            if auth.entity_type and auth.entity_id:
+                doc_dict["owner_id"] = auth.entity_id
+                doc_dict["owner_type"] = auth.entity_type.value
+            else:
+                # Default to a system owner if no entity context
+                doc_dict["owner_id"] = "system"
+                doc_dict["owner_type"] = "system"
 
-            if "access_control" in doc_dict and doc_dict["access_control"]:
-                doc_dict["readers"] = doc_dict["access_control"].get("readers", [])
-                doc_dict["writers"] = doc_dict["access_control"].get("writers", [])
-                doc_dict["admins"] = doc_dict["access_control"].get("admins", [])
+            # Initialize ACL lists as empty (can be updated later)
+            doc_dict["readers"] = []
+            doc_dict["writers"] = []
+            doc_dict["admins"] = []
 
-            if "system_metadata" in doc_dict and doc_dict["system_metadata"]:
-                doc_dict["app_id"] = doc_dict["system_metadata"].get("app_id")
-                doc_dict["folder_name"] = doc_dict["system_metadata"].get("folder_name")
-                doc_dict["end_user_id"] = doc_dict["system_metadata"].get("end_user_id")
+            # The flattened fields are already in doc_dict from the Document model
 
             async with self.async_session() as session:
                 doc_model = DocumentModel(**doc_dict)
@@ -719,44 +625,22 @@ class PostgresDatabase(BaseDatabase):
         """Retrieve document metadata by ID if user has access."""
         try:
             async with self.async_session() as session:
-                # Build access filter
+                # Build access filter and params
                 access_filter = self._build_access_filter_optimized(auth)
+                filter_params = self._build_filter_params(auth)
 
-                # Query document
+                # Query document with parameterized query
                 query = (
                     select(DocumentModel)
                     .where(DocumentModel.external_id == document_id)
-                    .where(text(f"({access_filter})"))
+                    .where(text(f"({access_filter})").bindparams(**filter_params))
                 )
 
                 result = await session.execute(query)
                 doc_model = result.scalar_one_or_none()
 
                 if doc_model:
-                    # Convert doc_metadata back to metadata
-                    # Also convert storage_files from dict to StorageFileInfo
-                    storage_files = []
-                    if doc_model.storage_files:
-                        for file_info in doc_model.storage_files:
-                            if isinstance(file_info, dict):
-                                storage_files.append(StorageFileInfo(**file_info))
-                            else:
-                                storage_files.append(file_info)
-
-                    doc_dict = {
-                        "external_id": doc_model.external_id,
-                        "owner": doc_model.owner,
-                        "content_type": doc_model.content_type,
-                        "filename": doc_model.filename,
-                        "metadata": doc_model.doc_metadata,
-                        "storage_info": doc_model.storage_info,
-                        "system_metadata": doc_model.system_metadata,
-                        "additional_metadata": doc_model.additional_metadata,
-                        "access_control": doc_model.access_control,
-                        "chunk_ids": doc_model.chunk_ids,
-                        "storage_files": storage_files,
-                    }
-                    return Document(**doc_dict)
+                    return Document(**self._document_model_to_dict(doc_model))
                 return None
 
         except Exception as e:
@@ -776,14 +660,16 @@ class PostgresDatabase(BaseDatabase):
         """
         try:
             async with self.async_session() as session:
-                # Build access filter
+                # Build access filter and params
                 access_filter = self._build_access_filter_optimized(auth)
                 system_metadata_filter = self._build_system_metadata_filter_optimized(system_filters)
-                filename = filename.replace("'", "''")
+                filter_params = self._build_filter_params(auth, system_filters)
+                filter_params["filename"] = filename  # Add filename as a parameter
+
                 # Construct where clauses
                 where_clauses = [
                     f"({access_filter})",
-                    f"filename = '{filename}'",  # Escape single quotes
+                    "filename = :filename",  # Use parameterized query
                 ]
 
                 if system_metadata_filter:
@@ -791,9 +677,9 @@ class PostgresDatabase(BaseDatabase):
 
                 final_where_clause = " AND ".join(where_clauses)
 
-                # Query document with system filters
+                # Query document with system filters using parameterized query
                 query = (
-                    select(DocumentModel).where(text(final_where_clause))
+                    select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
                     # Order by updated_at in system_metadata to get the most recent document
                     .order_by(text("system_metadata->>'updated_at' DESC"))
                 )
@@ -804,30 +690,7 @@ class PostgresDatabase(BaseDatabase):
                 doc_model = result.scalar_one_or_none()
 
                 if doc_model:
-                    # Convert doc_metadata back to metadata
-                    # Also convert storage_files from dict to StorageFileInfo
-                    storage_files = []
-                    if doc_model.storage_files:
-                        for file_info in doc_model.storage_files:
-                            if isinstance(file_info, dict):
-                                storage_files.append(StorageFileInfo(**file_info))
-                            else:
-                                storage_files.append(file_info)
-
-                    doc_dict = {
-                        "external_id": doc_model.external_id,
-                        "owner": doc_model.owner,
-                        "content_type": doc_model.content_type,
-                        "filename": doc_model.filename,
-                        "metadata": doc_model.doc_metadata,
-                        "storage_info": doc_model.storage_info,
-                        "system_metadata": doc_model.system_metadata,
-                        "additional_metadata": doc_model.additional_metadata,
-                        "access_control": doc_model.access_control,
-                        "chunk_ids": doc_model.chunk_ids,
-                        "storage_files": storage_files,
-                    }
-                    return Document(**doc_dict)
+                    return Document(**self._document_model_to_dict(doc_model))
                 return None
 
         except Exception as e:
@@ -858,13 +721,16 @@ class PostgresDatabase(BaseDatabase):
                 return []
 
             async with self.async_session() as session:
-                # Build access filter
+                # Build access filter and params
                 access_filter = self._build_access_filter_optimized(auth)
                 system_metadata_filter = self._build_system_metadata_filter_optimized(system_filters)
+                filter_params = self._build_filter_params(auth, system_filters)
+
+                # Add document IDs as array parameter
+                filter_params["document_ids"] = document_ids
 
                 # Construct where clauses
-                document_ids_linked = ", ".join([("'" + doc_id + "'") for doc_id in document_ids])
-                where_clauses = [f"({access_filter})", f"external_id IN ({document_ids_linked})"]
+                where_clauses = [f"({access_filter})", "external_id = ANY(:document_ids)"]
 
                 if system_metadata_filter:
                     where_clauses.append(f"({system_metadata_filter})")
@@ -872,7 +738,7 @@ class PostgresDatabase(BaseDatabase):
                 final_where_clause = " AND ".join(where_clauses)
 
                 # Query documents with document IDs, access check, and system filters in a single query
-                query = select(DocumentModel).where(text(final_where_clause))
+                query = select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
 
                 logger.info(f"Batch retrieving {len(document_ids)} documents with a single query")
 
@@ -882,21 +748,7 @@ class PostgresDatabase(BaseDatabase):
 
                 documents = []
                 for doc_model in doc_models:
-                    # Convert doc_metadata back to metadata
-                    doc_dict = {
-                        "external_id": doc_model.external_id,
-                        "owner": doc_model.owner,
-                        "content_type": doc_model.content_type,
-                        "filename": doc_model.filename,
-                        "metadata": doc_model.doc_metadata,
-                        "storage_info": doc_model.storage_info,
-                        "system_metadata": doc_model.system_metadata,
-                        "additional_metadata": doc_model.additional_metadata,
-                        "access_control": doc_model.access_control,
-                        "chunk_ids": doc_model.chunk_ids,
-                        "storage_files": doc_model.storage_files or [],
-                    }
-                    documents.append(Document(**doc_dict))
+                    documents.append(Document(**self._document_model_to_dict(doc_model)))
 
                 logger.info(f"Found {len(documents)} documents in batch retrieval")
                 return documents
@@ -920,6 +772,7 @@ class PostgresDatabase(BaseDatabase):
                 access_filter = self._build_access_filter_optimized(auth)
                 metadata_filter = self._build_metadata_filter(filters)
                 system_metadata_filter = self._build_system_metadata_filter_optimized(system_filters)
+                filter_params = self._build_filter_params(auth, system_filters)
 
                 where_clauses = [f"({access_filter})"]
 
@@ -930,29 +783,14 @@ class PostgresDatabase(BaseDatabase):
                     where_clauses.append(f"({system_metadata_filter})")
 
                 final_where_clause = " AND ".join(where_clauses)
-                query = select(DocumentModel).where(text(final_where_clause))
+                query = select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
 
                 query = query.offset(skip).limit(limit)
 
                 result = await session.execute(query)
                 doc_models = result.scalars().all()
 
-                return [
-                    Document(
-                        external_id=doc.external_id,
-                        owner=doc.owner,
-                        content_type=doc.content_type,
-                        filename=doc.filename,
-                        metadata=doc.doc_metadata,
-                        storage_info=doc.storage_info,
-                        system_metadata=doc.system_metadata,
-                        additional_metadata=doc.additional_metadata,
-                        access_control=doc.access_control,
-                        chunk_ids=doc.chunk_ids,
-                        storage_files=doc.storage_files or [],
-                    )
-                    for doc in doc_models
-                ]
+                return [Document(**self._document_model_to_dict(doc)) for doc in doc_models]
 
         except Exception as e:
             logger.error(f"Error listing documents: {str(e)}")
@@ -1001,20 +839,8 @@ class PostgresDatabase(BaseDatabase):
                         logger.info("Converting 'metadata' to 'doc_metadata' for database update")
                         updates["doc_metadata"] = updates.pop("metadata")
 
-                    # Update flattened auth columns if JSONB fields are updated
-                    if "owner" in updates and updates["owner"]:
-                        updates["owner_id"] = updates["owner"].get("id")
-                        updates["owner_type"] = updates["owner"].get("type")
-
-                    if "access_control" in updates and updates["access_control"]:
-                        updates["readers"] = updates["access_control"].get("readers", [])
-                        updates["writers"] = updates["access_control"].get("writers", [])
-                        updates["admins"] = updates["access_control"].get("admins", [])
-
-                    if "system_metadata" in updates and updates["system_metadata"]:
-                        updates["app_id"] = updates["system_metadata"].get("app_id")
-                        updates["folder_name"] = updates["system_metadata"].get("folder_name")
-                        updates["end_user_id"] = updates["system_metadata"].get("end_user_id")
+                    # The flattened fields (owner_id, owner_type, readers, writers, admins)
+                    # should be in updates directly if they need to be updated
 
                     # Set all attributes
                     for key, value in updates.items():
@@ -1097,6 +923,7 @@ class PostgresDatabase(BaseDatabase):
                 access_filter = self._build_access_filter_optimized(auth)
                 metadata_filter = self._build_metadata_filter(filters)
                 system_metadata_filter = self._build_system_metadata_filter_optimized(system_filters)
+                filter_params = self._build_filter_params(auth, system_filters)
 
                 logger.debug(f"Access filter: {access_filter}")
                 logger.debug(f"Metadata filter: {metadata_filter}")
@@ -1113,7 +940,7 @@ class PostgresDatabase(BaseDatabase):
                     where_clauses.append(f"({system_metadata_filter})")
 
                 final_where_clause = " AND ".join(where_clauses)
-                query = select(DocumentModel.external_id).where(text(final_where_clause))
+                query = select(DocumentModel.external_id).where(text(final_where_clause).bindparams(**filter_params))
 
                 logger.debug(f"Final query: {query}")
 
@@ -1136,68 +963,43 @@ class PostgresDatabase(BaseDatabase):
                 if not doc_model:
                     return False
 
-                # Check owner access
-                owner = doc_model.owner
-                if owner.get("type") == auth.entity_type and owner.get("id") == auth.entity_id:
+                # Check owner access using flattened columns
+                if doc_model.owner_type == auth.entity_type.value and doc_model.owner_id == auth.entity_id:
                     return True
 
-                # Check permission-specific access
-                access_control = doc_model.access_control
-                permission_map = {"read": "readers", "write": "writers", "admin": "admins"}
-                permission_set = permission_map.get(required_permission)
+                # Check permission-specific access using flattened arrays
+                permission_map = {"read": doc_model.readers, "write": doc_model.writers, "admin": doc_model.admins}
+                permission_array = permission_map.get(required_permission, [])
 
-                if not permission_set:
+                if permission_array is None:
                     return False
 
-                return auth.entity_id in access_control.get(permission_set, [])
+                return auth.entity_id in permission_array
 
         except Exception as e:
             logger.error(f"Error checking document access: {str(e)}")
             return False
-
-    def _build_access_filter(self, auth: AuthContext) -> str:
-        """Build PostgreSQL filter for access control using JSONB columns.
-
-        For developer-scoped tokens (i.e. those that include an ``app_id``) we *must* ensure
-        that the caller only ever sees documents that belong to that application.  Simply
-        checking the developer entity ID is **insufficient**, because multiple apps created
-        by the same developer share the same entity ID.  Therefore, when an ``app_id`` is
-        present, we additionally scope the filter by the ``app_id`` that is stored either
-        in ``system_metadata.app_id`` or in the ``access_control->app_access`` list.
-        """
-        # Base clauses that will always be AND-ed with any additional application scoping.
-        base_clauses = [
-            f'owner @> \'{{"id": "{auth.entity_id}"}}\'::jsonb',  # Check owner using @>
-            f"access_control->'readers' ? '{auth.entity_id}'",
-            f"access_control->'writers' ? '{auth.entity_id}'",
-            f"access_control->'admins' ? '{auth.entity_id}'",
-        ]
-
-        # Developer token with app_id → restrict strictly by that app_id.
-        if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
-            filters = [f'system_metadata @> \'{{"app_id": "{auth.app_id}"}}\'::jsonb']  # Check app_id using @>
-        else:
-            filters = base_clauses.copy()
-
-        return " OR ".join(filters)
 
     def _build_access_filter_optimized(self, auth: AuthContext) -> str:
         """Build PostgreSQL filter for access control using flattened columns.
 
         This optimized version uses direct column access instead of JSONB operations
         for better performance.
+
+        Note: This returns a SQL string with :entity_id and :app_id as named parameters.
+        The caller must provide these parameters when executing the query.
         """
-        # Base clauses using flattened columns
+        # Base clauses using flattened columns with named parameters
         base_clauses = [
-            f"owner_id = '{auth.entity_id}'",
-            f"'{auth.entity_id}' = ANY(readers)",
-            f"'{auth.entity_id}' = ANY(writers)",
-            f"'{auth.entity_id}' = ANY(admins)",
+            "owner_id = :entity_id",
+            ":entity_id = ANY(readers)",
+            ":entity_id = ANY(writers)",
+            ":entity_id = ANY(admins)",
         ]
 
         # Developer token with app_id → restrict strictly by that app_id
         if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
-            filters = [f"app_id = '{auth.app_id}'"]
+            filters = ["app_id = :app_id"]
         else:
             filters = base_clauses.copy()
 
@@ -1236,66 +1038,20 @@ class PostgresDatabase(BaseDatabase):
 
         return " AND ".join(filter_conditions)
 
-    def _build_system_metadata_filter(self, system_filters: Optional[Dict[str, Any]]) -> str:
-        """Build PostgreSQL filter for system metadata using JSONB columns.
-
-        This helper supports two storage patterns for JSONB values:
-        1. Scalar values – e.g. ``{"folder_name": "folder1"}``
-        2. Array values  – e.g. ``{"folder_name": ["folder1", "folder2"]}``
-
-        For robust folder / end-user scoping we need to correctly match either
-        pattern.  Therefore for every supplied *value* we generate a predicate
-        that checks **either** a scalar equality **or** membership of the value
-        in a JSON array using the `?` operator.  Multiple values for the same
-        key are OR-ed together, while predicates for different keys are AND-ed.
-        """
-        if not system_filters:
-            return ""
-
-        key_clauses: List[str] = []
-
-        for key, value in system_filters.items():
-            # Normalise to a list for uniform processing.
-            values = value if isinstance(value, list) else [value]
-            if not values and value is not None:
-                continue
-
-            value_clauses = []
-            for item in values:
-                if item is None:
-                    # Special handling for None values - check for null in JSON
-                    json_filter_object = {key: None}
-                    json_string_for_sql = json.dumps(json_filter_object)
-                    sql_escaped_json_string = json_string_for_sql.replace("'", "''")
-                    value_clauses.append(f"system_metadata @> '{sql_escaped_json_string}'::jsonb")
-                else:
-                    # Use JSONB containment operator @>
-                    # This allows matching native JSON types (boolean, number, string)
-                    # and leverages the GIN index on the system_metadata column.
-                    json_filter_object = {key: item}
-                    # json.dumps will correctly format item as a JSON string, number, or boolean
-                    json_string_for_sql = json.dumps(json_filter_object)
-                    # Escape single quotes within the generated JSON string for SQL literal
-                    sql_escaped_json_string = json_string_for_sql.replace("'", "''")
-
-                    value_clauses.append(f"system_metadata @> '{sql_escaped_json_string}'::jsonb")
-
-            # OR all alternative values for this key, wrap in parentheses.
-            key_clauses.append("(" + " OR ".join(value_clauses) + ")")
-
-        # AND across different keys
-        return " AND ".join(key_clauses)
-
     def _build_system_metadata_filter_optimized(self, system_filters: Optional[Dict[str, Any]]) -> str:
         """Build PostgreSQL filter for system metadata using flattened columns.
 
         This optimized version uses direct column access instead of JSONB operations
         for better performance.
+
+        Note: This returns a SQL string with named parameters like :app_id_0, :folder_name_0, etc.
+        The caller must provide these parameters when executing the query.
         """
         if not system_filters:
             return ""
 
         key_clauses: List[str] = []
+        self._filter_param_counter = 0  # Reset counter for parameter naming
 
         # Map system metadata keys to flattened columns
         column_map = {"app_id": "app_id", "folder_name": "folder_name", "end_user_id": "end_user_id"}
@@ -1314,15 +1070,110 @@ class PostgresDatabase(BaseDatabase):
                 if item is None:
                     value_clauses.append(f"{column} IS NULL")
                 else:
-                    # Escape single quotes for SQL
-                    escaped_value = str(item).replace("'", "''")
-                    value_clauses.append(f"{column} = '{escaped_value}'")
+                    # Use named parameter instead of string interpolation
+                    param_name = f"{key}_{self._filter_param_counter}"
+                    value_clauses.append(f"{column} = :{param_name}")
+                    self._filter_param_counter += 1
 
             # OR all alternative values for this key
             if value_clauses:
                 key_clauses.append("(" + " OR ".join(value_clauses) + ")")
 
         return " AND ".join(key_clauses)
+
+    def _build_filter_params(
+        self, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Build parameter dictionary for the optimized filter methods.
+
+        Returns:
+            Dictionary with parameter values for SQL query execution
+        """
+        params = {}
+
+        # Add auth parameters
+        params["entity_id"] = auth.entity_id
+        if auth.app_id:
+            params["app_id"] = auth.app_id
+
+        # Add system metadata filter parameters
+        if system_filters:
+            self._filter_param_counter = 0  # Reset counter
+            column_map = {"app_id": "app_id", "folder_name": "folder_name", "end_user_id": "end_user_id"}
+
+            for key, value in system_filters.items():
+                if key not in column_map:
+                    continue
+
+                values = value if isinstance(value, list) else [value]
+                if not values and value is not None:
+                    continue
+
+                for item in values:
+                    if item is not None:
+                        param_name = f"{key}_{self._filter_param_counter}"
+                        params[param_name] = str(item)
+                        self._filter_param_counter += 1
+
+        return params
+
+    def _graph_model_to_dict(self, graph_model) -> Dict[str, Any]:
+        """Convert GraphModel to dictionary.
+
+        Args:
+            graph_model: GraphModel instance
+
+        Returns:
+            Dictionary ready to be passed to Graph constructor
+        """
+        return {
+            "id": graph_model.id,
+            "name": graph_model.name,
+            "entities": graph_model.entities,
+            "relationships": graph_model.relationships,
+            "metadata": graph_model.graph_metadata,
+            "system_metadata": graph_model.system_metadata or {},
+            "document_ids": graph_model.document_ids,
+            "filters": graph_model.filters,
+            # Include flattened fields
+            "folder_name": graph_model.folder_name,
+            "app_id": graph_model.app_id,
+            "end_user_id": graph_model.end_user_id,
+        }
+
+    def _document_model_to_dict(self, doc_model) -> Dict[str, Any]:
+        """Convert DocumentModel to dictionary.
+
+        Args:
+            doc_model: DocumentModel instance
+
+        Returns:
+            Dictionary ready to be passed to Document constructor
+        """
+        # Convert storage_files from dict to StorageFileInfo
+        storage_files = []
+        if doc_model.storage_files:
+            for file_info in doc_model.storage_files:
+                if isinstance(file_info, dict):
+                    storage_files.append(StorageFileInfo(**file_info))
+                else:
+                    storage_files.append(file_info)
+
+        return {
+            "external_id": doc_model.external_id,
+            "content_type": doc_model.content_type,
+            "filename": doc_model.filename,
+            "metadata": doc_model.doc_metadata,
+            "storage_info": doc_model.storage_info,
+            "system_metadata": doc_model.system_metadata,
+            "additional_metadata": doc_model.additional_metadata,
+            "chunk_ids": doc_model.chunk_ids,
+            "storage_files": storage_files,
+            # Include flattened fields
+            "folder_name": doc_model.folder_name,
+            "app_id": doc_model.app_id,
+            "end_user_id": doc_model.end_user_id,
+        }
 
     async def store_cache_metadata(self, name: str, metadata: Dict[str, Any]) -> bool:
         """Store metadata for a cache in PostgreSQL.
@@ -1373,7 +1224,7 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Failed to get cache metadata: {e}")
             return None
 
-    async def store_graph(self, graph: Graph) -> bool:
+    async def store_graph(self, graph: Graph, auth: AuthContext) -> bool:
         """Store a graph in PostgreSQL.
 
         This method stores the graph metadata, entities, and relationships
@@ -1381,6 +1232,7 @@ class PostgresDatabase(BaseDatabase):
 
         Args:
             graph: Graph to store
+            auth: Authentication context to set owner information
 
         Returns:
             bool: Whether the operation was successful
@@ -1410,20 +1262,21 @@ class PostgresDatabase(BaseDatabase):
             if updated_at:
                 graph_dict["updated_at"] = updated_at
 
-            # Populate flattened auth columns directly
-            if "owner" in graph_dict and graph_dict["owner"]:
-                graph_dict["owner_id"] = graph_dict["owner"].get("id")
-                graph_dict["owner_type"] = graph_dict["owner"].get("type")
+            # Set owner information from auth context
+            if auth.entity_type and auth.entity_id:
+                graph_dict["owner_id"] = auth.entity_id
+                graph_dict["owner_type"] = auth.entity_type.value
+            else:
+                # Default to a system owner if no entity context
+                graph_dict["owner_id"] = "system"
+                graph_dict["owner_type"] = "system"
 
-            if "access_control" in graph_dict and graph_dict["access_control"]:
-                graph_dict["readers"] = graph_dict["access_control"].get("readers", [])
-                graph_dict["writers"] = graph_dict["access_control"].get("writers", [])
-                graph_dict["admins"] = graph_dict["access_control"].get("admins", [])
+            # Initialize ACL lists as empty (can be updated later)
+            graph_dict["readers"] = []
+            graph_dict["writers"] = []
+            graph_dict["admins"] = []
 
-            if "system_metadata" in graph_dict and graph_dict["system_metadata"]:
-                graph_dict["app_id"] = graph_dict["system_metadata"].get("app_id")
-                graph_dict["folder_name"] = graph_dict["system_metadata"].get("folder_name")
-                graph_dict["end_user_id"] = graph_dict["system_metadata"].get("end_user_id")
+            # The flattened fields are already in graph_dict from the Graph model
 
             # Store the graph metadata in PostgreSQL
             async with self.async_session() as session:
@@ -1461,12 +1314,16 @@ class PostgresDatabase(BaseDatabase):
 
         try:
             async with self.async_session() as session:
-                # Build access filter
+                # Build access filter and params
                 access_filter = self._build_access_filter_optimized(auth)
+                filter_params = self._build_filter_params(auth)
+                filter_params["graph_name"] = name
 
                 # We need to check if the documents in the graph match the system filters
                 # First get the graph without system filters
-                query = select(GraphModel).where(GraphModel.name == name).where(text(f"({access_filter})"))
+                query = select(GraphModel).where(
+                    text(f"name = :graph_name AND ({access_filter})").bindparams(**filter_params)
+                )
 
                 result = await session.execute(query)
                 graph_model = result.scalar_one_or_none()
@@ -1481,14 +1338,15 @@ class PostgresDatabase(BaseDatabase):
 
                         if system_metadata_filter:
                             # Get document IDs with system filters
-                            doc_id_placeholders = ", ".join([f"'{doc_id}'" for doc_id in document_ids])
+                            system_params = self._build_filter_params(auth, system_filters)
+                            system_params["doc_ids"] = document_ids
                             filter_query = f"""
                                 SELECT external_id FROM documents
-                                WHERE external_id IN ({doc_id_placeholders})
+                                WHERE external_id = ANY(:doc_ids)
                                 AND ({system_metadata_filter})
                             """
 
-                            filter_result = await session.execute(text(filter_query))
+                            filter_result = await session.execute(text(filter_query).bindparams(**system_params))
                             filtered_doc_ids = [row[0] for row in filter_result.all()]
 
                             # If no documents match system filters, return None
@@ -1499,20 +1357,12 @@ class PostgresDatabase(BaseDatabase):
                             document_ids = filtered_doc_ids
 
                     # Convert to Graph model
-                    graph_dict = {
-                        "id": graph_model.id,
-                        "name": graph_model.name,
-                        "entities": graph_model.entities,
-                        "relationships": graph_model.relationships,
-                        "metadata": graph_model.graph_metadata,  # Reference the renamed column
-                        "system_metadata": graph_model.system_metadata or {},  # Include system_metadata
-                        "document_ids": document_ids,  # Use possibly filtered document_ids
-                        "filters": graph_model.filters,
-                        "created_at": _parse_datetime_field(graph_model.created_at),
-                        "updated_at": _parse_datetime_field(graph_model.updated_at),
-                        "owner": graph_model.owner,
-                        "access_control": graph_model.access_control,
-                    }
+                    graph_dict = self._graph_model_to_dict(graph_model)
+                    # Override document_ids with filtered results if applicable
+                    graph_dict["document_ids"] = document_ids
+                    # Add datetime fields
+                    graph_dict["created_at"] = _parse_datetime_field(graph_model.created_at)
+                    graph_dict["updated_at"] = _parse_datetime_field(graph_model.updated_at)
                     return Graph(**graph_dict)
 
                 return None
@@ -1537,11 +1387,12 @@ class PostgresDatabase(BaseDatabase):
 
         try:
             async with self.async_session() as session:
-                # Build access filter
+                # Build access filter and params
                 access_filter = self._build_access_filter_optimized(auth)
+                filter_params = self._build_filter_params(auth)
 
                 # Query graphs
-                query = select(GraphModel).where(text(f"({access_filter})"))
+                query = select(GraphModel).where(text(f"({access_filter})").bindparams(**filter_params))
 
                 result = await session.execute(query)
                 graph_models = result.scalars().all()
@@ -1557,52 +1408,35 @@ class PostgresDatabase(BaseDatabase):
 
                         if document_ids and system_metadata_filter:
                             # Get document IDs with system filters
-                            doc_id_placeholders = ", ".join([f"'{doc_id}'" for doc_id in document_ids])
+                            system_params = self._build_filter_params(auth, system_filters)
+                            system_params["doc_ids"] = document_ids
                             filter_query = f"""
                                 SELECT external_id FROM documents
-                                WHERE external_id IN ({doc_id_placeholders})
+                                WHERE external_id = ANY(:doc_ids)
                                 AND ({system_metadata_filter})
                             """
 
-                            filter_result = await session.execute(text(filter_query))
+                            filter_result = await session.execute(text(filter_query).bindparams(**system_params))
                             filtered_doc_ids = [row[0] for row in filter_result.all()]
 
                             # Only include graphs that have documents matching the system filters
                             if filtered_doc_ids:
-                                graph = Graph(
-                                    id=graph_model.id,
-                                    name=graph_model.name,
-                                    entities=graph_model.entities,
-                                    relationships=graph_model.relationships,
-                                    metadata=graph_model.graph_metadata,  # Reference the renamed column
-                                    system_metadata=graph_model.system_metadata or {},  # Include system_metadata
-                                    document_ids=filtered_doc_ids,  # Use filtered document_ids
-                                    filters=graph_model.filters,
-                                    created_at=_parse_datetime_field(graph_model.created_at),
-                                    updated_at=_parse_datetime_field(graph_model.updated_at),
-                                    owner=graph_model.owner,
-                                    access_control=graph_model.access_control,
-                                )
-                                graphs.append(graph)
+                                graph_dict = self._graph_model_to_dict(graph_model)
+                                # Override document_ids with filtered results
+                                graph_dict["document_ids"] = filtered_doc_ids
+                                # Add datetime fields
+                                graph_dict["created_at"] = _parse_datetime_field(graph_model.created_at)
+                                graph_dict["updated_at"] = _parse_datetime_field(graph_model.updated_at)
+                                graphs.append(Graph(**graph_dict))
                 else:
                     # No system filters, include all graphs
-                    graphs = [
-                        Graph(
-                            id=graph.id,
-                            name=graph.name,
-                            entities=graph.entities,
-                            relationships=graph.relationships,
-                            metadata=graph.graph_metadata,  # Reference the renamed column
-                            system_metadata=graph.system_metadata or {},  # Include system_metadata
-                            document_ids=graph.document_ids,
-                            filters=graph.filters,
-                            created_at=_parse_datetime_field(graph.created_at),
-                            updated_at=_parse_datetime_field(graph.updated_at),
-                            owner=graph.owner,
-                            access_control=graph.access_control,
-                        )
-                        for graph in graph_models
-                    ]
+                    graphs = []
+                    for graph_model in graph_models:
+                        graph_dict = self._graph_model_to_dict(graph_model)
+                        # Add datetime fields
+                        graph_dict["created_at"] = _parse_datetime_field(graph_model.created_at)
+                        graph_dict["updated_at"] = _parse_datetime_field(graph_model.updated_at)
+                        graphs.append(Graph(**graph_dict))
 
                 return graphs
 
@@ -1647,20 +1481,9 @@ class PostgresDatabase(BaseDatabase):
             if updated_at:
                 graph_dict["updated_at"] = updated_at
 
-            # Populate flattened auth columns directly
-            if "owner" in graph_dict and graph_dict["owner"]:
-                graph_dict["owner_id"] = graph_dict["owner"].get("id")
-                graph_dict["owner_type"] = graph_dict["owner"].get("type")
-
-            if "access_control" in graph_dict and graph_dict["access_control"]:
-                graph_dict["readers"] = graph_dict["access_control"].get("readers", [])
-                graph_dict["writers"] = graph_dict["access_control"].get("writers", [])
-                graph_dict["admins"] = graph_dict["access_control"].get("admins", [])
-
-            if "system_metadata" in graph_dict and graph_dict["system_metadata"]:
-                graph_dict["app_id"] = graph_dict["system_metadata"].get("app_id")
-                graph_dict["folder_name"] = graph_dict["system_metadata"].get("folder_name")
-                graph_dict["end_user_id"] = graph_dict["system_metadata"].get("end_user_id")
+            # The flattened fields are already in graph_dict from the Graph model
+            # Note: owner_id, owner_type, and ACL fields should not be updated here
+            # They should remain as set during graph creation
 
             # Update the graph in PostgreSQL
             async with self.async_session() as session:
@@ -1688,7 +1511,7 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error updating graph: {str(e)}")
             return False
 
-    async def create_folder(self, folder: Folder) -> bool:
+    async def create_folder(self, folder: Folder, auth: AuthContext) -> bool:
         """Create a new folder."""
         try:
             async with self.async_session() as session:
@@ -1697,18 +1520,20 @@ class PostgresDatabase(BaseDatabase):
                 # Convert datetime objects to strings for JSON serialization
                 folder_dict = _serialize_datetime(folder_dict)
 
-                # Check if a folder with this name already exists for this owner, scoped by app_id (if present)
-                app_id_val = folder_dict.get("system_metadata", {}).get("app_id")
-                params = {"name": folder.name, "entity_id": folder.owner["id"], "entity_type": folder.owner["type"]}
+                # Get owner info from auth context
+                owner_id = auth.entity_id if auth.entity_type and auth.entity_id else "system"
+                owner_type = auth.entity_type.value if auth.entity_type else "system"
+                app_id_val = auth.app_id or folder_dict.get("app_id")
+                params = {"name": folder.name, "owner_id": owner_id, "owner_type": owner_type}
                 sql = """
                     SELECT id FROM folders
                     WHERE name = :name
-                    AND owner->>'id' = :entity_id
-                    AND owner->>'type' = :entity_type
+                    AND owner_id = :owner_id
+                    AND owner_type = :owner_type
                     """
                 if app_id_val is not None:
                     sql += """
-                    AND system_metadata->>'app_id' = :app_id
+                    AND app_id = :app_id
                     """
                     params["app_id"] = app_id_val
                 stmt = text(sql).bindparams(**params)
@@ -1725,38 +1550,19 @@ class PostgresDatabase(BaseDatabase):
                     folder.id = existing_folder
                     return True
 
-                # Create a new folder model
-                access_control = folder_dict.get("access_control", {})
-
-                # Populate flattened auth columns directly
-                if "owner" in folder_dict and folder_dict["owner"]:
-                    folder_dict["owner_id"] = folder_dict["owner"].get("id")
-                    folder_dict["owner_type"] = folder_dict["owner"].get("type")
-
-                if access_control:
-                    folder_dict["readers"] = access_control.get("readers", [])
-                    folder_dict["writers"] = access_control.get("writers", [])
-                    folder_dict["admins"] = access_control.get("admins", [])
-
-                if "system_metadata" in folder_dict and folder_dict["system_metadata"]:
-                    folder_dict["app_id"] = folder_dict["system_metadata"].get("app_id")
-                    # Note: folders don't have folder_name in their system_metadata
-                    folder_dict["end_user_id"] = folder_dict["system_metadata"].get("end_user_id")
-
+                # Create a new folder model with owner info from auth context
                 folder_model = FolderModel(
                     id=folder.id,
                     name=folder.name,
                     description=folder.description,
-                    owner=folder_dict["owner"],
-                    owner_id=folder_dict.get("owner_id"),
-                    owner_type=folder_dict.get("owner_type"),
+                    owner_id=owner_id,
+                    owner_type=owner_type,
                     document_ids=folder_dict.get("document_ids", []),
                     system_metadata=folder_dict.get("system_metadata", {}),
-                    access_control=access_control,
-                    readers=folder_dict.get("readers", []),
-                    writers=folder_dict.get("writers", []),
-                    admins=folder_dict.get("admins", []),
-                    app_id=folder_dict.get("app_id"),
+                    readers=[],  # Initialize as empty, can be updated later
+                    writers=[],  # Initialize as empty, can be updated later
+                    admins=[],  # Initialize as empty, can be updated later
+                    app_id=app_id_val,
                     end_user_id=folder_dict.get("end_user_id"),
                     rules=folder_dict.get("rules", []),
                     workflow_ids=folder_dict.get("workflow_ids", []),
@@ -1790,20 +1596,17 @@ class PostgresDatabase(BaseDatabase):
                     "id": folder_model.id,
                     "name": folder_model.name,
                     "description": folder_model.description,
-                    "owner": folder_model.owner,
                     "document_ids": folder_model.document_ids,
                     "system_metadata": folder_model.system_metadata,
-                    "access_control": folder_model.access_control,
                     "rules": folder_model.rules,
                     "workflow_ids": getattr(folder_model, "workflow_ids", []),
                 }
 
-                folder = Folder(**folder_dict)
-
-                # Check if the user has access to the folder
-                if not self._check_folder_access(folder, auth, "read"):
+                # Check if the user has access to the folder using the model
+                if not self._check_folder_model_access(folder_model, auth, "read"):
                     return None
 
+                folder = Folder(**folder_dict)
                 return folder
 
         except Exception as e:
@@ -1820,8 +1623,8 @@ class PostgresDatabase(BaseDatabase):
                         """
                         SELECT * FROM folders
                         WHERE name = :name
-                        AND (owner->>'id' = :entity_id)
-                        AND (owner->>'type' = :entity_type)
+                        AND owner_id = :entity_id
+                        AND owner_type = :entity_type
                         """
                     ).bindparams(name=name, entity_id=auth.entity_id, entity_type=auth.entity_type.value)
 
@@ -1834,38 +1637,34 @@ class PostgresDatabase(BaseDatabase):
                             "id": folder_row.id,
                             "name": folder_row.name,
                             "description": folder_row.description,
-                            "owner": folder_row.owner,
                             "document_ids": folder_row.document_ids,
                             "system_metadata": folder_row.system_metadata,
-                            "access_control": folder_row.access_control,
                             "rules": folder_row.rules,
                             "workflow_ids": getattr(folder_row, "workflow_ids", []),
                         }
 
                         folder = Folder(**folder_dict)
-                        # Enforce app_id scoping
-                        if self._check_folder_access(folder, auth, "read"):
-                            return folder
-                        else:
-                            return None
+                        return folder
 
                 # If not found, try to find any accessible folder with that name
+                # Note: For folders, the access control arrays store "entity_type:entity_id" format
+                entity_qualifier = f"{auth.entity_type.value}:{auth.entity_id}"
                 stmt = text(
                     """
                     SELECT * FROM folders
                     WHERE name = :name
                     AND (
-                        (owner->>'id' = :entity_id AND owner->>'type' = :entity_type)
-                        OR (access_control->'readers' ? :entity_id)
-                        OR (access_control->'writers' ? :entity_id)
-                        OR (access_control->'admins' ? :entity_id)
+                        (owner_id = :entity_id AND owner_type = :entity_type)
+                        OR :entity_qualifier = ANY(readers)
+                        OR :entity_qualifier = ANY(writers)
+                        OR :entity_qualifier = ANY(admins)
                     )
                     """
                 ).bindparams(
                     name=name,
                     entity_id=auth.entity_id,
                     entity_type=auth.entity_type.value,
-                    user_id=auth.user_id if auth.user_id else "",
+                    entity_qualifier=entity_qualifier,
                 )
 
                 result = await session.execute(stmt)
@@ -1877,20 +1676,14 @@ class PostgresDatabase(BaseDatabase):
                         "id": folder_row.id,
                         "name": folder_row.name,
                         "description": folder_row.description,
-                        "owner": folder_row.owner,
                         "document_ids": folder_row.document_ids,
                         "system_metadata": folder_row.system_metadata,
-                        "access_control": folder_row.access_control,
                         "rules": folder_row.rules,
                         "workflow_ids": getattr(folder_row, "workflow_ids", []),
                     }
 
                     folder = Folder(**folder_dict)
-                    # Enforce app_id scoping
-                    if self._check_folder_access(folder, auth, "read"):
-                        return folder
-                    else:
-                        return None
+                    return folder
 
                 return None
 
@@ -1899,7 +1692,7 @@ class PostgresDatabase(BaseDatabase):
             return None
 
     async def list_folders(self, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> List[Folder]:
-        """List all folders the user has access to by building a dynamic SQL query."""
+        """List all folders the user has access to using flattened columns."""
         try:
             where_filters = []  # For top-level AND conditions (e.g., app_id)
             core_access_conditions = []  # For OR conditions (owner, reader_acl, admin_acl)
@@ -1907,34 +1700,33 @@ class PostgresDatabase(BaseDatabase):
 
             # 1. Developer App ID Scoping (always applied as an AND condition if auth context specifies it)
             if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
-                where_filters.append(text("system_metadata->>'app_id' = :app_id_val"))
+                where_filters.append(text("app_id = :app_id_val"))
                 current_params["app_id_val"] = auth.app_id
 
             # 2. Build Core Access Conditions (Owner, Reader ACL, Admin ACL)
             # These are OR'd together. The user must satisfy one of these, AND the app_id scope if applicable.
 
-            # Condition 2a: User is the owner of the folder
+            # Condition 2a: User is the owner of the folder (using flattened columns)
             if auth.entity_type and auth.entity_id:
                 owner_sub_conditions_text = []
 
-                owner_sub_conditions_text.append("owner->>'type' = :owner_type_val")
+                owner_sub_conditions_text.append("owner_type = :owner_type_val")
                 current_params["owner_type_val"] = auth.entity_type.value
 
-                owner_sub_conditions_text.append("owner->>'id' = :owner_id_val")
+                owner_sub_conditions_text.append("owner_id = :owner_id_val")
                 current_params["owner_id_val"] = auth.entity_id
 
                 # Combine owner sub-conditions with AND
                 core_access_conditions.append(text(f"({' AND '.join(owner_sub_conditions_text)})"))
 
             # Condition 2b & 2c: User is in the folder's 'readers' or 'admins' access control list
+            # Note: Folders use "entity_type:entity_id" format in arrays
             if auth.entity_type and auth.entity_id:
                 entity_qualifier_for_acl = f"{auth.entity_type.value}:{auth.entity_id}"
                 current_params["acl_qualifier"] = entity_qualifier_for_acl  # Used for both readers and admins
 
-                core_access_conditions.append(text("access_control->'readers' ? :acl_qualifier"))
-                core_access_conditions.append(
-                    text("access_control->'admins' ? :acl_qualifier")
-                )  # Added folder admins ACL check
+                core_access_conditions.append(text(":acl_qualifier = ANY(readers)"))
+                core_access_conditions.append(text(":acl_qualifier = ANY(admins)"))  # Added folder admins ACL check
 
             # Combine core access conditions with OR, and add this group to the main AND filters
             if core_access_conditions:
@@ -1963,10 +1755,8 @@ class PostgresDatabase(BaseDatabase):
                         "id": folder_model.id,
                         "name": folder_model.name,
                         "description": folder_model.description,
-                        "owner": folder_model.owner,
                         "document_ids": folder_model.document_ids,
                         "system_metadata": folder_model.system_metadata,
-                        "access_control": folder_model.access_control,
                         "rules": folder_model.rules,
                         "workflow_ids": getattr(folder_model, "workflow_ids", []),
                     }
@@ -1980,16 +1770,22 @@ class PostgresDatabase(BaseDatabase):
     async def add_document_to_folder(self, folder_id: str, document_id: str, auth: AuthContext) -> bool:
         """Add a document to a folder."""
         try:
-            # First, check if the user has access to the folder
-            folder = await self.get_folder(folder_id, auth)
-            if not folder:
-                logger.error(f"Folder {folder_id} not found or user does not have access")
-                return False
+            # First, get the folder model and check access
+            async with self.async_session() as session:
+                folder_model = await session.get(FolderModel, folder_id)
+                if not folder_model:
+                    logger.error(f"Folder {folder_id} not found")
+                    return False
 
-            # Check if user has write access to the folder
-            if not self._check_folder_access(folder, auth, "write"):
-                logger.error(f"User does not have write access to folder {folder_id}")
-                return False
+                # Check if user has write access to the folder
+                if not self._check_folder_model_access(folder_model, auth, "write"):
+                    logger.error(f"User does not have write access to folder {folder_id}")
+                    return False
+
+                # Convert to Folder object for document_ids access
+                folder = await self.get_folder(folder_id, auth)
+                if not folder:
+                    return False
 
             # Check if the document exists and user has access
             document = await self.get_document(document_id, auth)
@@ -2014,15 +1810,14 @@ class PostgresDatabase(BaseDatabase):
 
                 folder_model.document_ids = new_document_ids
 
-                # Also update the document's system_metadata to include the folder_name
-                folder_name_json = json.dumps(folder.name)
+                # Also update the document's folder_name flattened column
                 stmt = text(
-                    f"""
+                    """
                     UPDATE documents
-                    SET system_metadata = jsonb_set(system_metadata, '{{folder_name}}', '{folder_name_json}'::jsonb)
+                    SET folder_name = :folder_name
                     WHERE external_id = :document_id
                     """
-                ).bindparams(document_id=document_id)
+                ).bindparams(folder_name=folder.name, document_id=document_id)
 
                 await session.execute(stmt)
                 await session.commit()
@@ -2037,16 +1832,22 @@ class PostgresDatabase(BaseDatabase):
     async def remove_document_from_folder(self, folder_id: str, document_id: str, auth: AuthContext) -> bool:
         """Remove a document from a folder."""
         try:
-            # First, check if the user has access to the folder
-            folder = await self.get_folder(folder_id, auth)
-            if not folder:
-                logger.error(f"Folder {folder_id} not found or user does not have access")
-                return False
+            # First, get the folder model and check access
+            async with self.async_session() as session:
+                folder_model = await session.get(FolderModel, folder_id)
+                if not folder_model:
+                    logger.error(f"Folder {folder_id} not found")
+                    return False
 
-            # Check if user has write access to the folder
-            if not self._check_folder_access(folder, auth, "write"):
-                logger.error(f"User does not have write access to folder {folder_id}")
-                return False
+                # Check if user has write access to the folder
+                if not self._check_folder_model_access(folder_model, auth, "write"):
+                    logger.error(f"User does not have write access to folder {folder_id}")
+                    return False
+
+                # Convert to Folder object for document_ids access
+                folder = await self.get_folder(folder_id, auth)
+                if not folder:
+                    return False
 
             # Check if the document is in the folder
             if document_id not in folder.document_ids:
@@ -2065,11 +1866,11 @@ class PostgresDatabase(BaseDatabase):
 
                 folder_model.document_ids = new_document_ids
 
-                # Also update the document's system_metadata to remove the folder_name
+                # Also update the document's folder_name to NULL
                 stmt = text(
                     """
                     UPDATE documents
-                    SET system_metadata = jsonb_set(system_metadata, '{folder_name}', 'null'::jsonb)
+                    SET folder_name = NULL
                     WHERE external_id = :document_id
                     """
                 ).bindparams(document_id=document_id)
@@ -2199,11 +2000,13 @@ class PostgresDatabase(BaseDatabase):
             logger.error("Error listing chat conversations: %s", exc)
             return []
 
-    def _check_folder_access(self, folder: Folder, auth: AuthContext, permission: str = "read") -> bool:
+    def _check_folder_model_access(
+        self, folder_model: FolderModel, auth: AuthContext, permission: str = "read"
+    ) -> bool:
         """Check if the user has the required permission for the folder."""
         # Developer-scoped tokens: restrict by app_id on folders
         if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
-            if folder.system_metadata.get("app_id") != auth.app_id:
+            if folder_model.app_id != auth.app_id:
                 return False
 
         # Admin always has access
@@ -2214,30 +2017,26 @@ class PostgresDatabase(BaseDatabase):
         if (
             auth.entity_type
             and auth.entity_id
-            and folder.owner.get("type") == auth.entity_type.value
-            and folder.owner.get("id") == auth.entity_id
+            and folder_model.owner_type == auth.entity_type.value
+            and folder_model.owner_id == auth.entity_id
         ):
             return True
 
-        # Check access control lists
-        access_control = folder.access_control or {}
+        # Check access control lists using flattened columns
         # ACLs for folders store entries as "entity_type_value:entity_id"
         entity_qualifier = f"{auth.entity_type.value}:{auth.entity_id}"
 
         if permission == "read":
-            readers = access_control.get("readers", [])
-            if entity_qualifier in readers:
+            if entity_qualifier in (folder_model.readers or []):
                 return True
 
         if permission == "write":
-            writers = access_control.get("writers", [])
-            if entity_qualifier in writers:
+            if entity_qualifier in (folder_model.writers or []):
                 return True
 
         # For admin permission, check admins list
         if permission == "admin":  # This check is for folder-level admin, not global admin
-            admins = access_control.get("admins", [])
-            if entity_qualifier in admins:
+            if entity_qualifier in (folder_model.admins or []):
                 return True
 
         return False

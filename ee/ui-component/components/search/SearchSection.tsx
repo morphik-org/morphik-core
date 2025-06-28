@@ -25,6 +25,7 @@ const defaultSearchOptions: SearchOptions = {
   use_reranking: false,
   use_colpali: true,
   padding: 0,
+  folder_name: undefined,
 };
 
 const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, onSearchSubmit }) => {
@@ -120,6 +121,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
         body: JSON.stringify({
           query: searchQuery,
           filters: filtersObject,
+          folder_name: currentSearchOptions.folder_name,
           k: currentSearchOptions.k,
           min_score: currentSearchOptions.min_score,
           use_reranking: currentSearchOptions.use_reranking,

@@ -8,6 +8,10 @@ export interface SearchOptions {
   use_reranking?: boolean;
   use_colpali?: boolean;
   padding?: number; // Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only)
+  /**
+   * Optional folder scoping for retrieval endpoints.
+   */
+  folder_name?: string | string[];
 }
 
 export interface QueryOptions extends SearchOptions {
@@ -59,6 +63,9 @@ export interface Document {
   metadata: Record<string, unknown>;
   system_metadata: Record<string, unknown>;
   additional_metadata: Record<string, unknown>;
+  folder_name?: string;
+  app_id?: string;
+  end_user_id?: string;
 }
 
 export interface FolderSummary {
@@ -70,11 +77,11 @@ export interface FolderSummary {
 }
 
 export interface Folder extends FolderSummary {
-  owner: string;
   document_ids?: string[];
   system_metadata: Record<string, unknown>;
-  access_control?: Record<string, unknown>;
   created_at?: string;
+  app_id?: string;
+  end_user_id?: string;
   // updated_at inherited
 }
 

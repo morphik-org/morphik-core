@@ -11,7 +11,6 @@ class Folder(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     description: Optional[str] = None
-    owner: Dict[str, str]
     document_ids: List[str] | None = Field(default_factory=list)
     system_metadata: Dict[str, Any] = Field(
         default_factory=lambda: {
@@ -19,11 +18,14 @@ class Folder(BaseModel):
             "updated_at": datetime.now(UTC),
         }
     )
-    access_control: Dict[str, List[str]] = Field(default_factory=lambda: {"readers": [], "writers": [], "admins": []})
     rules: List[Dict[str, Any]] = Field(default_factory=list)
     workflow_ids: List[str] = Field(
         default_factory=list, description="List of workflow IDs to run on document ingestion"
     )
+
+    # Flattened fields from system_metadata for performance
+    app_id: Optional[str] = None
+    end_user_id: Optional[str] = None
 
     def __hash__(self):
         return hash(self.id)

@@ -138,25 +138,15 @@ async def ingest_file(
             content_type=file.content_type,
             filename=file.filename,
             metadata=metadata_dict,
-            owner={"type": auth.entity_type.value, "id": auth.entity_id},
-            access_control={
-                "readers": [auth.entity_id],
-                "writers": [auth.entity_id],
-                "admins": [auth.entity_id],
-            },
             system_metadata={"status": "processing"},
+            folder_name=folder_name,
+            end_user_id=end_user_id,
+            app_id=auth.app_id,
         )
-
-        # Always set folder_name in system_metadata (None if not provided)
-        doc.system_metadata["folder_name"] = folder_name
-        if end_user_id:
-            doc.system_metadata["end_user_id"] = end_user_id
-        if auth.app_id:
-            doc.system_metadata["app_id"] = auth.app_id
 
         # Store stub in application database (not control-plane DB)
         app_db = document_service.db
-        success = await app_db.store_document(doc)
+        success = await app_db.store_document(doc, auth)
         if not success:
             raise Exception("Failed to store document metadata")
 
@@ -353,24 +343,14 @@ async def batch_ingest_files(
                 content_type=file.content_type,
                 filename=file.filename,
                 metadata=metadata_item,
-                owner={"type": auth.entity_type.value, "id": auth.entity_id},
-                access_control={
-                    "readers": [auth.entity_id],
-                    "writers": [auth.entity_id],
-                    "admins": [auth.entity_id],
-                },
+                folder_name=folder_name,
+                end_user_id=end_user_id,
+                app_id=auth.app_id,
             )
-
-            # Always set folder_name in system_metadata (None if not provided)
-            doc.system_metadata["folder_name"] = folder_name
-            if end_user_id:
-                doc.system_metadata["end_user_id"] = end_user_id
-            if auth.app_id:
-                doc.system_metadata["app_id"] = auth.app_id
             doc.system_metadata["status"] = "processing"
 
             app_db = document_service.db
-            success = await app_db.store_document(doc)
+            success = await app_db.store_document(doc, auth)
             if not success:
                 raise Exception(f"Failed to store document metadata for {file.filename}")
 

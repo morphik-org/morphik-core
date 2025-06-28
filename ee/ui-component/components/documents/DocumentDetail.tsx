@@ -75,7 +75,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
     );
   }
 
-  const currentFolder = selectedDocument.system_metadata?.folder_name as string | undefined;
+  const currentFolder = selectedDocument.folder_name;
   const status = selectedDocument.system_metadata?.status as string | undefined;
   const error = selectedDocument.system_metadata?.error as string | undefined;
   const createdAt = selectedDocument.system_metadata?.created_at as string | undefined;
