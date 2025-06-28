@@ -462,8 +462,7 @@ async def batch_get_documents(request: Dict[str, Any], auth: AuthContext = Depen
             system_filters["folder_name"] = normalized_folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in document retrieval
 
         # Main batch retrieval operation
         perf.start_phase("batch_retrieve_documents")
@@ -526,8 +525,7 @@ async def batch_get_chunks(request: Dict[str, Any], auth: AuthContext = Depends(
             system_filters["folder_name"] = normalized_folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in document retrieval
 
         # Main batch retrieval operation
         perf.start_phase("batch_retrieve_chunks")
@@ -963,8 +961,7 @@ async def list_documents(
         system_filters["folder_name"] = normalized_folder_name
     if end_user_id:
         system_filters["end_user_id"] = end_user_id
-    if auth.app_id:
-        system_filters["app_id"] = auth.app_id
+    # Note: auth.app_id is already handled in _build_access_filter_optimized
 
     return await document_service.db.get_documents(auth, skip, limit, filters, system_filters)
 
@@ -1585,8 +1582,7 @@ async def create_graph(
             system_filters["end_user_id"] = request.end_user_id
 
         # Developer tokens: always scope by app_id to prevent cross-app leakage
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in document retrieval
 
         # --------------------
         # Create stub graph
@@ -1905,8 +1901,7 @@ async def get_graph(
             system_filters["end_user_id"] = end_user_id
 
         # Developer tokens: always scope by app_id to prevent cross-app leakage
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in document retrieval
 
         graph = await document_service.db.get_graph(name, auth, system_filters)
         if not graph:
@@ -1948,8 +1943,7 @@ async def list_graphs(
             system_filters["end_user_id"] = end_user_id
 
         # Developer tokens: always scope by app_id to prevent cross-app leakage
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in document retrieval
 
         return await document_service.db.list_graphs(auth, system_filters)
     except PermissionError as e:
@@ -2035,8 +2029,7 @@ async def update_graph(
             system_filters["end_user_id"] = request.end_user_id
 
         # Developer tokens: always scope by app_id to prevent cross-app leakage
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in document retrieval
 
         return await document_service.update_graph(
             name=name,

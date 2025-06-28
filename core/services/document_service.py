@@ -291,8 +291,7 @@ class DocumentService:
             system_filters["folder_name"] = folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in _build_access_filter_optimized
 
         # Launch embedding queries concurrently
         embedding_tasks = [self.embedding_model.embed_for_query(query)]
@@ -796,8 +795,7 @@ class DocumentService:
             system_filters["folder_name"] = folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in _build_access_filter_optimized
 
         # Use the database's batch retrieval method
         documents = await self.db.get_documents_by_id(document_ids, auth, system_filters)

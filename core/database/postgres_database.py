@@ -609,6 +609,10 @@ class PostgresDatabase(BaseDatabase):
             doc_dict["writers"] = []
             doc_dict["admins"] = []
 
+            # Set app_id from auth context if present (required for cloud mode)
+            if auth.app_id:
+                doc_dict["app_id"] = auth.app_id
+
             # The flattened fields are already in doc_dict from the Document model
 
             async with self.async_session() as session:
@@ -997,13 +1001,14 @@ class PostgresDatabase(BaseDatabase):
             ":entity_id = ANY(admins)",
         ]
 
-        # Developer token with app_id → restrict strictly by that app_id
+        # Developer token with app_id → require BOTH app_id match AND standard access
         if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
-            filters = ["app_id = :app_id"]
+            # Must match app_id AND have at least one of the standard access permissions
+            return f"app_id = :app_id AND ({' OR '.join(base_clauses)})"
         else:
-            filters = base_clauses.copy()
-
-        return " OR ".join(filters)
+            # For non-developer tokens or developer tokens without app_id,
+            # use standard access control
+            return " OR ".join(base_clauses)
 
     def _build_metadata_filter(self, filters: Dict[str, Any]) -> str:
         """Build PostgreSQL filter for metadata."""
@@ -1275,6 +1280,10 @@ class PostgresDatabase(BaseDatabase):
             graph_dict["readers"] = []
             graph_dict["writers"] = []
             graph_dict["admins"] = []
+
+            # Set app_id from auth context if present (required for cloud mode)
+            if auth.app_id:
+                graph_dict["app_id"] = auth.app_id
 
             # The flattened fields are already in graph_dict from the Graph model
 
