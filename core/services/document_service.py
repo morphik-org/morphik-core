@@ -1240,7 +1240,13 @@ class DocumentService:
         # ===========================================================
 
         # Store everything
-        await self._store_chunks_and_doc(chunk_objects, doc, use_colpali, chunk_objects_multivector)
+        await self._store_chunks_and_doc(
+            chunk_objects,
+            doc,
+            use_colpali,
+            chunk_objects_multivector,
+            auth=auth,
+        )
         logger.debug(f"Successfully stored text document {doc.external_id}")
 
         # Update the document status to completed after successful storage
@@ -2129,7 +2135,12 @@ class DocumentService:
 
         # Store everything - this will replace existing chunks with new ones
         await self._store_chunks_and_doc(
-            chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
+            chunk_objects,
+            doc,
+            use_colpali,
+            chunk_objects_multivector,
+            is_update=True,
+            auth=auth,
         )
         logger.info(f"Successfully updated document {doc.external_id}")
 
