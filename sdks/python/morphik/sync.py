@@ -366,6 +366,7 @@ class Folder:
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
         chat_id: Optional[str] = None,
         llm_config: Optional[Dict[str, Any]] = None,
+        padding: int = 0,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context within this folder.
@@ -384,6 +385,7 @@ class Folder:
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
             additional_folders: Optional list of extra folders to include in the scope
             schema: Optional schema for structured output
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
 
         Returns:
             CompletionResponse: Generated completion
@@ -406,6 +408,7 @@ class Folder:
             chat_id,
             schema,
             llm_config,
+            padding,
         )
 
         # Add schema to payload if provided
@@ -942,6 +945,7 @@ class UserScope:
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
         chat_id: Optional[str] = None,
         llm_config: Optional[Dict[str, Any]] = None,
+        padding: int = 0,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context as this end user.
@@ -960,6 +964,7 @@ class UserScope:
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
             additional_folders: Optional list of extra folders to include in the scope
             schema: Optional schema for structured output
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
 
         Returns:
             CompletionResponse: Generated completion
@@ -982,6 +987,7 @@ class UserScope:
             chat_id,
             schema,
             llm_config,
+            padding,
         )
 
         # Add schema to payload if provided
@@ -1693,6 +1699,7 @@ class Morphik:
         chat_id: Optional[str] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
         llm_config: Optional[Dict[str, Any]] = None,
+        padding: int = 0,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context.
@@ -1714,6 +1721,7 @@ class Morphik:
             folder_name: Optional folder name to further scope operations
             schema: Optional schema for structured output, can be a Pydantic model or a JSON schema dict
             llm_config: Optional LiteLLM-compatible model configuration (e.g., model name, API key, base URL)
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
         Returns:
             CompletionResponse
 
@@ -1802,6 +1810,7 @@ class Morphik:
             chat_id,
             schema,
             llm_config,
+            padding,
         )
 
         # Add schema to payload if provided

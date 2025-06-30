@@ -254,6 +254,7 @@ class _MorphikClientLogic:
         chat_id: Optional[str] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
         llm_config: Optional[Dict[str, Any]] = None,
+        padding: int = 0,
     ) -> Dict[str, Any]:
         """Prepare request for query endpoint"""
         payload = {
@@ -277,6 +278,8 @@ class _MorphikClientLogic:
             payload["chat_id"] = chat_id
         if llm_config:
             payload["llm_config"] = llm_config
+        if padding > 0:
+            payload["padding"] = padding
 
         # Add schema to payload if provided
         if schema:
