@@ -67,6 +67,12 @@ dependencies = [
     "line_profiler>=4.1.2",
 ]
 
+[dependency-groups]
+dev-local = [
+    "fixed-dimensional-encoding",
+    "turbopuffer>=0.5.8",
+]
+
 [tool.black]
 line-length = 120
 
@@ -77,3 +83,6 @@ line_length = 120
 [tool.ruff]
 line-length = 120
 ignore = ["I"]
+
+[tool.uv.sources]
+fixed-dimensional-encoding = { path = "../fde" }

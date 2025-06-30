@@ -49,3 +49,8 @@ ee/ee_tokens/*
 migrations
 ugly-onetime-code/*
 trees
+
+multi_vector_embeddings_*.csv
+multi_vector_embeddings_*.db
+multi_vector_embeddings_*.sql
+multi_vector_embeddings_*.json
