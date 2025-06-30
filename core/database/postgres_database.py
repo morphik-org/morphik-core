@@ -1520,6 +1520,68 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error updating graph: {str(e)}")
             return False
 
+    async def delete_graph(self, name: str, auth: AuthContext) -> bool:
+        """Delete a graph by name.
+
+        This method checks if the user has write access to the graph before deleting it.
+
+        Args:
+            name: Name of the graph to delete
+            auth: Authentication context
+
+        Returns:
+            bool: Whether the operation was successful
+        """
+        # Ensure database is initialized
+        if not self._initialized:
+            await self.initialize()
+
+        try:
+            async with self.async_session() as session:
+                # First find the graph
+                access_filter = self._build_access_filter_optimized(auth)
+                filter_params = self._build_filter_params(auth)
+
+                # Query to find the graph
+                query = (
+                    select(GraphModel)
+                    .where(GraphModel.name == name)
+                    .where(text(f"({access_filter})").bindparams(**filter_params))
+                )
+
+                result = await session.execute(query)
+                graph_model = result.scalar_one_or_none()
+
+                if not graph_model:
+                    logger.error(f"Graph '{name}' not found")
+                    return False
+
+                # Check if user has write access (owner or admin)
+                # Similar to document access check - user needs to be owner or in admins/writers list
+                is_owner = (
+                    (graph_model.owner_id == auth.entity_id and graph_model.owner_type == auth.entity_type.value)
+                    if auth.entity_type and auth.entity_id
+                    else False
+                )
+
+                is_admin = auth.entity_id in (graph_model.admins or []) if auth.entity_id else False
+                is_writer = auth.entity_id in (graph_model.writers or []) if auth.entity_id else False
+
+                if not (is_owner or is_admin or is_writer):
+                    logger.error(f"User lacks write access to delete graph '{name}'")
+                    return False
+
+                # Delete the graph
+                await session.delete(graph_model)
+                await session.commit()
+                logger.info(f"Successfully deleted graph '{name}'")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error deleting graph: {str(e)}")
+            return False
+
     async def create_folder(self, folder: Folder, auth: AuthContext) -> bool:
         """Create a new folder."""
         try:

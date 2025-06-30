@@ -359,6 +359,7 @@ class AsyncFolder:
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
         chat_id: Optional[str] = None,
         llm_config: Optional[Dict[str, Any]] = None,
+        padding: int = 0,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context within this folder.
@@ -377,6 +378,7 @@ class AsyncFolder:
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
             schema: Optional schema for structured output
             additional_folders: Optional list of additional folder names to further scope operations
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
 
         Returns:
             CompletionResponse: Generated completion or structured output
@@ -399,6 +401,7 @@ class AsyncFolder:
             chat_id,
             schema,
             llm_config,
+            padding,
         )
 
         # Add schema to payload if provided
@@ -899,6 +902,7 @@ class AsyncUserScope:
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
         chat_id: Optional[str] = None,
         llm_config: Optional[Dict[str, Any]] = None,
+        padding: int = 0,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context, scoped to the end user.
@@ -917,6 +921,7 @@ class AsyncUserScope:
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
             schema: Optional schema for structured output
             additional_folders: Optional list of additional folder names to further scope operations
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
 
         Returns:
             CompletionResponse: Generated completion or structured output
@@ -939,6 +944,7 @@ class AsyncUserScope:
             chat_id,
             schema,
             llm_config,
+            padding,
         )
 
         # Add schema to payload if provided
@@ -1568,6 +1574,7 @@ class AsyncMorphik:
         chat_id: Optional[str] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
         llm_config: Optional[Dict[str, Any]] = None,
+        padding: int = 0,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context.
@@ -1588,6 +1595,7 @@ class AsyncMorphik:
                 Either a QueryPromptOverrides object or a dictionary with the same structure
             schema: Optional schema for structured output, can be a Pydantic model or a JSON schema dict
             llm_config: Optional LiteLLM-compatible model configuration (e.g., model name, API key, base URL)
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
         Returns:
             CompletionResponse
 
@@ -1676,6 +1684,7 @@ class AsyncMorphik:
             chat_id,
             schema,
             llm_config,
+            padding,
         )
 
         # Add schema to payload if provided

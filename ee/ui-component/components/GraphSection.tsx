@@ -17,12 +17,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { AlertCircle, Share2, Plus, Network, Tag, Link, ArrowLeft } from "lucide-react";
+import { AlertCircle, Share2, Plus, Network, Tag, Link, ArrowLeft, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { showAlert } from "@/components/ui/alert-system";
 import { MultiSelect } from "@/components/ui/multi-select";
+import DeleteConfirmationModal from "@/components/documents/DeleteConfirmationModal";
 
 // Dynamically import ForceGraphComponent to avoid SSR issues
 const ForceGraphComponent = dynamic(() => import("@/components/ForceGraphComponent"), {
@@ -167,6 +168,11 @@ const GraphSection: React.FC<GraphSectionProps> = ({
   const [additionalFilters, setAdditionalFilters] = useState("{}");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Delete confirmation state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [graphToDelete, setGraphToDelete] = useState<string | null>(null);
+  const [isDeletingGraph, setIsDeletingGraph] = useState(false);
   const [activeTab, setActiveTab] = useState("list"); // 'list', 'details', 'update', 'visualize' (no longer a tab, but a state)
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showNodeLabels, setShowNodeLabels] = useState(true);
@@ -681,6 +687,53 @@ const GraphSection: React.FC<GraphSectionProps> = ({
     return () => clearInterval(id);
   }, [graphs, selectedGraph, fetchGraphs, fetchGraph, checkGraphStatus]);
 
+  // Handle graph deletion
+  const handleDeleteGraph = useCallback(async () => {
+    if (!graphToDelete) return;
+
+    setIsDeletingGraph(true);
+    try {
+      const headers = createHeaders();
+      const response = await fetch(`${apiBaseUrl}/graph/${encodeURIComponent(graphToDelete)}`, {
+        method: "DELETE",
+        headers,
+      });
+
+      if (response.ok) {
+        // Refresh graphs list
+        fetchGraphs();
+        // If the deleted graph was selected, clear selection
+        if (selectedGraph?.name === graphToDelete) {
+          setSelectedGraph(null);
+          setActiveTab("list");
+          if (onSelectGraph) {
+            onSelectGraph(undefined);
+          }
+        }
+        showAlert(`Successfully deleted graph "${graphToDelete}"`, {
+          type: "success",
+          title: "Graph deleted",
+        });
+      } else {
+        const error = await response.text();
+        showAlert(`Failed to delete graph: ${error}`, {
+          type: "error",
+          title: "Failed to delete graph",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to delete graph:", error);
+      showAlert("Failed to delete graph. Please try again.", {
+        type: "error",
+        title: "Error",
+      });
+    } finally {
+      setIsDeletingGraph(false);
+      setShowDeleteModal(false);
+      setGraphToDelete(null);
+    }
+  }, [graphToDelete, apiBaseUrl, createHeaders, fetchGraphs, selectedGraph, onSelectGraph]);
+
   // Conditional rendering based on visualization state
   if (showVisualization && selectedGraph) {
     // Handle node click for sidebar
@@ -902,9 +955,22 @@ const GraphSection: React.FC<GraphSectionProps> = ({
                 {graphs.map(graph => (
                   <div
                     key={graph.id}
-                    className="group flex cursor-pointer flex-col items-center rounded-md border border-transparent p-2 transition-all hover:border-primary/20 hover:bg-primary/5"
+                    className="group relative flex cursor-pointer flex-col items-center rounded-md border border-transparent p-2 transition-all hover:border-primary/20 hover:bg-primary/5"
                     onClick={() => handleGraphClick(graph)}
                   >
+                    {/* Delete button */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute -right-1 -top-1 z-10 h-6 w-6 rounded-full bg-background opacity-0 shadow-sm transition-opacity hover:bg-destructive hover:text-destructive-foreground group-hover:opacity-100"
+                      onClick={e => {
+                        e.stopPropagation();
+                        setGraphToDelete(graph.name);
+                        setShowDeleteModal(true);
+                      }}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
                     <div className="mb-2 transition-transform group-hover:scale-110">
                       <Network className="h-12 w-12 text-primary/80 group-hover:text-primary" />
                     </div>
@@ -987,6 +1053,17 @@ const GraphSection: React.FC<GraphSectionProps> = ({
                 >
                   <Share2 className="mr-1 h-4 w-4" />
                   Visualize
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setGraphToDelete(selectedGraph.name);
+                    setShowDeleteModal(true);
+                  }}
+                  className="flex items-center text-destructive hover:text-destructive"
+                >
+                  <X className="mr-1 h-4 w-4" />
+                  Delete
                 </Button>
               </div>
             </div>
@@ -1209,6 +1286,18 @@ const GraphSection: React.FC<GraphSectionProps> = ({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={() => {
+          setShowDeleteModal(false);
+          setGraphToDelete(null);
+        }}
+        onConfirm={handleDeleteGraph}
+        itemName={graphToDelete || undefined}
+        loading={isDeletingGraph}
+      />
     </div>
   );
 };

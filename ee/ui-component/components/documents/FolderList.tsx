@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, ArrowLeft, Trash2, Layers, Settings2, Plus, Eye } from "lucide-react";
+import { PlusCircle, ArrowLeft, Trash2, Layers, Settings2, Plus, Eye, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -20,6 +20,7 @@ import { FolderSummary } from "@/components/types";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
+import DeleteConfirmationModal from "@/components/documents/DeleteConfirmationModal";
 
 interface FolderListProps {
   folders: FolderSummary[];
@@ -73,6 +74,11 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
   const [showAddWorkflowDialog, setShowAddWorkflowDialog] = React.useState(false);
   const [selectedWorkflowToAdd, setSelectedWorkflowToAdd] = React.useState<string>("");
 
+  // Delete confirmation state
+  const [showDeleteModal, setShowDeleteModal] = React.useState(false);
+  const [folderToDelete, setFolderToDelete] = React.useState<string | null>(null);
+  const [isDeletingFolder, setIsDeletingFolder] = React.useState(false);
+
   // Function to update both state and URL
   const updateSelectedFolder = (folderName: string | null) => {
     setSelectedFolder(folderName);
@@ -93,6 +99,42 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
       }
     }
   };
+
+  // Handle folder deletion
+  const handleDeleteFolder = React.useCallback(async () => {
+    if (!folderToDelete) return;
+
+    setIsDeletingFolder(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/folders/${folderToDelete}`, {
+        method: "DELETE",
+        headers: {
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+      });
+
+      if (response.ok) {
+        // Refresh folders list
+        if (refreshAction) {
+          refreshAction();
+        }
+        // If the deleted folder was selected, switch to "all"
+        if (selectedFolder === folderToDelete) {
+          updateSelectedFolder("all");
+        }
+      } else {
+        const error = await response.text();
+        alert(`Failed to delete folder: ${error}`);
+      }
+    } catch (error) {
+      console.error("Failed to delete folder:", error);
+      alert("Failed to delete folder. Please try again.");
+    } finally {
+      setIsDeletingFolder(false);
+      setShowDeleteModal(false);
+      setFolderToDelete(null);
+    }
+  }, [folderToDelete, apiBaseUrl, authToken, refreshAction, selectedFolder, updateSelectedFolder]);
 
   // Fetch workflows for the selected folder
   const fetchFolderWorkflows = React.useCallback(
@@ -619,9 +661,22 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
         {folders.map(folder => (
           <div
             key={folder.name}
-            className="group flex cursor-pointer flex-col items-center"
+            className="group relative flex cursor-pointer flex-col items-center"
             onClick={() => updateSelectedFolder(folder.name)}
           >
+            {/* Delete button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute -right-2 -top-2 z-10 h-6 w-6 rounded-full bg-background opacity-0 shadow-sm transition-opacity hover:bg-destructive hover:text-destructive-foreground group-hover:opacity-100"
+              onClick={e => {
+                e.stopPropagation();
+                setFolderToDelete(folder.name);
+                setShowDeleteModal(true);
+              }}
+            >
+              <X className="h-3 w-3" />
+            </Button>
             <div className="mb-2 flex h-16 w-16 items-center justify-center transition-transform group-hover:scale-110">
               <Image src="/icons/folder-icon.png" alt="Folder" width={64} height={64} className="object-contain" />
             </div>
@@ -900,6 +955,18 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={() => {
+          setShowDeleteModal(false);
+          setFolderToDelete(null);
+        }}
+        onConfirm={handleDeleteFolder}
+        itemName={folderToDelete || undefined}
+        loading={isDeletingFolder}
+      />
     </div>
   );
 });
