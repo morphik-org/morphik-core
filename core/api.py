@@ -2048,6 +2048,53 @@ async def update_graph(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.delete("/graph/{name}")
+@telemetry.track(operation_type="delete_graph")
+async def delete_graph(
+    name: str,
+    auth: AuthContext = Depends(verify_token),
+) -> Dict[str, Any]:
+    """Delete a graph by name.
+
+    Args:
+        name: Name of the graph to delete
+        auth: Authentication context (must have write access to the graph)
+
+    Returns:
+        Deletion status
+    """
+    try:
+        # Check if graph exists first
+        graph = await document_service.db.get_graph(name, auth)
+        if not graph:
+            raise HTTPException(status_code=404, detail=f"Graph '{name}' not found")
+
+        # Get the graph service
+        graph_service = document_service.graph_service
+
+        # Check if it's the MorphikGraphService
+        from core.services.morphik_graph_service import MorphikGraphService
+
+        if isinstance(graph_service, MorphikGraphService):
+            # Use the graph service to delete, which will handle both API and database deletion
+            success = await graph_service.delete_graph(name, auth)
+        else:
+            # Fallback to database-only deletion
+            success = await document_service.db.delete_graph(name, auth)
+
+        if not success:
+            raise HTTPException(status_code=500, detail=f"Failed to delete graph '{name}'")
+
+        return {"status": "success", "message": f"Graph '{name}' deleted successfully"}
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting graph: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/graph/{name}/status", response_model=Dict[str, Any])
 @telemetry.track(operation_type="get_graph_status")
 async def get_graph_status(

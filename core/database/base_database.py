@@ -216,6 +216,19 @@ class BaseDatabase(ABC):
         pass
 
     @abstractmethod
+    async def delete_graph(self, name: str, auth: AuthContext) -> bool:
+        """Delete a graph by name.
+
+        Args:
+            name: Name of the graph to delete
+            auth: Authentication context
+
+        Returns:
+            bool: Whether the operation was successful
+        """
+        pass
+
+    @abstractmethod
     async def create_folder(self, folder: Folder) -> bool:
         """Create a new folder.
 

@@ -715,3 +715,47 @@ class MorphikGraphService:
             logger.error(f"Failed to check workflow status for {workflow_id}: {e}")
             # Return failed status instead of raising
             return {"status": "failed", "error": str(e)}
+
+    async def delete_graph(
+        self,
+        graph_name: str,
+        auth: AuthContext,
+        system_filters: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Delete a graph and its associated data from the external graph API.
+
+        Args:
+            graph_name: Name of the graph to delete
+            auth: Authentication context
+            system_filters: Optional system metadata filters
+
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        try:
+            # Find the graph to get its ID
+            graph = await self._find_graph(graph_name, auth, system_filters)
+            graph_id = graph.id
+
+            # Call the external graph delete service
+            api_response = await self._make_api_request(
+                method="DELETE",
+                endpoint=f"/delete/{graph_id}",
+                auth=auth,
+            )
+            logger.info(f"Graph delete API call for graph_id {graph_id} successful. Response: {api_response}")
+
+            # Delete the graph from our database
+            success = await self.db.delete_graph(graph_name, auth)
+            if not success:
+                logger.error(f"Failed to delete graph '{graph_name}' from database after successful API deletion")
+                return False
+
+            return True
+
+        except ValueError as e:
+            logger.error(f"Graph '{graph_name}' not found: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to delete graph '{graph_name}': {e}")
+            raise
