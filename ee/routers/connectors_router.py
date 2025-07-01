@@ -3,7 +3,7 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 
 import arq  # Added for Redis
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Body
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
@@ -21,6 +21,8 @@ from ee.services.connectors.base_connector import ConnectorAuthStatus, Connector
 
 # from starlette.datastructures import URL  # Will be needed for oauth2callback
 
+from redis.asyncio import Redis
+# Connector models defined locally below
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,39 @@ class IngestFromConnectorRequest(BaseModel):
     morphik_end_user_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None  # New field for custom metadata
     rules: Optional[List[Dict[str, Any]]] = None  # New field for custom rules
+
+
+class ConnectorIngestRequest(BaseModel):
+    file_id: str
+    folder_name: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    rules: Optional[List[Dict[str, Any]]] = None
+
+
+class GitHubRepositoryIngestRequest(BaseModel):
+    connector_type: str = "github"
+    repo_path: str  # Format: "owner/repo"
+    folder_name: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    include_patterns: Optional[List[str]] = None
+    ignore_patterns: Optional[List[str]] = None
+    compress: bool = True
+    force: bool = False  # Force re-ingestion even if repository already exists
+
+
+class ConnectorAuthRequest(BaseModel):
+    connector_type: str
+
+
+class ConnectorAuthResponse(BaseModel):
+    connector_type: str
+    auth_response_data: Dict[str, Any]
+
+
+class ConnectorListFilesRequest(BaseModel):
+    connector_type: str
+    path: Optional[str] = None
+    page_token: Optional[str] = None
 
 
 # Add request model for manual credentials
@@ -389,134 +424,135 @@ async def list_files_for_connector(
         raise HTTPException(status_code=500, detail="Internal server error listing files.")
 
 
-@router.post("/{connector_type}/ingest", response_model=Dict[str, Any])
-async def ingest_file_from_connector(
+@router.post("/{connector_type}/ingest", status_code=202)
+async def ingest_file(
     connector_type: str,
-    ingest_request: IngestFromConnectorRequest,
-    auth_context: AuthContext = Depends(verify_token),  # For DocumentService & connector
-    connector_service: ConnectorService = Depends(get_connector_service),
-    doc_service: DocumentService = Depends(get_document_service),
-    redis_pool_instance: arq.ArqRedis = Depends(get_redis_pool),  # Retained as per original router structure
+    ingest_request: ConnectorIngestRequest,
+    auth: AuthContext = Depends(verify_token),
+    redis: Redis = Depends(get_redis_pool),
+    document_service: DocumentService = Depends(get_document_service),
 ):
-    """Downloads a file from the connector and ingests it into Morphik via DocumentService."""
-    logger.info(
-        f"Ingesting file_id: {ingest_request.file_id} from connector: {connector_type} "
-        f"for user: {auth_context.user_id or auth_context.entity_id}"
-    )
+    """Ingest a single file from a connector."""
     try:
-        connector = await connector_service.get_connector(connector_type)
+        connector_service_instance = ConnectorService(auth_context=auth)
+        result = await connector_service_instance.ingest_file_from_connector(
+            connector_type=connector_type,
+            file_id=ingest_request.file_id,
+            folder_name=ingest_request.folder_name,
+            document_service=document_service,
+            auth=auth,
+            redis=redis,
+            metadata=ingest_request.metadata,
+            rules=ingest_request.rules,
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error ingesting file {ingest_request.file_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-        # 1. Get file metadata from connector
-        file_metadata = await connector.get_file_metadata_by_id(ingest_request.file_id)
-        if not file_metadata:
-            logger.error(f"File not found via connector: {ingest_request.file_id}")
-            raise HTTPException(status_code=404, detail="File not found via connector.")
 
-        # 2. Download file content from connector
-        file_content_stream = await connector.download_file_by_id(ingest_request.file_id)
-        if not file_content_stream:
-            logger.error(f"Failed to download file from connector: {ingest_request.file_id}")
-            raise HTTPException(status_code=500, detail="Failed to download file from connector.")
-
-        file_content_bytes = file_content_stream.getvalue()  # Assuming BytesIO
-
-        # ----------------------------------------------------------
-        # Detect actual MIME type from file bytes (fallback to API)
-        # and fix filename extension when missing.
-        # ----------------------------------------------------------
-        import filetype as _ft
-
-        detected_kind = _ft.guess(file_content_bytes)
-        if detected_kind:
-            # Use detected mime/extension when available
-            actual_mime_type = detected_kind.mime
-            actual_extension = detected_kind.extension
-        else:
-            # Fall back to connector-reported mime
-            actual_mime_type = file_metadata.mime_type
-            # Derive extension from mime if possible
-            import mimetypes as _mtypes
-
-            guessed_ext = _mtypes.guess_extension(actual_mime_type or "")
-            actual_extension = guessed_ext.lstrip(".") if guessed_ext else None
-
-        # Ensure filename has an extension so downstream parsers work
-        filename_to_use = file_metadata.name
-        if actual_extension and "." not in filename_to_use:
-            filename_to_use = f"{filename_to_use}.{actual_extension}"
-
-        # Clean metadata – keep only connector-specific fields that may be
-        # useful for the user but drop UI/boolean helpers.
-        cleaned_metadata = {}
-        if file_metadata.modified_date:
-            cleaned_metadata["modified_date"] = file_metadata.modified_date
-        # You can add more whitelisted fields here if needed
-
-        # Merge user-provided metadata with cleaned connector metadata
-        final_metadata = cleaned_metadata.copy()
-        if ingest_request.metadata:  # User-provided metadata
-            final_metadata.update(ingest_request.metadata)
-
-        # 3. Ingest into Morphik using DocumentService
-        morphik_doc = await doc_service.ingest_file_content(
-            file_content_bytes=file_content_bytes,
-            filename=filename_to_use,
-            content_type=actual_mime_type,
-            metadata=final_metadata,  # Use merged metadata
-            auth=auth_context,
-            redis=redis_pool_instance,
-            folder_name=ingest_request.morphik_folder_name,
-            end_user_id=ingest_request.morphik_end_user_id,
-            rules=ingest_request.rules,  # Pass user-provided rules
-            use_colpali=True,  # As per previous request
+@router.post("/{connector_type}/ingest-repository", status_code=202)
+async def ingest_repository(
+    connector_type: str,
+    ingest_request: GitHubRepositoryIngestRequest,
+    auth: AuthContext = Depends(verify_token),
+    redis: Redis = Depends(get_redis_pool),
+    document_service: DocumentService = Depends(get_document_service),
+):
+    """Ingest an entire GitHub repository."""
+    logger.info(f"Repository ingestion endpoint called with connector_type={connector_type}, repo_path={ingest_request.repo_path}")
+    connector_service_instance = ConnectorService(auth_context=auth)
+    connector = await connector_service_instance.get_connector(
+        ingest_request.connector_type
+    )
+    if connector.connector_type != "github":
+        raise HTTPException(
+            status_code=400, detail="Repository ingestion is only supported for GitHub"
         )
 
-        return {
-            "message": f"File '{file_metadata.name}' successfully queued for ingestion.",
-            "morphik_document_id": morphik_doc.external_id,
-            "status_path": f"/documents/{morphik_doc.external_id}/status",
-        }
+    auth_status = await connector.get_auth_status()
+    if not auth_status.is_authenticated:
+        raise HTTPException(status_code=401, detail="Not authenticated with connector")
 
-    except HTTPException:  # Re-raise HTTPExceptions directly
-        raise
-    except ValueError as ve:  # E.g., unsupported connector type
-        logger.error(f"Value error during ingestion from {connector_type}: {ve}")
-        raise HTTPException(status_code=400, detail=str(ve))
-    except Exception as e:
-        logger.exception(f"Unexpected error ingesting from connector '{connector_type}': {e}")
-        raise HTTPException(status_code=500, detail="Internal server error during file ingestion.")
-
-
-@router.post("/{connector_type}/disconnect", response_model=Dict[str, Any])
-async def disconnect_from_connector(
-    connector_type: str,
-    service: ConnectorService = Depends(get_connector_service),
-):
-    """Disconnects the user from the specified connector by removing stored credentials."""
-    user_log_id = service.user_identifier
-    logger.info(f"Attempting to disconnect from '{connector_type}' for user '{user_log_id}'.")
     try:
-        connector = await service.get_connector(connector_type)
-        success = await connector.disconnect()
-
-        if success:
-            logger.info(f"Successfully disconnected from '{connector_type}' for user '{user_log_id}'.")
-            return {"status": "success", "message": f"Successfully disconnected from {connector_type}."}
-        else:
-            logger.warning(
-                f"Disconnection from '{connector_type}' for user '{user_log_id}' "
-                f"indicated failure by connector (returned False)."
-            )
-            raise HTTPException(
-                status_code=500, detail=f"Failed to disconnect from {connector_type}. An issue occurred on the server."
-            )
-
-    except ValueError as ve:  # From get_connector
-        logger.error(f"ValueError during disconnect from '{connector_type}' for user '{user_log_id}': {ve}")
-        raise HTTPException(status_code=400, detail=str(ve))
-    except ConnectionError as ce:  # If connector.disconnect had an issue
-        logger.error(f"ConnectionError during disconnect from '{connector_type}' for user '{user_log_id}': {ce}")
-        raise HTTPException(status_code=503, detail=f"Connector service error during disconnect: {str(ce)}")
+        documents = await connector.ingest_repository(
+            repo_path=ingest_request.repo_path,
+            document_service=document_service,
+            auth_context=auth,
+            redis=redis,
+            folder_name=ingest_request.folder_name,
+            metadata=ingest_request.metadata,
+            include_patterns=ingest_request.include_patterns,
+            ignore_patterns=ingest_request.ignore_patterns,
+            compress=ingest_request.compress,
+            force=ingest_request.force,
+        )
+        return {"status": "Repository ingestion started", "documents": documents}
     except Exception as e:
-        logger.exception(f"Unexpected error during disconnect from '{connector_type}' for user '{user_log_id}': {e}")
-        raise HTTPException(status_code=500, detail="Internal server error during disconnect operation.")
+        logger.error(f"Error ingesting repository {ingest_request.repo_path}: {e}")
+        error_detail = str(e)
+        if hasattr(e, "detail"):
+            error_detail = e.detail
+        raise HTTPException(
+            status_code=500, detail=f"Failed to ingest repository: {error_detail}"
+        )
+
+
+@router.post("/status")
+async def get_status(
+    auth_request: ConnectorAuthRequest, auth: AuthContext = Depends(verify_token)
+):
+    """Get the authentication status for a connector."""
+    connector = await connector_service.get_connector(
+        auth_request.connector_type, auth.user_id
+    )
+    return await connector.get_auth_status()
+
+
+@router.post("/initiate-auth")
+async def initiate_auth(
+    auth_request: ConnectorAuthRequest, auth: AuthContext = Depends(verify_token)
+):
+    """Initiate the OAuth flow for a connector."""
+    connector = await connector_service.get_connector(
+        auth_request.connector_type, auth.user_id
+    )
+    return await connector.initiate_auth()
+
+
+@router.post("/finalize-auth")
+async def finalize_auth(
+    auth_response: ConnectorAuthResponse, auth: AuthContext = Depends(verify_token)
+):
+    """Finalize the OAuth flow and exchange the code for a token."""
+    connector = await connector_service.get_connector(
+        auth_response.connector_type, auth.user_id
+    )
+    await connector.finalize_auth(auth_response.auth_response_data)
+    return {"status": "success"}
+
+
+@router.post("/disconnect")
+async def disconnect(
+    auth_request: ConnectorAuthRequest, auth: AuthContext = Depends(verify_token)
+):
+    """Disconnect from a connector and remove credentials."""
+    connector = await connector_service.get_connector(
+        auth_request.connector_type, auth.user_id
+    )
+    await connector.disconnect()
+    return {"status": "success"}
+
+
+@router.post("/list-files")
+async def list_files(
+    list_request: ConnectorListFilesRequest,
+    auth: AuthContext = Depends(verify_token),
+):
+    """List files from a connector."""
+    connector = await connector_service.get_connector(
+        list_request.connector_type, auth.user_id
+    )
+    return await connector.list_files(
+        path=list_request.path, page_token=list_request.page_token
+    )

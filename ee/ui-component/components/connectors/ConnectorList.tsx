@@ -1,7 +1,10 @@
 "use client";
 
 import { ConnectorCard } from "./ConnectorCard";
-import { BookLock, BookOpen } from "lucide-react"; // Example icon for Google Drive and Zotero
+import { BookLock, BookOpen } from "lucide-react";
+import { GitHub } from "../chat/icons"; // Import our custom GitHub icon
+import { useState } from "react";
+import { FileBrowser } from "./FileBrowser";
 
 // In the future, this could come from a configuration or an API call
 const availableConnectors = [
@@ -10,6 +13,12 @@ const availableConnectors = [
     displayName: "Google Drive",
     icon: BookLock, // Using an appropriate icon from lucide-react
     description: "Access files and folders from your Google Drive.",
+  },
+  {
+    connectorType: "github",
+    displayName: "GitHub",
+    icon: GitHub,
+    description: "Access repositories and files from GitHub.",
   },
   {
     connectorType: "zotero",
@@ -32,6 +41,7 @@ interface ConnectorListProps {
 }
 
 export function ConnectorList({ apiBaseUrl, authToken }: ConnectorListProps) {
+
   if (availableConnectors.length === 0) {
     return (
       <div className="text-center text-muted-foreground">
@@ -39,6 +49,8 @@ export function ConnectorList({ apiBaseUrl, authToken }: ConnectorListProps) {
       </div>
     );
   }
+
+
 
   return (
     <div className="space-y-6">
@@ -52,6 +64,8 @@ export function ConnectorList({ apiBaseUrl, authToken }: ConnectorListProps) {
           authToken={authToken} // Pass authToken down
         />
       ))}
+      
+
     </div>
   );
 }
