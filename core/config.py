@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = None
     ASSEMBLYAI_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
+    TURBOPUFFER_API_KEY: Optional[str] = None
 
     # API configuration
     HOST: str
@@ -110,6 +111,9 @@ class Settings(BaseSettings):
     # Vector store configuration
     VECTOR_STORE_PROVIDER: Literal["pgvector"]
     VECTOR_STORE_DATABASE_NAME: Optional[str] = None
+
+    # Multivector store configuration
+    MULTIVECTOR_STORE_PROVIDER: Literal["postgres", "morphik"] = "postgres"
 
     # Colpali configuration
     ENABLE_COLPALI: bool
@@ -385,6 +389,22 @@ def get_settings() -> Settings:
             "WORKFLOW_MODEL": config["workflows"]["model"],
         }
 
+    # load multivector store config
+    multivector_store_config = {}
+    if "multivector_store" in config:
+        multivector_store_config = {
+            "MULTIVECTOR_STORE_PROVIDER": config["multivector_store"].get("provider", "postgres"),
+        }
+
+        # Check for Turbopuffer API key if using morphik provider
+        if multivector_store_config["MULTIVECTOR_STORE_PROVIDER"] == "morphik":
+            if "TURBOPUFFER_API_KEY" not in os.environ:
+                msg = em.format(
+                    missing_value="TURBOPUFFER_API_KEY", field="multivector_store.provider", value="morphik"
+                )
+                raise ValueError(msg)
+            multivector_store_config["TURBOPUFFER_API_KEY"] = os.environ["TURBOPUFFER_API_KEY"]
+
     settings_dict = dict(
         ChainMap(
             api_config,
@@ -398,6 +418,7 @@ def get_settings() -> Settings:
             reranker_config,
             storage_config,
             vector_store_config,
+            multivector_store_config,
             rules_config,
             morphik_config,
             pdf_viewer_config,

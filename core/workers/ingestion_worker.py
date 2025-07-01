@@ -25,6 +25,7 @@ from core.services.rules_processor import RulesProcessor
 from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
+from core.vector_store.fast_multivector_store import FastMultiVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
 from core.vector_store.pgvector_store import PGVectorStore
 
@@ -228,7 +229,19 @@ async def process_ingestion_job(
 
                 uri_final = urlunparse(parsed)
 
-                colpali_vector_store = MultiVectorStore(uri=uri_final)
+                # Choose multivector store implementation based on provider
+                if settings.MULTIVECTOR_STORE_PROVIDER == "morphik":
+                    if not settings.TURBOPUFFER_API_KEY:
+                        raise ValueError(
+                            "TURBOPUFFER_API_KEY is required when using morphik multivector store provider"
+                        )
+                    colpali_vector_store = FastMultiVectorStore(
+                        uri=uri_final,
+                        tpuf_api_key=settings.TURBOPUFFER_API_KEY,
+                        namespace=f"app_{auth.app_id}" if auth.app_id else "public",
+                    )
+                else:
+                    colpali_vector_store = MultiVectorStore(uri=uri_final)
                 await asyncio.to_thread(colpali_vector_store.initialize)
             except Exception as e:
                 logger.warning(f"Failed to initialise ColPali MultiVectorStore for app {auth.app_id}: {e}")
@@ -780,7 +793,15 @@ async def startup(ctx):
                 raise ValueError(f"Unsupported COLPALI_MODE: {settings.COLPALI_MODE}")
 
         # Vector store is needed for both local and api modes
-        colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI)
+        # Choose multivector store implementation based on provider
+        if settings.MULTIVECTOR_STORE_PROVIDER == "morphik":
+            if not settings.TURBOPUFFER_API_KEY:
+                raise ValueError("TURBOPUFFER_API_KEY is required when using morphik multivector store provider")
+            colpali_vector_store = FastMultiVectorStore(
+                uri=settings.POSTGRES_URI, tpuf_api_key=settings.TURBOPUFFER_API_KEY, namespace="public"
+            )
+        else:
+            colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI)
         # colpali_vector_store = MultiVectorStore(uri="postgresql+asyncpg://morphik:morphik@postgres:5432/morphik")
         success = await asyncio.to_thread(colpali_vector_store.initialize)
         if success:
