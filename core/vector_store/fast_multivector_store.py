@@ -62,7 +62,7 @@ class FastMultiVectorStore(BaseVectorStore):
                 raise ValueError(f"Unsupported storage provider: {settings.STORAGE_PROVIDER}")
 
     def initialize(self):
-        asyncio.run(self.ns.hint_cache_warm())
+        return True
 
     async def store_embeddings(self, chunks: List[DocumentChunk]) -> Tuple[bool, List[str]]:
         #  group fde calls for better cache hit rate
