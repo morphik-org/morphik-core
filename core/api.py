@@ -44,6 +44,7 @@ from core.models.request import (
 from core.models.workflows import Workflow
 from core.routes.document import router as document_router
 from core.routes.ingest import router as ingest_router
+from core.routes.logs import router as logs_router  # noqa: E402 – import after FastAPI app
 from core.routes.model_config import router as model_config_router
 from core.routes.models import router as models_router
 from core.routes.workflow import router as workflow_router
@@ -253,6 +254,9 @@ app.include_router(model_config_router)
 
 # Register models router
 app.include_router(models_router)
+
+# Register logs router
+app.include_router(logs_router)
 
 # Single MorphikAgent instance (tool definitions cached)
 morphik_agent = MorphikAgent(document_service=document_service)
@@ -542,7 +546,6 @@ async def batch_get_chunks(request: Dict[str, Any], auth: AuthContext = Depends(
 
 
 @app.post("/query", response_model=CompletionResponse)
-@telemetry.track(operation_type="query", metadata_resolver=telemetry.query_metadata)
 async def query_completion(
     request: CompletionQueryRequest,
     auth: AuthContext = Depends(verify_token),
@@ -579,6 +582,10 @@ async def query_completion(
     """
     # Initialize performance tracker
     perf = PerformanceTracker(f"Query: '{request.query[:50]}...'")
+
+    # Prepare telemetry metadata
+    meta = telemetry.query_metadata(None, request=request)  # type: ignore[arg-type]
+    token_est = len(request.query.split()) if isinstance(request.query, str) else 0
 
     try:
         # Validate prompt overrides before proceeding
@@ -700,10 +707,30 @@ async def query_completion(
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Headers": "*",
             }
-            return StreamingResponse(generate_stream(), media_type="text/event-stream", headers=headers)
+
+            # Wrap original generator with telemetry span so formatting and history logic are preserved
+            async def wrapped():
+                async with telemetry.track_operation(
+                    operation_type="query",
+                    user_id=auth.entity_id,
+                    app_id=auth.app_id,
+                    tokens_used=token_est,
+                    metadata=meta,
+                ):
+                    async for item in generate_stream():
+                        yield item
+
+            return StreamingResponse(wrapped(), media_type="text/event-stream", headers=headers)
         else:
-            # For non-streaming responses, result is just the CompletionResponse
-            response = result
+            # For non-streaming responses, we record telemetry around result construction
+            async with telemetry.track_operation(
+                operation_type="query",
+                user_id=auth.entity_id,
+                app_id=auth.app_id,
+                tokens_used=token_est,
+                metadata=meta,
+            ):
+                response = result
 
             # Chat history storage for non-streaming responses
             perf.start_phase("chat_history_storage")

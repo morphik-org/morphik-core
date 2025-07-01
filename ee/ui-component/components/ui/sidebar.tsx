@@ -17,6 +17,7 @@ import {
   PlugZap,
   File,
   Layers,
+  Terminal,
   Settings,
 } from "lucide-react";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -31,7 +32,8 @@ export type SidebarSectionType =
   | "workflows"
   | "connections"
   | "pdf"
-  | "settings";
+  | "settings"
+  | "logs";
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   activeSection: SidebarSectionType; // Use the specific type
@@ -303,6 +305,16 @@ export function Sidebar({
           >
             <PlugZap className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
             {!isCollapsed && <span>Connections</span>}
+          </Button>
+          {/* Logs Nav Item */}
+          <Button
+            variant={activeSection === "logs" ? "secondary" : "ghost"}
+            className={cn("w-full justify-start", isCollapsed && "justify-center")}
+            onClick={() => onSectionChange("logs")}
+            title="Logs"
+          >
+            <Terminal className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
+            {!isCollapsed && <span>Logs</span>}
           </Button>
           {/* PDF Viewer Nav Item */}
           <Button

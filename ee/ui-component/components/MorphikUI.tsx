@@ -7,6 +7,7 @@ import SearchSection from "@/components/search/SearchSection";
 import ChatSection from "@/components/chat/ChatSection";
 import GraphSection from "@/components/GraphSection";
 import WorkflowSection from "@/components/workflows/WorkflowSection";
+import LogsSection from "@/components/logs/LogsSection";
 import { ConnectorList } from "@/components/connectors/ConnectorList";
 import { PDFViewer } from "@/components/pdf/PDFViewer";
 import { PDFAPIService } from "@/components/pdf/PDFAPIService";
@@ -50,7 +51,16 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
   }, [connectionUri]);
 
   // Valid section types, now matching the updated MorphikUIProps
-  type SectionType = "documents" | "search" | "chat" | "graphs" | "workflows" | "connections" | "pdf" | "settings";
+  type SectionType =
+    | "documents"
+    | "search"
+    | "chat"
+    | "graphs"
+    | "workflows"
+    | "connections"
+    | "pdf"
+    | "settings"
+    | "logs";
 
   useEffect(() => {
     // Ensure initialSection from props is a valid SectionType before setting
@@ -105,8 +115,10 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
 
   // Wrapper for section change to match expected type
   const handleSectionChange = (section: string) => {
-    if (["documents", "search", "chat", "graphs", "workflows", "connections", "pdf", "settings"].includes(section)) {
-      // Added "workflows"
+    if (
+      ["documents", "search", "chat", "graphs", "workflows", "connections", "pdf", "settings", "logs"].includes(section)
+    ) {
+      // Added "logs"
       setActiveSection(section as SectionType); // Use SectionType here
     }
   };
@@ -204,6 +216,9 @@ const MorphikUI: React.FC<MorphikUIProps> = ({
           )}
           {activeSection === "settings" && (
             <SettingsSection authToken={authToken} onBackClick={() => setActiveSection("chat")} />
+          )}
+          {activeSection === "logs" && (
+            <LogsSection key={`logs-${effectiveApiBaseUrl}`} apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} />
           )}
         </main>
       </div>

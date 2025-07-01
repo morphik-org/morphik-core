@@ -327,8 +327,10 @@ class UsageRecord:
     operation_type: str
     tokens_used: int
     user_id: str
+    app_id: str | None
     duration_ms: float
     status: str
+    error: str | None = None
     metadata: Optional[Dict] = None
 
 
@@ -562,7 +564,9 @@ class TelemetryService:
             MetadataField("end_user_id", "request"),
         ]
 
+        # For retrieval & query we want the same field names as the incoming request
         retrieval_fields = common_request_fields + [
+            MetadataField("query", "request", "query"),
             MetadataField("k", "request"),
             MetadataField("min_score", "request"),
             MetadataField("use_reranking", "request"),
@@ -686,6 +690,7 @@ class TelemetryService:
             ]
         )
 
+        # Completion / query operation – capture full parameter set
         self.query_metadata = MetadataExtractor(
             retrieval_fields
             + [
@@ -694,10 +699,40 @@ class TelemetryService:
                 MetadataField("graph_name", "request"),
                 MetadataField("hop_depth", "request"),
                 MetadataField("include_paths", "request"),
+                MetadataField("schema", "request"),
+                MetadataField("chat_id", "request"),
+                MetadataField("use_colpali", "request"),
+                MetadataField("folder_name", "request"),
+                MetadataField("end_user_id", "request"),
+                MetadataField("padding", "request"),
+                # Capture which filter keys were supplied (no values)
+                MetadataField(
+                    "filter_keys",
+                    "request",
+                    "filters",
+                    transform=lambda v: sorted(v.keys()) if isinstance(v, dict) else None,
+                ),
+                # Capture llm_config keys in hashed form to avoid leaking names/PII
+                MetadataField(
+                    "llm_config_hashed_keys",
+                    "request",
+                    "llm_config",
+                    transform=lambda cfg: (
+                        {hashlib.sha256(k.encode()).hexdigest()[:8]: type(v).__name__ for k, v in cfg.items()}
+                        if isinstance(cfg, dict)
+                        else None
+                    ),
+                ),
                 MetadataField(
                     "has_prompt_overrides",
                     "request",
                     "prompt_overrides",
+                    transform=lambda v: v is not None,
+                ),
+                MetadataField(
+                    "filters_present",
+                    "request",
+                    "filters",
                     transform=lambda v: v is not None,
                 ),
             ]
@@ -855,6 +890,20 @@ class TelemetryService:
             ]
         )
 
+        # Utility: dump full request payload (excluding giant fields)
+        def _safe_dump(req):
+            try:
+                d = req.dict() if hasattr(req, "dict") else req.model_dump()  # type: ignore[attr-defined]
+            except Exception:
+                d = None
+            # Remove potentially large fields
+            if d and "content" in d and isinstance(d["content"], str):
+                d["content_len"] = len(d["content"])
+                del d["content"]
+            return d
+
+        self.query_metadata.fields.append(MetadataField("request_dump", "request", transform=_safe_dump))
+
     def track(self, operation_type: Optional[str] = None, metadata_resolver: Optional[Callable] = None):
         """
         Decorator for tracking API operations with telemetry.
@@ -888,17 +937,20 @@ class TelemetryService:
                 if metadata_resolver:
                     meta = metadata_resolver(*args, **kwargs)
 
-                # Get approximate token count for text ingestion
+                # Approximate token count for common request payloads
                 tokens = 0
-                # Try to extract tokens for text ingestion
                 request = kwargs.get("request")
-                if request and hasattr(request, "content") and isinstance(request.content, str):
-                    tokens = len(request.content.split())  # Approximate token count
+                if request:
+                    if hasattr(request, "content") and isinstance(request.content, str):
+                        tokens = len(request.content.split())
+                    elif hasattr(request, "query") and isinstance(request.query, str):
+                        tokens = len(request.query.split())
 
                 # Run the function within the telemetry context
                 async with self.track_operation(
                     operation_type=op_type,
                     user_id=auth.entity_id,
+                    app_id=getattr(auth, "app_id", None),
                     tokens_used=tokens,
                     metadata=meta,
                 ):
@@ -915,6 +967,7 @@ class TelemetryService:
         self,
         operation_type: str,
         user_id: str,
+        app_id: Optional[str] = None,
         tokens_used: int = 0,
         metadata: Optional[Dict[str, Any]] = None,
     ):
@@ -927,6 +980,7 @@ class TelemetryService:
             return
 
         start_time = time.time()
+        error_msg: str | None = None
         status = "success"
         current_span = trace.get_current_span()
 
@@ -950,6 +1004,7 @@ class TelemetryService:
 
         except Exception as e:
             status = "error"
+            error_msg = str(e)
             current_span.set_status(Status(StatusCode.ERROR))
             current_span.record_exception(e)
             raise
@@ -962,6 +1017,8 @@ class TelemetryService:
                 "status": status,
                 "installation_id": self._installation_id,
             }
+            if app_id:
+                attributes["app_id"] = app_id
             self.operation_counter.add(1, attributes)
             if tokens_used > 0:
                 self.token_counter.add(tokens_used, attributes)
@@ -981,14 +1038,45 @@ class TelemetryService:
                 operation_type=operation_type,
                 tokens_used=tokens_used,
                 user_id=user_id,
+                app_id=app_id,
                 duration_ms=duration,
                 status=status,
+                error=error_msg,
                 metadata=sanitized_metadata,
             )
 
+            # In-memory for backward compatibility
             with self._lock:
                 self._usage_records.append(record)
                 self._user_totals[user_id][operation_type] += tokens_used
+
+            # Async insert into Postgres (fire and forget)
+            try:
+                import asyncio
+
+                from core.database.logs_db import LogsDB
+
+                async def _persist():
+                    db = await LogsDB.get()
+                    # Only persist key operations for now
+                    if record.operation_type in {"query", "ingest_worker"}:
+                        await db.insert(
+                            {
+                                "timestamp": record.timestamp,
+                                "user_id": record.user_id,
+                                "app_id": record.app_id or "unknown",
+                                "operation_type": record.operation_type,
+                                "status": record.status,
+                                "duration_ms": record.duration_ms,
+                                "tokens_used": record.tokens_used,
+                                "metadata": record.metadata or {},
+                                "error": record.error,
+                            }
+                        )
+
+                asyncio.create_task(_persist())
+            except Exception:  # pragma: no cover – never fail caller on logging error
+                pass
 
     def get_user_usage(self, user_id: str) -> Dict[str, int]:
         """Get usage statistics for a user."""
@@ -1001,6 +1089,7 @@ class TelemetryService:
     def get_recent_usage(
         self,
         user_id: Optional[str] = None,
+        app_id: Optional[str] = None,
         operation_type: Optional[str] = None,
         since: Optional[datetime] = None,
         status: Optional[str] = None,
@@ -1015,6 +1104,8 @@ class TelemetryService:
         # Apply filters
         if user_id:
             records = [r for r in records if r.user_id == user_id]
+        if app_id:
+            records = [r for r in records if r.app_id == app_id]
         if operation_type:
             records = [r for r in records if r.operation_type == operation_type]
         if since:
