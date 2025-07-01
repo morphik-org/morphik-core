@@ -66,40 +66,81 @@ class PerformanceTracker:
         self.phases = {}
         self.current_phase = None
         self.phase_start = None
+        self._phase_ended = False  # Track if current phase was already ended
 
     def start_phase(self, phase_name: str):
-        # End current phase if one is running
-        if self.current_phase and self.phase_start:
-            self.phases[self.current_phase] = time.time() - self.phase_start
+        """Start a new performance tracking phase.
+        
+        Args:
+            phase_name: Name of the phase to start
+        """
+        current_time = time.time()
+        
+        # End current phase if one is running and hasn't been ended
+        if self.current_phase and self.phase_start and not self._phase_ended:
+            duration = current_time - self.phase_start
+            # Accumulate duration if phase already exists (handles restart scenarios)
+            if self.current_phase in self.phases:
+                self.phases[self.current_phase] += duration
+            else:
+                self.phases[self.current_phase] = duration
 
-        # Start new phase
-        self.current_phase = phase_name
-        self.phase_start = time.time()
+        # Start new phase only if it's different from current
+        if phase_name != self.current_phase:
+            self.current_phase = phase_name
+            self.phase_start = current_time
+            self._phase_ended = False
 
     def end_phase(self):
-        if self.current_phase and self.phase_start:
-            self.phases[self.current_phase] = time.time() - self.phase_start
-            self.current_phase = None
-            self.phase_start = None
+        """Explicitly end the current phase."""
+        if self.current_phase and self.phase_start and not self._phase_ended:
+            duration = time.time() - self.phase_start
+            # Accumulate duration if phase already exists
+            if self.current_phase in self.phases:
+                self.phases[self.current_phase] += duration
+            else:
+                self.phases[self.current_phase] = duration
+            self._phase_ended = True
 
     def add_suboperation(self, name: str, duration: float):
-        """Add a sub-operation timing"""
-        self.phases[name] = duration
+        """Add a sub-operation timing.
+        
+        Args:
+            name: Name of the sub-operation
+            duration: Duration in seconds
+        """
+        if name in self.phases:
+            self.phases[name] += duration
+        else:
+            self.phases[name] = duration
 
     def log_summary(self, additional_info: str = ""):
+        """Log a performance summary of all tracked phases.
+        
+        Args:
+            additional_info: Additional information to log
+        """
         total_time = time.time() - self.start_time
 
-        # End current phase if still running
-        if self.current_phase and self.phase_start:
-            self.phases[self.current_phase] = time.time() - self.phase_start
+        # End current phase if still running and not already ended
+        if self.current_phase and self.phase_start and not self._phase_ended:
+            duration = total_time - (self.phase_start - self.start_time)
+            if self.current_phase in self.phases:
+                self.phases[self.current_phase] += duration
+            else:
+                self.phases[self.current_phase] = duration
+            self._phase_ended = True
 
         logger.info(f"=== {self.operation_name} Performance Summary ===")
         logger.info(f"Total time: {total_time:.2f}s")
 
         # Sort phases by duration (longest first)
-        for phase, duration in sorted(self.phases.items(), key=lambda x: x[1], reverse=True):
-            percentage = (duration / total_time) * 100 if total_time > 0 else 0
-            logger.info(f"  - {phase}: {duration:.2f}s ({percentage:.1f}%)")
+        if self.phases:
+            for phase, duration in sorted(self.phases.items(), key=lambda x: x[1], reverse=True):
+                percentage = (duration / total_time) * 100 if total_time > 0 else 0
+                logger.info(f"  - {phase}: {duration:.2f}s ({percentage:.1f}%)")
+        else:
+            logger.info("  No phases tracked")
 
         if additional_info:
             logger.info(additional_info)
@@ -118,13 +159,20 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(ProfilingMiddleware)
 
-# Add CORS middleware (same behaviour as before refactor)
+# Add CORS middleware - will be configured after settings are loaded
+# Placeholder middleware, will be replaced below
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],  # Temporary safe default
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=[
+        "Authorization", 
+        "Content-Type", 
+        "Accept", 
+        "X-Requested-With",
+        "X-CSRF-Token"
+    ],
 )
 
 # Initialise telemetry service
@@ -142,6 +190,47 @@ FastAPIInstrumentor.instrument_app(
 
 # Global settings object
 settings = get_settings()
+
+# Update CORS middleware with proper origins now that settings are loaded
+# Remove the existing CORS middleware by clearing middleware stack
+app.user_middleware.clear()
+
+# Re-add profiling middleware first
+app.add_middleware(ProfilingMiddleware)
+
+# Add secure CORS middleware based on configuration
+if settings.MODE == "cloud":
+    # In cloud mode, only allow the official domains
+    allowed_origins = [
+        "https://morphik.ai",
+        "https://app.morphik.ai", 
+        "https://www.morphik.ai",
+        f"https://{settings.API_DOMAIN}",
+    ]
+else:
+    # In self-hosted mode, allow localhost and the configured API domain
+    allowed_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000", 
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        f"http://{settings.HOST}:{settings.PORT}",
+        f"https://{settings.API_DOMAIN}",
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=[
+        "Authorization", 
+        "Content-Type", 
+        "Accept", 
+        "X-Requested-With",
+        "X-CSRF-Token"
+    ],
+)
 
 # ---------------------------------------------------------------------------
 # Session cookie behaviour differs between cloud / self-hosted

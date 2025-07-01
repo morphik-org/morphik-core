@@ -166,26 +166,45 @@ def get_settings() -> Settings:
     }
 
     # load auth config
+    dev_mode = config["auth"].get("dev_mode", False)
+    
+    # Generate secure random secrets for development if not provided
+    import secrets
+    dev_jwt_secret = secrets.token_urlsafe(64) if dev_mode else None
+    dev_session_secret = secrets.token_urlsafe(64) if dev_mode else None
+    
     auth_config = {
         "JWT_ALGORITHM": config["auth"]["jwt_algorithm"],
-        "JWT_SECRET_KEY": os.environ.get("JWT_SECRET_KEY", "dev-secret-key"),  # Default for dev mode
-        "SESSION_SECRET_KEY": os.environ.get("SESSION_SECRET_KEY", "super-secret-dev-session-key"),
-        "dev_mode": config["auth"].get("dev_mode", False),
+        "JWT_SECRET_KEY": os.environ.get("JWT_SECRET_KEY", dev_jwt_secret),
+        "SESSION_SECRET_KEY": os.environ.get("SESSION_SECRET_KEY", dev_session_secret),
+        "dev_mode": dev_mode,
         "dev_entity_type": config["auth"].get("dev_entity_type", "developer"),
         "dev_entity_id": config["auth"].get("dev_entity_id", "dev_user"),
         "dev_permissions": config["auth"].get("dev_permissions", ["read", "write", "admin"]),
     }
 
-    # Only require JWT_SECRET_KEY in non-dev mode
-    if not auth_config["dev_mode"] and "JWT_SECRET_KEY" not in os.environ:
-        raise ValueError("JWT_SECRET_KEY is required when dev_mode is disabled")
-    # Also require SESSION_SECRET_KEY in non-dev mode
-    if not auth_config["dev_mode"] and "SESSION_SECRET_KEY" not in os.environ:
-        # Or, if we want to be more strict and always require it via ENV:
-        # if "SESSION_SECRET_KEY" not in os.environ:
-        #     raise ValueError("SESSION_SECRET_KEY environment variable is required.")
-        # For now, align with JWT_SECRET_KEY's dev mode leniency.
-        pass  # Dev mode has a default, production should use ENV.
+    # Validate that secrets are properly configured
+    if not auth_config["dev_mode"]:
+        # In production mode, require explicit environment variables
+        if "JWT_SECRET_KEY" not in os.environ:
+            raise ValueError("JWT_SECRET_KEY environment variable is required when dev_mode is disabled")
+        if "SESSION_SECRET_KEY" not in os.environ:
+            raise ValueError("SESSION_SECRET_KEY environment variable is required when dev_mode is disabled")
+    else:
+        # In development mode, ensure we have valid secrets (either from env or generated)
+        if not auth_config["JWT_SECRET_KEY"]:
+            raise ValueError("Failed to generate secure JWT secret for development mode")
+        if not auth_config["SESSION_SECRET_KEY"]:
+            raise ValueError("Failed to generate secure session secret for development mode")
+        
+        # Log warning about development mode
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            "Running in development mode with auto-generated secrets. "
+            "Tokens will be invalid after server restart. "
+            "Set JWT_SECRET_KEY and SESSION_SECRET_KEY environment variables for consistent tokens."
+        )
 
     # Load registered models if available
     registered_models = {}
