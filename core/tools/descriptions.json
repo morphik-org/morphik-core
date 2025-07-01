@@ -80,25 +80,6 @@
       }
     },
     {
-      "name": "execute_code",
-      "description": "Executes Python code snippets for data analysis, visualization, or computation in a sandboxed environment. Allows use of common data science libraries (numpy, pandas, matplotlib, seaborn, etc.) but restricts system access for safety. It's ideal for performing calculations, transforming data, or creating visualizations based on research results. Code execution is limited by a configurable timeout to prevent long-running operations. The tool returns execution results, including any output (stdout/stderr), generated visualizations (as base64 images), and execution status.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "description": "Python code to execute"
-          },
-          "timeout": {
-            "type": "integer",
-            "description": "Maximum execution time in seconds",
-            "default": 30
-          }
-        },
-        "required": ["code"]
-      }
-    },
-    {
       "name": "knowledge_graph_query",
       "description": "Queries the knowledge graph to explore entities, relationships, and connections. Allows navigation through connected information. Supports several query types: list_entities finds entities semantically similar to a search term (requires a single search term as start_nodes); entity retrieves details for a specific entity (requires a single entity ID or label as start_nodes); path discovers routes between two entities (requires exactly two entity IDs or labels as start_nodes); and subgraph extracts a network around a central entity (requires a single entity ID or label as start_nodes). For entity, path, and subgraph queries, if an ID is not found, it will try to match by label. For best results, consider using list_entities first to find exact entity IDs. The max_depth parameter controls subgraph/path exploration depth. If graph_name is omitted, it attempts to use a default graph ('graph_main') or the user's only available graph.",
       "input_schema": {

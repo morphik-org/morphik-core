@@ -24,6 +24,11 @@ azure_gpt35 = { model_name = "gpt-3.5-turbo", api_base = "YOUR_AZURE_URL_HERE", 
 claude_opus = { model_name = "claude-3-opus-20240229" }
 claude_sonnet = { model_name = "claude-3-7-sonnet-latest" }
 
+# Google Gemini models
+gemini_flash = { model_name = "gemini/gemini-2.5-flash-preview-05-20" } # gemini-2.5-flash-preview-05-20
+# gemini_flash = { model_name = "gemini/gemini-2.5-pro-preview-06-05" } # { model_name = "claude-4-sonnet-20250514"} # { model_name = "gpt-4.1" } # { model_name = "gemini/gemini-2.5-pro-preview-06-05" } # {model_name = "o3-2025-04-16"} #  { model_name = "claude-3-7-sonnet-latest"} #  { model_name = "gemini/gemini-2.5-flash-preview-05-20" } # gemini-2.5-flash-preview-05-20
+# gemini_flash = { model_name = "groq/meta-llama/llama-4-maverick-17b-128e-instruct"}
+
 # Ollama models (modify api_base based on your deployment)
 # - Local Ollama: "http://localhost:11434" (default)
 # - Morphik in Docker, Ollama local: "http://host.docker.internal:11434"
@@ -114,6 +119,11 @@ colpali_mode = "local" # "off", "local", or "api"
 [redis]
 host = "redis"  # use "redis" for docker
 port = 6379
+[pdf_viewer]
+frontend_url = "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf" # "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf"
+
+[workflows]
+model = "gemini_flash"  # Model for workflow extraction tasks
 
 [graph]
 model = "ollama_qwen_1_5b"

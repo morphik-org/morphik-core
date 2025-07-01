@@ -1,8 +1,11 @@
 import base64
+from logging import getLogger
 from pathlib import Path
 from typing import Optional, Tuple
 
 from .base_storage import BaseStorage
+
+logger = getLogger(__name__)
 
 
 class LocalStorage(BaseStorage):
@@ -42,8 +45,9 @@ class LocalStorage(BaseStorage):
 
         return str(self.storage_path), key
 
-    async def get_download_url(self, bucket: str, key: str) -> str:
+    async def get_download_url(self, bucket: str, key: str, expires_in: int = 3600) -> str:
         """Get local file path as URL."""
+        logger.debug(f"Storage got params: bucket: {bucket}, key: {key}, expires in: {expires_in}")
         # Construct full key including bucket, consistent with other methods
         full_key = f"{bucket}/{key}" if (bucket and bucket != "storage") else key
         file_path = self.storage_path / full_key

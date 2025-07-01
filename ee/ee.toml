@@ -1,9 +1,9 @@
-morphik-host = "localhost:8000"
+morphik-host = "api.morphik.ai"
 
 # EE-specific configurations
 
 [google_drive]
-redirect_uri = "http://localhost:8000/ee/connectors/google_drive/oauth2callback" # Must match GCP console setting
+redirect_uri = "https://api.morphik.ai/ee/connectors/google_drive/oauth2callback" # Must match GCP console setting
 scopes = [
     "https://www.googleapis.com/auth/drive.readonly"
     # Add other scopes as needed, e.g.:

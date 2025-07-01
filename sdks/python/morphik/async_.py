@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 from io import BytesIO, IOBase
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Optional, Type, Union
@@ -287,6 +288,7 @@ class AsyncFolder:
         min_score: float = 0.0,
         use_colpali: bool = True,
         additional_folders: Optional[List[str]] = None,
+        padding: int = 0,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks within this folder.
@@ -298,13 +300,14 @@ class AsyncFolder:
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
             additional_folders: Optional list of additional folder names to further scope operations
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
         """
         effective_folder = self._merge_folders(additional_folders)
         payload = self._client._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, effective_folder, None
+            query, filters, k, min_score, use_colpali, effective_folder, None, padding
         )
         response = await self._client._request("POST", "retrieve/chunks", data=payload)
         return self._client._logic._parse_chunk_result_list_response(response)
@@ -355,6 +358,8 @@ class AsyncFolder:
         additional_folders: Optional[List[str]] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
         chat_id: Optional[str] = None,
+        llm_config: Optional[Dict[str, Any]] = None,
+        padding: int = 0,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context within this folder.
@@ -373,6 +378,7 @@ class AsyncFolder:
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
             schema: Optional schema for structured output
             additional_folders: Optional list of additional folder names to further scope operations
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
 
         Returns:
             CompletionResponse: Generated completion or structured output
@@ -394,6 +400,8 @@ class AsyncFolder:
             None,
             chat_id,
             schema,
+            llm_config,
+            padding,
         )
 
         # Add schema to payload if provided
@@ -823,6 +831,7 @@ class AsyncUserScope:
         min_score: float = 0.0,
         use_colpali: bool = True,
         additional_folders: Optional[List[str]] = None,
+        padding: int = 0,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks as this end user.
@@ -834,13 +843,14 @@ class AsyncUserScope:
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
             additional_folders: Optional list of additional folder names to further scope operations
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
         """
         effective_folder = self._merge_folders(additional_folders)
         payload = self._client._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, effective_folder, self._end_user_id
+            query, filters, k, min_score, use_colpali, effective_folder, self._end_user_id, padding
         )
         response = await self._client._request("POST", "retrieve/chunks", data=payload)
         return self._client._logic._parse_chunk_result_list_response(response)
@@ -891,6 +901,8 @@ class AsyncUserScope:
         additional_folders: Optional[List[str]] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
         chat_id: Optional[str] = None,
+        llm_config: Optional[Dict[str, Any]] = None,
+        padding: int = 0,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context, scoped to the end user.
@@ -909,6 +921,7 @@ class AsyncUserScope:
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
             schema: Optional schema for structured output
             additional_folders: Optional list of additional folder names to further scope operations
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
 
         Returns:
             CompletionResponse: Generated completion or structured output
@@ -930,6 +943,8 @@ class AsyncUserScope:
             self._end_user_id,
             chat_id,
             schema,
+            llm_config,
+            padding,
         )
 
         # Add schema to payload if provided
@@ -1473,6 +1488,7 @@ class AsyncMorphik:
         min_score: float = 0.0,
         use_colpali: bool = True,
         folder_name: Optional[Union[str, List[str]]] = None,
+        padding: int = 0,
     ) -> List[FinalChunkResult]:
         """
         Search for relevant chunks.
@@ -1484,6 +1500,7 @@ class AsyncMorphik:
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model to retrieve chunks
                 (only works for documents ingested with `use_colpali=True`)
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
         Returns:
             List[FinalChunkResult]
 
@@ -1491,13 +1508,14 @@ class AsyncMorphik:
             ```python
             chunks = await db.retrieve_chunks(
                 "What are the key findings?",
-                filters={"department": "research"}
+                filters={"department": "research"},
+                padding=2  # Get 2 pages before and after each matched page
             )
             ```
         """
         effective_folder = folder_name if folder_name is not None else None
         payload = self._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, effective_folder, None
+            query, filters, k, min_score, use_colpali, effective_folder, None, padding
         )
         response = await self._request("POST", "retrieve/chunks", data=payload)
         return self._logic._parse_chunk_result_list_response(response)
@@ -1555,6 +1573,8 @@ class AsyncMorphik:
         folder_name: Optional[Union[str, List[str]]] = None,
         chat_id: Optional[str] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
+        llm_config: Optional[Dict[str, Any]] = None,
+        padding: int = 0,
     ) -> CompletionResponse:
         """
         Generate completion using relevant chunks as context.
@@ -1574,6 +1594,8 @@ class AsyncMorphik:
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
                 Either a QueryPromptOverrides object or a dictionary with the same structure
             schema: Optional schema for structured output, can be a Pydantic model or a JSON schema dict
+            llm_config: Optional LiteLLM-compatible model configuration (e.g., model name, API key, base URL)
+            padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
         Returns:
             CompletionResponse
 
@@ -1661,6 +1683,8 @@ class AsyncMorphik:
             None,
             chat_id,
             schema,
+            llm_config,
+            padding,
         )
 
         # Add schema to payload if provided
@@ -1683,7 +1707,7 @@ class AsyncMorphik:
 
         The agent can autonomously use various tools to answer complex queries including:
         - Searching and retrieving relevant documents
-        - Analyzing document content 
+        - Analyzing document content
         - Performing calculations and data processing
         - Creating summaries and reports
         - Managing knowledge graphs
@@ -2567,7 +2591,7 @@ class AsyncMorphik:
         self,
         graph_name: str,
         timeout_seconds: int = 300,
-        check_interval_seconds: int = 5,
+        check_interval_seconds: int = 2,
     ) -> Graph:
         """Block until the specified graph finishes processing (async).
 
@@ -2590,3 +2614,97 @@ class AsyncMorphik:
                 raise RuntimeError(graph.error or "Graph processing failed")
             await asyncio.sleep(check_interval_seconds)
         raise TimeoutError("Timed out waiting for graph completion")
+
+    async def ping(self) -> Dict[str, Any]:
+        """Simple health-check call to ``/ping`` endpoint."""
+        return await self._request("GET", "ping")
+
+    # ------------------------------------------------------------------
+    # Chat API ----------------------------------------------------------
+    # ------------------------------------------------------------------
+    async def get_chat_history(self, chat_id: str) -> List[Dict[str, Any]]:
+        """Return the full message history for *chat_id*."""
+        return await self._request("GET", f"chat/{chat_id}")
+
+    async def list_chat_conversations(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """List recent chat conversations for the current user (async)."""
+        limit_capped = max(1, min(limit, 500))
+        return await self._request("GET", "chats", params={"limit": limit_capped})
+
+    # ------------------------------------------------------------------
+    # Usage API ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    async def get_usage_stats(self) -> Dict[str, int]:
+        """Return cumulative token usage statistics (async)."""
+        return await self._request("GET", "usage/stats")
+
+    async def get_recent_usage(
+        self,
+        operation_type: Optional[str] = None,
+        since: Optional["datetime"] = None,
+        status: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return recent usage entries with optional filtering (async)."""
+        from datetime import datetime
+
+        params: Dict[str, Any] = {}
+        if operation_type:
+            params["operation_type"] = operation_type
+        if since:
+            params["since"] = since.isoformat() if isinstance(since, datetime) else str(since)
+        if status:
+            params["status"] = status
+        return await self._request("GET", "usage/recent", params=params)
+
+    # ------------------------------------------------------------------
+    # Graph helpers -----------------------------------------------------
+    # ------------------------------------------------------------------
+    async def get_graph_visualization(
+        self,
+        name: str,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        end_user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Fetch nodes & links for visualising *name* graph (async)."""
+        params: Dict[str, Any] = {}
+        if folder_name is not None:
+            params["folder_name"] = folder_name
+        if end_user_id is not None:
+            params["end_user_id"] = end_user_id
+        return await self._request("GET", f"graph/{name}/visualization", params=params)
+
+    async def check_workflow_status(self, workflow_id: str, run_id: Optional[str] = None) -> Dict[str, Any]:
+        """Poll the status of an async graph build/update workflow."""
+        params = {"run_id": run_id} if run_id else None
+        return await self._request("GET", f"graph/workflow/{workflow_id}/status", params=params)
+
+    async def get_graph_status(
+        self, graph_name: str, folder_name: Optional[str] = None, end_user_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get the current status of a graph with pipeline stage information.
+
+        This is a lightweight endpoint that checks local database status and
+        optionally syncs with external workflow status if the graph is processing.
+
+        Args:
+            graph_name: Name of the graph to check
+            folder_name: Optional folder name for scoping
+            end_user_id: Optional end user ID for scoping
+
+        Returns:
+            Dict containing status, pipeline_stage (if processing), and other metadata
+        """
+        params = {}
+        if folder_name:
+            params["folder_name"] = folder_name
+        if end_user_id:
+            params["end_user_id"] = end_user_id
+
+        return await self._request("GET", f"graph/{graph_name}/status", params=params if params else None)
+
+    # ------------------------------------------------------------------
+    # Document download helpers ----------------------------------------
+    # ------------------------------------------------------------------
+    async def get_document_download_url(self, document_id: str, expires_in: int = 3600) -> Dict[str, Any]:
+        """Generate a presigned download URL for a document (async)."""
+        return await self._request("GET", f"documents/{document_id}/download_url", params={"expires_in": expires_in})

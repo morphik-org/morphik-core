@@ -51,7 +51,7 @@ const generateMessagePreview = (content: string, lastMessage?: MessagePreviewCon
       textContent = textContent.replace(/\*(.*?)\*/g, "$1");
       textContent = textContent.replace(/`(.*?)`/g, "$1");
       textContent = textContent.replace(/\n+/g, " ");
-      return textContent.trim().slice(0, 50) || "Agent response (text)"; // ensure not empty string
+      return textContent.trim().slice(0, 35) || "Agent response (text)"; // ensure not empty string
     }
 
     // If no text objects, show a generic agent response message
@@ -73,13 +73,13 @@ const generateMessagePreview = (content: string, lastMessage?: MessagePreviewCon
           textContent = textContent.replace(/\*(.*?)\*/g, "$1");
           textContent = textContent.replace(/`(.*?)`/g, "$1");
           textContent = textContent.replace(/\n+/g, " ");
-          return textContent.trim().slice(0, 50) || "Agent response (parsed text)";
+          return textContent.trim().slice(0, 35) || "Agent response (parsed text)";
         }
         return "Agent response (parsed media)";
       }
 
       if (parsed.content && typeof parsed.content === "string") {
-        return parsed.content.slice(0, 50) || "Agent response (parsed content)";
+        return parsed.content.slice(0, 35) || "Agent response (parsed content)";
       }
 
       return "Agent response (JSON)";
@@ -87,28 +87,34 @@ const generateMessagePreview = (content: string, lastMessage?: MessagePreviewCon
       console.log("Error parsing JSON:", _e);
       // Prefixed 'e' with an underscore
       if (trimmedContent.length < 100 && !trimmedContent.includes('"type"')) {
-        return content.slice(0, 50);
+        return content.slice(0, 35);
       }
       return "Agent response (error)";
     }
   }
 
-  return content.slice(0, 50);
+  // for regular chat
+  content = content.replace(/#{1,6}\s+/g, "");
+  content = content.replace(/\*\*(.*?)\*\*/g, "$1");
+  content = content.replace(/\*(.*?)\*/g, "$1");
+  content = content.replace(/`(.*?)`/g, "$1");
+  content = content.replace(/\n+/g, " ");
+  return content.trim().slice(0, 35) || "chat response (text)";
 };
 
-export const ChatSidebar: React.FC<ChatSidebarProps> = ({
+export const ChatSidebar: React.FC<ChatSidebarProps> = React.memo(function ChatSidebar({
   apiBaseUrl,
   authToken,
   onSelect,
   activeChatId,
   collapsed,
   onToggle,
-}) => {
+}) {
   const { sessions, isLoading, reload } = useChatSessions({ apiBaseUrl, authToken });
 
   if (collapsed) {
     return (
-      <div className="flex w-8 flex-col items-center border-r bg-muted/40">
+      <div className="flex w-10 flex-col items-center border-r bg-muted/40">
         <Button variant="ghost" size="icon" className="mt-2" onClick={onToggle} title="Expand">
           <ChevronsRight className="h-4 w-4" />
         </Button>
@@ -119,8 +125,8 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   return (
     <div className="flex w-60 flex-col border-r bg-muted/40">
       <div className="flex h-12 items-center justify-between px-3 text-xs font-medium">
-        <span>Conversations</span>
-        <div className="flex items-center gap-1">
+        <span className="text-base">Conversations</span>
+        <div className="flex items-center justify-center">
           <Button variant="ghost" size="icon" onClick={() => onSelect(undefined)} title="New chat">
             <Plus className="h-4 w-4" />
           </Button>
@@ -134,27 +140,27 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
       </div>
       <ScrollArea className="flex-1">
         <ul className="p-1">
-          {isLoading && <li className="px-2 py-1 text-xs">Loading…</li>}
+          {isLoading && <li className="py-1 text-center text-xs text-muted-foreground">Loading…</li>}
           {!isLoading && sessions.length === 0 && (
-            <li className="px-2 py-1 text-xs text-muted-foreground">No chats yet</li>
+            <li className="px-2 py-1 text-center text-xs text-muted-foreground">No chats yet</li>
           )}
-          {sessions.map(s => (
-            <li key={s.chatId} className="mb-1">
+          {sessions.map(session => (
+            <li key={session.chatId} className="mb-1">
               <button
-                onClick={() => onSelect(s.chatId)}
+                onClick={() => onSelect(session.chatId)}
                 className={cn(
                   "w-full rounded px-2 py-1 text-left text-sm hover:bg-accent/60",
-                  activeChatId === s.chatId && "bg-accent text-accent-foreground"
+                  activeChatId === session.chatId && "bg-accent text-accent-foreground"
                 )}
               >
                 <div className="truncate">
                   {generateMessagePreview(
-                    s.lastMessage?.content || "",
-                    s.lastMessage === null ? undefined : s.lastMessage
+                    session.lastMessage?.content || "",
+                    session.lastMessage === null ? undefined : session.lastMessage
                   )}
                 </div>
                 <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                  {new Date(s.updatedAt || s.createdAt || Date.now()).toLocaleString()}
+                  {new Date(session.updatedAt || session.createdAt || Date.now()).toLocaleString()}
                 </div>
               </button>
             </li>
@@ -163,4 +169,4 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
       </ScrollArea>
     </div>
   );
-};
+});

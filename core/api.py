@@ -12,21 +12,23 @@ from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query, Upload
 from fastapi.middleware.cors import CORSMiddleware  # Import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
 from core.agent import MorphikAgent
 from core.app_factory import lifespan
 from core.auth_utils import verify_token
 from core.config import get_settings
-from core.logging_config import setup_logging
 from core.database.postgres_database import PostgresDatabase
 from core.dependencies import get_redis_pool
 from core.limits_utils import check_and_increment_limits
+from core.logging_config import setup_logging
+from core.middleware.profiling import ProfilingMiddleware
 from core.models.auth import AuthContext, EntityType
 from core.models.chat import ChatMessage
 from core.models.completion import ChunkSource, CompletionResponse
-from core.models.documents import ChunkResult, Document, DocumentResult
-from core.models.folders import Folder, FolderCreate
+from core.models.documents import ChunkResult, Document, DocumentResult, GroupedChunkResponse
+from core.models.folders import Folder, FolderCreate, FolderSummary
 from core.models.graph import Graph
 from core.models.prompts import validate_prompt_overrides_with_http_exception
 from core.models.request import (
@@ -39,9 +41,15 @@ from core.models.request import (
     SetFolderRuleRequest,
     UpdateGraphRequest,
 )
+from core.models.workflows import Workflow
+from core.routes.document import router as document_router
 from core.routes.ingest import router as ingest_router
+from core.routes.logs import router as logs_router  # noqa: E402 – import after FastAPI app
+from core.routes.model_config import router as model_config_router
+from core.routes.models import router as models_router
+from core.routes.workflow import router as workflow_router
 from core.services.telemetry import TelemetryService
-from core.services_init import document_service
+from core.services_init import document_service, workflow_service
 
 # Set up logging configuration for Docker environment
 setup_logging()
@@ -104,6 +112,12 @@ class PerformanceTracker:
 
 app = FastAPI(lifespan=lifespan)
 
+# --------------------------------------------------------
+# Optional per-request profiler (ENABLE_PROFILING=1)
+# --------------------------------------------------------
+
+app.add_middleware(ProfilingMiddleware)
+
 # Add CORS middleware (same behaviour as before refactor)
 app.add_middleware(
     CORSMiddleware,
@@ -151,6 +165,72 @@ async def ping_health():
     return {"status": "ok", "message": "Server is running"}
 
 
+@app.get("/models")
+async def get_available_models(auth: AuthContext = Depends(verify_token)):
+    """
+    Get list of available models from configuration.
+
+    Returns models grouped by type (chat, embedding, etc.) with their metadata.
+    """
+    try:
+        # Load the morphik.toml file to get registered models
+        with open("morphik.toml", "rb") as f:
+            config = tomli.load(f)
+
+        registered_models = config.get("registered_models", {})
+
+        # Group models by their purpose
+        chat_models = []
+        embedding_models = []
+
+        for model_key, model_config in registered_models.items():
+            model_info = {
+                "id": model_key,
+                "model": model_config.get("model_name", model_key),
+                "provider": _extract_provider(model_config.get("model_name", "")),
+                "config": model_config,
+            }
+
+            # Categorize models based on their names or configuration
+            if "embedding" in model_key.lower():
+                embedding_models.append(model_info)
+            else:
+                chat_models.append(model_info)
+
+        # Also add the default configured models
+        default_models = {
+            "completion": config.get("completion", {}).get("model"),
+            "agent": config.get("agent", {}).get("model"),
+            "embedding": config.get("embedding", {}).get("model"),
+        }
+
+        return {
+            "chat_models": chat_models,
+            "embedding_models": embedding_models,
+            "default_models": default_models,
+            "providers": ["openai", "anthropic", "google", "azure", "ollama", "custom"],
+        }
+    except Exception as e:
+        logger.error(f"Error loading models: {e}")
+        raise HTTPException(status_code=500, detail="Failed to load available models")
+
+
+def _extract_provider(model_name: str) -> str:
+    """Extract provider from model name."""
+    if model_name.startswith("gpt"):
+        return "openai"
+    elif model_name.startswith("claude"):
+        return "anthropic"
+    elif model_name.startswith("gemini"):
+        return "google"
+    elif model_name.startswith("ollama"):
+        return "ollama"
+    elif "azure" in model_name:
+        return "azure"
+    else:
+        return "custom"
+
+
 # ---------------------------------------------------------------------------
 # Core singletons (database, vector store, storage, parser, models …)
 # ---------------------------------------------------------------------------
@@ -162,6 +242,21 @@ logger.info("Document service initialized and stored on app.state")
 
 # Register ingest router
 app.include_router(ingest_router)
+
+# Register document router
+app.include_router(document_router)
+
+# Register workflow router (step-2)
+app.include_router(workflow_router)
+
+# Register model config router
+app.include_router(model_config_router)
+
+# Register models router
+app.include_router(models_router)
+
+# Register logs router
+app.include_router(logs_router)
 
 # Single MorphikAgent instance (tool definitions cached)
 morphik_agent = MorphikAgent(document_service=document_service)
@@ -231,12 +326,57 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
             request.folder_name,
             request.end_user_id,
             perf,  # Pass performance tracker
+            request.padding,  # Pass padding parameter
         )
 
         # Log consolidated performance summary
         perf.log_summary(f"Retrieved {len(results)} chunks")
 
         return results
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.post("/retrieve/chunks/grouped", response_model=GroupedChunkResponse)
+@telemetry.track(operation_type="retrieve_chunks_grouped", metadata_resolver=telemetry.retrieve_chunks_metadata)
+async def retrieve_chunks_grouped(request: RetrieveRequest, auth: AuthContext = Depends(verify_token)):
+    """
+    Retrieve relevant chunks with grouped response format.
+
+    Returns both flat results (for backward compatibility) and grouped results (for UI).
+    When padding > 0, groups chunks by main matches and their padding chunks.
+
+    Args:
+        request: RetrieveRequest containing query, filters, padding, etc.
+        auth: Authentication context
+
+    Returns:
+        GroupedChunkResponse: Contains both flat chunks and grouped chunks
+    """
+    # Initialize performance tracker
+    perf = PerformanceTracker(f"Retrieve Chunks Grouped: '{request.query[:50]}...'")
+
+    try:
+        # Main retrieval operation
+        perf.start_phase("document_service_retrieve_chunks_grouped")
+        result = await document_service.retrieve_chunks_grouped(
+            request.query,
+            auth,
+            request.filters,
+            request.k,
+            request.min_score,
+            request.use_reranking,
+            request.use_colpali,
+            request.folder_name,
+            request.end_user_id,
+            perf,  # Pass performance tracker
+            request.padding,  # Pass padding parameter
+        )
+
+        # Log consolidated performance summary
+        perf.log_summary(f"Retrieved {len(result.chunks)} total chunks in {len(result.groups)} groups")
+
+        return result
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
@@ -326,8 +466,7 @@ async def batch_get_documents(request: Dict[str, Any], auth: AuthContext = Depen
             system_filters["folder_name"] = normalized_folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in document retrieval
 
         # Main batch retrieval operation
         perf.start_phase("batch_retrieve_documents")
@@ -390,8 +529,7 @@ async def batch_get_chunks(request: Dict[str, Any], auth: AuthContext = Depends(
             system_filters["folder_name"] = normalized_folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in document retrieval
 
         # Main batch retrieval operation
         perf.start_phase("batch_retrieve_chunks")
@@ -408,7 +546,6 @@ async def batch_get_chunks(request: Dict[str, Any], auth: AuthContext = Depends(
 
 
 @app.post("/query", response_model=CompletionResponse)
-@telemetry.track(operation_type="query", metadata_resolver=telemetry.query_metadata)
 async def query_completion(
     request: CompletionQueryRequest,
     auth: AuthContext = Depends(verify_token),
@@ -445,6 +582,10 @@ async def query_completion(
     """
     # Initialize performance tracker
     perf = PerformanceTracker(f"Query: '{request.query[:50]}...'")
+
+    # Prepare telemetry metadata
+    meta = telemetry.query_metadata(None, request=request)  # type: ignore[arg-type]
+    token_est = len(request.query.split()) if isinstance(request.query, str) else 0
 
     try:
         # Validate prompt overrides before proceeding
@@ -505,6 +646,8 @@ async def query_completion(
             history,
             perf,  # Pass performance tracker
             request.stream_response,
+            request.llm_config,
+            request.padding,  # Pass padding parameter
         )
 
         # Handle streaming vs non-streaming responses
@@ -525,7 +668,7 @@ async def query_completion(
                         logger.info(f"Completion start to first token: {completion_start_to_first_token:.2f}s")
 
                     full_content += chunk
-                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+                    yield f"data: {json.dumps({'type': 'assistant', 'content': chunk})}\n\n"
 
                 # Convert sources to the format expected by frontend
                 sources_info = [
@@ -534,7 +677,7 @@ async def query_completion(
                 ]
 
                 # Send completion signal with sources
-                yield f"data: {json.dumps({'done': True, 'sources': sources_info})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'sources': sources_info})}\n\n"
 
                 # Handle chat history after streaming is complete
                 if history_key:
@@ -564,10 +707,30 @@ async def query_completion(
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Headers": "*",
             }
-            return StreamingResponse(generate_stream(), media_type="text/event-stream", headers=headers)
+
+            # Wrap original generator with telemetry span so formatting and history logic are preserved
+            async def wrapped():
+                async with telemetry.track_operation(
+                    operation_type="query",
+                    user_id=auth.entity_id,
+                    app_id=auth.app_id,
+                    tokens_used=token_est,
+                    metadata=meta,
+                ):
+                    async for item in generate_stream():
+                        yield item
+
+            return StreamingResponse(wrapped(), media_type="text/event-stream", headers=headers)
         else:
-            # For non-streaming responses, result is just the CompletionResponse
-            response = result
+            # For non-streaming responses, we record telemetry around result construction
+            async with telemetry.track_operation(
+                operation_type="query",
+                user_id=auth.entity_id,
+                app_id=auth.app_id,
+                tokens_used=token_est,
+                metadata=meta,
+            ):
+                response = result
 
             # Chat history storage for non-streaming responses
             perf.start_phase("chat_history_storage")
@@ -626,6 +789,96 @@ async def get_chat_history(
         return [ChatMessage(**m) for m in data]
     except Exception:
         return []
+
+
+@app.get("/models/available")
+async def get_available_models_for_selection(auth: AuthContext = Depends(verify_token)):
+    """Get list of available models for UI selection.
+
+    Returns a list of models that can be used for queries. Each model includes:
+    - id: Model identifier to use in llm_config
+    - name: Display name for the model
+    - provider: The LLM provider (e.g., openai, anthropic, ollama)
+    - description: Optional description of the model
+    """
+    # For now, return some common models that work with LiteLLM
+    # In the future, this could be configurable or dynamically determined
+    models = [
+        {
+            "id": "gpt-4o",
+            "name": "GPT-4o",
+            "provider": "openai",
+            "description": "OpenAI's most capable model with vision support",
+        },
+        {
+            "id": "gpt-4o-mini",
+            "name": "GPT-4o Mini",
+            "provider": "openai",
+            "description": "Faster, more affordable GPT-4o variant",
+        },
+        {
+            "id": "claude-3-5-sonnet-20241022",
+            "name": "Claude 3.5 Sonnet",
+            "provider": "anthropic",
+            "description": "Anthropic's most intelligent model",
+        },
+        {
+            "id": "claude-3-5-haiku-20241022",
+            "name": "Claude 3.5 Haiku",
+            "provider": "anthropic",
+            "description": "Fast and affordable Claude model",
+        },
+        {
+            "id": "gemini/gemini-1.5-pro",
+            "name": "Gemini 1.5 Pro",
+            "provider": "google",
+            "description": "Google's advanced model with long context",
+        },
+        {
+            "id": "gemini/gemini-1.5-flash",
+            "name": "Gemini 1.5 Flash",
+            "provider": "google",
+            "description": "Fast and efficient Gemini model",
+        },
+        {
+            "id": "deepseek/deepseek-chat",
+            "name": "DeepSeek Chat",
+            "provider": "deepseek",
+            "description": "DeepSeek's conversational AI model",
+        },
+        {
+            "id": "groq/llama-3.3-70b-versatile",
+            "name": "Llama 3.3 70B",
+            "provider": "groq",
+            "description": "Fast inference with Groq",
+        },
+        {
+            "id": "groq/llama-3.1-8b-instant",
+            "name": "Llama 3.1 8B",
+            "provider": "groq",
+            "description": "Ultra-fast small model on Groq",
+        },
+    ]
+
+    # Check if there's a configured model in settings to add to the list
+    if hasattr(settings, "COMPLETION_MODEL") and hasattr(settings, "REGISTERED_MODELS"):
+        configured_model = settings.COMPLETION_MODEL
+        if configured_model in settings.REGISTERED_MODELS:
+            config = settings.REGISTERED_MODELS[configured_model]
+            model_name = config.get("model_name", configured_model)
+            # Add the configured model if it's not already in the list
+            if not any(m["id"] == model_name for m in models):
+                models.insert(
+                    0,
+                    {
+                        "id": model_name,
+                        "name": f"{configured_model} (Configured)",
+                        "provider": "configured",
+                        "description": "Currently configured model in morphik.toml",
+                    },
+                )
+
+    return {"models": models}
 
 
 @app.post("/agent", response_model=Dict[str, Any])
@@ -735,8 +988,7 @@ async def list_documents(
         system_filters["folder_name"] = normalized_folder_name
     if end_user_id:
         system_filters["end_user_id"] = end_user_id
-    if auth.app_id:
-        system_filters["app_id"] = auth.app_id
+    # Note: auth.app_id is already handled in _build_access_filter_optimized
 
     return await document_service.db.get_documents(auth, skip, limit, filters, system_filters)
 
@@ -866,6 +1118,118 @@ async def get_document_by_filename(
     except HTTPException as e:
         logger.error(f"Error getting document by filename: {e}")
         raise e
+
+
+@app.get("/documents/{document_id}/download_url")
+async def get_document_download_url(
+    document_id: str,
+    auth: AuthContext = Depends(verify_token),
+    expires_in: int = Query(3600, description="URL expiration time in seconds"),
+):
+    """
+    Get a download URL for a specific document.
+
+    Args:
+        document_id: External ID of the document
+        auth: Authentication context
+        expires_in: URL expiration time in seconds (default: 1 hour)
+
+    Returns:
+        Dictionary containing the download URL and metadata
+    """
+    try:
+        # Get the document
+        doc = await document_service.db.get_document(document_id, auth)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Check if document has storage info
+        if not doc.storage_info or not doc.storage_info.get("bucket") or not doc.storage_info.get("key"):
+            raise HTTPException(status_code=404, detail="Document file not found in storage")
+
+        # Generate download URL
+        download_url = await document_service.storage.get_download_url(
+            doc.storage_info["bucket"], doc.storage_info["key"], expires_in=expires_in
+        )
+
+        return {
+            "document_id": doc.external_id,
+            "filename": doc.filename,
+            "content_type": doc.content_type,
+            "download_url": download_url,
+            "expires_in": expires_in,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting download URL for document {document_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting download URL: {str(e)}")
+
+
+@app.get("/documents/{document_id}/file")
+async def download_document_file(document_id: str, auth: AuthContext = Depends(verify_token)):
+    """
+    Download the actual file content for a document.
+    This endpoint is used for local storage when file:// URLs cannot be accessed by browsers.
+
+    Args:
+        document_id: External ID of the document
+        auth: Authentication context
+
+    Returns:
+        StreamingResponse with the file content
+    """
+    try:
+        logger.info(f"Attempting to download file for document ID: {document_id}")
+        logger.info(f"Auth context: entity_id={auth.entity_id}, app_id={auth.app_id}")
+
+        # Get the document
+        doc = await document_service.db.get_document(document_id, auth)
+        logger.info(f"Document lookup result: {doc is not None}")
+
+        if not doc:
+            logger.warning(f"Document not found in database: {document_id}")
+            raise HTTPException(status_code=404, detail=f"Document not found: {document_id}")
+
+        logger.info(f"Found document: {doc.filename}, content_type: {doc.content_type}")
+        logger.info(f"Storage info: {doc.storage_info}")
+
+        # Check if document has storage info
+        if not doc.storage_info or not doc.storage_info.get("bucket") or not doc.storage_info.get("key"):
+            logger.warning(f"Document has no storage info: {document_id}")
+            raise HTTPException(status_code=404, detail="Document file not found in storage")
+
+        # Download file content from storage
+        logger.info(f"Downloading from bucket: {doc.storage_info['bucket']}, key: {doc.storage_info['key']}")
+        file_content = await document_service.storage.download_file(doc.storage_info["bucket"], doc.storage_info["key"])
+
+        logger.info(f"Successfully downloaded {len(file_content)} bytes")
+
+        # Create streaming response
+
+        from fastapi.responses import StreamingResponse
+
+        def generate():
+            yield file_content
+
+        return StreamingResponse(
+            generate(),
+            media_type=doc.content_type or "application/octet-stream",
+            headers={
+                "Content-Disposition": f"inline; filename=\"{doc.filename or 'document'}\"",
+                "Content-Length": str(len(file_content)),
+            },
+        )
+
+    except HTTPException:
+        raise
+    except FileNotFoundError as e:
+        logger.error(f"File not found in storage for document {document_id}: {e}")
+        raise HTTPException(status_code=404, detail=f"File not found in storage: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error downloading document file {document_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error downloading file: {str(e)}")
 
 
 @app.post("/documents/{document_id}/update_text", response_model=Document)
@@ -1245,8 +1609,7 @@ async def create_graph(
             system_filters["end_user_id"] = request.end_user_id
 
         # Developer tokens: always scope by app_id to prevent cross-app leakage
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in document retrieval
 
         # --------------------
         # Create stub graph
@@ -1256,29 +1619,14 @@ async def create_graph(
 
         from core.models.graph import Graph
 
-        access_control = {
-            "readers": [auth.entity_id],
-            "writers": [auth.entity_id],
-            "admins": [auth.entity_id],
-        }
-        if auth.user_id:
-            access_control["user_id"] = [auth.user_id]
-
         graph_stub = Graph(
             id=str(uuid.uuid4()),
             name=request.name,
             filters=request.filters,
-            owner={"type": auth.entity_type.value, "id": auth.entity_id},
-            access_control=access_control,
+            folder_name=system_filters.get("folder_name"),
+            end_user_id=system_filters.get("end_user_id"),
+            app_id=auth.app_id,
         )
-
-        # Persist scoping info in system metadata
-        if system_filters.get("folder_name"):
-            graph_stub.system_metadata["folder_name"] = system_filters["folder_name"]
-        if system_filters.get("end_user_id"):
-            graph_stub.system_metadata["end_user_id"] = system_filters["end_user_id"]
-        if auth.app_id:
-            graph_stub.system_metadata["app_id"] = auth.app_id
 
         # Mark graph as processing
         graph_stub.system_metadata["status"] = "processing"
@@ -1286,7 +1634,7 @@ async def create_graph(
         graph_stub.system_metadata["updated_at"] = datetime.now(UTC)
 
         # Store the stub graph so clients can poll for status
-        success = await document_service.db.store_graph(graph_stub)
+        success = await document_service.db.store_graph(graph_stub, auth)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to create graph stub")
 
@@ -1350,33 +1698,12 @@ async def create_folder(
         logger.info(f"Creating folder with ID: {folder_id}, auth.user_id: {auth.user_id}")
 
         # Set up access control with user_id
-        access_control = {
-            "readers": [auth.entity_id],
-            "writers": [auth.entity_id],
-            "admins": [auth.entity_id],
-        }
-
-        if auth.user_id:
-            access_control["user_id"] = [auth.user_id]
-            logger.info(f"Adding user_id {auth.user_id} to folder access control")
-
         folder = Folder(
-            id=folder_id,
-            name=folder_create.name,
-            description=folder_create.description,
-            owner={
-                "type": auth.entity_type.value,
-                "id": auth.entity_id,
-            },
-            access_control=access_control,
+            id=folder_id, name=folder_create.name, description=folder_create.description, app_id=auth.app_id
         )
 
-        # Scope folder to the application ID for developer tokens
-        if auth.app_id:
-            folder.system_metadata["app_id"] = auth.app_id
-
         # Store in database
-        success = await document_service.db.create_folder(folder)
+        success = await document_service.db.create_folder(folder, auth)
 
         if not success:
             raise HTTPException(status_code=500, detail="Failed to create folder")
@@ -1407,6 +1734,19 @@ async def list_folders(
     except Exception as e:
         logger.error(f"Error listing folders: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/folders/summary", response_model=List[FolderSummary])
+@telemetry.track(operation_type="list_folders_summary")
+async def list_folder_summaries(auth: AuthContext = Depends(verify_token)) -> List[FolderSummary]:
+    """Return compact folder list (id, name, doc_count, updated_at)."""
+
+    try:
+        summaries = await document_service.db.list_folders_summary(auth)
+        return summaries  # type: ignore[return-value]
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error listing folder summaries: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/folders/{folder_id}", response_model=Folder)
@@ -1588,8 +1928,7 @@ async def get_graph(
             system_filters["end_user_id"] = end_user_id
 
         # Developer tokens: always scope by app_id to prevent cross-app leakage
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in document retrieval
 
         graph = await document_service.db.get_graph(name, auth, system_filters)
         if not graph:
@@ -1631,8 +1970,7 @@ async def list_graphs(
             system_filters["end_user_id"] = end_user_id
 
         # Developer tokens: always scope by app_id to prevent cross-app leakage
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in document retrieval
 
         return await document_service.db.list_graphs(auth, system_filters)
     except PermissionError as e:
@@ -1718,8 +2056,7 @@ async def update_graph(
             system_filters["end_user_id"] = request.end_user_id
 
         # Developer tokens: always scope by app_id to prevent cross-app leakage
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in document retrieval
 
         return await document_service.update_graph(
             name=name,
@@ -1735,6 +2072,162 @@ async def update_graph(
         validate_prompt_overrides_with_http_exception(operation_type="graph", error=e)
     except Exception as e:
         logger.error(f"Error updating graph: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/graph/{name}")
+@telemetry.track(operation_type="delete_graph")
+async def delete_graph(
+    name: str,
+    auth: AuthContext = Depends(verify_token),
+) -> Dict[str, Any]:
+    """Delete a graph by name.
+
+    Args:
+        name: Name of the graph to delete
+        auth: Authentication context (must have write access to the graph)
+
+    Returns:
+        Deletion status
+    """
+    try:
+        # Check if graph exists first
+        graph = await document_service.db.get_graph(name, auth)
+        if not graph:
+            raise HTTPException(status_code=404, detail=f"Graph '{name}' not found")
+
+        # Get the graph service
+        graph_service = document_service.graph_service
+
+        # Check if it's the MorphikGraphService
+        from core.services.morphik_graph_service import MorphikGraphService
+
+        if isinstance(graph_service, MorphikGraphService):
+            # Use the graph service to delete, which will handle both API and database deletion
+            success = await graph_service.delete_graph(name, auth)
+        else:
+            # Fallback to database-only deletion
+            success = await document_service.db.delete_graph(name, auth)
+
+        if not success:
+            raise HTTPException(status_code=500, detail=f"Failed to delete graph '{name}'")
+
+        return {"status": "success", "message": f"Graph '{name}' deleted successfully"}
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting graph: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/graph/{name}/status", response_model=Dict[str, Any])
+@telemetry.track(operation_type="get_graph_status")
+async def get_graph_status(
+    name: str,
+    auth: AuthContext = Depends(verify_token),
+    folder_name: Optional[Union[str, List[str]]] = None,
+    end_user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Lightweight endpoint to check graph status with automatic status synchronization.
+
+    This endpoint:
+    1. First checks the local database for graph status
+    2. If status is 'processing' and has workflow_id, checks the external workflow status
+    3. Updates the local database if workflow has completed
+    4. Returns the current status and optionally pipeline stage information
+    """
+    try:
+        # Build system filters
+        system_filters = {}
+        if folder_name:
+            system_filters["folder_name"] = folder_name
+        if end_user_id:
+            system_filters["end_user_id"] = end_user_id
+
+        # Get graph from database
+        graph = await document_service.db.get_graph(name, auth, system_filters=system_filters)
+        if not graph:
+            raise HTTPException(status_code=404, detail=f"Graph '{name}' not found")
+
+        # Check if we need to sync status with external workflow
+        current_status = graph.system_metadata.get("status", "unknown")
+        workflow_id = graph.system_metadata.get("workflow_id")
+        run_id = graph.system_metadata.get("run_id")
+
+        # If graph is marked as processing and has workflow info, check external status
+        if current_status == "processing" and workflow_id:
+            try:
+                # Get the graph service
+                graph_service = document_service.graph_service
+                from core.services.morphik_graph_service import MorphikGraphService
+
+                if isinstance(graph_service, MorphikGraphService):
+                    # Check external workflow status
+                    workflow_result = await graph_service.check_workflow_status(
+                        workflow_id=workflow_id, run_id=run_id, auth=auth
+                    )
+
+                    external_status = workflow_result.get("status")
+
+                    # If external workflow is completed or failed, update local database
+                    if external_status in ["completed", "failed"]:
+                        graph.system_metadata["status"] = external_status
+                        if external_status == "completed":
+                            # Clear workflow tracking data
+                            graph.system_metadata.pop("workflow_id", None)
+                            graph.system_metadata.pop("run_id", None)
+                        elif external_status == "failed":
+                            # Store error information
+                            error_msg = workflow_result.get("error", "Workflow failed")
+                            graph.system_metadata["error"] = error_msg
+
+                        # Update database
+                        await document_service.db.update_graph(graph)
+                        current_status = external_status
+
+                        logger.info(f"Updated graph '{name}' status from processing to {external_status}")
+
+                    # Add pipeline stage information if available
+                    pipeline_stage = workflow_result.get("pipeline_stage")
+                    if pipeline_stage:
+                        graph.system_metadata["pipeline_stage"] = pipeline_stage
+
+            except Exception as e:
+                logger.warning(f"Failed to check workflow status for graph '{name}': {e}")
+                # Don't fail the request, just log the warning
+
+        # Return comprehensive status information
+        response = {
+            "name": graph.name,
+            "status": current_status,
+            "created_at": graph.created_at.isoformat(),
+            "updated_at": graph.updated_at.isoformat(),
+        }
+
+        # Add optional fields if available
+        if workflow_id:
+            response["workflow_id"] = workflow_id
+        if run_id:
+            response["run_id"] = run_id
+        if graph.system_metadata.get("pipeline_stage"):
+            response["pipeline_stage"] = graph.system_metadata["pipeline_stage"]
+        if graph.system_metadata.get("error"):
+            response["error"] = graph.system_metadata["error"]
+        if graph.document_ids:
+            response["document_count"] = len(graph.document_ids)
+        if graph.entities:
+            response["entity_count"] = len(graph.entities)
+        if graph.relationships:
+            response["relationship_count"] = len(graph.relationships)
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting graph status for '{name}': {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1785,9 +2278,26 @@ async def check_workflow_status(
                                 graph.system_metadata.pop("workflow_id", None)
                                 graph.system_metadata.pop("run_id", None)
                                 await document_service.db.update_graph(graph)
+                                logger.info(f"Auto-updated graph '{graph.name}' status to completed")
                                 break
                     except Exception as e:
                         logger.warning(f"Failed to update graph status after workflow completion: {e}")
+            elif result.get("status") == "failed":
+                # Also handle failed status updates
+                parts = workflow_id.split("-")
+                if len(parts) >= 3:
+                    graph_name = parts[2]
+                    try:
+                        graphs = await document_service.db.list_graphs(auth)
+                        for graph in graphs:
+                            if graph.name == graph_name or workflow_id in graph.system_metadata.get("workflow_id", ""):
+                                graph.system_metadata["status"] = "failed"
+                                graph.system_metadata["error"] = result.get("error", "Workflow failed")
+                                await document_service.db.update_graph(graph)
+                                logger.info(f"Auto-updated graph '{graph.name}' status to failed")
+                                break
+                    except Exception as e:
+                        logger.warning(f"Failed to update graph status after workflow failure: {e}")
 
             return result
         else:
@@ -2143,6 +2653,135 @@ async def set_folder_rule(
     except Exception as e:
         logger.error(f"Error setting folder rules: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Folder-Workflow Association Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/folders/{folder_id}/workflows/{workflow_id}")
+@telemetry.track(operation_type="associate_workflow_to_folder")
+async def associate_workflow_to_folder(
+    folder_id: str,
+    workflow_id: str,
+    auth: AuthContext = Depends(verify_token),
+) -> Dict[str, Any]:
+    """Associate a workflow with a folder for automatic execution on document ingestion."""
+    try:
+        # Get the folder
+        folder = await document_service.db.get_folder(folder_id, auth)
+        if not folder:
+            raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
+
+        # Check if user has write access to the folder
+        if not document_service.db._check_folder_access(folder, auth, "write"):
+            raise HTTPException(status_code=403, detail="You don't have write access to this folder")
+
+        # Get the workflow to verify it exists and is accessible
+        workflow = await workflow_service.get_workflow(workflow_id, auth)
+        if not workflow:
+            raise HTTPException(status_code=404, detail=f"Workflow {workflow_id} not found or not accessible")
+
+        # Check if workflow is already associated
+        if workflow_id in folder.workflow_ids:
+            return {"success": True, "message": "Workflow already associated with folder"}
+
+        # Add workflow to folder
+        workflow_ids = folder.workflow_ids.copy()
+        workflow_ids.append(workflow_id)
+
+        # Update the folder in the database
+        async with document_service.db.async_session() as session:
+            await session.execute(
+                text(
+                    """
+                    UPDATE folders
+                    SET workflow_ids = :workflow_ids
+                    WHERE id = :folder_id
+                    """
+                ),
+                {"folder_id": folder_id, "workflow_ids": json.dumps(workflow_ids)},
+            )
+            await session.commit()
+
+        logger.info(f"Associated workflow {workflow_id} with folder {folder_id}")
+        return {"success": True, "message": f"Successfully associated workflow {workflow_id} with folder {folder_id}"}
+
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+
+
+@app.delete("/folders/{folder_id}/workflows/{workflow_id}")
+@telemetry.track(operation_type="disassociate_workflow_from_folder")
+async def disassociate_workflow_from_folder(
+    folder_id: str,
+    workflow_id: str,
+    auth: AuthContext = Depends(verify_token),
+) -> Dict[str, Any]:
+    """Remove a workflow association from a folder."""
+    try:
+        # Get the folder
+        folder = await document_service.db.get_folder(folder_id, auth)
+        if not folder:
+            raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
+
+        # Check if user has write access to the folder
+        if not document_service.db._check_folder_access(folder, auth, "write"):
+            raise HTTPException(status_code=403, detail="You don't have write access to this folder")
+
+        # Check if workflow is associated
+        if workflow_id not in folder.workflow_ids:
+            return {"success": True, "message": "Workflow not associated with folder"}
+
+        # Remove workflow from folder
+        workflow_ids = [wid for wid in folder.workflow_ids if wid != workflow_id]
+
+        # Update the folder in the database
+        async with document_service.db.async_session() as session:
+            await session.execute(
+                text(
+                    """
+                    UPDATE folders
+                    SET workflow_ids = :workflow_ids
+                    WHERE id = :folder_id
+                    """
+                ),
+                {"folder_id": folder_id, "workflow_ids": json.dumps(workflow_ids)},
+            )
+            await session.commit()
+
+        logger.info(f"Removed workflow {workflow_id} from folder {folder_id}")
+        return {"success": True, "message": f"Successfully removed workflow {workflow_id} from folder {folder_id}"}
+
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+
+
+@app.get("/folders/{folder_id}/workflows", response_model=List[Workflow])
+@telemetry.track(operation_type="list_folder_workflows")
+async def list_folder_workflows(
+    folder_id: str,
+    auth: AuthContext = Depends(verify_token),
+) -> List[Workflow]:
+    """List all workflows associated with a folder."""
+    try:
+        # Get the folder
+        folder = await document_service.db.get_folder(folder_id, auth)
+        if not folder:
+            raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
+
+        # Get all workflows
+        workflows = []
+        for workflow_id in folder.workflow_ids:
+            workflow = await workflow_service.get_workflow(workflow_id, auth)
+            if workflow:
+                workflows.append(workflow)
+
+        return workflows
+
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
 
 
 # ---------------------------------------------------------------------------

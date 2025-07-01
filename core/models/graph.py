@@ -55,13 +55,14 @@ class Graph(BaseModel):
         default_factory=lambda: {
             "created_at": datetime.now(UTC),
             "updated_at": datetime.now(UTC),
-            "folder_name": None,
-            "end_user_id": None,
         }
     )
     document_ids: List[str] = Field(default_factory=list)
     filters: Optional[Dict[str, Any]] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    owner: Dict[str, str] = Field(default_factory=dict)
-    access_control: Dict[str, List[str]] = Field(default_factory=lambda: {"readers": [], "writers": [], "admins": []})
+
+    # Flattened fields from system_metadata for performance
+    folder_name: Optional[str] = None
+    end_user_id: Optional[str] = None
+    app_id: Optional[str] = None

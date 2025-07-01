@@ -106,9 +106,9 @@ class GraphService:
                 f"Please wait for the creation process to complete."
             )
 
-        # Ensure app_id scoping: persist app_id into system_metadata if this is a developer-scoped token
-        if auth.app_id and existing_graph.system_metadata.get("app_id") != auth.app_id:
-            existing_graph.system_metadata["app_id"] = auth.app_id
+        # Ensure app_id scoping: update app_id if this is a developer-scoped token
+        if auth.app_id and existing_graph.app_id != auth.app_id:
+            existing_graph.app_id = auth.app_id
 
         # Track explicitly added documents to ensure they're included in the final graph
         # even if they don't have new entities or relationships
@@ -463,39 +463,15 @@ class GraphService:
 
         # Validation is now handled by type annotations
 
-        # Create a new graph with authorization info
-        access_control = {
-            "readers": [auth.entity_id],
-            "writers": [auth.entity_id],
-            "admins": [auth.entity_id],
-        }
-
-        # Add user_id to access_control if present (for proper user_id scoping)
-        if auth.user_id:
-            # User ID must be provided as a list to match the Graph model's type constraints
-            access_control["user_id"] = [auth.user_id]
-
-        # Ensure entity_type is a string value for storage
-        entity_type = auth.entity_type.value if hasattr(auth.entity_type, "value") else auth.entity_type
-
+        # Create a new graph
         graph = Graph(
             name=name,
             document_ids=[doc.external_id for doc in document_objects],
             filters=filters,
-            owner={"type": entity_type, "id": auth.entity_id},
-            access_control=access_control,
+            folder_name=system_filters.get("folder_name") if system_filters else None,
+            end_user_id=system_filters.get("end_user_id") if system_filters else None,
+            app_id=auth.app_id,
         )
-
-        # Add folder_name and end_user_id to system_metadata if provided
-        if system_filters:
-            if "folder_name" in system_filters:
-                graph.system_metadata["folder_name"] = system_filters["folder_name"]
-            if "end_user_id" in system_filters:
-                graph.system_metadata["end_user_id"] = system_filters["end_user_id"]
-
-        # NEW: Add app_id to system_metadata when operating under a developer-scoped token
-        if auth.app_id:
-            graph.system_metadata["app_id"] = auth.app_id
 
         # Extract entities and relationships
         entities, relationships = await self._process_documents_for_entities(
@@ -510,7 +486,7 @@ class GraphService:
         graph.system_metadata["status"] = "completed"
 
         # Store the graph in the database
-        if not await self.db.store_graph(graph):
+        if not await self.db.store_graph(graph, auth):
             raise Exception("Failed to store graph")
 
         return graph

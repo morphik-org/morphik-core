@@ -263,6 +263,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         image_urls: List[str],
         request: CompletionRequest,
         history_messages: List[Dict[str, str]],
+        model_config: Optional[Dict[str, Any]] = None,
     ) -> CompletionResponse:
         """Handle structured output generation with LiteLLM."""
         import instructor
@@ -277,7 +278,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
 
             # Add images if available
             if image_urls:
-                NUM_IMAGES = min(5, len(image_urls))
+                NUM_IMAGES = len(image_urls)
                 for img_url in image_urls[:NUM_IMAGES]:
                     content_list.append({"type": "image_url", "image_url": {"url": img_url}})
 
@@ -285,8 +286,9 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             messages = [system_message] + history_messages + [{"role": "user", "content": content_list}]
 
             # Extract model configuration
-            model = self.model_config.get("model_name")
-            model_kwargs = {k: v for k, v in self.model_config.items() if k != "model_name"}
+            config = model_config or self.model_config
+            model = config.get("model", config.get("model_name", ""))
+            model_kwargs = {k: v for k, v in config.items() if k not in ["model", "model_name"]}
 
             # Override with completion request parameters
             if request.temperature is not None:
@@ -382,15 +384,20 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         image_urls: List[str],
         request: CompletionRequest,
         history_messages: List[Dict[str, str]],
+        model_config: Optional[Dict[str, Any]] = None,
     ) -> CompletionResponse:
         """Handle standard (non-structured) output generation with LiteLLM."""
-        logger.debug(f"Using LiteLLM for model: {self.model_config['model_name']}")
+        # Use provided model_config or fall back to instance config
+        config = model_config or self.model_config
+        model_name = config.get("model", config.get("model_name", ""))
+
+        logger.debug(f"Using LiteLLM for model: {model_name}")
         # Build messages for LiteLLM
         content_list = [{"type": "text", "text": user_content}]
         include_images = image_urls  # Use the collected full data URIs
 
         if include_images:
-            NUM_IMAGES = min(5, len(image_urls))
+            NUM_IMAGES = len(image_urls)
             for img_url in image_urls[:NUM_IMAGES]:
                 content_list.append({"type": "image_url", "image_url": {"url": img_url}})
 
@@ -401,15 +408,16 @@ class LiteLLMCompletionModel(BaseCompletionModel):
 
         # Prepare LiteLLM parameters
         model_params = {
-            "model": self.model_config["model_name"],
+            "model": model_name,
             "messages": litellm_messages,
             "max_tokens": request.max_tokens,
             "temperature": request.temperature,
             "num_retries": 3,
         }
 
-        for key, value in self.model_config.items():
-            if key != "model_name":
+        # Add additional parameters from config
+        for key, value in config.items():
+            if key not in ["model", "model_name"]:
                 model_params[key] = value
 
         logger.debug(f"Calling LiteLLM with params: {model_params}")
@@ -431,15 +439,20 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         image_urls: List[str],
         request: CompletionRequest,
         history_messages: List[Dict[str, str]],
+        model_config: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[str, None]:
         """Handle streaming output generation with LiteLLM."""
-        logger.debug(f"Using LiteLLM streaming for model: {self.model_config['model_name']}")
+        # Use provided model_config or fall back to instance config
+        config = model_config or self.model_config
+        model_name = config.get("model", config.get("model_name", ""))
+
+        logger.debug(f"Using LiteLLM streaming for model: {model_name}")
         # Build messages for LiteLLM
         content_list = [{"type": "text", "text": user_content}]
         include_images = image_urls  # Use the collected full data URIs
 
         if include_images:
-            NUM_IMAGES = min(5, len(image_urls))
+            NUM_IMAGES = len(image_urls)
             for img_url in image_urls[:NUM_IMAGES]:
                 content_list.append({"type": "image_url", "image_url": {"url": img_url}})
 
@@ -450,7 +463,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
 
         # Prepare LiteLLM parameters
         model_params = {
-            "model": self.model_config["model_name"],
+            "model": model_name,
             "messages": litellm_messages,
             "max_tokens": request.max_tokens,
             "temperature": request.temperature,
@@ -458,8 +471,9 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             "num_retries": 3,
         }
 
-        for key, value in self.model_config.items():
-            if key != "model_name":
+        # Add additional parameters from config
+        for key, value in config.items():
+            if key not in ["model", "model_name"]:
                 model_params[key] = value
 
         logger.debug(f"Calling LiteLLM streaming with params: {model_params}")
@@ -527,8 +541,18 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             CompletionResponse object with the generated text and usage statistics or
             AsyncGenerator for streaming responses
         """
+        # Use llm_config from request if provided, otherwise use instance config
+        if request.llm_config:
+            # Create a temporary instance with the custom model config
+            model_config = request.llm_config
+            is_ollama = "ollama" in model_config.get("model", "").lower()
+        else:
+            # Use the instance's pre-configured model
+            model_config = self.model_config
+            is_ollama = self.is_ollama
+
         # Process context chunks and handle images
-        context_text, image_urls, ollama_image_data = process_context_chunks(request.context_chunks, self.is_ollama)
+        context_text, image_urls, ollama_image_data = process_context_chunks(request.context_chunks, is_ollama)
 
         # Format user content
         user_content = format_user_content(context_text, request.query, request.prompt_template)
@@ -545,10 +569,10 @@ class LiteLLMCompletionModel(BaseCompletionModel):
 
         # If streaming is requested and no structured output
         if request.stream_response and not structured_output:
-            if self.is_ollama:
+            if is_ollama:
                 return self._handle_streaming_ollama(user_content, ollama_image_data, request, history_messages)
             else:
-                return self._handle_streaming_litellm(user_content, image_urls, request, history_messages)
+                return self._handle_streaming_litellm(user_content, image_urls, request, history_messages, model_config)
 
         # If structured output is requested, use instructor to handle it
         if structured_output:
@@ -575,7 +599,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
                 )
 
                 # Try structured output based on model type
-                if self.is_ollama:
+                if is_ollama:
                     response = await self._handle_structured_ollama(
                         dynamic_model,
                         system_message,
@@ -595,6 +619,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
                         image_urls,
                         request,
                         history_messages,
+                        model_config,
                     )
                     if response:
                         return response
@@ -602,7 +627,9 @@ class LiteLLMCompletionModel(BaseCompletionModel):
 
         # If we're here, either structured output wasn't requested or instructor failed
         # Proceed with standard completion based on model type
-        if self.is_ollama:
+        if is_ollama:
             return await self._handle_standard_ollama(user_content, ollama_image_data, request, history_messages)
         else:
-            return await self._handle_standard_litellm(user_content, image_urls, request, history_messages)
+            return await self._handle_standard_litellm(
+                user_content, image_urls, request, history_messages, model_config
+            )

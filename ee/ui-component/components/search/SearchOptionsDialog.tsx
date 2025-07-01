@@ -18,19 +18,17 @@ import {
 import { Settings } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-import { SearchOptions, Folder } from "@/components/types";
+import { SearchOptions, FolderSummary } from "@/components/types";
 
-// Define an extended search options type that includes folder_name
-interface ExtendedSearchOptions extends SearchOptions {
-  folder_name?: string;
-}
+// ExtendedSearchOptions currently equals SearchOptions, kept for future extension.
+type ExtendedSearchOptions = SearchOptions;
 
 interface SearchOptionsDialogProps {
   showSearchAdvanced: boolean;
   setShowSearchAdvanced: (show: boolean) => void;
   searchOptions: ExtendedSearchOptions;
   updateSearchOption: <K extends keyof SearchOptions>(key: K, value: SearchOptions[K]) => void;
-  folders: Folder[];
+  folders: FolderSummary[];
 }
 
 const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
@@ -50,6 +48,10 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
       updateSearchOption("k", searchOptions.k);
     }
   };
+
+  const folderValue = Array.isArray(searchOptions.folder_name)
+    ? searchOptions.folder_name[0]
+    : searchOptions.folder_name;
 
   return (
     <Dialog open={showSearchAdvanced} onOpenChange={setShowSearchAdvanced}>
@@ -129,11 +131,30 @@ const SearchOptionsDialog: React.FC<SearchOptionsDialogProps> = ({
             />
           </div>
 
+          {searchOptions.use_colpali && (
+            <div>
+              <Label htmlFor="search-padding" className="mb-2 block">
+                Padding: {searchOptions.padding || 0}
+              </Label>
+              <Input
+                id="search-padding"
+                type="number"
+                min={0}
+                max={10}
+                value={searchOptions.padding || 0}
+                onChange={e => updateSearchOption("padding", parseInt(e.target.value) || 0)}
+              />
+              <p className="mt-1 text-sm text-muted-foreground">
+                Number of additional pages to retrieve before and after matched pages (ColPali only)
+              </p>
+            </div>
+          )}
+
           <div>
             <Label htmlFor="folderName" className="mb-2 block">
               Scope to Folder
             </Label>
-            <Select value={searchOptions.folder_name || "__none__"} onValueChange={handleFolderChange}>
+            <Select value={folderValue || "__none__"} onValueChange={handleFolderChange}>
               <SelectTrigger className="w-full" id="folderName">
                 <SelectValue placeholder="Select a folder" />
               </SelectTrigger>

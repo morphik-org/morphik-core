@@ -1,8 +1,10 @@
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import time
+import traceback
 import urllib.parse as up
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
@@ -101,6 +103,42 @@ async def get_document_with_retry(document_service, document_id, auth, max_retri
     return None
 
 
+# ---------------------------------------------------------------------------
+# Profiling helpers (worker-level)
+# ---------------------------------------------------------------------------
+
+if os.getenv("ENABLE_PROFILING") == "1":
+    try:
+        import yappi  # type: ignore
+    except ImportError:
+        yappi = None
+else:
+    yappi = None
+
+
+@contextlib.asynccontextmanager
+async def _profile_ctx(label: str):  # type: ignore
+    if yappi is None:
+        yield
+        return
+
+    yappi.clear_stats()
+    yappi.set_clock_type("cpu")
+    yappi.start()
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        duration = time.perf_counter() - t0
+        fname = f"logs/worker_{label}_{int(t0)}.prof"
+        yappi.stop()
+        try:
+            yappi.get_func_stats().save(fname, type="pstat")
+            logger.info("Saved worker profile %s (%.2fs) to %s", label, duration, fname)
+        except Exception as exc:
+            logger.warning("Could not save worker profile: %s", exc)
+
+
 async def process_ingestion_job(
     ctx: Dict[str, Any],
     document_id: str,
@@ -134,448 +172,492 @@ async def process_ingestion_job(
     Returns:
         A dictionary with the document ID and processing status
     """
-    try:
-        # Start performance timer
-        job_start_time = time.time()
-        phase_times = {}
-        # 1. Log the start of the job
-        logger.info(f"Starting ingestion job for file: {original_filename}")
+    telemetry = TelemetryService()
 
-        # 2. Deserialize metadata and auth
-        deserialize_start = time.time()
-        metadata = json.loads(metadata_json) if metadata_json else {}
-        auth = AuthContext(
-            entity_type=EntityType(auth_dict.get("entity_type", "unknown")),
-            entity_id=auth_dict.get("entity_id", ""),
-            app_id=auth_dict.get("app_id"),
-            permissions=set(auth_dict.get("permissions", ["read"])),
-            user_id=auth_dict.get("user_id", auth_dict.get("entity_id", "")),
-        )
-        phase_times["deserialize_auth"] = time.time() - deserialize_start
-
-        # ------------------------------------------------------------------
-        # Per-app routing for database and vector store
-        # ------------------------------------------------------------------
-
-        # Resolve a dedicated database/vector-store using the JWT *app_id*.
-        # When app_id is None we fall back to the control-plane resources.
-
-        database = await get_database_for_app(auth.app_id)
-        await database.initialize()
-
-        vector_store = await get_vector_store_for_app(auth.app_id)
-        if vector_store and hasattr(vector_store, "initialize"):
-            # PGVectorStore.initialize is *async*
-            try:
-                await vector_store.initialize()
-            except Exception as init_err:
-                logger.warning(f"Vector store initialization failed for app {auth.app_id}: {init_err}")
-
-        # Initialise a per-app MultiVectorStore for ColPali when needed
-        colpali_vector_store = None
-        if use_colpali:
-            try:
-                # Use render_as_string(hide_password=False) so the URI keeps the
-                # password – str(engine.url) masks it with "***" which breaks
-                # authentication for psycopg.  Also append sslmode=require when
-                # missing to satisfy Neon.
-                from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
-
-                uri_raw = database.engine.url.render_as_string(hide_password=False)
-
-                parsed = urlparse(uri_raw)
-                query = parse_qs(parsed.query)
-                if "sslmode" not in query and settings.MODE == "cloud":
-                    query["sslmode"] = ["require"]
-                    parsed = parsed._replace(query=urlencode(query, doseq=True))
-
-                uri_final = urlunparse(parsed)
-
-                colpali_vector_store = MultiVectorStore(uri=uri_final)
-                await asyncio.to_thread(colpali_vector_store.initialize)
-            except Exception as e:
-                logger.warning(f"Failed to initialise ColPali MultiVectorStore for app {auth.app_id}: {e}")
-
-        # Build a fresh DocumentService scoped to this job/app so we don't
-        # mutate the shared instance kept in *ctx* (avoids cross-talk between
-        # concurrent jobs for different apps).
-        document_service = DocumentService(
-            storage=ctx["storage"],
-            database=database,
-            vector_store=vector_store,
-            embedding_model=ctx["embedding_model"],
-            parser=ctx["parser"],
-            cache_factory=None,
-            enable_colpali=use_colpali,
-            colpali_embedding_model=ctx.get("colpali_embedding_model"),
-            colpali_vector_store=colpali_vector_store,
-        )
-
-        # 3. Download the file from storage
-        logger.info(f"Downloading file from {bucket}/{file_key}")
-        download_start = time.time()
-        file_content = await document_service.storage.download_file(bucket, file_key)
-
-        # Ensure file_content is bytes
-        if hasattr(file_content, "read"):
-            file_content = file_content.read()
-        download_time = time.time() - download_start
-        phase_times["download_file"] = download_time
-        logger.info(f"File download took {download_time:.2f}s for {len(file_content)/1024/1024:.2f}MB")
-
-        # 4. Parse file to text
-        # Use the filename derived from the storage key so the parser
-        # receives the correct extension (.txt, .pdf, etc.).  Passing the UI
-        # provided original_filename (often .pdf) can mislead the parser when
-        # the stored object is a pre-extracted text file (e.g. .pdf.txt).
-        parse_filename = os.path.basename(file_key) if file_key else original_filename
-
-        parse_start = time.time()
-        additional_metadata, text = await document_service.parser.parse_file_to_text(file_content, parse_filename)
-        logger.debug(f"Parsed file into text of length {len(text)} (filename used: {parse_filename})")
-        parse_time = time.time() - parse_start
-        phase_times["parse_file"] = parse_time
-
-        # NEW -----------------------------------------------------------------
-        # Estimate pages early for pre-check
-        num_pages_estimated = estimate_pages_by_chars(len(text))
-
-        # 4.b Enforce tier limits (pages ingested) for cloud/free tier users
-        if settings.MODE == "cloud" and auth.user_id:
-            # Calculate approximate pages using same heuristic as DocumentService
-            try:
-                # Dry-run verification before heavy processing
-                await check_and_increment_limits(
-                    auth,
-                    "ingest",
-                    num_pages_estimated,
-                    document_id,
-                    verify_only=True,
-                )
-            except Exception as limit_exc:
-                logger.error("User %s exceeded ingest limits: %s", auth.user_id, limit_exc)
-                raise
-        # ---------------------------------------------------------------------
-
-        # === Apply post_parsing rules ===
-        rules_start = time.time()
-        document_rule_metadata = {}
-        if rules_list:
-            logger.info("Applying post-parsing rules...")
-            document_rule_metadata, text = await document_service.rules_processor.process_document_rules(
-                text, rules_list
-            )
-            metadata.update(document_rule_metadata)  # Merge metadata into main doc metadata
-            logger.info(f"Document metadata after post-parsing rules: {metadata}")
-            logger.info(f"Content length after post-parsing rules: {len(text)}")
-        rules_time = time.time() - rules_start
-        phase_times["apply_post_parsing_rules"] = rules_time
-        if rules_list:
-            logger.info(f"Post-parsing rules processing took {rules_time:.2f}s")
-
-        # 6. Retrieve the existing document
-        retrieve_start = time.time()
-        logger.debug(f"Retrieving document with ID: {document_id}")
-        logger.debug(
-            f"Auth context: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}"
-        )
-
-        # Use the retry helper function with initial delay to handle race conditions
-        doc = await get_document_with_retry(document_service, document_id, auth, max_retries=5, initial_delay=1.0)
-        retrieve_time = time.time() - retrieve_start
-        phase_times["retrieve_document"] = retrieve_time
-        logger.info(f"Document retrieval took {retrieve_time:.2f}s")
-
-        if not doc:
-            logger.error(f"Document {document_id} not found in database after multiple retries")
-            logger.error(
-                f"Details - file: {original_filename}, content_type: {content_type}, bucket: {bucket}, key: {file_key}"
-            )
-            logger.error(
-                f"Auth: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}"
-            )
-            raise ValueError(f"Document {document_id} not found in database after multiple retries")
-
-        # Prepare updates for the document
-        # Merge new metadata with existing metadata to preserve external_id
-        merged_metadata = {**doc.metadata, **metadata}
-        # Make sure external_id is preserved in the metadata
-        merged_metadata["external_id"] = doc.external_id
-
-        updates = {
-            "metadata": merged_metadata,
-            "additional_metadata": additional_metadata,
-            "system_metadata": {**doc.system_metadata, "content": text},
+    # Build metadata resolver inline to capture key fields
+    def _meta_resolver(*_a, **_kw):  # noqa: D401
+        return {
+            "filename": original_filename,
+            "content_type": content_type,
+            "folder_name": folder_name,
+            "end_user_id": end_user_id,
+            "use_colpali": use_colpali,
         }
 
-        # Add folder_name and end_user_id to system_metadata if provided
-        if folder_name:
-            updates["system_metadata"]["folder_name"] = folder_name
-        if end_user_id:
-            updates["system_metadata"]["end_user_id"] = end_user_id
+    try:
+        async with telemetry.track_operation(
+            operation_type="ingest_worker",
+            user_id=auth_dict.get("entity_id", "unknown"),
+            app_id=auth_dict.get("app_id"),
+            metadata=_meta_resolver(),
+        ):
+            # Start performance timer
+            job_start_time = time.time()
+            phase_times = {}
+            # 1. Log the start of the job
+            logger.info(f"Starting ingestion job for file: {original_filename}")
 
-        # Update the document in the database
-        update_start = time.time()
-        success = await document_service.db.update_document(document_id=document_id, updates=updates, auth=auth)
-        update_time = time.time() - update_start
-        phase_times["update_document_parsed"] = update_time
-        logger.info(f"Initial document update took {update_time:.2f}s")
-
-        if not success:
-            raise ValueError(f"Failed to update document {document_id}")
-
-        # Refresh document object with updated data
-        doc = await document_service.db.get_document(document_id, auth)
-        logger.debug("Updated document in database with parsed content")
-
-        # 7. Split text into chunks
-        chunking_start = time.time()
-        parsed_chunks = await document_service.parser.split_text(text)
-        if not parsed_chunks:
-            # No text was extracted from the file.  In many cases (e.g. pure images)
-            # we can still proceed if ColPali multivector chunks are produced later.
-            # Therefore we defer the fatal check until after ColPali chunk creation.
-            logger.warning(
-                "No text chunks extracted after parsing. Will attempt to continue "
-                "and rely on image-based chunks if available."
+            # 2. Deserialize metadata and auth
+            deserialize_start = time.time()
+            metadata = json.loads(metadata_json) if metadata_json else {}
+            auth = AuthContext(
+                entity_type=EntityType(auth_dict.get("entity_type", "unknown")),
+                entity_id=auth_dict.get("entity_id", ""),
+                app_id=auth_dict.get("app_id"),
+                permissions=set(auth_dict.get("permissions", ["read"])),
+                user_id=auth_dict.get("user_id", auth_dict.get("entity_id", "")),
             )
-        chunking_time = time.time() - chunking_start
-        phase_times["split_into_chunks"] = chunking_time
-        logger.info(f"Text chunking took {chunking_time:.2f}s to create {len(parsed_chunks)} chunks")
+            phase_times["deserialize_auth"] = time.time() - deserialize_start
 
-        # Decide whether we need image chunks either for ColPali embedding or because
-        # there are image-based rules (use_images=True) that must process them.
-        has_image_rules = any(
-            r.get("stage", "post_parsing") == "post_chunking"
-            and r.get("type") == "metadata_extraction"
-            and r.get("use_images", False)
-            for r in rules_list or []
-        )
+            # ------------------------------------------------------------------
+            # Per-app routing for database and vector store
+            # ------------------------------------------------------------------
 
-        using_colpali = (
-            use_colpali and document_service.colpali_embedding_model and document_service.colpali_vector_store
-        )
+            # Resolve a dedicated database/vector-store using the JWT *app_id*.
+            # When app_id is None we fall back to the control-plane resources.
 
-        should_create_image_chunks = has_image_rules or using_colpali
+            database = await get_database_for_app(auth.app_id)
+            await database.initialize()
 
-        # Start timer for optional image chunk creation / multivector processing
-        colpali_processing_start = time.time()
+            vector_store = await get_vector_store_for_app(auth.app_id)
+            if vector_store and hasattr(vector_store, "initialize"):
+                # PGVectorStore.initialize is *async*
+                try:
+                    await vector_store.initialize()
+                except Exception as init_err:
+                    logger.warning(f"Vector store initialization failed for app {auth.app_id}: {init_err}")
 
-        chunks_multivector = []
-        if should_create_image_chunks:
-            import base64
+            # Initialise a per-app MultiVectorStore for ColPali when needed
+            colpali_vector_store = None
+            if use_colpali:
+                try:
+                    # Use render_as_string(hide_password=False) so the URI keeps the
+                    # password – str(engine.url) masks it with "***" which breaks
+                    # authentication for psycopg.  Also append sslmode=require when
+                    # missing to satisfy Neon.
+                    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-            import filetype
+                    uri_raw = database.engine.url.render_as_string(hide_password=False)
 
-            file_type = filetype.guess(file_content)
-            file_content_base64 = base64.b64encode(file_content).decode()
+                    parsed = urlparse(uri_raw)
+                    query = parse_qs(parsed.query)
+                    if "sslmode" not in query and settings.MODE == "cloud":
+                        query["sslmode"] = ["require"]
+                        parsed = parsed._replace(query=urlencode(query, doseq=True))
 
-            # Use the parsed chunks for ColPali/image rules – this will create image chunks if appropriate
-            chunks_multivector = document_service._create_chunks_multivector(
-                file_type, file_content_base64, file_content, parsed_chunks
+                    uri_final = urlunparse(parsed)
+
+                    colpali_vector_store = MultiVectorStore(uri=uri_final)
+                    await asyncio.to_thread(colpali_vector_store.initialize)
+                except Exception as e:
+                    logger.warning(f"Failed to initialise ColPali MultiVectorStore for app {auth.app_id}: {e}")
+
+            # Build a fresh DocumentService scoped to this job/app so we don't
+            # mutate the shared instance kept in *ctx* (avoids cross-talk between
+            # concurrent jobs for different apps).
+            document_service = DocumentService(
+                storage=ctx["storage"],
+                database=database,
+                vector_store=vector_store,
+                embedding_model=ctx["embedding_model"],
+                parser=ctx["parser"],
+                cache_factory=None,
+                enable_colpali=use_colpali,
+                colpali_embedding_model=ctx.get("colpali_embedding_model"),
+                colpali_vector_store=colpali_vector_store,
             )
-            logger.debug(
-                f"Created {len(chunks_multivector)} multivector/image chunks "
-                f"(has_image_rules={has_image_rules}, using_colpali={using_colpali})"
-            )
-        colpali_create_chunks_time = time.time() - colpali_processing_start
-        phase_times["colpali_create_chunks"] = colpali_create_chunks_time
-        if using_colpali:
-            logger.info(f"Colpali chunk creation took {colpali_create_chunks_time:.2f}s")
 
-        # If we still have no chunks at all (neither text nor image) abort early
-        if not parsed_chunks and not chunks_multivector:
-            raise ValueError("No content chunks (text or image) could be extracted from the document")
+            # 3. Download the file from storage
+            logger.info(f"Downloading file from {bucket}/{file_key}")
+            download_start = time.time()
+            file_content = await document_service.storage.download_file(bucket, file_key)
 
-        # Determine the final page count for recording usage
-        final_page_count = num_pages_estimated  # Default to estimate
-        if using_colpali and chunks_multivector:
-            final_page_count = len(chunks_multivector)
-        final_page_count = max(1, final_page_count)  # Ensure at least 1 page
-        logger.info(
-            f"Determined final page count for usage recording: {final_page_count} pages (ColPali used: {using_colpali})"
-        )
+            # Ensure file_content is bytes
+            if hasattr(file_content, "read"):
+                file_content = file_content.read()
+            download_time = time.time() - download_start
+            phase_times["download_file"] = download_time
+            logger.info(f"File download took {download_time:.2f}s for {len(file_content)/1024/1024:.2f}MB")
 
-        colpali_count_for_limit_fn = len(chunks_multivector) if using_colpali else None
+            # 4. Parse file to text
+            # Use the filename derived from the storage key so the parser
+            # receives the correct extension (.txt, .pdf, etc.).  Passing the UI
+            # provided original_filename (often .pdf) can mislead the parser when
+            # the stored object is a pre-extracted text file (e.g. .pdf.txt).
+            parse_filename = os.path.basename(file_key) if file_key else original_filename
 
-        # 9. Apply post_chunking rules and aggregate metadata
-        processed_chunks = []
-        processed_chunks_multivector = []
-        aggregated_chunk_metadata: Dict[str, Any] = {}  # Initialize dict for aggregated metadata
-        chunk_contents = []  # Initialize list to collect chunk contents as we process them
+            parse_start = time.time()
+            additional_metadata, text = await document_service.parser.parse_file_to_text(file_content, parse_filename)
+            # Clean the extracted text to remove problematic escape characters (e.g., null bytes)
+            # PostgreSQL does not allow \x00 (null byte) or \u0000 in text fields
+            import re
 
-        if rules_list:
-            logger.info("Applying post-chunking rules...")
+            text = re.sub(r"[\x00\u0000]", "", text)
+            # Optionally, remove other non-printable or control characters except newlines/tabs
+            text = re.sub(r"[^\x09\x0A\x0D\x20-\x7E]", "", text)
 
-            # Partition rules by type
-            text_rules = []
-            image_rules = []
+            logger.debug(f"Parsed file into text of length {len(text)} (filename used: {parse_filename})")
+            parse_time = time.time() - parse_start
+            phase_times["parse_file"] = parse_time
 
-            for rule_dict in rules_list:
-                rule = document_service.rules_processor._parse_rule(rule_dict)
-                if rule.stage == "post_chunking":
-                    if isinstance(rule, MetadataExtractionRule) and rule.use_images:
-                        image_rules.append(rule_dict)
-                    else:
-                        text_rules.append(rule_dict)
+            # NEW -----------------------------------------------------------------
+            # Estimate pages early for pre-check
+            num_pages_estimated = estimate_pages_by_chars(len(text))
 
-            logger.info(f"Partitioned rules: {len(text_rules)} text rules, {len(image_rules)} image rules")
-
-            # Process regular text chunks with text rules only
-            if text_rules:
-                logger.info(f"Applying {len(text_rules)} text rules to text chunks...")
-                for chunk_obj in parsed_chunks:
-                    # Get metadata *and* the potentially modified chunk
-                    chunk_rule_metadata, processed_chunk = await document_service.rules_processor.process_chunk_rules(
-                        chunk_obj, text_rules
+            # 4.b Enforce tier limits (pages ingested) for cloud/free tier users
+            if settings.MODE == "cloud" and auth.user_id:
+                # Calculate approximate pages using same heuristic as DocumentService
+                try:
+                    # Dry-run verification before heavy processing
+                    await check_and_increment_limits(
+                        auth,
+                        "ingest",
+                        num_pages_estimated,
+                        document_id,
+                        verify_only=True,
                     )
-                    processed_chunks.append(processed_chunk)
-                    chunk_contents.append(processed_chunk.content)  # Collect content as we process
-                    # Aggregate the metadata extracted from this chunk
-                    aggregated_chunk_metadata.update(chunk_rule_metadata)
-            else:
-                processed_chunks = parsed_chunks  # No text rules, use original chunks
+                except Exception as limit_exc:
+                    logger.error("User %s exceeded ingest limits: %s", auth.user_id, limit_exc)
+                    raise
+            # ---------------------------------------------------------------------
 
-            # Process colpali image chunks with image rules if they exist
-            if chunks_multivector and image_rules:
-                logger.info(f"Applying {len(image_rules)} image rules to image chunks...")
-                for chunk_obj in chunks_multivector:
-                    # Only process if it's an image chunk - pass the image content to the rule
-                    if chunk_obj.metadata.get("is_image", False):
+            # === Apply post_parsing rules ===
+            rules_start = time.time()
+            document_rule_metadata = {}
+            if rules_list:
+                logger.info("Applying post-parsing rules...")
+                document_rule_metadata, text = await document_service.rules_processor.process_document_rules(
+                    text, rules_list
+                )
+                metadata.update(document_rule_metadata)  # Merge metadata into main doc metadata
+                logger.info(f"Document metadata after post-parsing rules: {metadata}")
+                logger.info(f"Content length after post-parsing rules: {len(text)}")
+            rules_time = time.time() - rules_start
+            phase_times["apply_post_parsing_rules"] = rules_time
+            if rules_list:
+                logger.info(f"Post-parsing rules processing took {rules_time:.2f}s")
+
+            # 6. Retrieve the existing document
+            retrieve_start = time.time()
+            logger.debug(f"Retrieving document with ID: {document_id}")
+            logger.debug(
+                f"Auth context: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}"
+            )
+
+            # Use the retry helper function with initial delay to handle race conditions
+            doc = await get_document_with_retry(document_service, document_id, auth, max_retries=5, initial_delay=1.0)
+            retrieve_time = time.time() - retrieve_start
+            phase_times["retrieve_document"] = retrieve_time
+            logger.info(f"Document retrieval took {retrieve_time:.2f}s")
+
+            if not doc:
+                logger.error(f"Document {document_id} not found in database after multiple retries")
+                logger.error(
+                    f"Details - file: {original_filename}, content_type: {content_type}, bucket: {bucket}, key: {file_key}"
+                )
+                logger.error(
+                    f"Auth: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}"
+                )
+                raise ValueError(f"Document {document_id} not found in database after multiple retries")
+
+            # Prepare updates for the document
+            # Merge new metadata with existing metadata to preserve external_id
+            merged_metadata = {**doc.metadata, **metadata}
+            # Make sure external_id is preserved in the metadata
+            merged_metadata["external_id"] = doc.external_id
+
+            updates = {
+                "metadata": merged_metadata,
+                "additional_metadata": additional_metadata,
+                "system_metadata": {**doc.system_metadata, "content": text},
+            }
+
+            # Add folder_name and end_user_id to updates if provided
+            if folder_name:
+                updates["folder_name"] = folder_name
+            if end_user_id:
+                updates["end_user_id"] = end_user_id
+
+            # Update the document in the database
+            update_start = time.time()
+            success = await document_service.db.update_document(document_id=document_id, updates=updates, auth=auth)
+            update_time = time.time() - update_start
+            phase_times["update_document_parsed"] = update_time
+            logger.info(f"Initial document update took {update_time:.2f}s")
+
+            if not success:
+                raise ValueError(f"Failed to update document {document_id}")
+
+            # Refresh document object with updated data
+            doc = await document_service.db.get_document(document_id, auth)
+            logger.debug("Updated document in database with parsed content")
+
+            # 7. Split text into chunks
+            chunking_start = time.time()
+            parsed_chunks = await document_service.parser.split_text(text)
+            if not parsed_chunks:
+                # No text was extracted from the file.  In many cases (e.g. pure images)
+                # we can still proceed if ColPali multivector chunks are produced later.
+                # Therefore we defer the fatal check until after ColPali chunk creation.
+                logger.warning(
+                    "No text chunks extracted after parsing. Will attempt to continue "
+                    "and rely on image-based chunks if available."
+                )
+            chunking_time = time.time() - chunking_start
+            phase_times["split_into_chunks"] = chunking_time
+            logger.info(f"Text chunking took {chunking_time:.2f}s to create {len(parsed_chunks)} chunks")
+
+            # Decide whether we need image chunks either for ColPali embedding or because
+            # there are image-based rules (use_images=True) that must process them.
+            has_image_rules = any(
+                r.get("stage", "post_parsing") == "post_chunking"
+                and r.get("type") == "metadata_extraction"
+                and r.get("use_images", False)
+                for r in rules_list or []
+            )
+
+            using_colpali = (
+                use_colpali and document_service.colpali_embedding_model and document_service.colpali_vector_store
+            )
+
+            should_create_image_chunks = has_image_rules or using_colpali
+
+            # Start timer for optional image chunk creation / multivector processing
+            colpali_processing_start = time.time()
+
+            chunks_multivector = []
+            if should_create_image_chunks:
+                import base64
+
+                import filetype
+
+                file_type = filetype.guess(file_content)
+                file_content_base64 = base64.b64encode(file_content).decode()
+
+                # Use the parsed chunks for ColPali/image rules – this will create image chunks if appropriate
+                chunks_multivector = document_service._create_chunks_multivector(
+                    file_type, file_content_base64, file_content, parsed_chunks
+                )
+                logger.debug(
+                    f"Created {len(chunks_multivector)} multivector/image chunks "
+                    f"(has_image_rules={has_image_rules}, using_colpali={using_colpali})"
+                )
+            colpali_create_chunks_time = time.time() - colpali_processing_start
+            phase_times["colpali_create_chunks"] = colpali_create_chunks_time
+            if using_colpali:
+                logger.info(f"Colpali chunk creation took {colpali_create_chunks_time:.2f}s")
+
+            # If we still have no chunks at all (neither text nor image) abort early
+            if not parsed_chunks and not chunks_multivector:
+                raise ValueError("No content chunks (text or image) could be extracted from the document")
+
+            # Determine the final page count for recording usage
+            final_page_count = num_pages_estimated  # Default to estimate
+            if using_colpali and chunks_multivector:
+                final_page_count = len(chunks_multivector)
+            final_page_count = max(1, final_page_count)  # Ensure at least 1 page
+            logger.info(
+                f"Determined final page count for usage recording: {final_page_count} pages (ColPali used: {using_colpali})"
+            )
+
+            colpali_count_for_limit_fn = len(chunks_multivector) if using_colpali else None
+
+            # 9. Apply post_chunking rules and aggregate metadata
+            processed_chunks = []
+            processed_chunks_multivector = []
+            aggregated_chunk_metadata: Dict[str, Any] = {}  # Initialize dict for aggregated metadata
+            chunk_contents = []  # Initialize list to collect chunk contents as we process them
+
+            if rules_list:
+                logger.info("Applying post-chunking rules...")
+
+                # Partition rules by type
+                text_rules = []
+                image_rules = []
+
+                for rule_dict in rules_list:
+                    rule = document_service.rules_processor._parse_rule(rule_dict)
+                    if rule.stage == "post_chunking":
+                        if isinstance(rule, MetadataExtractionRule) and rule.use_images:
+                            image_rules.append(rule_dict)
+                        else:
+                            text_rules.append(rule_dict)
+
+                logger.info(f"Partitioned rules: {len(text_rules)} text rules, {len(image_rules)} image rules")
+
+                # Process regular text chunks with text rules only
+                if text_rules:
+                    logger.info(f"Applying {len(text_rules)} text rules to text chunks...")
+                    for chunk_obj in parsed_chunks:
                         # Get metadata *and* the potentially modified chunk
                         chunk_rule_metadata, processed_chunk = (
-                            await document_service.rules_processor.process_chunk_rules(chunk_obj, image_rules)
+                            await document_service.rules_processor.process_chunk_rules(chunk_obj, text_rules)
                         )
-                        processed_chunks_multivector.append(processed_chunk)
+                        processed_chunks.append(processed_chunk)
+                        chunk_contents.append(processed_chunk.content)  # Collect content as we process
                         # Aggregate the metadata extracted from this chunk
                         aggregated_chunk_metadata.update(chunk_rule_metadata)
-                    else:
-                        # Non-image chunks from multivector don't need further processing
-                        processed_chunks_multivector.append(chunk_obj)
+                else:
+                    processed_chunks = parsed_chunks  # No text rules, use original chunks
 
-                logger.info(f"Finished applying image rules to {len(processed_chunks_multivector)} image chunks.")
-            elif chunks_multivector:
-                # No image rules, use original multivector chunks
-                processed_chunks_multivector = chunks_multivector
+                # Process colpali image chunks with image rules if they exist
+                if chunks_multivector and image_rules:
+                    logger.info(f"Applying {len(image_rules)} image rules to image chunks...")
+                    for chunk_obj in chunks_multivector:
+                        # Only process if it's an image chunk - pass the image content to the rule
+                        if chunk_obj.metadata.get("is_image", False):
+                            # Get metadata *and* the potentially modified chunk
+                            chunk_rule_metadata, processed_chunk = (
+                                await document_service.rules_processor.process_chunk_rules(chunk_obj, image_rules)
+                            )
+                            processed_chunks_multivector.append(processed_chunk)
+                            # Aggregate the metadata extracted from this chunk
+                            aggregated_chunk_metadata.update(chunk_rule_metadata)
+                        else:
+                            # Non-image chunks from multivector don't need further processing
+                            processed_chunks_multivector.append(chunk_obj)
 
-            logger.info(f"Finished applying post-chunking rules to {len(processed_chunks)} regular chunks.")
-            logger.info(f"Aggregated metadata from all chunks: {aggregated_chunk_metadata}")
+                    logger.info(f"Finished applying image rules to {len(processed_chunks_multivector)} image chunks.")
+                elif chunks_multivector:
+                    # No image rules, use original multivector chunks
+                    processed_chunks_multivector = chunks_multivector
 
-            # Update the document content with the stitched content from processed chunks
-            if processed_chunks:
-                logger.info("Updating document content with processed chunks...")
-                stitched_content = "\n".join(chunk_contents)
-                doc.system_metadata["content"] = stitched_content
-                logger.info(f"Updated document content with stitched chunks (length: {len(stitched_content)})")
-        else:
-            processed_chunks = parsed_chunks  # No rules, use original chunks
-            processed_chunks_multivector = chunks_multivector  # No rules, use original multivector chunks
+                logger.info(f"Finished applying post-chunking rules to {len(processed_chunks)} regular chunks.")
+                logger.info(f"Aggregated metadata from all chunks: {aggregated_chunk_metadata}")
 
-        # 10. Generate embeddings for processed chunks
-        embedding_start = time.time()
-        embeddings = await document_service.embedding_model.embed_for_ingestion(processed_chunks)
-        logger.debug(f"Generated {len(embeddings)} embeddings")
-        embedding_time = time.time() - embedding_start
-        phase_times["generate_embeddings"] = embedding_time
-        embeddings_per_second = len(embeddings) / embedding_time if embedding_time > 0 else 0
-        logger.info(
-            f"Embedding generation took {embedding_time:.2f}s for {len(embeddings)} embeddings "
-            f"({embeddings_per_second:.2f} embeddings/s)"
-        )
+                # Update the document content with the stitched content from processed chunks
+                if processed_chunks:
+                    logger.info("Updating document content with processed chunks...")
+                    stitched_content = "\n".join(chunk_contents)
+                    doc.system_metadata["content"] = stitched_content
+                    logger.info(f"Updated document content with stitched chunks (length: {len(stitched_content)})")
+            else:
+                processed_chunks = parsed_chunks  # No rules, use original chunks
+                processed_chunks_multivector = chunks_multivector  # No rules, use original multivector chunks
 
-        # 11. Create chunk objects with potentially modified chunk content and metadata
-        chunk_objects_start = time.time()
-        chunk_objects = document_service._create_chunk_objects(doc.external_id, processed_chunks, embeddings)
-        logger.debug(f"Created {len(chunk_objects)} chunk objects")
-        chunk_objects_time = time.time() - chunk_objects_start
-        phase_times["create_chunk_objects"] = chunk_objects_time
-        logger.debug(f"Creating chunk objects took {chunk_objects_time:.2f}s")
-
-        # 12. Handle ColPali embeddings
-        colpali_embed_start = time.time()
-        chunk_objects_multivector = []
-        if using_colpali:
-            colpali_embeddings = await document_service.colpali_embedding_model.embed_for_ingestion(
-                processed_chunks_multivector
-            )
-            logger.debug(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
-
-            chunk_objects_multivector = document_service._create_chunk_objects(
-                doc.external_id, processed_chunks_multivector, colpali_embeddings
-            )
-        colpali_embed_time = time.time() - colpali_embed_start
-        phase_times["colpali_generate_embeddings"] = colpali_embed_time
-        if using_colpali:
-            embeddings_per_second = len(colpali_embeddings) / colpali_embed_time if colpali_embed_time > 0 else 0
+            # 10. Generate embeddings for processed chunks
+            embedding_start = time.time()
+            embeddings = await document_service.embedding_model.embed_for_ingestion(processed_chunks)
+            logger.debug(f"Generated {len(embeddings)} embeddings")
+            embedding_time = time.time() - embedding_start
+            phase_times["generate_embeddings"] = embedding_time
+            embeddings_per_second = len(embeddings) / embedding_time if embedding_time > 0 else 0
             logger.info(
-                f"Colpali embedding took {colpali_embed_time:.2f}s for {len(colpali_embeddings)} embeddings "
+                f"Embedding generation took {embedding_time:.2f}s for {len(embeddings)} embeddings "
                 f"({embeddings_per_second:.2f} embeddings/s)"
             )
 
-        # === Merge aggregated chunk metadata into document metadata ===
-        if aggregated_chunk_metadata:
-            logger.info("Merging aggregated chunk metadata into document metadata...")
-            # Make sure doc.metadata exists
-            if not hasattr(doc, "metadata") or doc.metadata is None:
-                doc.metadata = {}
-            doc.metadata.update(aggregated_chunk_metadata)
-            logger.info(f"Final document metadata after merge: {doc.metadata}")
-        # ===========================================================
+            # 11. Create chunk objects with potentially modified chunk content and metadata
+            chunk_objects_start = time.time()
+            chunk_objects = document_service._create_chunk_objects(doc.external_id, processed_chunks, embeddings)
+            logger.debug(f"Created {len(chunk_objects)} chunk objects")
+            chunk_objects_time = time.time() - chunk_objects_start
+            phase_times["create_chunk_objects"] = chunk_objects_time
+            logger.debug(f"Creating chunk objects took {chunk_objects_time:.2f}s")
 
-        # Update document status to completed before storing
-        doc.system_metadata["status"] = "completed"
-        doc.system_metadata["updated_at"] = datetime.now(UTC)
-
-        # 11. Store chunks and update document with is_update=True
-        store_start = time.time()
-        await document_service._store_chunks_and_doc(
-            chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
-        )
-        store_time = time.time() - store_start
-        phase_times["store_chunks_and_update_doc"] = store_time
-        logger.info(f"Storing chunks and final document update took {store_time:.2f}s for {len(chunk_objects)} chunks")
-
-        logger.debug(f"Successfully completed processing for document {doc.external_id}")
-
-        # 13. Log successful completion
-        logger.info(f"Successfully completed ingestion for {original_filename}, document ID: {doc.external_id}")
-        # Performance summary
-        total_time = time.time() - job_start_time
-
-        # Log performance summary
-        logger.info("=== Ingestion Performance Summary ===")
-        logger.info(f"Total processing time: {total_time:.2f}s")
-        for phase, duration in sorted(phase_times.items(), key=lambda x: x[1], reverse=True):
-            percentage = (duration / total_time) * 100 if total_time > 0 else 0
-            logger.info(f"  - {phase}: {duration:.2f}s ({percentage:.1f}%)")
-        logger.info("=====================================")
-
-        # Record ingest usage *after* successful completion using the final page count
-        if settings.MODE == "cloud" and auth.user_id:
-            try:
-                await check_and_increment_limits(
-                    auth,
-                    "ingest",
-                    final_page_count,
-                    document_id,
-                    use_colpali=using_colpali,
-                    colpali_chunks_count=colpali_count_for_limit_fn,
+            # 12. Handle ColPali embeddings
+            colpali_embed_start = time.time()
+            chunk_objects_multivector = []
+            if using_colpali:
+                colpali_embeddings = await document_service.colpali_embedding_model.embed_for_ingestion(
+                    processed_chunks_multivector
                 )
-            except Exception as rec_exc:
-                # Log error but don't fail the job at this point
-                logger.error("Failed to record ingest usage after completion: %s", rec_exc)
+                logger.debug(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
 
-        # 14. Return document ID
-        return {
-            "document_id": doc.external_id,
-            "status": "completed",
-            "filename": original_filename,
-            "content_type": content_type,
-            "timestamp": datetime.now(UTC).isoformat(),
-        }
+                chunk_objects_multivector = document_service._create_chunk_objects(
+                    doc.external_id, processed_chunks_multivector, colpali_embeddings
+                )
+            colpali_embed_time = time.time() - colpali_embed_start
+            phase_times["colpali_generate_embeddings"] = colpali_embed_time
+            if using_colpali:
+                embeddings_per_second = len(colpali_embeddings) / colpali_embed_time if colpali_embed_time > 0 else 0
+                logger.info(
+                    f"Colpali embedding took {colpali_embed_time:.2f}s for {len(colpali_embeddings)} embeddings "
+                    f"({embeddings_per_second:.2f} embeddings/s)"
+                )
 
+            # === Merge aggregated chunk metadata into document metadata ===
+            if aggregated_chunk_metadata:
+                logger.info("Merging aggregated chunk metadata into document metadata...")
+                # Make sure doc.metadata exists
+                if not hasattr(doc, "metadata") or doc.metadata is None:
+                    doc.metadata = {}
+                doc.metadata.update(aggregated_chunk_metadata)
+                logger.info(f"Final document metadata after merge: {doc.metadata}")
+            # ===========================================================
+
+            # Update document status to completed before storing
+            doc.system_metadata["status"] = "completed"
+            doc.system_metadata["updated_at"] = datetime.now(UTC)
+
+            # 11. Store chunks and update document with is_update=True
+            store_start = time.time()
+            await document_service._store_chunks_and_doc(
+                chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
+            )
+            store_time = time.time() - store_start
+            phase_times["store_chunks_and_update_doc"] = store_time
+            logger.info(
+                f"Storing chunks and final document update took {store_time:.2f}s for {len(chunk_objects)} chunks"
+            )
+
+            logger.debug(f"Successfully completed processing for document {doc.external_id}")
+
+            # 12. Add document to folder (this will queue workflows but not execute them)
+            if folder_name:
+                try:
+                    logger.info(f"Adding document {doc.external_id} to folder '{folder_name}'")
+                    await document_service._ensure_folder_exists(folder_name, doc.external_id, auth)
+                except Exception as folder_exc:
+                    logger.error(f"Failed to add document to folder: {folder_exc}")
+                    # Don't fail the entire ingestion if folder processing fails
+
+            # 13. Execute any pending workflows now that document processing is complete
+            try:
+                logger.info(f"Executing pending workflows for document {doc.external_id}")
+                await document_service.execute_pending_workflows(doc.external_id, auth)
+            except Exception as workflow_exc:
+                logger.error(f"Failed to execute pending workflows: {workflow_exc}")
+                # Don't fail ingestion if workflow execution fails
+
+            # 13. Log successful completion
+            logger.info(f"Successfully completed ingestion for {original_filename}, document ID: {doc.external_id}")
+            # Performance summary
+            total_time = time.time() - job_start_time
+
+            # Log performance summary
+            logger.info("=== Ingestion Performance Summary ===")
+            logger.info(f"Total processing time: {total_time:.2f}s")
+            for phase, duration in sorted(phase_times.items(), key=lambda x: x[1], reverse=True):
+                percentage = (duration / total_time) * 100 if total_time > 0 else 0
+                logger.info(f"  - {phase}: {duration:.2f}s ({percentage:.1f}%)")
+            logger.info("=====================================")
+
+            # Record ingest usage *after* successful completion using the final page count
+            if settings.MODE == "cloud" and auth.user_id:
+                try:
+                    await check_and_increment_limits(
+                        auth,
+                        "ingest",
+                        final_page_count,
+                        document_id,
+                        use_colpali=using_colpali,
+                        colpali_chunks_count=colpali_count_for_limit_fn,
+                    )
+                except Exception as rec_exc:
+                    logger.error("Failed to record ingest usage after completion: %s", rec_exc)
+
+            # 14. Return document ID
+            return {
+                "document_id": document_id,
+                "status": "completed",
+                "filename": original_filename,
+                "content_type": content_type,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
     except Exception as e:
         logger.error(f"Error processing ingestion job for file {original_filename}: {str(e)}")
+        logger.error(traceback.format_exc())
 
         # ------------------------------------------------------------------
         # Ensure we update the *per-app* database where the document lives.
@@ -624,9 +706,9 @@ async def process_ingestion_job(
         except Exception as inner_e:
             logger.error(f"Failed to update document status: {inner_e}")
 
-        # Note: We don't record usage if the job failed.
+        # Note: TelemetryService will persist an error log entry automatically
 
-        # Return error information
+        # 14. Return error information
         return {
             "status": "failed",
             "filename": original_filename,

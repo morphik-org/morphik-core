@@ -36,7 +36,22 @@ class MetadataExtractionRule(Rule):
     def to_dict(self) -> Dict[str, Any]:
         if isinstance(self.schema, type) and issubclass(self.schema, BaseModel):
             # Convert Pydantic model to dict schema
-            schema_dict = self.schema.model_json_schema()
+            json_schema = self.schema.model_json_schema()
+            # Extract the properties from the JSON schema format
+            # to match the expected server format
+            schema_dict = {}
+            if "properties" in json_schema:
+                for field_name, field_info in json_schema["properties"].items():
+                    # Get field description from the Pydantic field
+                    description = field_info.get("description", f"No description for {field_name}")
+                    field_type = field_info.get("type", "string")
+                    schema_dict[field_name] = {
+                        "type": field_type,
+                        "description": description
+                    }
+            else:
+                # Fallback if properties not found
+                schema_dict = json_schema
         else:
             # Assume it's already a dict schema
             schema_dict = self.schema

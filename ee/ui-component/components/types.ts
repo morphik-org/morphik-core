@@ -7,6 +7,11 @@ export interface SearchOptions {
   filters?: string | object; // JSON string or object with external_id array
   use_reranking?: boolean;
   use_colpali?: boolean;
+  padding?: number; // Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only)
+  /**
+   * Optional folder scoping for retrieval endpoints.
+   */
+  folder_name?: string | string[];
 }
 
 export interface QueryOptions extends SearchOptions {
@@ -15,6 +20,7 @@ export interface QueryOptions extends SearchOptions {
   graph_name?: string;
   folder_name?: string | string[]; // Support single folder or array of folders
   // external_id removed - should be in filters object as external_id: string[]
+  llm_config?: Record<string, unknown>; // LiteLLM-compatible model configuration
 }
 
 // Common types used across multiple components
@@ -27,7 +33,7 @@ export interface MorphikUIProps {
   onBackClick?: () => void; // Callback when back button is clicked
   appName?: string; // Name of the app to display in UI
   initialFolder?: string | null; // Initial folder to show
-  initialSection?: "documents" | "search" | "chat" | "graphs" | "connections"; // Initial section to show
+  initialSection?: "documents" | "search" | "chat" | "graphs" | "workflows" | "connections" | "pdf" | "logs"; // Initial section to show
 
   // Callbacks for Documents Section tracking
   onDocumentUpload?: (fileName: string, fileSize: number) => void;
@@ -57,18 +63,26 @@ export interface Document {
   metadata: Record<string, unknown>;
   system_metadata: Record<string, unknown>;
   additional_metadata: Record<string, unknown>;
+  folder_name?: string;
+  app_id?: string;
+  end_user_id?: string;
 }
 
-export interface Folder {
+export interface FolderSummary {
   id: string;
   name: string;
   description?: string;
-  owner: string;
-  document_ids: string[];
-  system_metadata: Record<string, unknown>;
-  access_control?: Record<string, unknown>;
-  created_at?: string;
+  doc_count?: number;
   updated_at?: string;
+}
+
+export interface Folder extends FolderSummary {
+  document_ids?: string[];
+  system_metadata: Record<string, unknown>;
+  created_at?: string;
+  app_id?: string;
+  end_user_id?: string;
+  // updated_at inherited
 }
 
 export interface SearchResult {
@@ -79,6 +93,20 @@ export interface SearchResult {
   score: number;
   filename?: string;
   metadata: Record<string, unknown>;
+  is_padding?: boolean; // Whether this chunk was added as padding
+}
+
+export interface ChunkGroup {
+  main_chunk: SearchResult;
+  padding_chunks: SearchResult[];
+  total_chunks: number;
+}
+
+export interface GroupedSearchResponse {
+  chunks: SearchResult[]; // Flat list for backward compatibility
+  groups: ChunkGroup[]; // Grouped chunks for UI display
+  total_results: number;
+  has_padding: boolean;
 }
 
 export interface Source {
@@ -97,4 +125,37 @@ export interface ChatMessage {
   content: string;
   timestamp?: string;
   sources?: Source[];
+}
+
+// Model Configuration Types
+export interface ModelConfigResponse {
+  id: string;
+  provider: string;
+  config_data: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ModelConfigCreate {
+  provider: string;
+  config_data: Record<string, unknown>;
+}
+
+export interface ModelConfigUpdate {
+  config_data: Record<string, unknown>;
+}
+
+export interface CustomModel {
+  id: string;
+  name: string;
+  provider: string;
+  model_name: string;
+  config: Record<string, unknown>;
+}
+
+export interface CustomModelCreate {
+  name: string;
+  provider: string;
+  model_name: string;
+  config: Record<string, unknown>;
 }

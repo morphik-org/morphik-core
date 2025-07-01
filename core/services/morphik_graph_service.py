@@ -142,28 +142,8 @@ class MorphikGraphService:
 
         # Validation is now handled by type annotations
 
-        # Create a new graph with authorization info
-        access_control = {
-            "readers": [auth.entity_id],
-            "writers": [auth.entity_id],
-            "admins": [auth.entity_id],
-        }
-
-        # Add user_id to access_control if present (for proper user_id scoping)
-        if auth.user_id:
-            # User ID must be provided as a list to match the Graph model's type constraints
-            access_control["user_id"] = [auth.user_id]
-
-        # Ensure entity_type is a string value for storage
-        entity_type = auth.entity_type.value if hasattr(auth.entity_type, "value") else auth.entity_type
-
-        graph = Graph(
-            name=name,
-            document_ids=[doc.external_id for doc in document_objects],
-            filters=filters,
-            owner={"type": entity_type, "id": auth.entity_id},
-            access_control=access_control,
-        )
+        # Create a new graph
+        graph = Graph(name=name, document_ids=[doc.external_id for doc in document_objects], filters=filters)
 
         return graph
 
@@ -264,12 +244,12 @@ class MorphikGraphService:
             graph.system_metadata["status"] = "build_api_failed"
             # Attempt to store graph with failed status before re-raising
             try:
-                await self.db.store_graph(graph)
+                await self.db.store_graph(graph, auth)
             except Exception as db_exc:
                 logger.error(f"Failed to store graph {graph.id} with build_api_failed status: {db_exc}")
             raise
 
-        if not await self.db.store_graph(graph):
+        if not await self.db.store_graph(graph, auth):
             # This case might be redundant if the above block handles storing on failure/success appropriately
             # For now, ensure it's stored after successful API call.
             raise Exception("Failed to store graph in the database after API build call")
@@ -735,3 +715,47 @@ class MorphikGraphService:
             logger.error(f"Failed to check workflow status for {workflow_id}: {e}")
             # Return failed status instead of raising
             return {"status": "failed", "error": str(e)}
+
+    async def delete_graph(
+        self,
+        graph_name: str,
+        auth: AuthContext,
+        system_filters: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Delete a graph and its associated data from the external graph API.
+
+        Args:
+            graph_name: Name of the graph to delete
+            auth: Authentication context
+            system_filters: Optional system metadata filters
+
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        try:
+            # Find the graph to get its ID
+            graph = await self._find_graph(graph_name, auth, system_filters)
+            graph_id = graph.id
+
+            # Call the external graph delete service
+            api_response = await self._make_api_request(
+                method="DELETE",
+                endpoint=f"/delete/{graph_id}",
+                auth=auth,
+            )
+            logger.info(f"Graph delete API call for graph_id {graph_id} successful. Response: {api_response}")
+
+            # Delete the graph from our database
+            success = await self.db.delete_graph(graph_name, auth)
+            if not success:
+                logger.error(f"Failed to delete graph '{graph_name}' from database after successful API deletion")
+                return False
+
+            return True
+
+        except ValueError as e:
+            logger.error(f"Graph '{graph_name}' not found: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to delete graph '{graph_name}': {e}")
+            raise

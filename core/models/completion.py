@@ -39,3 +39,4 @@ class CompletionRequest(BaseModel):
     schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None
     chat_history: Optional[List[ChatMessage]] = None
     stream_response: Optional[bool] = False
+    llm_config: Optional[Dict[str, Any]] = None

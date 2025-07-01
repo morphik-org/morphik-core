@@ -8,8 +8,9 @@ import { Search } from "lucide-react";
 import { showAlert } from "@/components/ui/alert-system";
 import SearchOptionsDialog from "./SearchOptionsDialog";
 import SearchResultCard from "./SearchResultCard";
+import SearchResultCardCarousel from "./SearchResultCardCarousel";
 
-import { SearchResult, SearchOptions, Folder } from "@/components/types";
+import { SearchResult, SearchOptions, FolderSummary, GroupedSearchResponse } from "@/components/types";
 
 interface SearchSectionProps {
   apiBaseUrl: string;
@@ -23,14 +24,17 @@ const defaultSearchOptions: SearchOptions = {
   min_score: 0.7,
   use_reranking: false,
   use_colpali: true,
+  padding: 0,
+  folder_name: undefined,
 };
 
 const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, onSearchSubmit }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [groupedResults, setGroupedResults] = useState<GroupedSearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [showSearchAdvanced, setShowSearchAdvanced] = useState(false);
-  const [folders, setFolders] = useState<Folder[]>([]);
+  const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [searchOptions, setSearchOptions] = useState<SearchOptions>(defaultSearchOptions);
 
   // Update search options
@@ -45,11 +49,12 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
   useEffect(() => {
     console.log("SearchSection: Token or API URL changed, resetting results");
     setSearchResults([]);
+    setGroupedResults(null);
 
     // Fetch available folders
     const fetchFolders = async () => {
       try {
-        const response = await fetch(`${apiBaseUrl}/folders`, {
+        const response = await fetch(`${apiBaseUrl}/folders/summary`, {
           headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
         });
 
@@ -91,6 +96,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
     try {
       setLoading(true);
       setSearchResults([]);
+      setGroupedResults(null);
 
       // Handle filters - convert to object if needed
       let filtersObject = {};
@@ -102,7 +108,11 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
         }
       }
 
-      const response = await fetch(`${apiBaseUrl}/retrieve/chunks`, {
+      // Use grouped endpoint when padding is enabled, regular endpoint otherwise
+      const shouldUseGroupedEndpoint = (currentSearchOptions.padding || 0) > 0;
+      const endpoint = shouldUseGroupedEndpoint ? "/retrieve/chunks/grouped" : "/retrieve/chunks";
+
+      const response = await fetch(`${apiBaseUrl}${endpoint}`, {
         method: "POST",
         headers: {
           Authorization: authToken ? `Bearer ${authToken}` : "",
@@ -111,10 +121,12 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
         body: JSON.stringify({
           query: searchQuery,
           filters: filtersObject,
+          folder_name: currentSearchOptions.folder_name,
           k: currentSearchOptions.k,
           min_score: currentSearchOptions.min_score,
           use_reranking: currentSearchOptions.use_reranking,
           use_colpali: currentSearchOptions.use_colpali,
+          padding: currentSearchOptions.padding || 0,
         }),
       });
 
@@ -124,9 +136,19 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
       }
 
       const data = await response.json();
-      setSearchResults(data);
 
-      if (data.length === 0) {
+      if (shouldUseGroupedEndpoint) {
+        // Handle grouped response
+        setGroupedResults(data);
+        setSearchResults(data.chunks); // Also set flat results for backward compatibility
+      } else {
+        // Handle regular response
+        setSearchResults(data);
+        setGroupedResults(null);
+      }
+
+      const resultCount = shouldUseGroupedEndpoint ? data.chunks?.length || 0 : data.length || 0;
+      if (resultCount === 0) {
         showAlert("No search results found for the query", {
           type: "info",
           duration: 3000,
@@ -178,13 +200,29 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
         <div className="mt-6 min-h-0 flex-1 overflow-hidden">
           {searchResults.length > 0 ? (
             <div className="flex h-full flex-col">
-              <h3 className="mb-4 flex-shrink-0 text-lg font-medium">Results ({searchResults.length})</h3>
+              <h3 className="mb-4 flex-shrink-0 text-lg font-medium">
+                Results ({searchResults.length})
+                {groupedResults?.has_padding && (
+                  <span className="ml-2 text-sm text-muted-foreground">
+                    • {groupedResults.groups.length} match groups with context
+                  </span>
+                )}
+              </h3>
 
               <ScrollArea className="flex-1">
                 <div className="space-y-6 pr-4">
-                  {searchResults.map(result => (
-                    <SearchResultCard key={`${result.document_id}-${result.chunk_number}`} result={result} />
-                  ))}
+                  {groupedResults?.has_padding
+                    ? // Display grouped results with carousel
+                      groupedResults.groups.map(group => (
+                        <SearchResultCardCarousel
+                          key={`${group.main_chunk.document_id}-${group.main_chunk.chunk_number}`}
+                          group={group}
+                        />
+                      ))
+                    : // Display regular results
+                      searchResults.map(result => (
+                        <SearchResultCard key={`${result.document_id}-${result.chunk_number}`} result={result} />
+                      ))}
                 </div>
               </ScrollArea>
             </div>

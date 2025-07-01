@@ -317,7 +317,7 @@ class Graph(BaseModel):
     def error(self) -> str | None:
         return self.system_metadata.get("error") if self.system_metadata else None
 
-    def wait_for_completion(self, timeout_seconds: int = 300, check_interval_seconds: int = 5) -> "Graph":
+    def wait_for_completion(self, timeout_seconds: int = 300, check_interval_seconds: int = 2) -> "Graph":
         """Poll the server until the graph processing is finished."""
         import time
 

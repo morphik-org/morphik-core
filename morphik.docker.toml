@@ -1,0 +1,137 @@
+[api]
+host = "0.0.0.0"
+port = 8000
+reload = true
+
+[auth]
+jwt_algorithm = "HS256"
+dev_mode = true  # Enabled by default for easier local development
+dev_entity_id = "dev_user"  # Default dev user ID
+dev_entity_type = "developer"  # Default dev entity type
+dev_permissions = ["read", "write", "admin"]  # Default dev permissions
+
+#### Registered models
+[registered_models]
+# OpenAI models
+openai_gpt4-1 = { model_name = "gpt-4.1" }
+openai_gpt4-1-mini = { model_name = "gpt-4.1-mini" }
+
+# Azure OpenAI models
+azure_gpt4 = { model_name = "gpt-4", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "gpt-4-deployment" }
+azure_gpt35 = { model_name = "gpt-3.5-turbo", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "gpt-35-turbo-deployment" }
+
+# Anthropic models
+claude_opus = { model_name = "claude-3-opus-20240229" }
+claude_sonnet = { model_name = "claude-3-7-sonnet-latest" }
+
+# Google Gemini models
+gemini_flash = { model_name = "gemini/gemini-2.5-flash-preview-05-20" } # gemini-2.5-flash-preview-05-20
+# gemini_flash = { model_name = "gemini/gemini-2.5-pro-preview-06-05" } # { model_name = "claude-4-sonnet-20250514"} # { model_name = "gpt-4.1" } # { model_name = "gemini/gemini-2.5-pro-preview-06-05" } # {model_name = "o3-2025-04-16"} #  { model_name = "claude-3-7-sonnet-latest"} #  { model_name = "gemini/gemini-2.5-flash-preview-05-20" } # gemini-2.5-flash-preview-05-20
+# gemini_flash = { model_name = "groq/meta-llama/llama-4-maverick-17b-128e-instruct"}
+
+# Ollama models (modify api_base based on your deployment)
+# - Local Ollama: "http://localhost:11434" (default)
+# - Morphik in Docker, Ollama local: "http://host.docker.internal:11434"
+# - Both in Docker: "http://ollama:11434"
+ollama_qwen_vision = { model_name = "ollama_chat/qwen2.5vl:latest", api_base = "http://localhost:11434", vision = true }
+ollama_llama_vision = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://localhost:11434", vision = true }
+ollama_embedding = { model_name = "ollama/nomic-embed-text", api_base = "http://localhost:11434" }
+
+openai_embedding = { model_name = "text-embedding-3-small" }
+openai_embedding_large = { model_name = "text-embedding-3-large" }
+azure_embedding = { model_name = "text-embedding-ada-002", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "embedding-ada-002" }
+
+
+#### Component configurations ####
+
+[agent]
+model = "openai_gpt4-1-mini" # Model for the agent logic
+
+[completion]
+model = "openai_gpt4-1-mini" #"openai_gpt4-1-mini"  # Reference to a key in registered_models
+default_max_tokens = "1000"
+default_temperature = 0.3
+
+[database]
+provider = "postgres"
+# Connection pool settings
+pool_size = 10           # Maximum number of connections in the pool
+max_overflow = 15        # Maximum number of connections that can be created beyond pool_size
+pool_recycle = 3600      # Time in seconds after which a connection is recycled (1 hour)
+pool_timeout = 10        # Seconds to wait for a connection from the pool
+pool_pre_ping = true     # Check connection viability before using it from the pool
+max_retries = 3          # Number of retries for database operations
+retry_delay = 1.0        # Initial delay between retries in seconds
+
+[embedding]
+model = "openai_embedding"  # Reference to registered model
+dimensions = 1536
+similarity_metric = "cosine"
+
+[parser]
+chunk_size = 6000
+chunk_overlap = 300
+use_unstructured_api = false
+use_contextual_chunking = false
+contextual_chunking_model = "openai_gpt4-1-mini"  # Reference to a key in registered_models
+
+[document_analysis]
+model = "openai_gpt4-1-mini"  # Reference to a key in registered_models
+
+[parser.vision]
+model = "openai_gpt4-1-mini"  # Reference to a key in registered_models
+frame_sample_rate = -1  # Set to -1 to disable frame captioning
+
+[reranker]
+use_reranker = true
+provider = "flag"
+model_name = "BAAI/bge-reranker-large"
+query_max_length = 256
+passage_max_length = 512
+use_fp16 = true
+device = "mps" # use "cpu" if on docker and using a mac, "cuda" if cuda enabled device
+
+[storage]
+provider = "local"
+storage_path = "./storage"
+
+# [storage]
+# provider = "aws-s3"
+# region = "us-east-2"
+# bucket_name = "morphik-s3-storage"
+
+[vector_store]
+provider = "pgvector"
+
+[rules]
+model = "openai_gpt4-1-mini"
+batch_size = 4096
+
+[morphik]
+enable_colpali = true
+mode = "self_hosted"  # "cloud" or "self_hosted"
+api_domain = "api.morphik.ai"  # API domain for cloud URIs
+# Only call the embedding API if colpali_mode is "api"
+morphik_embedding_api_domain = "http://localhost:6000"  # endpoint for multivector embedding service
+colpali_mode = "local" # "off", "local", or "api"
+
+[graph]
+model = "openai_gpt4-1-mini"
+enable_entity_resolution = true
+
+# [graph]
+# mode="api"
+# base_url="https://graph-api.morphik.ai"
+
+[telemetry]
+enabled = true
+honeycomb_enabled = true
+honeycomb_endpoint = "https://api.honeycomb.io"
+honeycomb_proxy_endpoint = "https://otel-proxy.onrender.com"
+service_name = "databridge-core"
+otlp_timeout = 10
+otlp_max_retries = 3
+otlp_retry_delay = 1
+otlp_max_export_batch_size = 512
+otlp_schedule_delay_millis = 5000
+otlp_max_queue_size = 2048

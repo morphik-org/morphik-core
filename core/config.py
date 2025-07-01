@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
     ASSEMBLYAI_API_KEY: Optional[str] = None
+    GEMINI_API_KEY: Optional[str] = None
 
     # API configuration
     HOST: str
@@ -121,6 +122,9 @@ class Settings(BaseSettings):
     # API configuration
     API_DOMAIN: str = "api.morphik.ai"
 
+    # PDF Viewer configuration
+    PDF_VIEWER_FRONTEND_URL: Optional[str] = "https://morphik.ai/api/pdf"
+
     # Redis configuration
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
@@ -137,6 +141,9 @@ class Settings(BaseSettings):
     OTLP_MAX_EXPORT_BATCH_SIZE: int = 512
     OTLP_SCHEDULE_DELAY_MILLIS: int = 5000
     OTLP_MAX_QUEUE_SIZE: int = 2048
+
+    # Workflows configuration
+    WORKFLOW_MODEL: Optional[str] = None
 
 
 @lru_cache()
@@ -320,13 +327,15 @@ def get_settings() -> Settings:
         ),
     }
 
-    # load redis config
-    redis_config = {}
-    if "redis" in config:
-        redis_config = {
-            "REDIS_HOST": config["redis"].get("host", "localhost"),
-            "REDIS_PORT": int(config["redis"].get("port", 6379)),
+    # load pdf viewer config
+    pdf_viewer_config = {}
+    if "pdf_viewer" in config:
+        pdf_viewer_config = {
+            "PDF_VIEWER_FRONTEND_URL": config["pdf_viewer"].get("frontend_url", "https://morphik.ai/api/pdf")
         }
+
+    # Redis config is now only read from environment variables
+    redis_config = {}
 
     # load graph config
     graph_config = (
@@ -369,6 +378,13 @@ def get_settings() -> Settings:
             "OTLP_MAX_QUEUE_SIZE": config["telemetry"].get("otlp_max_queue_size", 2048),
         }
 
+    # load workflows config
+    workflows_config = {}
+    if "workflows" in config and "model" in config["workflows"]:
+        workflows_config = {
+            "WORKFLOW_MODEL": config["workflows"]["model"],
+        }
+
     settings_dict = dict(
         ChainMap(
             api_config,
@@ -384,10 +400,12 @@ def get_settings() -> Settings:
             vector_store_config,
             rules_config,
             morphik_config,
+            pdf_viewer_config,
             redis_config,
             graph_config,
             document_analysis_config,
             telemetry_config,
+            workflows_config,
             openai_config,
         )
     )

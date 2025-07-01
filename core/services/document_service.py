@@ -86,29 +86,105 @@ class DocumentService:
                     success = await self.db.add_document_to_folder(folder.id, document_id, auth)
                     if not success:
                         logger.warning(f"Failed to add document {document_id} to existing folder {folder.name}")
+                    else:
+                        # Queue workflows associated with this folder
+                        await self._queue_folder_workflows(folder, document_id, auth)
                 return folder  # Folder already exists
 
             # Create a new folder
             folder = Folder(
-                name=folder_name,
-                owner={
-                    "type": auth.entity_type.value,
-                    "id": auth.entity_id,
-                },
-                document_ids=[document_id],  # Add document_id to the new folder
+                name=folder_name, document_ids=[document_id], app_id=auth.app_id  # Add document_id to the new folder
             )
 
-            # Scope folder to the application ID for developer tokens
-            if auth.app_id:
-                folder.system_metadata["app_id"] = auth.app_id
+            await self.db.create_folder(folder, auth)
 
-            await self.db.create_folder(folder)
+            # Note: Newly created folders don't have workflows yet, but we'll still call this
+            # in case workflows are added via API before document ingestion completes
+            await self._queue_folder_workflows(folder, document_id, auth)
+
             return folder
 
         except Exception as e:
             # Log error but don't raise - we want document ingestion to continue even if folder creation fails
             logger.error(f"Error ensuring folder exists: {e}")
             return None
+
+    async def _queue_folder_workflows(self, folder: Folder, document_id: str, auth: AuthContext) -> None:
+        """Note which workflows need to run for a document added to a folder.
+
+        NOTE: This method no longer queues workflows. Actual execution happens after
+        document processing completes via execute_pending_workflows().
+
+        Args:
+            folder: The folder containing workflows
+            document_id: ID of the document that was just added
+            auth: Authentication context
+        """
+        if not folder.workflow_ids:
+            return
+
+        # Just log that workflows will be executed later
+        logger.info(
+            f"Document {document_id} added to folder {folder.name} with {len(folder.workflow_ids)} workflows. "
+            f"Workflows will execute after processing completes."
+        )
+
+    async def execute_pending_workflows(self, document_id: str, auth: AuthContext) -> None:
+        """Execute all pending workflow runs for a document after processing is complete.
+
+        This is called from the ingestion worker after document processing completes.
+        It finds any workflows that were queued during folder operations and executes them.
+
+        Args:
+            document_id: ID of the document that just finished processing
+            auth: Authentication context
+        """
+        try:
+            # Get the document to find its folder
+            doc = await self.db.get_document(document_id, auth)
+            if not doc:
+                logger.warning(f"Document {document_id} not found when trying to execute workflows")
+                return
+
+            folder_name = doc.folder_name
+            if not folder_name:
+                logger.debug(f"Document {document_id} has no folder, no workflows to execute")
+                return
+
+            # Get the folder
+            folder = await self.db.get_folder_by_name(folder_name, auth)
+            if not folder or not folder.workflow_ids:
+                logger.debug(f"No workflows found for folder {folder_name}")
+                return
+
+            # Import workflow service
+            try:
+                from core.services_init import workflow_service
+            except Exception as import_error:
+                logger.error(f"Failed to import workflow service: {import_error}")
+                from core.services.workflow_service import WorkflowService
+
+                workflow_service = WorkflowService(database=self.db, document_service_ref=self)
+
+            logger.info(
+                f"Executing {len(folder.workflow_ids)} workflows for document {document_id} in folder {folder_name}"
+            )
+
+            # Queue and execute each workflow
+            for workflow_id in folder.workflow_ids:
+                try:
+                    # Queue and execute the workflow
+                    run = await workflow_service.queue_workflow_run(workflow_id, document_id, auth)
+                    logger.info(f"Executing workflow {workflow_id} for document {document_id}, run ID: {run.id}")
+                    await workflow_service.execute_workflow_run(run.id, auth)
+                    logger.info(f"Completed workflow execution for run {run.id}")
+                except Exception as e:
+                    logger.error(f"Failed to execute workflow {workflow_id} for document {document_id}: {e}")
+                    # Continue with other workflows
+
+        except Exception as e:
+            logger.error(f"Error executing pending workflows for document {document_id}: {e}")
+            # Don't raise - workflow failures shouldn't break anything else
 
     def __init__(
         self,
@@ -179,6 +255,7 @@ class DocumentService:
         folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
         perf_tracker: Optional[Any] = None,  # Performance tracker from API layer
+        padding: int = 0,  # Number of additional chunks to retrieve before and after matched chunks
     ) -> List[ChunkResult]:
         """Retrieve relevant chunks."""
 
@@ -214,8 +291,7 @@ class DocumentService:
             system_filters["folder_name"] = folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in _build_access_filter_optimized
 
         # Launch embedding queries concurrently
         embedding_tasks = [self.embedding_model.embed_for_query(query)]
@@ -326,6 +402,18 @@ class DocumentService:
         if not perf_tracker:
             phase_times["chunk_combination"] = time.time() - combination_start
 
+        # Apply padding if requested and using colpali
+        if padding > 0 and using_colpali:
+            if perf_tracker:
+                perf_tracker.start_phase("retrieve_padding")
+            else:
+                padding_start = time.time()
+
+            chunks = await self._apply_padding_to_chunks(chunks, padding, auth)
+
+            if not perf_tracker:
+                phase_times["padding"] = time.time() - padding_start
+
         # Create and return chunk results
         if perf_tracker:
             perf_tracker.start_phase("retrieve_result_creation")
@@ -421,6 +509,243 @@ class DocumentService:
         full_chunks.sort(key=lambda x: x.score, reverse=True)
         return full_chunks
 
+    async def _apply_padding_to_chunks(
+        self,
+        chunks: List[DocumentChunk],
+        padding: int,
+        auth: AuthContext,
+    ) -> List[DocumentChunk]:
+        """
+        Apply padding to chunks by retrieving additional chunks before and after each matched chunk.
+        This is only relevant for ColPali retrieval path where chunks correspond to pages.
+        Only applies to image chunks - non-image chunks are filtered out when padding is enabled.
+
+        Args:
+            chunks: Original matched chunks
+            padding: Number of chunks to retrieve before and after each matched chunk
+            auth: Authentication context for access control
+
+        Returns:
+            List of image chunks with padding applied (deduplicated)
+        """
+        if not chunks or padding <= 0:
+            return chunks
+        logger.info(f"chunks: {[chunk.content[:100] for chunk in chunks]}")
+
+        # Filter to only image chunks when padding is enabled
+        image_chunks = [chunk for chunk in chunks if chunk.content.startswith("data")]
+
+        if not image_chunks:
+            # No image chunks to pad, return empty list since padding is only for images
+            logger.info("No image chunks found for padding, returning empty list")
+            return []
+
+        logger.info(
+            f"Applying padding of {padding} to {len(image_chunks)} image chunks (filtered from {len(chunks)} total chunks)"
+        )
+
+        # Group image chunks by document to apply padding efficiently
+        chunks_by_doc = {}
+        for chunk in image_chunks:
+            if chunk.document_id not in chunks_by_doc:
+                chunks_by_doc[chunk.document_id] = []
+            chunks_by_doc[chunk.document_id].append(chunk)
+
+        # Collect all chunk identifiers we need to retrieve (including padding)
+        chunk_identifiers_to_retrieve = set()
+
+        for doc_id, doc_chunks in chunks_by_doc.items():
+            for chunk in doc_chunks:
+                # Add the original chunk
+                chunk_identifiers_to_retrieve.add((doc_id, chunk.chunk_number))
+
+                # Add padding chunks before and after
+                for i in range(1, padding + 1):
+                    # Add chunks before (if chunk_number > i)
+                    if chunk.chunk_number >= i:
+                        chunk_identifiers_to_retrieve.add((doc_id, chunk.chunk_number - i))
+
+                    # Add chunks after
+                    chunk_identifiers_to_retrieve.add((doc_id, chunk.chunk_number + i))
+
+        logger.debug(f"Need to retrieve {len(chunk_identifiers_to_retrieve)} chunks total (including padding)")
+
+        # Convert to list for batch retrieval
+        chunk_identifiers = list(chunk_identifiers_to_retrieve)
+
+        # Use colpali vector store for retrieval since padding is only for colpali path
+        if self.colpali_vector_store:
+            try:
+                padded_chunks = await self.colpali_vector_store.get_chunks_by_id(chunk_identifiers)
+                logger.debug(f"Retrieved {len(padded_chunks)} chunks from colpali vector store")
+            except Exception as e:
+                logger.error(f"Error retrieving padded chunks from colpali vector store: {e}")
+                # Fallback to original image chunks if padding fails
+                return image_chunks
+        else:
+            logger.warning("ColPali vector store not available for padding, returning original image chunks")
+            return image_chunks
+
+        # Filter retrieved chunks to only image chunks (padding chunks should also be images)
+        padded_image_chunks = [chunk for chunk in padded_chunks if chunk.content.startswith("data")]
+        logger.debug(f"Filtered to {len(padded_image_chunks)} image chunks from {len(padded_chunks)} retrieved chunks")
+
+        # # Create a mapping to preserve original scores for matched chunks
+        # original_scores = {(chunk.document_id, chunk.chunk_number): chunk.score for chunk in image_chunks}
+
+        # # Apply original scores to matched chunks, set score to 0 for padding chunks
+        # for chunk in padded_image_chunks:
+        #     key = (chunk.document_id, chunk.chunk_number)
+        #     if key in original_scores:
+        #         chunk.score = original_scores[key]
+        #     else:
+        #         # This is a padding chunk, set a lower score
+        #         chunk.score = 0.0
+        chunk_id = set()
+        chunks = []
+        for chunk in padded_image_chunks:
+            if f"{chunk.document_id}-{chunk.chunk_number}" in chunk_id:
+                continue
+            chunks.append(chunk)
+            chunk_id.add(f"{chunk.document_id}-{chunk.chunk_number}")
+
+        # Sort by score (original matched chunks first, then padding chunks)
+        chunks.sort(key=lambda x: f"{x.document_id}-{x.chunk_number}", reverse=False)
+
+        logger.info(f"Applied padding: returning {len(chunks)} image chunks (was {len(image_chunks)} image chunks)")
+        return chunks
+
+    async def _create_grouped_chunk_response_from_results(
+        self,
+        original_chunk_results: List[ChunkResult],
+        final_chunk_results: List[ChunkResult],
+        padding: int,
+    ):  #  -> "GroupedChunkResponse"
+        """
+        Create a grouped response directly from ChunkResult objects.
+
+        Args:
+            original_chunk_results: The original matched chunks (before padding)
+            final_chunk_results: All chunks including padding
+            padding: The padding value used
+
+        Returns:
+            GroupedChunkResponse with both flat and grouped results
+        """
+        from core.models.documents import ChunkGroup, GroupedChunkResponse
+
+        # Create mapping of original chunks for easy lookup
+        original_chunk_keys = {(chunk.document_id, chunk.chunk_number) for chunk in original_chunk_results}
+
+        # Mark chunks as padding or not
+        for result in final_chunk_results:
+            result.is_padding = (result.document_id, result.chunk_number) not in original_chunk_keys
+
+        # If no padding was applied, return simple response
+        if padding == 0:
+            return GroupedChunkResponse(
+                chunks=final_chunk_results,
+                groups=[
+                    ChunkGroup(main_chunk=result, padding_chunks=[], total_chunks=1) for result in final_chunk_results
+                ],
+                total_results=len(final_chunk_results),
+                has_padding=False,
+            )
+
+        # Group chunks by main chunks
+        groups = []
+        processed_chunks = set()
+
+        # First, identify all main (non-padding) chunks
+        main_chunks = [result for result in final_chunk_results if not result.is_padding]
+
+        for main_chunk in main_chunks:
+            if (main_chunk.document_id, main_chunk.chunk_number) in processed_chunks:
+                continue
+
+            # Find all padding chunks for this main chunk
+            padding_chunks = []
+
+            # Look for chunks in the padding range
+            for i in range(1, padding + 1):
+                # Check chunks before
+                before_key = (main_chunk.document_id, main_chunk.chunk_number - i)
+                after_key = (main_chunk.document_id, main_chunk.chunk_number + i)
+
+                for result in final_chunk_results:
+                    result_key = (result.document_id, result.chunk_number)
+                    if result.is_padding and (result_key == before_key or result_key == after_key):
+                        padding_chunks.append(result)
+                        processed_chunks.add(result_key)
+
+            # Create group
+            group = ChunkGroup(
+                main_chunk=main_chunk, padding_chunks=padding_chunks, total_chunks=1 + len(padding_chunks)
+            )
+            groups.append(group)
+            processed_chunks.add((main_chunk.document_id, main_chunk.chunk_number))
+
+        return GroupedChunkResponse(
+            chunks=final_chunk_results, groups=groups, total_results=len(final_chunk_results), has_padding=padding > 0
+        )
+
+    async def retrieve_chunks_grouped(
+        self,
+        query: str,
+        auth: AuthContext,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 5,
+        min_score: float = 0.0,
+        use_reranking: Optional[bool] = None,
+        use_colpali: Optional[bool] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        end_user_id: Optional[str] = None,
+        perf_tracker: Optional[Any] = None,
+        padding: int = 0,
+    ):  #  -> "GroupedChunkResponse"
+        """
+        Retrieve chunks with grouped response format that differentiates main chunks from padding.
+
+        Returns both flat results (for backward compatibility) and grouped results (for UI).
+        """
+        # Get original chunks before padding (as ChunkResult objects)
+        original_chunk_results = await self.retrieve_chunks(
+            query,
+            auth,
+            filters,
+            k,
+            min_score,
+            use_reranking,
+            use_colpali,
+            folder_name,
+            end_user_id,
+            perf_tracker,
+            padding=0,  # No padding for original
+        )
+
+        # Get final chunks with padding (as ChunkResult objects)
+        if padding > 0 and use_colpali:
+            final_chunk_results = await self.retrieve_chunks(
+                query,
+                auth,
+                filters,
+                k,
+                min_score,
+                use_reranking,
+                use_colpali,
+                folder_name,
+                end_user_id,
+                perf_tracker,
+                padding,
+            )
+        else:
+            final_chunk_results = original_chunk_results
+
+        # Create grouped response directly from ChunkResult objects
+        return await self._create_grouped_chunk_response_from_results(
+            original_chunk_results, final_chunk_results, padding
+        )
+
     async def retrieve_docs(
         self,
         query: str,
@@ -470,8 +795,7 @@ class DocumentService:
             system_filters["folder_name"] = folder_name
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
-        if auth.app_id:
-            system_filters["app_id"] = auth.app_id
+        # Note: Don't add auth.app_id here - it's already handled in _build_access_filter_optimized
 
         # Use the database's batch retrieval method
         documents = await self.db.get_documents_by_id(document_ids, auth, system_filters)
@@ -565,11 +889,11 @@ class DocumentService:
 
         # Create a mapping of original scores from ChunkSource objects (O(n) time)
         score_map = {
-            (source.document_id, source.chunk_number): source.score 
-            for source in authorized_sources 
+            (source.document_id, source.chunk_number): source.score
+            for source in authorized_sources
             if source.score is not None
         }
-        
+
         # Apply original scores to the retrieved chunks (O(m) time with O(1) lookups)
         for chunk in chunks:
             key = (chunk.document_id, chunk.chunk_number)
@@ -607,6 +931,8 @@ class DocumentService:
         chat_history: Optional[List[ChatMessage]] = None,
         perf_tracker: Optional[Any] = None,  # Performance tracker from API layer
         stream_response: Optional[bool] = False,
+        llm_config: Optional[Dict[str, Any]] = None,
+        padding: int = 0,  # Number of additional chunks to retrieve before and after matched chunks
     ) -> Union[CompletionResponse, tuple[AsyncGenerator[str, None], List[ChunkSource]]]:
         """Generate completion using relevant chunks as context.
 
@@ -677,7 +1003,17 @@ class DocumentService:
             chunk_retrieval_start = time.time()
 
         chunks = await self.retrieve_chunks(
-            query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, end_user_id, perf_tracker
+            query,
+            auth,
+            filters,
+            k,
+            min_score,
+            use_reranking,
+            use_colpali,
+            folder_name,
+            end_user_id,
+            perf_tracker,
+            padding,
         )
 
         if not perf_tracker:
@@ -738,6 +1074,7 @@ class DocumentService:
             schema=schema,
             chat_history=chat_history,
             stream_response=stream_response,
+            llm_config=llm_config,
         )
 
         response = await self.completion_model.complete(request)
@@ -803,28 +1140,14 @@ class DocumentService:
             content_type="text/plain",
             filename=filename,
             metadata=metadata or {},
-            owner={"type": auth.entity_type, "id": auth.entity_id},
-            access_control={
-                "readers": [auth.entity_id],
-                "writers": [auth.entity_id],
-                "admins": [auth.entity_id],
-                "user_id": [auth.user_id if auth.user_id else []],  # user scoping
-            },
+            folder_name=folder_name,
+            end_user_id=end_user_id,
+            app_id=auth.app_id,
         )
-
-        # Always add folder_name to system_metadata (None if not provided)
-        doc.system_metadata["folder_name"] = folder_name
 
         # Check if the folder exists, if not create it (only when folder_name is provided)
         if folder_name:
             await self._ensure_folder_exists(folder_name, doc.external_id, auth)
-
-        if end_user_id:
-            doc.system_metadata["end_user_id"] = end_user_id
-
-        # Tag document with app_id for segmentation
-        if auth.app_id:
-            doc.system_metadata["app_id"] = auth.app_id
 
         logger.debug(f"Created text document record with ID {doc.external_id}")
 
@@ -917,7 +1240,13 @@ class DocumentService:
         # ===========================================================
 
         # Store everything
-        await self._store_chunks_and_doc(chunk_objects, doc, use_colpali, chunk_objects_multivector)
+        await self._store_chunks_and_doc(
+            chunk_objects,
+            doc,
+            use_colpali,
+            chunk_objects_multivector,
+            auth=auth,
+        )
         logger.debug(f"Successfully stored text document {doc.external_id}")
 
         # Update the document status to completed after successful storage
@@ -988,25 +1317,13 @@ class DocumentService:
         doc = Document(
             filename=filename,
             content_type=content_type,
-            owner={"type": auth.entity_type.value, "id": auth.entity_id},
             metadata=metadata or {},
             system_metadata={"status": "processing"},  # Initial status
             content_info={"type": "file", "mime_type": content_type},
-            # Ensure access_control is set similar to /ingest/file
-            access_control={
-                "readers": [auth.entity_id],
-                "writers": [auth.entity_id],
-                "admins": [auth.entity_id],
-                "user_id": [auth.user_id] if auth.user_id else [],
-                "app_access": ([auth.app_id] if auth.app_id else []),
-            },
+            app_id=auth.app_id,
+            end_user_id=end_user_id,
+            folder_name=folder_name,
         )
-
-        if auth.app_id:
-            doc.system_metadata["app_id"] = auth.app_id
-        if end_user_id:
-            doc.system_metadata["end_user_id"] = end_user_id
-        # folder_name is handled later by _ensure_folder_exists if needed by background worker
 
         # --------------------------------------------------------
         # Verify quotas before incurring heavy compute or storage
@@ -1038,7 +1355,7 @@ class DocumentService:
 
         # 1. Create initial document record in DB
         # The app_db concept from core/api.py implies self.db is already app-specific if needed
-        await self.db.store_document(doc)
+        await self.db.store_document(doc, auth)
         logger.info(f"Initial document record created for {filename} (doc_id: {doc.external_id})")
 
         # 2. Save raw file to Storage
@@ -1448,7 +1765,7 @@ class DocumentService:
                             raise Exception("Failed to update document metadata")
                     else:
                         # For new documents, use store_document
-                        success = await self.db.store_document(doc)
+                        success = await self.db.store_document(doc, auth)
                         if not success:
                             raise Exception("Failed to store document metadata")
                     return success
@@ -1818,7 +2135,12 @@ class DocumentService:
 
         # Store everything - this will replace existing chunks with new ones
         await self._store_chunks_and_doc(
-            chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
+            chunk_objects,
+            doc,
+            use_colpali,
+            chunk_objects_multivector,
+            is_update=True,
+            auth=auth,
         )
         logger.info(f"Successfully updated document {doc.external_id}")
 
@@ -1956,7 +2278,7 @@ class DocumentService:
         file_extension = os.path.splitext(file.filename)[1] if file.filename else ""
 
         # Route file uploads to the dedicated app bucket when available
-        bucket_override = await self._get_bucket_for_app(doc.system_metadata.get("app_id"))
+        bucket_override = await self._get_bucket_for_app(doc.app_id)
 
         storage_info_tuple = await self.storage.upload_from_base64(
             file_content_base64,

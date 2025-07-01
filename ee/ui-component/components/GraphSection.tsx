@@ -17,12 +17,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { AlertCircle, Share2, Plus, Network, Tag, Link, ArrowLeft } from "lucide-react";
+import { AlertCircle, Share2, Plus, Network, Tag, Link, ArrowLeft, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { showAlert } from "@/components/ui/alert-system";
 import { MultiSelect } from "@/components/ui/multi-select";
+import DeleteConfirmationModal from "@/components/documents/DeleteConfirmationModal";
 
 // Dynamically import ForceGraphComponent to avoid SSR issues
 const ForceGraphComponent = dynamic(() => import("@/components/ForceGraphComponent"), {
@@ -53,10 +54,25 @@ interface Graph {
   };
 }
 
-interface WorkflowStatusResponse {
-  status: "running" | "completed" | "failed";
-  result?: Record<string, unknown>;
+// interface WorkflowStatusResponse {
+//   status: "running" | "completed" | "failed";
+//   result?: Record<string, unknown>;
+//   error?: string;
+//   pipeline_stage?: string;
+// }
+
+interface GraphStatusResponse {
+  name: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  workflow_id?: string;
+  run_id?: string;
+  pipeline_stage?: string;
   error?: string;
+  document_count?: number;
+  entity_count?: number;
+  relationship_count?: number;
 }
 
 interface Entity {
@@ -108,7 +124,7 @@ const entityTypeColors: Record<string, string> = {
   default: "#6b7280", // Gray
 };
 
-const POLL_INTERVAL_MS = 60000; // 1 minute
+const POLL_INTERVAL_MS = 2000; // 2 seconds
 
 // Interface for document API response
 interface ApiDocumentResponse {
@@ -152,6 +168,11 @@ const GraphSection: React.FC<GraphSectionProps> = ({
   const [additionalFilters, setAdditionalFilters] = useState("{}");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Delete confirmation state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [graphToDelete, setGraphToDelete] = useState<string | null>(null);
+  const [isDeletingGraph, setIsDeletingGraph] = useState(false);
   const [activeTab, setActiveTab] = useState("list"); // 'list', 'details', 'update', 'visualize' (no longer a tab, but a state)
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showNodeLabels, setShowNodeLabels] = useState(true);
@@ -401,34 +422,58 @@ const GraphSection: React.FC<GraphSectionProps> = ({
     [apiBaseUrl, createHeaders, onSelectGraph]
   );
 
-  // Check workflow status
-  const checkWorkflowStatus = useCallback(
-    async (workflowId: string, runId?: string): Promise<WorkflowStatusResponse> => {
+  // Check graph status using the new lightweight endpoint
+  const checkGraphStatus = useCallback(
+    async (graphName: string): Promise<GraphStatusResponse> => {
       try {
         const headers = createHeaders();
-        const params = new URLSearchParams();
-        if (runId) {
-          params.append("run_id", runId);
-        }
-
-        const url = `${apiBaseUrl}/graph/workflow/${encodeURIComponent(workflowId)}/status${params.toString() ? `?${params}` : ""}`;
+        const url = `${apiBaseUrl}/graph/${encodeURIComponent(graphName)}/status`;
         const response = await fetch(url, {
           method: "GET",
           headers,
         });
 
         if (!response.ok) {
-          throw new Error(`Failed to check workflow status: ${response.statusText}`);
+          throw new Error(`Failed to check graph status: ${response.statusText}`);
         }
 
         return await response.json();
       } catch (err) {
-        console.error("Error checking workflow status:", err);
+        console.error("Error checking graph status:", err);
         throw err;
       }
     },
     [apiBaseUrl, createHeaders]
   );
+
+  // // Check workflow status (legacy endpoint, kept for compatibility)
+  // const checkWorkflowStatus = useCallback(
+  //   async (workflowId: string, runId?: string): Promise<WorkflowStatusResponse> => {
+  //     try {
+  //       const headers = createHeaders();
+  //       const params = new URLSearchParams();
+  //       if (runId) {
+  //         params.append("run_id", runId);
+  //       }
+
+  //       const url = `${apiBaseUrl}/graph/workflow/${encodeURIComponent(workflowId)}/status${params.toString() ? `?${params}` : ""}`;
+  //       const response = await fetch(url, {
+  //         method: "GET",
+  //         headers,
+  //       });
+
+  //       if (!response.ok) {
+  //         throw new Error(`Failed to check workflow status: ${response.statusText}`);
+  //       }
+
+  //       return await response.json();
+  //     } catch (err) {
+  //       console.error("Error checking workflow status:", err);
+  //       throw err;
+  //     }
+  //   },
+  //   [apiBaseUrl, createHeaders]
+  // );
 
   // Handle graph click
   const handleGraphClick = (graph: Graph) => {
@@ -587,33 +632,52 @@ const GraphSection: React.FC<GraphSectionProps> = ({
 
   // Removed useEffect that depended on initializeGraph
 
-  // Poll for processing graphs and workflow status
+  // Poll for processing graphs using the new lightweight status endpoint
   useEffect(() => {
-    // Find graphs that are processing and have workflow_id
-    const processingGraphs = graphs.filter(
-      g => g.system_metadata?.status === "processing" && g.system_metadata?.workflow_id
-    );
+    // Find graphs that are processing
+    const processingGraphs = graphs.filter(g => g.system_metadata?.status === "processing");
 
     if (processingGraphs.length === 0) return; // No need to poll
 
     const id = setInterval(async () => {
-      // Check workflow status for each processing graph
+      // Check status for each processing graph using the new endpoint
       const statusChecks = processingGraphs.map(async graph => {
-        if (graph.system_metadata?.workflow_id) {
-          try {
-            const result = await checkWorkflowStatus(graph.system_metadata.workflow_id, graph.system_metadata.run_id);
+        try {
+          const result = await checkGraphStatus(graph.name);
 
-            // If workflow is completed or failed, refresh the graph list
-            if (result.status === "completed" || result.status === "failed") {
-              await fetchGraphs();
-              // If this is the selected graph, refresh it too
+          // If graph status has changed, refresh the graph list
+          if (result.status === "completed" || result.status === "failed") {
+            await fetchGraphs();
+            // If this is the selected graph, refresh it too
+            if (selectedGraph?.name === graph.name) {
+              await fetchGraph(graph.name);
+            }
+          } else if (result.status === "processing" && result.pipeline_stage) {
+            // Update pipeline stage without full refresh if stage has changed
+            const currentStage = graph.system_metadata?.pipeline_stage;
+            if (currentStage !== result.pipeline_stage) {
+              setGraphs(prevGraphs =>
+                prevGraphs.map(g =>
+                  g.name === graph.name
+                    ? { ...g, system_metadata: { ...g.system_metadata, pipeline_stage: result.pipeline_stage } }
+                    : g
+                )
+              );
+              // Update selected graph if it's the one being updated
               if (selectedGraph?.name === graph.name) {
-                await fetchGraph(graph.name);
+                setSelectedGraph(prev =>
+                  prev
+                    ? {
+                        ...prev,
+                        system_metadata: { ...prev.system_metadata, pipeline_stage: result.pipeline_stage },
+                      }
+                    : prev
+                );
               }
             }
-          } catch (err) {
-            console.error(`Error checking workflow status for graph ${graph.name}:`, err);
           }
+        } catch (err) {
+          console.error(`Error checking graph status for ${graph.name}:`, err);
         }
       });
 
@@ -621,7 +685,54 @@ const GraphSection: React.FC<GraphSectionProps> = ({
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(id);
-  }, [graphs, selectedGraph, fetchGraphs, fetchGraph, checkWorkflowStatus]);
+  }, [graphs, selectedGraph, fetchGraphs, fetchGraph, checkGraphStatus]);
+
+  // Handle graph deletion
+  const handleDeleteGraph = useCallback(async () => {
+    if (!graphToDelete) return;
+
+    setIsDeletingGraph(true);
+    try {
+      const headers = createHeaders();
+      const response = await fetch(`${apiBaseUrl}/graph/${encodeURIComponent(graphToDelete)}`, {
+        method: "DELETE",
+        headers,
+      });
+
+      if (response.ok) {
+        // Refresh graphs list
+        fetchGraphs();
+        // If the deleted graph was selected, clear selection
+        if (selectedGraph?.name === graphToDelete) {
+          setSelectedGraph(null);
+          setActiveTab("list");
+          if (onSelectGraph) {
+            onSelectGraph(undefined);
+          }
+        }
+        showAlert(`Successfully deleted graph "${graphToDelete}"`, {
+          type: "success",
+          title: "Graph deleted",
+        });
+      } else {
+        const error = await response.text();
+        showAlert(`Failed to delete graph: ${error}`, {
+          type: "error",
+          title: "Failed to delete graph",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to delete graph:", error);
+      showAlert("Failed to delete graph. Please try again.", {
+        type: "error",
+        title: "Error",
+      });
+    } finally {
+      setIsDeletingGraph(false);
+      setShowDeleteModal(false);
+      setGraphToDelete(null);
+    }
+  }, [graphToDelete, apiBaseUrl, createHeaders, fetchGraphs, selectedGraph, onSelectGraph]);
 
   // Conditional rendering based on visualization state
   if (showVisualization && selectedGraph) {
@@ -844,9 +955,22 @@ const GraphSection: React.FC<GraphSectionProps> = ({
                 {graphs.map(graph => (
                   <div
                     key={graph.id}
-                    className="group flex cursor-pointer flex-col items-center rounded-md border border-transparent p-2 transition-all hover:border-primary/20 hover:bg-primary/5"
+                    className="group relative flex cursor-pointer flex-col items-center rounded-md border border-transparent p-2 transition-all hover:border-primary/20 hover:bg-primary/5"
                     onClick={() => handleGraphClick(graph)}
                   >
+                    {/* Delete button */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute -right-1 -top-1 z-10 h-6 w-6 rounded-full bg-background opacity-0 shadow-sm transition-opacity hover:bg-destructive hover:text-destructive-foreground group-hover:opacity-100"
+                      onClick={e => {
+                        e.stopPropagation();
+                        setGraphToDelete(graph.name);
+                        setShowDeleteModal(true);
+                      }}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
                     <div className="mb-2 transition-transform group-hover:scale-110">
                       <Network className="h-12 w-12 text-primary/80 group-hover:text-primary" />
                     </div>
@@ -857,8 +981,15 @@ const GraphSection: React.FC<GraphSectionProps> = ({
                       <Badge
                         variant="secondary"
                         className="mt-1 bg-yellow-400 text-[10px] text-black opacity-90 hover:bg-yellow-400"
+                        title={
+                          typeof graph.system_metadata?.pipeline_stage === "string"
+                            ? graph.system_metadata.pipeline_stage
+                            : "Processing"
+                        }
                       >
-                        Processing
+                        {typeof graph.system_metadata?.pipeline_stage === "string"
+                          ? graph.system_metadata.pipeline_stage
+                          : "Processing"}
                       </Badge>
                     )}
                   </div>
@@ -875,7 +1006,11 @@ const GraphSection: React.FC<GraphSectionProps> = ({
               <Alert variant="default" className="mb-2">
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>Graph is processing</AlertTitle>
-                <AlertDescription>Entities and relationships are still being extracted.</AlertDescription>
+                <AlertDescription>
+                  {typeof selectedGraph.system_metadata?.pipeline_stage === "string"
+                    ? `Current stage: ${selectedGraph.system_metadata.pipeline_stage}`
+                    : "Entities and relationships are still being extracted."}
+                </AlertDescription>
               </Alert>
             )}
             {/* Header with back button */}
@@ -918,6 +1053,17 @@ const GraphSection: React.FC<GraphSectionProps> = ({
                 >
                   <Share2 className="mr-1 h-4 w-4" />
                   Visualize
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setGraphToDelete(selectedGraph.name);
+                    setShowDeleteModal(true);
+                  }}
+                  className="flex items-center text-destructive hover:text-destructive"
+                >
+                  <X className="mr-1 h-4 w-4" />
+                  Delete
                 </Button>
               </div>
             </div>
@@ -1140,6 +1286,18 @@ const GraphSection: React.FC<GraphSectionProps> = ({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={() => {
+          setShowDeleteModal(false);
+          setGraphToDelete(null);
+        }}
+        onConfirm={handleDeleteGraph}
+        itemName={graphToDelete || undefined}
+        loading={isDeletingGraph}
+      />
     </div>
   );
 };
