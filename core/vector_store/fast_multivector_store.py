@@ -132,25 +132,26 @@ class FastMultiVectorStore(BaseVectorStore):
         scores = self.processor.score_multi_vector(
             [torch.from_numpy(query_embedding)], multivectors, device=self.device
         )[0]
-        # TODO: Check if getting top_k with a diff alg is  a better complexity (doubt this is critical path right now, tho)
-        top_k_indices = np.argsort(-1 * scores).tolist()[:k]
+        scores, idx = torch.topk(scores, min(k, len(scores)))
+        scores, top_k_indices = scores.tolist(), idx.tolist()
         rows, storage_retrieval_tasks = [], []
         for i in top_k_indices:
             row = result.rows[i]
             rows.append(row)
             storage_retrieval_tasks.append(self._retrieve_content_from_storage(row["content"], row["metadata"]))
         contents = await asyncio.gather(*storage_retrieval_tasks)
-        return [
+        ret = [
             DocumentChunk(
                 document_id=row["document_id"],
                 embedding=[],
                 chunk_number=row["chunk_number"],
                 content=content,
                 metadata=json.loads(row["metadata"]),
-                score=scores[i],
+                score=score,
             )
-            for row, content in zip(rows, contents)
+            for score, row, content in zip(scores, rows, contents)
         ]
+        return ret
 
     async def get_chunks_by_id(self, chunk_identifiers: List[Tuple[str, int]]) -> List[DocumentChunk]:
         result = await self.ns.query(
@@ -181,14 +182,18 @@ class FastMultiVectorStore(BaseVectorStore):
         as_np = np.array(chunk.embedding)
         save_path = f"multivector/{chunk.document_id}/{chunk.chunk_number}.npy"
         with tempfile.NamedTemporaryFile(suffix=".npy") as temp_file:
-            np.save(temp_file, as_np, allow_pickle=False)
-            bucket, key = await self.storage.upload_file(temp_file.name, save_path)
+            np.save(temp_file, as_np)  # , allow_pickle=True)
+            if isinstance(self.storage, S3Storage):
+                self.storage.s3_client.upload_file(temp_file.name, MULTIVECTOR_CHUNKS_BUCKET, save_path)
+                bucket, key = MULTIVECTOR_CHUNKS_BUCKET, save_path
+            else:
+                bucket, key = await self.storage.upload_file(temp_file.name, save_path)
             temp_file.close()
         return bucket, key
 
     async def load_multivector_from_storage(self, bucket: str, key: str) -> torch.Tensor:
         content = await self.storage.download_file(bucket, key)
-        as_np = np.load(BytesIO(content))
+        as_np = np.load(BytesIO(content))  # , allow_pickle=True)
         return torch.from_numpy(as_np)
 
     @contextmanager
@@ -342,14 +347,23 @@ class FastMultiVectorStore(BaseVectorStore):
         try:
             # Download content from storage
             logger.debug(f"Downloading from bucket: {MULTIVECTOR_CHUNKS_BUCKET}, key: {storage_key}")
-            if isinstance(self.storage, S3Storage):
-                storage_key = f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}"
-            try:
-                content_bytes = await self.storage.download_file(bucket=MULTIVECTOR_CHUNKS_BUCKET, key=storage_key)
-            except Exception:
-                storage_key = f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}.txt"
-                content_bytes = await self.storage.download_file(bucket=MULTIVECTOR_CHUNKS_BUCKET, key=storage_key)
-
+            key_possibilities = [
+                storage_key,
+                f"{storage_key}.txt",
+                f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}",
+                f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}.txt",
+            ]
+            download_tasks = [
+                self.storage.download_file(bucket=MULTIVECTOR_CHUNKS_BUCKET, key=key) for key in key_possibilities
+            ]
+            content_bytes_list = await asyncio.gather(*download_tasks, return_exceptions=True)
+            content_bytes = None
+            for potential_content_bytes in content_bytes_list:
+                if isinstance(potential_content_bytes, Exception):
+                    continue
+                content_bytes = potential_content_bytes
+                logger.info(f"ARNAVLOG: Successfully downloaded content from storage key: {storage_key}")
+                break
             if not content_bytes:
                 logger.error(f"No content downloaded for storage key: {storage_key}")
                 return storage_key
