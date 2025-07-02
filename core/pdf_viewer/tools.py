@@ -3,8 +3,9 @@ import uuid
 from io import BytesIO
 from typing import List
 
+import fitz  # PyMuPDF
 import httpx
-from PIL.Image import Image as ImageType
+from PIL import Image
 
 SUMMARY_PROMPT = "Please provide a concise summary of the provided image of a page from a PDF."
 SUMMARY_PROMPT += "Focus on the main topics, key points, and any important information."
@@ -12,11 +13,12 @@ SUMMARY_PROMPT += "Your summaries will be used as an *index* to allow an agent t
 
 
 class PDFViewer:
-    """A state machine for navigating and viewing PDF pages."""
+    """A state machine for navigating and viewing PDF pages with lazy loading."""
 
     def __init__(
         self,
-        images: List[ImageType],
+        pdf_document: fitz.Document = None,
+        images: List = None,  # Keep for backward compatibility
         api_base_url: str = None,
         session_id: str = None,
         user_id: str = None,
@@ -24,25 +26,60 @@ class PDFViewer:
         document_service=None,
         auth=None,
     ):
+        # Support both new PyMuPDF approach and legacy images approach
+        if pdf_document is not None:
+            self.pdf_document = pdf_document
+            self.total_pages = len(pdf_document)
+            self.use_lazy_loading = True
+        elif images is not None:
+            # Backward compatibility with old approach
+            self.images = images
+            self.total_pages = len(images)
+            self.use_lazy_loading = False
+            self.pdf_document = None
+        else:
+            raise ValueError("Either pdf_document or images must be provided")
+
         self.current_page: int = 0
-        self.total_pages: int = len(images)
-        self.images: List[ImageType] = images
         self.current_frame: str = self._create_page_url(self.current_page)
+
         # Use provided api_base_url or fall back to localhost for development
         self.api_base_url: str = api_base_url or "http://localhost:3000/api/pdf"
         # Generate session and user IDs if not provided
         self.session_id: str = session_id or str(uuid.uuid4())
         self.user_id: str = user_id or "anonymous"
         self.client = httpx.Client(base_url=self.api_base_url, follow_redirects=True)
-        # Execute summarization in parallel batches of 10
-        self.summaries: List[str] = [
-            ""
-        ] * self.total_pages  # [self._summarize_page(i) for i in range(self.total_pages)]
+
+        # Initialize empty summaries - will be generated on demand
+        self.summaries: List[str] = [""] * self.total_pages
 
         # For document retrieval functionality
         self.document_id: str = document_id
         self.document_service = document_service
         self.auth = auth
+
+    def _get_page_image(self, page_number: int) -> Image.Image:
+        """Get PIL Image for a specific page, using lazy loading if available."""
+        if self.use_lazy_loading:
+            # Lazy loading with PyMuPDF - render page on demand
+            page = self.pdf_document[page_number]
+            # Use high DPI for better quality (150 DPI is a good balance of quality/speed)
+            mat = fitz.Matrix(150 / 72, 150 / 72)  # 150 DPI
+            pix = page.get_pixmap(matrix=mat)
+            img_data = pix.tobytes("png")
+            return Image.open(BytesIO(img_data))
+        else:
+            # Legacy approach with pre-loaded images
+            return self.images[page_number]
+
+    def _create_page_url(self, page_number: int) -> str:
+        """Convert a page to base64 data URL."""
+        image = self._get_page_image(page_number)
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        return "data:image/png;base64," + image_base64
 
     def _make_api_call(self, method: str, endpoint: str, json_data: dict = None) -> httpx.Response:
         """Make API call to PDF viewer for UI side effects with session and user scoping."""
@@ -60,15 +97,6 @@ class PDFViewer:
             return self.client.post(endpoint, json=json_data, headers=headers)
         elif method.upper() == "GET":
             return self.client.get(endpoint, headers=headers)
-
-    def _create_page_url(self, page_number: int) -> str:
-        """Convert a PIL image to base64 data URL."""
-        image = self.images[page_number]
-        buffer = BytesIO()
-        image.save(buffer, format="PNG")
-        buffer.seek(0)
-        image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-        return "data:image/png;base64," + image_base64
 
     def get_current_frame(self) -> str:
         """Get the current frame as a base64 data URL."""
@@ -164,7 +192,7 @@ class PDFViewer:
         #     # Fallback to original page if current_frame is not properly formatted
         #     image = self.images[self.current_page]
 
-        image = self.images[self.current_page]
+        image = self._get_page_image(self.current_page)
         width, height = image.size
 
         # Convert normalized coordinates (0-1000) to actual pixel coordinates
@@ -306,6 +334,21 @@ class PDFViewer:
         response = litellm.completion(model="gemini/gemini-2.5-flash-preview-05-20", messages=messages, max_tokens=500)
 
         return response.choices[0].message.content
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with cleanup."""
+        self.close()
+
+    def close(self):
+        """Clean up resources."""
+        if self.pdf_document is not None:
+            self.pdf_document.close()
+        if hasattr(self, "client"):
+            self.client.close()
 
 
 # LiteLLM Tools Description for PDF Viewer
