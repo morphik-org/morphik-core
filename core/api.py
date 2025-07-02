@@ -2478,7 +2478,7 @@ async def set_folder_rule(
             raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
 
         # Check if user has write access to the folder
-        if not document_service.db._check_folder_access(folder, auth, "write"):
+        if not document_service.db._check_folder_model_access(folder, auth, "write"):
             raise HTTPException(status_code=403, detail="You don't have write access to this folder")
 
         # Update folder with rules
@@ -2675,7 +2675,7 @@ async def associate_workflow_to_folder(
             raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
 
         # Check if user has write access to the folder
-        if not document_service.db._check_folder_access(folder, auth, "write"):
+        if not document_service.db._check_folder_model_access(folder, auth, "write"):
             raise HTTPException(status_code=403, detail="You don't have write access to this folder")
 
         # Get the workflow to verify it exists and is accessible
@@ -2727,7 +2727,7 @@ async def disassociate_workflow_from_folder(
             raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
 
         # Check if user has write access to the folder
-        if not document_service.db._check_folder_access(folder, auth, "write"):
+        if not document_service.db._check_folder_model_access(folder, auth, "write"):
             raise HTTPException(status_code=403, detail="You don't have write access to this folder")
 
         # Check if workflow is associated
