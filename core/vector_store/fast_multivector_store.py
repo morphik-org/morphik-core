@@ -2,11 +2,18 @@ import asyncio
 import base64
 import json
 import logging
-from typing import List, Optional, Tuple, Union
+import tempfile
+import time
+from contextlib import contextmanager
+from io import BytesIO
+from typing import Dict, List, Optional, Tuple, Union
 
 import fixed_dimensional_encoding as fde
 import numpy as np
+import psycopg
 import torch
+from colpali_engine.models import ColQwen2_5_Processor
+from psycopg_pool import ConnectionPool
 from turbopuffer import AsyncTurbopuffer
 
 from core.config import get_settings
@@ -28,6 +35,8 @@ DEFAULT_APP_ID = "default"  # Fallback for local usage when app_id is None
 # external storage always enabled, no two ways about it
 class FastMultiVectorStore(BaseVectorStore):
     def __init__(self, uri: str, tpuf_api_key: str, namespace: str = "public", region: str = "aws-us-west-2"):
+        if uri.startswith("postgresql+asyncpg://"):
+            uri = uri.replace("postgresql+asyncpg://", "postgresql://")
         self.uri = uri
         self.tpuf_api_key = tpuf_api_key
         self.namespace = namespace
@@ -41,6 +50,12 @@ class FastMultiVectorStore(BaseVectorStore):
             projection_dimension=16,
             projection_type="AMS_SKETCH",
         )
+        self._document_app_id_cache: Dict[str, str] = {}  # Cache for document app_ids
+        self.pool: ConnectionPool = ConnectionPool(conninfo=self.uri, min_size=1, max_size=10, timeout=60)
+        self.processor: ColQwen2_5_Processor = ColQwen2_5_Processor.from_pretrained(
+            "tsystems/colqwen2.5-3b-multilingual-v1.0"
+        )
+        self.device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
 
     def _init_storage(self) -> BaseStorage:
         """Initialize appropriate storage backend based on settings."""
@@ -71,14 +86,22 @@ class FastMultiVectorStore(BaseVectorStore):
         ]
         storage_keys = await asyncio.gather(*[self._save_chunk_to_storage(chunk) for chunk in chunks])
         stored_ids = [f"{chunk.document_id}-{chunk.chunk_number}" for chunk in chunks]
+        doc_ids, chunk_numbers, metdatas, multivecs = [], [], [], []
+        for chunk in chunks:
+            doc_ids.append(chunk.document_id)
+            chunk_numbers.append(chunk.chunk_number)
+            metdatas.append(json.dumps(chunk.metadata))
+            bucket, key = await self.save_multivector_to_storage(chunk)
+            multivecs.append([bucket, key])
         result = await self.ns.write(
             upsert_columns={
                 "id": stored_ids,
                 "vector": embeddings,
-                "document_id": [chunk.document_id for chunk in chunks],
-                "chunk_number": [chunk.chunk_number for chunk in chunks],
+                "document_id": doc_ids,
+                "chunk_number": chunk_numbers,
                 "content": storage_keys,
-                "metadata": [json.dumps(chunk.metadata) for chunk in chunks],
+                "metadata": metdatas,
+                "multivector": multivecs,
             },
             distance_metric="cosine_distance",
         )
@@ -95,16 +118,27 @@ class FastMultiVectorStore(BaseVectorStore):
             query_embedding = query_embedding.cpu().numpy()
         elif isinstance(query_embedding, list):
             query_embedding = np.array(query_embedding)
-        query_embedding = fde.generate_query_encoding(query_embedding, self.fde_config).tolist()
+        encoded_query_embedding = fde.generate_query_encoding(query_embedding, self.fde_config).tolist()
         result = await self.ns.query(
             filters=("document_id", "In", doc_ids),
-            rank_by=("vector", "ANN", query_embedding),
-            top_k=k,
-            include_attributes=["id", "document_id", "chunk_number", "content", "metadata"],
+            rank_by=("vector", "ANN", encoded_query_embedding),
+            top_k=min(10 * k, 75),
+            include_attributes=["id", "document_id", "chunk_number", "content", "metadata", "multivector"],
         )
-        storage_retrieval_tasks = [
-            self._retrieve_content_from_storage(r["content"], json.loads(r["metadata"])) for r in result.rows
+        multivector_retrieval_tasks = [
+            self.load_multivector_from_storage(r["multivector"][0], r["multivector"][1]) for r in result.rows
         ]
+        multivectors = await asyncio.gather(*multivector_retrieval_tasks)
+        scores = self.processor.score_multi_vector(
+            [torch.from_numpy(query_embedding)], multivectors, device=self.device
+        )[0]
+        # TODO: Check if getting top_k with a diff alg is  a better complexity (doubt this is critical path right now, tho)
+        top_k_indices = np.argsort(-1 * scores).tolist()[:k]
+        rows, storage_retrieval_tasks = [], []
+        for i in top_k_indices:
+            row = result.rows[i]
+            rows.append(row)
+            storage_retrieval_tasks.append(self._retrieve_content_from_storage(row["content"], row["metadata"]))
         contents = await asyncio.gather(*storage_retrieval_tasks)
         return [
             DocumentChunk(
@@ -113,18 +147,19 @@ class FastMultiVectorStore(BaseVectorStore):
                 chunk_number=row["chunk_number"],
                 content=content,
                 metadata=json.loads(row["metadata"]),
-                score=1 - row["$dist"],
+                score=scores[i],
             )
-            for row, content in zip(result.rows, contents)
+            for row, content in zip(rows, contents)
         ]
 
     async def get_chunks_by_id(self, chunk_identifiers: List[Tuple[str, int]]) -> List[DocumentChunk]:
         result = await self.ns.query(
             filters=("id", "In", [f"{doc_id}-{chunk_num}" for doc_id, chunk_num in chunk_identifiers]),
             include_attributes=["id", "document_id", "chunk_number", "content", "metadata"],
+            top_k=len(chunk_identifiers),
         )
         storage_retrieval_tasks = [
-            self._retrieve_content_from_storage(r["content"], json.loads(r["metadata"])) for r in result.rows
+            self._retrieve_content_from_storage(r["content"], r["metadata"]) for r in result.rows
         ]
         contents = await asyncio.gather(*storage_retrieval_tasks)
         return [
@@ -140,7 +175,66 @@ class FastMultiVectorStore(BaseVectorStore):
         ]
 
     async def delete_chunks_by_document_id(self, document_id: str) -> bool:
-        return await self.ns.write(delete_by_filter=("document_id", "=", document_id))
+        return await self.ns.write(delete_by_filter=("document_id", "Eq", document_id))
+
+    async def save_multivector_to_storage(self, chunk: DocumentChunk) -> Tuple[str, str]:
+        as_np = np.array(chunk.embedding)
+        save_path = f"multivector/{chunk.document_id}/{chunk.chunk_number}.npy"
+        with tempfile.NamedTemporaryFile(suffix=".npy") as temp_file:
+            np.save(temp_file, as_np, allow_pickle=False)
+            bucket, key = await self.storage.upload_file(temp_file.name, save_path)
+            temp_file.close()
+        return bucket, key
+
+    async def load_multivector_from_storage(self, bucket: str, key: str) -> torch.Tensor:
+        content = await self.storage.download_file(bucket, key)
+        as_np = np.load(BytesIO(content))
+        return torch.from_numpy(as_np)
+
+    @contextmanager
+    def get_connection(self):
+        """Get a PostgreSQL connection with retry logic.
+
+        Yields:
+            A PostgreSQL connection object
+
+        Raises:
+            psycopg.OperationalError: If all connection attempts fail
+        """
+        attempt = 0
+        last_error = None
+
+        # Try to establish a new connection with retries
+        while attempt < self.max_retries:
+            try:
+                # Borrow a pooled connection (blocking wait). Autocommit stays
+                # disabled so we can batch-commit.
+                conn = self.pool.getconn()
+
+                try:
+                    yield conn
+                    return
+                finally:
+                    # Release connection back to the pool
+                    try:
+                        self.pool.putconn(conn)
+                    except Exception:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+            except psycopg.OperationalError as e:
+                last_error = e
+                attempt += 1
+                if attempt < self.max_retries:
+                    logger.warning(
+                        f"Connection attempt {attempt} failed: {str(e)}. Retrying in {self.retry_delay} seconds..."
+                    )
+                    time.sleep(self.retry_delay)
+
+        # If we get here, all retries failed
+        logger.error(f"All connection attempts failed after {self.max_retries} retries: {str(last_error)}")
+        raise last_error
 
     async def _get_document_app_id(self, document_id: str) -> str:
         """Get app_id for a document, with caching."""
@@ -262,7 +356,14 @@ class FastMultiVectorStore(BaseVectorStore):
 
             logger.debug(f"Downloaded {len(content_bytes)} bytes for key: {storage_key}")
 
-            # Determine if this should be returned as base64 or text
+            # Check if storage key ends with .txt (indicates content was stored as text)
+            if storage_key.endswith(".txt"):
+                # Content is stored as text (could be base64 string for images)
+                result = content_bytes.decode("utf-8")
+                logger.debug(f"Retrieved text content from .txt file, length: {len(result)}")
+                return result
+
+            # For non-.txt files, determine content type
             try:
                 if chunk_metadata:
                     metadata = json.loads(chunk_metadata)
@@ -277,6 +378,7 @@ class FastMultiVectorStore(BaseVectorStore):
                     result = content_bytes.decode("utf-8")
                     logger.debug(f"Returning text content, length: {len(result)}")
                     return result
+
                 logger.debug("No metadata, auto-detecting content type")
                 try:
                     result = content_bytes.decode("utf-8")
