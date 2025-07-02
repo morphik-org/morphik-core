@@ -2453,7 +2453,6 @@ async def set_folder_rule(
         Success status with processing results
     """
     # Import text here to ensure it's available in this function's scope
-    from sqlalchemy import text
 
     try:
         # Log detailed information about the rules
@@ -2477,9 +2476,7 @@ async def set_folder_rule(
         if not folder:
             raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
 
-        # Check if user has write access to the folder
-        if not document_service.db._check_folder_model_access(folder, auth, "write"):
-            raise HTTPException(status_code=403, detail="You don't have write access to this folder")
+        # Note: Write access will be checked by the database operations
 
         # Update folder with rules
         # Convert rules to dicts for JSON serialization
@@ -2669,47 +2666,26 @@ async def associate_workflow_to_folder(
 ) -> Dict[str, Any]:
     """Associate a workflow with a folder for automatic execution on document ingestion."""
     try:
-        # Get the folder
-        folder = await document_service.db.get_folder(folder_id, auth)
-        if not folder:
-            raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
-
-        # Check if user has write access to the folder
-        if not document_service.db._check_folder_model_access(folder, auth, "write"):
-            raise HTTPException(status_code=403, detail="You don't have write access to this folder")
-
-        # Get the workflow to verify it exists and is accessible
+        # Verify the workflow exists and is accessible
         workflow = await workflow_service.get_workflow(workflow_id, auth)
         if not workflow:
             raise HTTPException(status_code=404, detail=f"Workflow {workflow_id} not found or not accessible")
 
-        # Check if workflow is already associated
-        if workflow_id in folder.workflow_ids:
-            return {"success": True, "message": "Workflow already associated with folder"}
+        # Use the database method which handles access control properly
+        success = await document_service.db.associate_workflow_to_folder(folder_id, workflow_id, auth)
 
-        # Add workflow to folder
-        workflow_ids = folder.workflow_ids.copy()
-        workflow_ids.append(workflow_id)
+        if not success:
+            # Check if folder exists by trying to get it
+            folder = await document_service.db.get_folder(folder_id, auth)
+            if not folder:
+                raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
+            else:
+                raise HTTPException(status_code=403, detail="You don't have write access to this folder")
 
-        # Update the folder in the database
-        async with document_service.db.async_session() as session:
-            await session.execute(
-                text(
-                    """
-                    UPDATE folders
-                    SET workflow_ids = :workflow_ids
-                    WHERE id = :folder_id
-                    """
-                ),
-                {"folder_id": folder_id, "workflow_ids": json.dumps(workflow_ids)},
-            )
-            await session.commit()
-
-        logger.info(f"Associated workflow {workflow_id} with folder {folder_id}")
         return {"success": True, "message": f"Successfully associated workflow {workflow_id} with folder {folder_id}"}
-
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
+    except Exception as e:
+        logger.error(f"Error associating workflow to folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.delete("/folders/{folder_id}/workflows/{workflow_id}")
@@ -2721,41 +2697,21 @@ async def disassociate_workflow_from_folder(
 ) -> Dict[str, Any]:
     """Remove a workflow association from a folder."""
     try:
-        # Get the folder
-        folder = await document_service.db.get_folder(folder_id, auth)
-        if not folder:
-            raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
+        # Use the database method which handles access control properly
+        success = await document_service.db.disassociate_workflow_from_folder(folder_id, workflow_id, auth)
 
-        # Check if user has write access to the folder
-        if not document_service.db._check_folder_model_access(folder, auth, "write"):
-            raise HTTPException(status_code=403, detail="You don't have write access to this folder")
+        if not success:
+            # Check if folder exists by trying to get it
+            folder = await document_service.db.get_folder(folder_id, auth)
+            if not folder:
+                raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
+            else:
+                raise HTTPException(status_code=403, detail="You don't have write access to this folder")
 
-        # Check if workflow is associated
-        if workflow_id not in folder.workflow_ids:
-            return {"success": True, "message": "Workflow not associated with folder"}
-
-        # Remove workflow from folder
-        workflow_ids = [wid for wid in folder.workflow_ids if wid != workflow_id]
-
-        # Update the folder in the database
-        async with document_service.db.async_session() as session:
-            await session.execute(
-                text(
-                    """
-                    UPDATE folders
-                    SET workflow_ids = :workflow_ids
-                    WHERE id = :folder_id
-                    """
-                ),
-                {"folder_id": folder_id, "workflow_ids": json.dumps(workflow_ids)},
-            )
-            await session.commit()
-
-        logger.info(f"Removed workflow {workflow_id} from folder {folder_id}")
         return {"success": True, "message": f"Successfully removed workflow {workflow_id} from folder {folder_id}"}
-
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
+    except Exception as e:
+        logger.error(f"Error disassociating workflow from folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/folders/{folder_id}/workflows", response_model=List[Workflow])

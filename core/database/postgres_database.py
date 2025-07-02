@@ -1956,6 +1956,76 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error removing document from folder: {e}")
             return False
 
+    async def associate_workflow_to_folder(self, folder_id: str, workflow_id: str, auth: AuthContext) -> bool:
+        """Associate a workflow with a folder."""
+        try:
+            # First, get the folder model and check write access
+            async with self.async_session() as session:
+                folder_model = await session.get(FolderModel, folder_id)
+                if not folder_model:
+                    logger.error(f"Folder {folder_id} not found")
+                    return False
+
+                # Check if user has write access to the folder
+                if not self._check_folder_model_access(folder_model, auth, "write"):
+                    logger.error(f"User does not have write access to folder {folder_id}")
+                    return False
+
+                # Get current workflow_ids
+                workflow_ids = folder_model.workflow_ids or []
+
+                # Check if workflow is already associated
+                if workflow_id in workflow_ids:
+                    logger.info(f"Workflow {workflow_id} is already associated with folder {folder_id}")
+                    return True
+
+                # Add the workflow to the folder
+                workflow_ids.append(workflow_id)
+                folder_model.workflow_ids = workflow_ids
+
+                await session.commit()
+                logger.info(f"Associated workflow {workflow_id} with folder {folder_id}")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error associating workflow with folder: {e}")
+            return False
+
+    async def disassociate_workflow_from_folder(self, folder_id: str, workflow_id: str, auth: AuthContext) -> bool:
+        """Remove a workflow from a folder."""
+        try:
+            # First, get the folder model and check write access
+            async with self.async_session() as session:
+                folder_model = await session.get(FolderModel, folder_id)
+                if not folder_model:
+                    logger.error(f"Folder {folder_id} not found")
+                    return False
+
+                # Check if user has write access to the folder
+                if not self._check_folder_model_access(folder_model, auth, "write"):
+                    logger.error(f"User does not have write access to folder {folder_id}")
+                    return False
+
+                # Get current workflow_ids
+                workflow_ids = folder_model.workflow_ids or []
+
+                # Check if workflow is associated
+                if workflow_id not in workflow_ids:
+                    logger.info(f"Workflow {workflow_id} is not associated with folder {folder_id}")
+                    return True
+
+                # Remove the workflow from the folder
+                workflow_ids.remove(workflow_id)
+                folder_model.workflow_ids = workflow_ids
+
+                await session.commit()
+                logger.info(f"Disassociated workflow {workflow_id} from folder {folder_id}")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error disassociating workflow from folder: {e}")
+            return False
+
     async def get_chat_history(
         self, conversation_id: str, user_id: Optional[str], app_id: Optional[str]
     ) -> Optional[List[Dict[str, Any]]]:
