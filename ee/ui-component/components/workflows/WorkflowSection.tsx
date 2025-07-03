@@ -377,7 +377,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
   const pollRunStatus = useCallback(
     async (runId: string) => {
       try {
-        const res = await fetch(`${apiBaseUrl}/workflow_runs/${runId}`, { headers });
+        const res = await fetch(`${apiBaseUrl}/workflows/runs/${runId}`, { headers });
         if (res.ok) {
           const run = await res.json();
           setWorkflowRuns(prev => prev.map(r => (r.id === runId ? run : r)));
@@ -407,18 +407,18 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                 return newIntervals;
               });
             }
-          } else if (res.status === 404) {
-            // Run no longer exists – stop polling and remove it from state
-            if (pollingIntervals[runId]) {
-              clearInterval(pollingIntervals[runId]);
-              setPollingIntervals(prev => {
-                const newIntervals = { ...prev };
-                delete newIntervals[runId];
-                return newIntervals;
-              });
-            }
-            setWorkflowRuns(prev => prev.filter(r => r.id !== runId));
           }
+        } else if (res.status === 404) {
+          // Run no longer exists – stop polling and remove it from state
+          if (pollingIntervals[runId]) {
+            clearInterval(pollingIntervals[runId]);
+            setPollingIntervals(prev => {
+              const newIntervals = { ...prev };
+              delete newIntervals[runId];
+              return newIntervals;
+            });
+          }
+          setWorkflowRuns(prev => prev.filter(r => r.id !== runId));
         }
       } catch (error) {
         console.error("Failed to poll run status:", error);

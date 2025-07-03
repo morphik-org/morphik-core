@@ -180,6 +180,40 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
     );
   };
 
+  // Helper to retrieve value at nested path
+  const getNestedValue = (obj: Record<string, unknown>, path: string[]): unknown => {
+    return path.reduce<unknown>((acc, key) => {
+      if (acc && typeof acc === "object") {
+        return (acc as Record<string, unknown>)[key];
+      }
+      return undefined;
+    }, obj);
+  };
+
+  // Rename a metadata key while preserving its value
+  const renameMetadataKey = (path: string[], newKey: string) => {
+    setEditedMetadata(prev => {
+      const value = getNestedValue(prev as Record<string, unknown>, path);
+      // Delete old key
+      let temp = setNestedValue(prev as Record<string, unknown>, path, undefined);
+      // Add new key with previous value
+      temp = setNestedValue(temp as Record<string, unknown>, [...path.slice(0, -1), newKey], value);
+      return temp;
+    });
+
+    // Update expanded state so the row stays open if it was previously open
+    setExpandedKeys(prev => {
+      const oldPathKey = path.join(".");
+      const newPathKey = [...path.slice(0, -1), newKey].join(".");
+      const newSet = new Set(prev);
+      if (newSet.has(oldPathKey)) {
+        newSet.delete(oldPathKey);
+        newSet.add(newPathKey);
+      }
+      return newSet;
+    });
+  };
+
   // Helper function to parse JSON safely
   const parseJsonSafely = (value: string): unknown => {
     try {
@@ -244,6 +278,17 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
   const saveMetadata = async () => {
     if (!selectedDocument) return;
 
+    /*
+     * If the user has typed a new key/value but hasn't clicked the
+     * plus button yet, make sure we still persist that data. We do
+     * this by merging the temporary input values into the payload
+     * sent to the server.
+     */
+    const metadataToSave: Record<string, unknown> = { ...editedMetadata };
+    if (newMetadataKey.trim()) {
+      metadataToSave[newMetadataKey.trim()] = parseJsonSafely(newMetadataValue);
+    }
+
     setIsSavingMetadata(true);
     try {
       const response = await fetch(`${apiBaseUrl}/documents/${selectedDocument.external_id}/update_metadata`, {
@@ -252,7 +297,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
           "Content-Type": "application/json",
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body: JSON.stringify(editedMetadata),
+        body: JSON.stringify(metadataToSave),
       });
 
       if (!response.ok) {
@@ -272,6 +317,8 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
       // Exit edit mode
       setIsEditingMetadata(false);
       setEditedMetadata({});
+      setNewMetadataKey("");
+      setNewMetadataValue("");
     } catch (error) {
       console.error("Error updating metadata:", error);
       showAlert(`Failed to update metadata: ${error instanceof Error ? error.message : String(error)}`, {
@@ -355,7 +402,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
           const isObject = !isPrimitive(value) && value !== null;
 
           return (
-            <div key={key} className="space-y-1">
+            <div key={pathKey} className="space-y-1">
               <div className="flex items-center gap-2">
                 {isObject && (
                   <Button variant="ghost" size="icon" onClick={() => toggleExpanded(pathKey)} className="h-6 w-6 p-0">
@@ -364,12 +411,22 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
                 )}
                 {!isObject && <div className="w-6" />}
 
-                <Input value={key} disabled={isArray} className="h-8 w-[140px] flex-shrink-0 text-sm font-medium" />
+                <Input
+                  defaultValue={key}
+                  disabled={isArray}
+                  onBlur={e => {
+                    const newKey = e.target.value.trim();
+                    if (newKey && newKey !== key) {
+                      renameMetadataKey(currentPath, newKey);
+                    }
+                  }}
+                  className="h-8 w-[140px] flex-shrink-0 text-sm font-medium"
+                />
 
                 {isPrimitive(value) ? (
                   <Input
-                    value={String(value ?? "")}
-                    onChange={e => updateMetadataField(currentPath, e.target.value)}
+                    defaultValue={String(value ?? "")}
+                    onBlur={e => updateMetadataField(currentPath, e.target.value)}
                     className="h-8 flex-1 text-sm"
                     placeholder="Value"
                   />

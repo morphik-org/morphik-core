@@ -80,25 +80,28 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
   const [isDeletingFolder, setIsDeletingFolder] = React.useState(false);
 
   // Function to update both state and URL
-  const updateSelectedFolder = (folderName: string | null) => {
-    setSelectedFolder(folderName);
+  const updateSelectedFolder = React.useCallback(
+    (folderName: string | null) => {
+      setSelectedFolder(folderName);
 
-    // If we're on the workflows page, navigate back to documents
-    if (pathname === "/workflows") {
-      if (folderName) {
-        router.push(`/?folder=${encodeURIComponent(folderName)}`);
+      // If we're on the workflows page, navigate back to documents
+      if (pathname === "/workflows") {
+        if (folderName) {
+          router.push(`/?folder=${encodeURIComponent(folderName)}`);
+        } else {
+          router.push("/");
+        }
       } else {
-        router.push("/");
+        // Update URL to reflect the selected folder
+        if (folderName) {
+          router.push(`${pathname}?folder=${encodeURIComponent(folderName)}`);
+        } else {
+          router.push(pathname);
+        }
       }
-    } else {
-      // Update URL to reflect the selected folder
-      if (folderName) {
-        router.push(`${pathname}?folder=${encodeURIComponent(folderName)}`);
-      } else {
-        router.push(pathname);
-      }
-    }
-  };
+    },
+    [pathname, router]
+  );
 
   // Handle folder deletion
   const handleDeleteFolder = React.useCallback(async () => {
