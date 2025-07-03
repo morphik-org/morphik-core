@@ -2869,3 +2869,35 @@ async def list_chat_conversations(
     except Exception as exc:  # noqa: BLE001
         logger.error("Error listing chat conversations: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to list chat conversations")
+
+
+@app.patch("/chats/{chat_id}/title")
+async def update_chat_title(
+    chat_id: str,
+    title: str = Query(..., description="New title for the chat"),
+    auth: AuthContext = Depends(verify_token),
+):
+    """Update the title of a chat conversation.
+
+    Args:
+        chat_id: ID of the chat conversation to update
+        title: New title for the chat
+        auth: Authentication context
+
+    Returns:
+        Success status
+    """
+    try:
+        success = await document_service.db.update_chat_title(
+            conversation_id=chat_id,
+            title=title,
+            user_id=auth.user_id,
+            app_id=auth.app_id,
+        )
+        if success:
+            return {"success": True, "message": "Chat title updated successfully"}
+        else:
+            raise HTTPException(status_code=404, detail="Chat not found or access denied")
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error updating chat title: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to update chat title")

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 
 interface ChatSessionMeta {
   chatId: string;
+  title?: string;
   createdAt?: string;
   updatedAt?: string;
   lastMessage?: {
@@ -70,6 +71,7 @@ export function useChatSessions({ apiBaseUrl, authToken, limit = 100 }: UseChatS
           const data = await res.json();
           const transformedSessions = data.map((c: any) => ({
             chatId: c.chat_id,
+            title: c.title,
             createdAt: c.created_at,
             updatedAt: c.updated_at,
             lastMessage: c.last_message ?? null,
