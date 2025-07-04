@@ -20,6 +20,7 @@ from .models import (
     Graph,
     GraphPromptOverrides,
     IngestTextRequest,
+    QueryPromptOverrides,
 )
 from .rules import Rule
 
@@ -248,7 +249,7 @@ class _MorphikClientLogic:
         graph_name: Optional[str],
         hop_depth: int,
         include_paths: bool,
-        prompt_overrides: Optional[Dict],
+        prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]],
         folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
         chat_id: Optional[str] = None,
@@ -257,6 +258,10 @@ class _MorphikClientLogic:
         padding: int = 0,
     ) -> Dict[str, Any]:
         """Prepare request for query endpoint"""
+        # Convert prompt_overrides to dict if it's a model
+        if prompt_overrides and isinstance(prompt_overrides, QueryPromptOverrides):
+            prompt_overrides = prompt_overrides.model_dump(exclude_none=True)
+
         payload = {
             "query": query,
             "filters": filters,

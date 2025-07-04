@@ -45,7 +45,7 @@ for item in medical_texts:
 print("\nExample 1: Basic Query with Prompt Override")
 basic_query_override = QueryPromptOverrides(
     query=QueryPromptOverride(
-        prompt_template="Respond as if you are a medical professional. Answer the following question based on the provided context: {question}"
+        prompt_template="Respond as if you are a medical professional. Based on the following context: {context}\n\nAnswer the following question: {question}"
     )
 )
 
@@ -104,7 +104,9 @@ if graph_response.metadata and "graph" in graph_response.metadata:
 # Example 5: Using dictionary for prompt overrides
 print("\nExample 5: Using Dictionary for Prompt Overrides")
 dict_override = {
-    "query": {"prompt_template": "Summarize the information in a bulleted list format, focusing on: {question}"}
+    "query": {
+        "prompt_template": "Based on the following context: {context}\n\nSummarize the information in a bulleted list format, focusing on: {question}"
+    }
 }
 
 dict_response = db.query(
