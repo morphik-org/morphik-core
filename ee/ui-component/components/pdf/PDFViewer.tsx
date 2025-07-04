@@ -1161,12 +1161,14 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
         {/* Document List Area */}
         <div className="flex min-h-0 flex-1 flex-col p-8">
           <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col">
-            <div className="mb-6 text-center">
-              <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Select a PDF Document</h3>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Choose from your uploaded PDF documents to view and chat about
-              </p>
-            </div>
+            {availableDocuments.length >= 1 && (
+              <div className="mb-6 text-center">
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Select a PDF Document</h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Choose from your uploaded PDF documents to view and chat about
+                </p>
+              </div>
+            )}
 
             {isLoadingDocuments ? (
               <div className="flex flex-1 items-center justify-center py-12">

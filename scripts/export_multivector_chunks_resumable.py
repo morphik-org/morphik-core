@@ -161,9 +161,7 @@ async def export_multi_vector_embeddings(resume=False, force_restart=False):
     """Export multi_vector_embeddings table from Supabase in batches with resume capability."""
 
     # Database connection string
-    DATABASE_URL = (
-        "postgresql+asyncpg://postgres:xafzaq-8cogni-Dadsyw@db.sjziybcvpdghcaqkssnm.supabase.co:5432/postgres"
-    )
+    DATABASE_URL = "xxxxxxxxxxxxxx"
 
     # Clean the URL for asyncpg (remove the +asyncpg part)
     ASYNCPG_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")

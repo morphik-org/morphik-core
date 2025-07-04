@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { Edit2, FileJson, Save, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { Edit2, FileJson, Save, Trash2, ChevronDown, ChevronUp, FileText, FileDown } from "lucide-react";
 
 interface SchemaField {
   name: string;
@@ -89,6 +89,8 @@ export const WorkflowStepInlineConfig: React.FC<WorkflowStepInlineConfigProps> =
                         {action.id.includes("extract") && <FileJson className="h-4 w-4 text-blue-500" />}
                         {action.id.includes("instruction") && <Edit2 className="h-4 w-4 text-purple-500" />}
                         {action.id.includes("save") && <Save className="h-4 w-4 text-green-500" />}
+                        {action.id.includes("convert_to_markdown") && <FileText className="h-4 w-4 text-orange-500" />}
+                        {action.id.includes("ingest_output") && <FileDown className="h-4 w-4 text-indigo-500" />}
                         <span>{action.name}</span>
                       </div>
                     </SelectItem>
@@ -143,6 +145,11 @@ export const WorkflowStepInlineConfig: React.FC<WorkflowStepInlineConfigProps> =
                         <Save className="h-5 w-5 text-green-600 dark:text-green-400" />
                       </div>
                     )}
+                    {action?.id.includes("convert_to_markdown") && (
+                      <div className="rounded-lg bg-orange-500/10 p-2">
+                        <FileText className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                      </div>
+                    )}
                     <div>
                       <h4 className="font-medium text-foreground">{action?.name || "Unknown Action"}</h4>
                       <p className="text-sm text-muted-foreground">{action?.description}</p>
@@ -172,6 +179,16 @@ export const WorkflowStepInlineConfig: React.FC<WorkflowStepInlineConfigProps> =
                       {step.action_id === "morphik.actions.save_to_metadata" && step.parameters.metadata_key && (
                         <div className="mt-2 text-sm text-muted-foreground">
                           Saving to: {step.parameters.metadata_key as string}
+                        </div>
+                      )}
+                      {step.action_id === "morphik.actions.convert_to_markdown" && (
+                        <div className="mt-2 text-sm text-muted-foreground">
+                          Converting to Markdown using {(step.parameters.model as string) || "gemini-2.5-pro"}
+                        </div>
+                      )}
+                      {step.action_id === "morphik.actions.ingest_output" && (
+                        <div className="mt-2 text-sm text-muted-foreground">
+                          Ingesting as: {(step.parameters.filename as string) || "workflow_output.md"}
                         </div>
                       )}
                     </>
@@ -229,6 +246,10 @@ export const WorkflowStepInlineConfig: React.FC<WorkflowStepInlineConfigProps> =
                             {action.id.includes("extract") && <FileJson className="h-4 w-4 text-blue-500" />}
                             {action.id.includes("instruction") && <Edit2 className="h-4 w-4 text-purple-500" />}
                             {action.id.includes("save") && <Save className="h-4 w-4 text-green-500" />}
+                            {action.id.includes("convert_to_markdown") && (
+                              <FileText className="h-4 w-4 text-orange-500" />
+                            )}
+                            {action.id.includes("ingest_output") && <FileDown className="h-4 w-4 text-indigo-500" />}
                             <span>{action.name}</span>
                           </div>
                         </SelectItem>
@@ -313,6 +334,136 @@ export const WorkflowStepInlineConfig: React.FC<WorkflowStepInlineConfigProps> =
                       </Select>
                       <p className="mt-1 text-xs text-muted-foreground">
                         Choose whether to save only the previous step&apos;s output or all steps&apos; outputs.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {step.action_id === "morphik.actions.convert_to_markdown" && (
+                  <div className="space-y-4">
+                    <div>
+                      <Label>API Key Environment Variable</Label>
+                      <Input
+                        value={(step.parameters.api_key_env as string) || "GEMINI_API_KEY"}
+                        onChange={e =>
+                          onUpdate(index, {
+                            parameters: {
+                              ...step.parameters,
+                              api_key_env: e.target.value,
+                            },
+                          })
+                        }
+                        placeholder="e.g., GEMINI_API_KEY"
+                        className="mt-1"
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        The environment variable containing your Gemini API key.
+                      </p>
+                    </div>
+                    <div>
+                      <Label>Model</Label>
+                      <Select
+                        value={(step.parameters.model as string) || "gemini-2.5-pro"}
+                        onValueChange={value =>
+                          onUpdate(index, {
+                            parameters: {
+                              ...step.parameters,
+                              model: value,
+                            },
+                          })
+                        }
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
+                          <SelectItem value="gemini-1.5-pro">Gemini 1.5 Pro</SelectItem>
+                          <SelectItem value="gemini-2.0-flash-exp">Gemini 2.0 Flash Experimental</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Custom Prompt (Optional)</Label>
+                      <Textarea
+                        value={(step.parameters.custom_prompt as string) || ""}
+                        onChange={e =>
+                          onUpdate(index, {
+                            parameters: {
+                              ...step.parameters,
+                              custom_prompt: e.target.value,
+                            },
+                          })
+                        }
+                        placeholder="Add any specific instructions for the conversion..."
+                        className="mt-1"
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Optional additional instructions for the markdown conversion.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {step.action_id === "morphik.actions.ingest_output" && (
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Filename</Label>
+                      <Input
+                        value={(step.parameters.filename as string) || "workflow_output.md"}
+                        onChange={e =>
+                          onUpdate(index, {
+                            parameters: {
+                              ...step.parameters,
+                              filename: e.target.value,
+                            },
+                          })
+                        }
+                        placeholder="e.g., output.md"
+                        className="mt-1"
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">Filename for the ingested document.</p>
+                    </div>
+                    <div>
+                      <Label>Data Source</Label>
+                      <Select
+                        value={(step.parameters.source as string) || "previous_step"}
+                        onValueChange={value =>
+                          onUpdate(index, {
+                            parameters: {
+                              ...step.parameters,
+                              source: value,
+                            },
+                          })
+                        }
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="previous_step">Previous Step Output</SelectItem>
+                          <SelectItem value="all_steps">All Steps Output</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Content Field</Label>
+                      <Input
+                        value={(step.parameters.content_field as string) || "markdown"}
+                        onChange={e =>
+                          onUpdate(index, {
+                            parameters: {
+                              ...step.parameters,
+                              content_field: e.target.value,
+                            },
+                          })
+                        }
+                        placeholder="e.g., markdown, result"
+                        className="mt-1"
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Field name containing the content to ingest (e.g., &apos;markdown&apos; for convert_to_markdown
+                        output).
                       </p>
                     </div>
                   </div>

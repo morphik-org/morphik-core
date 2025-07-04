@@ -38,6 +38,8 @@ import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { WorkflowCreateDialog } from "./WorkflowCreateDialog";
 import { WorkflowEditDialog } from "./WorkflowEditDialog";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface WorkflowSectionProps {
   apiBaseUrl: string;
@@ -132,6 +134,86 @@ const AVAILABLE_ACTIONS: ActionDefinition[] = [
       },
     },
     output_schema: { type: "string" },
+  },
+  {
+    id: "morphik.actions.convert_to_markdown",
+    name: "Convert to Markdown",
+    description: "Convert documents to markdown",
+    parameters_schema: {
+      type: "object",
+      properties: {
+        api_key_env: {
+          type: "string",
+          description: "Environment variable name containing the Gemini API key",
+          default: "GEMINI_API_KEY",
+        },
+        model: {
+          type: "string",
+          description: "Gemini model to use for conversion",
+          default: "gemini-2.5-pro",
+        },
+        temperature: {
+          type: "number",
+          description: "Temperature for generation (0-1)",
+          default: 0,
+        },
+        custom_prompt: {
+          type: "string",
+          description: "Optional custom prompt to append to the conversion request",
+          default: "",
+        },
+      },
+      required: [],
+    },
+    output_schema: {
+      type: "object",
+      properties: {
+        markdown: { type: "string", description: "The converted markdown content" },
+        original_filename: { type: "string" },
+        mime_type: { type: "string" },
+        model_used: { type: "string" },
+      },
+    },
+  },
+  {
+    id: "morphik.actions.ingest_output",
+    name: "Ingest Output",
+    description: "Ingest workflow output as a new document",
+    parameters_schema: {
+      type: "object",
+      properties: {
+        filename: {
+          type: "string",
+          description: "Filename for the ingested document",
+          default: "workflow_output.md",
+        },
+        source: {
+          type: "string",
+          enum: ["previous_step", "all_steps"],
+          description: "Source of content to ingest",
+          default: "previous_step",
+        },
+        content_field: {
+          type: "string",
+          description: "Field name containing the content to ingest",
+          default: "markdown",
+        },
+        metadata: {
+          type: "object",
+          description: "Additional metadata to attach to the document",
+          default: {},
+        },
+      },
+      required: [],
+    },
+    output_schema: {
+      type: "object",
+      properties: {
+        document_id: { type: "string", description: "ID of the ingested document" },
+        filename: { type: "string" },
+        status: { type: "string" },
+      },
+    },
   },
   {
     id: "morphik.actions.save_to_metadata",
@@ -295,7 +377,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
   const pollRunStatus = useCallback(
     async (runId: string) => {
       try {
-        const res = await fetch(`${apiBaseUrl}/workflow_runs/${runId}`, { headers });
+        const res = await fetch(`${apiBaseUrl}/workflows/runs/${runId}`, { headers });
         if (res.ok) {
           const run = await res.json();
           setWorkflowRuns(prev => prev.map(r => (r.id === runId ? run : r)));
@@ -325,18 +407,18 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                 return newIntervals;
               });
             }
-          } else if (res.status === 404) {
-            // Run no longer exists – stop polling and remove it from state
-            if (pollingIntervals[runId]) {
-              clearInterval(pollingIntervals[runId]);
-              setPollingIntervals(prev => {
-                const newIntervals = { ...prev };
-                delete newIntervals[runId];
-                return newIntervals;
-              });
-            }
-            setWorkflowRuns(prev => prev.filter(r => r.id !== runId));
           }
+        } else if (res.status === 404) {
+          // Run no longer exists – stop polling and remove it from state
+          if (pollingIntervals[runId]) {
+            clearInterval(pollingIntervals[runId]);
+            setPollingIntervals(prev => {
+              const newIntervals = { ...prev };
+              delete newIntervals[runId];
+              return newIntervals;
+            });
+          }
+          setWorkflowRuns(prev => prev.filter(r => r.id !== runId));
         }
       } catch (error) {
         console.error("Failed to poll run status:", error);
@@ -463,11 +545,53 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
     }
   };
 
-  const renderExtractedData = (output: unknown, isExpanded: boolean = true) => {
+  const renderExtractedData = (output: unknown, isExpanded: boolean = true, isMarkdown: boolean = false) => {
     if (!output) return null;
 
     // Handle different output types
     if (typeof output === "string") {
+      // If it's markdown content, render it as markdown
+      if (isMarkdown) {
+        return (
+          <div className="prose prose-sm dark:prose-invert max-w-none space-y-2 rounded-lg bg-muted/30 p-4">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                p: ({ children }) => <p className="mb-2 text-sm">{children}</p>,
+                h1: ({ children }) => <h1 className="mb-3 text-xl font-bold">{children}</h1>,
+                h2: ({ children }) => <h2 className="mb-2 text-lg font-semibold">{children}</h2>,
+                h3: ({ children }) => <h3 className="mb-2 text-base font-medium">{children}</h3>,
+                ul: ({ children }) => <ul className="mb-2 list-disc pl-5 text-sm">{children}</ul>,
+                ol: ({ children }) => <ol className="mb-2 list-decimal pl-5 text-sm">{children}</ol>,
+                li: ({ children }) => <li className="mb-1">{children}</li>,
+                a: ({ href, children }) => (
+                  <a
+                    href={href}
+                    className="text-primary underline hover:no-underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {children}
+                  </a>
+                ),
+                blockquote: ({ children }) => (
+                  <blockquote className="my-2 border-l-4 border-muted-foreground/50 pl-4 italic">{children}</blockquote>
+                ),
+                code: ({ inline, children }: { inline?: boolean; children?: React.ReactNode }) =>
+                  inline ? (
+                    <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{children}</code>
+                  ) : (
+                    <code className="block rounded bg-muted p-2 font-mono text-xs">{children}</code>
+                  ),
+                pre: ({ children }) => <pre className="overflow-x-auto">{children}</pre>,
+              }}
+            >
+              {output}
+            </ReactMarkdown>
+          </div>
+        );
+      }
+
       return (
         <div className="space-y-2">
           <Textarea value={output} readOnly className="min-h-[100px] resize-none bg-muted/30 font-mono text-sm" />
@@ -480,6 +604,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
       const stringValue = typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
       const isCopied = copiedField === `${key}-${depth}`;
       const isObject = typeof value === "object" && value !== null;
+      const isMarkdownField = key === "markdown" && typeof value === "string" && isMarkdown;
 
       return (
         <div key={`${key}-${depth}`} className={`space-y-2 ${depth > 0 ? "ml-4 border-l-2 border-gray-200 pl-4" : ""}`}>
@@ -507,7 +632,46 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
           </div>
           {isExpanded && (
             <div className="relative">
-              {isObject && depth < 2 ? (
+              {isMarkdownField ? (
+                <div className="prose prose-sm dark:prose-invert mt-2 max-w-none rounded-lg bg-muted/30 p-4">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      p: ({ children }) => <p className="mb-2 text-sm">{children}</p>,
+                      h1: ({ children }) => <h1 className="mb-3 text-xl font-bold">{children}</h1>,
+                      h2: ({ children }) => <h2 className="mb-2 text-lg font-semibold">{children}</h2>,
+                      h3: ({ children }) => <h3 className="mb-2 text-base font-medium">{children}</h3>,
+                      ul: ({ children }) => <ul className="mb-2 list-disc pl-5 text-sm">{children}</ul>,
+                      ol: ({ children }) => <ol className="mb-2 list-decimal pl-5 text-sm">{children}</ol>,
+                      li: ({ children }) => <li className="mb-1">{children}</li>,
+                      a: ({ href, children }) => (
+                        <a
+                          href={href}
+                          className="text-primary underline hover:no-underline"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {children}
+                        </a>
+                      ),
+                      blockquote: ({ children }) => (
+                        <blockquote className="my-2 border-l-4 border-muted-foreground/50 pl-4 italic">
+                          {children}
+                        </blockquote>
+                      ),
+                      code: ({ inline, children }: { inline?: boolean; children?: React.ReactNode }) =>
+                        inline ? (
+                          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{children}</code>
+                        ) : (
+                          <code className="block rounded bg-muted p-2 font-mono text-xs">{children}</code>
+                        ),
+                      pre: ({ children }) => <pre className="overflow-x-auto">{children}</pre>,
+                    }}
+                  >
+                    {value as string}
+                  </ReactMarkdown>
+                </div>
+              ) : isObject && depth < 2 ? (
                 <div className="mt-2 space-y-2">
                   {Object.entries(value).map(([k, v]) => renderValue(k, v, depth + 1))}
                 </div>
@@ -1142,7 +1306,18 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
 
                                   <TabsContent value="output" className="mt-4">
                                     {run.status === "completed" && run.final_output ? (
-                                      <div className="space-y-3">{renderExtractedData(run.final_output)}</div>
+                                      <div className="space-y-3">
+                                        {renderExtractedData(
+                                          run.final_output,
+                                          true,
+                                          // Check if the last step was convert_to_markdown
+                                          selectedWorkflow.steps[selectedWorkflow.steps.length - 1]?.action_id ===
+                                            "morphik.actions.convert_to_markdown" &&
+                                            typeof run.final_output === "object" &&
+                                            run.final_output !== null &&
+                                            "markdown" in run.final_output
+                                        )}
+                                      </div>
                                     ) : run.status === "running" ? (
                                       <div className="flex items-center gap-2 py-4 text-blue-600 dark:text-blue-400">
                                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -1184,7 +1359,17 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
                                                 </div>
                                               </CardHeader>
                                               <CardContent>
-                                                <div className="text-sm">{renderExtractedData(result, false)}</div>
+                                                <div className="text-sm">
+                                                  {renderExtractedData(
+                                                    result,
+                                                    false,
+                                                    // Check if this step was convert_to_markdown
+                                                    step?.action_id === "morphik.actions.convert_to_markdown" &&
+                                                      typeof result === "object" &&
+                                                      result !== null &&
+                                                      "markdown" in result
+                                                  )}
+                                                </div>
                                               </CardContent>
                                             </Card>
                                           );
@@ -1270,7 +1455,7 @@ const ExtractStructuredParams: React.FC<{
       return Object.entries(parameters.schema.properties).map(([name, prop]) => ({
         name,
         type: (prop.type || "string") as SchemaField["type"],
-        description: prop.description || "",
+        description: (prop.description as string) || "",
         required: parameters.schema?.required?.includes(name) || false,
       }));
     }

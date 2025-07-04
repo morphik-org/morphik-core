@@ -28,11 +28,17 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Folder as FolderIcon,
+  FileText,
+  Files,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { showAlert } from "@/components/ui/alert-system";
 
 import { Document, Folder, FolderSummary } from "@/components/types";
+import { EmptyDocuments, NoMatchingDocuments, LoadingDocuments } from "./shared/EmptyStates";
 
 type ColumnType = "string" | "int" | "float" | "bool" | "Date" | "json";
 
@@ -65,6 +71,10 @@ interface DocumentListProps {
   onDownloadDocument?: (documentId: string) => void; // Add download functionality
   onDeleteDocument?: (documentId: string) => void; // Add delete functionality
   folders?: FolderSummary[]; // Optional since it's fetched internally
+  showBorder?: boolean; // Control whether to show the outer border and rounded corners
+  hideSearchBar?: boolean; // Control whether to hide the search bar
+  externalSearchQuery?: string; // External search query when search bar is hidden
+  onSearchChange?: (query: string) => void; // Callback for search changes when search bar is hidden
 }
 
 // Filter Dialog Component
@@ -298,6 +308,10 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
   onViewInPDFViewer,
   onDownloadDocument,
   onDeleteDocument,
+  showBorder = true,
+  hideSearchBar = false,
+  externalSearchQuery = "",
+  onSearchChange,
 }) {
   const [customColumns, setCustomColumns] = useState<CustomColumn[]>([]);
   const [showAddColumnDialog, setShowAddColumnDialog] = useState(false);
@@ -306,8 +320,16 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
   const [copiedDocumentId, setCopiedDocumentId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Use external search query when search bar is hidden
+  const effectiveSearchQuery = hideSearchBar ? externalSearchQuery : searchQuery;
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  // State for expanded folders and their documents
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [folderDocuments, setFolderDocuments] = useState<Record<string, Document[]>>({});
+  const [isAllDocumentsExpanded, setIsAllDocumentsExpanded] = useState(false);
 
   // Get unique metadata fields from all documents, excluding external_id
   const existingMetadataFields = useMemo(() => {
@@ -325,13 +347,41 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
     return Array.from(fields);
   }, [documents]);
 
-  // Apply filter, search, and sort logic with memoization
+  // Apply filter, search, and sort logic with memoization, including expanded folder documents
   const filteredDocuments = useMemo(() => {
-    let result = [...documents];
+    let result: (Document & {
+      itemType?: "document" | "folder" | "all";
+      folderData?: Folder;
+      isChildDocument?: boolean;
+      parentFolderName?: string;
+    })[] = [];
+
+    // Add all main documents
+    documents.forEach(doc => {
+      result.push(doc);
+
+      // If this is a folder and it's expanded, add its documents as children
+      if ((doc as Document & { itemType?: string }).itemType === "folder") {
+        const folderName = doc.filename || "";
+        if (expandedFolders.has(folderName) && folderDocuments[folderName]) {
+          folderDocuments[folderName].forEach(childDoc => {
+            result.push({
+              ...childDoc,
+              isChildDocument: true,
+              parentFolderName: folderName,
+              itemType: "document",
+            });
+          });
+        }
+      }
+
+      // Note: "All Documents" expansion now works by expanding all folders,
+      // so we don't add separate children for it
+    });
 
     // Apply search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+    if (effectiveSearchQuery.trim()) {
+      const query = effectiveSearchQuery.toLowerCase();
       result = result.filter(doc => {
         // Search in filename
         if (doc.filename?.toLowerCase().includes(query)) return true;
@@ -410,7 +460,7 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
     }
 
     return result;
-  }, [documents, filterValues, searchQuery, sortColumn, sortDirection]);
+  }, [documents, filterValues, effectiveSearchQuery, sortColumn, sortDirection, expandedFolders, folderDocuments]);
 
   // Copy document ID to clipboard
   const copyDocumentId = async (documentId: string) => {
@@ -423,6 +473,126 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
       showAlert("Failed to copy document ID", { type: "error", duration: 3000 });
     }
   };
+
+  // Fetch documents for a specific folder
+  const fetchFolderDocuments = useCallback(
+    async (folderName: string) => {
+      if (folderDocuments[folderName]) {
+        return; // Already fetched
+      }
+
+      try {
+        // First get folder details to get the folder ID
+        const foldersResponse = await fetch(`${apiBaseUrl}/folders/summary`, {
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        });
+
+        if (!foldersResponse.ok) {
+          throw new Error(`Failed to fetch folders: ${foldersResponse.statusText}`);
+        }
+
+        const foldersData = await foldersResponse.json();
+        const folder = foldersData.find((f: FolderSummary) => f.name === folderName);
+
+        if (!folder) {
+          console.warn(`Folder "${folderName}" not found`);
+          return;
+        }
+
+        // Get document IDs for this folder
+        let documentIds: string[] = [];
+        if (Array.isArray(folder.document_ids)) {
+          documentIds = folder.document_ids;
+        } else {
+          // Fetch detailed folder info if document_ids not in summary
+          const folderDetailResponse = await fetch(`${apiBaseUrl}/folders/${folder.id}`, {
+            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+          });
+          if (folderDetailResponse.ok) {
+            const folderDetail = await folderDetailResponse.json();
+            documentIds = Array.isArray(folderDetail.document_ids) ? folderDetail.document_ids : [];
+          }
+        }
+
+        if (documentIds.length > 0) {
+          // Fetch document details
+          const docsResponse = await fetch(`${apiBaseUrl}/batch/documents`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+            },
+            body: JSON.stringify({ document_ids: documentIds }),
+          });
+
+          if (docsResponse.ok) {
+            const docs = await docsResponse.json();
+            setFolderDocuments(prev => ({ ...prev, [folderName]: docs }));
+          }
+        } else {
+          // Empty folder
+          setFolderDocuments(prev => ({ ...prev, [folderName]: [] }));
+        }
+      } catch (error) {
+        console.error(`Error fetching documents for folder "${folderName}":`, error);
+        setFolderDocuments(prev => ({ ...prev, [folderName]: [] }));
+      }
+    },
+    [apiBaseUrl, authToken, folderDocuments]
+  );
+
+  // Handle folder expansion toggle
+  const toggleFolderExpansion = useCallback(
+    (folderName: string, event: React.MouseEvent) => {
+      event.stopPropagation(); // Prevent folder navigation
+
+      setExpandedFolders(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(folderName)) {
+          newSet.delete(folderName);
+        } else {
+          newSet.add(folderName);
+          // Fetch documents when expanding
+          fetchFolderDocuments(folderName);
+        }
+        return newSet;
+      });
+    },
+    [fetchFolderDocuments]
+  );
+
+  // Handle "All Documents" expansion toggle
+  const toggleAllDocumentsExpansion = useCallback(
+    (event: React.MouseEvent) => {
+      event.stopPropagation();
+
+      setIsAllDocumentsExpanded(prev => {
+        const newExpanded = !prev;
+
+        if (newExpanded) {
+          // When expanding "All Documents", expand all folders
+          const allFolderNames = documents
+            .filter((doc: Document & { itemType?: string }) => doc.itemType === "folder")
+            .map((doc: Document & { itemType?: string }) => doc.filename || "");
+
+          setExpandedFolders(new Set(allFolderNames));
+
+          // Fetch documents for all folders that aren't already fetched
+          allFolderNames.forEach(folderName => {
+            if (!folderDocuments[folderName]) {
+              fetchFolderDocuments(folderName);
+            }
+          });
+        } else {
+          // When collapsing "All Documents", collapse all folders
+          setExpandedFolders(new Set());
+        }
+
+        return newExpanded;
+      });
+    },
+    [documents, folderDocuments, fetchFolderDocuments]
+  );
 
   // Combine existing metadata fields with custom columns
   const allColumns = useMemo(() => {
@@ -739,8 +909,33 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
 
   if (loading && !documents.length) {
     return (
-      <div className="w-full overflow-hidden rounded-md border shadow-sm">
+      <div className={`w-full overflow-hidden ${showBorder ? "rounded-md border shadow-sm" : ""}`}>
         {/* Search Bar */}
+        {!hideSearchBar && (
+          <div className="border-b border-border bg-background p-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search documents..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          </div>
+        )}
+        <div className="h-[calc(100vh-280px)] overflow-auto">
+          {DocumentListHeader()}
+          <LoadingDocuments />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`w-full overflow-hidden ${showBorder ? "rounded-md border shadow-sm" : ""}`}>
+      {/* Search Bar - Fixed at top */}
+      {!hideSearchBar && (
         <div className="border-b border-border bg-background p-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -752,33 +947,7 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
             />
           </div>
         </div>
-        <div className="h-[calc(100vh-280px)] overflow-auto">
-          {DocumentListHeader()}
-          <div className="p-8">
-            <div className="flex flex-col items-center justify-center">
-              <div className="mb-4 h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
-              <p className="text-muted-foreground">Loading documents...</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="w-full overflow-hidden rounded-md border shadow-sm">
-      {/* Search Bar - Fixed at top */}
-      <div className="border-b border-border bg-background p-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search documents..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
+      )}
 
       {/* Main content area with horizontal scroll */}
       <div className="h-[calc(100vh-280px)] overflow-auto">
@@ -788,13 +957,27 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
         {/* Content rows */}
         {filteredDocuments.map(doc => (
           <div
-            key={doc.external_id}
-            onClick={() => handleDocumentClick(doc)}
+            key={`${doc.external_id}${(doc as Document & { isChildDocument?: boolean; parentFolderName?: string }).isChildDocument ? `-child-${(doc as Document & { isChildDocument?: boolean; parentFolderName?: string }).parentFolderName}` : ""}`}
+            onClick={() => {
+              // Handle different item types
+              if ((doc as Document & { itemType?: string }).itemType === "folder") {
+                // Navigate to folder when clicking on folder row (but not on chevron)
+                handleDocumentClick(doc);
+              } else if ((doc as Document & { itemType?: string }).itemType !== "all") {
+                // Handle document clicks for actual documents
+                handleDocumentClick(doc);
+              } else {
+                // Handle "All Documents" click
+                handleDocumentClick(doc);
+              }
+            }}
             className={`relative flex w-max min-w-full border-b border-border ${
-              doc.external_id === selectedDocument?.external_id
-                ? "bg-primary/10 hover:bg-primary/15"
-                : "hover:bg-muted/70"
-            }`}
+              (doc as Document & { itemType?: string }).itemType === "folder"
+                ? "cursor-pointer hover:bg-muted/50"
+                : doc.external_id === selectedDocument?.external_id
+                  ? "bg-primary/10 hover:bg-primary/15"
+                  : "hover:bg-muted/70"
+            } ${(doc as Document & { isChildDocument?: boolean }).isChildDocument ? "bg-gray-50" : ""}`}
             style={
               {
                 // no-op for flex container
@@ -804,36 +987,82 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
             {/* Main scrollable content */}
             <div className="grid flex-1 items-center" style={{ gridTemplateColumns }}>
               <div className="flex items-center justify-center px-3 py-2">
-                <Checkbox
-                  id={`doc-${doc.external_id}`}
-                  checked={selectedDocuments.includes(doc.external_id)}
-                  onCheckedChange={checked => handleCheckboxChange(checked, doc.external_id)}
-                  onClick={e => e.stopPropagation()}
-                  aria-label={`Select ${doc.filename || "document"}`}
-                />
+                {/* Show checkbox for all items except child documents */}
+                {!(doc as Document & { isChildDocument?: boolean }).isChildDocument ? (
+                  <Checkbox
+                    id={`doc-${doc.external_id}`}
+                    checked={selectedDocuments.includes(doc.external_id)}
+                    onCheckedChange={checked => handleCheckboxChange(checked, doc.external_id)}
+                    onClick={e => e.stopPropagation()}
+                    aria-label={`Select ${doc.filename || "document"}`}
+                  />
+                ) : (
+                  <div className="h-4 w-4" /> // Empty space for alignment
+                )}
               </div>
-              <div className="flex items-center gap-2 px-3 py-2">
-                {/* Status dot next to filename */}
-                <div className="group relative">
-                  {doc.system_metadata?.status === "completed" ? (
-                    <div className="h-2 w-2 rounded-full bg-green-500" />
-                  ) : doc.system_metadata?.status === "failed" ? (
-                    <div className="h-2 w-2 rounded-full bg-red-500" />
-                  ) : doc.system_metadata?.status === "uploading" ? (
-                    <div className="h-2 w-2 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-                  ) : (
-                    <div className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
-                  )}
-                  <div className="absolute -top-8 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md border bg-popover px-2 py-1 text-xs text-foreground shadow-md group-hover:block">
-                    {doc.system_metadata?.status === "completed"
-                      ? "Completed"
-                      : doc.system_metadata?.status === "failed"
-                        ? "Failed"
-                        : doc.system_metadata?.status === "uploading"
-                          ? "Uploading"
-                          : "Processing"}
+              <div
+                className={`flex items-center gap-2 px-3 py-2 ${(doc as Document & { isChildDocument?: boolean }).isChildDocument ? "pl-8" : ""}`}
+              >
+                {/* Chevron for folders and "All Documents" or status dot for documents */}
+                {(doc as Document & { itemType?: string }).itemType === "folder" ? (
+                  <button
+                    onClick={e => toggleFolderExpansion(doc.filename || "", e)}
+                    className="group relative flex-shrink-0 rounded p-0.5 transition-colors hover:bg-gray-100"
+                  >
+                    {expandedFolders.has(doc.filename || "") ? (
+                      <ChevronDown className="h-3 w-3 text-gray-600" />
+                    ) : (
+                      <ChevronRight className="h-3 w-3 text-gray-600" />
+                    )}
+                  </button>
+                ) : (doc as Document & { itemType?: string }).itemType === "all" ? (
+                  <button
+                    onClick={toggleAllDocumentsExpansion}
+                    className="group relative flex-shrink-0 rounded p-0.5 transition-colors hover:bg-gray-100"
+                  >
+                    {isAllDocumentsExpanded ? (
+                      <ChevronDown className="h-3 w-3 text-gray-600" />
+                    ) : (
+                      <ChevronRight className="h-3 w-3 text-gray-600" />
+                    )}
+                  </button>
+                ) : (doc as Document & { itemType?: string }).itemType === "document" ||
+                  !(doc as Document & { itemType?: string }).itemType ? (
+                  <div className="group relative flex-shrink-0">
+                    {doc.system_metadata?.status === "completed" ? (
+                      <div className="h-2 w-2 rounded-full bg-green-500" />
+                    ) : doc.system_metadata?.status === "failed" ? (
+                      <div className="h-2 w-2 rounded-full bg-red-500" />
+                    ) : doc.system_metadata?.status === "uploading" ? (
+                      <div className="h-2 w-2 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                    ) : (
+                      <div className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+                    )}
+                    <div className="absolute -top-8 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md border bg-popover px-2 py-1 text-xs text-foreground shadow-md group-hover:block">
+                      {doc.system_metadata?.status === "completed"
+                        ? "Completed"
+                        : doc.system_metadata?.status === "failed"
+                          ? "Failed"
+                          : doc.system_metadata?.status === "uploading"
+                            ? "Uploading"
+                            : "Processing"}
+                    </div>
                   </div>
+                ) : (
+                  <div className="h-2 w-2 flex-shrink-0" /> // Empty space to maintain alignment
+                )}
+
+                {/* Icon to show file/folder type */}
+                <div className="flex-shrink-0">
+                  {(doc as Document & { itemType?: string }).itemType === "folder" ? (
+                    <FolderIcon className="h-4 w-4 text-blue-600" />
+                  ) : (doc as Document & { itemType?: string }).itemType === "all" ? (
+                    <Files className="h-4 w-4 text-purple-600" />
+                  ) : (
+                    <FileText className="h-4 w-4 text-gray-600" />
+                  )}
                 </div>
+
                 <span className="truncate font-medium">{doc.filename || "N/A"}</span>
               </div>
               <div className="px-3 py-2">
@@ -864,123 +1093,98 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
             <div
               className={`sticky right-0 z-20 flex w-[120px] items-center justify-end gap-1 border-l border-border px-3 py-2 ${
                 doc.external_id === selectedDocument?.external_id ? "bg-accent" : "bg-background"
-              }`}
+              } ${(doc as Document & { isChildDocument?: boolean }).isChildDocument ? "bg-gray-50" : ""}`}
             >
-              {doc.content_type === "application/pdf" && onViewInPDFViewer && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={e => {
-                    e.stopPropagation();
-                    onViewInPDFViewer(doc.external_id);
-                  }}
-                  className="h-8 w-8 p-0"
-                  title="View in PDF Viewer"
-                >
-                  <Eye className="h-4 w-4" />
-                </Button>
-              )}
-              {onDownloadDocument && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={e => {
-                    e.stopPropagation();
-                    onDownloadDocument(doc.external_id);
-                  }}
-                  className="h-8 w-8 p-0"
-                  title="Download Document"
-                >
-                  <Download className="h-4 w-4" />
-                </Button>
-              )}
-              {onDeleteDocument && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={e => {
-                    e.stopPropagation();
-                    onDeleteDocument(doc.external_id);
-                  }}
-                  className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                  title="Delete Document"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+              {/* Only show actions for actual documents, not folders or special items */}
+              {((doc as Document & { itemType?: string }).itemType === "document" ||
+                !(doc as Document & { itemType?: string }).itemType) && (
+                <>
+                  {doc.content_type === "application/pdf" && onViewInPDFViewer && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={e => {
+                        e.stopPropagation();
+                        onViewInPDFViewer(doc.external_id);
+                      }}
+                      className="h-8 w-8 p-0"
+                      title="View in PDF Viewer"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {onDownloadDocument && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={e => {
+                        e.stopPropagation();
+                        onDownloadDocument(doc.external_id);
+                      }}
+                      className="h-8 w-8 p-0"
+                      title="Download Document"
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {onDeleteDocument && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={e => {
+                        e.stopPropagation();
+                        onDeleteDocument(doc.external_id);
+                      }}
+                      className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                      title="Delete Document"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </>
               )}
             </div>
           </div>
         ))}
 
         {filteredDocuments.length === 0 && documents.length > 0 && (
-          <div className="flex flex-col items-center justify-center p-12 text-center">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-              <Filter className="text-muted-foreground" />
-            </div>
-            <p className="text-muted-foreground">
-              No documents match {searchQuery.trim() && "your search"}
-              {searchQuery.trim() && Object.keys(filterValues).length > 0 && " and"}
-              {Object.keys(filterValues).length > 0 && " the current filters"}.
-            </p>
-            <Button
-              variant="link"
-              className="mt-2"
-              onClick={() => {
-                setFilterValues({});
+          <NoMatchingDocuments
+            searchQuery={effectiveSearchQuery}
+            hasFilters={Object.keys(filterValues).length > 0}
+            onClearFilters={() => {
+              setFilterValues({});
+              if (hideSearchBar && onSearchChange) {
+                onSearchChange("");
+              } else {
                 setSearchQuery("");
-              }}
-            >
-              Clear {searchQuery.trim() && "search"}
-              {searchQuery.trim() && Object.keys(filterValues).length > 0 && " and"}
-              {Object.keys(filterValues).length > 0 && " filters"}
-            </Button>
-          </div>
+              }
+            }}
+          />
         )}
 
-        {documents.length === 0 && (
-          <div className="flex flex-col items-center justify-center p-12 text-center">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-muted-foreground"
-              >
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="9" y1="15" x2="15" y2="15"></line>
-              </svg>
-            </div>
-            <p className="text-muted-foreground">No documents found in this view.</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Try uploading a document or selecting a different folder.
-            </p>
-          </div>
-        )}
+        {documents.length === 0 && <EmptyDocuments />}
       </div>
 
       <div className="flex justify-between border-t p-3">
         {/* Filter stats */}
         <div className="flex items-center text-sm text-muted-foreground">
-          {Object.keys(filterValues).length > 0 || searchQuery.trim() ? (
+          {Object.keys(filterValues).length > 0 || effectiveSearchQuery.trim() ? (
             <div className="flex items-center gap-1">
-              {searchQuery.trim() && <Search className="h-4 w-4" />}
+              {effectiveSearchQuery.trim() && <Search className="h-4 w-4" />}
               {Object.keys(filterValues).length > 0 && <Filter className="h-4 w-4" />}
               <span>
                 {filteredDocuments.length} of {documents.length} documents
-                {(Object.keys(filterValues).length > 0 || searchQuery.trim()) && (
+                {(Object.keys(filterValues).length > 0 || effectiveSearchQuery.trim()) && (
                   <Button
                     variant="link"
                     className="ml-1 h-auto p-0 text-sm"
                     onClick={() => {
                       setFilterValues({});
-                      setSearchQuery("");
+                      if (hideSearchBar && onSearchChange) {
+                        onSearchChange("");
+                      } else {
+                        setSearchQuery("");
+                      }
                     }}
                   >
                     Clear all

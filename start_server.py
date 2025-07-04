@@ -266,7 +266,7 @@ def main():
     check_and_start_redis()
 
     # Load environment variables from .env file
-    load_dotenv()
+    load_dotenv(override=True)
 
     # Check if Ollama is required and running
     if not args.skip_ollama_check:

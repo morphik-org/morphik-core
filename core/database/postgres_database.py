@@ -138,6 +138,7 @@ class ChatConversationModel(Base):
     conversation_id = Column(String, primary_key=True)
     user_id = Column(String, index=True, nullable=True)
     app_id = Column(String, index=True, nullable=True)
+    title = Column(String, nullable=True)
     history = Column(JSONB, default=list)
     created_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
     updated_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now())
@@ -520,6 +521,28 @@ class PostgresDatabase(BaseDatabase):
                         "CREATE INDEX IF NOT EXISTS idx_workflow_runs_owner_user ON workflow_runs (owner_id, user_id);"
                     )
                 )
+
+                # Check if title column exists in chat_conversations table
+                result = await conn.execute(
+                    text(
+                        """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'chat_conversations' AND column_name = 'title'
+                    """
+                    )
+                )
+                if not result.first():
+                    # Add title column to chat_conversations table
+                    await conn.execute(
+                        text(
+                            """
+                        ALTER TABLE chat_conversations
+                        ADD COLUMN IF NOT EXISTS title VARCHAR
+                        """
+                        )
+                    )
+                    logger.info("Added title column to chat_conversations table")
 
                 # ---------------------------------------------
                 # Legacy ALTER-TABLE loop removed: SQLAlchemy now
@@ -1956,6 +1979,76 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error removing document from folder: {e}")
             return False
 
+    async def associate_workflow_to_folder(self, folder_id: str, workflow_id: str, auth: AuthContext) -> bool:
+        """Associate a workflow with a folder."""
+        try:
+            # First, get the folder model and check write access
+            async with self.async_session() as session:
+                folder_model = await session.get(FolderModel, folder_id)
+                if not folder_model:
+                    logger.error(f"Folder {folder_id} not found")
+                    return False
+
+                # Check if user has write access to the folder
+                if not self._check_folder_model_access(folder_model, auth, "write"):
+                    logger.error(f"User does not have write access to folder {folder_id}")
+                    return False
+
+                # Get current workflow_ids
+                workflow_ids = folder_model.workflow_ids or []
+
+                # Check if workflow is already associated
+                if workflow_id in workflow_ids:
+                    logger.info(f"Workflow {workflow_id} is already associated with folder {folder_id}")
+                    return True
+
+                # Add the workflow to the folder
+                workflow_ids.append(workflow_id)
+                folder_model.workflow_ids = workflow_ids
+
+                await session.commit()
+                logger.info(f"Associated workflow {workflow_id} with folder {folder_id}")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error associating workflow with folder: {e}")
+            return False
+
+    async def disassociate_workflow_from_folder(self, folder_id: str, workflow_id: str, auth: AuthContext) -> bool:
+        """Remove a workflow from a folder."""
+        try:
+            # First, get the folder model and check write access
+            async with self.async_session() as session:
+                folder_model = await session.get(FolderModel, folder_id)
+                if not folder_model:
+                    logger.error(f"Folder {folder_id} not found")
+                    return False
+
+                # Check if user has write access to the folder
+                if not self._check_folder_model_access(folder_model, auth, "write"):
+                    logger.error(f"User does not have write access to folder {folder_id}")
+                    return False
+
+                # Get current workflow_ids
+                workflow_ids = folder_model.workflow_ids or []
+
+                # Check if workflow is associated
+                if workflow_id not in workflow_ids:
+                    logger.info(f"Workflow {workflow_id} is not associated with folder {folder_id}")
+                    return True
+
+                # Remove the workflow from the folder
+                workflow_ids.remove(workflow_id)
+                folder_model.workflow_ids = workflow_ids
+
+                await session.commit()
+                logger.info(f"Disassociated workflow {workflow_id} from folder {folder_id}")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error disassociating workflow from folder: {e}")
+            return False
+
     async def get_chat_history(
         self, conversation_id: str, user_id: Optional[str], app_id: Optional[str]
     ) -> Optional[List[Dict[str, Any]]]:
@@ -1986,6 +2079,7 @@ class PostgresDatabase(BaseDatabase):
         user_id: Optional[str],
         app_id: Optional[str],
         history: List[Dict[str, Any]],
+        title: Optional[str] = None,
     ) -> bool:
         """Store or update chat history."""
         if not self._initialized:
@@ -1993,18 +2087,42 @@ class PostgresDatabase(BaseDatabase):
 
         try:
             now = datetime.now(UTC).isoformat()
+
+            # Auto-generate title from first user message if not provided
+            if title is None and history:
+                # Find first user message
+                for msg in history:
+                    if msg.get("role") == "user":
+                        content = msg.get("content", "")
+                        # Extract first 50 chars as title
+                        title = content[:50].strip()
+                        if len(content) > 50:
+                            title += "..."
+                        break
+
             async with self.async_session() as session:
+                # Check if conversation exists to determine if we need to preserve existing title
+                result = await session.execute(
+                    text("SELECT title FROM chat_conversations WHERE conversation_id = :cid"), {"cid": conversation_id}
+                )
+                existing = result.fetchone()
+
+                # If conversation exists and has a title, preserve it unless a new title is provided
+                if existing and existing[0] and title is None:
+                    title = existing[0]
+
                 await session.execute(
                     text(
                         """
-                        INSERT INTO chat_conversations (conversation_id, user_id, app_id, history, created_at, updated_at)
-                        VALUES (:cid, :uid, :aid, :hist, :now, :now)
+                        INSERT INTO chat_conversations (conversation_id, user_id, app_id, history, title, created_at, updated_at)
+                        VALUES (:cid, :uid, :aid, :hist, :title, CAST(:now AS TEXT), CAST(:now AS TEXT))
                         ON CONFLICT (conversation_id)
                         DO UPDATE SET
                             user_id = EXCLUDED.user_id,
                             app_id = EXCLUDED.app_id,
                             history = EXCLUDED.history,
-                            updated_at = :now
+                            title = COALESCE(EXCLUDED.title, chat_conversations.title),
+                            updated_at = CAST(:now AS TEXT)
                         """
                     ),
                     {
@@ -2012,6 +2130,7 @@ class PostgresDatabase(BaseDatabase):
                         "uid": user_id,
                         "aid": app_id,
                         "hist": json.dumps(history),
+                        "title": title,
                         "now": now,
                     },
                 )
@@ -2043,33 +2162,99 @@ class PostgresDatabase(BaseDatabase):
 
         try:
             async with self.async_session() as session:
-                stmt = select(ChatConversationModel).order_by(ChatConversationModel.updated_at.desc())
+                # Build WHERE clause dynamically to avoid parameter type ambiguity
+                where_clauses = []
+                params = {"limit": limit}
 
                 if user_id is not None:
-                    stmt = stmt.where(ChatConversationModel.user_id == user_id)
-                # When an app_id scope is specified (developer tokens) we must restrict results
-                if app_id is not None:
-                    stmt = stmt.where(ChatConversationModel.app_id == app_id)
+                    where_clauses.append("user_id = :user_id")
+                    params["user_id"] = user_id
 
-                stmt = stmt.limit(limit)
-                res = await session.execute(stmt)
-                convos = res.scalars().all()
+                if app_id is not None:
+                    where_clauses.append("app_id = :app_id")
+                    params["app_id"] = app_id
+
+                where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+                # Use a raw SQL query to efficiently extract just the last message
+                query = text(
+                    f"""
+                    SELECT
+                        conversation_id,
+                        title,
+                        updated_at,
+                        created_at,
+                        CASE
+                            WHEN history IS NOT NULL AND jsonb_array_length(history) > 0
+                            THEN history->-1
+                            ELSE NULL
+                        END as last_message
+                    FROM chat_conversations
+                    {where_clause}
+                    ORDER BY updated_at DESC
+                    LIMIT :limit
+                """
+                )
+
+                result = await session.execute(query, params)
 
                 conversations: List[Dict[str, Any]] = []
-                for convo in convos:
-                    last_message = convo.history[-1] if convo.history else None
+                for row in result:
                     conversations.append(
                         {
-                            "chat_id": convo.conversation_id,
-                            "updated_at": convo.updated_at,
-                            "created_at": convo.created_at,
-                            "last_message": last_message,
+                            "chat_id": row.conversation_id,
+                            "title": row.title,
+                            "updated_at": row.updated_at,
+                            "created_at": row.created_at,
+                            "last_message": row.last_message,
                         }
                     )
                 return conversations
         except Exception as exc:  # noqa: BLE001
             logger.error("Error listing chat conversations: %s", exc)
             return []
+
+    async def update_chat_title(
+        self,
+        conversation_id: str,
+        title: str,
+        user_id: Optional[str],
+        app_id: Optional[str] = None,
+    ) -> bool:
+        """Update the title of a chat conversation."""
+        if not self._initialized:
+            await self.initialize()
+
+        try:
+            async with self.async_session() as session:
+                # Build the WHERE clause based on user/app context
+                where_clauses = ["conversation_id = :cid"]
+                params = {"cid": conversation_id, "title": title}
+
+                if user_id is not None:
+                    where_clauses.append("user_id = :uid")
+                    params["uid"] = user_id
+                if app_id is not None:
+                    where_clauses.append("app_id = :aid")
+                    params["aid"] = app_id
+
+                where_clause = " AND ".join(where_clauses)
+
+                result = await session.execute(
+                    text(
+                        f"""
+                        UPDATE chat_conversations
+                        SET title = :title, updated_at = CURRENT_TIMESTAMP
+                        WHERE {where_clause}
+                    """
+                    ),
+                    params,
+                )
+                await session.commit()
+                return result.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error updating chat title: {e}")
+            return False
 
     def _check_folder_model_access(
         self, folder_model: FolderModel, auth: AuthContext, permission: str = "read"

@@ -44,6 +44,7 @@ from core.models.request import (
 from core.models.workflows import Workflow
 from core.routes.document import router as document_router
 from core.routes.ingest import router as ingest_router
+from core.routes.logs import router as logs_router  # noqa: E402 – import after FastAPI app
 from core.routes.model_config import router as model_config_router
 from core.routes.models import router as models_router
 from core.routes.workflow import router as workflow_router
@@ -253,6 +254,9 @@ app.include_router(model_config_router)
 
 # Register models router
 app.include_router(models_router)
+
+# Register logs router
+app.include_router(logs_router)
 
 # Single MorphikAgent instance (tool definitions cached)
 morphik_agent = MorphikAgent(document_service=document_service)
@@ -542,7 +546,6 @@ async def batch_get_chunks(request: Dict[str, Any], auth: AuthContext = Depends(
 
 
 @app.post("/query", response_model=CompletionResponse)
-@telemetry.track(operation_type="query", metadata_resolver=telemetry.query_metadata)
 async def query_completion(
     request: CompletionQueryRequest,
     auth: AuthContext = Depends(verify_token),
@@ -579,6 +582,10 @@ async def query_completion(
     """
     # Initialize performance tracker
     perf = PerformanceTracker(f"Query: '{request.query[:50]}...'")
+
+    # Prepare telemetry metadata
+    meta = telemetry.query_metadata(None, request=request)  # type: ignore[arg-type]
+    token_est = len(request.query.split()) if isinstance(request.query, str) else 0
 
     try:
         # Validate prompt overrides before proceeding
@@ -700,10 +707,30 @@ async def query_completion(
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Headers": "*",
             }
-            return StreamingResponse(generate_stream(), media_type="text/event-stream", headers=headers)
+
+            # Wrap original generator with telemetry span so formatting and history logic are preserved
+            async def wrapped():
+                async with telemetry.track_operation(
+                    operation_type="query",
+                    user_id=auth.entity_id,
+                    app_id=auth.app_id,
+                    tokens_used=token_est,
+                    metadata=meta,
+                ):
+                    async for item in generate_stream():
+                        yield item
+
+            return StreamingResponse(wrapped(), media_type="text/event-stream", headers=headers)
         else:
-            # For non-streaming responses, result is just the CompletionResponse
-            response = result
+            # For non-streaming responses, we record telemetry around result construction
+            async with telemetry.track_operation(
+                operation_type="query",
+                user_id=auth.entity_id,
+                app_id=auth.app_id,
+                tokens_used=token_est,
+                metadata=meta,
+            ):
+                response = result
 
             # Chat history storage for non-streaming responses
             perf.start_phase("chat_history_storage")
@@ -2426,7 +2453,6 @@ async def set_folder_rule(
         Success status with processing results
     """
     # Import text here to ensure it's available in this function's scope
-    from sqlalchemy import text
 
     try:
         # Log detailed information about the rules
@@ -2450,9 +2476,7 @@ async def set_folder_rule(
         if not folder:
             raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
 
-        # Check if user has write access to the folder
-        if not document_service.db._check_folder_access(folder, auth, "write"):
-            raise HTTPException(status_code=403, detail="You don't have write access to this folder")
+        # Note: Write access will be checked by the database operations
 
         # Update folder with rules
         # Convert rules to dicts for JSON serialization
@@ -2642,47 +2666,26 @@ async def associate_workflow_to_folder(
 ) -> Dict[str, Any]:
     """Associate a workflow with a folder for automatic execution on document ingestion."""
     try:
-        # Get the folder
-        folder = await document_service.db.get_folder(folder_id, auth)
-        if not folder:
-            raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
-
-        # Check if user has write access to the folder
-        if not document_service.db._check_folder_access(folder, auth, "write"):
-            raise HTTPException(status_code=403, detail="You don't have write access to this folder")
-
-        # Get the workflow to verify it exists and is accessible
+        # Verify the workflow exists and is accessible
         workflow = await workflow_service.get_workflow(workflow_id, auth)
         if not workflow:
             raise HTTPException(status_code=404, detail=f"Workflow {workflow_id} not found or not accessible")
 
-        # Check if workflow is already associated
-        if workflow_id in folder.workflow_ids:
-            return {"success": True, "message": "Workflow already associated with folder"}
+        # Use the database method which handles access control properly
+        success = await document_service.db.associate_workflow_to_folder(folder_id, workflow_id, auth)
 
-        # Add workflow to folder
-        workflow_ids = folder.workflow_ids.copy()
-        workflow_ids.append(workflow_id)
+        if not success:
+            # Check if folder exists by trying to get it
+            folder = await document_service.db.get_folder(folder_id, auth)
+            if not folder:
+                raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
+            else:
+                raise HTTPException(status_code=403, detail="You don't have write access to this folder")
 
-        # Update the folder in the database
-        async with document_service.db.async_session() as session:
-            await session.execute(
-                text(
-                    """
-                    UPDATE folders
-                    SET workflow_ids = :workflow_ids
-                    WHERE id = :folder_id
-                    """
-                ),
-                {"folder_id": folder_id, "workflow_ids": json.dumps(workflow_ids)},
-            )
-            await session.commit()
-
-        logger.info(f"Associated workflow {workflow_id} with folder {folder_id}")
         return {"success": True, "message": f"Successfully associated workflow {workflow_id} with folder {folder_id}"}
-
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
+    except Exception as e:
+        logger.error(f"Error associating workflow to folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.delete("/folders/{folder_id}/workflows/{workflow_id}")
@@ -2694,41 +2697,21 @@ async def disassociate_workflow_from_folder(
 ) -> Dict[str, Any]:
     """Remove a workflow association from a folder."""
     try:
-        # Get the folder
-        folder = await document_service.db.get_folder(folder_id, auth)
-        if not folder:
-            raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
+        # Use the database method which handles access control properly
+        success = await document_service.db.disassociate_workflow_from_folder(folder_id, workflow_id, auth)
 
-        # Check if user has write access to the folder
-        if not document_service.db._check_folder_access(folder, auth, "write"):
-            raise HTTPException(status_code=403, detail="You don't have write access to this folder")
+        if not success:
+            # Check if folder exists by trying to get it
+            folder = await document_service.db.get_folder(folder_id, auth)
+            if not folder:
+                raise HTTPException(status_code=404, detail=f"Folder {folder_id} not found")
+            else:
+                raise HTTPException(status_code=403, detail="You don't have write access to this folder")
 
-        # Check if workflow is associated
-        if workflow_id not in folder.workflow_ids:
-            return {"success": True, "message": "Workflow not associated with folder"}
-
-        # Remove workflow from folder
-        workflow_ids = [wid for wid in folder.workflow_ids if wid != workflow_id]
-
-        # Update the folder in the database
-        async with document_service.db.async_session() as session:
-            await session.execute(
-                text(
-                    """
-                    UPDATE folders
-                    SET workflow_ids = :workflow_ids
-                    WHERE id = :folder_id
-                    """
-                ),
-                {"folder_id": folder_id, "workflow_ids": json.dumps(workflow_ids)},
-            )
-            await session.commit()
-
-        logger.info(f"Removed workflow {workflow_id} from folder {folder_id}")
         return {"success": True, "message": f"Successfully removed workflow {workflow_id} from folder {folder_id}"}
-
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
+    except Exception as e:
+        logger.error(f"Error disassociating workflow from folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/folders/{folder_id}/workflows", response_model=List[Workflow])
@@ -2886,3 +2869,35 @@ async def list_chat_conversations(
     except Exception as exc:  # noqa: BLE001
         logger.error("Error listing chat conversations: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to list chat conversations")
+
+
+@app.patch("/chats/{chat_id}/title")
+async def update_chat_title(
+    chat_id: str,
+    title: str = Query(..., description="New title for the chat"),
+    auth: AuthContext = Depends(verify_token),
+):
+    """Update the title of a chat conversation.
+
+    Args:
+        chat_id: ID of the chat conversation to update
+        title: New title for the chat
+        auth: Authentication context
+
+    Returns:
+        Success status
+    """
+    try:
+        success = await document_service.db.update_chat_title(
+            conversation_id=chat_id,
+            title=title,
+            user_id=auth.user_id,
+            app_id=auth.app_id,
+        )
+        if success:
+            return {"success": True, "message": "Chat title updated successfully"}
+        else:
+            raise HTTPException(status_code=404, detail="Chat not found or access denied")
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error updating chat title: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to update chat title")
