@@ -124,7 +124,8 @@ class S3Storage(BaseStorage):
         """Download file from S3."""
         try:
             response = self.s3_client.get_object(Bucket=bucket, Key=key)
-            return response["Body"].read()
+            as_bytes = response["Body"].read()
+            return as_bytes
         except ClientError as e:
             logger.error(f"Error downloading from S3: {e}")
             raise

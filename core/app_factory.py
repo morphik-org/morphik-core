@@ -58,7 +58,9 @@ async def lifespan(app_instance: FastAPI):
     logger.info("Lifespan: Initializing ColPali Vector Store…")
     try:
         from core.services_init import colpali_vector_store
+
         if colpali_vector_store and hasattr(colpali_vector_store, "initialize"):
+            # FastMultiVectorStore has sync initialize, MultiVectorStore has sync initialize
             colpali_vector_store.initialize()  # This is sync method
         logger.info("Lifespan: ColPali Vector Store initialization successful (or not applicable).")
     except Exception as exc:  # noqa: BLE001

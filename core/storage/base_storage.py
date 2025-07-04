@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from typing import BinaryIO, Optional, Tuple, Union
 
 
 class BaseStorage(ABC):
@@ -14,6 +14,23 @@ class BaseStorage(ABC):
 
         Args:
             content: Base64 encoded content
+            key: Storage key/path
+            content_type: Optional MIME type
+            bucket: Optional bucket/folder name
+        Returns:
+            Tuple[str, str]: (bucket/container name, storage key)
+        """
+        pass
+
+    @abstractmethod
+    async def upload_file(
+        self, file: Union[str, bytes, BinaryIO], key: str, content_type: Optional[str] = None, bucket: str = ""
+    ) -> Tuple[str, str]:
+        """
+        Upload file to storage.
+
+        Args:
+            file: File to upload
             key: Storage key/path
             content_type: Optional MIME type
             bucket: Optional bucket/folder name

@@ -447,11 +447,11 @@ class DocumentService:
     ):
         """Combine and potentially rerank regular and colpali chunks based on configuration.
 
-        # 4 configurations:
-        # 1. No reranking, no colpali -> just return regular chunks - this already happens upstream, correctly
-        # 2. No reranking, colpali  -> return colpali chunks + regular chunks - no need to run smaller colpali model
-        # 3. Reranking, no colpali -> sort regular chunks by re-ranker score - this already happens upstream, correctly
-        # 4. Reranking, colpali -> return merged chunks sorted by smaller colpali model score
+        ### 4 configurations:
+        1. No reranking, no colpali -> just return regular chunks - this already happens upstream, correctly
+        2. No reranking, colpali  -> return colpali chunks + regular chunks - no need to run smaller colpali model
+        3. Reranking, no colpali -> sort regular chunks by re-ranker score - this already happens upstream, correctly
+        4. Reranking, colpali -> return merged chunks sorted by smaller colpali model score
 
         Args:
             query: The user query
@@ -475,13 +475,13 @@ class DocumentService:
         if not should_rerank:
             # For configuration 2, simply combine the chunks with multivector chunks first
             # since they are generally higher quality
-            logger.debug("Using configuration 2: No reranking, with colpali - combining chunks without rescoring")
-            combined_chunks = chunks_multivector + chunks
-            return combined_chunks
+            return chunks_multivector + chunks
+            # if chunks_multivector:
+            #     return chunks_multivector
+            # return chunks
 
         # Configuration 4: Reranking with colpali
         # Use colpali as a reranker to get consistent similarity scores for both types of chunks
-        logger.debug("Using configuration 4: Reranking with colpali - rescoring chunks with colpali model")
 
         model_name = "vidore/colSmol-256M"
         device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
@@ -503,6 +503,14 @@ class DocumentService:
         scores = processor.score_multi_vector(query_rep, multi_vec_representations)
         for chunk, score in zip(chunks, scores[0]):
             chunk.score = score
+
+        # Also rescore multivector chunks to ensure consistent scoring
+        if chunks_multivector:
+            mv_batch_chunks = processor.process_queries([chunk.content for chunk in chunks_multivector]).to(device)
+            mv_reps = model(**mv_batch_chunks)
+            mv_scores = processor.score_multi_vector(query_rep, mv_reps)
+            for chunk, score in zip(chunks_multivector, mv_scores[0]):
+                chunk.score = score
 
         # Combine and sort all chunks
         full_chunks = chunks + chunks_multivector

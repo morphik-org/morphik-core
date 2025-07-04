@@ -32,7 +32,6 @@ dependencies = [
     "opencv-python>=4.11.0.86",
     "opentelemetry-exporter-otlp>=1.33.0",
     "opentelemetry-instrumentation-fastapi>=0.54b0",
-    "pdf2image>=1.17.0",
     "pgvector>=0.4.1",
     "pre-commit>=4.2.0",
     "psycopg>=3.2.9",
@@ -65,6 +64,13 @@ dependencies = [
     "snakeviz>=2.2.0",
     "pyprof2calltree>=1.4.5",
     "line_profiler>=4.1.2",
+    "types-boto3[s3]>=1.39.1",
+]
+
+[dependency-groups]
+dev-local = [
+    "fixed-dimensional-encoding",
+    "turbopuffer>=0.5.8",
 ]
 
 [tool.black]
@@ -77,3 +83,6 @@ line_length = 120
 [tool.ruff]
 line-length = 120
 ignore = ["I"]
+
+[tool.uv.sources]
+fixed-dimensional-encoding = { path = "../fde" }
