@@ -8,13 +8,11 @@ from contextlib import contextmanager
 from io import BytesIO
 from typing import Dict, List, Optional, Tuple, Union
 
-import fixed_dimensional_encoding as fde
 import numpy as np
 import psycopg
 import torch
 from colpali_engine.models import ColQwen2_5_Processor
 from psycopg_pool import ConnectionPool
-from turbopuffer import AsyncTurbopuffer
 
 from core.config import get_settings
 from core.models.chunk import DocumentChunk
@@ -30,6 +28,11 @@ logger = logging.getLogger(__name__)
 # Constants for external storage
 MULTIVECTOR_CHUNKS_BUCKET = "multivector-chunks"
 DEFAULT_APP_ID = "default"  # Fallback for local usage when app_id is None
+
+
+if get_settings().MULTIVECTOR_STORE_PROVIDER == "morphik":
+    import fixed_dimensional_encoding as fde
+    from turbopuffer import AsyncTurbopuffer
 
 
 # external storage always enabled, no two ways about it
