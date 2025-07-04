@@ -114,6 +114,8 @@ class Settings(BaseSettings):
 
     # Multivector store configuration
     MULTIVECTOR_STORE_PROVIDER: Literal["postgres", "morphik"] = "postgres"
+    # Enable dual ingestion to both fast and slow multivector stores during migration
+    ENABLE_DUAL_MULTIVECTOR_INGESTION: bool = False
 
     # Colpali configuration
     ENABLE_COLPALI: bool

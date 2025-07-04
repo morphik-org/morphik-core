@@ -40,7 +40,6 @@ from core.services.morphik_graph_service import MorphikGraphService
 from core.services.rules_processor import RulesProcessor
 from core.storage.base_storage import BaseStorage
 from core.vector_store.base_vector_store import BaseVectorStore
-from core.vector_store.multi_vector_store import MultiVectorStore
 
 from ..models.auth import AuthContext
 from ..models.folders import Folder
@@ -93,7 +92,9 @@ class DocumentService:
 
             # Create a new folder
             folder = Folder(
-                name=folder_name, document_ids=[document_id], app_id=auth.app_id  # Add document_id to the new folder
+                name=folder_name,
+                document_ids=[document_id],
+                app_id=auth.app_id,  # Add document_id to the new folder
             )
 
             await self.db.create_folder(folder, auth)
@@ -198,7 +199,7 @@ class DocumentService:
         reranker: Optional[BaseReranker] = None,
         enable_colpali: bool = False,
         colpali_embedding_model: Optional[ColpaliEmbeddingModel] = None,
-        colpali_vector_store: Optional[MultiVectorStore] = None,
+        colpali_vector_store: Optional[BaseVectorStore] = None,
     ):
         self.db = database
         self.vector_store = vector_store
