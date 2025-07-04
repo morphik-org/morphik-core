@@ -52,6 +52,13 @@ RUN --mount=type=cache,target=${UV_CACHE_DIR} \
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv pip install --verbose 'colpali-engine@git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3'
 
+# Enable backports and install GCC 11+ for Debian Bookworm
+RUN echo "deb http://deb.debian.org/debian bookworm-backports main" > /etc/apt/sources.list.d/backports.list && \
+    apt-get update && \
+    apt-get install -y -t bookworm-backports gcc-11 g++-11 && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
+
 # Cache buster: 1 - verbose flag already present
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv pip install --upgrade --verbose --force-reinstall --no-cache-dir llama-cpp-python==0.3.5

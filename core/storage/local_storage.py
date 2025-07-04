@@ -1,7 +1,7 @@
 import base64
 from logging import getLogger
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import BinaryIO, Optional, Tuple, Union
 
 from .base_storage import BaseStorage
 
@@ -54,6 +54,32 @@ class LocalStorage(BaseStorage):
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
         return f"file://{file_path.absolute()}"
+
+    async def upload_file(
+        self,
+        file: Union[str, bytes, BinaryIO],
+        key: str,
+        content_type: Optional[str] = None,
+        bucket: str = "",
+    ) -> Tuple[str, str]:
+        """Upload a file to local storage."""
+        # Handle different input types
+        if isinstance(file, str):
+            # If it's a string, treat it as a file path
+            with open(file, "rb") as f:
+                file_content = f.read()
+        elif isinstance(file, bytes):
+            # If it's bytes, use directly
+            file_content = file
+        else:
+            # If it's a file-like object, read from it
+            file_content = file.read()
+
+        # Convert to base64
+        base64_content = base64.b64encode(file_content).decode("utf-8")
+
+        # Call upload_from_base64
+        return await self.upload_from_base64(base64_content, key, content_type, bucket)
 
     async def delete_file(self, bucket: str, key: str) -> bool:
         """Delete a file from local storage."""
