@@ -100,6 +100,7 @@ storage_path = "./storage"
 # provider = "aws-s3"
 # region = "us-east-2"
 # bucket_name = "morphik-s3-storage"
+# storage_path = "morphik-storage"
 
 [vector_store]
 provider = "pgvector"
