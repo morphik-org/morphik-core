@@ -362,7 +362,7 @@ class FastMultiVectorStore(BaseVectorStore):
                 if isinstance(potential_content_bytes, Exception):
                     continue
                 content_bytes = potential_content_bytes
-                logger.info(f"ARNAVLOG: Successfully downloaded content from storage key: {storage_key}")
+                logger.info(f"Successfully downloaded content from storage key: {storage_key}")
                 break
             if not content_bytes:
                 logger.error(f"No content downloaded for storage key: {storage_key}")

@@ -475,7 +475,6 @@ class DocumentService:
         if not should_rerank:
             # For configuration 2, simply combine the chunks with multivector chunks first
             # since they are generally higher quality
-            logger.info("ARNAVLOG: No reranking. Prioritizing multivector chunks.")
             return chunks_multivector + chunks
             # if chunks_multivector:
             #     return chunks_multivector
@@ -483,7 +482,6 @@ class DocumentService:
 
         # Configuration 4: Reranking with colpali
         # Use colpali as a reranker to get consistent similarity scores for both types of chunks
-        logger.info("ARNAVLOG: Reranking with colpali. Rescoring all chunks.")
 
         model_name = "vidore/colSmol-256M"
         device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
@@ -508,7 +506,6 @@ class DocumentService:
 
         # Also rescore multivector chunks to ensure consistent scoring
         if chunks_multivector:
-            logger.info("ARNAVLOG: Rescoring multivector chunks for consistency.")
             mv_batch_chunks = processor.process_queries([chunk.content for chunk in chunks_multivector]).to(device)
             mv_reps = model(**mv_batch_chunks)
             mv_scores = processor.score_multi_vector(query_rep, mv_reps)
