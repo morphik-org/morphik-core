@@ -344,13 +344,15 @@ class DocumentService:
         # When using standard reranker, we get more chunks initially to improve reranking quality
         search_tasks = [
             self.vector_store.query_similar(
-                query_embedding_regular, k=10 * k if use_standard_reranker else k, doc_ids=doc_ids
+                query_embedding_regular, k=10 * k if use_standard_reranker else k, doc_ids=doc_ids, app_id=auth.app_id
             )
         ]
 
         if search_multi:
             search_tasks.append(
-                self.colpali_vector_store.query_similar(query_embedding_multivector, k=k, doc_ids=doc_ids)
+                self.colpali_vector_store.query_similar(
+                    query_embedding_multivector, k=k, doc_ids=doc_ids, app_id=auth.app_id
+                )
             )
 
         if not perf_tracker:
@@ -1711,7 +1713,7 @@ class DocumentService:
 
             while attempt < max_retries and not success:
                 try:
-                    success, result = await store.store_embeddings(objects)
+                    success, result = await store.store_embeddings(objects, auth.app_id if auth else None)
                     if not success:
                         raise Exception(f"Failed to store {store_name} chunk embeddings")
                     return result

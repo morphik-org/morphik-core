@@ -55,6 +55,8 @@ class FastMultiVectorStore(BaseVectorStore):
         )
         self._document_app_id_cache: Dict[str, str] = {}  # Cache for document app_ids
         self.pool: ConnectionPool = ConnectionPool(conninfo=self.uri, min_size=1, max_size=10, timeout=60)
+        self.max_retries = 3
+        self.retry_delay = 1.0
         self.processor: ColQwen2_5_Processor = ColQwen2_5_Processor.from_pretrained(
             "tsystems/colqwen2.5-3b-multilingual-v1.0"
         )
@@ -82,12 +84,14 @@ class FastMultiVectorStore(BaseVectorStore):
     def initialize(self):
         return True
 
-    async def store_embeddings(self, chunks: List[DocumentChunk]) -> Tuple[bool, List[str]]:
+    async def store_embeddings(
+        self, chunks: List[DocumentChunk], app_id: Optional[str] = None
+    ) -> Tuple[bool, List[str]]:
         #  group fde calls for better cache hit rate
         embeddings = [
             fde.generate_document_encoding(np.array(chunk.embedding), self.fde_config).tolist() for chunk in chunks
         ]
-        storage_keys = await asyncio.gather(*[self._save_chunk_to_storage(chunk) for chunk in chunks])
+        storage_keys = await asyncio.gather(*[self._save_chunk_to_storage(chunk, app_id) for chunk in chunks])
         stored_ids = [f"{chunk.document_id}-{chunk.chunk_number}" for chunk in chunks]
         doc_ids, chunk_numbers, metdatas, multivecs = [], [], [], []
         for chunk in chunks:
@@ -116,6 +120,7 @@ class FastMultiVectorStore(BaseVectorStore):
         query_embedding: Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]],
         k: int,
         doc_ids: Optional[List[str]] = None,
+        app_id: Optional[str] = None,
     ) -> List[DocumentChunk]:
         if isinstance(query_embedding, torch.Tensor):
             query_embedding = query_embedding.cpu().numpy()
@@ -289,15 +294,24 @@ class FastMultiVectorStore(BaseVectorStore):
         return f"{app_id}/{document_id}/{chunk_number}{extension}"
 
     async def _store_content_externally(
-        self, content: str, document_id: str, chunk_number: int, chunk_metadata: Optional[str]
+        self,
+        content: str,
+        document_id: str,
+        chunk_number: int,
+        chunk_metadata: Optional[str],
+        app_id: Optional[str] = None,
     ) -> Optional[str]:
         """Store chunk content in external storage and return storage key."""
         if not self.storage:
             return None
 
         try:
-            # Get app_id for this document
-            app_id = await self._get_document_app_id(document_id)
+            # Use provided app_id or fall back to document lookup
+            if app_id is None:
+                logger.warning(f"No app_id provided for document {document_id}, falling back to database lookup")
+                app_id = await self._get_document_app_id(document_id)
+            else:
+                logger.debug(f"Using provided app_id: {app_id} for document {document_id}")
 
             # Determine file extension
             extension = self._determine_file_extension(content, chunk_metadata)
@@ -327,9 +341,9 @@ class FastMultiVectorStore(BaseVectorStore):
             logger.error(f"Failed to store content externally for {document_id}-{chunk_number}: {e}")
             return None
 
-    async def _save_chunk_to_storage(self, chunk: DocumentChunk):
+    async def _save_chunk_to_storage(self, chunk: DocumentChunk, app_id: Optional[str] = None):
         return await self._store_content_externally(
-            chunk.content, chunk.document_id, chunk.chunk_number, str(chunk.metadata)
+            chunk.content, chunk.document_id, chunk.chunk_number, str(chunk.metadata), app_id
         )
 
     def _is_storage_key(self, content: str) -> bool:

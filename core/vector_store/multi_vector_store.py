@@ -453,7 +453,9 @@ class MultiVectorStore(BaseVectorStore):
             logger.error(f"Failed to retrieve content from storage key {storage_key}: {e}", exc_info=True)
             return storage_key  # Return storage key as fallback
 
-    async def store_embeddings(self, chunks: List[DocumentChunk]) -> Tuple[bool, List[str]]:
+    async def store_embeddings(
+        self, chunks: List[DocumentChunk], app_id: Optional[str] = None
+    ) -> Tuple[bool, List[str]]:
         """Store document chunks with their multi-vector embeddings."""
         # Prepare a list of row tuples for executemany
         rows = []
@@ -506,6 +508,7 @@ class MultiVectorStore(BaseVectorStore):
         query_embedding: Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]],
         k: int,
         doc_ids: Optional[List[str]] = None,
+        app_id: Optional[str] = None,
     ) -> List[DocumentChunk]:
         """Find similar chunks using the max_sim function for multi-vectors."""
         # Convert query embeddings to binary format

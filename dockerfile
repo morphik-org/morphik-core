@@ -31,6 +31,7 @@ ENV PATH="/app/.venv/bin:${PATH}"
 
 # Copy project definition and lock file
 COPY pyproject.toml uv.lock ./
+COPY fde ./fde
 
 # Create venv and install dependencies from lockfile (excluding the project itself initially for better caching)
 # This also creates the /app/.venv directory

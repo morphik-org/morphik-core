@@ -56,7 +56,9 @@ class DualMultiVectorStore(BaseVectorStore):
         slow_result = self.slow_store.initialize()
         return fast_result and slow_result
 
-    async def store_embeddings(self, chunks: List[DocumentChunk]) -> Tuple[bool, List[str]]:
+    async def store_embeddings(
+        self, chunks: List[DocumentChunk], app_id: Optional[str] = None
+    ) -> Tuple[bool, List[str]]:
         """
         Store embeddings in both stores simultaneously during migration.
 
@@ -68,14 +70,14 @@ class DualMultiVectorStore(BaseVectorStore):
         """
         if not self.enable_dual_ingestion:
             # If dual ingestion is disabled, only use slow store
-            return await self.slow_store.store_embeddings(chunks)
+            return await self.slow_store.store_embeddings(chunks, app_id)
 
         logger.info(f"Dual ingestion: storing {len(chunks)} chunks in both fast and slow stores")
 
         # Store in both stores concurrently
         try:
-            fast_task = asyncio.create_task(self.fast_store.store_embeddings(chunks))
-            slow_task = asyncio.create_task(self.slow_store.store_embeddings(chunks))
+            fast_task = asyncio.create_task(self.fast_store.store_embeddings(chunks, app_id))
+            slow_task = asyncio.create_task(self.slow_store.store_embeddings(chunks, app_id))
 
             # Wait for both to complete
             fast_result, slow_result = await asyncio.gather(fast_task, slow_task, return_exceptions=True)
@@ -115,13 +117,14 @@ class DualMultiVectorStore(BaseVectorStore):
             logger.error(f"Error during dual ingestion: {e}")
             # If dual ingestion fails, fall back to slow store only
             logger.warning("Falling back to slow store only due to dual ingestion error")
-            return await self.slow_store.store_embeddings(chunks)
+            return await self.slow_store.store_embeddings(chunks, app_id)
 
     async def query_similar(
         self,
         query_embedding: Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]],
         k: int,
         doc_ids: Optional[List[str]] = None,
+        app_id: Optional[str] = None,
     ) -> List[DocumentChunk]:
         """
         Query similar chunks from the slow store only during migration.
@@ -129,7 +132,7 @@ class DualMultiVectorStore(BaseVectorStore):
         This ensures consistent search results during migration period.
         """
         logger.debug("Querying from slow store only during migration")
-        return await self.slow_store.query_similar(query_embedding, k, doc_ids)
+        return await self.slow_store.query_similar(query_embedding, k, doc_ids, app_id)
 
     async def get_chunks_by_id(self, chunk_identifiers: List[Tuple[str, int]]) -> List[DocumentChunk]:
         """
