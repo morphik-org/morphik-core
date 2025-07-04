@@ -85,4 +85,4 @@ line-length = 120
 ignore = ["I"]
 
 [tool.uv.sources]
-fixed-dimensional-encoding = { path = "fde" }
+fixed-dimensional-encoding = { path = "../fde" }
