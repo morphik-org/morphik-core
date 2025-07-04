@@ -415,10 +415,3 @@ class FastMultiVectorStore(BaseVectorStore):
         except Exception as e:
             logger.error(f"Failed to retrieve content from storage key {storage_key}: {e}", exc_info=True)
             return storage_key  # Return storage key as fallback
-
-
-# query_similar
-# get_chunks_by_id
-# store_embeddings
-# delete_chunks_by_document_id
-# initialize
