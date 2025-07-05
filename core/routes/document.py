@@ -4,10 +4,10 @@ from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
 import arq
+import fitz
 import litellm
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pdf2image import convert_from_bytes
 from pydantic import BaseModel
 
 from core.auth_utils import verify_token
@@ -36,9 +36,8 @@ async def get_pdf_viewer(
 ) -> PDFViewer:
     document = await document_service.db.get_document(document_id, auth)
     as_bytes = await document_service.storage.download_file(**document.storage_info)
-    images = convert_from_bytes(as_bytes)
+    pdf_document = fitz.open(stream=as_bytes, filetype="pdf")
 
-    # Generate session ID if not provided
     if session_id is None:
         import uuid
 
@@ -48,7 +47,7 @@ async def get_pdf_viewer(
     user_id = auth.user_id if auth and hasattr(auth, "user_id") else "anonymous"
 
     return PDFViewer(
-        images,
+        pdf_document=pdf_document,
         api_base_url=api_base_url,
         session_id=session_id,
         user_id=user_id,
@@ -205,7 +204,6 @@ async def complete_document_chat(
             "timestamp": datetime.now(UTC).isoformat(),
         }
         history.append(user_message)
-        logger.debug(f"Added user message to history: {user_message['content'][:100]}...")
 
         # Get PDF viewer instance
         # For production, this should be the frontend URL where the PDF viewer is hosted

@@ -225,7 +225,6 @@ class PGVectorStore(BaseVectorStore):
 
             # Continue with the rest of the initialization
             async with self.engine.begin() as conn:
-
                 # Check if vector_embeddings table exists
                 check_table_sql = """
                 SELECT EXISTS (
@@ -357,7 +356,9 @@ class PGVectorStore(BaseVectorStore):
             logger.error(f"Error initializing PGVector store: {str(e)}")
             return False
 
-    async def store_embeddings(self, chunks: List[DocumentChunk]) -> Tuple[bool, List[str]]:
+    async def store_embeddings(
+        self, chunks: List[DocumentChunk], app_id: Optional[str] = None
+    ) -> Tuple[bool, List[str]]:
         """
         Bulk-insert embeddings in one go instead of row-by-row ORM adds.
 
@@ -397,6 +398,7 @@ class PGVectorStore(BaseVectorStore):
         query_embedding: List[float],
         k: int,
         doc_ids: Optional[List[str]] = None,
+        app_id: Optional[str] = None,
     ) -> List[DocumentChunk]:
         """Find similar chunks using cosine similarity."""
         try:

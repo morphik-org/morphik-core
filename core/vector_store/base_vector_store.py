@@ -6,7 +6,9 @@ from core.models.chunk import DocumentChunk
 
 class BaseVectorStore(ABC):
     @abstractmethod
-    async def store_embeddings(self, chunks: List[DocumentChunk]) -> Tuple[bool, List[str]]:
+    async def store_embeddings(
+        self, chunks: List[DocumentChunk], app_id: Optional[str] = None
+    ) -> Tuple[bool, List[str]]:
         """Store document chunks and their embeddings"""
         pass
 
@@ -16,6 +18,7 @@ class BaseVectorStore(ABC):
         query_embedding: List[float],
         k: int,
         doc_ids: Optional[List[str]] = None,
+        app_id: Optional[str] = None,
     ) -> List[DocumentChunk]:
         """Find similar chunks"""
         pass

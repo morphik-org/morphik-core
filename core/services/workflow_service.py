@@ -195,6 +195,8 @@ class WorkflowService:
                     "document_content": None,  # Cache document content
                     "document_chunks": None,  # Cache document chunks
                     "metadata": {},  # Shared metadata
+                    "workflow_name": wf.name,  # Include workflow name
+                    "workflow_id": wf.id,  # Include workflow ID
                 }
 
                 for step in wf.steps:

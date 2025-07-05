@@ -151,8 +151,11 @@ when citing different sources. Use markdown formatting for text content to impro
         """Dispatch tool calls, injecting document_service and auth."""
         match name:
             case "retrieve_chunks":
+                # Remove document_id if it was incorrectly included
+                # (model sometimes confuses retrieve_chunks with retrieve_document)
+                filtered_args = {k: v for k, v in args.items() if k != "document_id"}
                 content, found_sources = await retrieve_chunks(
-                    document_service=self.document_service, auth=auth, **args
+                    document_service=self.document_service, auth=auth, **filtered_args
                 )
                 source_map.update(found_sources)
                 return content

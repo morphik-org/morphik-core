@@ -20,7 +20,7 @@ import { Slider } from "@/components/ui/slider";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { AgentPreviewMessage, AgentUIMessage, DisplayObject, SourceObject, ToolCall } from "./AgentChatMessages";
 import { MessageSquare } from "lucide-react";
-import { ModelSelector2 } from "./ModelSelector2";
+import { ModelSelector } from "./ModelSelector";
 
 interface ChatSectionProps {
   apiBaseUrl: string;
@@ -459,6 +459,12 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   const handleModelChange = (modelId: string) => {
     setSelectedModel(modelId);
 
+    // Handle default model - clear llm_config to use server default
+    if (modelId === "default") {
+      safeUpdateOption("llm_config", undefined);
+      return;
+    }
+
     // Check if this is a custom model
     if (modelId.startsWith("custom_")) {
       const savedModels = localStorage.getItem("morphik_custom_models");
@@ -760,10 +766,10 @@ const ChatSection: React.FC<ChatSectionProps> = ({
               {/* Model Selector - below input */}
               {!isAgentMode && (
                 <div className="mt-2 flex items-center justify-between px-2">
-                  <ModelSelector2
+                  <ModelSelector
                     apiBaseUrl={apiBaseUrl}
                     authToken={authToken}
-                    selectedModel={selectedModel}
+                    selectedModel={selectedModel || "default"}
                     onModelChange={handleModelChange}
                     onRequestApiKey={() => {
                       // Navigate to settings page with API keys tab

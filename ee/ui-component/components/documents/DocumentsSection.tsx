@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 // import { useDebounce } from "@/lib/hooks/useDebounce"; // Commented for future use
-import { Upload } from "lucide-react";
+import { Upload, Search, PlusCircle } from "lucide-react";
 import { showAlert, removeAlert } from "@/components/ui/alert-system";
 import DocumentList from "./DocumentList";
 import DocumentDetail from "./DocumentDetail";
@@ -10,11 +10,25 @@ import FolderList from "./FolderList";
 import { UploadDialog, useUploadDialog } from "./UploadDialog";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 import { useFolders, clearFoldersCache } from "@/hooks/useFolders";
 import { useDocuments, clearDocumentsCache } from "@/hooks/useDocuments";
+import { useUnorganizedDocuments, clearUnorganizedDocumentsCache } from "@/hooks/useUnorganizedDocuments";
 
-import { Document } from "@/components/types";
+import { Document, FolderSummary } from "@/components/types";
 
 // Custom hook for drag and drop functionality
 function useDragAndDrop({ onDrop, disabled = false }: { onDrop: (files: File[]) => void; disabled?: boolean }) {
@@ -130,6 +144,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
 
+  // Search state for folder view (when selectedFolder !== null)
+  const [folderSearchQuery, setFolderSearchQuery] = useState("");
+
   // Use cached hooks for folders and documents
   const {
     folders,
@@ -154,7 +171,78 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     folders,
   });
 
-  const loading = documentsLoading;
+  // Use hook for unorganized documents (only when at root level)
+  const {
+    unorganizedDocuments,
+    loading: unorganizedLoading,
+    refresh: refreshUnorganizedDocuments,
+  } = useUnorganizedDocuments({
+    apiBaseUrl: effectiveApiUrl,
+    authToken,
+    enabled: selectedFolder === null, // Only fetch when at root level
+  });
+
+  const loading = documentsLoading || unorganizedLoading;
+
+  // Search state for root level
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Create combined list of documents and folders for root level display
+  const combinedRootItems = useMemo(() => {
+    const items: (Document & { itemType?: "document" | "folder" | "all"; folderData?: FolderSummary })[] = [];
+
+    // Add "All Documents" option first
+    items.push({
+      external_id: "all-documents",
+      filename: "All Documents",
+      content_type: "view",
+      metadata: {},
+      system_metadata: {
+        created_at: new Date().toISOString(),
+        file_size: 0,
+      },
+      additional_metadata: {},
+      itemType: "all",
+    });
+
+    // Add folders as document-like objects
+    folders.forEach(folder => {
+      items.push({
+        external_id: `folder-${folder.name}`,
+        filename: folder.name,
+        content_type: "folder",
+        metadata: {},
+        system_metadata: {
+          created_at: folder.updated_at || new Date().toISOString(),
+          file_size: folder.doc_count || 0,
+        },
+        additional_metadata: {},
+        itemType: "folder",
+        // Add folder-specific data
+        folderData: folder,
+      });
+    });
+
+    // Add unorganized documents last
+    unorganizedDocuments.forEach(doc => {
+      items.push({ ...doc, itemType: "document" });
+    });
+
+    return items;
+  }, [unorganizedDocuments, folders]);
+
+  // Filter combined items based on search query
+  const filteredRootItems = useMemo(() => {
+    if (!searchQuery.trim()) return combinedRootItems;
+    const query = searchQuery.toLowerCase();
+    return combinedRootItems.filter(item => {
+      if (item.itemType === "all") {
+        return "all documents".includes(query);
+      }
+      return (item.filename || item.external_id).toLowerCase().includes(query);
+    });
+  }, [combinedRootItems, searchQuery]);
+
   // State for delete confirmation modal
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null); // For single delete: stores ID
@@ -162,6 +250,12 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
   // State for polling
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // State for New Folder dialog
+  const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderDescription, setNewFolderDescription] = useState("");
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
 
   // Upload dialog state from custom hook
   const uploadDialogState = useUploadDialog();
@@ -443,8 +537,10 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       // Clear caches and refresh data
       clearFoldersCache(effectiveApiUrl);
       clearDocumentsCache();
+      clearUnorganizedDocumentsCache();
       await refreshFolders();
       await refreshDocuments();
+      await refreshUnorganizedDocuments();
 
       // Show success message
       showAlert("Document deleted successfully", {
@@ -514,8 +610,10 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       // Clear caches and refresh data
       clearFoldersCache(effectiveApiUrl);
       clearDocumentsCache();
+      clearUnorganizedDocumentsCache();
       await refreshFolders();
       await refreshDocuments();
+      await refreshUnorganizedDocuments();
 
       // Remove progress alert
       removeAlert(alertId);
@@ -1063,8 +1161,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
       // Clear caches and refresh both folders and documents
       clearFoldersCache(effectiveApiUrl);
       clearDocumentsCache();
+      clearUnorganizedDocumentsCache();
 
-      await Promise.all([refreshFolders(), refreshDocuments()]);
+      await Promise.all([refreshFolders(), refreshDocuments(), refreshUnorganizedDocuments()]);
 
       showAlert("Data refreshed successfully.", {
         type: "success",
@@ -1077,7 +1176,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         duration: 3000,
       });
     }
-  }, [onRefresh, effectiveApiUrl, refreshFolders, refreshDocuments]);
+  }, [onRefresh, effectiveApiUrl, refreshFolders, refreshDocuments, refreshUnorganizedDocuments]);
 
   // Debounced version of refresh for rapid refresh calls (kept for future use)
   // const handleDebouncedRefresh = useDebounce(handleRefresh, 500);
@@ -1091,6 +1190,85 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     },
     [onFolderClick]
   ); // Add setSelectedFolder if its identity matters, but it usually doesn't
+
+  // Custom click handler for root level items
+  const handleRootItemClick = useCallback(
+    (item: Document & { itemType?: "document" | "folder" | "all" }) => {
+      if (item.itemType === "document") {
+        // Handle document click
+        handleDocumentClick(item);
+      } else if (item.itemType === "folder") {
+        // Handle folder click
+        const folderName = item.filename || "";
+        handleFolderSelect(folderName);
+      } else if (item.itemType === "all") {
+        // Handle "All Documents" click
+        handleFolderSelect("all");
+      }
+    },
+    [handleDocumentClick, handleFolderSelect]
+  );
+
+  // Handle folder creation
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) return;
+
+    setIsCreatingFolder(true);
+
+    try {
+      console.log(`Creating folder: ${newFolderName}`);
+
+      const response = await fetch(`${effectiveApiUrl}/folders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify({
+          name: newFolderName.trim(),
+          description: newFolderDescription.trim() || undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to create folder: ${response.statusText}`);
+      }
+
+      // Get the created folder data
+      const folderData = await response.json();
+      console.log(`Created folder with ID: ${folderData.id} and name: ${folderData.name}`);
+
+      // Close dialog and reset form
+      setShowNewFolderDialog(false);
+      setNewFolderName("");
+      setNewFolderDescription("");
+
+      // Refresh folder list
+      clearFoldersCache(effectiveApiUrl);
+      clearDocumentsCache();
+      clearUnorganizedDocumentsCache();
+      await refreshFolders();
+      await refreshUnorganizedDocuments();
+
+      // Invoke callback
+      console.log(`handleCreateFolder: Calling onFolderCreate with '${folderData.name}'`);
+      onFolderCreate?.(folderData.name);
+
+      // Show success message
+      showAlert("Folder created successfully", {
+        type: "success",
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error("Error creating folder:", error);
+      showAlert(`Failed to create folder: ${error instanceof Error ? error.message : "Unknown error"}`, {
+        type: "error",
+        duration: 5000,
+      });
+    } finally {
+      setIsCreatingFolder(false);
+    }
+  };
 
   return (
     <div
@@ -1114,29 +1292,44 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
       {/* Render the FolderList with header at all times when selectedFolder is not null */}
       {selectedFolder !== null && (
-        <FolderList
-          folders={folders}
-          selectedFolder={selectedFolder}
-          setSelectedFolder={handleFolderSelect}
-          apiBaseUrl={effectiveApiUrl}
-          authToken={authToken}
-          refreshFolders={refreshFolders}
-          loading={foldersLoading}
-          refreshAction={handleRefresh}
-          selectedDocuments={selectedDocuments}
-          handleDeleteMultipleDocuments={handleDeleteMultipleDocuments}
-          uploadDialogComponent={
-            <UploadDialog
-              showUploadDialog={showUploadDialog}
-              setShowUploadDialog={setShowUploadDialog}
-              loading={loading}
-              onFileUpload={handleFileUpload}
-              onBatchFileUpload={handleBatchFileUpload}
-              onTextUpload={handleTextUpload}
-            />
-          }
-          onFolderCreate={onFolderCreate}
-        />
+        <>
+          <FolderList
+            folders={folders}
+            selectedFolder={selectedFolder}
+            setSelectedFolder={handleFolderSelect}
+            apiBaseUrl={effectiveApiUrl}
+            authToken={authToken}
+            refreshFolders={refreshFolders}
+            loading={foldersLoading}
+            refreshAction={handleRefresh}
+            selectedDocuments={selectedDocuments}
+            handleDeleteMultipleDocuments={handleDeleteMultipleDocuments}
+            uploadDialogComponent={
+              <UploadDialog
+                showUploadDialog={showUploadDialog}
+                setShowUploadDialog={setShowUploadDialog}
+                loading={loading}
+                onFileUpload={handleFileUpload}
+                onBatchFileUpload={handleBatchFileUpload}
+                onTextUpload={handleTextUpload}
+              />
+            }
+            onFolderCreate={onFolderCreate}
+          />
+
+          {/* Separate Search Bar for Folder View */}
+          <div className="mb-4 bg-background">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search documents..."
+                value={folderSearchQuery}
+                onChange={e => setFolderSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          </div>
+        </>
       )}
 
       {/* Delete Confirmation Modal */}
@@ -1155,43 +1348,205 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         loading={loading}
       />
 
-      {/* Folder Grid View (selectedFolder is null) */}
+      {/* Root Level List View (selectedFolder is null) */}
       {selectedFolder === null ? (
-        <div className="flex flex-1 flex-col gap-4">
-          {/* Skeleton for Folder List loading state */}
-          {foldersLoading ? (
-            <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {[...Array(8)].map((_, i) => (
-                <div key={i} className="flex h-32 flex-col items-center justify-center rounded-lg border p-4">
-                  <Skeleton className="mb-2 h-8 w-8 rounded-md" />
-                  <Skeleton className="h-4 w-20" />
+        <div className="flex flex-1 flex-col gap-4 md:flex-row">
+          {/* Left Panel: Combined Folders and Documents List */}
+          <div
+            className={cn(
+              "flex w-full flex-col transition-all duration-300",
+              selectedDocument ? "md:w-2/3" : "md:w-full"
+            )}
+          >
+            {loading && folders.length === 0 && unorganizedDocuments.length === 0 ? (
+              // Initial skeleton only when no data is yet loaded
+              <div className="flex-1 space-y-3 p-4">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-8 w-3/4" />
+                <Skeleton className="h-8 w-full" />
+                <Skeleton className="h-8 w-5/6" />
+                <Skeleton className="h-8 w-full" />
+              </div>
+            ) : folders.length === 0 && unorganizedDocuments.length === 0 ? (
+              // Empty State
+              <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed py-8 text-center">
+                <div>
+                  <Upload className="mx-auto mb-2 h-12 w-12 text-muted-foreground" />
+                  <p className="text-muted-foreground">No folders or documents found.</p>
+                  <p className="mt-2 text-xs text-muted-foreground">Upload files to get started.</p>
                 </div>
-              ))}
+              </div>
+            ) : (
+              // Combined list with header, search, and navigation
+              <div className={cn("relative transition-opacity", loading ? "opacity-60" : "")}>
+                {/* Tiny corner spinner for loading state */}
+                {loading && (
+                  <div className="absolute left-2 top-2 z-10 flex items-center">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  </div>
+                )}
+
+                <div className="mb-4">
+                  {/* Breadcrumb Navigation Header */}
+                  <div className="border-border bg-background p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-1">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-4 w-4"
+                          >
+                            <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                            <polyline points="9,22 9,12 15,12 15,22" />
+                          </svg>
+                          <span className="font-medium text-foreground">Morphik</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
+                          <DialogTrigger asChild>
+                            <Button variant="outline" size="sm">
+                              <PlusCircle className="mr-2 h-4 w-4" /> New Folder
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Create New Folder</DialogTitle>
+                              <DialogDescription>Create a new folder to organize your documents.</DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                              <div>
+                                <Label htmlFor="folderName">Folder Name</Label>
+                                <Input
+                                  id="folderName"
+                                  value={newFolderName}
+                                  onChange={e => setNewFolderName(e.target.value)}
+                                  placeholder="Enter folder name"
+                                />
+                              </div>
+                              <div>
+                                <Label htmlFor="folderDescription">Description (Optional)</Label>
+                                <Textarea
+                                  id="folderDescription"
+                                  value={newFolderDescription}
+                                  onChange={e => setNewFolderDescription(e.target.value)}
+                                  placeholder="Enter folder description"
+                                  rows={3}
+                                />
+                              </div>
+                            </div>
+                            <DialogFooter>
+                              <Button
+                                variant="ghost"
+                                onClick={() => setShowNewFolderDialog(false)}
+                                disabled={isCreatingFolder}
+                              >
+                                Cancel
+                              </Button>
+                              <Button onClick={handleCreateFolder} disabled={!newFolderName.trim() || isCreatingFolder}>
+                                {isCreatingFolder ? "Creating..." : "Create Folder"}
+                              </Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                        <Button variant="outline" size="sm" onClick={handleRefresh} title="Refresh documents">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="mr-1"
+                          >
+                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                            <path d="M21 3v5h-5"></path>
+                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+                            <path d="M8 16H3v5"></path>
+                          </svg>
+                          Refresh
+                        </Button>
+                        <UploadDialog
+                          showUploadDialog={showUploadDialog}
+                          setShowUploadDialog={setShowUploadDialog}
+                          loading={loading}
+                          onFileUpload={handleFileUpload}
+                          onBatchFileUpload={handleBatchFileUpload}
+                          onTextUpload={handleTextUpload}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Separate Search Bar for Root Level */}
+                  <div className="mb-4 bg-background">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="Search documents..."
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Use DocumentList component for consistent styling and actions */}
+                  <DocumentList
+                    documents={filteredRootItems}
+                    selectedDocument={selectedDocument}
+                    selectedDocuments={selectedDocuments}
+                    handleDocumentClick={handleRootItemClick}
+                    handleCheckboxChange={handleCheckboxChange}
+                    getSelectAllState={getSelectAllState}
+                    setSelectedDocuments={setSelectedDocuments}
+                    setDocuments={() => {}} // Not needed for root level
+                    loading={loading || foldersLoading}
+                    apiBaseUrl={effectiveApiUrl}
+                    authToken={authToken}
+                    selectedFolder={null} // Root level
+                    onViewInPDFViewer={onViewInPDFViewer}
+                    onDownloadDocument={handleDownloadDocument}
+                    onDeleteDocument={handleDeleteDocument}
+                    folders={folders}
+                    showBorder={true} // Keep border for the table
+                    hideSearchBar={true} // Hide the search bar inside DocumentList
+                    externalSearchQuery={searchQuery} // Pass the external search query
+                    onSearchChange={setSearchQuery} // Handle search changes
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right Panel: Document Detail (conditionally rendered) */}
+          {selectedDocument && (
+            <div className="w-full duration-300 animate-in slide-in-from-right md:w-1/3">
+              <DocumentDetail
+                selectedDocument={selectedDocument}
+                handleDeleteDocument={handleDeleteDocument}
+                folders={folders}
+                apiBaseUrl={effectiveApiUrl}
+                authToken={authToken}
+                refreshDocuments={refreshUnorganizedDocuments}
+                refreshFolders={refreshFolders}
+                loading={loading}
+                onClose={() => setSelectedDocument(null)}
+                onViewInPDFViewer={onViewInPDFViewer}
+                onMetadataUpdate={documentId => fetchDocument(documentId)}
+              />
             </div>
-          ) : (
-            <FolderList
-              folders={folders}
-              selectedFolder={selectedFolder}
-              setSelectedFolder={handleFolderSelect}
-              apiBaseUrl={effectiveApiUrl}
-              authToken={authToken}
-              refreshFolders={refreshFolders}
-              loading={foldersLoading}
-              refreshAction={handleRefresh}
-              selectedDocuments={selectedDocuments}
-              handleDeleteMultipleDocuments={handleDeleteMultipleDocuments}
-              uploadDialogComponent={
-                <UploadDialog
-                  showUploadDialog={showUploadDialog}
-                  setShowUploadDialog={setShowUploadDialog}
-                  loading={loading}
-                  onFileUpload={handleFileUpload}
-                  onBatchFileUpload={handleBatchFileUpload}
-                  onTextUpload={handleTextUpload}
-                />
-              }
-              onFolderCreate={onFolderCreate}
-            />
           )}
         </div>
       ) : (
@@ -1227,7 +1582,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                 {/* Tiny corner spinner instead of full overlay */}
                 {loading && documents.length > 0 && (
                   <div className="absolute left-2 top-2 z-10 flex items-center">
-                    <div className="\\ h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                   </div>
                 )}
 
@@ -1248,6 +1603,10 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                   onDownloadDocument={handleDownloadDocument}
                   onDeleteDocument={handleDeleteDocument}
                   folders={folders}
+                  showBorder={true} // Keep border for the table
+                  hideSearchBar={true} // Hide the search bar inside DocumentList
+                  externalSearchQuery={folderSearchQuery} // Pass the external search query
+                  onSearchChange={setFolderSearchQuery} // Handle search changes
                 />
               </div>
             )}

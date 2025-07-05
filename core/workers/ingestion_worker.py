@@ -26,6 +26,8 @@ from core.services.rules_processor import RulesProcessor
 from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
+from core.vector_store.dual_multivector_store import DualMultiVectorStore
+from core.vector_store.fast_multivector_store import FastMultiVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
 from core.vector_store.pgvector_store import PGVectorStore
 
@@ -246,8 +248,33 @@ async def process_ingestion_job(
                         parsed = parsed._replace(query=urlencode(query, doseq=True))
 
                     uri_final = urlunparse(parsed)
+                    # Choose multivector store implementation based on provider
+                    if settings.ENABLE_DUAL_MULTIVECTOR_INGESTION:
+                        # Dual ingestion mode: create both stores and wrap them
+                        if not settings.TURBOPUFFER_API_KEY:
+                            raise ValueError("TURBOPUFFER_API_KEY is required when dual ingestion is enabled")
 
-                    colpali_vector_store = MultiVectorStore(uri=uri_final)
+                        fast_store = FastMultiVectorStore(
+                            uri=uri_final,
+                            tpuf_api_key=settings.TURBOPUFFER_API_KEY,
+                            namespace="public",
+                        )
+                        slow_store = MultiVectorStore(uri=uri_final)
+                        colpali_vector_store = DualMultiVectorStore(
+                            fast_store=fast_store, slow_store=slow_store, enable_dual_ingestion=True
+                        )
+                    elif settings.MULTIVECTOR_STORE_PROVIDER == "morphik":
+                        if not settings.TURBOPUFFER_API_KEY:
+                            raise ValueError(
+                                "TURBOPUFFER_API_KEY is required when using morphik multivector store provider"
+                            )
+                        colpali_vector_store = FastMultiVectorStore(
+                            uri=uri_final,
+                            tpuf_api_key=settings.TURBOPUFFER_API_KEY,
+                            namespace="public",
+                        )
+                    else:
+                        colpali_vector_store = MultiVectorStore(uri=uri_final)
                     await asyncio.to_thread(colpali_vector_store.initialize)
                 except Exception as e:
                     logger.warning(f"Failed to initialise ColPali MultiVectorStore for app {auth.app_id}: {e}")
@@ -490,9 +517,10 @@ async def process_ingestion_job(
                     logger.info(f"Applying {len(text_rules)} text rules to text chunks...")
                     for chunk_obj in parsed_chunks:
                         # Get metadata *and* the potentially modified chunk
-                        chunk_rule_metadata, processed_chunk = (
-                            await document_service.rules_processor.process_chunk_rules(chunk_obj, text_rules)
-                        )
+                        (
+                            chunk_rule_metadata,
+                            processed_chunk,
+                        ) = await document_service.rules_processor.process_chunk_rules(chunk_obj, text_rules)
                         processed_chunks.append(processed_chunk)
                         chunk_contents.append(processed_chunk.content)  # Collect content as we process
                         # Aggregate the metadata extracted from this chunk
@@ -507,9 +535,10 @@ async def process_ingestion_job(
                         # Only process if it's an image chunk - pass the image content to the rule
                         if chunk_obj.metadata.get("is_image", False):
                             # Get metadata *and* the potentially modified chunk
-                            chunk_rule_metadata, processed_chunk = (
-                                await document_service.rules_processor.process_chunk_rules(chunk_obj, image_rules)
-                            )
+                            (
+                                chunk_rule_metadata,
+                                processed_chunk,
+                            ) = await document_service.rules_processor.process_chunk_rules(chunk_obj, image_rules)
                             processed_chunks_multivector.append(processed_chunk)
                             # Aggregate the metadata extracted from this chunk
                             aggregated_chunk_metadata.update(chunk_rule_metadata)
@@ -797,7 +826,27 @@ async def startup(ctx):
                 raise ValueError(f"Unsupported COLPALI_MODE: {settings.COLPALI_MODE}")
 
         # Vector store is needed for both local and api modes
-        colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI)
+        # Choose multivector store implementation based on provider and dual ingestion setting
+        if settings.ENABLE_DUAL_MULTIVECTOR_INGESTION:
+            # Dual ingestion mode: create both stores and wrap them
+            if not settings.TURBOPUFFER_API_KEY:
+                raise ValueError("TURBOPUFFER_API_KEY is required when dual ingestion is enabled")
+
+            fast_store = FastMultiVectorStore(
+                uri=settings.POSTGRES_URI, tpuf_api_key=settings.TURBOPUFFER_API_KEY, namespace="public"
+            )
+            slow_store = MultiVectorStore(uri=settings.POSTGRES_URI)
+            colpali_vector_store = DualMultiVectorStore(
+                fast_store=fast_store, slow_store=slow_store, enable_dual_ingestion=True
+            )
+        elif settings.MULTIVECTOR_STORE_PROVIDER == "morphik":
+            if not settings.TURBOPUFFER_API_KEY:
+                raise ValueError("TURBOPUFFER_API_KEY is required when using morphik multivector store provider")
+            colpali_vector_store = FastMultiVectorStore(
+                uri=settings.POSTGRES_URI, tpuf_api_key=settings.TURBOPUFFER_API_KEY, namespace="public"
+            )
+        else:
+            colpali_vector_store = MultiVectorStore(uri=settings.POSTGRES_URI)
         # colpali_vector_store = MultiVectorStore(uri="postgresql+asyncpg://morphik:morphik@postgres:5432/morphik")
         success = await asyncio.to_thread(colpali_vector_store.initialize)
         if success:
