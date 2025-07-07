@@ -35,6 +35,11 @@ try:
 except ImportError:  # pragma: no cover – module optional in some deployments
     MultiVectorStore = None  # type: ignore
 
+try:
+    from core.vector_store.fast_multivector_store import FastMultiVectorStore
+except ImportError:  # pragma: no cover – module optional in some deployments
+    FastMultiVectorStore = None  # type: ignore
+
 __all__ = ["get_database_for_app"]
 
 # ---------------------------------------------------------------------------
@@ -46,10 +51,12 @@ _DB_CACHE: Dict[str, PostgresDatabase] = {}
 # PGVectorStore cache keyed by connection URI to avoid duplicate pools
 _VSTORE_CACHE: Dict[str, "PGVectorStore"] = {}
 _MVSTORE_CACHE: Dict[str, "MultiVectorStore"] = {}
+_FAST_MVSTORE_CACHE: Dict[str, "FastMultiVectorStore"] = {}
 # Dedicated cache for control-plane vector store (covers non-app requests)
 _CONTROL_PLANE_VSTORE: Optional["PGVectorStore"] = None
 # Dedicated cache for control-plane multi-vector store
 _CONTROL_PLANE_MVSTORE: Optional["MultiVectorStore"] = None
+_CONTROL_PLANE_FAST_MVSTORE: Optional["FastMultiVectorStore"] = None
 _CONN_URI_CACHE: Dict[str, Optional[str]] = {}
 # Reuse a single engine + sessionmaker for catalogue look-ups so we don't create
 # a new connection pool on every request.  The pool is tiny because we only
@@ -218,51 +225,71 @@ async def get_vector_store_for_app(app_id: str | None):
 
 
 async def get_multi_vector_store_for_app(app_id: str | None):
-    """Return a MultiVectorStore bound to the connection URI of *app_id*.
+    """Return a MultiVectorStore or FastMultiVectorStore bound to the connection URI of *app_id*.
 
     When *app_id* is ``None`` we return a store that points at the control-plane
     database so that shared/legacy apps keep working.  Instances are cached per
     URI to avoid duplicate connection pools.
+
+    Respects MULTIVECTOR_STORE_PROVIDER setting to determine whether to create
+    FastMultiVectorStore or MultiVectorStore.
     """
 
     if MultiVectorStore is None:  # Dependency missing – feature disabled
         return None
 
-    global _CONTROL_PLANE_MVSTORE  # noqa: PLW0603 – module-level cache
+    global _CONTROL_PLANE_MVSTORE, _CONTROL_PLANE_FAST_MVSTORE  # noqa: PLW0603 – module-level cache
     settings = get_settings()
 
     # ------------------------------------------------------------------
     # 1) No per-app routing required –> control-plane store
     # ------------------------------------------------------------------
     if not app_id:
-        if _CONTROL_PLANE_MVSTORE is not None:
-            return _CONTROL_PLANE_MVSTORE
+        # Choose store type based on configuration
+        if settings.MULTIVECTOR_STORE_PROVIDER == "morphik":
+            if FastMultiVectorStore is None:
+                return None
+            if _CONTROL_PLANE_FAST_MVSTORE is not None:
+                return _CONTROL_PLANE_FAST_MVSTORE
 
-        # Build URI once (include sslmode=require)
-        uri = settings.POSTGRES_URI
-        from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+            # Build URI for FastMultiVectorStore (requires async URI)
+            uri = settings.POSTGRES_URI
+            if not settings.TURBOPUFFER_API_KEY:
+                raise ValueError("TURBOPUFFER_API_KEY is required when using morphik multivector store provider")
 
-        parsed = urlparse(uri)
-        if parsed.scheme.startswith("postgresql+asyncpg"):
-            parsed = parsed._replace(scheme="postgresql")
-        q = parse_qs(parsed.query)
-        if "sslmode" not in q:
-            q["sslmode"] = ["require"]
-        parsed = parsed._replace(query=urlencode(q, doseq=True))
-        final_uri = urlunparse(parsed)
+            store = FastMultiVectorStore(uri=uri, tpuf_api_key=settings.TURBOPUFFER_API_KEY, namespace="public")
+            _CONTROL_PLANE_FAST_MVSTORE = store
+            return store
+        else:
+            # Use MultiVectorStore (legacy behavior)
+            if _CONTROL_PLANE_MVSTORE is not None:
+                return _CONTROL_PLANE_MVSTORE
 
-        # Reuse cache if created via generic cache (unlikely due first call)
-        if final_uri in _MVSTORE_CACHE:
-            _CONTROL_PLANE_MVSTORE = _MVSTORE_CACHE[final_uri]
-            return _CONTROL_PLANE_MVSTORE
+            # Build URI once (include sslmode=require)
+            uri = settings.POSTGRES_URI
+            from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-        store = MultiVectorStore(uri=final_uri)
-        _MVSTORE_CACHE[final_uri] = store
-        _CONTROL_PLANE_MVSTORE = store
-        return store
+            parsed = urlparse(uri)
+            if parsed.scheme.startswith("postgresql+asyncpg"):
+                parsed = parsed._replace(scheme="postgresql")
+            q = parse_qs(parsed.query)
+            if "sslmode" not in q:
+                q["sslmode"] = ["require"]
+            parsed = parsed._replace(query=urlencode(q, doseq=True))
+            final_uri = urlunparse(parsed)
+
+            # Reuse cache if created via generic cache (unlikely due first call)
+            if final_uri in _MVSTORE_CACHE:
+                _CONTROL_PLANE_MVSTORE = _MVSTORE_CACHE[final_uri]
+                return _CONTROL_PLANE_MVSTORE
+
+            store = MultiVectorStore(uri=final_uri)
+            _MVSTORE_CACHE[final_uri] = store
+            _CONTROL_PLANE_MVSTORE = store
+            return store
 
     # ------------------------------------------------------------------
-    # 2) Cached? –> quick return
+    # 2) Per-app routing
     # ------------------------------------------------------------------
     uri = await _resolve_connection_uri(app_id)
 
@@ -274,28 +301,45 @@ async def get_multi_vector_store_for_app(app_id: str | None):
     if uri is None:
         uri = settings.POSTGRES_URI
 
-    # Convert asyncpg URI to plain psycopg (sync) variant expected by
-    # MultiVectorStore and make sure *sslmode=require* is present so Neon
-    # accepts the connection.
-    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+    # Choose store type based on configuration
+    if settings.MULTIVECTOR_STORE_PROVIDER == "morphik":
+        if FastMultiVectorStore is None:
+            return None
 
-    parsed = urlparse(uri)
+        # Use original URI for FastMultiVectorStore (keeps asyncpg)
+        if uri in _FAST_MVSTORE_CACHE:
+            return _FAST_MVSTORE_CACHE[uri]
 
-    # Ensure the driver prefix is *postgresql://* (psycopg)
-    if parsed.scheme.startswith("postgresql+asyncpg"):
-        parsed = parsed._replace(scheme="postgresql")
+        if not settings.TURBOPUFFER_API_KEY:
+            raise ValueError("TURBOPUFFER_API_KEY is required when using morphik multivector store provider")
 
-    # Ensure sslmode=require in the query string (Neon tends to need it)
-    q = parse_qs(parsed.query)
-    if "sslmode" not in q:
-        q["sslmode"] = ["require"]
-    parsed = parsed._replace(query=urlencode(q, doseq=True))
+        store = FastMultiVectorStore(uri=uri, tpuf_api_key=settings.TURBOPUFFER_API_KEY, namespace="public")
+        _FAST_MVSTORE_CACHE[uri] = store
+        return store
+    else:
+        # Use MultiVectorStore (legacy behavior)
+        # Convert asyncpg URI to plain psycopg (sync) variant expected by
+        # MultiVectorStore and make sure *sslmode=require* is present so Neon
+        # accepts the connection.
+        from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-    final_uri = urlunparse(parsed)
+        parsed = urlparse(uri)
 
-    if final_uri in _MVSTORE_CACHE:
-        return _MVSTORE_CACHE[final_uri]
+        # Ensure the driver prefix is *postgresql://* (psycopg)
+        if parsed.scheme.startswith("postgresql+asyncpg"):
+            parsed = parsed._replace(scheme="postgresql")
 
-    store = MultiVectorStore(uri=final_uri)
-    _MVSTORE_CACHE[final_uri] = store
-    return store
+        # Ensure sslmode=require in the query string (Neon tends to need it)
+        q = parse_qs(parsed.query)
+        if "sslmode" not in q:
+            q["sslmode"] = ["require"]
+        parsed = parsed._replace(query=urlencode(q, doseq=True))
+
+        final_uri = urlunparse(parsed)
+
+        if final_uri in _MVSTORE_CACHE:
+            return _MVSTORE_CACHE[final_uri]
+
+        store = MultiVectorStore(uri=final_uri)
+        _MVSTORE_CACHE[final_uri] = store
+        return store
