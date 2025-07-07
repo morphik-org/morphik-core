@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 import tempfile
@@ -121,11 +122,15 @@ class S3Storage(BaseStorage):
             raise e
 
     async def download_file(self, bucket: str, key: str) -> bytes:
-        """Download file from S3."""
-        try:
+        """Download file from S3 asynchronously using a thread pool to avoid blocking the event loop."""
+        loop = asyncio.get_running_loop()
+
+        def _sync_download() -> bytes:  # Runs in a separate thread
             response = self.s3_client.get_object(Bucket=bucket, Key=key)
-            as_bytes = response["Body"].read()
-            return as_bytes
+            return response["Body"].read()
+
+        try:
+            return await loop.run_in_executor(None, _sync_download)
         except ClientError as e:
             logger.error(f"Error downloading from S3: {e}")
             raise

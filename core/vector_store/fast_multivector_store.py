@@ -231,7 +231,7 @@ class FastMultiVectorStore(BaseVectorStore):
     async def load_multivector_from_storage(self, bucket: str, key: str) -> torch.Tensor:
         content = await self.storage.download_file(bucket, key)
         as_np = np.load(BytesIO(content))  # , allow_pickle=True)
-        return torch.from_numpy(as_np)
+        return torch.from_numpy(as_np).float()
 
     @contextmanager
     def get_connection(self):
