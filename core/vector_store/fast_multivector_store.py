@@ -396,8 +396,8 @@ class FastMultiVectorStore(BaseVectorStore):
             key_possibilities = [
                 storage_key,
                 f"{storage_key}.txt",
-                f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}",
-                f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}.txt",
+                f"multivector-chunks/{storage_key}",
+                f"multivector-chunks/{storage_key}.txt",
             ]
             download_tasks = [
                 self.storage.download_file(bucket=MULTIVECTOR_CHUNKS_BUCKET, key=key) for key in key_possibilities
