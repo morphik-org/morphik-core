@@ -155,7 +155,7 @@ class FastMultiVectorStore(BaseVectorStore):
 
         # 4) Rerank using ColQwen2.5 processor
         scores = self.processor.score_multi_vector(
-            [torch.from_numpy(query_embedding)], multivectors, device=self.device
+            [torch.from_numpy(query_embedding).float()], multivectors, device=self.device
         )[0]
         scores, idx = torch.topk(scores, min(k, len(scores)))
         scores, top_k_indices = scores.tolist(), idx.tolist()
