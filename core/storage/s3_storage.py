@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import BinaryIO, Optional, Tuple, Union
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from .base_storage import BaseStorage
@@ -26,11 +27,14 @@ class S3Storage(BaseStorage):
         default_bucket: str = "morphik-storage",
     ):
         self.default_bucket = default_bucket
+        # Increase the underlying urllib3 connection-pool size to better support high concurrency
+        boto_cfg = Config(max_pool_connections=64, retries={"max_attempts": 3, "mode": "standard"})
         self.s3_client = boto3.client(
             "s3",
             aws_access_key_id=aws_access_key,
             aws_secret_access_key=aws_secret_key,
             region_name=region_name,
+            config=boto_cfg,
         )
 
     # ------------------------------------------------------------------
