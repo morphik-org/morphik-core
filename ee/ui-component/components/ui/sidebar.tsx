@@ -326,18 +326,21 @@ export function Sidebar({
             <File className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
             {!isCollapsed && <span>PDF Viewer</span>}
           </Button>
-          {/* Settings Nav Item */}
-          <Button
-            variant={activeSection === "settings" ? "secondary" : "ghost"}
-            className={cn("w-full justify-start", isCollapsed && "justify-center")}
-            onClick={() => onSectionChange("settings")}
-            title="Settings"
-          >
-            <Settings className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
-            {!isCollapsed && <span>Settings</span>}
-          </Button>
         </div>
       </ScrollArea>
+
+      {/* Settings Nav Item - Pinned to bottom */}
+      <div className="p-2">
+        <Button
+          variant={activeSection === "settings" ? "secondary" : "ghost"}
+          className={cn("w-full justify-start", isCollapsed && "justify-center")}
+          onClick={() => onSectionChange("settings")}
+          title="Settings"
+        >
+          <Settings className={cn("h-5 w-5", !isCollapsed && "mr-2")} />
+          {!isCollapsed && <span>Settings</span>}
+        </Button>
+      </div>
 
       <div
         className={cn("border-t p-4", isCollapsed ? "flex justify-center" : "flex items-center justify-between gap-2")}

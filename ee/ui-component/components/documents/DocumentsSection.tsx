@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 // import { useDebounce } from "@/lib/hooks/useDebounce"; // Commented for future use
-import { Upload, Search, PlusCircle } from "lucide-react";
+import { Upload, Search, PlusCircle, ChevronsDown, ChevronsUp } from "lucide-react";
 import { showAlert, removeAlert } from "@/components/ui/alert-system";
 import DocumentList from "./DocumentList";
 import DocumentDetail from "./DocumentDetail";
@@ -143,6 +143,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   const [selectedFolder, setSelectedFolder] = useState<string | null>(initialFolder);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
+  const [allFoldersExpanded, setAllFoldersExpanded] = useState(false);
 
   // Search state for folder view (when selectedFolder !== null)
   const [folderSearchQuery, setFolderSearchQuery] = useState("");
@@ -190,20 +191,6 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
   // Create combined list of documents and folders for root level display
   const combinedRootItems = useMemo(() => {
     const items: (Document & { itemType?: "document" | "folder" | "all"; folderData?: FolderSummary })[] = [];
-
-    // Add "All Documents" option first
-    items.push({
-      external_id: "all-documents",
-      filename: "All Documents",
-      content_type: "view",
-      metadata: {},
-      system_metadata: {
-        created_at: new Date().toISOString(),
-        file_size: 0,
-      },
-      additional_metadata: {},
-      itemType: "all",
-    });
 
     // Add folders as document-like objects
     folders.forEach(folder => {
@@ -1350,11 +1337,11 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
 
       {/* Root Level List View (selectedFolder is null) */}
       {selectedFolder === null ? (
-        <div className="flex flex-1 flex-col gap-4 md:flex-row">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 md:flex-row">
           {/* Left Panel: Combined Folders and Documents List */}
           <div
             className={cn(
-              "flex w-full flex-col transition-all duration-300",
+              "flex min-h-0 w-full flex-col transition-all duration-300",
               selectedDocument ? "md:w-2/3" : "md:w-full"
             )}
           >
@@ -1378,7 +1365,9 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               </div>
             ) : (
               // Combined list with header, search, and navigation
-              <div className={cn("relative transition-opacity", loading ? "opacity-60" : "")}>
+              <div
+                className={cn("relative flex min-h-0 flex-1 flex-col transition-opacity", loading ? "opacity-60" : "")}
+              >
                 {/* Tiny corner spinner for loading state */}
                 {loading && (
                   <div className="absolute left-2 top-2 z-10 flex items-center">
@@ -1386,123 +1375,135 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                   </div>
                 )}
 
-                <div className="mb-4">
-                  {/* Breadcrumb Navigation Header */}
-                  <div className="border-border bg-background p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <div className="flex items-center space-x-1">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="h-4 w-4"
-                          >
-                            <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                            <polyline points="9,22 9,12 15,12 15,22" />
-                          </svg>
-                          <span className="font-medium text-foreground">Morphik</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
-                          <DialogTrigger asChild>
-                            <Button variant="outline" size="sm">
-                              <PlusCircle className="mr-2 h-4 w-4" /> New Folder
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Create New Folder</DialogTitle>
-                              <DialogDescription>Create a new folder to organize your documents.</DialogDescription>
-                            </DialogHeader>
-                            <div className="grid gap-4 py-4">
-                              <div>
-                                <Label htmlFor="folderName">Folder Name</Label>
-                                <Input
-                                  id="folderName"
-                                  value={newFolderName}
-                                  onChange={e => setNewFolderName(e.target.value)}
-                                  placeholder="Enter folder name"
-                                />
-                              </div>
-                              <div>
-                                <Label htmlFor="folderDescription">Description (Optional)</Label>
-                                <Textarea
-                                  id="folderDescription"
-                                  value={newFolderDescription}
-                                  onChange={e => setNewFolderDescription(e.target.value)}
-                                  placeholder="Enter folder description"
-                                  rows={3}
-                                />
-                              </div>
-                            </div>
-                            <DialogFooter>
-                              <Button
-                                variant="ghost"
-                                onClick={() => setShowNewFolderDialog(false)}
-                                disabled={isCreatingFolder}
-                              >
-                                Cancel
-                              </Button>
-                              <Button onClick={handleCreateFolder} disabled={!newFolderName.trim() || isCreatingFolder}>
-                                {isCreatingFolder ? "Creating..." : "Create Folder"}
-                              </Button>
-                            </DialogFooter>
-                          </DialogContent>
-                        </Dialog>
-                        <Button variant="outline" size="sm" onClick={handleRefresh} title="Refresh documents">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="mr-1"
-                          >
-                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
-                            <path d="M21 3v5h-5"></path>
-                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
-                            <path d="M8 16H3v5"></path>
-                          </svg>
-                          Refresh
-                        </Button>
-                        <UploadDialog
-                          showUploadDialog={showUploadDialog}
-                          setShowUploadDialog={setShowUploadDialog}
-                          loading={loading}
-                          onFileUpload={handleFileUpload}
-                          onBatchFileUpload={handleBatchFileUpload}
-                          onTextUpload={handleTextUpload}
-                        />
+                {/* Breadcrumb Navigation Header */}
+                <div className="border-border bg-background p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-1">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-4 w-4"
+                        >
+                          <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                          <polyline points="9,22 9,12 15,12 15,22" />
+                        </svg>
+                        <span className="font-medium text-foreground">Morphik</span>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Separate Search Bar for Root Level */}
-                  <div className="mb-4 bg-background">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        placeholder="Search documents..."
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        className="pl-9"
+                    <div className="flex items-center space-x-2">
+                      <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" size="sm">
+                            <PlusCircle className="mr-2 h-4 w-4" /> New Folder
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Create New Folder</DialogTitle>
+                            <DialogDescription>Create a new folder to organize your documents.</DialogDescription>
+                          </DialogHeader>
+                          <div className="grid gap-4 py-4">
+                            <div>
+                              <Label htmlFor="folderName">Folder Name</Label>
+                              <Input
+                                id="folderName"
+                                value={newFolderName}
+                                onChange={e => setNewFolderName(e.target.value)}
+                                placeholder="Enter folder name"
+                              />
+                            </div>
+                            <div>
+                              <Label htmlFor="folderDescription">Description (Optional)</Label>
+                              <Textarea
+                                id="folderDescription"
+                                value={newFolderDescription}
+                                onChange={e => setNewFolderDescription(e.target.value)}
+                                placeholder="Enter folder description"
+                                rows={3}
+                              />
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button
+                              variant="ghost"
+                              onClick={() => setShowNewFolderDialog(false)}
+                              disabled={isCreatingFolder}
+                            >
+                              Cancel
+                            </Button>
+                            <Button onClick={handleCreateFolder} disabled={!newFolderName.trim() || isCreatingFolder}>
+                              {isCreatingFolder ? "Creating..." : "Create Folder"}
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setAllFoldersExpanded(!allFoldersExpanded);
+                        }}
+                        className="flex items-center gap-1.5"
+                        title="Expand or collapse all folders"
+                      >
+                        {allFoldersExpanded ? <ChevronsUp className="h-4 w-4" /> : <ChevronsDown className="h-4 w-4" />}
+                        <span>{allFoldersExpanded ? "Collapse All" : "Expand All"}</span>
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={handleRefresh} title="Refresh documents">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="mr-1"
+                        >
+                          <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                          <path d="M21 3v5h-5"></path>
+                          <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+                          <path d="M8 16H3v5"></path>
+                        </svg>
+                        Refresh
+                      </Button>
+                      <UploadDialog
+                        showUploadDialog={showUploadDialog}
+                        setShowUploadDialog={setShowUploadDialog}
+                        loading={loading}
+                        onFileUpload={handleFileUpload}
+                        onBatchFileUpload={handleBatchFileUpload}
+                        onTextUpload={handleTextUpload}
                       />
                     </div>
                   </div>
+                </div>
 
-                  {/* Use DocumentList component for consistent styling and actions */}
+                {/* Separate Search Bar for Root Level */}
+                <div className="mb-4 bg-background">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Search documents..."
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+
+                {/* Use DocumentList component for consistent styling and actions */}
+                <div className="min-h-0 flex-1">
                   <DocumentList
                     documents={filteredRootItems}
                     selectedDocument={selectedDocument}
@@ -1524,6 +1525,7 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
                     hideSearchBar={true} // Hide the search bar inside DocumentList
                     externalSearchQuery={searchQuery} // Pass the external search query
                     onSearchChange={setSearchQuery} // Handle search changes
+                    allFoldersExpanded={allFoldersExpanded}
                   />
                 </div>
               </div>
@@ -1550,11 +1552,11 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           )}
         </div>
       ) : (
-        <div className="flex flex-1 flex-col gap-4 md:flex-row">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 md:flex-row">
           {/* Left Panel: Document List or Skeleton or Empty State */}
           <div
             className={cn(
-              "flex w-full flex-col transition-all duration-300",
+              "flex min-h-0 w-full flex-col transition-all duration-300",
               selectedDocument ? "md:w-2/3" : "md:w-full"
             )}
           >
@@ -1578,7 +1580,12 @@ const DocumentsSection: React.FC<DocumentsSectionProps> = ({
               </div>
             ) : (
               // Document list with subtle background refresh indicator
-              <div className={cn("relative transition-opacity", loading && documents.length > 0 ? "opacity-60" : "")}>
+              <div
+                className={cn(
+                  "relative min-h-0 flex-1 transition-opacity",
+                  loading && documents.length > 0 ? "opacity-60" : ""
+                )}
+              >
                 {/* Tiny corner spinner instead of full overlay */}
                 {loading && documents.length > 0 && (
                   <div className="absolute left-2 top-2 z-10 flex items-center">
