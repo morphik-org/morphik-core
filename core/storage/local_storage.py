@@ -16,7 +16,7 @@ class LocalStorage(BaseStorage):
         # Create storage directory if it doesn't exist
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
-    async def download_file(self, bucket: str, key: str) -> bytes:
+    async def download_file(self, bucket: str, key: str, **kwargs) -> bytes:
         """Download a file from local storage without blocking the event loop."""
         # Construct full key including bucket, consistent with upload_from_base64
         full_key = f"{bucket}/{key}" if (bucket and bucket != "storage") else key

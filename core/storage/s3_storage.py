@@ -125,12 +125,16 @@ class S3Storage(BaseStorage):
             logger.error(f"Error uploading base64 content to S3: {e}")
             raise e
 
-    async def download_file(self, bucket: str, key: str) -> bytes:
+    async def download_file(self, bucket: str, key: str, version: str | None = None, **kwargs) -> bytes:
         """Download file from S3 asynchronously using a thread pool to avoid blocking the event loop."""
         loop = asyncio.get_running_loop()
 
         def _sync_download() -> bytes:  # Runs in a separate thread
-            response = self.s3_client.get_object(Bucket=bucket, Key=key)
+            get_obj_params = {"Bucket": bucket, "Key": key}
+            if version:
+                # If a specific version is requested, include the VersionId parameter
+                get_obj_params["VersionId"] = version
+            response = self.s3_client.get_object(**get_obj_params)
             return response["Body"].read()
 
         try:
