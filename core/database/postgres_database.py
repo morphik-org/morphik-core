@@ -302,6 +302,7 @@ class PostgresDatabase(BaseDatabase):
             pool_timeout=pool_timeout,
             # Echo SQL for debugging (set to False in production)
             echo=False,
+            connect_args={"server_settings": {"statement_timeout": "30000"}},  # 30 second timeout
         )
         self.async_session = sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
         self._initialized = False

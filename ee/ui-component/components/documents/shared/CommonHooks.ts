@@ -149,7 +149,7 @@ export const useFolderNavigation = (setSelectedFolder: (folder: string | null) =
         if (folderName) {
           router.push(`${pathname}?folder=${encodeURIComponent(folderName)}`);
         } else {
-          router.push(pathname);
+          router.push(pathname || "/");
         }
       }
     },

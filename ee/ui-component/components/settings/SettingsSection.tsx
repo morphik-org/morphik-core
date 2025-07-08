@@ -9,6 +9,7 @@ import { Eye, EyeOff, Save, Trash2, ExternalLink, Key, ChevronLeft, Bot } from "
 import { showAlert } from "@/components/ui/alert-system";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ModelManager } from "./ModelManager";
+import { useHeader } from "@/contexts/header-context";
 
 interface SettingsSectionProps {
   authToken?: string | null;
@@ -78,17 +79,21 @@ export function SettingsSection({ authToken, onBackClick, initialTab = "api-keys
   const [config, setConfig] = useState<APIKeyConfig>({});
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
+  const { setCustomBreadcrumbs } = useHeader();
 
   // Load saved configuration from localStorage and backend
   useEffect(() => {
     const loadConfig = async () => {
-      // First load from localStorage
-      const savedConfig = localStorage.getItem("morphik_api_keys");
-      if (savedConfig) {
-        try {
-          setConfig(JSON.parse(savedConfig));
-        } catch (err) {
-          console.error("Failed to parse saved API keys:", err);
+      // First load from localStorage (only in browser)
+      let savedConfig: string | null = null;
+      if (typeof window !== "undefined") {
+        savedConfig = localStorage.getItem("morphik_api_keys");
+        if (savedConfig) {
+          try {
+            setConfig(JSON.parse(savedConfig));
+          } catch (err) {
+            console.error("Failed to parse saved API keys:", err);
+          }
         }
       }
 
@@ -137,11 +142,18 @@ export function SettingsSection({ authToken, onBackClick, initialTab = "api-keys
     loadConfig();
   }, [authToken]);
 
+  useEffect(() => {
+    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Settings" }]);
+    return () => setCustomBreadcrumbs(null);
+  }, [setCustomBreadcrumbs]);
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Save to localStorage first
-      localStorage.setItem("morphik_api_keys", JSON.stringify(config));
+      // Save to localStorage first (only in browser)
+      if (typeof window !== "undefined") {
+        localStorage.setItem("morphik_api_keys", JSON.stringify(config));
+      }
 
       // If we have authToken, also save to backend
       if (authToken) {
@@ -225,6 +237,7 @@ export function SettingsSection({ authToken, onBackClick, initialTab = "api-keys
   };
 
   const hasUnsavedChanges = () => {
+    if (typeof window === "undefined") return false;
     const savedConfig = localStorage.getItem("morphik_api_keys");
     if (!savedConfig) return Object.keys(config).length > 0;
     try {
@@ -246,9 +259,7 @@ export function SettingsSection({ authToken, onBackClick, initialTab = "api-keys
             </Button>
           )}
 
-          <h2 className="mb-4 text-lg font-semibold">Settings</h2>
-
-          <nav className="space-y-1">
+          <nav className="mt-4 space-y-1">
             <button
               onClick={() => setActiveTab("api-keys")}
               className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
@@ -278,7 +289,6 @@ export function SettingsSection({ authToken, onBackClick, initialTab = "api-keys
             {activeTab === "api-keys" && (
               <>
                 <div className="mb-6">
-                  <h1 className="text-2xl font-semibold">API Keys</h1>
                   <p className="text-sm text-muted-foreground">
                     Configure API keys for different AI providers. Your keys are stored securely in your browser.
                   </p>

@@ -22,6 +22,7 @@ import { Slider } from "@/components/ui/slider";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { AgentPreviewMessage, AgentUIMessage, DisplayObject, SourceObject, ToolCall } from "./AgentChatMessages";
 import { ModelSelector } from "./ModelSelector";
+import { useHeader } from "@/contexts/header-context";
 
 interface ChatSectionProps {
   apiBaseUrl: string;
@@ -544,6 +545,12 @@ const ChatSection: React.FC<ChatSectionProps> = ({
       }
     }
   };
+
+  const { setCustomBreadcrumbs } = useHeader();
+  useEffect(() => {
+    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Chat" }]);
+    return () => setCustomBreadcrumbs(null);
+  }, [setCustomBreadcrumbs]);
 
   return (
     <div className="relative flex h-full w-full overflow-hidden bg-background">

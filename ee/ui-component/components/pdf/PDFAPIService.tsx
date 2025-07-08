@@ -1,19 +1,5 @@
 import { useEffect, createContext, useContext } from "react";
 
-interface PDFViewerControls {
-  changePage: (page: number) => void;
-  zoomToY: (bounds: { top: number; bottom: number }) => void;
-  zoomToX: (bounds: { left: number; right: number }) => void;
-  getCurrentState: () => unknown;
-  getMode: () => "manual" | "api";
-}
-
-declare global {
-  interface Window {
-    pdfViewerControls?: PDFViewerControls;
-  }
-}
-
 interface PDFSessionContext {
   sessionId: string;
   userId: string;

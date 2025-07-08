@@ -13,9 +13,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import { Upload } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 // Alert system is handled by the parent component
 
@@ -88,11 +86,6 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
         if (!open) resetUploadDialog();
       }}
     >
-      <DialogTrigger asChild>
-        <Button onClick={() => setShowUploadDialog(true)}>
-          <Upload className="mr-2 h-4 w-4" /> Upload Document
-        </Button>
-      </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Upload Document</DialogTitle>

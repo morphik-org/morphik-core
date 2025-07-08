@@ -18,7 +18,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { FolderSummary, Document } from "@/components/types";
 import Image from "next/image";
 import DeleteConfirmationModal from "@/components/documents/DeleteConfirmationModal";
-import BreadcrumbNavigation from "./shared/BreadcrumbNavigation";
 import WorkflowDialogs from "./shared/WorkflowDialogs";
 import { EmptyFolders } from "./shared/EmptyStates";
 import { useWorkflowManagement, useFolderNavigation, useDeleteConfirmation } from "./shared/CommonHooks";
@@ -51,8 +50,6 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
   refreshFolders,
   loading,
   refreshAction,
-  selectedDocuments = [],
-  handleDeleteMultipleDocuments,
   uploadDialogComponent,
   onFolderCreate,
   unorganizedDocuments = [],
@@ -79,7 +76,6 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
     fetchAvailableWorkflows,
     addWorkflow,
     removeWorkflow,
-    openWorkflowDialog,
   } = useWorkflowManagement(apiBaseUrl, authToken, selectedFolder, folders);
 
   const {
@@ -188,41 +184,28 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
     }
   };
 
-  // If we're viewing a specific folder or all documents, show breadcrumb navigation
+  // If we're viewing a specific folder, only show workflow dialogs
   if (selectedFolder !== null) {
     return (
-      <div>
-        <BreadcrumbNavigation
-          selectedFolder={selectedFolder}
-          onNavigateHome={() => updateSelectedFolder(null)}
-          onOpenWorkflows={openWorkflowDialog}
-          workflowCount={folderWorkflows.length}
-          selectedDocuments={selectedDocuments}
-          onDeleteMultiple={handleDeleteMultipleDocuments}
-          refreshAction={refreshAction}
-          uploadDialogComponent={uploadDialogComponent}
-        />
-
-        <WorkflowDialogs
-          showWorkflowDialog={showWorkflowDialog}
-          setShowWorkflowDialog={setShowWorkflowDialog}
-          showAddWorkflowDialog={showAddWorkflowDialog}
-          setShowAddWorkflowDialog={setShowAddWorkflowDialog}
-          folderWorkflows={folderWorkflows}
-          loadingWorkflows={loadingWorkflows}
-          availableWorkflows={availableWorkflows}
-          selectedWorkflowToAdd={selectedWorkflowToAdd}
-          setSelectedWorkflowToAdd={setSelectedWorkflowToAdd}
-          selectedFolder={selectedFolder}
-          apiBaseUrl={apiBaseUrl}
-          authToken={authToken}
-          onFetchFolderWorkflows={fetchFolderWorkflows}
-          onFetchAvailableWorkflows={fetchAvailableWorkflows}
-          onAddWorkflow={addWorkflow}
-          onRemoveWorkflow={removeWorkflow}
-          folders={folders}
-        />
-      </div>
+      <WorkflowDialogs
+        showWorkflowDialog={showWorkflowDialog}
+        setShowWorkflowDialog={setShowWorkflowDialog}
+        showAddWorkflowDialog={showAddWorkflowDialog}
+        setShowAddWorkflowDialog={setShowAddWorkflowDialog}
+        folderWorkflows={folderWorkflows}
+        loadingWorkflows={loadingWorkflows}
+        availableWorkflows={availableWorkflows}
+        selectedWorkflowToAdd={selectedWorkflowToAdd}
+        setSelectedWorkflowToAdd={setSelectedWorkflowToAdd}
+        selectedFolder={selectedFolder}
+        apiBaseUrl={apiBaseUrl}
+        authToken={authToken}
+        onFetchFolderWorkflows={fetchFolderWorkflows}
+        onFetchAvailableWorkflows={fetchAvailableWorkflows}
+        onAddWorkflow={addWorkflow}
+        onRemoveWorkflow={removeWorkflow}
+        folders={folders}
+      />
     );
   }
 

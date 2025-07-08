@@ -1,21 +1,24 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, forwardRef, useImperativeHandle, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useLogs } from "@/hooks/useLogs";
-import { Button } from "@/components/ui/button";
-import { RotateCw, Loader2 } from "lucide-react";
+import { useHeader } from "@/contexts/header-context";
 
 interface LogsSectionProps {
   apiBaseUrl: string;
   authToken: string | null;
 }
 
-export default function LogsSection({ apiBaseUrl, authToken }: LogsSectionProps) {
+export interface LogsSectionRef {
+  handleRefresh: () => void;
+}
+
+const LogsSection = forwardRef<LogsSectionRef, LogsSectionProps>(({ apiBaseUrl, authToken }, ref) => {
   const { logs, loading, error, refresh } = useLogs({ apiBaseUrl, authToken });
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const [refreshing, setRefreshing] = useState(false);
+  const { setCustomBreadcrumbs } = useHeader();
 
   const toggle = (idx: number) => {
     setExpanded(prev => {
@@ -27,22 +30,24 @@ export default function LogsSection({ apiBaseUrl, authToken }: LogsSectionProps)
   };
 
   const handleRefresh = async () => {
-    setRefreshing(true);
     await refresh();
-    setRefreshing(false);
   };
+
+  // Expose handleRefresh method through ref
+  useImperativeHandle(ref, () => ({
+    handleRefresh,
+  }));
+
+  useEffect(() => {
+    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Logs" }]);
+    return () => setCustomBreadcrumbs(null);
+  }, [setCustomBreadcrumbs]);
 
   if (loading) return <p className="p-4 text-sm">Loading logs…</p>;
   if (error) return <p className="p-4 text-sm text-red-600">{error.message}</p>;
 
   return (
-    <div className="h-full overflow-auto p-4 md:p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Logs</h2>
-        <Button variant="ghost" size="icon" onClick={handleRefresh} disabled={refreshing} title="Refresh logs">
-          {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
-        </Button>
-      </div>
+    <div className="h-full overflow-auto">
       <Table className="text-xs md:text-sm">
         <TableHeader>
           <TableRow>
@@ -101,4 +106,8 @@ export default function LogsSection({ apiBaseUrl, authToken }: LogsSectionProps)
       </Table>
     </div>
   );
-}
+});
+
+LogsSection.displayName = "LogsSection";
+
+export default LogsSection;

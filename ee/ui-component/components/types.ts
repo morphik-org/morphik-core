@@ -33,7 +33,16 @@ export interface MorphikUIProps {
   onBackClick?: () => void; // Callback when back button is clicked
   appName?: string; // Name of the app to display in UI
   initialFolder?: string | null; // Initial folder to show
-  initialSection?: "documents" | "search" | "chat" | "graphs" | "workflows" | "connections" | "pdf" | "logs"; // Initial section to show
+  initialSection?:
+    | "documents"
+    | "search"
+    | "chat"
+    | "graphs"
+    | "workflows"
+    | "connections"
+    | "pdf"
+    | "settings"
+    | "logs"; // Initial section to show
 
   // Callbacks for Documents Section tracking
   onDocumentUpload?: (fileName: string, fileSize: number) => void;
@@ -54,6 +63,20 @@ export interface MorphikUIProps {
   onGraphClick?: (graphName: string | undefined) => void;
   onGraphCreate?: (graphName: string, numDocuments: number) => void;
   onGraphUpdate?: (graphName: string, numAdditionalDocuments: number) => void;
+
+  // User profile and auth
+  userProfile?: {
+    name?: string;
+    email?: string;
+    avatar?: string;
+    tier?: string;
+  };
+  onLogout?: () => void;
+  onProfileNavigate?: (section: "account" | "billing" | "notifications") => void;
+
+  // UI Customization
+  logoLight?: string;
+  logoDark?: string;
 }
 
 export interface Document {

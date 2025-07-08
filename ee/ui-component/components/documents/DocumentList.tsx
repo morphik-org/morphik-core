@@ -43,6 +43,7 @@ interface DocumentListProps {
   onViewInPDFViewer?: (documentId: string) => void; // Add PDF viewer navigation
   onDownloadDocument?: (documentId: string) => void; // Add download functionality
   onDeleteDocument?: (documentId: string) => void; // Add delete functionality
+  onDeleteMultipleDocuments?: () => void; // Add bulk delete functionality
   folders?: FolderSummary[]; // Optional since it's fetched internally
   showBorder?: boolean; // Control whether to show the outer border and rounded corners
   hideSearchBar?: boolean; // Control whether to hide the search bar
@@ -65,12 +66,18 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
   onViewInPDFViewer,
   onDownloadDocument,
   onDeleteDocument,
+  onDeleteMultipleDocuments,
   showBorder = true,
   hideSearchBar = false,
   externalSearchQuery = "",
   onSearchChange,
   allFoldersExpanded = false,
 }) {
+  const [mounted, setMounted] = useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
   const [copiedDocumentId, setCopiedDocumentId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -350,8 +357,8 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
 
   const DocumentListHeader = () => {
     return (
-      <div className="relative sticky top-0 z-20 border-b bg-muted font-medium">
-        <div className="flex w-max min-w-full">
+      <div className="sticky top-0 z-20 border-b bg-muted font-medium">
+        <div className="flex min-w-fit">
           {/* Main scrollable content */}
           <div className="grid flex-1 items-center" style={{ gridTemplateColumns }}>
             <div className="flex items-center justify-center px-3 py-2">
@@ -359,7 +366,8 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
                 id="select-all-documents"
                 checked={getSelectAllState()}
                 onCheckedChange={checked => {
-                  if (checked) {
+                  if (checked === true) {
+                    // Select all items (including folders)
                     setSelectedDocuments(documents.map(doc => doc.external_id));
                   } else {
                     setSelectedDocuments([]);
@@ -464,8 +472,33 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
         </div>
       )}
 
+      {/* Bulk actions bar */}
+      {mounted && selectedDocuments.length > 0 && (
+        <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-2">
+          <span className="text-sm text-muted-foreground">
+            {selectedDocuments.length} item{selectedDocuments.length > 1 ? "s" : ""} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelectedDocuments([])}>
+              Clear selection
+            </Button>
+            {onDeleteMultipleDocuments && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={onDeleteMultipleDocuments}
+                className="flex items-center gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete selected
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main content area with horizontal scroll */}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
         {/* Header */}
         {DocumentListHeader()}
 
@@ -483,7 +516,7 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
                 handleDocumentClick(doc);
               }
             }}
-            className={`relative flex w-max min-w-full border-b border-border ${
+            className={`relative flex min-w-fit border-b border-border ${
               (doc as Document & { itemType?: string }).itemType === "folder"
                 ? "cursor-pointer hover:bg-muted/50"
                 : doc.external_id === selectedDocument?.external_id

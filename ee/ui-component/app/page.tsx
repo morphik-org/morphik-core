@@ -1,30 +1,5 @@
-"use client";
-
-import React, { Suspense } from "react";
-import MorphikUI from "@/components/MorphikUI";
-import { useSearchParams } from "next/navigation";
-
-type AllowedSection = "documents" | "search" | "chat" | "graphs" | "connections" | "pdf" | "logs";
-const ALLOWED_SECTIONS: AllowedSection[] = ["documents", "search", "chat", "graphs", "connections", "pdf", "logs"];
-
-function isValidSection(section: string | null): section is AllowedSection {
-  return section !== null && ALLOWED_SECTIONS.includes(section as AllowedSection);
-}
-
-function HomeContent() {
-  const searchParams = useSearchParams();
-  const folderParam = searchParams.get("folder");
-  const sectionParam = searchParams.get("section");
-
-  const initialSectionValidated: AllowedSection | undefined = isValidSection(sectionParam) ? sectionParam : undefined;
-
-  return <MorphikUI initialFolder={folderParam} initialSection={initialSectionValidated} />;
-}
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <HomeContent />
-    </Suspense>
-  );
+  redirect("/documents");
 }

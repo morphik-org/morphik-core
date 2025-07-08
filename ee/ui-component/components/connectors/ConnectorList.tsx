@@ -2,6 +2,8 @@
 
 import { ConnectorCard } from "./ConnectorCard";
 import { BookLock, BookOpen } from "lucide-react"; // Example icon for Google Drive and Zotero
+import { useHeader } from "@/contexts/header-context";
+import { useEffect } from "react";
 
 // In the future, this could come from a configuration or an API call
 const availableConnectors = [
@@ -32,6 +34,13 @@ interface ConnectorListProps {
 }
 
 export function ConnectorList({ apiBaseUrl, authToken }: ConnectorListProps) {
+  const { setCustomBreadcrumbs } = useHeader();
+
+  useEffect(() => {
+    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Connectors" }]);
+    return () => setCustomBreadcrumbs(null);
+  }, [setCustomBreadcrumbs]);
+
   if (availableConnectors.length === 0) {
     return (
       <div className="text-center text-muted-foreground">
