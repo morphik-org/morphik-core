@@ -122,32 +122,57 @@ class FastMultiVectorStore(BaseVectorStore):
         doc_ids: Optional[List[str]] = None,
         app_id: Optional[str] = None,
     ) -> List[DocumentChunk]:
+        # --- Begin profiling ---
+        t0 = time.perf_counter()
+
         if isinstance(query_embedding, torch.Tensor):
             query_embedding = query_embedding.cpu().numpy()
         elif isinstance(query_embedding, list):
             query_embedding = np.array(query_embedding)
+
+        # 1) Encode query embedding
         encoded_query_embedding = fde.generate_query_encoding(query_embedding, self.fde_config).tolist()
+        t1 = time.perf_counter()
+        logger.info(f"query_similar timing - encode_query: {(t1 - t0)*1000:.2f} ms")
+
+        # 2) ANN search on Turbopuffer namespace
         result = await self.ns.query(
             filters=("document_id", "In", doc_ids),
             rank_by=("vector", "ANN", encoded_query_embedding),
             top_k=min(10 * k, 75),
             include_attributes=["id", "document_id", "chunk_number", "content", "metadata", "multivector"],
         )
+        t2 = time.perf_counter()
+        logger.info(f"query_similar timing - ns.query: {(t2 - t1)*1000:.2f} ms")
+
+        # 3) Download multi-vectors
         multivector_retrieval_tasks = [
             self.load_multivector_from_storage(r["multivector"][0], r["multivector"][1]) for r in result.rows
         ]
         multivectors = await asyncio.gather(*multivector_retrieval_tasks)
+        t3 = time.perf_counter()
+        logger.info(f"query_similar timing - load_multivectors: {(t3 - t2)*1000:.2f} ms")
+
+        # 4) Rerank using ColQwen2.5 processor
         scores = self.processor.score_multi_vector(
-            [torch.from_numpy(query_embedding)], multivectors, device=self.device
+            [torch.from_numpy(query_embedding).float()], multivectors, device=self.device
         )[0]
         scores, idx = torch.topk(scores, min(k, len(scores)))
         scores, top_k_indices = scores.tolist(), idx.tolist()
+        t4 = time.perf_counter()
+        logger.info(f"query_similar timing - rerank_scoring: {(t4 - t3)*1000:.2f} ms")
+
+        # 5) Retrieve chunk contents
         rows, storage_retrieval_tasks = [], []
         for i in top_k_indices:
             row = result.rows[i]
             rows.append(row)
             storage_retrieval_tasks.append(self._retrieve_content_from_storage(row["content"], row["metadata"]))
         contents = await asyncio.gather(*storage_retrieval_tasks)
+        t5 = time.perf_counter()
+        logger.info(f"query_similar timing - load_contents: {(t5 - t4)*1000:.2f} ms")
+
+        # 6) Build return objects
         ret = [
             DocumentChunk(
                 document_id=row["document_id"],
@@ -159,6 +184,10 @@ class FastMultiVectorStore(BaseVectorStore):
             )
             for score, row, content in zip(scores, rows, contents)
         ]
+        t6 = time.perf_counter()
+        logger.info(f"query_similar timing - build_chunks: {(t6 - t5)*1000:.2f} ms")
+        logger.info(f"query_similar total time: {(t6 - t0)*1000:.2f} ms")
+
         return ret
 
     async def get_chunks_by_id(self, chunk_identifiers: List[Tuple[str, int]]) -> List[DocumentChunk]:
@@ -202,7 +231,7 @@ class FastMultiVectorStore(BaseVectorStore):
     async def load_multivector_from_storage(self, bucket: str, key: str) -> torch.Tensor:
         content = await self.storage.download_file(bucket, key)
         as_np = np.load(BytesIO(content))  # , allow_pickle=True)
-        return torch.from_numpy(as_np)
+        return torch.from_numpy(as_np).float()
 
     @contextmanager
     def get_connection(self):
@@ -311,7 +340,7 @@ class FastMultiVectorStore(BaseVectorStore):
                 logger.warning(f"No app_id provided for document {document_id}, falling back to database lookup")
                 app_id = await self._get_document_app_id(document_id)
             else:
-                logger.debug(f"Using provided app_id: {app_id} for document {document_id}")
+                logger.info(f"Using provided app_id: {app_id} for document {document_id}")
 
             # Determine file extension
             extension = self._determine_file_extension(content, chunk_metadata)
@@ -334,7 +363,7 @@ class FastMultiVectorStore(BaseVectorStore):
                     content=content, key=storage_key, bucket=MULTIVECTOR_CHUNKS_BUCKET
                 )
 
-            logger.debug(f"Stored chunk content externally with key: {storage_key}")
+            logger.info(f"Stored chunk content externally with key: {storage_key}")
             return storage_key
 
         except Exception as e:
@@ -355,7 +384,7 @@ class FastMultiVectorStore(BaseVectorStore):
 
     async def _retrieve_content_from_storage(self, storage_key: str, chunk_metadata: Optional[str]) -> str:
         """Retrieve content from external storage and convert to expected format."""
-        logger.debug(f"Attempting to retrieve content from storage key: {storage_key}")
+        logger.info(f"Attempting to retrieve content from storage key: {storage_key}")
 
         if not self.storage:
             logger.warning(f"External storage not available for retrieving key: {storage_key}")
@@ -363,12 +392,12 @@ class FastMultiVectorStore(BaseVectorStore):
 
         try:
             # Download content from storage
-            logger.debug(f"Downloading from bucket: {MULTIVECTOR_CHUNKS_BUCKET}, key: {storage_key}")
+            logger.info(f"Downloading from bucket: {MULTIVECTOR_CHUNKS_BUCKET}, key: {storage_key}")
             key_possibilities = [
                 storage_key,
                 f"{storage_key}.txt",
-                f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}",
-                f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}.txt",
+                f"multivector-chunks/{storage_key}",
+                f"multivector-chunks/{storage_key}.txt",
             ]
             download_tasks = [
                 self.storage.download_file(bucket=MULTIVECTOR_CHUNKS_BUCKET, key=key) for key in key_possibilities
@@ -385,13 +414,13 @@ class FastMultiVectorStore(BaseVectorStore):
                 logger.error(f"No content downloaded for storage key: {storage_key}")
                 return storage_key
 
-            logger.debug(f"Downloaded {len(content_bytes)} bytes for key: {storage_key}")
+            logger.info(f"Downloaded {len(content_bytes)} bytes for key: {storage_key}")
 
             # Check if storage key ends with .txt (indicates content was stored as text)
             if storage_key.endswith(".txt"):
                 # Content is stored as text (could be base64 string for images)
                 result = content_bytes.decode("utf-8")
-                logger.debug(f"Retrieved text content from .txt file, length: {len(result)}")
+                logger.info(f"Retrieved text content from .txt file, length: {len(result)}")
                 return result
 
             # For non-.txt files, determine content type
@@ -399,26 +428,26 @@ class FastMultiVectorStore(BaseVectorStore):
                 if chunk_metadata:
                     metadata = json.loads(chunk_metadata)
                     is_image = metadata.get("is_image", False)
-                    logger.debug(f"Chunk metadata indicates is_image: {is_image}")
+                    logger.info(f"Chunk metadata indicates is_image: {is_image}")
 
                     if is_image:
                         # For images, return as base64 string
                         result = base64.b64encode(content_bytes).decode("utf-8")
-                        logger.debug(f"Returning image as base64, length: {len(result)}")
+                        logger.info(f"Returning image as base64, length: {len(result)}")
                         return result
                     result = content_bytes.decode("utf-8")
-                    logger.debug(f"Returning text content, length: {len(result)}")
+                    logger.info(f"Returning text content, length: {len(result)}")
                     return result
 
-                logger.debug("No metadata, auto-detecting content type")
+                logger.info("No metadata, auto-detecting content type")
                 try:
                     result = content_bytes.decode("utf-8")
-                    logger.debug(f"Auto-detected as text, length: {len(result)}")
+                    logger.info(f"Auto-detected as text, length: {len(result)}")
                     return result
                 except UnicodeDecodeError:
                     # If not valid UTF-8, treat as binary (image) and return base64
                     result = base64.b64encode(content_bytes).decode("utf-8")
-                    logger.debug(f"Auto-detected as binary, returning base64, length: {len(result)}")
+                    logger.info(f"Auto-detected as binary, returning base64, length: {len(result)}")
                     return result
 
             except (json.JSONDecodeError, Exception) as e:

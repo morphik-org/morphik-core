@@ -340,15 +340,24 @@ class MultiVectorStore(BaseVectorStore):
         return f"{app_id}/{document_id}/{chunk_number}{extension}"
 
     async def _store_content_externally(
-        self, content: str, document_id: str, chunk_number: int, chunk_metadata: Optional[str]
+        self,
+        content: str,
+        document_id: str,
+        chunk_number: int,
+        chunk_metadata: Optional[str],
+        app_id: Optional[str] = None,
     ) -> Optional[str]:
         """Store chunk content in external storage and return storage key."""
         if not self.storage:
             return None
 
         try:
-            # Get app_id for this document
-            app_id = await self._get_document_app_id(document_id)
+            # Use provided app_id or fall back to document lookup
+            if app_id is None:
+                logger.warning(f"No app_id provided for document {document_id}, falling back to database lookup")
+                app_id = await self._get_document_app_id(document_id)
+            else:
+                logger.debug(f"Using provided app_id: {app_id} for document {document_id}")
 
             # Determine file extension
             extension = self._determine_file_extension(content, chunk_metadata)
@@ -472,7 +481,7 @@ class MultiVectorStore(BaseVectorStore):
             if self.enable_external_storage and self.storage:
                 # Try to store content externally
                 storage_key = await self._store_content_externally(
-                    chunk.content, chunk.document_id, chunk.chunk_number, str(chunk.metadata)
+                    chunk.content, chunk.document_id, chunk.chunk_number, str(chunk.metadata), app_id
                 )
 
                 if storage_key:

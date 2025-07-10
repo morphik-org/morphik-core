@@ -4,21 +4,8 @@ import React, { useState, useMemo, useCallback } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
-  Plus,
-  Wand2,
-  Upload,
-  Filter,
   Eye,
   Download,
   Trash2,
@@ -30,29 +17,15 @@ import {
   ArrowDown,
   Folder as FolderIcon,
   FileText,
-  Files,
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { showAlert } from "@/components/ui/alert-system";
 
 import { Document, Folder, FolderSummary } from "@/components/types";
 import { EmptyDocuments, NoMatchingDocuments, LoadingDocuments } from "./shared/EmptyStates";
 
 type ColumnType = "string" | "int" | "float" | "bool" | "Date" | "json";
-
-interface CustomColumn {
-  name: string;
-  description: string;
-  _type: ColumnType;
-  schema?: string;
-}
-
-interface MetadataExtractionRule {
-  type: "metadata_extraction";
-  schema: Record<string, unknown>;
-}
 
 interface DocumentListProps {
   documents: Document[];
@@ -70,227 +43,14 @@ interface DocumentListProps {
   onViewInPDFViewer?: (documentId: string) => void; // Add PDF viewer navigation
   onDownloadDocument?: (documentId: string) => void; // Add download functionality
   onDeleteDocument?: (documentId: string) => void; // Add delete functionality
+  onDeleteMultipleDocuments?: () => void; // Add bulk delete functionality
   folders?: FolderSummary[]; // Optional since it's fetched internally
   showBorder?: boolean; // Control whether to show the outer border and rounded corners
   hideSearchBar?: boolean; // Control whether to hide the search bar
   externalSearchQuery?: string; // External search query when search bar is hidden
   onSearchChange?: (query: string) => void; // Callback for search changes when search bar is hidden
+  allFoldersExpanded?: boolean; // Control whether all folders should be expanded
 }
-
-// Filter Dialog Component
-const FilterDialog = ({
-  isOpen,
-  onClose,
-  columns,
-  filterValues,
-  setFilterValues,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  columns: CustomColumn[];
-  filterValues: Record<string, string>;
-  setFilterValues: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-}) => {
-  const [localFilters, setLocalFilters] = useState<Record<string, string>>(filterValues);
-
-  const handleApplyFilters = () => {
-    setFilterValues(localFilters);
-    onClose();
-  };
-
-  const handleClearFilters = () => {
-    setLocalFilters({});
-    setFilterValues({});
-    onClose();
-  };
-
-  const handleFilterChange = (column: string, value: string) => {
-    setLocalFilters(prev => ({
-      ...prev,
-      [column]: value,
-    }));
-  };
-
-  return (
-    <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
-      <DialogContent onPointerDownOutside={e => e.preventDefault()}>
-        <DialogHeader>
-          <DialogTitle>Filter Documents</DialogTitle>
-          <DialogDescription>Filter documents by their metadata values</DialogDescription>
-        </DialogHeader>
-        <div className="max-h-96 space-y-4 overflow-y-auto py-4">
-          {columns.map(column => (
-            <div key={column.name} className="space-y-2">
-              <label htmlFor={`filter-${column.name}`} className="text-sm font-medium">
-                {column.name}
-              </label>
-              <Input
-                id={`filter-${column.name}`}
-                placeholder={`Filter by ${column.name}...`}
-                value={localFilters[column.name] || ""}
-                onChange={e => handleFilterChange(column.name, e.target.value)}
-              />
-            </div>
-          ))}
-        </div>
-        <DialogFooter className="flex justify-between">
-          <Button variant="outline" onClick={handleClearFilters}>
-            Clear Filters
-          </Button>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button onClick={handleApplyFilters}>Apply Filters</Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-};
-
-// Create a separate Column Dialog component to isolate its state
-const AddColumnDialog = ({
-  isOpen,
-  onClose,
-  onAddColumn,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  onAddColumn: (column: CustomColumn) => void;
-}) => {
-  const [localColumnName, setLocalColumnName] = useState("");
-  const [localColumnDescription, setLocalColumnDescription] = useState("");
-  const [localColumnType, setLocalColumnType] = useState<ColumnType>("string");
-  const [localColumnSchema, setLocalColumnSchema] = useState<string>("");
-
-  const handleLocalSchemaFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = event => {
-        setLocalColumnSchema(event.target?.result as string);
-      };
-      reader.readAsText(file);
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (localColumnName.trim()) {
-      const column: CustomColumn = {
-        name: localColumnName.trim(),
-        description: localColumnDescription.trim(),
-        _type: localColumnType,
-      };
-
-      if (localColumnType === "json" && localColumnSchema) {
-        column.schema = localColumnSchema;
-      }
-
-      onAddColumn(column);
-
-      // Reset form values
-      setLocalColumnName("");
-      setLocalColumnDescription("");
-      setLocalColumnType("string");
-      setLocalColumnSchema("");
-
-      // Close the dialog
-      onClose();
-    }
-  };
-
-  return (
-    <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
-      <DialogContent onPointerDownOutside={e => e.preventDefault()}>
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>Add Custom Column</DialogTitle>
-            <DialogDescription>Add a new column and specify its type and description.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label htmlFor="column-name" className="text-sm font-medium">
-                Column Name
-              </label>
-              <Input
-                id="column-name"
-                placeholder="e.g. Author, Category, etc."
-                value={localColumnName}
-                onChange={e => setLocalColumnName(e.target.value)}
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="column-type" className="text-sm font-medium">
-                Type
-              </label>
-              <Select value={localColumnType} onValueChange={value => setLocalColumnType(value as ColumnType)}>
-                <SelectTrigger id="column-type">
-                  <SelectValue placeholder="Select data type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="string">String</SelectItem>
-                  <SelectItem value="int">Integer</SelectItem>
-                  <SelectItem value="float">Float</SelectItem>
-                  <SelectItem value="bool">Boolean</SelectItem>
-                  <SelectItem value="Date">Date</SelectItem>
-                  <SelectItem value="json">JSON</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {localColumnType === "json" && (
-              <div className="space-y-2">
-                <label htmlFor="column-schema" className="text-sm font-medium">
-                  JSON Schema
-                </label>
-                <div className="flex items-center space-x-2">
-                  <Input
-                    id="column-schema-file"
-                    type="file"
-                    accept=".json"
-                    className="hidden"
-                    onChange={handleLocalSchemaFileChange}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => document.getElementById("column-schema-file")?.click()}
-                    className="flex items-center gap-2"
-                  >
-                    <Upload className="h-4 w-4" />
-                    Upload Schema
-                  </Button>
-                  <span className="text-sm text-muted-foreground">
-                    {localColumnSchema ? "Schema loaded" : "No schema uploaded"}
-                  </span>
-                </div>
-              </div>
-            )}
-            <div className="space-y-2">
-              <label htmlFor="column-description" className="text-sm font-medium">
-                Description
-              </label>
-              <Textarea
-                id="column-description"
-                placeholder="Describe in natural language what information this column should contain..."
-                value={localColumnDescription}
-                onChange={e => setLocalColumnDescription(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit">Add Column</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-};
 
 const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentList({
   documents,
@@ -300,24 +60,24 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
   handleCheckboxChange,
   getSelectAllState,
   setSelectedDocuments,
-  setDocuments,
   loading,
   apiBaseUrl,
   authToken,
-  selectedFolder,
   onViewInPDFViewer,
   onDownloadDocument,
   onDeleteDocument,
+  onDeleteMultipleDocuments,
   showBorder = true,
   hideSearchBar = false,
   externalSearchQuery = "",
   onSearchChange,
+  allFoldersExpanded = false,
 }) {
-  const [customColumns, setCustomColumns] = useState<CustomColumn[]>([]);
-  const [showAddColumnDialog, setShowAddColumnDialog] = useState(false);
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [showFilterDialog, setShowFilterDialog] = useState(false);
-  const [filterValues, setFilterValues] = useState<Record<string, string>>({});
+  const [mounted, setMounted] = useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
   const [copiedDocumentId, setCopiedDocumentId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -329,7 +89,6 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
   // State for expanded folders and their documents
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [folderDocuments, setFolderDocuments] = useState<Record<string, Document[]>>({});
-  const [isAllDocumentsExpanded, setIsAllDocumentsExpanded] = useState(false);
 
   // Get unique metadata fields from all documents, excluding external_id
   const existingMetadataFields = useMemo(() => {
@@ -347,7 +106,7 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
     return Array.from(fields);
   }, [documents]);
 
-  // Apply filter, search, and sort logic with memoization, including expanded folder documents
+  // Apply search and sort logic with memoization, including expanded folder documents
   const filteredDocuments = useMemo(() => {
     let result: (Document & {
       itemType?: "document" | "folder" | "all";
@@ -400,22 +159,6 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
       });
     }
 
-    // Apply column filters
-    if (Object.keys(filterValues).length > 0) {
-      result = result.filter(doc => {
-        // Check if document matches all filter criteria
-        return Object.entries(filterValues).every(([key, value]) => {
-          if (!value || value.trim() === "") return true; // Skip empty filters
-
-          const docValue = doc.metadata?.[key];
-          if (docValue === undefined) return false;
-
-          // String comparison (case-insensitive)
-          return String(docValue).toLowerCase().includes(value.toLowerCase());
-        });
-      });
-    }
-
     // Apply sorting
     if (sortColumn) {
       result.sort((a, b) => {
@@ -460,7 +203,7 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
     }
 
     return result;
-  }, [documents, filterValues, effectiveSearchQuery, sortColumn, sortDirection, expandedFolders, folderDocuments]);
+  }, [documents, effectiveSearchQuery, sortColumn, sortDirection, expandedFolders, folderDocuments]);
 
   // Copy document ID to clipboard
   const copyDocumentId = async (documentId: string) => {
@@ -541,6 +284,27 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
     [apiBaseUrl, authToken, folderDocuments]
   );
 
+  // Effect to handle allFoldersExpanded prop changes
+  React.useEffect(() => {
+    if (allFoldersExpanded) {
+      // Expand all folders
+      const allFolderNames = documents
+        .filter((doc: Document & { itemType?: string }) => doc.itemType === "folder")
+        .map((doc: Document & { itemType?: string }) => doc.filename || "");
+      setExpandedFolders(new Set(allFolderNames));
+
+      // Fetch documents for all folders that aren't already fetched
+      allFolderNames.forEach(folderName => {
+        if (!folderDocuments[folderName]) {
+          fetchFolderDocuments(folderName);
+        }
+      });
+    } else {
+      // Collapse all folders
+      setExpandedFolders(new Set());
+    }
+  }, [allFoldersExpanded, documents, folderDocuments, fetchFolderDocuments]);
+
   // Handle folder expansion toggle
   const toggleFolderExpansion = useCallback(
     (folderName: string, event: React.MouseEvent) => {
@@ -561,64 +325,14 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
     [fetchFolderDocuments]
   );
 
-  // Handle "All Documents" expansion toggle
-  const toggleAllDocumentsExpansion = useCallback(
-    (event: React.MouseEvent) => {
-      event.stopPropagation();
-
-      setIsAllDocumentsExpanded(prev => {
-        const newExpanded = !prev;
-
-        if (newExpanded) {
-          // When expanding "All Documents", expand all folders
-          const allFolderNames = documents
-            .filter((doc: Document & { itemType?: string }) => doc.itemType === "folder")
-            .map((doc: Document & { itemType?: string }) => doc.filename || "");
-
-          setExpandedFolders(new Set(allFolderNames));
-
-          // Fetch documents for all folders that aren't already fetched
-          allFolderNames.forEach(folderName => {
-            if (!folderDocuments[folderName]) {
-              fetchFolderDocuments(folderName);
-            }
-          });
-        } else {
-          // When collapsing "All Documents", collapse all folders
-          setExpandedFolders(new Set());
-        }
-
-        return newExpanded;
-      });
-    },
-    [documents, folderDocuments, fetchFolderDocuments]
-  );
-
-  // Combine existing metadata fields with custom columns
+  // Use existing metadata fields as columns
   const allColumns = useMemo(() => {
-    const metadataColumns: CustomColumn[] = existingMetadataFields.map(field => ({
+    return existingMetadataFields.map(field => ({
       name: field,
       description: `Extracted ${field}`,
-      _type: "string", // Default to string type for existing metadata
+      _type: "string" as ColumnType,
     }));
-
-    // Merge with custom columns, preferring custom column definitions if they exist
-    const mergedColumns = [...metadataColumns];
-    customColumns.forEach(customCol => {
-      const existingIndex = mergedColumns.findIndex(col => col.name === customCol.name);
-      if (existingIndex >= 0) {
-        mergedColumns[existingIndex] = customCol;
-      } else {
-        mergedColumns.push(customCol);
-      }
-    });
-
-    return mergedColumns;
-  }, [existingMetadataFields, customColumns]);
-
-  const handleAddColumn = useCallback((column: CustomColumn) => {
-    setCustomColumns(prev => [...prev, column]);
-  }, []);
+  }, [existingMetadataFields]);
 
   // Handle column sorting
   const handleSort = useCallback(
@@ -635,204 +349,6 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
     [sortColumn]
   );
 
-  // Handle data extraction
-  const handleExtract = useCallback(async () => {
-    // First, find the folder object to get its ID
-    if (!selectedFolder || customColumns.length === 0) {
-      console.error("Cannot extract: No folder selected or no columns defined");
-      return;
-    }
-
-    // We need to get the folder ID for the API call
-    try {
-      setIsExtracting(true);
-
-      // First, get folders to find the current folder ID
-      const foldersResponse = await fetch(`${apiBaseUrl}/folders/summary`, {
-        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-      });
-
-      if (!foldersResponse.ok) {
-        throw new Error(`Failed to fetch folders: ${foldersResponse.statusText}`);
-      }
-
-      const folders = await foldersResponse.json();
-      const currentFolder = folders.find((folder: FolderSummary) => folder.name === selectedFolder);
-
-      if (!currentFolder) {
-        throw new Error(`Folder "${selectedFolder}" not found`);
-      }
-
-      // Ensure we have document_ids – fetch folder detail if missing
-      let docIds: string[] = Array.isArray(currentFolder.document_ids) ? currentFolder.document_ids : [];
-      if (docIds.length === 0) {
-        const detailRes = await fetch(`${apiBaseUrl}/folders/${currentFolder.id}`, {
-          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-        });
-        if (detailRes.ok) {
-          const detail: Folder = await detailRes.json();
-          docIds = Array.isArray(detail.document_ids) ? detail.document_ids : [];
-        }
-      }
-
-      // Convert columns to metadata extraction rule
-      const rule: MetadataExtractionRule = {
-        type: "metadata_extraction",
-        schema: Object.fromEntries(
-          customColumns.map(col => [
-            col.name,
-            {
-              type: col._type,
-              description: col.description,
-              ...(col.schema ? { schema: JSON.parse(col.schema) } : {}),
-            },
-          ])
-        ),
-      };
-
-      // Set the rule
-      const setRuleResponse = await fetch(`${apiBaseUrl}/folders/${currentFolder.id}/set_rule`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-        },
-        body: JSON.stringify({
-          rules: [rule],
-        }),
-      });
-
-      if (!setRuleResponse.ok) {
-        throw new Error(`Failed to set rule: ${setRuleResponse.statusText}`);
-      }
-
-      const result = await setRuleResponse.json();
-      console.log("Rule set successfully:", result);
-
-      // Show success message
-      showAlert("Extraction rule set successfully!", {
-        type: "success",
-        duration: 3000,
-      });
-
-      // Force a fresh refresh after setting the rule
-      // This is a special function to ensure we get truly fresh data
-      const refreshAfterRule = async () => {
-        try {
-          console.log("Performing fresh refresh after setting extraction rule");
-          // Clear folder data to force a clean refresh
-          const folderResponse = await fetch(`${apiBaseUrl}/folders/summary`, {
-            method: "GET",
-            headers: {
-              ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-            },
-          });
-
-          if (!folderResponse.ok) {
-            throw new Error(`Failed to fetch folders: ${folderResponse.statusText}`);
-          }
-
-          const freshFolders = await folderResponse.json();
-          console.log(`Rule: Fetched ${freshFolders.length} folders with fresh data`);
-
-          // Now fetch documents based on the current folder
-          if (selectedFolder && selectedFolder !== "all") {
-            // Find the folder by name
-            const targetFolder = freshFolders.find((folder: FolderSummary) => folder.name === selectedFolder);
-
-            if (targetFolder) {
-              console.log(`Rule: Found folder ${targetFolder.name} in fresh data`);
-
-              // Ensure we have document IDs (may be missing in summary response)
-              let documentIds = Array.isArray(targetFolder.document_ids) ? targetFolder.document_ids : [];
-              if (documentIds.length === 0 && targetFolder.id) {
-                const detResp = await fetch(`${apiBaseUrl}/folders/${targetFolder.id}`, {
-                  headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-                });
-                if (detResp.ok) {
-                  const det: Folder = await detResp.json();
-                  documentIds = Array.isArray(det.document_ids) ? det.document_ids : [];
-                }
-              }
-
-              if (documentIds.length > 0) {
-                // Fetch document details for the IDs
-                const docResponse = await fetch(`${apiBaseUrl}/batch/documents`, {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-                  },
-                  body: JSON.stringify({
-                    document_ids: [...documentIds],
-                  }),
-                });
-
-                if (!docResponse.ok) {
-                  throw new Error(`Failed to fetch documents: ${docResponse.statusText}`);
-                }
-
-                const freshDocs = await docResponse.json();
-                console.log(`Rule: Fetched ${freshDocs.length} document details`);
-
-                // Update documents state
-                setDocuments(freshDocs);
-              } else {
-                // Empty folder
-                setDocuments([]);
-              }
-            } else {
-              console.log(`Rule: Selected folder ${selectedFolder} not found in fresh data`);
-              setDocuments([]);
-            }
-          } else {
-            // For "all" documents view, fetch all documents
-            const allDocsResponse = await fetch(`${apiBaseUrl}/documents`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-              },
-              body: JSON.stringify({}),
-            });
-
-            if (!allDocsResponse.ok) {
-              throw new Error(`Failed to fetch all documents: ${allDocsResponse.statusText}`);
-            }
-
-            const allDocs = await allDocsResponse.json();
-            console.log(`Rule: Fetched ${allDocs.length} documents for "all" view`);
-            setDocuments(allDocs);
-          }
-        } catch (err) {
-          console.error("Error refreshing after setting rule:", err);
-          showAlert("Error refreshing data after setting rule", {
-            type: "error",
-            duration: 3000,
-          });
-        }
-      };
-
-      // Execute the refresh
-      await refreshAfterRule();
-    } catch (error) {
-      console.error("Error setting extraction rule:", error);
-      showAlert(`Failed to set extraction rule: ${error instanceof Error ? error.message : String(error)}`, {
-        type: "error",
-        title: "Error",
-        duration: 5000,
-      });
-    } finally {
-      setIsExtracting(false);
-    }
-  }, [selectedFolder, customColumns, apiBaseUrl, authToken, setDocuments]);
-
-  // Calculate how many filters are currently active
-  const activeFilterCount = useMemo(
-    () => Object.values(filterValues).filter(v => v && v.trim() !== "").length,
-    [filterValues]
-  );
-
   // Base grid template for the scrollable part – exclude the Actions column.
   const gridTemplateColumns = useMemo(
     () => `48px minmax(200px, 350px) 160px ${allColumns.map(() => "140px").join(" ")}`,
@@ -841,8 +357,8 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
 
   const DocumentListHeader = () => {
     return (
-      <div className="relative sticky top-0 z-20 border-b bg-muted font-medium">
-        <div className="flex w-max min-w-full">
+      <div className="sticky top-0 z-20 border-b bg-muted font-medium">
+        <div className="flex min-w-fit">
           {/* Main scrollable content */}
           <div className="grid flex-1 items-center" style={{ gridTemplateColumns }}>
             <div className="flex items-center justify-center px-3 py-2">
@@ -850,7 +366,8 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
                 id="select-all-documents"
                 checked={getSelectAllState()}
                 onCheckedChange={checked => {
-                  if (checked) {
+                  if (checked === true) {
+                    // Select all items (including folders)
                     setSelectedDocuments(documents.map(doc => doc.external_id));
                   } else {
                     setSelectedDocuments([]);
@@ -909,8 +426,10 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
 
   if (loading && !documents.length) {
     return (
-      <div className={`w-full overflow-hidden ${showBorder ? "rounded-md border shadow-sm" : ""}`}>
-        {/* Search Bar */}
+      <div
+        className={`flex h-full w-full flex-col overflow-hidden ${showBorder ? "rounded-t-md border-l border-r border-t shadow-sm" : ""}`}
+      >
+        {/* Search Bar */}{" "}
         {!hideSearchBar && (
           <div className="border-b border-border bg-background p-3">
             <div className="relative">
@@ -924,16 +443,20 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
             </div>
           </div>
         )}
-        <div className="h-[calc(100vh-280px)] overflow-auto">
+        <div className="flex-1 overflow-auto">
           {DocumentListHeader()}
           <LoadingDocuments />
+          {/* Spacer to ensure container fills available height */}
+          <div className="min-h-16 flex-1"></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`w-full overflow-hidden ${showBorder ? "rounded-md border shadow-sm" : ""}`}>
+    <div
+      className={`flex h-full w-full flex-col overflow-hidden ${showBorder ? "rounded-t-md border-l border-r border-t shadow-sm" : ""}`}
+    >
       {/* Search Bar - Fixed at top */}
       {!hideSearchBar && (
         <div className="border-b border-border bg-background p-3">
@@ -949,8 +472,33 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
         </div>
       )}
 
+      {/* Bulk actions bar */}
+      {mounted && selectedDocuments.length > 0 && (
+        <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-2">
+          <span className="text-sm text-muted-foreground">
+            {selectedDocuments.length} item{selectedDocuments.length > 1 ? "s" : ""} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelectedDocuments([])}>
+              Clear selection
+            </Button>
+            {onDeleteMultipleDocuments && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={onDeleteMultipleDocuments}
+                className="flex items-center gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete selected
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main content area with horizontal scroll */}
-      <div className="h-[calc(100vh-280px)] overflow-auto">
+      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
         {/* Header */}
         {DocumentListHeader()}
 
@@ -963,21 +511,18 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
               if ((doc as Document & { itemType?: string }).itemType === "folder") {
                 // Navigate to folder when clicking on folder row (but not on chevron)
                 handleDocumentClick(doc);
-              } else if ((doc as Document & { itemType?: string }).itemType !== "all") {
-                // Handle document clicks for actual documents
-                handleDocumentClick(doc);
               } else {
-                // Handle "All Documents" click
+                // Handle document clicks for actual documents
                 handleDocumentClick(doc);
               }
             }}
-            className={`relative flex w-max min-w-full border-b border-border ${
+            className={`relative flex min-w-fit border-b border-border ${
               (doc as Document & { itemType?: string }).itemType === "folder"
                 ? "cursor-pointer hover:bg-muted/50"
                 : doc.external_id === selectedDocument?.external_id
-                  ? "bg-primary/10 hover:bg-primary/15"
-                  : "hover:bg-muted/70"
-            } ${(doc as Document & { isChildDocument?: boolean }).isChildDocument ? "bg-gray-50" : ""}`}
+                  ? "cursor-pointer bg-primary/10 hover:bg-primary/15"
+                  : "cursor-pointer hover:bg-muted/70"
+            } ${(doc as Document & { isChildDocument?: boolean }).isChildDocument ? "bg-gray-50 dark:bg-gray-900" : ""}`}
             style={
               {
                 // no-op for flex container
@@ -1001,26 +546,15 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
                 )}
               </div>
               <div
-                className={`flex items-center gap-2 px-3 py-2 ${(doc as Document & { isChildDocument?: boolean }).isChildDocument ? "pl-8" : ""}`}
+                className={`flex flex-1 items-center gap-2 px-3 py-2 ${(doc as Document & { isChildDocument?: boolean }).isChildDocument ? "pl-8" : ""}`}
               >
                 {/* Chevron for folders and "All Documents" or status dot for documents */}
                 {(doc as Document & { itemType?: string }).itemType === "folder" ? (
                   <button
                     onClick={e => toggleFolderExpansion(doc.filename || "", e)}
-                    className="group relative flex-shrink-0 rounded p-0.5 transition-colors hover:bg-gray-100"
+                    className="group relative flex-shrink-0 rounded p-0.5 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
                   >
                     {expandedFolders.has(doc.filename || "") ? (
-                      <ChevronDown className="h-3 w-3 text-gray-600" />
-                    ) : (
-                      <ChevronRight className="h-3 w-3 text-gray-600" />
-                    )}
-                  </button>
-                ) : (doc as Document & { itemType?: string }).itemType === "all" ? (
-                  <button
-                    onClick={toggleAllDocumentsExpansion}
-                    className="group relative flex-shrink-0 rounded p-0.5 transition-colors hover:bg-gray-100"
-                  >
-                    {isAllDocumentsExpanded ? (
                       <ChevronDown className="h-3 w-3 text-gray-600" />
                     ) : (
                       <ChevronRight className="h-3 w-3 text-gray-600" />
@@ -1056,8 +590,6 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
                 <div className="flex-shrink-0">
                   {(doc as Document & { itemType?: string }).itemType === "folder" ? (
                     <FolderIcon className="h-4 w-4 text-blue-600" />
-                  ) : (doc as Document & { itemType?: string }).itemType === "all" ? (
-                    <Files className="h-4 w-4 text-purple-600" />
                   ) : (
                     <FileText className="h-4 w-4 text-gray-600" />
                   )}
@@ -1093,7 +625,7 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
             <div
               className={`sticky right-0 z-20 flex w-[120px] items-center justify-end gap-1 border-l border-border px-3 py-2 ${
                 doc.external_id === selectedDocument?.external_id ? "bg-accent" : "bg-background"
-              } ${(doc as Document & { isChildDocument?: boolean }).isChildDocument ? "bg-gray-50" : ""}`}
+              } ${(doc as Document & { isChildDocument?: boolean }).isChildDocument ? "bg-gray-50 dark:bg-gray-900" : ""}`}
             >
               {/* Only show actions for actual documents, not folders or special items */}
               {((doc as Document & { itemType?: string }).itemType === "document" ||
@@ -1150,9 +682,8 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
         {filteredDocuments.length === 0 && documents.length > 0 && (
           <NoMatchingDocuments
             searchQuery={effectiveSearchQuery}
-            hasFilters={Object.keys(filterValues).length > 0}
+            hasFilters={false}
             onClearFilters={() => {
-              setFilterValues({});
               if (hideSearchBar && onSearchChange) {
                 onSearchChange("");
               } else {
@@ -1163,91 +694,10 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
         )}
 
         {documents.length === 0 && <EmptyDocuments />}
+
+        {/* Spacer to ensure container fills available height */}
+        <div className="min-h-16 flex-1"></div>
       </div>
-
-      <div className="flex justify-between border-t p-3">
-        {/* Filter stats */}
-        <div className="flex items-center text-sm text-muted-foreground">
-          {Object.keys(filterValues).length > 0 || effectiveSearchQuery.trim() ? (
-            <div className="flex items-center gap-1">
-              {effectiveSearchQuery.trim() && <Search className="h-4 w-4" />}
-              {Object.keys(filterValues).length > 0 && <Filter className="h-4 w-4" />}
-              <span>
-                {filteredDocuments.length} of {documents.length} documents
-                {(Object.keys(filterValues).length > 0 || effectiveSearchQuery.trim()) && (
-                  <Button
-                    variant="link"
-                    className="ml-1 h-auto p-0 text-sm"
-                    onClick={() => {
-                      setFilterValues({});
-                      if (hideSearchBar && onSearchChange) {
-                        onSearchChange("");
-                      } else {
-                        setSearchQuery("");
-                      }
-                    }}
-                  >
-                    Clear all
-                  </Button>
-                )}
-              </span>
-            </div>
-          ) : null}
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex gap-2">
-          {/* Filter button */}
-          <Button
-            variant={activeFilterCount > 0 ? "default" : "outline"}
-            size="sm"
-            className="h-8 text-xs font-medium"
-            onClick={() => setShowFilterDialog(true)}
-          >
-            <Filter className="mr-0.5 h-3.5 w-3.5" />
-            Filter
-            {activeFilterCount > 0 && (
-              <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary/20 text-[10px] text-primary">
-                {activeFilterCount}
-              </span>
-            )}
-          </Button>
-
-          {/* Add column button */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs font-medium"
-            title="Add column"
-            onClick={() => setShowAddColumnDialog(true)}
-          >
-            <Plus className="mr-0.5 h-3.5 w-3.5" />
-            Column
-          </Button>
-
-          {customColumns.length > 0 && selectedFolder && (
-            <Button className="gap-2" onClick={handleExtract} disabled={isExtracting || !selectedFolder}>
-              <Wand2 className="h-4 w-4" />
-              {isExtracting ? "Processing..." : "Extract"}
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Render dialogs */}
-      <AddColumnDialog
-        isOpen={showAddColumnDialog}
-        onClose={() => setShowAddColumnDialog(false)}
-        onAddColumn={handleAddColumn}
-      />
-
-      <FilterDialog
-        isOpen={showFilterDialog}
-        onClose={() => setShowFilterDialog(false)}
-        columns={allColumns}
-        filterValues={filterValues}
-        setFilterValues={setFilterValues}
-      />
     </div>
   );
 });

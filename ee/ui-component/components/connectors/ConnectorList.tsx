@@ -5,6 +5,8 @@ import { BookLock, BookOpen } from "lucide-react";
 import { GitHub } from "../chat/icons"; // Import our custom GitHub icon
 import { useState } from "react";
 import { FileBrowser } from "./FileBrowser";
+import { useHeader } from "@/contexts/header-context";
+import { useEffect } from "react";
 
 // In the future, this could come from a configuration or an API call
 const availableConnectors = [
@@ -41,6 +43,12 @@ interface ConnectorListProps {
 }
 
 export function ConnectorList({ apiBaseUrl, authToken }: ConnectorListProps) {
+  const { setCustomBreadcrumbs } = useHeader();
+
+  useEffect(() => {
+    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Connectors" }]);
+    return () => setCustomBreadcrumbs(null);
+  }, [setCustomBreadcrumbs]);
 
   if (availableConnectors.length === 0) {
     return (

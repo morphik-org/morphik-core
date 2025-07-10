@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 import tempfile
@@ -5,6 +6,7 @@ from pathlib import Path
 from typing import BinaryIO, Optional, Tuple, Union
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from .base_storage import BaseStorage
@@ -25,11 +27,14 @@ class S3Storage(BaseStorage):
         default_bucket: str = "morphik-storage",
     ):
         self.default_bucket = default_bucket
+        # Increase the underlying urllib3 connection-pool size to better support high concurrency
+        boto_cfg = Config(max_pool_connections=64, retries={"max_attempts": 3, "mode": "standard"})
         self.s3_client = boto3.client(
             "s3",
             aws_access_key_id=aws_access_key,
             aws_secret_access_key=aws_secret_key,
             region_name=region_name,
+            config=boto_cfg,
         )
 
     # ------------------------------------------------------------------
@@ -120,12 +125,20 @@ class S3Storage(BaseStorage):
             logger.error(f"Error uploading base64 content to S3: {e}")
             raise e
 
-    async def download_file(self, bucket: str, key: str) -> bytes:
-        """Download file from S3."""
+    async def download_file(self, bucket: str, key: str, version: str | None = None, **kwargs) -> bytes:
+        """Download file from S3 asynchronously using a thread pool to avoid blocking the event loop."""
+        loop = asyncio.get_running_loop()
+
+        def _sync_download() -> bytes:  # Runs in a separate thread
+            get_obj_params = {"Bucket": bucket, "Key": key}
+            if version:
+                # If a specific version is requested, include the VersionId parameter
+                get_obj_params["VersionId"] = version
+            response = self.s3_client.get_object(**get_obj_params)
+            return response["Body"].read()
+
         try:
-            response = self.s3_client.get_object(Bucket=bucket, Key=key)
-            as_bytes = response["Body"].read()
-            return as_bytes
+            return await loop.run_in_executor(None, _sync_download)
         except ClientError as e:
             logger.error(f"Error downloading from S3: {e}")
             raise

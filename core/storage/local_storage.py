@@ -1,3 +1,4 @@
+import asyncio
 import base64
 from logging import getLogger
 from pathlib import Path
@@ -15,15 +16,17 @@ class LocalStorage(BaseStorage):
         # Create storage directory if it doesn't exist
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
-    async def download_file(self, bucket: str, key: str) -> bytes:
-        """Download a file from local storage."""
+    async def download_file(self, bucket: str, key: str, **kwargs) -> bytes:
+        """Download a file from local storage without blocking the event loop."""
         # Construct full key including bucket, consistent with upload_from_base64
         full_key = f"{bucket}/{key}" if (bucket and bucket != "storage") else key
         file_path = self.storage_path / full_key
+
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
-        with open(file_path, "rb") as f:
-            return f.read()
+
+        # Use a thread to perform blocking IO
+        return await asyncio.to_thread(file_path.read_bytes)
 
     async def upload_from_base64(
         self, content: str, key: str, content_type: Optional[str] = None, bucket: str = ""

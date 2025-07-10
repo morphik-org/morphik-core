@@ -33,6 +33,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Badge } from "@/components/ui/badge";
 import { usePDFChatSessions } from "@/hooks/useChatSessions";
 import { usePDFSession } from "@/components/pdf/PDFAPIService";
+import { useHeader } from "@/contexts/header-context";
 
 // Configure PDF.js worker - use CDN for reliability
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -45,6 +46,8 @@ interface PDFViewerProps {
   apiBaseUrl?: string;
   authToken?: string | null;
   initialDocumentId?: string; // Add prop to load a specific document on initialization
+  onChatToggle?: (isOpen: boolean) => void; // Callback when chat is toggled
+  chatOpen?: boolean; // Control chat open state from parent
 }
 
 interface PDFState {
@@ -128,7 +131,7 @@ interface PDFDocument {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewerProps) {
+export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatToggle, chatOpen }: PDFViewerProps) {
   // Get session information from PDF API service context (optional)
   const pdfSession = usePDFSession() || {
     sessionId: `fallback-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -151,7 +154,26 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
   // Chat-related state
-  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isChatOpenInternal, setIsChatOpenInternal] = useState(false);
+  const isChatOpen = chatOpen !== undefined ? chatOpen : isChatOpenInternal;
+
+  const setIsChatOpen = useCallback(
+    (value: boolean | ((prev: boolean) => boolean)) => {
+      if (chatOpen === undefined) {
+        setIsChatOpenInternal(prev => {
+          const newValue = typeof value === "function" ? value(prev) : value;
+          if (onChatToggle) {
+            onChatToggle(newValue);
+          }
+          return newValue;
+        });
+      } else if (onChatToggle) {
+        const newValue = typeof value === "function" ? value(isChatOpen) : value;
+        onChatToggle(newValue);
+      }
+    },
+    [onChatToggle, chatOpen, isChatOpen]
+  );
   const [chatWidth, setChatWidth] = useState(400);
   const [isResizing, setIsResizing] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -190,6 +212,30 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
     }),
     []
   );
+
+  const { setRightContent, setCustomBreadcrumbs } = useHeader();
+
+  // header effect
+  useEffect(() => {
+    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "PDF Viewer" }]);
+
+    const btn = (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setIsChatOpen(v => !v)}
+        className={cn(isChatOpen && "bg-accent")}
+      >
+        <MessageSquare className="mr-2 h-4 w-4" /> Chat
+      </Button>
+    );
+    setRightContent(btn);
+
+    return () => {
+      setCustomBreadcrumbs(null);
+      setRightContent(null);
+    };
+  }, [setCustomBreadcrumbs, setRightContent, isChatOpen]);
 
   // Handle chat resize functionality
   useEffect(() => {
@@ -1137,27 +1183,6 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
   if (!pdfState.file) {
     return (
       <div className="flex h-screen flex-col bg-white dark:bg-background">
-        {/* Clean Header */}
-        <div className="border-b bg-white p-4 dark:bg-background">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <FileText className="h-5 w-5 text-muted-foreground" />
-              <h2 className="text-lg font-medium text-slate-900 dark:text-slate-100">PDF Viewer</h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsChatOpen(!isChatOpen)}
-                className={cn(isChatOpen && "bg-accent")}
-              >
-                <MessageSquare className="mr-2 h-4 w-4" />
-                Chat
-              </Button>
-            </div>
-          </div>
-        </div>
-
         {/* Document List Area */}
         <div className="flex min-h-0 flex-1 flex-col p-8">
           <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col">
@@ -1453,28 +1478,30 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId }: PDFViewe
         style={{ marginRight: isChatOpen ? `${chatWidth}px` : "0px" }}
       >
         {/* Clean Header */}
-        <div className="border-b border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-black">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <FileText className="h-5 w-5 text-slate-600 dark:text-slate-400" />
-              <h2 className="text-lg font-medium text-slate-900 dark:text-slate-100">
-                {pdfState.documentName || pdfState.file?.name}
-              </h2>
-            </div>
+        {/* {!hideHeader && (
+          <div className="border-b border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-black">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <FileText className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+                <h2 className="text-lg font-medium text-slate-900 dark:text-slate-100">
+                  {pdfState.documentName || pdfState.file?.name}
+                </h2>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsChatOpen(!isChatOpen)}
-                className={cn(isChatOpen && "bg-accent")}
-              >
-                <MessageSquare className="mr-2 h-4 w-4" />
-                Chat
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsChatOpen(!isChatOpen)}
+                  className={cn(isChatOpen && "bg-accent")}
+                >
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                  Chat
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        )} */}
 
         {/* PDF Display Area */}
         <div className="relative flex-1 overflow-hidden">

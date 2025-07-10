@@ -40,6 +40,7 @@ import { WorkflowCreateDialog } from "./WorkflowCreateDialog";
 import { WorkflowEditDialog } from "./WorkflowEditDialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useHeader } from "@/contexts/header-context";
 
 interface WorkflowSectionProps {
   apiBaseUrl: string;
@@ -236,6 +237,7 @@ const AVAILABLE_ACTIONS: ActionDefinition[] = [
 ];
 
 const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken }) => {
+  const { setCustomBreadcrumbs, setRightContent } = useHeader();
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [docs, setDocs] = useState<DocumentMeta[]>([]);
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
@@ -286,7 +288,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
     }
   }, [workflows]);
 
-  const fetchWorkflows = async () => {
+  const fetchWorkflows = useCallback(async () => {
     try {
       const res = await fetch(`${apiBaseUrl}/workflows`, { headers });
       if (res.ok) {
@@ -296,7 +298,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
     } catch (error) {
       console.error("Failed to fetch workflows:", error);
     }
-  };
+  }, [apiBaseUrl, headers]);
 
   const fetchDocs = async () => {
     try {
@@ -433,6 +435,37 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
     fetchFolders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Header breadcrumbs & controls
+  useEffect(() => {
+    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Workflows" }]);
+
+    const right = (
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => fetchWorkflows()} title="Refresh workflows">
+          <RefreshCcw className="mr-2 h-4 w-4" /> Refresh
+        </Button>
+        <Button
+          variant="default"
+          size="sm"
+          onClick={() => {
+            setWorkflowForm({ name: "", description: "", steps: [] });
+            setSelectedStepIndex(null);
+            setIsCreateOpen(true);
+          }}
+        >
+          <Plus className="mr-2 h-4 w-4" /> New Workflow
+        </Button>
+      </div>
+    );
+
+    setRightContent(right);
+
+    return () => {
+      setCustomBreadcrumbs(null);
+      setRightContent(null);
+    };
+  }, [setCustomBreadcrumbs, setRightContent, fetchWorkflows]);
 
   useEffect(() => {
     if (selectedWorkflow) {
@@ -734,31 +767,7 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
   if (!selectedWorkflow) {
     return (
       <TooltipProvider>
-        <div className="space-y-6 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-foreground">Workflows</h2>
-              <p className="text-muted-foreground">Create and manage document processing workflows</p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={fetchWorkflows} className="transition-colors hover:bg-accent">
-                <RefreshCcw className="mr-2 h-4 w-4" />
-                Refresh
-              </Button>
-              <Button
-                onClick={() => {
-                  setWorkflowForm({ name: "", description: "", steps: [] });
-                  setSelectedStepIndex(null);
-                  setIsCreateOpen(true);
-                }}
-                className="bg-primary transition-colors hover:bg-primary/90"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                New Workflow
-              </Button>
-            </div>
-          </div>
-
+        <div className="space-y-6">
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {workflows.length === 0 ? (
               <div className="col-span-full">

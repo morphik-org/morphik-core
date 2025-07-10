@@ -8,19 +8,21 @@ import type { UIMessage } from "./ChatMessages";
 import { FolderSummary } from "@/components/types";
 
 import { Settings, Spin, ArrowUp, Sparkles } from "./icons";
+import { Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MultiSelect } from "@/components/ui/multi-select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { DocumentSelector } from "@/components/ui/document-selector";
 import { PreviewMessage } from "./ChatMessages";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { AgentPreviewMessage, AgentUIMessage, DisplayObject, SourceObject, ToolCall } from "./AgentChatMessages";
-import { MessageSquare } from "lucide-react";
 import { ModelSelector } from "./ModelSelector";
+import { useHeader } from "@/contexts/header-context";
 
 interface ChatSectionProps {
   apiBaseUrl: string;
@@ -28,14 +30,6 @@ interface ChatSectionProps {
   initialMessages?: UIMessage[];
   isReadonly?: boolean;
   onChatSubmit?: (query: string, options: QueryOptions, initialMessages?: UIMessage[]) => void;
-}
-
-// Interface for document API response
-interface ApiDocumentResponse {
-  external_id?: string;
-  id?: string;
-  filename?: string;
-  name?: string;
 }
 
 // Define an interface for the items coming from the chat history API
@@ -129,7 +123,16 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
-  const [documents, setDocuments] = useState<{ id: string; filename: string }[]>([]);
+  const [documents, setDocuments] = useState<
+    {
+      id: string;
+      filename: string;
+      folder_name?: string;
+      content_type?: string;
+      metadata?: Record<string, unknown>;
+      system_metadata?: unknown;
+    }[]
+  >([]);
 
   // Model selection state
   const [selectedModel, setSelectedModel] = useState<string>("");
@@ -274,18 +277,32 @@ const ChatSection: React.FC<ChatSectionProps> = ({
       console.log("Documents data received:", documentsData);
 
       if (Array.isArray(documentsData)) {
-        // Transform documents to the format we need (id and filename)
+        // Transform documents to the format we need (id, filename, and folder info)
         const transformedDocs = documentsData
-          .map((doc: ApiDocumentResponse) => {
-            const id = doc.external_id || doc.id;
+          .map((doc: unknown) => {
+            const docObj = doc as Record<string, unknown>;
+            const id = (docObj.external_id as string) || (docObj.id as string);
             if (!id) return null; // Skip documents without valid IDs
 
             return {
               id,
-              filename: doc.filename || doc.name || `Document ${id}`,
+              filename: (docObj.filename as string) || (docObj.name as string) || `Document ${id}`,
+              folder_name:
+                (docObj.folder_name as string) ||
+                ((docObj.system_metadata as Record<string, unknown>)?.folder_name as string),
+              content_type: docObj.content_type as string,
+              metadata: docObj.metadata as Record<string, unknown>,
+              system_metadata: docObj.system_metadata,
             };
           })
-          .filter((doc): doc is { id: string; filename: string } => doc !== null);
+          .filter(doc => doc !== null) as {
+          id: string;
+          filename: string;
+          folder_name?: string;
+          content_type?: string;
+          metadata?: Record<string, unknown>;
+          system_metadata?: unknown;
+        }[];
 
         setDocuments(transformedDocs);
       } else {
@@ -529,6 +546,12 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     }
   };
 
+  const { setCustomBreadcrumbs } = useHeader();
+  useEffect(() => {
+    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Chat" }]);
+    return () => setCustomBreadcrumbs(null);
+  }, [setCustomBreadcrumbs]);
+
   return (
     <div className="relative flex h-full w-full overflow-hidden bg-background">
       {/* Sidebar */}
@@ -547,419 +570,718 @@ const ChatSection: React.FC<ChatSectionProps> = ({
 
       {/* Main chat area */}
       <div className="flex h-full flex-1 flex-col">
-        {/* Messages Area */}
-        <div className="relative min-h-0 flex-1">
-          <ScrollArea className="h-full" ref={messagesContainerRef}>
-            <div className="mx-auto flex max-w-4xl flex-col pb-32 pt-8">
-              {(isAgentMode ? agentMessages : messages).map(msg =>
-                isAgentMode ? (
-                  <AgentPreviewMessage key={msg.id} message={msg as AgentUIMessage} />
-                ) : (
-                  <PreviewMessage key={msg.id} message={msg} />
-                )
-              )}
-
-              {isAgentMode
-                ? agentStatus === "submitted" &&
-                  agentMessages.length > 0 &&
-                  agentMessages[agentMessages.length - 1].role === "user" && (
-                    <div className="flex h-12 items-center justify-start pl-4 text-start text-sm text-muted-foreground">
-                      <Spin className="mr-2 h-4 w-4 animate-spin" />
-                      <span>Agent thinking...</span>
-                    </div>
-                  )
-                : status === "loading" &&
-                  messages.length > 0 &&
-                  messages[messages.length - 1].role === "user" && (
-                    <div className="flex h-12 items-center justify-start pl-4 text-start text-sm text-muted-foreground">
-                      <Spin className="mr-2 h-4 w-4 animate-spin" />
-                      <span>Thinking...</span>
-                    </div>
-                  )}
-            </div>
-
-            <div ref={messagesEndRef} className="min-h-[24px] min-w-[24px] shrink-0" />
-          </ScrollArea>
-        </div>
-
-        {/* Input Area */}
-        <div className="sticky bottom-0 w-full bg-background">
-          {/* Empty state when no messages */}
-          {(isAgentMode ? agentMessages.length === 0 : messages.length === 0) && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <MessageSquare className="mb-4 h-12 w-12 text-muted-foreground" />
-              <h2 className="mb-2 text-xl font-semibold text-foreground">
-                {isAgentMode ? "Morphik Agent Chat" : "Welcome to Morphik Chat"}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {isAgentMode
-                  ? "Ask a question to the agent to get started."
-                  : "Ask a question about your documents to get started."}
+        {/* Conditional layout based on whether there are messages */}
+        {(isAgentMode ? agentMessages.length === 0 : messages.length === 0) ? (
+          /* Empty state - centered layout with controls */
+          <div className="flex h-full flex-1 flex-col items-center justify-center transition-all duration-700 ease-out">
+            <div className="mb-12 flex flex-col items-center justify-center text-center">
+              <div className="mb-4 flex items-center gap-3">
+                <h1 className="text-4xl font-light text-foreground">How can I help?</h1>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                      >
+                        <Info className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-sm text-center">
+                      <p className="text-sm">
+                        {isAgentMode
+                          ? "Agent Mode: Advanced AI with reasoning, tool use, and multimodal capabilities. May take longer but provides deeper insights."
+                          : "Chat Mode: Fast document search and retrieval. Perfect for quick questions and finding specific information."}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <p className="max-w-2xl text-lg text-muted-foreground">
+                Ask me anything about your documents. I&apos;ll search through them and provide you with relevant
+                information.
               </p>
             </div>
-          )}
 
-          <div className="mx-auto max-w-4xl px-4">
-            {/* Controls Row - Folder Selection and Agent Mode */}
-            {!isReadonly && (
-              <div className="border-b border-border/50 pb-3 pt-3">
-                <div className="flex items-center justify-between gap-4">
-                  {/* Left side - Folder and Document Selection (only in chat mode) */}
-                  {!isAgentMode && (
-                    <div className="flex items-center gap-4">
-                      {/* Folder Selection */}
-                      <div className="flex items-start gap-2">
-                        <Label htmlFor="folder_name" className="whitespace-nowrap py-1.5 text-sm text-muted-foreground">
-                          Folder:
-                        </Label>
-                        <MultiSelect
-                          options={[
-                            { label: "All Folders", value: "__none__" },
-                            ...(loadingFolders ? [{ label: "Loading folders...", value: "loading" }] : []),
-                            ...folders.map(folder => ({
-                              label: folder.name,
-                              value: folder.name,
-                            })),
-                          ]}
-                          selected={getCurrentSelectedFolders()}
-                          onChange={(value: string[]) => {
-                            const filteredValues = value.filter(v => v !== "__none__");
-                            safeUpdateOption("folder_name", filteredValues.length > 0 ? filteredValues : undefined);
-                          }}
-                          placeholder="All folders"
-                          className="w-[200px] border-border/50 bg-background shadow-sm transition-colors hover:border-primary/50"
-                        />
-                      </div>
-
-                      {/* Document Selection */}
-                      <div className="flex items-start gap-2">
-                        <Label
-                          htmlFor="document_filter"
-                          className="whitespace-nowrap py-1.5 text-sm text-muted-foreground"
-                        >
-                          Document:
-                        </Label>
-                        <MultiSelect
-                          options={[
-                            { label: "All Documents", value: "__none__" },
-                            ...(loadingDocuments ? [{ label: "Loading documents...", value: "loading" }] : []),
-                            ...documents.map(doc => ({
-                              label: doc.filename,
-                              value: doc.id,
-                            })),
-                          ]}
-                          selected={getCurrentSelectedDocuments()}
-                          onChange={(value: string[]) => {
-                            const filteredValues = value.filter(v => v !== "__none__");
-                            updateDocumentFilter(filteredValues);
-                          }}
-                          placeholder="All documents"
-                          className="w-[220px] border-border/50 bg-background shadow-sm transition-colors hover:border-primary/50"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Right side - Agent Mode and Settings */}
-                  <div className={`flex items-center gap-2 ${isAgentMode ? "ml-auto" : ""}`}>
-                    <Button
-                      variant={isAgentMode ? "default" : "outline"}
-                      size="sm"
-                      className="text-xs font-medium transition-all hover:border-primary/50"
-                      title="Goes deeper, reasons across documents and may return image-grounded answers"
-                      onClick={() => {
-                        setIsAgentMode(prev => !prev);
-                        setAgentStatus("idle");
-                        setShowSettings(false);
-                      }}
-                    >
-                      <span className="flex items-center gap-1.5">
-                        {!isAgentMode && <Sparkles className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400" />}
-                        <span>{isAgentMode ? "Chat Mode" : "Agent Mode"}</span>
-                      </span>
-                    </Button>
+            {/* Centered input area for empty state */}
+            <div className="w-full max-w-4xl px-4">
+              {/* Controls Row - Folder Selection and Agent Mode */}
+              {!isReadonly && (
+                <div className="border-b border-border/50 pb-3 pt-3">
+                  <div className="flex items-center justify-between gap-4">
+                    {/* Left side - Document and Folder Selection (only in chat mode) */}
                     {!isAgentMode && (
+                      <div className="mr-4 flex-1">
+                        <DocumentSelector
+                          documents={documents}
+                          folders={folders.map(folder => ({
+                            name: folder.name,
+                            doc_count: folder.doc_count || 0,
+                          }))}
+                          selectedDocuments={getCurrentSelectedDocuments()}
+                          selectedFolders={getCurrentSelectedFolders()}
+                          onDocumentSelectionChange={(selectedDocumentIds: string[]) => {
+                            updateDocumentFilter(selectedDocumentIds);
+                          }}
+                          onFolderSelectionChange={(selectedFolderNames: string[]) => {
+                            safeUpdateOption(
+                              "folder_name",
+                              selectedFolderNames.length > 0 ? selectedFolderNames : undefined
+                            );
+                          }}
+                          loading={loadingDocuments || loadingFolders}
+                          placeholder="Select documents and folders"
+                          className="w-full"
+                        />
+                      </div>
+                    )}
+
+                    {/* Right side - Agent Mode and Settings */}
+                    <div className={`flex items-center gap-2 ${isAgentMode ? "ml-auto" : ""}`}>
                       <Button
-                        variant="outline"
+                        variant={isAgentMode ? "default" : "outline"}
                         size="sm"
-                        className="flex items-center gap-1 text-xs font-medium transition-all hover:border-primary/50"
+                        className="text-xs font-medium transition-all hover:border-primary/50"
+                        title="Goes deeper, reasons across documents and may return image-grounded answers"
                         onClick={() => {
-                          setShowSettings(!showSettings);
-                          if (!showSettings && authToken) {
-                            fetchGraphs();
-                            fetchFolders();
-                            fetchDocuments();
-                          }
+                          setIsAgentMode(prev => !prev);
+                          setAgentStatus("idle");
+                          setShowSettings(false);
                         }}
                       >
-                        <Settings className="h-3.5 w-3.5" />
-                        <span>{showSettings ? "Hide" : "Settings"}</span>
+                        <span className="flex items-center gap-1.5">
+                          {!isAgentMode && <Sparkles className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400" />}
+                          <span>{isAgentMode ? "Chat Mode" : "Agent Mode"}</span>
+                        </span>
                       </Button>
-                    )}
+                      {!isAgentMode && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex items-center gap-1 text-xs font-medium transition-all hover:border-primary/50"
+                          onClick={() => {
+                            setShowSettings(!showSettings);
+                            if (!showSettings && authToken) {
+                              fetchGraphs();
+                              fetchFolders();
+                              fetchDocuments();
+                            }
+                          }}
+                        >
+                          <Settings className="h-3.5 w-3.5" />
+                          <span>{showSettings ? "Hide" : "Settings"}</span>
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <form
-              className="pb-6 pt-4"
-              onSubmit={e => {
-                e.preventDefault();
-                submitForm();
-              }}
-            >
-              <div className="relative w-full">
-                <div className="relative flex items-end">
+              {/* Input Form for centered state */}
+              <form onSubmit={isAgentMode ? handleAgentSubmit : handleSubmit} className="relative space-y-4 py-4">
+                <div className="relative">
                   <Textarea
                     ref={textareaRef}
-                    placeholder="Send a message..."
+                    placeholder={isReadonly ? "Chat is read-only" : "Ask a question..."}
                     value={input}
                     onChange={handleInput}
-                    className="max-h-[400px] min-h-[52px] w-full resize-none overflow-hidden rounded-lg border border-border bg-background pr-14 text-base transition-colors focus:border-primary"
-                    rows={1}
-                    autoFocus
-                    onKeyDown={event => {
-                      if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                        event.preventDefault();
-                        const busy = isAgentMode ? agentStatus !== "idle" : status !== "idle";
-                        if (busy) {
-                          console.log("Please wait for the model to finish its response");
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        if (isAgentMode) {
+                          handleAgentSubmit();
                         } else {
-                          submitForm();
+                          handleSubmit();
                         }
                       }
                     }}
+                    disabled={isReadonly || (isAgentMode ? agentStatus === "submitted" : status === "loading")}
+                    className="min-h-[60px] resize-none pr-12 text-base"
+                    style={{ height: "auto" }}
                   />
 
-                  <div className="absolute bottom-2 right-2 flex items-center">
-                    <Button
-                      onClick={submitForm}
-                      size="icon"
-                      disabled={input.trim().length === 0 || (isAgentMode ? agentStatus !== "idle" : status !== "idle")}
-                      className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-50"
-                    >
-                      {isAgentMode ? (
-                        agentStatus === "submitted" ? (
+                  <Button
+                    type="submit"
+                    disabled={
+                      !input.trim() || isReadonly || (isAgentMode ? agentStatus === "submitted" : status === "loading")
+                    }
+                    size="sm"
+                    className="absolute bottom-2 right-2 h-8 w-8 p-0"
+                  >
+                    {isAgentMode && agentStatus === "submitted" ? (
+                      <Spin className="h-4 w-4 animate-spin" />
+                    ) : status === "loading" ? (
+                      <Spin className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ArrowUp className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+
+                {/* Model Selector - below input (always reserve space) */}
+                <div className="mt-2 flex min-h-[32px] items-center justify-between px-2">
+                  {!isAgentMode && (
+                    <ModelSelector
+                      apiBaseUrl={apiBaseUrl}
+                      authToken={authToken}
+                      selectedModel={selectedModel || "default"}
+                      onModelChange={handleModelChange}
+                      onRequestApiKey={() => {
+                        // Navigate to settings page with API keys tab
+                        window.location.href = "?section=settings";
+                      }}
+                    />
+                  )}
+                </div>
+
+                {/* Settings Panel */}
+                {showSettings && !isAgentMode && !isReadonly && (
+                  <div className="mt-4 rounded-lg border border-border/50 bg-muted/20 p-4 shadow-sm duration-300 animate-in fade-in slide-in-from-bottom-2">
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold">Advanced Settings</h3>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-xs hover:bg-muted/50"
+                        onClick={() => setShowSettings(false)}
+                      >
+                        Done
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      {/* First Column - Core Settings */}
+                      <div className="space-y-4">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
+                            <Label htmlFor="use_reranking" className="text-sm font-medium">
+                              Use Reranking
+                            </Label>
+                            <Switch
+                              id="use_reranking"
+                              checked={safeQueryOptions.use_reranking}
+                              onCheckedChange={checked => safeUpdateOption("use_reranking", checked)}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
+                            <Label htmlFor="use_colpali" className="text-sm font-medium">
+                              Use Colpali
+                            </Label>
+                            <Switch
+                              id="use_colpali"
+                              checked={safeQueryOptions.use_colpali}
+                              onCheckedChange={checked => safeUpdateOption("use_colpali", checked)}
+                            />
+                          </div>
+                          {safeQueryOptions.use_colpali && (
+                            <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                              <Label htmlFor="query-padding" className="flex justify-between text-sm font-medium">
+                                <span>Padding</span>
+                                <span className="text-muted-foreground">{safeQueryOptions.padding || 0}</span>
+                              </Label>
+                              <Slider
+                                id="query-padding"
+                                min={0}
+                                max={10}
+                                step={1}
+                                value={[safeQueryOptions.padding || 0]}
+                                onValueChange={value => safeUpdateOption("padding", value[0])}
+                                className="w-full"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Additional pages to retrieve before and after matched pages
+                              </p>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
+                            <Label htmlFor="streaming_enabled" className="text-sm font-medium">
+                              Streaming Response
+                            </Label>
+                            <Switch
+                              id="streaming_enabled"
+                              checked={streamingEnabled}
+                              onCheckedChange={setStreamingEnabled}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="graph_name" className="block text-sm font-medium">
+                            Knowledge Graph
+                          </Label>
+                          <Select
+                            value={safeQueryOptions.graph_name || "__none__"}
+                            onValueChange={value =>
+                              safeUpdateOption("graph_name", value === "__none__" ? undefined : value)
+                            }
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select a graph..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">No Graph</SelectItem>
+                              {availableGraphs.map(graph => (
+                                <SelectItem key={graph} value={graph}>
+                                  {graph}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {/* Second Column - Query Parameters */}
+                      <div className="space-y-4">
+                        <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                          <Label htmlFor="query-k" className="flex justify-between text-sm font-medium">
+                            <span>Top K Results</span>
+                            <span className="text-muted-foreground">{safeQueryOptions.k}</span>
+                          </Label>
+                          <Slider
+                            id="query-k"
+                            min={1}
+                            max={20}
+                            step={1}
+                            value={[safeQueryOptions.k]}
+                            onValueChange={value => safeUpdateOption("k", value[0])}
+                            className="w-full"
+                          />
+                          <p className="text-xs text-muted-foreground">Number of document chunks to retrieve</p>
+                        </div>
+
+                        <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                          <Label htmlFor="query-min-score" className="flex justify-between text-sm font-medium">
+                            <span>Min Score</span>
+                            <span className="text-muted-foreground">{safeQueryOptions.min_score}</span>
+                          </Label>
+                          <Slider
+                            id="query-min-score"
+                            min={0}
+                            max={1}
+                            step={0.1}
+                            value={[safeQueryOptions.min_score]}
+                            onValueChange={value => safeUpdateOption("min_score", value[0])}
+                            className="w-full"
+                          />
+                          <p className="text-xs text-muted-foreground">Minimum similarity score for results</p>
+                        </div>
+
+                        <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                          <Label htmlFor="query-temperature" className="flex justify-between text-sm font-medium">
+                            <span>Temperature</span>
+                            <span className="text-muted-foreground">{safeQueryOptions.temperature}</span>
+                          </Label>
+                          <Slider
+                            id="query-temperature"
+                            min={0}
+                            max={2}
+                            step={0.1}
+                            value={[safeQueryOptions.temperature]}
+                            onValueChange={value => safeUpdateOption("temperature", value[0])}
+                            className="w-full"
+                          />
+                          <p className="text-xs text-muted-foreground">Controls randomness in responses</p>
+                        </div>
+
+                        <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                          <Label htmlFor="query-max-tokens" className="flex justify-between text-sm font-medium">
+                            <span>Max Tokens</span>
+                            <span className="text-muted-foreground">{safeQueryOptions.max_tokens}</span>
+                          </Label>
+                          <Slider
+                            id="query-max-tokens"
+                            min={100}
+                            max={4000}
+                            step={100}
+                            value={[safeQueryOptions.max_tokens]}
+                            onValueChange={value => safeUpdateOption("max_tokens", value[0])}
+                            className="w-full"
+                          />
+                          <p className="text-xs text-muted-foreground">Maximum length of the response</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </form>
+            </div>
+          </div>
+        ) : (
+          /* Messages present - normal layout */
+          <div className="relative min-h-0 flex-1 transition-all duration-700 ease-out">
+            <ScrollArea className="h-full" ref={messagesContainerRef}>
+              <div className="mx-auto flex max-w-4xl flex-col pb-32 pt-8">
+                {(isAgentMode ? agentMessages : messages).map(msg =>
+                  isAgentMode ? (
+                    <AgentPreviewMessage key={msg.id} message={msg as AgentUIMessage} />
+                  ) : (
+                    <PreviewMessage key={msg.id} message={msg} />
+                  )
+                )}
+
+                {isAgentMode
+                  ? agentStatus === "submitted" &&
+                    agentMessages.length > 0 &&
+                    agentMessages[agentMessages.length - 1].role === "user" && (
+                      <div className="flex h-12 items-center justify-start pl-4 text-start text-sm text-muted-foreground">
+                        <Spin className="mr-2 h-4 w-4 animate-spin" />
+                        <span>Agent thinking...</span>
+                      </div>
+                    )
+                  : status === "loading" &&
+                    messages.length > 0 &&
+                    messages[messages.length - 1].role === "user" && (
+                      <div className="flex h-12 items-center justify-start pl-4 text-start text-sm text-muted-foreground">
+                        <Spin className="mr-2 h-4 w-4 animate-spin" />
+                        <span>Thinking...</span>
+                      </div>
+                    )}
+              </div>
+
+              <div ref={messagesEndRef} className="min-h-[24px] min-w-[24px] shrink-0" />
+            </ScrollArea>
+          </div>
+        )}
+
+        {/* Input Area - only shown when there are messages */}
+        {(isAgentMode ? agentMessages.length > 0 : messages.length > 0) && (
+          <div className="sticky bottom-0 w-full bg-background transition-all duration-700 ease-out">
+            <div className="mx-auto max-w-4xl px-4">
+              {/* Controls Row - Folder Selection and Agent Mode */}
+              {!isReadonly && (
+                <div className="border-b border-border/50 pb-3 pt-3">
+                  <div className="flex items-center justify-between gap-4">
+                    {/* Left side - Document and Folder Selection (only in chat mode) */}
+                    {!isAgentMode && (
+                      <div className="mr-4 flex-1">
+                        <DocumentSelector
+                          documents={documents}
+                          folders={folders.map(folder => ({
+                            name: folder.name,
+                            doc_count: folder.doc_count || 0,
+                          }))}
+                          selectedDocuments={getCurrentSelectedDocuments()}
+                          selectedFolders={getCurrentSelectedFolders()}
+                          onDocumentSelectionChange={(selectedDocumentIds: string[]) => {
+                            updateDocumentFilter(selectedDocumentIds);
+                          }}
+                          onFolderSelectionChange={(selectedFolderNames: string[]) => {
+                            safeUpdateOption(
+                              "folder_name",
+                              selectedFolderNames.length > 0 ? selectedFolderNames : undefined
+                            );
+                          }}
+                          loading={loadingDocuments || loadingFolders}
+                          placeholder="Select documents and folders"
+                          className="w-full"
+                        />
+                      </div>
+                    )}
+
+                    {/* Right side - Agent Mode and Settings */}
+                    <div className={`flex items-center gap-2 ${isAgentMode ? "ml-auto" : ""}`}>
+                      <Button
+                        variant={isAgentMode ? "default" : "outline"}
+                        size="sm"
+                        className="text-xs font-medium transition-all hover:border-primary/50"
+                        title="Goes deeper, reasons across documents and may return image-grounded answers"
+                        onClick={() => {
+                          setIsAgentMode(prev => !prev);
+                          setAgentStatus("idle");
+                          setShowSettings(false);
+                        }}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          {!isAgentMode && <Sparkles className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400" />}
+                          <span>{isAgentMode ? "Chat Mode" : "Agent Mode"}</span>
+                        </span>
+                      </Button>
+                      {!isAgentMode && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex items-center gap-1 text-xs font-medium transition-all hover:border-primary/50"
+                          onClick={() => {
+                            setShowSettings(!showSettings);
+                            if (!showSettings && authToken) {
+                              fetchGraphs();
+                              fetchFolders();
+                              fetchDocuments();
+                            }
+                          }}
+                        >
+                          <Settings className="h-3.5 w-3.5" />
+                          <span>{showSettings ? "Hide" : "Settings"}</span>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <form
+                className="pb-6 pt-4"
+                onSubmit={e => {
+                  e.preventDefault();
+                  submitForm();
+                }}
+              >
+                <div className="relative w-full">
+                  <div className="relative flex items-end">
+                    <Textarea
+                      ref={textareaRef}
+                      placeholder="Send a message..."
+                      value={input}
+                      onChange={handleInput}
+                      className="max-h-[400px] min-h-[52px] w-full resize-none overflow-hidden rounded-lg border border-border bg-background pr-14 text-base transition-colors focus:border-primary"
+                      rows={1}
+                      autoFocus
+                      onKeyDown={event => {
+                        if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                          event.preventDefault();
+                          const busy = isAgentMode ? agentStatus !== "idle" : status !== "idle";
+                          if (busy) {
+                            console.log("Please wait for the model to finish its response");
+                          } else {
+                            submitForm();
+                          }
+                        }
+                      }}
+                    />
+
+                    <div className="absolute bottom-2 right-2 flex items-center">
+                      <Button
+                        onClick={submitForm}
+                        size="icon"
+                        disabled={
+                          input.trim().length === 0 || (isAgentMode ? agentStatus !== "idle" : status !== "idle")
+                        }
+                        className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        {isAgentMode ? (
+                          agentStatus === "submitted" ? (
+                            <Spin className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <ArrowUp className="h-4 w-4" />
+                          )
+                        ) : status === "loading" ? (
                           <Spin className="h-4 w-4 animate-spin" />
                         ) : (
                           <ArrowUp className="h-4 w-4" />
-                        )
-                      ) : status === "loading" ? (
-                        <Spin className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <ArrowUp className="h-4 w-4" />
-                      )}
-                      <span className="sr-only">
-                        {isAgentMode
-                          ? agentStatus === "submitted"
-                            ? "Processing"
-                            : "Send message"
-                          : status === "loading"
-                            ? "Processing"
-                            : "Send message"}
-                      </span>
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Model Selector - below input */}
-              {!isAgentMode && (
-                <div className="mt-2 flex items-center justify-between px-2">
-                  <ModelSelector
-                    apiBaseUrl={apiBaseUrl}
-                    authToken={authToken}
-                    selectedModel={selectedModel || "default"}
-                    onModelChange={handleModelChange}
-                    onRequestApiKey={() => {
-                      // Navigate to settings page with API keys tab
-                      window.location.href = "?section=settings";
-                    }}
-                  />
-                </div>
-              )}
-
-              {/* Settings Panel */}
-              {showSettings && !isAgentMode && !isReadonly && (
-                <div className="mt-4 rounded-lg border border-border/50 bg-muted/20 p-4 shadow-sm duration-300 animate-in fade-in slide-in-from-bottom-2">
-                  <div className="mb-4 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">Advanced Settings</h3>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 text-xs hover:bg-muted/50"
-                      onClick={() => setShowSettings(false)}
-                    >
-                      Done
-                    </Button>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    {/* First Column - Core Settings */}
-                    <div className="space-y-4">
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
-                          <Label htmlFor="use_reranking" className="text-sm font-medium">
-                            Use Reranking
-                          </Label>
-                          <Switch
-                            id="use_reranking"
-                            checked={safeQueryOptions.use_reranking}
-                            onCheckedChange={checked => safeUpdateOption("use_reranking", checked)}
-                          />
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
-                          <Label htmlFor="use_colpali" className="text-sm font-medium">
-                            Use Colpali
-                          </Label>
-                          <Switch
-                            id="use_colpali"
-                            checked={safeQueryOptions.use_colpali}
-                            onCheckedChange={checked => safeUpdateOption("use_colpali", checked)}
-                          />
-                        </div>
-                        {safeQueryOptions.use_colpali && (
-                          <div className="space-y-2 rounded-lg bg-background/50 p-3">
-                            <Label htmlFor="query-padding" className="flex justify-between text-sm font-medium">
-                              <span>Padding</span>
-                              <span className="text-muted-foreground">{safeQueryOptions.padding || 0}</span>
-                            </Label>
-                            <Slider
-                              id="query-padding"
-                              min={0}
-                              max={10}
-                              step={1}
-                              value={[safeQueryOptions.padding || 0]}
-                              onValueChange={value => safeUpdateOption("padding", value[0])}
-                              className="w-full"
-                            />
-                            <p className="text-xs text-muted-foreground">
-                              Additional pages to retrieve before and after matched pages
-                            </p>
-                          </div>
                         )}
-                        <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
-                          <Label htmlFor="streaming_enabled" className="text-sm font-medium">
-                            Streaming Response
-                          </Label>
-                          <Switch
-                            id="streaming_enabled"
-                            checked={streamingEnabled}
-                            onCheckedChange={setStreamingEnabled}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="graph_name" className="block text-sm font-medium">
-                          Knowledge Graph
-                        </Label>
-                        <Select
-                          value={safeQueryOptions.graph_name || "__none__"}
-                          onValueChange={value =>
-                            safeUpdateOption("graph_name", value === "__none__" ? undefined : value)
-                          }
-                        >
-                          <SelectTrigger
-                            className="w-full border-border/50 bg-background/50 shadow-sm transition-colors hover:border-primary/50"
-                            id="graph_name"
-                          >
-                            <SelectValue placeholder="Select a knowledge graph" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">None (Standard RAG)</SelectItem>
-                            {loadingGraphs ? (
-                              <SelectItem value="loading" disabled>
-                                Loading graphs...
-                              </SelectItem>
-                            ) : availableGraphs.length > 0 ? (
-                              availableGraphs.map(graphName => (
-                                <SelectItem key={graphName} value={graphName}>
-                                  {graphName}
-                                </SelectItem>
-                              ))
-                            ) : (
-                              <SelectItem value="none_available" disabled>
-                                No graphs available
-                              </SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    {/* Second Column - Advanced Settings */}
-                    <div className="space-y-4">
-                      <div className="space-y-2 rounded-lg bg-background/50 p-3">
-                        <Label htmlFor="query-k" className="flex justify-between text-sm font-medium">
-                          <span>Results (k)</span>
-                          <span className="text-muted-foreground">{safeQueryOptions.k}</span>
-                        </Label>
-                        <Slider
-                          id="query-k"
-                          min={1}
-                          max={20}
-                          step={1}
-                          value={[safeQueryOptions.k]}
-                          onValueChange={value => safeUpdateOption("k", value[0])}
-                          className="w-full"
-                        />
-                      </div>
-
-                      <div className="space-y-2 rounded-lg bg-background/50 p-3">
-                        <Label htmlFor="query-min-score" className="flex justify-between text-sm font-medium">
-                          <span>Min Score</span>
-                          <span className="text-muted-foreground">{safeQueryOptions.min_score.toFixed(2)}</span>
-                        </Label>
-                        <Slider
-                          id="query-min-score"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={[safeQueryOptions.min_score]}
-                          onValueChange={value => safeUpdateOption("min_score", value[0])}
-                          className="w-full"
-                        />
-                      </div>
-
-                      <div className="space-y-2 rounded-lg bg-background/50 p-3">
-                        <Label htmlFor="query-temperature" className="flex justify-between text-sm font-medium">
-                          <span>Temperature</span>
-                          <span className="text-muted-foreground">{safeQueryOptions.temperature.toFixed(2)}</span>
-                        </Label>
-                        <Slider
-                          id="query-temperature"
-                          min={0}
-                          max={2}
-                          step={0.01}
-                          value={[safeQueryOptions.temperature]}
-                          onValueChange={value => safeUpdateOption("temperature", value[0])}
-                          className="w-full"
-                        />
-                      </div>
-
-                      <div className="space-y-2 rounded-lg bg-background/50 p-3">
-                        <Label htmlFor="query-max-tokens" className="flex justify-between text-sm font-medium">
-                          <span>Max Tokens</span>
-                          <span className="text-muted-foreground">{safeQueryOptions.max_tokens}</span>
-                        </Label>
-                        <Slider
-                          id="query-max-tokens"
-                          min={1}
-                          max={2048}
-                          step={1}
-                          value={[safeQueryOptions.max_tokens]}
-                          onValueChange={value => safeUpdateOption("max_tokens", value[0])}
-                          className="w-full"
-                        />
-                      </div>
+                        <span className="sr-only">
+                          {isAgentMode
+                            ? agentStatus === "submitted"
+                              ? "Processing"
+                              : "Send message"
+                            : status === "loading"
+                              ? "Processing"
+                              : "Send message"}
+                        </span>
+                      </Button>
                     </div>
                   </div>
                 </div>
-              )}
-            </form>
+
+                {/* Model Selector - below input (always reserve space) */}
+                <div className="mt-2 flex min-h-[32px] items-center justify-between px-2">
+                  {!isAgentMode && (
+                    <ModelSelector
+                      apiBaseUrl={apiBaseUrl}
+                      authToken={authToken}
+                      selectedModel={selectedModel || "default"}
+                      onModelChange={handleModelChange}
+                      onRequestApiKey={() => {
+                        // Navigate to settings page with API keys tab
+                        window.location.href = "?section=settings";
+                      }}
+                    />
+                  )}
+                </div>
+
+                {/* Settings Panel */}
+                {showSettings && !isAgentMode && !isReadonly && (
+                  <div className="mt-4 rounded-lg border border-border/50 bg-muted/20 p-4 shadow-sm duration-300 animate-in fade-in slide-in-from-bottom-2">
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold">Advanced Settings</h3>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-xs hover:bg-muted/50"
+                        onClick={() => setShowSettings(false)}
+                      >
+                        Done
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      {/* First Column - Core Settings */}
+                      <div className="space-y-4">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
+                            <Label htmlFor="use_reranking" className="text-sm font-medium">
+                              Use Reranking
+                            </Label>
+                            <Switch
+                              id="use_reranking"
+                              checked={safeQueryOptions.use_reranking}
+                              onCheckedChange={checked => safeUpdateOption("use_reranking", checked)}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
+                            <Label htmlFor="use_colpali" className="text-sm font-medium">
+                              Use Colpali
+                            </Label>
+                            <Switch
+                              id="use_colpali"
+                              checked={safeQueryOptions.use_colpali}
+                              onCheckedChange={checked => safeUpdateOption("use_colpali", checked)}
+                            />
+                          </div>
+                          {safeQueryOptions.use_colpali && (
+                            <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                              <Label htmlFor="query-padding" className="flex justify-between text-sm font-medium">
+                                <span>Padding</span>
+                                <span className="text-muted-foreground">{safeQueryOptions.padding || 0}</span>
+                              </Label>
+                              <Slider
+                                id="query-padding"
+                                min={0}
+                                max={10}
+                                step={1}
+                                value={[safeQueryOptions.padding || 0]}
+                                onValueChange={value => safeUpdateOption("padding", value[0])}
+                                className="w-full"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Additional pages to retrieve before and after matched pages
+                              </p>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
+                            <Label htmlFor="streaming_enabled" className="text-sm font-medium">
+                              Streaming Response
+                            </Label>
+                            <Switch
+                              id="streaming_enabled"
+                              checked={streamingEnabled}
+                              onCheckedChange={setStreamingEnabled}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="graph_name" className="block text-sm font-medium">
+                            Knowledge Graph
+                          </Label>
+                          <Select
+                            value={safeQueryOptions.graph_name || "__none__"}
+                            onValueChange={value =>
+                              safeUpdateOption("graph_name", value === "__none__" ? undefined : value)
+                            }
+                          >
+                            <SelectTrigger
+                              className="w-full border-border/50 bg-background/50 shadow-sm transition-colors hover:border-primary/50"
+                              id="graph_name"
+                            >
+                              <SelectValue placeholder="Select a knowledge graph" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">None (Standard RAG)</SelectItem>
+                              {loadingGraphs ? (
+                                <SelectItem value="loading" disabled>
+                                  Loading graphs...
+                                </SelectItem>
+                              ) : availableGraphs.length > 0 ? (
+                                availableGraphs.map(graphName => (
+                                  <SelectItem key={graphName} value={graphName}>
+                                    {graphName}
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <SelectItem value="none_available" disabled>
+                                  No graphs available
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {/* Second Column - Advanced Settings */}
+                      <div className="space-y-4">
+                        <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                          <Label htmlFor="query-k" className="flex justify-between text-sm font-medium">
+                            <span>Results (k)</span>
+                            <span className="text-muted-foreground">{safeQueryOptions.k}</span>
+                          </Label>
+                          <Slider
+                            id="query-k"
+                            min={1}
+                            max={20}
+                            step={1}
+                            value={[safeQueryOptions.k]}
+                            onValueChange={value => safeUpdateOption("k", value[0])}
+                            className="w-full"
+                          />
+                        </div>
+
+                        <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                          <Label htmlFor="query-min-score" className="flex justify-between text-sm font-medium">
+                            <span>Min Score</span>
+                            <span className="text-muted-foreground">{safeQueryOptions.min_score.toFixed(2)}</span>
+                          </Label>
+                          <Slider
+                            id="query-min-score"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={[safeQueryOptions.min_score]}
+                            onValueChange={value => safeUpdateOption("min_score", value[0])}
+                            className="w-full"
+                          />
+                        </div>
+
+                        <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                          <Label htmlFor="query-temperature" className="flex justify-between text-sm font-medium">
+                            <span>Temperature</span>
+                            <span className="text-muted-foreground">{safeQueryOptions.temperature.toFixed(2)}</span>
+                          </Label>
+                          <Slider
+                            id="query-temperature"
+                            min={0}
+                            max={2}
+                            step={0.01}
+                            value={[safeQueryOptions.temperature]}
+                            onValueChange={value => safeUpdateOption("temperature", value[0])}
+                            className="w-full"
+                          />
+                        </div>
+
+                        <div className="space-y-2 rounded-lg bg-background/50 p-3">
+                          <Label htmlFor="query-max-tokens" className="flex justify-between text-sm font-medium">
+                            <span>Max Tokens</span>
+                            <span className="text-muted-foreground">{safeQueryOptions.max_tokens}</span>
+                          </Label>
+                          <Slider
+                            id="query-max-tokens"
+                            min={1}
+                            max={2048}
+                            step={1}
+                            value={[safeQueryOptions.max_tokens]}
+                            onValueChange={value => safeUpdateOption("max_tokens", value[0])}
+                            className="w-full"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </form>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

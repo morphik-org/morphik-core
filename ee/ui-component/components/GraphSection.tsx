@@ -15,7 +15,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { AlertCircle, Share2, Plus, Network, Tag, Link, ArrowLeft, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { showAlert } from "@/components/ui/alert-system";
 import { MultiSelect } from "@/components/ui/multi-select";
 import DeleteConfirmationModal from "@/components/documents/DeleteConfirmationModal";
+import { useHeader } from "@/contexts/header-context";
 
 // Dynamically import ForceGraphComponent to avoid SSR issues
 const ForceGraphComponent = dynamic(() => import("@/components/ForceGraphComponent"), {
@@ -110,6 +110,8 @@ interface GraphSectionProps {
   onGraphCreate?: (graphName: string, numDocuments: number) => void;
   onGraphUpdate?: (graphName: string, numAdditionalDocuments: number) => void;
   authToken?: string | null;
+  showCreateDialog?: boolean;
+  setShowCreateDialog?: (show: boolean) => void;
 }
 
 // Map entity types to colors
@@ -140,6 +142,8 @@ const GraphSection: React.FC<GraphSectionProps> = ({
   onGraphCreate,
   onGraphUpdate,
   authToken,
+  showCreateDialog: showCreateDialogProp,
+  setShowCreateDialog: setShowCreateDialogProp,
 }) => {
   // Create auth headers for API requests if auth token is available
   const createHeaders = useCallback(
@@ -174,7 +178,9 @@ const GraphSection: React.FC<GraphSectionProps> = ({
   const [graphToDelete, setGraphToDelete] = useState<string | null>(null);
   const [isDeletingGraph, setIsDeletingGraph] = useState(false);
   const [activeTab, setActiveTab] = useState("list"); // 'list', 'details', 'update', 'visualize' (no longer a tab, but a state)
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showCreateDialogLocal, setShowCreateDialogLocal] = useState(false);
+  const showCreateDialog = showCreateDialogProp !== undefined ? showCreateDialogProp : showCreateDialogLocal;
+  const setShowCreateDialog = setShowCreateDialogProp || setShowCreateDialogLocal;
   const [showNodeLabels, setShowNodeLabels] = useState(true);
   const [showLinkLabels, setShowLinkLabels] = useState(true);
   const [showVisualization, setShowVisualization] = useState(false);
@@ -191,6 +197,26 @@ const GraphSection: React.FC<GraphSectionProps> = ({
   // Refs for graph visualization
   const graphContainerRef = useRef<HTMLDivElement>(null);
   // Removed graphInstance ref as it's not needed with the dynamic component
+
+  // Header controls
+  const { setCustomBreadcrumbs, setRightContent } = useHeader();
+
+  // set breadcrumbs & button when component mounts
+  useEffect(() => {
+    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Knowledge Graphs" }]);
+
+    const right = (
+      <Button variant="default" size="sm" onClick={() => setShowCreateDialog(true)}>
+        <Plus className="mr-2 h-4 w-4" /> New Graph
+      </Button>
+    );
+    setRightContent(right);
+
+    return () => {
+      setCustomBreadcrumbs(null);
+      setRightContent(null);
+    };
+  }, [setCustomBreadcrumbs, setRightContent, setShowCreateDialog]);
 
   // Fallback function for local graph data (when API fails or for local graphs)
   const prepareLocalGraphData = useCallback((graph: Graph | null) => {
@@ -814,188 +840,179 @@ const GraphSection: React.FC<GraphSectionProps> = ({
 
   // Default view (List or Details/Update)
   return (
-    <div className="flex h-full flex-1 flex-col p-4">
+    <div className="flex h-full flex-1 flex-col">
       <div className="flex flex-1 flex-col">
         {/* Graph List View */}
         {activeTab === "list" && (
           <div className="mb-6">
-            <div className="mb-4 flex items-center justify-end">
-              {" "}
-              {/* Removed justify-between and empty div */}
-              <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <Plus className="mr-2 h-4 w-4" /> New Graph
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle className="flex items-center">
-                      <Plus className="mr-2 h-5 w-5" />
-                      Create New Knowledge Graph
-                    </DialogTitle>
-                    <DialogDescription>
-                      Create a knowledge graph from documents in your Morphik collection to enhance your queries.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="graph-name">Graph Name</Label>
-                      <Input
-                        id="graph-name"
-                        placeholder="Enter a unique name for your graph"
-                        value={graphName}
-                        onChange={e => setGraphName(e.target.value)}
-                      />
-                      <p className="text-sm text-muted-foreground">
-                        Give your graph a descriptive name that helps you identify its purpose.
-                      </p>
-                    </div>
+            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center">
+                    <Plus className="mr-2 h-5 w-5" />
+                    Create New Knowledge Graph
+                  </DialogTitle>
+                  <DialogDescription>
+                    Create a knowledge graph from documents in your Morphik collection to enhance your queries.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="graph-name">Graph Name</Label>
+                    <Input
+                      id="graph-name"
+                      placeholder="Enter a unique name for your graph"
+                      value={graphName}
+                      onChange={e => setGraphName(e.target.value)}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Give your graph a descriptive name that helps you identify its purpose.
+                    </p>
+                  </div>
 
-                    <div className="border-t pt-4">
-                      <h3 className="text-md mb-3 font-medium">Document Selection</h3>
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="graph-documents">Documents</Label>
-                          <MultiSelect
-                            options={[
-                              { label: "All Documents", value: "__none__" },
-                              ...(loadingDocuments ? [{ label: "Loading documents...", value: "loading" }] : []),
-                              ...documents.map(doc => ({
-                                label: doc.filename,
-                                value: doc.id,
-                              })),
-                            ]}
-                            selected={graphDocuments}
-                            onChange={(value: string[]) => {
-                              const filteredValues = value.filter(v => v !== "__none__");
-                              setGraphDocuments(filteredValues);
-                            }}
-                            placeholder="Select documents for the graph"
-                            className="w-full"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Select specific documents to include in the graph, or leave empty and use filters below.
-                          </p>
-                        </div>
+                  <div className="border-t pt-4">
+                    <h3 className="text-md mb-3 font-medium">Document Selection</h3>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="graph-documents">Documents</Label>
+                        <MultiSelect
+                          options={[
+                            { label: "All Documents", value: "__none__" },
+                            ...(loadingDocuments ? [{ label: "Loading documents...", value: "loading" }] : []),
+                            ...documents.map(doc => ({
+                              label: doc.filename,
+                              value: doc.id,
+                            })),
+                          ]}
+                          selected={graphDocuments}
+                          onChange={(value: string[]) => {
+                            const filteredValues = value.filter(v => v !== "__none__");
+                            setGraphDocuments(filteredValues);
+                          }}
+                          placeholder="Select documents for the graph"
+                          className="w-full"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Select specific documents to include in the graph, or leave empty and use filters below.
+                        </p>
+                      </div>
 
-                        <div className="relative flex items-center">
-                          <div className="flex-grow border-t border-muted"></div>
-                          <span className="mx-4 flex-shrink text-xs uppercase text-muted-foreground">Or</span>
-                          <div className="flex-grow border-t border-muted"></div>
-                        </div>
+                      <div className="relative flex items-center">
+                        <div className="flex-grow border-t border-muted"></div>
+                        <span className="mx-4 flex-shrink text-xs uppercase text-muted-foreground">Or</span>
+                        <div className="flex-grow border-t border-muted"></div>
+                      </div>
 
-                        <div className="space-y-2">
-                          <Label htmlFor="graph-filters">Metadata Filters (Optional)</Label>
-                          <Textarea
-                            id="graph-filters"
-                            placeholder='{"category": "research", "author": "Jane Doe"}'
-                            value={graphFilters}
-                            onChange={e => setGraphFilters(e.target.value)}
-                            className="min-h-[80px] font-mono"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            JSON object with metadata filters to select documents.
-                          </p>
-                        </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="graph-filters">Metadata Filters (Optional)</Label>
+                        <Textarea
+                          id="graph-filters"
+                          placeholder='{"category": "research", "author": "Jane Doe"}'
+                          value={graphFilters}
+                          onChange={e => setGraphFilters(e.target.value)}
+                          className="min-h-[80px] font-mono"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          JSON object with metadata filters to select documents.
+                        </p>
                       </div>
                     </div>
                   </div>
-                  <DialogFooter>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setShowCreateDialog(false);
-                        setError(null); // Clear error when cancelling
-                        // Reset form fields on cancel
-                        setGraphName("");
-                        setGraphDocuments([]);
-                        setGraphFilters("{}");
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleCreateGraph} // Removed setShowCreateDialog(false) here, handleCreateGraph does it on success
-                      disabled={!graphName || loading}
-                    >
-                      {loading ? (
-                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-b-2 border-white"></div>
-                      ) : null}
-                      Create Graph
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-
-            {loading ? (
-              <div className="flex items-center justify-center p-8">
-                {/* Skeleton Loader for Graph List */}
-                <div className="grid w-full grid-cols-2 gap-4 py-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-                  {[...Array(12)].map((_, i) => (
-                    <div key={i} className="flex flex-col items-center rounded-md border border-transparent p-2">
-                      <Skeleton className="mb-2 h-12 w-12 rounded-md" />
-                      <Skeleton className="h-4 w-20 rounded-md" />
-                    </div>
-                  ))}
                 </div>
-              </div>
-            ) : graphs.length === 0 ? (
-              <div className="mt-4 rounded-lg border-2 border-dashed p-8 text-center">
-                <Network className="mx-auto mb-3 h-12 w-12 text-muted-foreground" />
-                <p className="mb-3 text-muted-foreground">No graphs available.</p>
-                <Button onClick={() => setShowCreateDialog(true)} variant="default">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Your First Graph
-                </Button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-4 py-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-                {graphs.map(graph => (
-                  <div
-                    key={graph.id}
-                    className="group relative flex cursor-pointer flex-col items-center rounded-md border border-transparent p-2 transition-all hover:border-primary/20 hover:bg-primary/5"
-                    onClick={() => handleGraphClick(graph)}
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowCreateDialog(false);
+                      setError(null); // Clear error when cancelling
+                      // Reset form fields on cancel
+                      setGraphName("");
+                      setGraphDocuments([]);
+                      setGraphFilters("{}");
+                    }}
                   >
-                    {/* Delete button */}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="absolute -right-1 -top-1 z-10 h-6 w-6 rounded-full bg-background opacity-0 shadow-sm transition-opacity hover:bg-destructive hover:text-destructive-foreground group-hover:opacity-100"
-                      onClick={e => {
-                        e.stopPropagation();
-                        setGraphToDelete(graph.name);
-                        setShowDeleteModal(true);
-                      }}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                    <div className="mb-2 transition-transform group-hover:scale-110">
-                      <Network className="h-12 w-12 text-primary/80 group-hover:text-primary" />
-                    </div>
-                    <span className="w-full max-w-[120px] truncate text-center text-sm font-medium transition-colors group-hover:text-primary">
-                      {graph.name}
-                    </span>
-                    {graph.system_metadata?.status === "processing" && (
-                      <Badge
-                        variant="secondary"
-                        className="mt-1 bg-yellow-400 text-[10px] text-black opacity-90 hover:bg-yellow-400"
-                        title={
-                          typeof graph.system_metadata?.pipeline_stage === "string"
-                            ? graph.system_metadata.pipeline_stage
-                            : "Processing"
-                        }
-                      >
-                        {typeof graph.system_metadata?.pipeline_stage === "string"
-                          ? graph.system_metadata.pipeline_stage
-                          : "Processing"}
-                      </Badge>
-                    )}
-                  </div>
-                ))}
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleCreateGraph} // Removed setShowCreateDialog(false) here, handleCreateGraph does it on success
+                    disabled={!graphName || loading}
+                  >
+                    {loading ? (
+                      <div className="mr-2 h-4 w-4 animate-spin rounded-full border-b-2 border-white"></div>
+                    ) : null}
+                    Create Graph
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex items-center justify-center p-8">
+            {/* Skeleton Loader for Graph List */}
+            <div className="grid w-full grid-cols-2 gap-4 py-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+              {[...Array(12)].map((_, i) => (
+                <div key={i} className="flex flex-col items-center rounded-md border border-transparent p-2">
+                  <Skeleton className="mb-2 h-12 w-12 rounded-md" />
+                  <Skeleton className="h-4 w-20 rounded-md" />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : graphs.length === 0 ? (
+          <div className="mt-4 rounded-lg border-2 border-dashed p-8 text-center">
+            <Network className="mx-auto mb-3 h-12 w-12 text-muted-foreground" />
+            <p className="mb-3 text-muted-foreground">No graphs available.</p>
+            <Button onClick={() => setShowCreateDialog(true)} variant="default">
+              <Plus className="mr-2 h-4 w-4" />
+              Create Your First Graph
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 py-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {graphs.map(graph => (
+              <div
+                key={graph.id}
+                className="group relative flex cursor-pointer flex-col items-center rounded-md border border-transparent p-2 transition-all hover:border-primary/20 hover:bg-primary/5"
+                onClick={() => handleGraphClick(graph)}
+              >
+                {/* Delete button */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute -right-1 -top-1 z-10 h-6 w-6 rounded-full bg-background opacity-0 shadow-sm transition-opacity hover:bg-destructive hover:text-destructive-foreground group-hover:opacity-100"
+                  onClick={e => {
+                    e.stopPropagation();
+                    setGraphToDelete(graph.name);
+                    setShowDeleteModal(true);
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+                <div className="mb-2 transition-transform group-hover:scale-110">
+                  <Network className="h-12 w-12 text-primary/80 group-hover:text-primary" />
+                </div>
+                <span className="w-full max-w-[120px] truncate text-center text-sm font-medium transition-colors group-hover:text-primary">
+                  {graph.name}
+                </span>
+                {graph.system_metadata?.status === "processing" && (
+                  <Badge
+                    variant="secondary"
+                    className="mt-1 bg-yellow-400 text-[10px] text-black opacity-90 hover:bg-yellow-400"
+                    title={
+                      typeof graph.system_metadata?.pipeline_stage === "string"
+                        ? graph.system_metadata.pipeline_stage
+                        : "Processing"
+                    }
+                  >
+                    {typeof graph.system_metadata?.pipeline_stage === "string"
+                      ? graph.system_metadata.pipeline_stage
+                      : "Processing"}
+                  </Badge>
+                )}
               </div>
-            )}
+            ))}
           </div>
         )}
 

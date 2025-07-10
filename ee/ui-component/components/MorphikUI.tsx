@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
-import { Sidebar } from "@/components/ui/sidebar";
-import DocumentsSection from "@/components/documents/DocumentsSection";
+import React, { useState, useCallback, useEffect } from "react";
+import { MorphikUIProps } from "./types";
+import DocumentsWithHeader from "@/components/documents/DocumentsWithHeader";
 import SearchSection from "@/components/search/SearchSection";
 import ChatSection from "@/components/chat/ChatSection";
 import GraphSection from "@/components/GraphSection";
@@ -10,219 +10,212 @@ import WorkflowSection from "@/components/workflows/WorkflowSection";
 import LogsSection from "@/components/logs/LogsSection";
 import { ConnectorList } from "@/components/connectors/ConnectorList";
 import { PDFViewer } from "@/components/pdf/PDFViewer";
-import { PDFAPIService } from "@/components/pdf/PDFAPIService";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { extractTokenFromUri, getApiBaseUrlFromUri } from "@/lib/utils";
-import { MorphikUIProps } from "./types";
-import { cn } from "@/lib/utils";
-import { setupLogging } from "@/lib/log";
+import { PDFAPIService } from "@/components/pdf/PDFAPIService";
+import { MorphikSidebarStateful } from "@/components/morphik-sidebar-stateful";
+import { DynamicSiteHeader } from "@/components/dynamic-site-header";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar-new";
+import { MorphikProvider } from "@/contexts/morphik-context";
+import { HeaderProvider } from "@/contexts/header-context";
+import { AlertSystem } from "@/components/ui/alert-system";
+import { ThemeProvider } from "@/components/theme-provider";
+import { useRouter, usePathname } from "next/navigation";
 
-// Default API base URL
-const DEFAULT_API_BASE_URL = "http://localhost:8000";
+/**
+ * MorphikUI Component
+ *
+ * Full dashboard component with sidebar navigation and header.
+ * This includes the complete UI chrome for a standalone experience.
+ */
+const MorphikUI: React.FC<MorphikUIProps> = props => {
+  const {
+    connectionUri,
+    apiBaseUrl = "http://localhost:8000",
+    initialSection = "documents",
+    initialFolder = null,
+    onBackClick,
+    onDocumentUpload,
+    onDocumentDelete,
+    onDocumentClick,
+    onFolderCreate,
+    onFolderClick,
+    onSearchSubmit,
+    onChatSubmit,
+    onGraphClick,
+    onGraphCreate,
+    onGraphUpdate,
+    userProfile,
+    onLogout,
+    onProfileNavigate,
+    logoLight = "/morphikblack.png",
+    logoDark = "/morphikwhite.png",
+  } = props;
 
-// Disable excessive logging unless debug is enabled
-setupLogging();
+  const [currentSection, setCurrentSection] = useState(initialSection);
+  const [currentFolder, setCurrentFolder] = useState<string | null>(initialFolder);
 
-const MorphikUI: React.FC<MorphikUIProps> = ({
-  connectionUri,
-  apiBaseUrl = DEFAULT_API_BASE_URL,
-  isReadOnlyUri = false, // Default to editable URI
-  onUriChange,
-  onBackClick,
-  initialFolder = null,
-  initialSection = "documents",
-  onDocumentUpload,
-  onDocumentDelete,
-  onDocumentClick,
-  onFolderCreate,
-  onFolderClick,
-  onSearchSubmit,
-  onChatSubmit,
-  onGraphClick,
-  onGraphCreate,
-  onGraphUpdate,
-}) => {
-  // State to manage connectionUri internally if needed
-  const [currentUri, setCurrentUri] = useState(connectionUri);
+  const authToken = connectionUri ? extractTokenFromUri(connectionUri) : null;
+  const effectiveApiBaseUrl = getApiBaseUrlFromUri(connectionUri ?? undefined, apiBaseUrl);
 
-  // Update internal state when prop changes
+  // For PDF viewer session info
+  const sessionId = `ui-session-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  const userId = authToken ? "authenticated" : "anonymous";
+
+  // Local breadcrumbs managed here when section is not documents
+  const [localBreadcrumbs, setLocalBreadcrumbs] = useState<
+    { label: string; href?: string; onClick?: (e: React.MouseEvent) => void }[] | undefined
+  >();
+
+  // update breadcrumbs whenever section changes (initial and subsequent)
   useEffect(() => {
-    setCurrentUri(connectionUri);
-  }, [connectionUri]);
+    if (currentSection === "documents") {
+      setLocalBreadcrumbs(undefined);
+      return;
+    }
 
-  // Valid section types, now matching the updated MorphikUIProps
-  type SectionType =
-    | "documents"
-    | "search"
-    | "chat"
-    | "graphs"
-    | "workflows"
-    | "connections"
-    | "pdf"
-    | "settings"
-    | "logs";
+    const prettyLabel =
+      currentSection === "graphs"
+        ? "Knowledge Graphs"
+        : currentSection.charAt(0).toUpperCase() + currentSection.slice(1);
 
+    setLocalBreadcrumbs([
+      {
+        label: "Home",
+        onClick: () => setCurrentSection("documents" as typeof initialSection),
+      },
+      { label: prettyLabel },
+    ]);
+  }, [currentSection]);
+
+  // sync prop changes from layout routing
   useEffect(() => {
-    // Ensure initialSection from props is a valid SectionType before setting
-    setActiveSection(initialSection as SectionType);
+    setCurrentSection(initialSection);
   }, [initialSection]);
 
-  // Handle URI changes from sidebar
-  const handleUriChange = (newUri: string) => {
-    console.log("MorphikUI: URI changed to:", newUri);
-    setCurrentUri(newUri);
-    onUriChange?.(newUri);
-  };
+  const router = useRouter();
+  const pathname = usePathname() || "/";
 
-  const [activeSection, setActiveSection] = useState<SectionType>(initialSection as SectionType);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [pdfViewerDocumentId, setPdfViewerDocumentId] = useState<string | undefined>(undefined);
+  const handleSectionChange = useCallback(
+    (section: string) => {
+      setCurrentSection(section as typeof initialSection);
 
-  // Extract auth token and API URL from connection URI if provided
-  const authToken = currentUri ? extractTokenFromUri(currentUri) : null;
-
-  // Derive API base URL from the URI if provided
-  const effectiveApiBaseUrl = getApiBaseUrlFromUri(currentUri ?? undefined, apiBaseUrl);
-
-  // Generate session and user information for PDF viewer scoping
-  const pdfSessionInfo = useMemo(() => {
-    // Generate a unique session ID for this UI instance
-    const sessionId = `ui-session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    // Try to extract user ID from auth token or use a fallback
-    let userId = "anonymous";
-    if (authToken) {
-      try {
-        // Try to decode JWT token to get user info (basic decode, not verification)
-        const payload = JSON.parse(atob(authToken.split(".")[1]));
-        userId = payload.sub || payload.user_id || payload.id || "authenticated";
-      } catch (error) {
-        console.error("MorphikUI: Error parsing auth token:", error);
-        // If token parsing fails, use a generic authenticated user ID
-        userId = "authenticated";
+      // --- update browser URL so Cloud mirrors standalone behaviour ----
+      const segments = pathname.split("/").filter(Boolean);
+      if (segments.length > 0) {
+        const appId = segments[0];
+        const newPath = `/${appId}/${section === "documents" ? "documents" : section}`;
+        router.push(newPath);
       }
-    }
+    },
+    [router, pathname]
+  );
 
-    return { sessionId, userId };
-  }, [authToken]); // Regenerate if auth token changes
+  const handleFolderChange = useCallback(
+    (folderName: string | null) => {
+      setCurrentFolder(folderName);
+      onFolderClick?.(folderName);
+    },
+    [onFolderClick]
+  );
 
-  // Log the effective API URL for debugging
-  useEffect(() => {
-    console.log("MorphikUI: Using API URL:", effectiveApiBaseUrl);
-    console.log("MorphikUI: Auth token present:", !!authToken);
-    console.log("MorphikUI: PDF session info:", pdfSessionInfo);
-  }, [effectiveApiBaseUrl, authToken, pdfSessionInfo]);
-
-  // Wrapper for section change to match expected type
-  const handleSectionChange = (section: string) => {
-    if (
-      ["documents", "search", "chat", "graphs", "workflows", "connections", "pdf", "settings", "logs"].includes(section)
-    ) {
-      // Added "logs"
-      setActiveSection(section as SectionType); // Use SectionType here
+  const renderSection = () => {
+    switch (currentSection) {
+      case "documents":
+        return (
+          <DocumentsWithHeader
+            apiBaseUrl={effectiveApiBaseUrl}
+            authToken={authToken}
+            initialFolder={currentFolder}
+            onDocumentUpload={onDocumentUpload}
+            onDocumentDelete={onDocumentDelete}
+            onDocumentClick={onDocumentClick}
+            onFolderCreate={onFolderCreate}
+            onFolderClick={handleFolderChange}
+          />
+        );
+      case "search":
+        return <SearchSection apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} onSearchSubmit={onSearchSubmit} />;
+      case "chat":
+        return <ChatSection apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} onChatSubmit={onChatSubmit} />;
+      case "graphs":
+        return (
+          <GraphSection
+            apiBaseUrl={effectiveApiBaseUrl}
+            authToken={authToken}
+            onSelectGraph={onGraphClick}
+            onGraphCreate={onGraphCreate}
+            onGraphUpdate={onGraphUpdate}
+          />
+        );
+      case "workflows":
+        return <WorkflowSection apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} />;
+      case "connections":
+        return (
+          <div className="h-full overflow-auto p-4 md:p-6">
+            <ConnectorList apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} />
+          </div>
+        );
+      case "pdf":
+        return <PDFViewer apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} />;
+      case "settings":
+        return <SettingsSection authToken={authToken} onBackClick={onBackClick} />;
+      case "logs":
+        return <LogsSection apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} />;
+      default:
+        return (
+          <div className="flex h-full items-center justify-center">
+            <p className="text-muted-foreground">Unknown section: {initialSection}</p>
+          </div>
+        );
     }
   };
 
-  // Handle navigation to PDF viewer with specific document
-  const handleViewInPDFViewer = (documentId: string) => {
-    setPdfViewerDocumentId(documentId);
-    setActiveSection("pdf");
-  };
-
-  // Clear PDF viewer document ID when switching away from PDF section
-  useEffect(() => {
-    if (activeSection !== "pdf") {
-      setPdfViewerDocumentId(undefined);
-    }
-  }, [activeSection]);
+  const contentInner = (
+    <PDFAPIService sessionId={sessionId} userId={userId}>
+      <div className="min-h-screen bg-sidebar">
+        <MorphikProvider
+          connectionUri={connectionUri}
+          onBackClick={onBackClick}
+          userProfile={userProfile}
+          onLogout={onLogout}
+          onProfileNavigate={onProfileNavigate}
+        >
+          <HeaderProvider>
+            <SidebarProvider
+              style={
+                {
+                  "--sidebar-width": "calc(var(--spacing) * 72)",
+                  "--header-height": "calc(var(--spacing) * 12)",
+                } as React.CSSProperties
+              }
+            >
+              <MorphikSidebarStateful
+                variant="inset"
+                currentSection={currentSection}
+                onSectionChange={handleSectionChange}
+                userProfile={userProfile}
+                onLogout={onLogout}
+                onProfileNavigate={onProfileNavigate}
+                logoLight={logoLight}
+                logoDark={logoDark}
+              />
+              <SidebarInset>
+                <DynamicSiteHeader userProfile={userProfile} customBreadcrumbs={localBreadcrumbs} />
+                <div className="flex flex-1 flex-col p-4 md:p-6">{renderSection()}</div>
+              </SidebarInset>
+            </SidebarProvider>
+          </HeaderProvider>
+        </MorphikProvider>
+      </div>
+      <AlertSystem position="bottom-right" />
+    </PDFAPIService>
+  );
 
   return (
-    <PDFAPIService sessionId={pdfSessionInfo.sessionId} userId={pdfSessionInfo.userId}>
-      <div className={cn("flex h-full w-full overflow-hidden")}>
-        <Sidebar
-          connectionUri={currentUri ?? undefined}
-          isReadOnlyUri={isReadOnlyUri}
-          onUriChange={handleUriChange}
-          activeSection={activeSection}
-          onSectionChange={handleSectionChange}
-          isCollapsed={isSidebarCollapsed}
-          setIsCollapsed={setIsSidebarCollapsed}
-          onBackClick={onBackClick}
-        />
-
-        <main className="flex flex-1 flex-col overflow-hidden">
-          {/* Render active section based on state */}
-          {activeSection === "documents" && (
-            <DocumentsSection
-              key={`docs-${effectiveApiBaseUrl}-${initialFolder}`}
-              apiBaseUrl={effectiveApiBaseUrl}
-              authToken={authToken}
-              initialFolder={initialFolder ?? undefined}
-              onDocumentUpload={onDocumentUpload}
-              onDocumentDelete={onDocumentDelete}
-              onDocumentClick={onDocumentClick}
-              onFolderCreate={onFolderCreate}
-              onFolderClick={onFolderClick}
-              onRefresh={undefined}
-              onViewInPDFViewer={handleViewInPDFViewer}
-            />
-          )}
-          {activeSection === "search" && (
-            <SearchSection
-              key={`search-${effectiveApiBaseUrl}`}
-              apiBaseUrl={effectiveApiBaseUrl}
-              authToken={authToken}
-              onSearchSubmit={onSearchSubmit}
-            />
-          )}
-          {activeSection === "chat" && (
-            <ChatSection
-              key={`chat-${effectiveApiBaseUrl}`}
-              apiBaseUrl={effectiveApiBaseUrl}
-              authToken={authToken}
-              onChatSubmit={onChatSubmit}
-            />
-          )}
-          {activeSection === "graphs" && (
-            <GraphSection
-              key={`graphs-${effectiveApiBaseUrl}`}
-              apiBaseUrl={effectiveApiBaseUrl}
-              authToken={authToken}
-              onSelectGraph={onGraphClick}
-              onGraphCreate={onGraphCreate}
-              onGraphUpdate={onGraphUpdate}
-            />
-          )}
-          {activeSection === "workflows" && (
-            <WorkflowSection
-              key={`workflows-${effectiveApiBaseUrl}`}
-              apiBaseUrl={effectiveApiBaseUrl}
-              authToken={authToken}
-            />
-          )}
-          {activeSection === "connections" && (
-            <div className="h-full overflow-auto p-4 md:p-6">
-              {/* Wrapper div for consistent padding and full height */}
-              <ConnectorList apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} />
-            </div>
-          )}
-          {activeSection === "pdf" && (
-            <PDFViewer
-              key={`pdf-${effectiveApiBaseUrl}-${pdfViewerDocumentId}`}
-              apiBaseUrl={effectiveApiBaseUrl}
-              authToken={authToken}
-              initialDocumentId={pdfViewerDocumentId}
-            />
-          )}
-          {activeSection === "settings" && (
-            <SettingsSection authToken={authToken} onBackClick={() => setActiveSection("chat")} />
-          )}
-          {activeSection === "logs" && (
-            <LogsSection key={`logs-${effectiveApiBaseUrl}`} apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} />
-          )}
-        </main>
-      </div>
-    </PDFAPIService>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+      {contentInner}
+    </ThemeProvider>
   );
 };
 

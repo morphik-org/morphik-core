@@ -88,9 +88,20 @@ const WorkflowDialogs: React.FC<WorkflowDialogsProps> = ({
                     key={workflow.id}
                     className="flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-colors hover:bg-muted/50"
                     onClick={() => {
-                      if (pathname === "/workflows") {
+                      // Get the app ID from the current path if in cloud context
+                      const pathSegments = (pathname || "").split("/").filter(Boolean);
+                      const isCloudUI =
+                        pathSegments.length > 1 && !["dashboard", "login", "signup"].includes(pathSegments[0]);
+
+                      if (isCloudUI) {
+                        // In cloud UI, route to /app_id/workflows
+                        const appId = pathSegments[0];
+                        router.push(`/${appId}/workflows?id=${workflow.id}`);
+                      } else if (pathname === "/workflows") {
+                        // In standalone, already on workflows page
                         router.push(`/workflows?id=${workflow.id}`);
                       } else {
+                        // In standalone, not on workflows page
                         router.push(`/?section=workflows&id=${workflow.id}`);
                       }
                     }}
@@ -122,7 +133,14 @@ const WorkflowDialogs: React.FC<WorkflowDialogsProps> = ({
                         size="icon"
                         onClick={e => {
                           e.stopPropagation();
-                          if (pathname === "/workflows") {
+                          const pathSegments = (pathname || "").split("/").filter(Boolean);
+                          const isCloudUI =
+                            pathSegments.length > 1 && !["dashboard", "login", "signup"].includes(pathSegments[0]);
+
+                          if (isCloudUI) {
+                            const appId = pathSegments[0];
+                            router.push(`/${appId}/workflows?id=${workflow.id}`);
+                          } else if (pathname === "/workflows") {
                             router.push(`/workflows?id=${workflow.id}`);
                           } else {
                             router.push(`/?section=workflows&id=${workflow.id}`);
@@ -168,7 +186,14 @@ const WorkflowDialogs: React.FC<WorkflowDialogsProps> = ({
                 </Button>
                 <Button
                   onClick={() => {
-                    if (pathname === "/workflows") {
+                    const pathSegments = (pathname || "").split("/").filter(Boolean);
+                    const isCloudUI =
+                      pathSegments.length > 1 && !["dashboard", "login", "signup"].includes(pathSegments[0]);
+
+                    if (isCloudUI) {
+                      const appId = pathSegments[0];
+                      router.push(`/${appId}/workflows`);
+                    } else if (pathname === "/workflows") {
                       setShowWorkflowDialog(false);
                     } else {
                       router.push("/workflows");

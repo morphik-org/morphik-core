@@ -2370,7 +2370,7 @@ wheels = [
 
 [[package]]
 name = "morphik"
-version = "0.1.9"
+version = "0.2.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -2379,9 +2379,9 @@ dependencies = [
     { name = "pyjwt" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e8/b3/7854b2c29c50be298729be31680254554967342cd906fed94e8a72872ae6/morphik-0.1.9.tar.gz", hash = "sha256:88f9a9b1d8fa363daefaa28484fb3589439d774e9bd038e6dd66a9ca6adb8ba9", size = 41973 }
+sdist = { url = "https://files.pythonhosted.org/packages/47/0d/cdea8b7fdd878b16fd18cdacebd29fc8e07dec82c8a7d8c812a1e916aa10/morphik-0.2.7.tar.gz", hash = "sha256:3d6c24431b472581e482d4a55b32d3125d081bcb1745e5c9e6f8a0f1a46f86c7", size = 45710 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d0/81/424636b4ccb6f2ec0b33e2182e35686ac8467908dca74e6148f8698dd1b9/morphik-0.1.9-py3-none-any.whl", hash = "sha256:aade342dfaff58edb37d942b3a245feac12176ea9d5685b3bda63b325f8a7d19", size = 51345 },
+    { url = "https://files.pythonhosted.org/packages/22/27/1063fd16eb4f450f3db034b100aa6128abfbe92df77746a77e1285f25eca/morphik-0.2.7-py3-none-any.whl", hash = "sha256:6ba8e48ee171d66b8c5f96979a3c803a15290fe1ec078d440f0292e7956cae40", size = 55191 },
 ]
 
 [[package]]
@@ -2481,7 +2481,7 @@ requires-dist = [
     { name = "itsdangerous", specifier = ">=2.2.0" },
     { name = "line-profiler", specifier = ">=4.1.2" },
     { name = "litellm", specifier = ">=1.69.1" },
-    { name = "morphik", specifier = ">=0.1.9" },
+    { name = "morphik", specifier = "==0.2.7" },
     { name = "ollama", specifier = ">=0.4.8" },
     { name = "openai", specifier = ">=1.75.0" },
     { name = "opencv-python", specifier = ">=4.11.0.86" },
