@@ -25,6 +25,16 @@ class EESettings(BaseSettings):
     GOOGLE_SCOPES: List[str] = ["https://www.googleapis.com/auth/drive.readonly"]
     GOOGLE_TOKEN_STORAGE_PATH: str = DEFAULT_TOKEN_STORAGE_PATH
 
+    # GitHub Connector Settings
+    # Loaded ONLY from environment variables for security
+    GITHUB_CLIENT_ID: Optional[str] = Field(None, env="GITHUB_CLIENT_ID")
+    GITHUB_CLIENT_SECRET: Optional[str] = Field(None, env="GITHUB_CLIENT_SECRET")
+
+    # Loaded from ee.toml or environment variables
+    GITHUB_REDIRECT_URI: Optional[str] = "http://localhost:8000/ee/connectors/github/oauth2callback"
+    GITHUB_SCOPES: List[str] = ["repo"]
+    GITHUB_TOKEN_STORAGE_PATH: str = DEFAULT_TOKEN_STORAGE_PATH
+
     class Config:
         env_file = ".env"  # Load .env file if present
         env_file_encoding = "utf-8"

@@ -40,13 +40,13 @@ export function ConnectorCard({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showFileBrowserModal, setShowFileBrowserModal] = useState<boolean>(false);
+  const [showIngestionModal, setShowIngestionModal] = useState<boolean>(false);
 
   // State for ingestion modal
-  const [showIngestionModal, setShowIngestionModal] = useState<boolean>(false);
   const [ingestionTargetFileId, setIngestionTargetFileId] = useState<string | null>(null);
   const [ingestionTargetFileName, setIngestionTargetFileName] = useState<string | null>(null);
-  const [ingestionMetadata, setIngestionMetadata] = useState<string>("{}"); // Default to empty JSON object
-  const [ingestionRules, setIngestionRules] = useState<string>("[]"); // Default to empty JSON array
+  const [ingestionMetadata, setIngestionMetadata] = useState<string>("{}");
+  const [ingestionRules, setIngestionRules] = useState<string>("[]");
 
   // State for manual credentials modal
   const [showCredentialsModal, setShowCredentialsModal] = useState<boolean>(false);
@@ -71,6 +71,8 @@ export function ConnectorCard({
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
+
+
 
   const handleConnect = async () => {
     setError(null);
@@ -157,6 +159,53 @@ export function ConnectorCard({
     setError(null); // Clear previous errors
   };
 
+  const handleRepositoryIngest = async (repoPath: string, ingestedConnectorType: string) => {
+    if (ingestedConnectorType !== connectorType) return;
+    
+    setIsSubmitting(true);
+    setError(null);
+    
+    try {
+      const response = await fetch(`${apiBaseUrl}/ee/connectors/${ingestedConnectorType}/ingest-repository`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          connector_type: ingestedConnectorType,
+          repo_path: repoPath,
+          folder_name: 'github-repos', // Or use a state-managed folder name
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to ingest repository');
+      }
+
+      const result = await response.json();
+      
+      console.log('Repository ingested successfully:', result);
+      
+      // Show success message with details
+      const docCount = result.documents?.length || 0;
+      const successMessage = `Successfully ingested repository "${repoPath}"! Created ${docCount} document${docCount !== 1 ? 's' : ''}.`;
+      alert(successMessage);
+      
+      // Close the file browser modal on success
+      setShowFileBrowserModal(false);
+      
+    } catch (error) {
+      console.error('Error ingesting repository:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error during repository ingestion';
+      setError(errorMessage);
+      alert(`Failed to ingest repository "${repoPath}": ${errorMessage}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleConfirmFileIngest = async () => {
     if (!ingestionTargetFileId || !ingestionTargetFileName) return;
 
@@ -164,7 +213,6 @@ export function ConnectorCard({
     setError(null);
     try {
       // Pass metadata and rules to ingestConnectorFile
-      // Note: ingestConnectorFile in lib/connectorsApi.ts will need to be updated to accept these
       const result = await ingestConnectorFile(apiBaseUrl, connectorType, authToken, ingestionTargetFileId, {
         metadata: JSON.parse(ingestionMetadata),
         rules: JSON.parse(ingestionRules),
@@ -172,11 +220,17 @@ export function ConnectorCard({
         // For now, they will be undefined and thus not sent if not explicitly set.
       });
       console.log("Ingestion successfully queued:", result);
-      setShowIngestionModal(false); // Close modal on success
+      
+      // Show success message
+      alert(`Successfully started ingestion for "${ingestionTargetFileName}"! Document ID: ${result.morphik_document_id || result.document_id || 'N/A'}`);
+      
+      // Close modal on success
+      setShowIngestionModal(false);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to ingest file.";
       setError(errorMessage);
       console.error("Ingestion error:", errorMessage);
+      alert(`Failed to ingest "${ingestionTargetFileName}": ${errorMessage}`);
       // Keep modal open on error to allow correction or retry
     } finally {
       setIsSubmitting(false);
@@ -185,13 +239,13 @@ export function ConnectorCard({
 
   return (
     <Card className="w-full max-w-2xl">
-      <CardHeader>
-        <CardTitle className="flex items-center">
-          {ConnectorIcon ? <ConnectorIcon className="mr-2 h-6 w-6" /> : <FileText className="mr-2 h-6 w-6" />}
-          {displayName}
-        </CardTitle>
-        <CardDescription>Manage your connection and browse files from the {displayName} service.</CardDescription>
-      </CardHeader>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            {ConnectorIcon ? <ConnectorIcon className="mr-2 h-6 w-6" /> : <FileText className="mr-2 h-6 w-6" />}
+            {displayName}
+          </CardTitle>
+          <CardDescription>Manage your connection and browse files from the {displayName} service.</CardDescription>
+        </CardHeader>
       <CardContent className="space-y-4">
         {/* Simplified view for "Disconnected but Connectable" state */}
         {!isLoading && !error && authStatus && !authStatus.is_authenticated && authStatus.auth_url ? (
@@ -354,23 +408,19 @@ export function ConnectorCard({
 
       {/* File Browser Modal */}
       <Dialog open={showFileBrowserModal} onOpenChange={setShowFileBrowserModal}>
-        <DialogContent className="flex h-[80vh] w-[90vw] max-w-[1200px] flex-col">
+        <DialogContent className="max-w-4xl h-[80vh]">
           <DialogHeader>
-            <DialogTitle>Browse Files: {displayName}</DialogTitle>
+            <DialogTitle>Browse {displayName}</DialogTitle>
           </DialogHeader>
-          <div className="flex-grow overflow-auto py-4">
+          <div className="h-full overflow-y-auto">
             <FileBrowser
               connectorType={connectorType}
               apiBaseUrl={apiBaseUrl}
               authToken={authToken}
               onFileIngest={handleFileIngest}
+              onRepositoryIngest={handleRepositoryIngest}
             />
           </div>
-          <DialogFooter className="mt-auto">
-            <DialogClose asChild>
-              <Button variant="outline">Close</Button>
-            </DialogClose>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
