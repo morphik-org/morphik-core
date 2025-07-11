@@ -98,6 +98,9 @@ COPY --from=builder /bin/uvx /bin/uvx
 # Copy NLTK data from builder
 COPY --from=builder /usr/local/share/nltk_data /usr/local/share/nltk_data
 
+## copy fde package to avoid error at server startup
+COPY --from=builder /app/fde ./fde
+
 # Create necessary directories
 RUN mkdir -p storage logs
 
@@ -161,8 +164,11 @@ fi\n\
 
 # Copy application code
 # pyproject.toml is needed for uv to identify the project context for `uv run`
-COPY pyproject.toml ./
-COPY core ./core
+COPY pyproject.toml uv.lock ./
+
+## copy the fde package also to fix distribution not found error
+COPY fde ./fde
+
 COPY ee ./ee
 COPY README.md LICENSE ./
 # Assuming start_server.py is at the root of your project
