@@ -26,6 +26,7 @@ dependencies = [
     "instructor>=1.8.1",
     "itsdangerous>=2.2.0",
     "litellm>=1.69.1",
+    "lxml>=5.2.2",
     "morphik==0.2.7",
     "ollama>=0.4.8",
     "openai>=1.75.0",

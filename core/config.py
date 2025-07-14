@@ -1,13 +1,21 @@
 import os
 from collections import ChainMap
 from functools import lru_cache
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import tomli
 from dotenv import load_dotenv
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 
 load_dotenv(override=True)
+
+
+class ParserXMLSettings(BaseModel):
+    """XML parser configuration settings"""
+    max_tokens: int = 350
+    preferred_unit_tags: List[str] = ["SECTION", "Section", "Article", "clause"]
+    ignore_tags: List[str] = ["TOC", "INDEX"]
 
 
 class Settings(BaseSettings):
@@ -78,6 +86,7 @@ class Settings(BaseSettings):
     USE_UNSTRUCTURED_API: bool
     FRAME_SAMPLE_RATE: Optional[int] = None
     USE_CONTEXTUAL_CHUNKING: bool = False
+    PARSER_XML: ParserXMLSettings = ParserXMLSettings()
 
     # Rules configuration
     RULES_PROVIDER: Literal["litellm"] = "litellm"
@@ -260,6 +269,15 @@ def get_settings() -> Settings:
         raise ValueError(msg)
     elif parser_config["USE_UNSTRUCTURED_API"]:
         parser_config.update({"UNSTRUCTURED_API_KEY": os.environ["UNSTRUCTURED_API_KEY"]})
+    
+    # Load XML parser configuration
+    xml_parser_config = config.get("parser", {}).get("xml", {})
+    parser_xml_settings = ParserXMLSettings(
+        max_tokens=xml_parser_config.get("max_tokens", 350),
+        preferred_unit_tags=xml_parser_config.get("preferred_unit_tags", ["SECTION", "Section", "Article", "clause"]),
+        ignore_tags=xml_parser_config.get("ignore_tags", ["TOC", "INDEX"])
+    )
+    parser_config["PARSER_XML"] = parser_xml_settings
 
     # load reranker config
     reranker_config = {"USE_RERANKING": config["reranker"]["use_reranker"]}

@@ -11,6 +11,7 @@ from unstructured.partition.auto import partition
 from core.models.chunk import Chunk
 from core.parser.base_parser import BaseParser
 from core.parser.video.parse_video import VideoParser, load_config
+from core.parser.xml_chunker import XMLChunker
 
 # Custom RecursiveCharacterTextSplitter replaces langchain's version
 
@@ -197,6 +198,7 @@ class MorphikParser(BaseParser):
         anthropic_api_key: Optional[str] = None,
         frame_sample_rate: int = 1,
         use_contextual_chunking: bool = False,
+        settings: Optional[Any] = None,
     ):
         # Initialize basic configuration
         self.use_unstructured_api = use_unstructured_api
@@ -204,6 +206,8 @@ class MorphikParser(BaseParser):
         self._assemblyai_api_key = assemblyai_api_key
         self._anthropic_api_key = anthropic_api_key
         self.frame_sample_rate = frame_sample_rate
+        self.settings = settings
+        self.logger = logging.getLogger(__name__)
 
         # Initialize chunker based on configuration
         if use_contextual_chunking:
@@ -219,6 +223,71 @@ class MorphikParser(BaseParser):
         except Exception as e:
             logging.error(f"Error detecting file type: {str(e)}")
             return False
+
+    def _is_xml_file(self, file: bytes, filename: str) -> bool:
+        """Check if the file is an XML file."""
+        # Check file extension
+        if filename and filename.lower().endswith('.xml'):
+            return True
+        
+        # Check content type by trying to detect XML content
+        try:
+            kind = filetype.guess(file)
+            if kind and kind.mime in ['application/xml', 'text/xml']:
+                return True
+        except Exception:
+            pass
+        
+        # Fallback: check if content starts with XML declaration or has XML-like structure
+        try:
+            content_start = file[:1000].decode('utf-8', errors='ignore').strip()
+            if content_start.startswith('<?xml') or (content_start.startswith('<') and '>' in content_start):
+                return True
+        except Exception:
+            pass
+        
+        return False
+
+    async def _parse_xml(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
+        """Parse XML file using XMLChunker and return metadata and combined text."""
+        if not self.settings or not hasattr(self.settings, 'PARSER_XML'):
+            # Fallback to default settings if not available
+            xml_config = {
+                "max_tokens": 350,
+                "preferred_unit_tags": ["SECTION", "Section", "Article", "clause"],
+                "ignore_tags": ["TOC", "INDEX"]
+            }
+        else:
+            xml_config = self.settings.PARSER_XML.model_dump()
+        
+        self.logger.info(f"Processing '{filename}' with dedicated XML chunker.")
+        
+        try:
+            # Create XMLChunker and get chunks
+            xml_chunker = XMLChunker(content=file, config=xml_config)
+            xml_chunks_data = xml_chunker.chunk()
+            
+            # Combine all chunk texts for the text processing pipeline
+            combined_text = "\n\n".join([chunk_data['text'] for chunk_data in xml_chunks_data])
+            
+            # Create metadata that includes the XML chunks for later use
+            metadata = {
+                "xml_chunks": xml_chunks_data,
+                "is_xml": True,
+                "chunk_count": len(xml_chunks_data)
+            }
+            
+            self.logger.info(f"XML chunking created {len(xml_chunks_data)} chunks")
+            return metadata, combined_text
+            
+        except Exception as e:
+            self.logger.error(f"Error parsing XML file '{filename}': {e}")
+            # Fallback to regular text extraction
+            try:
+                text = file.decode('utf-8', errors='ignore')
+                return {}, text
+            except Exception:
+                return {}, ""
 
     async def _parse_video(self, file: bytes) -> Tuple[Dict[str, Any], str]:
         """Parse video file to extract transcript and frame descriptions"""
@@ -289,10 +358,39 @@ class MorphikParser(BaseParser):
 
     async def parse_file_to_text(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
         """Parse file content into text based on file type"""
-        if self._is_video_file(file, filename):
+        if self._is_xml_file(file, filename):
+            return await self._parse_xml(file, filename)
+        elif self._is_video_file(file, filename):
             return await self._parse_video(file)
         return await self._parse_document(file, filename)
 
-    async def split_text(self, text: str) -> List[Chunk]:
+    async def split_text(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> List[Chunk]:
         """Split text into chunks using configured chunking strategy"""
+        # Check if this is pre-chunked XML content
+        if metadata and metadata.get("is_xml") and "xml_chunks" in metadata:
+            xml_chunks_data = metadata["xml_chunks"]
+            chunks = []
+            
+            for i, chunk_data in enumerate(xml_chunks_data):
+                # Create metadata for the chunk
+                chunk_metadata = {
+                    "unit": chunk_data.get("unit"),
+                    "xml_id": chunk_data.get("xml_id"),
+                    "breadcrumbs": chunk_data.get("breadcrumbs"),
+                    "source_path": chunk_data.get("source_path"),
+                    "prev_chunk_xml_id": chunk_data.get("prev"),
+                    "next_chunk_xml_id": chunk_data.get("next"),
+                    "token_count": chunk_data.get("token_count"),
+                }
+                
+                chunks.append(Chunk(
+                    content=chunk_data['text'],
+                    chunk_number=i,
+                    metadata=chunk_metadata
+                ))
+            
+            self.logger.info(f"Converted {len(chunks)} XML chunks to Chunk objects")
+            return chunks
+        
+        # Use regular chunking strategy for non-XML files
         return self.chunker.split_text(text)

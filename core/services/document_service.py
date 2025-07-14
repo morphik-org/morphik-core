@@ -1188,7 +1188,7 @@ class DocumentService:
         doc.system_metadata["content"] = content
 
         # Split text into chunks
-        parsed_chunks = await self.parser.split_text(content)
+        parsed_chunks = await self.parser.split_text(content, metadata=additional_file_metadata)
         if not parsed_chunks:
             raise ValueError("No content chunks extracted after rules processing")
         logger.debug(f"Split processed text into {len(parsed_chunks)} chunks")
