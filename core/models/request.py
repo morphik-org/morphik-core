@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, Field
 
@@ -163,4 +163,8 @@ class AgentQueryRequest(BaseModel):
     chat_id: Optional[str] = Field(
         None,
         description="Optional chat session ID for persisting conversation history",
+    )
+    display_mode: Literal["formatted", "raw"] = Field(
+        default="formatted",
+        description="Display mode for images: 'formatted' (default) creates bounding boxes with Gemini, 'raw' returns uncropped images",
     )

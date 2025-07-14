@@ -314,22 +314,43 @@ async def process_ingestion_job(
             parse_filename = os.path.basename(file_key) if file_key else original_filename
 
             parse_start = time.time()
-            additional_metadata, text = await document_service.parser.parse_file_to_text(file_content, parse_filename)
-            # Clean the extracted text to remove problematic escape characters (e.g., null bytes)
-            # PostgreSQL does not allow \x00 (null byte) or \u0000 in text fields
-            import re
 
-            text = re.sub(r"[\x00\u0000]", "", text)
-            # Optionally, remove other non-printable or control characters except newlines/tabs
-            text = re.sub(r"[^\x09\x0A\x0D\x20-\x7E]", "", text)
+            # Check if this is an XML file and handle it specially
+            if document_service.parser.is_xml_file(parse_filename, content_type):
+                logger.info(f"Detected XML file: {parse_filename}")
+                # For XML files, we parse and chunk in one step
+                xml_chunks = await document_service.parser.parse_and_chunk_xml(file_content, parse_filename)
+                additional_metadata = {}
+                text = ""  # Will be handled differently for XML
+                xml_processing = True
+            else:
+                # Normal processing for non-XML files
+                additional_metadata, text = await document_service.parser.parse_file_to_text(
+                    file_content, parse_filename
+                )
+                # Clean the extracted text to remove problematic escape characters (e.g., null bytes)
+                # PostgreSQL does not allow \x00 (null byte) or \u0000 in text fields
+                import re
 
-            logger.debug(f"Parsed file into text of length {len(text)} (filename used: {parse_filename})")
+                text = re.sub(r"[\x00\u0000]", "", text)
+                # Optionally, remove other non-printable or control characters except newlines/tabs
+                text = re.sub(r"[^\x09\x0A\x0D\x20-\x7E]", "", text)
+                xml_processing = False
+
+            logger.debug(
+                f"Parsed file into {'XML chunks' if xml_processing else f'text of length {len(text)}'} (filename used: {parse_filename})"
+            )
             parse_time = time.time() - parse_start
             phase_times["parse_file"] = parse_time
 
             # NEW -----------------------------------------------------------------
             # Estimate pages early for pre-check
-            num_pages_estimated = estimate_pages_by_chars(len(text))
+            if xml_processing:
+                # For XML files, estimate pages based on total content length of all chunks
+                total_content_length = sum(len(chunk.content) for chunk in xml_chunks)
+                num_pages_estimated = estimate_pages_by_chars(total_content_length)
+            else:
+                num_pages_estimated = estimate_pages_by_chars(len(text))
 
             # 4.b Enforce tier limits (pages ingested) for cloud/free tier users
             if settings.MODE == "cloud" and auth.user_id:
@@ -351,7 +372,8 @@ async def process_ingestion_job(
             # === Apply post_parsing rules ===
             rules_start = time.time()
             document_rule_metadata = {}
-            if rules_list:
+            if rules_list and not xml_processing:
+                # Apply document rules to extracted text for non-XML files
                 logger.info("Applying post-parsing rules...")
                 document_rule_metadata, text = await document_service.rules_processor.process_document_rules(
                     text, rules_list
@@ -359,6 +381,10 @@ async def process_ingestion_job(
                 metadata.update(document_rule_metadata)  # Merge metadata into main doc metadata
                 logger.info(f"Document metadata after post-parsing rules: {metadata}")
                 logger.info(f"Content length after post-parsing rules: {len(text)}")
+            elif rules_list and xml_processing:
+                # For XML files, we skip document-level rules processing since we have structured chunks
+                # Rules will be applied at the chunk level later in the process
+                logger.info("Skipping document-level rules for XML file - will apply at chunk level")
             rules_time = time.time() - rules_start
             phase_times["apply_post_parsing_rules"] = rules_time
             if rules_list:
@@ -393,10 +419,17 @@ async def process_ingestion_job(
             # Make sure external_id is preserved in the metadata
             merged_metadata["external_id"] = doc.external_id
 
+            # For XML files, store the combined content of all chunks as the document content
+            if xml_processing:
+                combined_xml_content = "\n\n".join(chunk.content for chunk in xml_chunks)
+                document_content = combined_xml_content
+            else:
+                document_content = text
+
             updates = {
                 "metadata": merged_metadata,
                 "additional_metadata": additional_metadata,
-                "system_metadata": {**doc.system_metadata, "content": text},
+                "system_metadata": {**doc.system_metadata, "content": document_content},
             }
 
             # Add folder_name and end_user_id to updates if provided
@@ -421,18 +454,28 @@ async def process_ingestion_job(
 
             # 7. Split text into chunks
             chunking_start = time.time()
-            parsed_chunks = await document_service.parser.split_text(text)
-            if not parsed_chunks:
-                # No text was extracted from the file.  In many cases (e.g. pure images)
-                # we can still proceed if ColPali multivector chunks are produced later.
-                # Therefore we defer the fatal check until after ColPali chunk creation.
-                logger.warning(
-                    "No text chunks extracted after parsing. Will attempt to continue "
-                    "and rely on image-based chunks if available."
-                )
+
+            if xml_processing:
+                # For XML files, we already have the chunks from the parsing step
+                parsed_chunks = xml_chunks
+                logger.info(f"Using pre-parsed XML chunks: {len(parsed_chunks)} chunks")
+            else:
+                # Normal text chunking for non-XML files
+                parsed_chunks = await document_service.parser.split_text(text)
+                if not parsed_chunks:
+                    # No text was extracted from the file.  In many cases (e.g. pure images)
+                    # we can still proceed if ColPali multivector chunks are produced later.
+                    # Therefore we defer the fatal check until after ColPali chunk creation.
+                    logger.warning(
+                        "No text chunks extracted after parsing. Will attempt to continue "
+                        "and rely on image-based chunks if available."
+                    )
+
             chunking_time = time.time() - chunking_start
             phase_times["split_into_chunks"] = chunking_time
-            logger.info(f"Text chunking took {chunking_time:.2f}s to create {len(parsed_chunks)} chunks")
+            logger.info(
+                f"{'XML' if xml_processing else 'Text'} chunking took {chunking_time:.2f}s to create {len(parsed_chunks)} chunks"
+            )
 
             # Decide whether we need image chunks either for ColPali embedding or because
             # there are image-based rules (use_images=True) that must process them.

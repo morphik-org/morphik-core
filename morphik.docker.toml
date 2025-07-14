@@ -75,6 +75,11 @@ use_unstructured_api = false
 use_contextual_chunking = false
 contextual_chunking_model = "openai_gpt4-1-mini"  # Reference to a key in registered_models
 
+[parser.xml]
+max_tokens = 350
+preferred_unit_tags = ["SECTION", "Section", "Article", "clause"]
+ignore_tags = ["TOC", "INDEX"]
+
 [document_analysis]
 model = "openai_gpt4-1-mini"  # Reference to a key in registered_models
 

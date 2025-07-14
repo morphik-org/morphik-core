@@ -11,6 +11,7 @@ from unstructured.partition.auto import partition
 from core.models.chunk import Chunk
 from core.parser.base_parser import BaseParser
 from core.parser.video.parse_video import VideoParser, load_config
+from core.parser.xml_chunker import XMLChunker
 
 # Custom RecursiveCharacterTextSplitter replaces langchain's version
 
@@ -197,6 +198,7 @@ class MorphikParser(BaseParser):
         anthropic_api_key: Optional[str] = None,
         frame_sample_rate: int = 1,
         use_contextual_chunking: bool = False,
+        settings: Optional[Any] = None,
     ):
         # Initialize basic configuration
         self.use_unstructured_api = use_unstructured_api
@@ -204,12 +206,16 @@ class MorphikParser(BaseParser):
         self._assemblyai_api_key = assemblyai_api_key
         self._anthropic_api_key = anthropic_api_key
         self.frame_sample_rate = frame_sample_rate
+        self.settings = settings
 
         # Initialize chunker based on configuration
         if use_contextual_chunking:
             self.chunker = ContextualChunker(chunk_size, chunk_overlap, anthropic_api_key)
         else:
             self.chunker = StandardChunker(chunk_size, chunk_overlap)
+
+        # Initialize logger
+        self.logger = logging.getLogger(__name__)
 
     def _is_video_file(self, file: bytes, filename: str) -> bool:
         """Check if the file is a video file."""
@@ -219,6 +225,14 @@ class MorphikParser(BaseParser):
         except Exception as e:
             logging.error(f"Error detecting file type: {str(e)}")
             return False
+
+    def _is_xml_file(self, filename: str, content_type: Optional[str] = None) -> bool:
+        """Check if the file is an XML file."""
+        if filename and filename.lower().endswith(".xml"):
+            return True
+        if content_type and content_type in ["application/xml", "text/xml"]:
+            return True
+        return False
 
     async def _parse_video(self, file: bytes) -> Tuple[Dict[str, Any], str]:
         """Parse video file to extract transcript and frame descriptions"""
@@ -260,6 +274,34 @@ class MorphikParser(BaseParser):
         finally:
             os.unlink(video_path)
 
+    async def _parse_xml(self, file: bytes, filename: str) -> Tuple[List[Chunk], int]:
+        """Parse XML file directly using XMLChunker."""
+        self.logger.info(f"Processing '{filename}' with dedicated XML chunker.")
+
+        # Get XML parser configuration
+        xml_config = {}
+        if self.settings and hasattr(self.settings, "PARSER_XML"):
+            xml_config = self.settings.PARSER_XML.model_dump()
+
+        # Use XMLChunker to process the XML
+        xml_chunker = XMLChunker(content=file, config=xml_config)
+        xml_chunks_data = xml_chunker.chunk()
+
+        # Map to Chunk objects
+        chunks = []
+        for i, chunk_data in enumerate(xml_chunks_data):
+            metadata = {
+                "unit": chunk_data.get("unit"),
+                "xml_id": chunk_data.get("xml_id"),
+                "breadcrumbs": chunk_data.get("breadcrumbs"),
+                "source_path": chunk_data.get("source_path"),
+                "prev_chunk_xml_id": chunk_data.get("prev"),
+                "next_chunk_xml_id": chunk_data.get("next"),
+            }
+            chunks.append(Chunk(content=chunk_data["text"], metadata=metadata))
+
+        return chunks, len(file)
+
     async def _parse_document(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
         """Parse document using unstructured"""
         # Choose a lighter parsing strategy for text-based files. Using
@@ -291,7 +333,21 @@ class MorphikParser(BaseParser):
         """Parse file content into text based on file type"""
         if self._is_video_file(file, filename):
             return await self._parse_video(file)
+        elif self._is_xml_file(filename):
+            # For XML files, we'll handle parsing and chunking together
+            # This method should not be called for XML files in normal flow
+            # Return empty to indicate XML files should use parse_and_chunk_xml
+            return {}, ""
         return await self._parse_document(file, filename)
+
+    async def parse_and_chunk_xml(self, file: bytes, filename: str) -> List[Chunk]:
+        """Parse and chunk XML files in one step."""
+        chunks, _ = await self._parse_xml(file, filename)
+        return chunks
+
+    def is_xml_file(self, filename: str, content_type: Optional[str] = None) -> bool:
+        """Public method to check if file is XML."""
+        return self._is_xml_file(filename, content_type)
 
     async def split_text(self, text: str) -> List[Chunk]:
         """Split text into chunks using configured chunking strategy"""

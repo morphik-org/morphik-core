@@ -231,11 +231,6 @@ class FastMultiVectorStore(BaseVectorStore):
     async def load_multivector_from_storage(self, bucket: str, key: str) -> torch.Tensor:
         content = await self.storage.download_file(bucket, key)
         as_np = np.load(BytesIO(content))  # , allow_pickle=True)
-        total = np.sum(as_np)
-        is_malformed = total % 1 < 0.01  # probably a bit vector
-        if is_malformed:
-            sub = np.ones_like(as_np) * 0.5
-            as_np = as_np - sub
         return torch.from_numpy(as_np).float()
 
     @contextmanager

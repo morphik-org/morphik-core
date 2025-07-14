@@ -1,13 +1,20 @@
 import os
 from collections import ChainMap
 from functools import lru_cache
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import tomli
 from dotenv import load_dotenv
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 
 load_dotenv(override=True)
+
+
+class ParserXMLSettings(BaseModel):
+    max_tokens: int = 350
+    preferred_unit_tags: List[str] = ["SECTION", "Section", "Article", "clause"]
+    ignore_tags: List[str] = ["TOC", "INDEX"]
 
 
 class Settings(BaseSettings):
@@ -78,6 +85,7 @@ class Settings(BaseSettings):
     USE_UNSTRUCTURED_API: bool
     FRAME_SAMPLE_RATE: Optional[int] = None
     USE_CONTEXTUAL_CHUNKING: bool = False
+    PARSER_XML: ParserXMLSettings = ParserXMLSettings()
 
     # Rules configuration
     RULES_PROVIDER: Literal["litellm"] = "litellm"
@@ -255,6 +263,15 @@ def get_settings() -> Settings:
         "USE_UNSTRUCTURED_API": config["parser"]["use_unstructured_api"],
         "USE_CONTEXTUAL_CHUNKING": config["parser"].get("use_contextual_chunking", False),
     }
+
+    # load parser XML config
+    if "xml" in config["parser"]:
+        xml_config = config["parser"]["xml"]
+        parser_config["PARSER_XML"] = ParserXMLSettings(
+            max_tokens=xml_config.get("max_tokens", 350),
+            preferred_unit_tags=xml_config.get("preferred_unit_tags", ["SECTION", "Section", "Article", "clause"]),
+            ignore_tags=xml_config.get("ignore_tags", ["TOC", "INDEX"]),
+        )
     if parser_config["USE_UNSTRUCTURED_API"] and "UNSTRUCTURED_API_KEY" not in os.environ:
         msg = em.format(missing_value="UNSTRUCTURED_API_KEY", field="parser.use_unstructured_api", value="true")
         raise ValueError(msg)

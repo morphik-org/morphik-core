@@ -206,7 +206,9 @@ when citing different sources. Use markdown formatting for text content to impro
             case _:
                 raise ValueError(f"Unknown tool: {name}")
 
-    async def run(self, query: str, auth: AuthContext, conversation_history: list = None) -> str:
+    async def run(
+        self, query: str, auth: AuthContext, conversation_history: list = None, display_mode: str = "formatted"
+    ) -> str:
         """Synchronously run the agent and return the final answer."""
         # Per-run state to avoid cross-request leakage
         source_map: dict = {}
@@ -422,7 +424,8 @@ when citing different sources. Use markdown formatting for text content to impro
                         )
 
                 # Return final content, tool history, display objects and sources
-                display_objects = crop_images_in_display_objects(display_objects)
+                if display_mode == "formatted":
+                    display_objects = crop_images_in_display_objects(display_objects)
 
                 # Generate a user-friendly response text from display objects
                 response_text = ""

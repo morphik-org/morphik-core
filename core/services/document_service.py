@@ -1860,7 +1860,11 @@ class DocumentService:
                 logger.warning(f"Document {chunk.document_id} not found")
                 continue
 
+            # Start with document metadata, then merge in chunk-specific metadata
             metadata = doc.metadata.copy()
+            # Add all chunk metadata (this includes our XML metadata like unit, xml_id, breadcrumbs, etc.)
+            metadata.update(chunk.metadata)
+            # Ensure is_image is set (fallback to False if not present)
             metadata["is_image"] = chunk.metadata.get("is_image", False)
             results.append(
                 ChunkResult(

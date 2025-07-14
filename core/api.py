@@ -927,7 +927,7 @@ async def agent_query(
         await check_and_increment_limits(auth, "agent", 1)
 
     # Use the shared MorphikAgent instance; per-run state is now isolated internally
-    response = await morphik_agent.run(request.query, auth, history)
+    response = await morphik_agent.run(request.query, auth, history, request.display_mode)
 
     # Chat history storage
     if history_key:

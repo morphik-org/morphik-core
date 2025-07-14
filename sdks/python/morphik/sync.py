@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 from io import BytesIO, IOBase
 from pathlib import Path
-from typing import Any, BinaryIO, Dict, List, Optional, Type, Union
+from typing import Any, BinaryIO, Dict, List, Literal, Optional, Type, Union
 
 import httpx
 from pydantic import BaseModel
@@ -1827,7 +1827,7 @@ class Morphik:
         response = self._request("POST", "query", data=payload)
         return self._logic._parse_completion_response(response)
 
-    def agent_query(self, query: str) -> Dict[str, Any]:
+    def agent_query(self, query: str, display_mode: Literal["formatted", "raw"] = "formatted") -> Dict[str, Any]:
         """
         Execute an agentic query with tool access and conversation handling.
 
@@ -1840,6 +1840,7 @@ class Morphik:
 
         Args:
             query: Natural language query for the Morphik agent
+            display_mode: Display mode for images: 'formatted' (default) creates bounding boxes with Gemini, 'raw' returns uncropped images
 
         Returns:
             Dict[str, Any]: Agent response with potential tool execution results and sources
@@ -1862,7 +1863,7 @@ class Morphik:
             # based on the query requirements
             ```
         """
-        request = {"query": query}
+        request = {"query": query, "display_mode": display_mode}
         response = self._request("POST", "agent", data=request)
         return response
 
