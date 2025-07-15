@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "main": "dist/index.js",
   "type": "commonjs",
-  "repository": "github:stainless-sdks/morphik-typescript",
+  "repository": "github:morphik-org/morphik-core",
   "license": "Apache-2.0",
   "packageManager": "yarn@1.22.22",
   "files": [

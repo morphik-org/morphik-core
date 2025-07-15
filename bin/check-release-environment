@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+errors=()
+
+lenErrors=${#errors[@]}
+
+if [[ lenErrors -gt 0 ]]; then
+  echo -e "Found the following errors in the release environment:\n"
+
+  for error in "${errors[@]}"; do
+    echo -e "- $error\n"
+  done
+
+  exit 1
+fi
+
+echo "The environment is ready to push releases!"
+
