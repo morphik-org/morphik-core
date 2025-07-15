@@ -604,6 +604,7 @@ class MultiVectorStore(BaseVectorStore):
     async def get_chunks_by_id(
         self,
         chunk_identifiers: List[Tuple[str, int]],
+        app_id: Optional[str] = None,
     ) -> List[DocumentChunk]:
         """
         Retrieve specific chunks by document ID and chunk number in a single database query.
@@ -679,7 +680,7 @@ class MultiVectorStore(BaseVectorStore):
         logger.debug(f"Found {len(chunks)} chunks in batch retrieval from multi-vector store")
         return chunks
 
-    async def delete_chunks_by_document_id(self, document_id: str) -> bool:
+    async def delete_chunks_by_document_id(self, document_id: str, app_id: Optional[str] = None) -> bool:
         """
         Delete all chunks associated with a document.
 

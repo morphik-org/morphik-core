@@ -44,7 +44,8 @@ class FastMultiVectorStore(BaseVectorStore):
         self.tpuf_api_key = tpuf_api_key
         self.namespace = namespace
         self.tpuf = AsyncTurbopuffer(api_key=tpuf_api_key, region=region)
-        self.ns = self.tpuf.namespace(namespace)
+        # TODO: Cache namespaces, and send a warming request
+        self.ns = lambda app_id: self.tpuf.namespace(app_id)
         self.storage = self._init_storage()
         self.fde_config = fde.FixedDimensionalEncodingConfig(
             dimension=128,
@@ -100,7 +101,7 @@ class FastMultiVectorStore(BaseVectorStore):
             metdatas.append(json.dumps(chunk.metadata))
             bucket, key = await self.save_multivector_to_storage(chunk)
             multivecs.append([bucket, key])
-        result = await self.ns.write(
+        result = await self.ns(app_id).write(
             upsert_columns={
                 "id": stored_ids,
                 "vector": embeddings,
@@ -136,7 +137,7 @@ class FastMultiVectorStore(BaseVectorStore):
         logger.info(f"query_similar timing - encode_query: {(t1 - t0)*1000:.2f} ms")
 
         # 2) ANN search on Turbopuffer namespace
-        result = await self.ns.query(
+        result = await self.ns(app_id).query(
             filters=("document_id", "In", doc_ids),
             rank_by=("vector", "ANN", encoded_query_embedding),
             top_k=min(10 * k, 75),
@@ -190,8 +191,10 @@ class FastMultiVectorStore(BaseVectorStore):
 
         return ret
 
-    async def get_chunks_by_id(self, chunk_identifiers: List[Tuple[str, int]]) -> List[DocumentChunk]:
-        result = await self.ns.query(
+    async def get_chunks_by_id(
+        self, chunk_identifiers: List[Tuple[str, int]], app_id: Optional[str] = None
+    ) -> List[DocumentChunk]:
+        result = await self.ns(app_id).query(
             filters=("id", "In", [f"{doc_id}-{chunk_num}" for doc_id, chunk_num in chunk_identifiers]),
             include_attributes=["id", "document_id", "chunk_number", "content", "metadata"],
             top_k=len(chunk_identifiers),
@@ -212,8 +215,8 @@ class FastMultiVectorStore(BaseVectorStore):
             for row, content in zip(result.rows, contents)
         ]
 
-    async def delete_chunks_by_document_id(self, document_id: str) -> bool:
-        return await self.ns.write(delete_by_filter=("document_id", "Eq", document_id))
+    async def delete_chunks_by_document_id(self, document_id: str, app_id: Optional[str] = None) -> bool:
+        return await self.ns(app_id).write(delete_by_filter=("document_id", "Eq", document_id))
 
     async def save_multivector_to_storage(self, chunk: DocumentChunk) -> Tuple[str, str]:
         as_np = np.array(chunk.embedding)

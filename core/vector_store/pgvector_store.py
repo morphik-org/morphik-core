@@ -22,6 +22,8 @@ PGVECTOR_MAX_DIMENSIONS = 2000  # Maximum dimensions for pgvector
 class Vector(UserDefinedType):
     """Custom type for pgvector vectors."""
 
+    # cache_ok = True  # Safe to use in cache key since vectors are immutable
+
     def get_col_spec(self, **kw):
         return "vector"
 
@@ -451,6 +453,7 @@ class PGVectorStore(BaseVectorStore):
     async def get_chunks_by_id(
         self,
         chunk_identifiers: List[Tuple[str, int]],
+        app_id: Optional[str] = None,
     ) -> List[DocumentChunk]:
         """
         Retrieve specific chunks by document ID and chunk number in a single database query.
@@ -509,7 +512,7 @@ class PGVectorStore(BaseVectorStore):
             logger.error(f"Error retrieving chunks by ID: {str(e)}")
             return []
 
-    async def delete_chunks_by_document_id(self, document_id: str) -> bool:
+    async def delete_chunks_by_document_id(self, document_id: str, app_id: Optional[str] = None) -> bool:
         """
         Delete all chunks associated with a document.
 

@@ -134,19 +134,22 @@ class DualMultiVectorStore(BaseVectorStore):
         logger.debug("Querying from slow store only during migration")
         return await self.slow_store.query_similar(query_embedding, k, doc_ids, app_id)
 
-    async def get_chunks_by_id(self, chunk_identifiers: List[Tuple[str, int]]) -> List[DocumentChunk]:
+    async def get_chunks_by_id(
+        self, chunk_identifiers: List[Tuple[str, int]], app_id: Optional[str] = None
+    ) -> List[DocumentChunk]:
         """
         Get chunks by ID from the slow store only during migration.
         """
         logger.debug("Getting chunks from slow store only during migration")
-        return await self.slow_store.get_chunks_by_id(chunk_identifiers)
+        return await self.slow_store.get_chunks_by_id(chunk_identifiers, app_id)
 
-    async def delete_chunks_by_document_id(self, document_id: str) -> bool:
+    async def delete_chunks_by_document_id(self, document_id: str, app_id: Optional[str] = None) -> bool:
         """
         Delete chunks from both stores to maintain consistency.
 
         Args:
             document_id: ID of the document whose chunks should be deleted
+            app_id: Optional app ID for filtering chunks
 
         Returns:
             bool: True if deletion succeeded in at least the slow store
@@ -155,8 +158,8 @@ class DualMultiVectorStore(BaseVectorStore):
 
         try:
             # Delete from both stores concurrently
-            fast_task = asyncio.create_task(self.fast_store.delete_chunks_by_document_id(document_id))
-            slow_task = asyncio.create_task(self.slow_store.delete_chunks_by_document_id(document_id))
+            fast_task = asyncio.create_task(self.fast_store.delete_chunks_by_document_id(document_id, app_id))
+            slow_task = asyncio.create_task(self.slow_store.delete_chunks_by_document_id(document_id, app_id))
 
             fast_result, slow_result = await asyncio.gather(fast_task, slow_task, return_exceptions=True)
 
@@ -190,7 +193,7 @@ class DualMultiVectorStore(BaseVectorStore):
         except Exception as e:
             logger.error(f"Error during dual deletion for document {document_id}: {e}")
             # Fall back to slow store only
-            return await self.slow_store.delete_chunks_by_document_id(document_id)
+            return await self.slow_store.delete_chunks_by_document_id(document_id, app_id)
 
     def close(self):
         """Close both stores."""

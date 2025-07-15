@@ -587,7 +587,7 @@ class DocumentService:
         # Use colpali vector store for retrieval since padding is only for colpali path
         if self.colpali_vector_store:
             try:
-                padded_chunks = await self.colpali_vector_store.get_chunks_by_id(chunk_identifiers)
+                padded_chunks = await self.colpali_vector_store.get_chunks_by_id(chunk_identifiers, auth.app_id)
                 logger.debug(f"Retrieved {len(padded_chunks)} chunks from colpali vector store")
             except Exception as e:
                 logger.error(f"Error retrieving padded chunks from colpali vector store: {e}")
@@ -854,12 +854,12 @@ class DocumentService:
         chunk_identifiers = [(source.document_id, source.chunk_number) for source in authorized_sources]
 
         # Set up vector store retrieval tasks
-        retrieval_tasks = [self.vector_store.get_chunks_by_id(chunk_identifiers)]
+        retrieval_tasks = [self.vector_store.get_chunks_by_id(chunk_identifiers, auth.app_id)]
 
         # Add colpali vector store task if needed
         if use_colpali and self.colpali_vector_store:
             logger.info("Preparing to retrieve chunks from both regular and colpali vector stores")
-            retrieval_tasks.append(self.colpali_vector_store.get_chunks_by_id(chunk_identifiers))
+            retrieval_tasks.append(self.colpali_vector_store.get_chunks_by_id(chunk_identifiers, auth.app_id))
 
         # Execute vector store retrievals in parallel
         try:
@@ -2559,11 +2559,13 @@ class DocumentService:
             # Try to delete chunks by document ID
             # Note: Some vector stores may not implement this method
             if hasattr(self.vector_store, "delete_chunks_by_document_id"):
-                vector_deletion_tasks.append(self.vector_store.delete_chunks_by_document_id(document_id))
+                vector_deletion_tasks.append(self.vector_store.delete_chunks_by_document_id(document_id, auth.app_id))
 
             # Try to delete from colpali vector store as well
             if self.colpali_vector_store and hasattr(self.colpali_vector_store, "delete_chunks_by_document_id"):
-                vector_deletion_tasks.append(self.colpali_vector_store.delete_chunks_by_document_id(document_id))
+                vector_deletion_tasks.append(
+                    self.colpali_vector_store.delete_chunks_by_document_id(document_id, auth.app_id)
+                )
 
         # Collect storage file deletion tasks
         if hasattr(document, "storage_info") and document.storage_info:
