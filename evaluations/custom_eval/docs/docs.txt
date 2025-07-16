@@ -1,3 +1,0 @@
-jpm_midyear.pdf: https://drive.google.com/file/d/1HulP1qAT0R3I_GeW28KrbRWbyab_dFAO/view?usp=sharing
-nvidia_10q.pdf: https://drive.google.com/file/d/1e3wBSBLftkZORS85RF96GavhLJ10TowB/view?usp=sharing
-palantir_q1_investor_presentation: https://drive.google.com/file/d/1NfEcy0RUSiVKmLJCQjMT9v_n7NndSIW7/view?usp=sharing
