@@ -370,21 +370,20 @@ class _MorphikClientLogic:
             params["folder_name"] = folder_name
         if end_user_id:
             params["end_user_id"] = end_user_id
-        data = filters or {}
+        # Wrap filters in document_filters parameter as expected by the API
+        data = {"document_filters": filters} if filters else {}
         return params, data
 
     def _prepare_batch_get_documents_request(
         self, document_ids: List[str], folder_name: Optional[Union[str, List[str]]], end_user_id: Optional[str]
     ) -> Dict[str, Any]:
         """Prepare request for batch_get_documents endpoint"""
-        if folder_name or end_user_id:
-            request = {"document_ids": document_ids}
-            if folder_name:
-                request["folder_name"] = folder_name
-            if end_user_id:
-                request["end_user_id"] = end_user_id
-            return request
-        return document_ids  # Return just IDs list if no scoping is needed
+        request = {"document_ids": document_ids}
+        if folder_name:
+            request["folder_name"] = folder_name
+        if end_user_id:
+            request["end_user_id"] = end_user_id
+        return request
 
     def _prepare_batch_get_chunks_request(
         self,

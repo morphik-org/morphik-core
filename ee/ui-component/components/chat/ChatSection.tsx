@@ -195,8 +195,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
 
     setLoadingGraphs(true);
     try {
-      console.log(`Fetching graphs from: ${apiBaseUrl}/graphs`);
-      const response = await fetch(`${apiBaseUrl}/graphs`, {
+      console.log(`Fetching graphs from: ${apiBaseUrl}/graph`);
+      const response = await fetch(`${apiBaseUrl}/graph`, {
         headers: {
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
@@ -553,7 +553,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   }, [setCustomBreadcrumbs]);
 
   return (
-    <div className="relative flex h-full w-full overflow-hidden bg-background">
+    <div className="relative -m-4 flex h-[calc(100vh-3rem)] w-[calc(100%+2rem)] bg-background md:-m-6 md:h-[calc(100vh-3rem)] md:w-[calc(100%+3rem)]">
       {/* Sidebar */}
       <ChatSidebar
         apiBaseUrl={apiBaseUrl}
@@ -569,7 +569,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
       />
 
       {/* Main chat area */}
-      <div className="flex h-full flex-1 flex-col">
+      <div className="flex h-full flex-1 flex-col overflow-hidden">
         {/* Conditional layout based on whether there are messages */}
         {(isAgentMode ? agentMessages.length === 0 : messages.length === 0) ? (
           /* Empty state - centered layout with controls */

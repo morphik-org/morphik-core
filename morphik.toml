@@ -33,10 +33,13 @@ gemini_flash = { model_name = "gemini/gemini-2.5-flash-preview-05-20" } # { mode
 # - Local Ollama: "http://localhost:11434" (default)
 # - Morphik in Docker, Ollama local: "http://host.docker.internal:11434"
 # - Both in Docker: "http://ollama:11434"
+
 # ollama_qwen_vision = { model_name = "gpt-4.1" } # {model_name = "groq/meta-llama/llama-4-scout-17b-16e-instruct"} #{ model_name = "ollama_chat/qwen2.5vl:latest", api_base = "http://localhost:11434", vision = true }
 ollama_qwen_vision = { model_name = "ollama_chat/qwen2.5vl:latest", api_base = "http://localhost:11434", vision = true }
+
 ollama_llama_vision = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://localhost:11434", vision = true }
-ollama_embedding = { model_name = "ollama/nomic-embed-text", api_base = "http://localhost:11434" }
+ollama_qwen_1_5b = { model_name = "ollama_chat/qwen2:1.5b", api_base = "http://ollama:11434" }
+ollama_embedding = { model_name = "ollama/nomic-embed-text", api_base = "http://ollama:11434" }
 
 openai_embedding = { model_name = "text-embedding-3-small" }
 openai_embedding_large = { model_name = "text-embedding-3-large" }

@@ -34,7 +34,7 @@ class AsyncCache:
         return response.get("success", False)
 
     async def add_docs(self, docs: List[str]) -> bool:
-        response = await self._db._request("POST", f"cache/{self._name}/add_docs", {"docs": docs})
+        response = await self._db._request("POST", f"cache/{self._name}/add_docs", {"document_ids": docs})
         return response.get("success", False)
 
     async def query(
@@ -2456,7 +2456,7 @@ class AsyncMorphik:
                 print(f"Graph: {graph.name}, Entities: {len(graph.entities)}")
             ```
         """
-        response = await self._request("GET", "graphs")
+        response = await self._request("GET", "graph")
         graphs = self._logic._parse_graph_list_response(response)
         for g in graphs:
             g._client = self

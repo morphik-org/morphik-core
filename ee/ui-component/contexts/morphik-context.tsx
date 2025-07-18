@@ -19,6 +19,7 @@ interface MorphikContextType {
   };
   onLogout?: () => void;
   onProfileNavigate?: (section: "account" | "billing" | "notifications") => void;
+  onUpgradeClick?: () => void;
   onBackClick?: () => void;
 }
 
@@ -33,6 +34,7 @@ export function MorphikProvider({
   userProfile,
   onLogout,
   onProfileNavigate,
+  onUpgradeClick,
 }: {
   children: React.ReactNode;
   initialConnectionUri?: string | null;
@@ -47,6 +49,7 @@ export function MorphikProvider({
   };
   onLogout?: () => void;
   onProfileNavigate?: (section: "account" | "billing" | "notifications") => void;
+  onUpgradeClick?: () => void;
 }) {
   const [connectionUri, setConnectionUri] = useState<string | null>(externalConnectionUri || initialConnectionUri);
 
@@ -70,6 +73,7 @@ export function MorphikProvider({
         userProfile,
         onLogout,
         onProfileNavigate,
+        onUpgradeClick,
         onBackClick,
       }}
     >

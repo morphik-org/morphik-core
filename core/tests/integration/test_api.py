@@ -1687,7 +1687,7 @@ async def test_list_graphs(client: AsyncClient):
     # List all graphs
     headers = create_auth_header()
     response = await client.get(
-        "/graphs",
+        "/graph",
         headers=headers,
     )
 

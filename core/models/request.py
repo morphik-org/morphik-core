@@ -6,6 +6,14 @@ from core.models.documents import Document
 from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
 
 
+class ListDocumentsRequest(BaseModel):
+    """Request model for listing documents"""
+
+    document_filters: Optional[Dict[str, Any]] = Field(None, description="Metadata filters for documents")
+    skip: int = Field(default=0, ge=0)
+    limit: int = Field(default=10000, gt=0)
+
+
 class RetrieveRequest(BaseModel):
     """Base retrieve request model"""
 

@@ -333,7 +333,7 @@ const GraphSection: React.FC<GraphSectionProps> = ({
     try {
       setLoading(true);
       const headers = createHeaders();
-      const response = await fetch(`${apiBaseUrl}/graphs`, { headers });
+      const response = await fetch(`${apiBaseUrl}/graph`, { headers });
 
       if (!response.ok) {
         throw new Error(`Failed to fetch graphs: ${response.statusText}`);

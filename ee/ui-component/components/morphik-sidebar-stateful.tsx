@@ -14,6 +14,7 @@ import {
   IconGitBranch,
   IconBook,
   IconMessageCircle,
+  IconArrowRight,
 } from "@tabler/icons-react";
 
 type NavSecondaryItem =
@@ -30,6 +31,7 @@ type NavSecondaryItem =
 
 import { NavUser } from "@/components/nav-user";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -114,6 +116,7 @@ interface MorphikSidebarStatefulProps extends React.ComponentProps<typeof Sideba
   };
   onLogout?: () => void;
   onProfileNavigate?: (section: "account" | "billing" | "notifications") => void;
+  onUpgradeClick?: () => void;
   logoLight?: string;
   logoDark?: string;
 }
@@ -124,6 +127,7 @@ export function MorphikSidebarStateful({
   userProfile,
   onLogout,
   onProfileNavigate,
+  onUpgradeClick,
   logoLight = "/morphikblack.png",
   logoDark = "/morphikwhite.png",
   ...props
@@ -238,6 +242,20 @@ export function MorphikSidebarStateful({
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
+        {/* Show upgrade button for free users in cloud UI only */}
+        {onUpgradeClick && (userProfile?.tier === "free" || !userProfile?.tier) && (
+          <div className="mx-2 mb-2">
+            <Button className="w-full justify-between" variant="outline" size="default" onClick={onUpgradeClick}>
+              <div className="flex items-center gap-2">
+                <span>Upgrade to</span>
+                <Badge variant="secondary" className="text-xs">
+                  PRO
+                </Badge>
+              </div>
+              <IconArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
         <NavUser user={userData} onLogout={onLogout} onProfileNavigate={onProfileNavigate} />
       </SidebarFooter>
     </Sidebar>

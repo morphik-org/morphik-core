@@ -14,6 +14,7 @@ import {
   IconGitBranch,
   IconBook,
   IconMessageCircle,
+  IconArrowRight,
 } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav-main";
@@ -28,6 +29,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar-new";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 const data = {
   user: {
@@ -105,9 +108,16 @@ interface MorphikSidebarProps extends React.ComponentProps<typeof Sidebar> {
   };
   onLogout?: () => void;
   onProfileNavigate?: (section: "account" | "billing" | "notifications") => void;
+  onUpgradeClick?: () => void;
 }
 
-export function MorphikSidebar({ userProfile, onLogout, onProfileNavigate, ...props }: MorphikSidebarProps) {
+export function MorphikSidebar({
+  userProfile,
+  onLogout,
+  onProfileNavigate,
+  onUpgradeClick,
+  ...props
+}: MorphikSidebarProps) {
   const [mounted, setMounted] = React.useState(false);
 
   // Ensure component is mounted before rendering theme-dependent content
@@ -160,6 +170,20 @@ export function MorphikSidebar({ userProfile, onLogout, onProfileNavigate, ...pr
       <SidebarContent>
         <NavMain items={data.navMain} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
+        {/* Show upgrade button for free users in cloud UI only */}
+        {onUpgradeClick && (userProfile?.tier === "free" || !userProfile?.tier) && (
+          <div className="mx-2 mb-2 mt-2">
+            <Button className="w-full justify-between" variant="outline" size="default" onClick={onUpgradeClick}>
+              <div className="flex items-center gap-2">
+                <span>Upgrade to</span>
+                <Badge variant="secondary" className="text-xs">
+                  PRO
+                </Badge>
+              </div>
+              <IconArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={userData} onLogout={onLogout} onProfileNavigate={onProfileNavigate} />

@@ -307,7 +307,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
       showAlert("Metadata updated successfully", { type: "success", duration: 3000 });
 
       // Refresh documents to get the updated data
-      await refreshDocuments();
+      refreshDocuments();
 
       // Call the metadata update callback to refresh the selected document
       if (onMetadataUpdate) {
@@ -374,9 +374,9 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
       }
 
       // Refresh folders first to get updated document_ids
-      await refreshFolders();
+      refreshFolders();
       // Then refresh documents with the updated folder information
-      await refreshDocuments();
+      refreshDocuments();
     } catch (error) {
       console.error("Error updating folder:", error);
     } finally {
@@ -670,14 +670,14 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
                       onChange={e => setNewMetadataKey(e.target.value)}
                       placeholder="New key"
                       className="h-8 w-[140px] flex-shrink-0 text-sm"
-                      onKeyPress={e => e.key === "Enter" && addMetadataField()}
+                      onKeyDown={e => e.key === "Enter" && addMetadataField()}
                     />
                     <Input
                       value={newMetadataValue}
                       onChange={e => setNewMetadataValue(e.target.value)}
                       placeholder="New value (JSON supported)"
                       className="h-8 flex-1 text-sm"
-                      onKeyPress={e => e.key === "Enter" && addMetadataField()}
+                      onKeyDown={e => e.key === "Enter" && addMetadataField()}
                     />
                     <Button
                       variant="outline"

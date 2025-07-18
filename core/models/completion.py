@@ -8,6 +8,13 @@ from .chat import ChatMessage
 PydanticT = TypeVar("PydanticT", bound=BaseModel)
 
 
+class StructuredCompletion(BaseModel):
+    """Structured completion object for schema-based responses"""
+
+    class Config:
+        extra = "allow"  # Allow additional properties
+
+
 class ChunkSource(BaseModel):
     """Source information for a chunk used in completion"""
 
@@ -19,11 +26,11 @@ class ChunkSource(BaseModel):
 class CompletionResponse(BaseModel):
     """Response from completion generation"""
 
-    completion: Union[str, PydanticT]
+    completion: Union[str, StructuredCompletion]
     usage: Dict[str, int]
     finish_reason: Optional[str] = None
     sources: List[ChunkSource] = []
-    metadata: Optional[Dict] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class CompletionRequest(BaseModel):

@@ -160,7 +160,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = React.memo(function ChatS
 
   if (collapsed) {
     return (
-      <div className="flex w-10 flex-col items-center border-r bg-muted/40">
+      <div className="flex h-full w-10 flex-col items-center border-r bg-muted/40">
         <Button variant="ghost" size="icon" className="mt-2" onClick={onToggle} title="Expand">
           <ChevronsRight className="h-4 w-4" />
         </Button>
@@ -169,7 +169,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = React.memo(function ChatS
   }
 
   return (
-    <div className="flex w-80 flex-col border-r bg-muted/40">
+    <div className="flex h-full w-80 flex-col border-r bg-muted/40">
       <div className="flex h-12 items-center justify-between px-3 text-xs font-medium">
         <span className="text-base">Conversations</span>
         <div className="flex items-center justify-center">

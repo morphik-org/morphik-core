@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   listConnectorFiles,
   ConnectorFile,
-  // ingestConnectorFile, // Parent will call this via onFileIngest
 } from "@/lib/connectorsApi";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,6 +15,7 @@ import {
   UploadCloud,
   Loader2,
   AlertCircle,
+  BookMarked,
 } from "lucide-react";
 // import { useDebounce } from '@/hooks/useDebounce'; // Assuming you have a debounce hook
 
@@ -26,7 +26,7 @@ interface FileBrowserProps {
   apiBaseUrl: string;
   authToken: string | null;
   onFileIngest: (fileId: string, fileName: string, connectorType: string) => void; // Added connectorType
-  initialPath?: string | null; // Allow null for root
+  onRepositoryIngest?: (repoPath: string, connectorType: string) => void; // New prop for repository ingestion
   // onPathChange?: (newPath: string | null, newPathName: string | null) => void; // Optional: if parent needs to know
 }
 
@@ -40,15 +40,16 @@ export function FileBrowser({
   apiBaseUrl,
   authToken,
   onFileIngest,
-  initialPath = null, // Default to null for root
+  onRepositoryIngest,
 }: FileBrowserProps) {
   const [files, setFiles] = useState<ConnectorFile[]>([]);
-  const [currentPath, setCurrentPath] = useState<string | null>(initialPath);
-  const [pathHistory, setPathHistory] = useState<PathCrumb[]>([{ id: initialPath, name: "Root" }]);
+  const [currentPath, setCurrentPath] = useState<string | null>(null);
+  const [pathHistory, setPathHistory] = useState<PathCrumb[]>([{ id: null, name: "Root" }]);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isIngesting, setIsIngesting] = useState<Record<string, boolean>>({});
+  const [ingestingRepos, setIngestingRepos] = useState<Record<string, boolean>>({});
 
   const currentFolderName = useMemo(() => {
     return pathHistory.length > 0 ? pathHistory[pathHistory.length - 1].name : "Root";
@@ -124,6 +125,38 @@ export function FileBrowser({
       // Reset ingesting state for this specific file on error
       setIsIngesting(prev => ({ ...prev, [file.id]: false }));
     }
+  };
+
+  const handleIngestRepository = async (file: ConnectorFile) => {
+    if (!file.is_folder || connectorType !== 'github') return;
+    
+    // For GitHub, repository ID is in format "owner/repo"
+    const repoPath = file.id;
+    setIngestingRepos(prev => ({ ...prev, [repoPath]: true }));
+    setError(null);
+    
+    try {
+      if (onRepositoryIngest) {
+        onRepositoryIngest(repoPath, connectorType);
+      } else {
+        // Fallback or direct call if parent doesn't handle it
+        throw new Error("Repository ingestion not supported");
+      }
+      // You can add a success notification here if needed
+    } catch (ingestError) {
+      const errorMessage = ingestError instanceof Error ? ingestError.message : "Failed to start repository ingestion.";
+      setError(errorMessage);
+      console.error("Repository ingestion error:", ingestError);
+    } finally {
+      // We might want to keep the loading state until parent confirms completion
+      // For now, let's just reset it. Parent can manage this via props if needed.
+      setIngestingRepos(prev => ({ ...prev, [repoPath]: false }));
+    }
+  };
+
+  // Helper function to determine if we're at repository root level for GitHub
+  const isAtRepositoryLevel = () => {
+    return connectorType === 'github' && currentPath === null;
   };
 
   // --- RENDER LOGIC ---
@@ -212,21 +245,38 @@ export function FileBrowser({
                   {file.is_folder ? "-" : file.size ? (file.size / 1024).toFixed(1) + " KB" : "N/A"}
                 </TableCell>
                 <TableCell className="text-right">
-                  {!file.is_folder && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleIngestFile(file)}
-                      disabled={isIngesting[file.id] || isLoading}
-                    >
-                      {isIngesting[file.id] ? (
-                        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                      ) : (
-                        <UploadCloud className="mr-1 h-4 w-4" />
-                      )}
-                      Ingest
-                    </Button>
-                  )}
+                  <div className="flex gap-2 justify-end">
+                    {!file.is_folder && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleIngestFile(file)}
+                        disabled={isIngesting[file.id] || isLoading}
+                      >
+                        {isIngesting[file.id] ? (
+                          <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                        ) : (
+                          <UploadCloud className="mr-1 h-4 w-4" />
+                        )}
+                        Ingest
+                      </Button>
+                    )}
+                    {file.is_folder && isAtRepositoryLevel() && onRepositoryIngest && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => handleIngestRepository(file)}
+                        disabled={ingestingRepos[file.id] || isLoading}
+                      >
+                        {ingestingRepos[file.id] ? (
+                          <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                        ) : (
+                          <UploadCloud className="mr-1 h-4 w-4" />
+                        )}
+                        Ingest Repo
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

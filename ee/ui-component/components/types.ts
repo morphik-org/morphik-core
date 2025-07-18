@@ -73,6 +73,7 @@ export interface MorphikUIProps {
   };
   onLogout?: () => void;
   onProfileNavigate?: (section: "account" | "billing" | "notifications") => void;
+  onUpgradeClick?: () => void;
 
   // UI Customization
   logoLight?: string;

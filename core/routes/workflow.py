@@ -49,11 +49,11 @@ async def get_workflow(workflow_id: str, auth: AuthContext = Depends(verify_toke
 @router.put("/{workflow_id}", response_model=Workflow)
 async def update_workflow(
     workflow_id: str,
-    updates: Dict[str, Any],
+    workflow_updates: Dict[str, Any],
     auth: AuthContext = Depends(verify_token),
 ) -> Workflow:
     try:
-        return await workflow_service.update_workflow(workflow_id, updates, auth)
+        return await workflow_service.update_workflow(workflow_id, workflow_updates, auth)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
 

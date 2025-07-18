@@ -48,6 +48,7 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
     userProfile,
     onLogout,
     onProfileNavigate,
+    onUpgradeClick,
     logoLight = "/morphikblack.png",
     logoDark = "/morphikwhite.png",
   } = props;
@@ -180,6 +181,7 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
           userProfile={userProfile}
           onLogout={onLogout}
           onProfileNavigate={onProfileNavigate}
+          onUpgradeClick={onUpgradeClick}
         >
           <HeaderProvider>
             <SidebarProvider
@@ -197,6 +199,7 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
                 userProfile={userProfile}
                 onLogout={onLogout}
                 onProfileNavigate={onProfileNavigate}
+                onUpgradeClick={onUpgradeClick}
                 logoLight={logoLight}
                 logoDark={logoDark}
               />
