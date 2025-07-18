@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 MULTIVECTOR_CHUNKS_BUCKET = "multivector-chunks"
 DEFAULT_APP_ID = "default"  # Fallback for local usage when app_id is None
 
-
-if get_settings().MULTIVECTOR_STORE_PROVIDER == "morphik":
+settings = get_settings()
+if settings.MULTIVECTOR_STORE_PROVIDER == "morphik" or settings.ENABLE_DUAL_MULTIVECTOR_INGESTION:
     import fixed_dimensional_encoding as fde
     from turbopuffer import AsyncTurbopuffer
 
