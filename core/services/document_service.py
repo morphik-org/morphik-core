@@ -244,6 +244,40 @@ class DocumentService:
         # Store for aggregated metadata from chunk rules
         self._last_aggregated_metadata: Dict[str, Any] = {}
 
+        # Cache for ColPali reranking model and processor
+        self._colpali_rerank_model = None
+        self._colpali_rerank_processor = None
+        self._colpali_rerank_device = None
+
+    def _get_colpali_rerank_model_and_processor(self):
+        """
+        Lazily load and cache the ColPali reranking model and processor.
+        This avoids loading the model on every retrieve_chunks call.
+        """
+        if self._colpali_rerank_model is None:
+            try:
+                logger.info("Initializing ColPali reranking model (one-time setup)...")
+                
+                model_name = "vidore/colSmol-256M"
+                device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
+                
+                self._colpali_rerank_model = ColIdefics3.from_pretrained(
+                    model_name,
+                    torch_dtype=torch.bfloat16,
+                    device_map=device,
+                    attn_implementation="eager",
+                ).eval()
+                
+                self._colpali_rerank_processor = ColIdefics3Processor.from_pretrained(model_name)
+                self._colpali_rerank_device = device
+                
+                logger.info(f"ColPali reranking model initialized on device: {device}")
+            except Exception as e:
+                logger.error(f"Failed to initialize ColPali reranking model: {e}")
+                raise
+        
+        return self._colpali_rerank_model, self._colpali_rerank_processor, self._colpali_rerank_device
+
     async def retrieve_chunks(
         self,
         query: str,
@@ -486,17 +520,8 @@ class DocumentService:
         # Configuration 4: Reranking with colpali
         # Use colpali as a reranker to get consistent similarity scores for both types of chunks
 
-        model_name = "vidore/colSmol-256M"
-        device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
-
-        model = ColIdefics3.from_pretrained(
-            model_name,
-            torch_dtype=torch.bfloat16,
-            device_map=device,  # "cuda:0",  # or "mps" if on Apple Silicon
-            attn_implementation="eager",  # "flash_attention_2" if is_flash_attn_2_available() else None,
-            # or "eager" if "mps"
-        ).eval()
-        processor = ColIdefics3Processor.from_pretrained(model_name)
+        # Use cached model and processor to avoid expensive loading on every request
+        model, processor, device = self._get_colpali_rerank_model_and_processor()
 
         # Score regular chunks with colpali model for consistent comparison
         batch_chunks = processor.process_queries([chunk.content for chunk in chunks]).to(device)
