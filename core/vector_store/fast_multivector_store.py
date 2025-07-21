@@ -43,7 +43,7 @@ class FastMultiVectorStore(BaseVectorStore):
         self.uri = uri
         self.tpuf_api_key = tpuf_api_key
         self.namespace = namespace
-        self.tpuf = AsyncTurbopuffer(api_key=tpuf_api_key, region=region)
+        self.tpuf = AsyncTurbopuffer(api_key=tpuf_api_key, region=region, default_namespace="default2")
         # TODO: Cache namespaces, and send a warming request
         self.ns = lambda app_id: self.tpuf.namespace(app_id)
         self.storage = self._init_storage()

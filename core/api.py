@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import arq
 import jwt
+import sentry_sdk
 import tomli
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware  # Import CORSMiddleware
@@ -96,6 +97,32 @@ class PerformanceTracker:
         logger.info("=" * (len(self.operation_name) + 31))
 
 
+# Global settings object
+settings = get_settings()
+
+# ---------------------------------------------------------------------------
+# Initialize Sentry
+# ---------------------------------------------------------------------------
+
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        # Add data like request headers and IP for users,
+        # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+        send_default_pii=True,
+        # Set traces_sample_rate to 1.0 to capture 100%
+        # of transactions for tracing.
+        traces_sample_rate=1.0,
+        # Set profile_session_sample_rate to 1.0 to profile 100%
+        # of profile sessions.
+        profile_session_sample_rate=1.0,
+        # Set profile_lifecycle to "trace" to automatically
+        # run the profiler on when there is an active transaction
+        profile_lifecycle="trace",
+    )
+else:
+    logger.warning("SENTRY_DSN is not set, skipping Sentry initialization")
+
 # ---------------------------------------------------------------------------
 # Application instance & core initialisation (moved lifespan, rest unchanged)
 # ---------------------------------------------------------------------------
@@ -129,9 +156,6 @@ FastAPIInstrumentor.instrument_app(
     http_capture_headers_server_response=None,
     tracer_provider=None,
 )
-
-# Global settings object
-settings = get_settings()
 
 # ---------------------------------------------------------------------------
 # Session cookie behaviour differs between cloud / self-hosted

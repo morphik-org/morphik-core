@@ -67,6 +67,9 @@ dependencies = [
     "pyprof2calltree>=1.4.5",
     "line_profiler>=4.1.2",
     "types-boto3[s3]>=1.39.1",
+    "sentry-sdk[fastapi]>=2.33.0",
+    "turbopuffer>=0.5.8",
+    "fixed-dimensional-encoding",
 ]
 
 [dependency-groups]

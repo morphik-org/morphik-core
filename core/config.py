@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     HOST: str
     PORT: int
     RELOAD: bool
+    SENTRY_DSN: Optional[str] = None
     # Morphik Embedding API server configuration
     MORPHIK_EMBEDDING_API_KEY: Optional[str] = None
     MORPHIK_EMBEDDING_API_DOMAIN: str
@@ -177,6 +178,7 @@ def get_settings() -> Settings:
         "HOST": config["api"]["host"],
         "PORT": int(config["api"]["port"]),
         "RELOAD": bool(config["api"]["reload"]),
+        "SENTRY_DSN": os.getenv("SENTRY_DSN", None),
     }
 
     # load auth config
