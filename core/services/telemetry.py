@@ -705,6 +705,7 @@ class TelemetryService:
                 MetadataField("folder_name", "request"),
                 MetadataField("end_user_id", "request"),
                 MetadataField("padding", "request"),
+                MetadataField("inline_citations", "request"),
                 # Capture which filter keys were supplied (no values)
                 MetadataField(
                     "filter_keys",

@@ -21,6 +21,7 @@ export interface QueryOptions extends SearchOptions {
   folder_name?: string | string[]; // Support single folder or array of folders
   // external_id removed - should be in filters object as external_id: string[]
   llm_config?: Record<string, unknown>; // LiteLLM-compatible model configuration
+  inline_citations?: boolean; // Whether to include inline citations with filename and page number
 }
 
 // Common types used across multiple components

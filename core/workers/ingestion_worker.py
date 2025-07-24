@@ -50,6 +50,38 @@ logger.addHandler(file_handler)
 logger.setLevel(logging.INFO)
 
 
+async def update_document_progress(document_service, document_id, auth, current_step, total_steps, step_name):
+    """
+    Helper function to update document progress during ingestion.
+
+    Args:
+        document_service: The document service instance
+        document_id: ID of the document to update
+        auth: Authentication context
+        current_step: Current step number (1-based)
+        total_steps: Total number of steps
+        step_name: Human-readable name of the current step
+    """
+    try:
+        updates = {
+            "system_metadata": {
+                "status": "processing",
+                "progress": {
+                    "current_step": current_step,
+                    "total_steps": total_steps,
+                    "step_name": step_name,
+                    "percentage": round((current_step / total_steps) * 100),
+                },
+                "updated_at": datetime.now(UTC),
+            }
+        }
+        await document_service.db.update_document(document_id, updates, auth)
+        logger.debug(f"Updated progress: {step_name} ({current_step}/{total_steps})")
+    except Exception as e:
+        logger.warning(f"Failed to update progress for document {document_id}: {e}")
+        # Don't fail the ingestion if progress update fails
+
+
 async def get_document_with_retry(document_service, document_id, auth, max_retries=3, initial_delay=0.3):
     """
     Helper function to get a document with retries to handle race conditions.
@@ -199,6 +231,9 @@ async def process_ingestion_job(
             # 1. Log the start of the job
             logger.info(f"Starting ingestion job for file: {original_filename}")
 
+            # Define total steps for progress tracking
+            total_steps = 6
+
             # 2. Deserialize metadata and auth
             deserialize_start = time.time()
             metadata = json.loads(metadata_json) if metadata_json else {}
@@ -295,6 +330,7 @@ async def process_ingestion_job(
             )
 
             # 3. Download the file from storage
+            await update_document_progress(document_service, document_id, auth, 1, total_steps, "Downloading file")
             logger.info(f"Downloading file from {bucket}/{file_key}")
             download_start = time.time()
             file_content = await document_service.storage.download_file(bucket, file_key)
@@ -307,6 +343,7 @@ async def process_ingestion_job(
             logger.info(f"File download took {download_time:.2f}s for {len(file_content)/1024/1024:.2f}MB")
 
             # 4. Parse file to text
+            await update_document_progress(document_service, document_id, auth, 2, total_steps, "Parsing file")
             # Use the filename derived from the storage key so the parser
             # receives the correct extension (.txt, .pdf, etc.).  Passing the UI
             # provided original_filename (often .pdf) can mislead the parser when
@@ -453,6 +490,7 @@ async def process_ingestion_job(
             logger.debug("Updated document in database with parsed content")
 
             # 7. Split text into chunks
+            await update_document_progress(document_service, document_id, auth, 3, total_steps, "Splitting into chunks")
             chunking_start = time.time()
 
             if xml_processing:
@@ -608,6 +646,7 @@ async def process_ingestion_job(
                 processed_chunks_multivector = chunks_multivector  # No rules, use original multivector chunks
 
             # 10. Generate embeddings for processed chunks
+            await update_document_progress(document_service, document_id, auth, 4, total_steps, "Generating embeddings")
             embedding_start = time.time()
             embeddings = await document_service.embedding_model.embed_for_ingestion(processed_chunks)
             logger.debug(f"Generated {len(embeddings)} embeddings")
@@ -658,11 +697,8 @@ async def process_ingestion_job(
                 logger.info(f"Final document metadata after merge: {doc.metadata}")
             # ===========================================================
 
-            # Update document status to completed before storing
-            doc.system_metadata["status"] = "completed"
-            doc.system_metadata["updated_at"] = datetime.now(UTC)
-
             # 11. Store chunks and update document with is_update=True
+            await update_document_progress(document_service, document_id, auth, 5, total_steps, "Storing chunks")
             store_start = time.time()
             await document_service._store_chunks_and_doc(
                 chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
@@ -685,12 +721,24 @@ async def process_ingestion_job(
                     # Don't fail the entire ingestion if folder processing fails
 
             # 13. Execute any pending workflows now that document processing is complete
+            await update_document_progress(document_service, document_id, auth, 6, total_steps, "Finalizing")
             try:
                 logger.info(f"Executing pending workflows for document {doc.external_id}")
                 await document_service.execute_pending_workflows(doc.external_id, auth)
             except Exception as workflow_exc:
                 logger.error(f"Failed to execute pending workflows: {workflow_exc}")
                 # Don't fail ingestion if workflow execution fails
+
+            # Update document status to completed after all processing
+            doc.system_metadata["status"] = "completed"
+            doc.system_metadata["updated_at"] = datetime.now(UTC)
+            # Clear progress info on completion
+            doc.system_metadata.pop("progress", None)
+
+            # Final update to mark as completed
+            await document_service.db.update_document(
+                document_id=document_id, updates={"system_metadata": doc.system_metadata}, auth=auth
+            )
 
             # 13. Log successful completion
             logger.info(f"Successfully completed ingestion for {original_filename}, document ID: {doc.external_id}")
@@ -770,6 +818,8 @@ async def process_ingestion_job(
                                 "status": "failed",
                                 "error": str(e),
                                 "updated_at": datetime.now(UTC),
+                                # Clear progress info on failure
+                                "progress": None,
                             }
                         },
                         auth=auth,

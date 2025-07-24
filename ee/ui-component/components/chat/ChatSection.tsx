@@ -61,6 +61,9 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   // State for streaming toggle
   const [streamingEnabled, setStreamingEnabled] = useState(true);
 
+  // State for inline citations toggle
+  const [inlineCitationsEnabled, setInlineCitationsEnabled] = useState(true);
+
   // Initialize our custom hook
   const { messages, input, setInput, status, handleSubmit, queryOptions, updateQueryOption } = useMorphikChat({
     chatId,
@@ -102,14 +105,22 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     [updateQueryOption, queryOptions.filters]
   );
 
+  // Sync inline_citations with the toggle state
+  React.useEffect(() => {
+    safeUpdateOption("inline_citations", inlineCitationsEnabled);
+  }, [inlineCitationsEnabled, safeUpdateOption]);
+
   // Derive safe option values with sensible defaults to avoid undefined issues in UI
-  const safeQueryOptions: Required<Pick<QueryOptions, "k" | "min_score" | "temperature" | "max_tokens" | "padding">> &
+  const safeQueryOptions: Required<
+    Pick<QueryOptions, "k" | "min_score" | "temperature" | "max_tokens" | "padding" | "inline_citations">
+  > &
     QueryOptions = {
     k: queryOptions.k ?? 5,
     min_score: queryOptions.min_score ?? 0.7,
     temperature: queryOptions.temperature ?? 0.3,
     max_tokens: queryOptions.max_tokens ?? 1024,
     padding: queryOptions.padding ?? 0,
+    inline_citations: queryOptions.inline_citations ?? inlineCitationsEnabled,
     ...queryOptions,
   };
 
@@ -804,6 +815,19 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                               onCheckedChange={setStreamingEnabled}
                             />
                           </div>
+                          <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
+                            <Label htmlFor="inline_citations" className="text-sm font-medium">
+                              Inline Citations
+                            </Label>
+                            <Switch
+                              id="inline_citations"
+                              checked={inlineCitationsEnabled}
+                              onCheckedChange={checked => {
+                                setInlineCitationsEnabled(checked);
+                                safeUpdateOption("inline_citations", checked);
+                              }}
+                            />
+                          </div>
                         </div>
 
                         <div className="space-y-2">
@@ -1167,6 +1191,19 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                               id="streaming_enabled"
                               checked={streamingEnabled}
                               onCheckedChange={setStreamingEnabled}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
+                            <Label htmlFor="inline_citations" className="text-sm font-medium">
+                              Inline Citations
+                            </Label>
+                            <Switch
+                              id="inline_citations"
+                              checked={inlineCitationsEnabled}
+                              onCheckedChange={checked => {
+                                setInlineCitationsEnabled(checked);
+                                safeUpdateOption("inline_citations", checked);
+                              }}
                             />
                           </div>
                         </div>

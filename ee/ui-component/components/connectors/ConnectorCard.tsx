@@ -72,8 +72,6 @@ export function ConnectorCard({
     fetchStatus();
   }, [fetchStatus]);
 
-
-
   const handleConnect = async () => {
     setError(null);
     setIsSubmitting(true);
@@ -161,44 +159,43 @@ export function ConnectorCard({
 
   const handleRepositoryIngest = async (repoPath: string, ingestedConnectorType: string) => {
     if (ingestedConnectorType !== connectorType) return;
-    
+
     setIsSubmitting(true);
     setError(null);
-    
+
     try {
       const response = await fetch(`${apiBaseUrl}/ee/connectors/${ingestedConnectorType}/ingest-repository`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
         },
         body: JSON.stringify({
           connector_type: ingestedConnectorType,
           repo_path: repoPath,
-          folder_name: 'github-repos', // Or use a state-managed folder name
+          folder_name: "github-repos", // Or use a state-managed folder name
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to ingest repository');
+        throw new Error(errorData.detail || "Failed to ingest repository");
       }
 
       const result = await response.json();
-      
-      console.log('Repository ingested successfully:', result);
-      
+
+      console.log("Repository ingested successfully:", result);
+
       // Show success message with details
       const docCount = result.documents?.length || 0;
-      const successMessage = `Successfully ingested repository "${repoPath}"! Created ${docCount} document${docCount !== 1 ? 's' : ''}.`;
+      const successMessage = `Successfully ingested repository "${repoPath}"! Created ${docCount} document${docCount !== 1 ? "s" : ""}.`;
       alert(successMessage);
-      
+
       // Close the file browser modal on success
       setShowFileBrowserModal(false);
-      
     } catch (error) {
-      console.error('Error ingesting repository:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error during repository ingestion';
+      console.error("Error ingesting repository:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error during repository ingestion";
       setError(errorMessage);
       alert(`Failed to ingest repository "${repoPath}": ${errorMessage}`);
     } finally {
@@ -220,10 +217,12 @@ export function ConnectorCard({
         // For now, they will be undefined and thus not sent if not explicitly set.
       });
       console.log("Ingestion successfully queued:", result);
-      
+
       // Show success message
-      alert(`Successfully started ingestion for "${ingestionTargetFileName}"! Document ID: ${result.morphik_document_id || result.document_id || 'N/A'}`);
-      
+      alert(
+        `Successfully started ingestion for "${ingestionTargetFileName}"! Document ID: ${result.morphik_document_id || result.document_id || "N/A"}`
+      );
+
       // Close modal on success
       setShowIngestionModal(false);
     } catch (err) {
@@ -239,13 +238,13 @@ export function ConnectorCard({
 
   return (
     <Card className="w-full max-w-2xl">
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            {ConnectorIcon ? <ConnectorIcon className="mr-2 h-6 w-6" /> : <FileText className="mr-2 h-6 w-6" />}
-            {displayName}
-          </CardTitle>
-          <CardDescription>Manage your connection and browse files from the {displayName} service.</CardDescription>
-        </CardHeader>
+      <CardHeader>
+        <CardTitle className="flex items-center">
+          {ConnectorIcon ? <ConnectorIcon className="mr-2 h-6 w-6" /> : <FileText className="mr-2 h-6 w-6" />}
+          {displayName}
+        </CardTitle>
+        <CardDescription>Manage your connection and browse files from the {displayName} service.</CardDescription>
+      </CardHeader>
       <CardContent className="space-y-4">
         {/* Simplified view for "Disconnected but Connectable" state */}
         {!isLoading && !error && authStatus && !authStatus.is_authenticated && authStatus.auth_url ? (
@@ -408,7 +407,7 @@ export function ConnectorCard({
 
       {/* File Browser Modal */}
       <Dialog open={showFileBrowserModal} onOpenChange={setShowFileBrowserModal}>
-        <DialogContent className="max-w-4xl h-[80vh]">
+        <DialogContent className="h-[80vh] max-w-4xl">
           <DialogHeader>
             <DialogTitle>Browse {displayName}</DialogTitle>
           </DialogHeader>

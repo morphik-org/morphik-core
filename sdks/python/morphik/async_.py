@@ -319,6 +319,7 @@ class AsyncFolder:
         k: int = 4,
         min_score: float = 0.0,
         use_colpali: bool = True,
+        use_reranking: Optional[bool] = None,  # Add missing parameter
         additional_folders: Optional[List[str]] = None,
     ) -> List[DocumentResult]:
         """
@@ -330,6 +331,7 @@ class AsyncFolder:
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
+            use_reranking: Whether to use reranking
             additional_folders: Optional list of additional folder names to further scope operations
 
         Returns:
@@ -337,7 +339,7 @@ class AsyncFolder:
         """
         effective_folder = self._merge_folders(additional_folders)
         payload = self._client._logic._prepare_retrieve_docs_request(
-            query, filters, k, min_score, use_colpali, effective_folder, None
+            query, filters, k, min_score, use_colpali, effective_folder, use_reranking
         )
         response = await self._client._request("POST", "retrieve/docs", data=payload)
         return self._client._logic._parse_document_result_list_response(response)
@@ -351,6 +353,7 @@ class AsyncFolder:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         use_colpali: bool = True,
+        use_reranking: Optional[bool] = None,  # Add missing parameter
         graph_name: Optional[str] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
@@ -372,6 +375,7 @@ class AsyncFolder:
             max_tokens: Maximum tokens in completion
             temperature: Model temperature
             use_colpali: Whether to use ColPali-style embedding model
+            use_reranking: Whether to use reranking
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
@@ -398,6 +402,7 @@ class AsyncFolder:
             prompt_overrides,
             effective_folder,
             None,
+            use_reranking,
             chat_id,
             schema,
             llm_config,
@@ -862,6 +867,7 @@ class AsyncUserScope:
         k: int = 4,
         min_score: float = 0.0,
         use_colpali: bool = True,
+        use_reranking: Optional[bool] = None,  # Add missing parameter
         additional_folders: Optional[List[str]] = None,
     ) -> List[DocumentResult]:
         """
@@ -873,6 +879,7 @@ class AsyncUserScope:
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
+            use_reranking: Whether to use reranking
             additional_folders: Optional list of additional folder names to further scope operations
 
         Returns:
@@ -880,7 +887,7 @@ class AsyncUserScope:
         """
         effective_folder = self._merge_folders(additional_folders)
         payload = self._client._logic._prepare_retrieve_docs_request(
-            query, filters, k, min_score, use_colpali, effective_folder, self._end_user_id
+            query, filters, k, min_score, use_colpali, effective_folder, self._end_user_id, use_reranking
         )
         response = await self._client._request("POST", "retrieve/docs", data=payload)
         return self._client._logic._parse_document_result_list_response(response)
@@ -894,6 +901,7 @@ class AsyncUserScope:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         use_colpali: bool = True,
+        use_reranking: Optional[bool] = None,  # Add missing parameter
         graph_name: Optional[str] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
@@ -915,6 +923,7 @@ class AsyncUserScope:
             max_tokens: Maximum tokens in completion
             temperature: Model temperature
             use_colpali: Whether to use ColPali-style embedding model
+            use_reranking: Whether to use reranking
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
@@ -941,6 +950,7 @@ class AsyncUserScope:
             prompt_overrides,
             effective_folder,
             self._end_user_id,
+            use_reranking,
             chat_id,
             schema,
             llm_config,
@@ -1527,6 +1537,7 @@ class AsyncMorphik:
         k: int = 4,
         min_score: float = 0.0,
         use_colpali: bool = True,
+        use_reranking: Optional[bool] = None,  # Add missing parameter
         folder_name: Optional[Union[str, List[str]]] = None,
     ) -> List[DocumentResult]:
         """
@@ -1539,6 +1550,9 @@ class AsyncMorphik:
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model to retrieve documents
                 (only works for documents ingested with `use_colpali=True`)
+            use_reranking: Whether to use reranking
+            folder_name: Optional folder name (or list of names) to scope the request
+
         Returns:
             List[DocumentResult]
 
@@ -1552,7 +1566,7 @@ class AsyncMorphik:
         """
         effective_folder = folder_name if folder_name is not None else None
         payload = self._logic._prepare_retrieve_docs_request(
-            query, filters, k, min_score, use_colpali, effective_folder, None
+            query, filters, k, min_score, use_colpali, effective_folder, None, use_reranking
         )
         response = await self._request("POST", "retrieve/docs", data=payload)
         return self._logic._parse_document_result_list_response(response)
@@ -1566,6 +1580,7 @@ class AsyncMorphik:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         use_colpali: bool = True,
+        use_reranking: Optional[bool] = None,  # Add missing parameter
         graph_name: Optional[str] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
@@ -1588,6 +1603,7 @@ class AsyncMorphik:
             temperature: Model temperature
             use_colpali: Whether to use ColPali-style embedding model to generate the completion
                 (only works for documents ingested with `use_colpali=True`)
+            use_reranking: Whether to use reranking
             graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
             hop_depth: Number of relationship hops to traverse in the graph (1-3)
             include_paths: Whether to include relationship paths in the response
@@ -1681,6 +1697,7 @@ class AsyncMorphik:
             prompt_overrides,
             effective_folder,
             None,
+            use_reranking,
             chat_id,
             schema,
             llm_config,
@@ -1822,7 +1839,7 @@ class AsyncMorphik:
         return response
 
     async def wait_for_document_completion(
-        self, document_id: str, timeout_seconds=300, check_interval_seconds=2
+        self, document_id: str, timeout_seconds=300, check_interval_seconds=2, progress_callback=None
     ) -> Document:
         """
         Wait for a document's processing to complete.
@@ -1831,6 +1848,8 @@ class AsyncMorphik:
             document_id: ID of the document to wait for
             timeout_seconds: Maximum time to wait for completion (default: 300 seconds)
             check_interval_seconds: Time between status checks (default: 2 seconds)
+            progress_callback: Optional async callback function that receives progress updates.
+                               Called with (current_step, total_steps, step_name, percentage)
 
         Returns:
             Document: Updated document with the latest status
@@ -1843,8 +1862,15 @@ class AsyncMorphik:
             ```python
             # Upload a file and wait for processing to complete
             doc = await db.ingest_file("large_document.pdf")
+
+            async def on_progress(current, total, step_name, percentage):
+                print(f"Progress: {step_name} ({current}/{total}) - {percentage}%")
+
             try:
-                completed_doc = await db.wait_for_document_completion(doc.external_id)
+                completed_doc = await db.wait_for_document_completion(
+                    doc.external_id,
+                    progress_callback=on_progress
+                )
                 print(f"Processing complete! Document has {len(completed_doc.chunk_ids)} chunks")
             except TimeoutError:
                 print("Processing is taking too long")
@@ -1864,6 +1890,23 @@ class AsyncMorphik:
                 return await self.get_document(document_id)
             elif status["status"] == "failed":
                 raise ValueError(f"Document processing failed: {status.get('error', 'Unknown error')}")
+            elif status["status"] == "processing" and "progress" in status and progress_callback:
+                # Call the progress callback with progress information
+                progress = status["progress"]
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback(
+                        progress.get("current_step", 0),
+                        progress.get("total_steps", 1),
+                        progress.get("step_name", "Processing"),
+                        progress.get("percentage", 0),
+                    )
+                else:
+                    progress_callback(
+                        progress.get("current_step", 0),
+                        progress.get("total_steps", 1),
+                        progress.get("step_name", "Processing"),
+                        progress.get("percentage", 0),
+                    )
 
             # Wait before checking again
             await asyncio.sleep(check_interval_seconds)

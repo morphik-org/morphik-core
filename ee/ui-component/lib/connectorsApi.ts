@@ -30,6 +30,15 @@ export interface OAuthAuthResponse {
 // Union type for auth responses
 export type AuthResponse = ManualAuthResponse | OAuthAuthResponse;
 
+// Interface for rule objects
+export interface Rule {
+  type: "metadata_extraction" | "natural_language";
+  stage: "post_parsing" | "post_chunking";
+  schema?: Record<string, unknown>; // for metadata_extraction rules
+  prompt?: string; // for natural_language rules
+  use_images?: boolean; // for metadata_extraction rules
+}
+
 // Fetches the authentication status for a given connector type
 export async function getConnectorAuthStatus(
   apiBaseUrl: string,
@@ -204,7 +213,7 @@ export async function listConnectorFiles(
 // Define the structure for ingestion options
 interface IngestionOptions {
   metadata?: Record<string, unknown>;
-  rules?: any[];
+  rules?: Rule[];
   morphikFolderName?: string;
 }
 

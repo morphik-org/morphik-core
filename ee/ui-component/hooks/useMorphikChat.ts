@@ -137,6 +137,7 @@ export function useMorphikChat({
     temperature: initialQueryOptions.temperature ?? 0.3,
     graph_name: initialQueryOptions.graph_name,
     folder_name: initialQueryOptions.folder_name,
+    inline_citations: initialQueryOptions.inline_citations ?? true,
   });
 
   const status = isLoading ? "loading" : "idle";
@@ -173,6 +174,7 @@ export function useMorphikChat({
         console.log(`Sending to ${apiBaseUrl}/query:`, {
           query: newUserMessage.content,
           ...currentQueryOptions,
+          inline_citations: currentQueryOptions.inline_citations,
         });
 
         // Ensure filters is an object before sending to the API
@@ -196,6 +198,7 @@ export function useMorphikChat({
           chat_id: chatId,
           stream_response: streamResponse,
           llm_config: currentQueryOptions.llm_config,
+          inline_citations: currentQueryOptions.inline_citations ?? true,
         } as Record<string, unknown>;
 
         if (streamResponse) {

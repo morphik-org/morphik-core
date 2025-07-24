@@ -579,7 +579,9 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
                           ? "Failed"
                           : doc.system_metadata?.status === "uploading"
                             ? "Uploading"
-                            : "Processing"}
+                            : doc.system_metadata?.status === "processing" && doc.system_metadata?.progress
+                              ? `${doc.system_metadata.progress.step_name} (${doc.system_metadata.progress.current_step}/${doc.system_metadata.progress.total_steps})`
+                              : "Processing"}
                     </div>
                   </div>
                 ) : (
@@ -596,6 +598,17 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
                 </div>
 
                 <span className="truncate font-medium">{doc.filename || "N/A"}</span>
+                {/* Progress bar for processing documents */}
+                {doc.system_metadata?.status === "processing" && doc.system_metadata?.progress && (
+                  <div className="mt-1 w-full">
+                    <div className="h-1 w-full overflow-hidden rounded-full bg-gray-200">
+                      <div
+                        className="h-full bg-blue-500 transition-all duration-300 ease-out"
+                        style={{ width: `${doc.system_metadata.progress.percentage || 0}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="px-3 py-2">
                 <button

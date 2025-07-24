@@ -47,6 +47,7 @@ export function useDocuments({
   const isMountedRef = useRef(true);
   const previousFoldersLength = useRef(folders.length);
   const hasInitiallyFetched = useRef(false);
+  const statusPollInterval = useRef<NodeJS.Timeout | null>(null);
 
   const fetchDocuments = useCallback(
     async (forceRefresh = false) => {
@@ -237,6 +238,102 @@ export function useDocuments({
     setOptimisticDocuments(prev => prev.filter(doc => doc.external_id !== id));
   }, []);
 
+  // Poll for status updates of processing documents
+  const pollDocumentStatuses = useCallback(async () => {
+    const processingDocs = documents.filter(doc => doc.system_metadata?.status === "processing");
+
+    if (processingDocs.length === 0 || !authToken) {
+      return;
+    }
+
+    try {
+      // Fetch status updates for all processing documents
+      const statusPromises = processingDocs.map(async doc => {
+        const response = await fetch(`${apiBaseUrl}/documents/${doc.external_id}/status`, {
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        });
+
+        if (response.ok) {
+          const status = await response.json();
+          return { id: doc.external_id, status };
+        }
+        return null;
+      });
+
+      const statusUpdates = await Promise.all(statusPromises);
+
+      // Check if any documents have completed processing
+      const completedDocIds = statusUpdates
+        .filter(u => u && u.status && u.status.status === "completed")
+        .map(u => u!.id);
+
+      // Update documents with new status information
+      setDocuments(prevDocs => {
+        return prevDocs.map(doc => {
+          const update = statusUpdates.find(u => u && u.id === doc.external_id);
+          if (update && update.status) {
+            // Build updated system_metadata
+            const updatedSystemMetadata: any = {
+              ...doc.system_metadata,
+              status: update.status.status,
+            };
+
+            // Only add progress if still processing
+            if (update.status.status === "processing" && update.status.progress) {
+              updatedSystemMetadata.progress = update.status.progress;
+            } else {
+              // Remove progress field when completed or failed
+              delete updatedSystemMetadata.progress;
+            }
+
+            // Add error if failed
+            if (update.status.error) {
+              updatedSystemMetadata.error = update.status.error;
+            }
+
+            return {
+              ...doc,
+              system_metadata: updatedSystemMetadata,
+            };
+          }
+          return doc;
+        });
+      });
+
+      // If any documents completed, trigger a full refresh
+      if (completedDocIds.length > 0) {
+        // Small delay to ensure backend has finished updating
+        setTimeout(() => {
+          fetchDocuments(true);
+        }, 1000);
+      }
+    } catch (error) {
+      console.error("Error polling document statuses:", error);
+    }
+  }, [documents, apiBaseUrl, authToken, fetchDocuments]);
+
+  // Set up polling interval
+  useEffect(() => {
+    // Clear existing interval
+    if (statusPollInterval.current) {
+      clearInterval(statusPollInterval.current);
+    }
+
+    // Check if we have any processing documents
+    const hasProcessingDocs = documents.some(doc => doc.system_metadata?.status === "processing");
+
+    if (hasProcessingDocs) {
+      // Poll every 2 seconds
+      statusPollInterval.current = setInterval(pollDocumentStatuses, 2000);
+    }
+
+    return () => {
+      if (statusPollInterval.current) {
+        clearInterval(statusPollInterval.current);
+      }
+    };
+  }, [documents, pollDocumentStatuses]);
+
   // Merge regular documents with optimistic documents
   const mergedDocuments = useMemo(() => {
     // Create a map to track document IDs to avoid duplicates
@@ -250,6 +347,15 @@ export function useDocuments({
 
     return Array.from(docMap.values());
   }, [documents, optimisticDocuments]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (statusPollInterval.current) {
+        clearInterval(statusPollInterval.current);
+      }
+    };
+  }, []);
 
   return {
     documents: mergedDocuments,

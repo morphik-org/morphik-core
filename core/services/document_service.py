@@ -479,46 +479,126 @@ class DocumentService:
             # For configuration 2, simply combine the chunks with multivector chunks first
             # since they are generally higher quality
             return chunks_multivector + chunks
-            # if chunks_multivector:
-            #     return chunks_multivector
-            # return chunks
 
         # Configuration 4: Reranking with colpali
         # Use colpali as a reranker to get consistent similarity scores for both types of chunks
+        # IMPORTANT: Multivector chunks already have proper ColPali similarity scores from their vector store,
+        # so we should preserve those. Only rescore regular text chunks to make them comparable.
 
-        model_name = "vidore/colSmol-256M"
-        device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
+        try:
+            model_name = "vidore/colSmol-256M"
+            device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
 
-        model = ColIdefics3.from_pretrained(
-            model_name,
-            torch_dtype=torch.bfloat16,
-            device_map=device,  # "cuda:0",  # or "mps" if on Apple Silicon
-            attn_implementation="eager",  # "flash_attention_2" if is_flash_attn_2_available() else None,
-            # or "eager" if "mps"
-        ).eval()
-        processor = ColIdefics3Processor.from_pretrained(model_name)
+            model = ColIdefics3.from_pretrained(
+                model_name,
+                torch_dtype=torch.bfloat16,
+                device_map=device,
+                attn_implementation="eager",
+            ).eval()
+            processor = ColIdefics3Processor.from_pretrained(model_name)
 
-        # Score regular chunks with colpali model for consistent comparison
-        batch_chunks = processor.process_queries([chunk.content for chunk in chunks]).to(device)
-        query_rep = processor.process_queries([query]).to(device)
-        multi_vec_representations = model(**batch_chunks)
-        query_rep = model(**query_rep)
-        scores = processor.score_multi_vector(query_rep, multi_vec_representations)
-        for chunk, score in zip(chunks, scores[0]):
-            chunk.score = score
+            # Process query representation once
+            query_rep = processor.process_queries([query]).to(device)
+            query_rep = model(**query_rep)
 
-        # Also rescore multivector chunks to ensure consistent scoring
-        if chunks_multivector:
-            mv_batch_chunks = processor.process_queries([chunk.content for chunk in chunks_multivector]).to(device)
-            mv_reps = model(**mv_batch_chunks)
-            mv_scores = processor.score_multi_vector(query_rep, mv_reps)
-            for chunk, score in zip(chunks_multivector, mv_scores[0]):
-                chunk.score = score
+            # Score regular chunks with batching to make them comparable to multivector chunks
+            if chunks:
+                logger.info(f"Reranking {len(chunks)} regular text chunks with ColPali for score consistency")
+                chunk_batches = self._batch_chunks_by_tokens(chunks)
+                for batch in chunk_batches:
+                    try:
+                        batch_chunks = processor.process_queries([chunk.content for chunk in batch]).to(device)
+                        multi_vec_representations = model(**batch_chunks)
+                        scores = processor.score_multi_vector(query_rep, multi_vec_representations)
+                        for chunk, score in zip(batch, scores[0]):
+                            chunk.score = score
+                    except Exception as e:
+                        logger.error(f"Error processing regular chunk batch: {e}")
+                        # Assign default scores to prevent chunks from being lost
+                        for chunk in batch:
+                            chunk.score = 0.0
 
-        # Combine and sort all chunks
-        full_chunks = chunks + chunks_multivector
-        full_chunks.sort(key=lambda x: x.score, reverse=True)
-        return full_chunks
+            # Preserve multivector chunks' original scores - they already have proper ColPali similarity scores
+            if chunks_multivector:
+                logger.info(f"Preserving original ColPali scores for {len(chunks_multivector)} multivector chunks")
+                # Log score distribution for debugging
+                mv_scores = [chunk.score for chunk in chunks_multivector]
+                if mv_scores:
+                    logger.debug(f"Multivector score range: {min(mv_scores):.3f} - {max(mv_scores):.3f}")
+
+            # Log regular chunk scores for debugging
+            if chunks:
+                reg_scores = [chunk.score for chunk in chunks]
+                if reg_scores:
+                    logger.debug(f"Regular chunk score range: {min(reg_scores):.3f} - {max(reg_scores):.3f}")
+
+            # Combine and sort all chunks
+            full_chunks = chunks + chunks_multivector
+            full_chunks.sort(key=lambda x: x.score, reverse=True)
+
+            logger.info(
+                f"Combined and sorted {len(full_chunks)} chunks (regular: {len(chunks)}, multivector: {len(chunks_multivector)})"
+            )
+            return full_chunks
+
+        except Exception as e:
+            logger.error(f"Error in ColPali reranking: {e}")
+            # Fallback to simple combination without reranking
+            return chunks_multivector + chunks
+
+    def _count_tokens_simple(self, text: str) -> int:
+        """Simple token counting using whitespace splitting.
+
+        This is a conservative estimate that works well for batching purposes.
+        """
+        return len(text.split())
+
+    def _batch_chunks_by_tokens(self, chunks: List[DocumentChunk], max_tokens: int = 6000) -> List[List[DocumentChunk]]:
+        """Batch chunks to ensure total token count doesn't exceed max_tokens.
+
+        Args:
+            chunks: List of chunks to batch
+            max_tokens: Maximum tokens per batch (conservative limit under 8192)
+
+        Returns:
+            List of chunk batches
+        """
+        if not chunks:
+            return []
+
+        batches = []
+        current_batch = []
+        current_tokens = 0
+
+        for chunk in chunks:
+            chunk_tokens = self._count_tokens_simple(chunk.content)
+
+            # If a single chunk exceeds the limit, put it in its own batch
+            if chunk_tokens > max_tokens:
+                if current_batch:
+                    batches.append(current_batch)
+                    current_batch = []
+                    current_tokens = 0
+                batches.append([chunk])
+                logger.warning(f"Chunk with {chunk_tokens} tokens exceeds limit of {max_tokens}")
+                continue
+
+            # If adding this chunk would exceed the limit, start a new batch
+            if current_tokens + chunk_tokens > max_tokens:
+                if current_batch:
+                    batches.append(current_batch)
+                current_batch = [chunk]
+                current_tokens = chunk_tokens
+            else:
+                current_batch.append(chunk)
+                current_tokens += chunk_tokens
+
+        # Add the last batch if it has chunks
+        if current_batch:
+            batches.append(current_batch)
+
+        logger.info(f"Created {len(batches)} batches from {len(chunks)} chunks")
+        return batches
 
     async def _apply_padding_to_chunks(
         self,
@@ -944,6 +1024,7 @@ class DocumentService:
         stream_response: Optional[bool] = False,
         llm_config: Optional[Dict[str, Any]] = None,
         padding: int = 0,  # Number of additional chunks to retrieve before and after matched chunks
+        inline_citations: bool = False,  # Whether to include inline citations with filename and page number
     ) -> Union[CompletionResponse, tuple[AsyncGenerator[str, None], List[ChunkSource]]]:
         """Generate completion using relevant chunks as context.
 
@@ -1049,6 +1130,39 @@ class DocumentService:
 
         chunk_contents = [chunk.augmented_content(documents[chunk.document_id]) for chunk in chunks]
 
+        # Collect chunk metadata for inline citations if enabled
+        chunk_metadata = None
+        if inline_citations:
+            logger.info(f"Inline citations enabled - collecting metadata for {len(chunks)} chunks")
+            chunk_metadata = []
+            for chunk in chunks:
+                # Get the document for this chunk
+                doc = documents.get(chunk.document_id, {})
+                filename = (
+                    chunk.filename or doc.metadata.get("filename", "unknown") if hasattr(doc, "metadata") else "unknown"
+                )
+
+                # Check if this is a ColPali/image chunk
+                is_colpali = chunk.metadata.get("is_image", False)
+
+                metadata = {
+                    "filename": filename,
+                    "chunk_number": chunk.chunk_number,
+                    "document_id": chunk.document_id,
+                    "is_colpali": is_colpali,
+                }
+
+                logger.info(f"Chunk metadata: {metadata}")
+                # For ColPali chunks, chunk_number corresponds to page number (0-indexed)
+                # Add 1 to make it 1-indexed for user display
+                if is_colpali:
+                    metadata["page_number"] = chunk.chunk_number + 1
+                else:
+                    # For regular text chunks, check if page_number is stored in metadata
+                    metadata["page_number"] = chunk.metadata.get("page_number")
+
+                chunk_metadata.append(metadata)
+
         if not perf_tracker:
             phase_times["content_augmentation"] = time.time() - augmentation_start
 
@@ -1086,6 +1200,8 @@ class DocumentService:
             chat_history=chat_history,
             stream_response=stream_response,
             llm_config=llm_config,
+            inline_citations=inline_citations,
+            chunk_metadata=chunk_metadata,
         )
 
         response = await self.completion_model.complete(request)

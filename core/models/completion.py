@@ -47,3 +47,5 @@ class CompletionRequest(BaseModel):
     chat_history: Optional[List[ChatMessage]] = None
     stream_response: Optional[bool] = False
     llm_config: Optional[Dict[str, Any]] = None
+    inline_citations: Optional[bool] = False
+    chunk_metadata: Optional[List[Dict[str, Any]]] = None  # Metadata for each chunk including filename and page

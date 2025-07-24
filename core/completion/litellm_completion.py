@@ -19,11 +19,32 @@ from .base_completion import BaseCompletionModel
 logger = logging.getLogger(__name__)
 
 
-def get_system_message() -> Dict[str, str]:
+def get_system_message(inline_citations: bool = False) -> Dict[str, str]:
     """Return the standard system message for Morphik's query agent."""
-    return {
-        "role": "system",
-        "content": """You are Morphik's powerful query agent. Your role is to:
+
+    if inline_citations:
+        content = """You are Morphik's powerful query agent with INLINE CITATION MODE ENABLED.
+
+MANDATORY CITATION RULES:
+- Every fact or piece of information from the context MUST include its source citation
+- Citations appear as "Source: [filename, page X]" or "Source: [filename]" at the end of each context chunk
+- Copy these citations EXACTLY in your response using the format [filename, page X]
+- Place citations immediately after the relevant information
+
+Your role is to:
+1. Analyze the provided context chunks from documents carefully
+2. Use the context to answer questions accurately with proper citations
+3. Be clear and concise in your answers
+4. ALWAYS include [filename, page X] citations for every piece of information
+5. For image-based queries, analyze the visual content with citations
+6. Format your responses using Markdown
+
+Example response with citations:
+"Morphik is a retrieval-augmented generation tool [README.md, page 1] designed for legal and technical work [overview.pdf, page 3]."
+
+Remember: NO information should be presented without its source citation."""
+    else:
+        content = """You are Morphik's powerful query agent. Your role is to:
 
 1. Analyze the provided context chunks from documents carefully
 2. Use the context to answer questions accurately and comprehensively
@@ -33,7 +54,11 @@ def get_system_message() -> Dict[str, str]:
 6. Format your responses using Markdown.
 
 Remember: Your primary goal is to provide accurate, context-aware responses that help users understand
-and utilize the information in their documents effectively.""",
+and utilize the information in their documents effectively."""
+
+    return {
+        "role": "system",
+        "content": content,
     }
 
 
@@ -69,7 +94,13 @@ def process_context_chunks(context_chunks: List[str], is_ollama: bool) -> Tuple[
     return context_text, image_urls, ollama_image_data
 
 
-def format_user_content(context_text: List[str], query: str, prompt_template: Optional[str] = None) -> str:
+def format_user_content(
+    context_text: List[str],
+    query: str,
+    prompt_template: Optional[str] = None,
+    inline_citations: bool = False,
+    chunk_metadata: Optional[List[Dict[str, Any]]] = None,
+) -> str:
     """
     Format the user content based on context and query.
 
@@ -77,11 +108,40 @@ def format_user_content(context_text: List[str], query: str, prompt_template: Op
         context_text: List of context text chunks
         query: The user query
         prompt_template: Optional template to format the content
+        inline_citations: Whether to include inline citations
+        chunk_metadata: Metadata for each chunk including filename and page
 
     Returns:
         Formatted user content string
     """
-    context = "\n" + "\n\n".join(context_text) + "\n\n" if context_text else ""
+    if inline_citations and chunk_metadata:
+        # Format each chunk with its citation
+        formatted_chunks = []
+        for i, (chunk, metadata) in enumerate(zip(context_text, chunk_metadata)):
+            filename = metadata.get("filename", "unknown")
+            page = metadata.get("page_number")
+            is_colpali = metadata.get("is_colpali", False)
+
+            # Build the citation based on available information
+            if is_colpali and page:
+                # For ColPali chunks, always show page number since each chunk is a page
+                citation = f"[{filename}, page {page}]"
+            elif page:
+                # For regular text chunks with page metadata
+                citation = f"[{filename}, page {page}]"
+            else:
+                # For text chunks without page info, just show filename
+                citation = f"[{filename}]"
+
+            # Log first few citations for debugging
+            if i < 3:
+                logger.debug(f"Citation {i}: {citation} for chunk starting with: {chunk[:50]}...")
+
+            # Make citations more prominent by putting them on a new line
+            formatted_chunks.append(f"{chunk}\nSource: {citation}")
+        context = "\n" + "\n\n".join(formatted_chunks) + "\n\n"
+    else:
+        context = "\n" + "\n\n".join(context_text) + "\n\n" if context_text else ""
 
     if prompt_template:
         return prompt_template.format(
@@ -339,7 +399,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         client = ollama.AsyncClient(host=self.ollama_api_base)
 
         # Construct Ollama messages
-        system_message = {"role": "system", "content": get_system_message()["content"]}
+        system_message = {"role": "system", "content": get_system_message(request.inline_citations)["content"]}
         user_message_data = {"role": "user", "content": user_content}
 
         # Add images directly to the user message if available
@@ -404,7 +464,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         # LiteLLM uses list content format
         user_message = {"role": "user", "content": content_list}
         # Use the system prompt defined earlier
-        litellm_messages = [get_system_message()] + history_messages + [user_message]
+        litellm_messages = [get_system_message(request.inline_citations)] + history_messages + [user_message]
 
         # Prepare LiteLLM parameters
         model_params = {
@@ -459,7 +519,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         # LiteLLM uses list content format
         user_message = {"role": "user", "content": content_list}
         # Use the system prompt defined earlier
-        litellm_messages = [get_system_message()] + history_messages + [user_message]
+        litellm_messages = [get_system_message(request.inline_citations)] + history_messages + [user_message]
 
         # Prepare LiteLLM parameters
         model_params = {
@@ -496,7 +556,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         client = ollama.AsyncClient(host=self.ollama_api_base)
 
         # Construct Ollama messages
-        system_message = {"role": "system", "content": get_system_message()["content"]}
+        system_message = {"role": "system", "content": get_system_message(request.inline_citations)["content"]}
         user_message_data = {"role": "user", "content": user_content}
 
         # Add images directly to the user message if available
@@ -555,7 +615,12 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         context_text, image_urls, ollama_image_data = process_context_chunks(request.context_chunks, is_ollama)
 
         # Format user content
-        user_content = format_user_content(context_text, request.query, request.prompt_template)
+        user_content = format_user_content(
+            context_text, request.query, request.prompt_template, request.inline_citations, request.chunk_metadata
+        )
+
+        if request.inline_citations:
+            logger.debug(f"Inline citations enabled - formatted {len(context_text)} chunks with citation metadata")
 
         history_messages = [{"role": m.role, "content": m.content} for m in (request.chat_history or [])]
 
@@ -589,7 +654,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
                 # Create system and user messages with enhanced instructions for structured output
                 system_message = {
                     "role": "system",
-                    "content": get_system_message()["content"]
+                    "content": get_system_message(request.inline_citations)["content"]
                     + "\n\nYou MUST format your response according to the required schema.",
                 }
 

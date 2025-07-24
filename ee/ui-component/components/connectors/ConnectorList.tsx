@@ -3,8 +3,6 @@
 import { ConnectorCard } from "./ConnectorCard";
 import { BookLock, BookOpen } from "lucide-react";
 import { GitHub } from "../chat/icons"; // Import our custom GitHub icon
-import { useState } from "react";
-import { FileBrowser } from "./FileBrowser";
 import { useHeader } from "@/contexts/header-context";
 import { useEffect } from "react";
 
@@ -58,8 +56,6 @@ export function ConnectorList({ apiBaseUrl, authToken }: ConnectorListProps) {
     );
   }
 
-
-
   return (
     <div className="space-y-6">
       {availableConnectors.map(connector => (
@@ -72,8 +68,6 @@ export function ConnectorList({ apiBaseUrl, authToken }: ConnectorListProps) {
           authToken={authToken} // Pass authToken down
         />
       ))}
-      
-
     </div>
   );
 }

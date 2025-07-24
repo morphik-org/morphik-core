@@ -652,6 +652,10 @@ async def query_completion(
 
         # Main query processing
         perf.start_phase("document_service_query")
+
+        # Debug log for inline citations
+        logger.debug(f"Query request - inline_citations: {request.inline_citations}")
+
         result = await document_service.query(
             request.query,
             auth,
@@ -670,10 +674,11 @@ async def query_completion(
             request.end_user_id,
             request.schema,
             history,
-            perf,  # Pass performance tracker
+            perf,
             request.stream_response,
             request.llm_config,
-            request.padding,  # Pass padding parameter
+            request.padding,
+            request.inline_citations,
         )
 
         # Handle streaming vs non-streaming responses

@@ -116,10 +116,21 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
           </Badge>
         );
       case "processing":
+        const progress = selectedDocument.system_metadata?.progress;
         return (
-          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100">
-            Processing
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="secondary"
+              className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
+            >
+              Processing
+            </Badge>
+            {progress && (
+              <span className="text-sm text-muted-foreground">
+                {progress.step_name} ({progress.current_step}/{progress.total_steps})
+              </span>
+            )}
+          </div>
         );
       case "failed":
         return <Badge variant="destructive">Failed</Badge>;
@@ -511,6 +522,22 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
               {getStatusBadge(status)}
             </div>
           </div>
+
+          {/* Progress bar for processing documents */}
+          {status === "processing" && selectedDocument.system_metadata?.progress && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm text-muted-foreground">
+                <span>Processing Progress</span>
+                <span>{selectedDocument.system_metadata.progress.percentage || 0}%</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                <div
+                  className="h-full bg-blue-500 transition-all duration-300 ease-out"
+                  style={{ width: `${selectedDocument.system_metadata.progress.percentage || 0}%` }}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Error message for failed documents */}
           {status === "failed" && error && (

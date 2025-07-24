@@ -1,10 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import {
-  listConnectorFiles,
-  ConnectorFile,
-} from "@/lib/connectorsApi";
+import { listConnectorFiles, ConnectorFile } from "@/lib/connectorsApi";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -15,9 +12,7 @@ import {
   UploadCloud,
   Loader2,
   AlertCircle,
-  BookMarked,
 } from "lucide-react";
-// import { useDebounce } from '@/hooks/useDebounce'; // Assuming you have a debounce hook
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -128,13 +123,13 @@ export function FileBrowser({
   };
 
   const handleIngestRepository = async (file: ConnectorFile) => {
-    if (!file.is_folder || connectorType !== 'github') return;
-    
+    if (!file.is_folder || connectorType !== "github") return;
+
     // For GitHub, repository ID is in format "owner/repo"
     const repoPath = file.id;
     setIngestingRepos(prev => ({ ...prev, [repoPath]: true }));
     setError(null);
-    
+
     try {
       if (onRepositoryIngest) {
         onRepositoryIngest(repoPath, connectorType);
@@ -156,7 +151,7 @@ export function FileBrowser({
 
   // Helper function to determine if we're at repository root level for GitHub
   const isAtRepositoryLevel = () => {
-    return connectorType === 'github' && currentPath === null;
+    return connectorType === "github" && currentPath === null;
   };
 
   // --- RENDER LOGIC ---
@@ -245,7 +240,7 @@ export function FileBrowser({
                   {file.is_folder ? "-" : file.size ? (file.size / 1024).toFixed(1) + " KB" : "N/A"}
                 </TableCell>
                 <TableCell className="text-right">
-                  <div className="flex gap-2 justify-end">
+                  <div className="flex justify-end gap-2">
                     {!file.is_folder && (
                       <Button
                         variant="outline"

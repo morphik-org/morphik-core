@@ -252,6 +252,7 @@ class _MorphikClientLogic:
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]],
         folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
+        use_reranking: Optional[bool] = None,  # Add missing parameter
         chat_id: Optional[str] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
         llm_config: Optional[Dict[str, Any]] = None,
@@ -270,6 +271,7 @@ class _MorphikClientLogic:
             "max_tokens": max_tokens,
             "temperature": temperature,
             "use_colpali": use_colpali,
+            "use_reranking": use_reranking,  # Add to payload
             "graph_name": graph_name,
             "hop_depth": hop_depth,
             "include_paths": include_paths,
@@ -338,6 +340,7 @@ class _MorphikClientLogic:
         use_colpali: bool,
         folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
+        use_reranking: Optional[bool] = None,  # Add missing parameter
     ) -> Dict[str, Any]:
         """Prepare request for retrieve_docs endpoint"""
         request = {
@@ -346,6 +349,7 @@ class _MorphikClientLogic:
             "k": k,
             "min_score": min_score,
             "use_colpali": use_colpali,
+            "use_reranking": use_reranking,  # Add to payload
         }
         if folder_name:
             request["folder_name"] = folder_name

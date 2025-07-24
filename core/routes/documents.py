@@ -125,6 +125,10 @@ async def get_document_status(document_id: str, auth: AuthContext = Depends(veri
             "updated_at": doc.system_metadata.get("updated_at"),
         }
 
+        # Add progress information if processing
+        if status == "processing" and "progress" in doc.system_metadata:
+            response["progress"] = doc.system_metadata["progress"]
+
         # Add error information if failed
         if status == "failed":
             response["error"] = doc.system_metadata.get("error", "Unknown error")

@@ -54,12 +54,14 @@ class Document(BaseModel):
         status_info = self.status
         return status_info.get("error") if status_info.get("status") == "failed" else None
 
-    def wait_for_completion(self, timeout_seconds=300, check_interval_seconds=2):
+    def wait_for_completion(self, timeout_seconds=300, check_interval_seconds=2, progress_callback=None):
         """Wait for document processing to complete.
 
         Args:
             timeout_seconds: Maximum time to wait for completion (default: 300 seconds)
             check_interval_seconds: Time between status checks (default: 2 seconds)
+            progress_callback: Optional callback function that receives progress updates.
+                               Called with (current_step, total_steps, step_name, percentage)
 
         Returns:
             Document: Updated document with the latest status
@@ -72,7 +74,9 @@ class Document(BaseModel):
             raise ValueError(
                 "Document instance not connected to a client. Use a document returned from a Morphik client method."
             )
-        return self._client.wait_for_document_completion(self.external_id, timeout_seconds, check_interval_seconds)
+        return self._client.wait_for_document_completion(
+            self.external_id, timeout_seconds, check_interval_seconds, progress_callback
+        )
 
     def update_with_text(
         self,
@@ -505,4 +509,6 @@ class FolderInfo(BaseModel):
     workflow_ids: List[str] = Field(default_factory=list, description="Workflow IDs associated with the folder")
     app_id: Optional[str] = Field(None, description="Application ID associated with the folder")
     end_user_id: Optional[str] = Field(None, description="End user ID associated with the folder")
-    access_control: Optional[Dict[str, List[str]]] = Field(default_factory=dict, description="Access control information")
+    access_control: Optional[Dict[str, List[str]]] = Field(
+        default_factory=dict, description="Access control information"
+    )

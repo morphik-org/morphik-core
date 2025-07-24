@@ -65,6 +65,10 @@ class CompletionQueryRequest(RetrieveRequest):
         None,
         description="LiteLLM-compatible model configuration (e.g., model name, API key, base URL)",
     )
+    inline_citations: Optional[bool] = Field(
+        False,
+        description="Whether to include inline citations with filename and page number in the response",
+    )
 
 
 class IngestTextRequest(BaseModel):
