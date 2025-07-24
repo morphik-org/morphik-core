@@ -98,6 +98,71 @@ class MorphikGraphService:
 
         return existing_graph
 
+    async def get_graph(
+        self, graph_name: str, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None
+    ) -> Optional[Graph]:
+        """
+        Get graph information from the remote service and sync with local database.
+
+        Args:
+            graph_name: Name of the graph to fetch
+            auth: Authentication context
+            system_filters: Optional system filters for graph retrieval
+
+        Returns:
+            Graph object with updated metadata from remote service, or None if not found
+        """
+        try:
+            # First get the local graph to get its ID and workflow info
+            local_graph = await self.db.get_graph(graph_name, auth, system_filters=system_filters)
+            if not local_graph:
+                return None
+
+            # Check workflow status if the graph is processing
+            if local_graph.system_metadata.get("status") == "processing":
+                workflow_id = local_graph.system_metadata.get("workflow_id")
+                run_id = local_graph.system_metadata.get("run_id")
+
+                if workflow_id:
+                    # Use existing check_workflow_status method
+                    status_response = await self.check_workflow_status(workflow_id, run_id, auth)
+
+                    if status_response:
+                        # Update local graph metadata based on remote status
+                        remote_status = status_response.get("status", "processing")
+                        local_graph.system_metadata["status"] = remote_status
+
+                        if "error" in status_response:
+                            local_graph.system_metadata["error"] = status_response["error"]
+
+                        if "pipeline_stage" in status_response:
+                            local_graph.system_metadata["pipeline_stage"] = status_response["pipeline_stage"]
+
+                        if remote_status == "completed":
+                            # Get graph statistics
+                            try:
+                                graph_data = await self._make_api_request(
+                                    method="POST",
+                                    endpoint="/graph",
+                                    auth=auth,
+                                    json_data={"graph_id": local_graph.id},
+                                    params={"nodes_num": 2000},
+                                )
+
+                                if graph_data:
+                                    nodes = graph_data.get("nodes", [])
+                                    links = graph_data.get("links", [])
+                                    local_graph.system_metadata["node_count"] = len(nodes)
+                                    local_graph.system_metadata["edge_count"] = len(links)
+                            except Exception as e:
+                                logger.warning(f"Failed to get graph statistics: {e}")
+
+            return local_graph
+
+        except Exception as e:
+            logger.error(f"Error in get_graph: {e}")
+            return None
+
     async def _make_graph_object(
         self,
         name: str,

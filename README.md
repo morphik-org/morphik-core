@@ -44,7 +44,7 @@ The result is AI applications that confidently return wrong answers because they
 - [Integrations](https://morphik.ai/docs/integrations): Integrate with existing tools and workflows. Including (but not limited to) Google Suite, Slack, and Confluence.
 - [Cache-Augmented-Generation](https://morphik.ai/docs/python-sdk/create_cache): Create persistent KV-caches of your documents to speed up generation.
 
-The best part? Morphik has a [free tier](https://www.morphik.ai/pricing) and is open source! Get started by signing up at [Morphik](https://www.morphik.ai/signup).
+The best part? Morphik has a [free tier](https://www.morphik.ai/pricing)! Get started by signing up at [Morphik](https://www.morphik.ai/signup).
 
 ## Table of Contents
 - [Getting Started with Morphik](#getting-started-with-morphik-recommended)
