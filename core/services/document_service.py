@@ -899,7 +899,7 @@ class DocumentService:
         auth: AuthContext,
         folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
-        use_colpali: Optional[bool] = None,
+        retrieve_images: Optional[bool] = None,
     ) -> List[ChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation.
@@ -909,7 +909,7 @@ class DocumentService:
             auth: Authentication context
             folder_name: Optional folder to scope the operation to
             end_user_id: Optional end-user ID to scope the operation to
-            use_colpali: Whether to use colpali multimodal features for image chunks
+            retrieve_images: Whether to use colpali multimodal features for image chunks
 
         Returns:
             List of ChunkResult objects
@@ -937,7 +937,7 @@ class DocumentService:
         retrieval_tasks = [self.vector_store.get_chunks_by_id(chunk_identifiers, auth.app_id)]
 
         # Add colpali vector store task if needed
-        if use_colpali and self.colpali_vector_store:
+        if retrieve_images and self.colpali_vector_store:
             logger.info("Preparing to retrieve chunks from both regular and colpali vector stores")
             retrieval_tasks.append(self.colpali_vector_store.get_chunks_by_id(chunk_identifiers, auth.app_id))
 
