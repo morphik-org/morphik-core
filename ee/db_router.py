@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Dict, Optional
 
 from sqlalchemy import select
@@ -123,6 +124,9 @@ async def get_database_for_app(app_id: str | None) -> PostgresDatabase:
         if _CONTROL_PLANE_DB is None:
             settings = get_settings()
             _CONTROL_PLANE_DB = PostgresDatabase(uri=settings.POSTGRES_URI)
+            # Initialize the control-plane database
+            await _CONTROL_PLANE_DB.initialize()
+            logging.getLogger(__name__).info("Initialized control-plane PostgresDatabase")
         return _CONTROL_PLANE_DB
 
     # ------------------------------------------------------------------
@@ -149,7 +153,10 @@ async def get_database_for_app(app_id: str | None) -> PostgresDatabase:
         return await get_database_for_app(None)  # type: ignore[return-value]
 
     db = PostgresDatabase(uri=connection_uri)
+    # Initialize the per-app database
+    await db.initialize()
     _DB_CACHE[app_id] = db
+    logging.getLogger(__name__).info(f"Initialized PostgresDatabase for app_id={app_id}")
     return db
 
 
@@ -164,6 +171,9 @@ async def get_vector_store_for_app(app_id: str | None):
         if _CONTROL_PLANE_VSTORE is None:
             settings = get_settings()
             _CONTROL_PLANE_VSTORE = PGVectorStore(uri=settings.POSTGRES_URI)
+            # Initialize the control-plane vector store
+            await _CONTROL_PLANE_VSTORE.initialize()
+            logging.getLogger(__name__).info("Initialized control-plane PGVectorStore")
         return _CONTROL_PLANE_VSTORE
 
     # Fetch the raw connection URI directly from the catalogue – this string
@@ -204,8 +214,6 @@ async def get_vector_store_for_app(app_id: str | None):
         return _VSTORE_CACHE[uri]
 
     # Log at DEBUG level with password redacted to aid debugging connection issues
-    import logging
-
     debug_uri = uri
     try:
         from urllib.parse import urlparse, urlunparse
@@ -220,7 +228,10 @@ async def get_vector_store_for_app(app_id: str | None):
     logging.getLogger(__name__).debug("Creating PGVectorStore for app %s with URI %s", app_id, debug_uri)
 
     store = PGVectorStore(uri=uri)
+    # Initialize the per-app vector store
+    await store.initialize()
     _VSTORE_CACHE[uri] = store
+    logging.getLogger(__name__).info(f"Initialized PGVectorStore for app_id={app_id}")
     return store
 
 
@@ -258,7 +269,12 @@ async def get_multi_vector_store_for_app(app_id: str | None):
                 raise ValueError("TURBOPUFFER_API_KEY is required when using morphik multivector store provider")
 
             store = FastMultiVectorStore(uri=uri, tpuf_api_key=settings.TURBOPUFFER_API_KEY, namespace="public")
+            # Initialize the control-plane fast multi-vector store
+            import asyncio
+
+            await asyncio.to_thread(store.initialize)
             _CONTROL_PLANE_FAST_MVSTORE = store
+            logging.getLogger(__name__).info("Initialized control-plane FastMultiVectorStore")
             return store
         else:
             # Use MultiVectorStore (legacy behavior)
@@ -284,8 +300,13 @@ async def get_multi_vector_store_for_app(app_id: str | None):
                 return _CONTROL_PLANE_MVSTORE
 
             store = MultiVectorStore(uri=final_uri)
+            # Initialize the control-plane multi-vector store
+            import asyncio
+
+            await asyncio.to_thread(store.initialize)
             _MVSTORE_CACHE[final_uri] = store
             _CONTROL_PLANE_MVSTORE = store
+            logging.getLogger(__name__).info("Initialized control-plane MultiVectorStore")
             return store
 
     # ------------------------------------------------------------------
@@ -314,7 +335,12 @@ async def get_multi_vector_store_for_app(app_id: str | None):
             raise ValueError("TURBOPUFFER_API_KEY is required when using morphik multivector store provider")
 
         store = FastMultiVectorStore(uri=uri, tpuf_api_key=settings.TURBOPUFFER_API_KEY, namespace="public")
+        # Initialize the per-app fast multi-vector store
+        import asyncio
+
+        await asyncio.to_thread(store.initialize)
         _FAST_MVSTORE_CACHE[uri] = store
+        logging.getLogger(__name__).info(f"Initialized FastMultiVectorStore for app_id={app_id}")
         return store
     else:
         # Use MultiVectorStore (legacy behavior)
@@ -341,5 +367,10 @@ async def get_multi_vector_store_for_app(app_id: str | None):
             return _MVSTORE_CACHE[final_uri]
 
         store = MultiVectorStore(uri=final_uri)
+        # Initialize the per-app multi-vector store
+        import asyncio
+
+        await asyncio.to_thread(store.initialize)
         _MVSTORE_CACHE[final_uri] = store
+        logging.getLogger(__name__).info(f"Initialized MultiVectorStore for app_id={app_id}")
         return store

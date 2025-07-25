@@ -254,15 +254,7 @@ async def process_ingestion_job(
             # When app_id is None we fall back to the control-plane resources.
 
             database = await get_database_for_app(auth.app_id)
-            await database.initialize()
-
             vector_store = await get_vector_store_for_app(auth.app_id)
-            if vector_store and hasattr(vector_store, "initialize"):
-                # PGVectorStore.initialize is *async*
-                try:
-                    await vector_store.initialize()
-                except Exception as init_err:
-                    logger.warning(f"Vector store initialization failed for app {auth.app_id}: {init_err}")
 
             # Initialise a per-app MultiVectorStore for ColPali when needed
             colpali_vector_store = None

@@ -1266,10 +1266,6 @@ class PostgresDatabase(BaseDatabase):
         Returns:
             bool: Whether the operation was successful
         """
-        # Ensure database is initialized
-        if not self._initialized:
-            await self.initialize()
-
         try:
             # First serialize the graph model to dict
             graph_dict = graph.model_dump()
@@ -1341,10 +1337,6 @@ class PostgresDatabase(BaseDatabase):
         Returns:
             Optional[Graph]: Graph if found and accessible, None otherwise
         """
-        # Ensure database is initialized
-        if not self._initialized:
-            await self.initialize()
-
         try:
             async with self.async_session() as session:
                 # Build access filter and params
@@ -1414,10 +1406,6 @@ class PostgresDatabase(BaseDatabase):
         Returns:
             List[Graph]: List of graphs
         """
-        # Ensure database is initialized
-        if not self._initialized:
-            await self.initialize()
-
         try:
             async with self.async_session() as session:
                 # Build access filter and params
@@ -1489,10 +1477,6 @@ class PostgresDatabase(BaseDatabase):
         Returns:
             bool: Whether the operation was successful
         """
-        # Ensure database is initialized
-        if not self._initialized:
-            await self.initialize()
-
         try:
             # First serialize the graph model to dict
             graph_dict = graph.model_dump()
@@ -1556,10 +1540,6 @@ class PostgresDatabase(BaseDatabase):
         Returns:
             bool: Whether the operation was successful
         """
-        # Ensure database is initialized
-        if not self._initialized:
-            await self.initialize()
-
         try:
             async with self.async_session() as session:
                 # First find the graph
@@ -2054,9 +2034,6 @@ class PostgresDatabase(BaseDatabase):
         self, conversation_id: str, user_id: Optional[str], app_id: Optional[str]
     ) -> Optional[List[Dict[str, Any]]]:
         """Return stored chat history for *conversation_id*."""
-        if not self._initialized:
-            await self.initialize()
-
         try:
             async with self.async_session() as session:
                 result = await session.execute(
@@ -2083,9 +2060,6 @@ class PostgresDatabase(BaseDatabase):
         title: Optional[str] = None,
     ) -> bool:
         """Store or update chat history."""
-        if not self._initialized:
-            await self.initialize()
-
         try:
             now = datetime.now(UTC).isoformat()
 
@@ -2158,9 +2132,6 @@ class PostgresDatabase(BaseDatabase):
             A list of dictionaries containing conversation_id, updated_at and a preview of the
             last message (if available).
         """
-        if not self._initialized:
-            await self.initialize()
-
         try:
             async with self.async_session() as session:
                 # Build WHERE clause dynamically to avoid parameter type ambiguity
@@ -2223,9 +2194,6 @@ class PostgresDatabase(BaseDatabase):
         app_id: Optional[str] = None,
     ) -> bool:
         """Update the title of a chat conversation."""
-        if not self._initialized:
-            await self.initialize()
-
         try:
             async with self.async_session() as session:
                 # Build the WHERE clause based on user/app context
@@ -2475,8 +2443,6 @@ class PostgresDatabase(BaseDatabase):
             return False
 
     async def store_workflow(self, workflow: Workflow, auth: AuthContext) -> bool:  # noqa: D401 – override
-        if not self._initialized:
-            await self.initialize()
         try:
             wf_json = _serialize_datetime(workflow.model_dump())
 
@@ -2505,8 +2471,6 @@ class PostgresDatabase(BaseDatabase):
 
     async def list_workflows(self, auth: AuthContext) -> List[Workflow]:
         try:
-            if not self._initialized:
-                await self.initialize()
             async with self.async_session() as session:
                 # Build query with auth filtering
                 query = select(WorkflowModel)
@@ -2532,8 +2496,6 @@ class PostgresDatabase(BaseDatabase):
 
     async def get_workflow(self, workflow_id: str, auth: AuthContext) -> Optional[Workflow]:
         try:
-            if not self._initialized:
-                await self.initialize()
             async with self.async_session() as session:
                 wf_model = await session.get(WorkflowModel, workflow_id)
                 if not wf_model:
@@ -2571,8 +2533,6 @@ class PostgresDatabase(BaseDatabase):
 
     async def delete_workflow(self, workflow_id: str, auth: AuthContext) -> bool:
         try:
-            if not self._initialized:
-                await self.initialize()
             async with self.async_session() as session:
                 # Get the workflow to check permissions
                 wf_model = await session.get(WorkflowModel, workflow_id)
@@ -2617,8 +2577,6 @@ class PostgresDatabase(BaseDatabase):
 
     async def store_workflow_run(self, run: WorkflowRun) -> bool:
         try:
-            if not self._initialized:
-                await self.initialize()
             run_json = _serialize_datetime(run.model_dump())
 
             async with self.async_session() as session:
@@ -2653,8 +2611,6 @@ class PostgresDatabase(BaseDatabase):
 
     async def get_workflow_run(self, run_id: str, auth: AuthContext) -> Optional[WorkflowRun]:
         try:
-            if not self._initialized:
-                await self.initialize()
             async with self.async_session() as session:
                 run_model = await session.get(WorkflowRunModel, run_id)
                 if not run_model:
@@ -2682,8 +2638,6 @@ class PostgresDatabase(BaseDatabase):
 
     async def list_workflow_runs(self, workflow_id: str, auth: AuthContext) -> List[WorkflowRun]:
         try:
-            if not self._initialized:
-                await self.initialize()
             async with self.async_session() as session:
                 # First check if the user has access to the workflow itself
                 workflow = await session.get(WorkflowModel, workflow_id)
@@ -2726,8 +2680,6 @@ class PostgresDatabase(BaseDatabase):
 
     async def delete_workflow_run(self, run_id: str, auth: AuthContext) -> bool:
         try:
-            if not self._initialized:
-                await self.initialize()
             async with self.async_session() as session:
                 run_model = await session.get(WorkflowRunModel, run_id)
                 if not run_model:
