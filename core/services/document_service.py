@@ -1133,7 +1133,6 @@ class DocumentService:
         # Collect chunk metadata for inline citations if enabled
         chunk_metadata = None
         if inline_citations:
-            logger.info(f"Inline citations enabled - collecting metadata for {len(chunks)} chunks")
             chunk_metadata = []
             for chunk in chunks:
                 # Get the document for this chunk
@@ -1152,7 +1151,6 @@ class DocumentService:
                     "is_colpali": is_colpali,
                 }
 
-                logger.info(f"Chunk metadata: {metadata}")
                 # For ColPali chunks, chunk_number corresponds to page number (0-indexed)
                 # Add 1 to make it 1-indexed for user display
                 if is_colpali:

@@ -25,7 +25,7 @@ import { showAlert } from "@/components/ui/alert-system";
 import Image from "next/image";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 
-import { Document, FolderSummary } from "@/components/types";
+import { Document, FolderSummary, ProcessingProgress } from "@/components/types";
 
 interface DocumentDetailProps {
   selectedDocument: Document | null;
@@ -116,7 +116,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
           </Badge>
         );
       case "processing":
-        const progress = selectedDocument.system_metadata?.progress;
+        const progress = selectedDocument.system_metadata?.progress as ProcessingProgress | undefined;
         return (
           <div className="flex items-center gap-2">
             <Badge
@@ -524,20 +524,23 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
           </div>
 
           {/* Progress bar for processing documents */}
-          {status === "processing" && selectedDocument.system_metadata?.progress && (
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm text-muted-foreground">
-                <span>Processing Progress</span>
-                <span>{selectedDocument.system_metadata.progress.percentage || 0}%</span>
+          {status === "processing" &&
+            (selectedDocument.system_metadata?.progress as ProcessingProgress | undefined) && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span>Processing Progress</span>
+                  <span>{(selectedDocument.system_metadata.progress as ProcessingProgress).percentage || 0}%</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                  <div
+                    className="h-full bg-blue-500 transition-all duration-300 ease-out"
+                    style={{
+                      width: `${(selectedDocument.system_metadata.progress as ProcessingProgress).percentage || 0}%`,
+                    }}
+                  />
+                </div>
               </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
-                <div
-                  className="h-full bg-blue-500 transition-all duration-300 ease-out"
-                  style={{ width: `${selectedDocument.system_metadata.progress.percentage || 0}%` }}
-                />
-              </div>
-            </div>
-          )}
+            )}
 
           {/* Error message for failed documents */}
           {status === "failed" && error && (

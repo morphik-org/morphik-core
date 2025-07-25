@@ -184,3 +184,11 @@ export interface CustomModelCreate {
   model_name: string;
   config: Record<string, unknown>;
 }
+
+// Progress tracking interface for document processing
+export interface ProcessingProgress {
+  step_name: string;
+  current_step: number;
+  total_steps: number;
+  percentage?: number;
+}
