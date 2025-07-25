@@ -20,6 +20,13 @@ def setup_logging(log_level: str = "INFO"):
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
 
+    # Check if handlers already exist - if so, skip setup
+    if root_logger.handlers:
+        # Update existing handlers' levels if needed
+        for handler in root_logger.handlers:
+            handler.setLevel(level)
+        return
+
     # Create formatters
     console_formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"

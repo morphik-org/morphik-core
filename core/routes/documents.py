@@ -40,7 +40,7 @@ def normalize_folder_name(folder_name: Optional[Union[str, List[str]]]) -> Optio
 # ---------------------------------------------------------------------------
 
 
-@router.post("/", response_model=List[Document])
+@router.post("", response_model=List[Document])
 async def list_documents(
     request: ListDocumentsRequest,
     auth: AuthContext = Depends(verify_token),
