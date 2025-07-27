@@ -3,7 +3,9 @@
 import React, { createContext, useContext, useState } from "react";
 import { extractTokenFromUri, getApiBaseUrlFromUri } from "@/lib/utils";
 
-const DEFAULT_API_BASE_URL = "http://localhost:8000";
+const DEFAULT_API_BASE_URL = typeof window !== 'undefined' 
+  ? `${window.location.protocol}//${window.location.hostname}:8000`
+  : "http://localhost:8000";
 
 interface MorphikContextType {
   connectionUri: string | null;

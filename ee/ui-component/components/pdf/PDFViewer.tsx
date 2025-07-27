@@ -193,7 +193,9 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
 
   // Use the new PDF chat sessions hook
   const { currentChatId, createNewSession } = usePDFChatSessions({
-    apiBaseUrl: apiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000",
+    apiBaseUrl: apiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || (typeof window !== 'undefined' 
+      ? `${window.location.protocol}//${window.location.hostname}:8000`
+      : "http://localhost:8000"),
     authToken: authToken || null,
     documentName: pdfState.documentId || pdfState.documentName || pdfState.file?.name,
   });
@@ -304,7 +306,9 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
 
       // Make API call to our document chat endpoint
       const response = await fetch(
-        `${apiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"}/document/chat/${chatId}/complete`,
+        `${apiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || (typeof window !== 'undefined' 
+          ? `${window.location.protocol}//${window.location.hostname}:8000`
+          : "http://localhost:8000")}/document/chat/${chatId}/complete`,
         {
           method: "POST",
           headers: {

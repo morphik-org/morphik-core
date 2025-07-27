@@ -31,7 +31,9 @@ import { useRouter, usePathname } from "next/navigation";
 const MorphikUI: React.FC<MorphikUIProps> = props => {
   const {
     connectionUri,
-    apiBaseUrl = "http://localhost:8000",
+    apiBaseUrl = typeof window !== 'undefined' 
+      ? `${window.location.protocol}//${window.location.hostname}:8000`
+      : "http://localhost:8000",
     initialSection = "documents",
     initialFolder = null,
     onBackClick,
