@@ -55,7 +55,9 @@ export function extractTokenFromUri(uri: string | undefined): string | null {
  * @param defaultUrl - The default API URL to use if URI is invalid
  * @returns The API base URL derived from the URI host
  */
-export function getApiBaseUrlFromUri(uri: string | undefined, defaultUrl: string = "http://localhost:8000"): string {
+export function getApiBaseUrlFromUri(uri: string | undefined, defaultUrl: string = typeof window !== 'undefined' 
+  ? `${window.location.protocol}//${window.location.hostname}:8000`
+  : "http://localhost:8000"): string {
   // If URI is empty or undefined, connect to the default URL
   if (!uri || uri.trim() === "") {
     return defaultUrl;

@@ -35,7 +35,7 @@ export default function YourApp() {
 | Prop            | Type                    | Default                   | Description                            |
 | --------------- | ----------------------- | ------------------------- | -------------------------------------- |
 | `connectionUri` | `string`                | `undefined`               | Connection URI for Morphik API         |
-| `apiBaseUrl`    | `string`                | `"http://localhost:8000"` | Base URL for API requests              |
+| `apiBaseUrl`    | `string`                | `"http://{hostname}:8000"` | Base URL for API requests (defaults to current hostname) |
 | `isReadOnlyUri` | `boolean`               | `false`                   | Controls whether the URI can be edited |
 | `onUriChange`   | `(uri: string) => void` | `undefined`               | Callback when URI is changed           |
 
