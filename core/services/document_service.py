@@ -1917,20 +1917,15 @@ class DocumentService:
                         logger.error(f"Error storing document metadata: {error_msg}")
                         raise
 
-        # Run storage operations in parallel when possible
-        storage_tasks = [store_with_retry(self.vector_store, chunk_objects, "regular")]
-
-        # Add colpali storage task if needed
+        # Store in the appropriate vector store based on use_colpali
         if use_colpali and self.colpali_vector_store and chunk_objects_multivector:
-            storage_tasks.append(store_with_retry(self.colpali_vector_store, chunk_objects_multivector, "colpali"))
+            # Store only in ColPali vector store when ColPali is enabled
+            chunk_ids = await store_with_retry(self.colpali_vector_store, chunk_objects_multivector, "colpali")
+        else:
+            # Store in regular vector store when ColPali is not enabled
+            chunk_ids = await store_with_retry(self.vector_store, chunk_objects, "regular")
 
-        # Execute storage tasks concurrently
-        storage_results = await asyncio.gather(*storage_tasks)
-
-        # Combine chunk IDs
-        regular_chunk_ids = storage_results[0]
-        colpali_chunk_ids = storage_results[1] if len(storage_results) > 1 else []
-        doc.chunk_ids = regular_chunk_ids + colpali_chunk_ids
+        doc.chunk_ids = chunk_ids
 
         logger.debug(f"Stored chunk embeddings in vector stores: {len(doc.chunk_ids)} chunks total")
 

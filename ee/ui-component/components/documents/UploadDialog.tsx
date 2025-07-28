@@ -21,8 +21,8 @@ interface UploadDialogProps {
   showUploadDialog: boolean;
   setShowUploadDialog: (show: boolean) => void;
   loading: boolean;
-  onFileUpload: (file: File | null) => Promise<void>;
-  onBatchFileUpload: (files: File[]) => Promise<void>;
+  onFileUpload: (file: File | null, metadata: string, rules: string, useColpali: boolean) => Promise<void>;
+  onBatchFileUpload: (files: File[], metadata: string, rules: string, useColpali: boolean) => Promise<void>;
   onTextUpload: (text: string, metadata: string, rules: string, useColpali: boolean) => Promise<void>;
 }
 
@@ -197,9 +197,9 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
           <Button
             onClick={() => {
               if (uploadType === "file") {
-                onFileUpload(fileToUpload);
+                onFileUpload(fileToUpload, metadata, rules, useColpali);
               } else if (uploadType === "batch") {
-                onBatchFileUpload(batchFilesToUpload);
+                onBatchFileUpload(batchFilesToUpload, metadata, rules, useColpali);
               } else {
                 onTextUpload(textContent, metadata, rules, useColpali);
               }

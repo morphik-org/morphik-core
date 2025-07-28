@@ -758,7 +758,12 @@ const DocumentsSection = React.forwardRef<
     }, [selectedDocuments.length, documents.length, selectedFolder, combinedRootItems]);
 
     // Handle file upload
-    const handleFileUpload = async (file: File | null) => {
+    const handleFileUpload = async (
+      file: File | null,
+      metadataParam?: string,
+      rulesParam?: string,
+      useColpaliParam?: boolean
+    ) => {
       if (!file) {
         showAlert("Please select a file to upload", {
           type: "error",
@@ -788,11 +793,11 @@ const DocumentsSection = React.forwardRef<
 
       addOptimisticDocument(optimisticDoc);
 
-      // Save file reference before we reset the form
+      // Use passed parameters or fall back to hook values
       const fileToUploadRef = file;
-      const metadataRef = metadata;
-      const rulesRef = rules;
-      const useColpaliRef = useColpali;
+      const metadataRef = metadataParam ?? metadata;
+      const rulesRef = rulesParam ?? rules;
+      const useColpaliRef = useColpaliParam ?? useColpali;
 
       // Reset form
       resetUploadDialog();
@@ -923,7 +928,17 @@ const DocumentsSection = React.forwardRef<
     };
 
     // Handle batch file upload
-    const handleBatchFileUpload = async (files: File[], fromDragAndDrop: boolean = false) => {
+    const handleBatchFileUpload = async (
+      files: File[],
+      metadataParamOrFromDragAndDrop?: string | boolean,
+      rulesParam?: string,
+      useColpaliParam?: boolean
+    ) => {
+      // Handle overloaded parameters - check if second param is boolean (old signature) or string (new signature)
+      const fromDragAndDrop =
+        typeof metadataParamOrFromDragAndDrop === "boolean" ? metadataParamOrFromDragAndDrop : false;
+      const metadataParam =
+        typeof metadataParamOrFromDragAndDrop === "string" ? metadataParamOrFromDragAndDrop : undefined;
       if (files.length === 0) {
         showAlert("Please select files to upload", {
           type: "error",
@@ -958,11 +973,11 @@ const DocumentsSection = React.forwardRef<
         addOptimisticDocument(optimisticDoc);
       });
 
-      // Save form data locally
+      // Save form data locally - use passed parameters or fall back to hook values
       const batchFilesRef = [...files];
-      const metadataRef = metadata;
-      const rulesRef = rules;
-      const useColpaliRef = useColpali;
+      const metadataRef = metadataParam ?? metadata;
+      const rulesRef = rulesParam ?? rules;
+      const useColpaliRef = useColpaliParam ?? useColpali;
 
       // Only reset form if not from drag and drop
       if (!fromDragAndDrop) {

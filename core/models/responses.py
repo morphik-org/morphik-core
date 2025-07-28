@@ -10,6 +10,23 @@ class HealthCheckResponse(BaseModel):
     message: str
 
 
+class ServiceStatus(BaseModel):
+    """Status of an individual service"""
+
+    name: str
+    status: str  # "healthy", "unhealthy", "degraded"
+    message: Optional[str] = None
+    response_time_ms: Optional[float] = None
+
+
+class DetailedHealthCheckResponse(BaseModel):
+    """Response for detailed health check endpoint"""
+
+    status: str  # "healthy", "unhealthy", "degraded"
+    services: List[ServiceStatus]
+    timestamp: str
+
+
 class ModelsResponse(BaseModel):
     """Response for available models endpoint"""
 

@@ -28,11 +28,12 @@ from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentResult, GroupedChunkResponse
 from core.models.prompts import validate_prompt_overrides_with_http_exception
 from core.models.request import AgentQueryRequest, CompletionQueryRequest, GenerateUriRequest, RetrieveRequest
-from core.models.responses import ChatTitleResponse, HealthCheckResponse, ModelsResponse
+from core.models.responses import ChatTitleResponse, ModelsResponse
 from core.routes.cache import router as cache_router
 from core.routes.documents import router as documents_router
 from core.routes.folders import router as folders_router
 from core.routes.graph import router as graph_router
+from core.routes.health import router as health_router
 from core.routes.ingest import router as ingest_router
 from core.routes.logs import router as logs_router  # noqa: E402 – import after FastAPI app
 from core.routes.model_config import router as model_config_router
@@ -172,13 +173,6 @@ else:
     app.add_middleware(SessionMiddleware, secret_key=settings.SESSION_SECRET_KEY)
 
 
-# Simple health check endpoint
-@app.get("/ping", response_model=HealthCheckResponse)
-async def ping_health():
-    """Simple health check endpoint that returns 200 OK."""
-    return {"status": "ok", "message": "Server is running"}
-
-
 @app.get("/models", response_model=ModelsResponse)
 async def get_available_models(auth: AuthContext = Depends(verify_token)):
     """
@@ -253,6 +247,9 @@ def _extract_provider(model_name: str) -> str:
 # Store on app.state for later access
 app.state.document_service = document_service
 logger.info("Document service initialized and stored on app.state")
+
+# Register health router
+app.include_router(health_router)
 
 # Register ingest router
 app.include_router(ingest_router)

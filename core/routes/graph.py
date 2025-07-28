@@ -339,7 +339,8 @@ async def delete_graph(
         # Check if graph exists first
         graph = await document_service.db.get_graph(name, auth)
         if not graph:
-            raise HTTPException(status_code=404, detail=f"Graph '{name}' not found")
+            # Return success if graph doesn't exist (idempotent delete)
+            return {"status": "success", "message": f"Graph '{name}' deleted successfully"}
 
         # Get the graph service
         graph_service = document_service.graph_service
@@ -349,7 +350,13 @@ async def delete_graph(
 
         if isinstance(graph_service, MorphikGraphService):
             # Use the graph service to delete, which will handle both API and database deletion
-            success = await graph_service.delete_graph(name, auth)
+            try:
+                success = await graph_service.delete_graph(name, auth)
+            except ValueError as e:
+                # Handle "graph not found" from MorphikGraphService
+                if "not found" in str(e).lower():
+                    return {"status": "success", "message": f"Graph '{name}' deleted successfully"}
+                raise
         else:
             # Fallback to database-only deletion
             success = await document_service.db.delete_graph(name, auth)

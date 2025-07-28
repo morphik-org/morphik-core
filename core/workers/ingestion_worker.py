@@ -230,6 +230,7 @@ async def process_ingestion_job(
             phase_times = {}
             # 1. Log the start of the job
             logger.info(f"Starting ingestion job for file: {original_filename}")
+            logger.info(f"ColPali parameter received: use_colpali={use_colpali} (type: {type(use_colpali)})")
 
             # Define total steps for progress tracking
             total_steps = 6
@@ -334,6 +335,96 @@ async def process_ingestion_job(
             phase_times["download_file"] = download_time
             logger.info(f"File download took {download_time:.2f}s for {len(file_content)/1024/1024:.2f}MB")
 
+            # ================== INGESTION FLOW DECISION LOGIC ==================
+            # Determine processing path based on ColPali and Rules configuration
+            # This section maps out all scenarios for clarity and maintainability
+            #
+            # Rule Types:
+            # 1. post_parsing rules: Applied to full document text BEFORE chunking
+            #    - Always require text extraction
+            #    - Example: Extract document-level metadata, clean text
+            #
+            # 2. post_chunking text rules: Applied to text chunks AFTER chunking
+            #    - Require text extraction and chunking
+            #    - Example: Extract metadata from each chunk's text
+            #
+            # 3. post_chunking image rules: Applied to image representations
+            #    - Don't require text extraction (work on images)
+            #    - Only relevant for ColPali/image processing
+            #    - Example: Extract visual features from images
+            # ===================================================================
+
+            # Check if we're using ColPali
+            using_colpali = (
+                use_colpali and document_service.colpali_embedding_model and document_service.colpali_vector_store
+            )
+            logger.info(
+                f"ColPali decision: use_colpali={use_colpali}, "
+                f"has_model={bool(document_service.colpali_embedding_model)}, "
+                f"has_store={bool(document_service.colpali_vector_store)}, "
+                f"using_colpali={using_colpali}"
+            )
+
+            # Check what types of rules we have
+            # Note: Default stage is "post_parsing" if not specified
+
+            # post_parsing rules always need text
+            has_post_parsing_rules = any(r.get("stage", "post_parsing") == "post_parsing" for r in rules_list or [])
+
+            # post_chunking text rules (non-image) need text chunks
+            has_text_chunking_rules = any(
+                r.get("stage") == "post_chunking" and not r.get("use_images", False) for r in rules_list or []
+            )
+
+            # post_chunking image rules work on images (don't need text)
+            has_image_chunking_rules = any(
+                r.get("stage") == "post_chunking"
+                and r.get("type") == "metadata_extraction"
+                and r.get("use_images", False)
+                for r in rules_list or []
+            )
+
+            # We need text if we have any text-based rules
+            has_text_rules = has_post_parsing_rules or has_text_chunking_rules
+
+            # Detect file type early for optimization decisions
+            file_type = None
+            mime_type = None
+            is_colpali_native_format = False  # Images, PDFs, Word docs that ColPali converts to images
+
+            try:
+                import filetype
+
+                file_type = filetype.guess(file_content)
+                if file_type:
+                    mime_type = file_type.mime
+                    # These formats are handled natively by ColPali as images
+                    is_colpali_native_format = (
+                        mime_type.startswith("image/")
+                        or mime_type == "application/pdf"
+                        or mime_type
+                        in [
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            "application/msword",
+                        ]
+                    )
+            except Exception as e:
+                logger.warning(f"Could not detect file type: {e}")
+
+            # ===== PROCESSING FLOW DECISION =====
+            # Skip text parsing only when ALL conditions are met:
+            # 1. ColPali is enabled
+            # 2. No text-based rules (neither post_parsing nor text post_chunking)
+            # 3. File is a ColPali-native format (image/PDF/Word that converts to images)
+            skip_text_parsing = using_colpali and not has_text_rules and is_colpali_native_format
+
+            logger.info(
+                f"Processing decision for {mime_type or 'unknown'} file: "
+                f"skip_text_parsing={skip_text_parsing} "
+                f"(ColPali={using_colpali}, text_rules={has_text_rules}, native_format={is_colpali_native_format}, "
+                f"image_rules={has_image_chunking_rules})"
+            )
+
             # 4. Parse file to text
             await update_document_progress(document_service, document_id, auth, 2, total_steps, "Parsing file")
             # Use the filename derived from the storage key so the parser
@@ -344,27 +435,33 @@ async def process_ingestion_job(
 
             parse_start = time.time()
 
-            # Check if this is an XML file and handle it specially
-            if document_service.parser.is_xml_file(parse_filename, content_type):
+            # ===== FILE PARSING LOGIC =====
+            is_xml = document_service.parser.is_xml_file(parse_filename, content_type)
+            xml_processing = False
+            xml_chunks = []
+
+            if is_xml:
+                # XML files always need special parsing
                 logger.info(f"Detected XML file: {parse_filename}")
-                # For XML files, we parse and chunk in one step
                 xml_chunks = await document_service.parser.parse_and_chunk_xml(file_content, parse_filename)
                 additional_metadata = {}
-                text = ""  # Will be handled differently for XML
+                text = ""
                 xml_processing = True
+            elif skip_text_parsing:
+                # Skip text parsing for ColPali-native formats when no text rules
+                additional_metadata = {}
+                text = ""
+                logger.info("Skipping text extraction - ColPali will handle this file directly")
             else:
-                # Normal processing for non-XML files
+                # Normal text parsing required
                 additional_metadata, text = await document_service.parser.parse_file_to_text(
                     file_content, parse_filename
                 )
-                # Clean the extracted text to remove problematic escape characters (e.g., null bytes)
-                # PostgreSQL does not allow \x00 (null byte) or \u0000 in text fields
+                # Clean the extracted text to remove problematic escape characters
                 import re
 
                 text = re.sub(r"[\x00\u0000]", "", text)
-                # Optionally, remove other non-printable or control characters except newlines/tabs
                 text = re.sub(r"[^\x09\x0A\x0D\x20-\x7E]", "", text)
-                xml_processing = False
 
             logger.debug(
                 f"Parsed file into {'XML chunks' if xml_processing else f'text of length {len(text)}'} (filename used: {parse_filename})"
@@ -485,17 +582,19 @@ async def process_ingestion_job(
             await update_document_progress(document_service, document_id, auth, 3, total_steps, "Splitting into chunks")
             chunking_start = time.time()
 
+            # ===== CHUNKING LOGIC =====
             if xml_processing:
-                # For XML files, we already have the chunks from the parsing step
+                # XML files already have chunks from parsing
                 parsed_chunks = xml_chunks
                 logger.info(f"Using pre-parsed XML chunks: {len(parsed_chunks)} chunks")
+            elif skip_text_parsing:
+                # ColPali-native formats without text rules - no text chunks needed
+                parsed_chunks = []
+                logger.info("No text chunking needed - ColPali will create image-based chunks")
             else:
-                # Normal text chunking for non-XML files
+                # Normal text chunking required
                 parsed_chunks = await document_service.parser.split_text(text)
                 if not parsed_chunks:
-                    # No text was extracted from the file.  In many cases (e.g. pure images)
-                    # we can still proceed if ColPali multivector chunks are produced later.
-                    # Therefore we defer the fatal check until after ColPali chunk creation.
                     logger.warning(
                         "No text chunks extracted after parsing. Will attempt to continue "
                         "and rely on image-based chunks if available."
@@ -509,18 +608,8 @@ async def process_ingestion_job(
 
             # Decide whether we need image chunks either for ColPali embedding or because
             # there are image-based rules (use_images=True) that must process them.
-            has_image_rules = any(
-                r.get("stage", "post_parsing") == "post_chunking"
-                and r.get("type") == "metadata_extraction"
-                and r.get("use_images", False)
-                for r in rules_list or []
-            )
-
-            using_colpali = (
-                use_colpali and document_service.colpali_embedding_model and document_service.colpali_vector_store
-            )
-
-            should_create_image_chunks = has_image_rules or using_colpali
+            # Note: has_image_chunking_rules was already computed above during rule analysis
+            should_create_image_chunks = has_image_chunking_rules or using_colpali
 
             # Start timer for optional image chunk creation / multivector processing
             colpali_processing_start = time.time()
@@ -539,8 +628,7 @@ async def process_ingestion_job(
                     file_type, file_content_base64, file_content, parsed_chunks
                 )
                 logger.debug(
-                    f"Created {len(chunks_multivector)} multivector/image chunks "
-                    f"(has_image_rules={has_image_rules}, using_colpali={using_colpali})"
+                    f"Created {len(chunks_multivector)} multivector/image chunks " f"(using_colpali={using_colpali})"
                 )
             colpali_create_chunks_time = time.time() - colpali_processing_start
             phase_times["colpali_create_chunks"] = colpali_create_chunks_time
@@ -637,26 +725,41 @@ async def process_ingestion_job(
                 processed_chunks = parsed_chunks  # No rules, use original chunks
                 processed_chunks_multivector = chunks_multivector  # No rules, use original multivector chunks
 
-            # 10. Generate embeddings for processed chunks
-            await update_document_progress(document_service, document_id, auth, 4, total_steps, "Generating embeddings")
-            embedding_start = time.time()
-            embeddings = await document_service.embedding_model.embed_for_ingestion(processed_chunks)
-            logger.debug(f"Generated {len(embeddings)} embeddings")
-            embedding_time = time.time() - embedding_start
-            phase_times["generate_embeddings"] = embedding_time
-            embeddings_per_second = len(embeddings) / embedding_time if embedding_time > 0 else 0
-            logger.info(
-                f"Embedding generation took {embedding_time:.2f}s for {len(embeddings)} embeddings "
-                f"({embeddings_per_second:.2f} embeddings/s)"
-            )
+            # ===== REGULAR EMBEDDING GENERATION DECISION =====
+            # Generate regular embeddings only if we have chunks AND not using ColPali
+            chunk_objects = []
 
-            # 11. Create chunk objects with potentially modified chunk content and metadata
-            chunk_objects_start = time.time()
-            chunk_objects = document_service._create_chunk_objects(doc.external_id, processed_chunks, embeddings)
-            logger.debug(f"Created {len(chunk_objects)} chunk objects")
-            chunk_objects_time = time.time() - chunk_objects_start
-            phase_times["create_chunk_objects"] = chunk_objects_time
-            logger.debug(f"Creating chunk objects took {chunk_objects_time:.2f}s")
+            if processed_chunks and not using_colpali:
+                # Generate regular embeddings for standard flow
+                await update_document_progress(
+                    document_service, document_id, auth, 4, total_steps, "Generating embeddings"
+                )
+                embedding_start = time.time()
+                embeddings = await document_service.embedding_model.embed_for_ingestion(processed_chunks)
+                logger.debug(f"Generated {len(embeddings)} embeddings")
+                embedding_time = time.time() - embedding_start
+                phase_times["generate_embeddings"] = embedding_time
+                embeddings_per_second = len(embeddings) / embedding_time if embedding_time > 0 else 0
+                logger.info(
+                    f"Embedding generation took {embedding_time:.2f}s for {len(embeddings)} embeddings "
+                    f"({embeddings_per_second:.2f} embeddings/s)"
+                )
+
+                # Create chunk objects
+                chunk_objects_start = time.time()
+                chunk_objects = document_service._create_chunk_objects(doc.external_id, processed_chunks, embeddings)
+                logger.debug(f"Created {len(chunk_objects)} chunk objects")
+                chunk_objects_time = time.time() - chunk_objects_start
+                phase_times["create_chunk_objects"] = chunk_objects_time
+                logger.debug(f"Creating chunk objects took {chunk_objects_time:.2f}s")
+            else:
+                # Skip regular embeddings
+                if using_colpali:
+                    logger.info("Skipping regular embeddings - will store only in ColPali vector store")
+                elif not processed_chunks:
+                    logger.info("No text chunks to embed")
+                phase_times["generate_embeddings"] = 0
+                phase_times["create_chunk_objects"] = 0
 
             # 12. Handle ColPali embeddings
             colpali_embed_start = time.time()
@@ -697,8 +800,18 @@ async def process_ingestion_job(
             )
             store_time = time.time() - store_start
             phase_times["store_chunks_and_update_doc"] = store_time
+
+            # ===== STORAGE SUMMARY =====
+            # Log what was actually stored for clarity
+            storage_summary = []
+            if using_colpali and chunk_objects_multivector:
+                storage_summary.append(f"ColPali vector store: {len(chunk_objects_multivector)} chunks")
+            if not using_colpali and chunk_objects:
+                storage_summary.append(f"Regular vector store: {len(chunk_objects)} chunks")
+
             logger.info(
-                f"Storing chunks and final document update took {store_time:.2f}s for {len(chunk_objects)} chunks"
+                f"Storage complete in {store_time:.2f}s - "
+                + ("; ".join(storage_summary) if storage_summary else "No chunks stored")
             )
 
             logger.debug(f"Successfully completed processing for document {doc.external_id}")

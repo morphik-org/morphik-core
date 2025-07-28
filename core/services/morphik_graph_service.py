@@ -280,39 +280,73 @@ class MorphikGraphService:
         """
         graph = await self._make_graph_object(name, auth, document_service, filters, documents, system_filters)
         docs = await self.db.get_documents_by_id(graph.document_ids, auth, system_filters)
-        content = "\n".join([doc.system_metadata.get("content", "") for doc in docs if doc.system_metadata])
 
-        # Call the external graph building service
-        request_data = {"graph_id": graph.id, "text": content}
-        try:
-            api_response = await self._make_api_request(
-                method="POST",
-                endpoint="/build",
-                auth=auth,
-                json_data=request_data,
-            )
-            logger.info(f"Graph build API call for graph_id {graph.id} successful. Response: {api_response}")
-
-            # Check if the response contains workflow_id and run_id (async API)
-            if isinstance(api_response, dict) and "workflow_id" in api_response and "run_id" in api_response:
-                logger.info(
-                    f"Graph build is async. workflow_id: {api_response['workflow_id']}, run_id: {api_response['run_id']}"
-                )
-                graph.system_metadata["status"] = "processing"
-                graph.system_metadata["workflow_id"] = api_response["workflow_id"]
-                graph.system_metadata["run_id"] = api_response["run_id"]
-            else:
-                # Legacy synchronous response - mark as completed
-                graph.system_metadata["status"] = "completed"
-        except Exception as e:
-            logger.error(f"Failed to call graph build API for graph_id {graph.id}: {e}")
-            graph.system_metadata["status"] = "build_api_failed"
-            # Attempt to store graph with failed status before re-raising
+        # Process documents individually instead of concatenating
+        if not docs:
+            logger.warning(f"No documents found for graph {graph.id}")
+            graph.system_metadata["status"] = "completed"
+        else:
+            # Create empty graph first, then add documents one by one
             try:
-                await self.db.store_graph(graph, auth)
-            except Exception as db_exc:
-                logger.error(f"Failed to store graph {graph.id} with build_api_failed status: {db_exc}")
-            raise
+                # Initialize empty graph
+                initial_request_data = {"graph_id": graph.id, "text": ""}
+                api_response = await self._make_api_request(
+                    method="POST",
+                    endpoint="/build",
+                    auth=auth,
+                    json_data=initial_request_data,
+                )
+                logger.info(f"Initial graph build API call for graph_id {graph.id} successful")
+
+                # Process each document individually using /update endpoint
+                successful_docs = 0
+                failed_docs = 0
+
+                for doc in docs:
+                    doc_content = doc.system_metadata.get("content", "") if doc.system_metadata else ""
+                    if not doc_content.strip():
+                        continue
+
+                    try:
+                        request_data = {"graph_id": graph.id, "text": doc_content}
+                        doc_response = await self._make_api_request(
+                            method="POST",
+                            endpoint="/update",
+                            auth=auth,
+                            json_data=request_data,
+                        )
+                        logger.debug(f"Document {doc.external_id} response: {doc_response}")
+                        successful_docs += 1
+                        logger.debug(f"Successfully processed document {doc.external_id} for graph {graph.id}")
+                    except Exception as doc_e:
+                        failed_docs += 1
+                        logger.error(f"Failed to process document {doc.external_id} for graph {graph.id}: {doc_e}")
+
+                logger.info(
+                    f"Graph {graph.id}: processed {successful_docs} documents successfully, {failed_docs} failed"
+                )
+
+                # Check if the initial response contains workflow_id and run_id (async API)
+                if isinstance(api_response, dict) and "workflow_id" in api_response and "run_id" in api_response:
+                    logger.info(
+                        f"Graph build is async. workflow_id: {api_response['workflow_id']}, run_id: {api_response['run_id']}"
+                    )
+                    graph.system_metadata["status"] = "processing"
+                    graph.system_metadata["workflow_id"] = api_response["workflow_id"]
+                    graph.system_metadata["run_id"] = api_response["run_id"]
+                else:
+                    # Legacy synchronous response - mark as completed
+                    graph.system_metadata["status"] = "completed"
+
+            except Exception as e:
+                logger.error(f"Failed to call graph build API for graph_id {graph.id}: {e}")
+                graph.system_metadata["status"] = "build_api_failed"
+                # Attempt to store graph with failed status before re-raising
+                try:
+                    await self.db.store_graph(graph, auth)
+                except Exception as db_exc:
+                    logger.error(f"Failed to store graph {graph.id} with build_api_failed status: {db_exc}")
+                raise
 
         if not await self.db.store_graph(graph, auth):
             # This case might be redundant if the above block handles storing on failure/success appropriately
@@ -359,34 +393,43 @@ class MorphikGraphService:
             graph.system_metadata["status"] = "completed"  # Or perhaps "unchanged"
         else:
             new_docs = await self.db.get_documents_by_id(list(new_doc_ids_set), auth, system_filters)
-            new_content = "\n".join([doc.system_metadata.get("content", "") for doc in new_docs if doc.system_metadata])
 
-            request_data = {"graph_id": graph.id, "text": new_content}
+            # Process new documents individually instead of concatenating
+            successful_docs = 0
+            failed_docs = 0
+
             try:
-                api_response = await self._make_api_request(
-                    method="POST",
-                    endpoint="/update",
-                    auth=auth,
-                    json_data=request_data,
-                )
-                logger.info(f"Graph update API call for graph_id {graph.id} successful. Response: {api_response}")
+                for doc in new_docs:
+                    doc_content = doc.system_metadata.get("content", "") if doc.system_metadata else ""
+                    if not doc_content.strip():
+                        continue
 
-                # Check if the response contains workflow_id and run_id (async API)
-                if isinstance(api_response, dict) and "workflow_id" in api_response and "run_id" in api_response:
-                    logger.info(
-                        f"Graph update is async. workflow_id: {api_response['workflow_id']}, run_id: {api_response['run_id']}"
-                    )
-                    graph.system_metadata["status"] = "processing"
-                    graph.system_metadata["workflow_id"] = api_response["workflow_id"]
-                    graph.system_metadata["run_id"] = api_response["run_id"]
-                else:
-                    # Legacy synchronous response - mark as completed
-                    graph.system_metadata["status"] = "completed"
+                    try:
+                        request_data = {"graph_id": graph.id, "text": doc_content}
+                        await self._make_api_request(
+                            method="POST",
+                            endpoint="/update",
+                            auth=auth,
+                            json_data=request_data,
+                        )
+                        successful_docs += 1
+                        logger.debug(f"Successfully updated graph {graph.id} with document {doc.external_id}")
+                    except Exception as doc_e:
+                        failed_docs += 1
+                        logger.error(f"Failed to update graph {graph.id} with document {doc.external_id}: {doc_e}")
+
+                logger.info(
+                    f"Graph update {graph.id}: processed {successful_docs} documents successfully, {failed_docs} failed"
+                )
+
+                # Mark as completed for individual document processing
+                graph.system_metadata["status"] = "completed"
 
                 # Update local graph object with new document IDs
                 current_doc_ids = set(graph.document_ids)
                 current_doc_ids.update(new_doc_ids_set)
                 graph.document_ids = list(current_doc_ids)
+
             except Exception as e:
                 logger.error(f"Failed to call graph update API for graph_id {graph.id}: {e}")
                 graph.system_metadata["status"] = "update_api_failed"
