@@ -7,7 +7,7 @@ import { DynamicSiteHeader } from "@/components/dynamic-site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar-new";
 import { MorphikProvider } from "@/contexts/morphik-context";
 import { HeaderProvider } from "@/contexts/header-context";
-import { ConnectedSidebar } from "@/components/connected-sidebar";
+import { ConnectedSidebar, ChatProvider } from "@/components/connected-sidebar";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -33,20 +33,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="min-h-screen bg-sidebar">
             <MorphikProvider>
               <HeaderProvider>
-                <SidebarProvider
-                  style={
-                    {
-                      "--sidebar-width": "calc(var(--spacing) * 72)",
-                      "--header-height": "calc(var(--spacing) * 12)",
-                    } as React.CSSProperties
-                  }
-                >
-                  <ConnectedSidebar />
-                  <SidebarInset>
-                    <DynamicSiteHeader />
-                    <div className="flex flex-1 flex-col p-4 md:p-6">{children}</div>
-                  </SidebarInset>
-                </SidebarProvider>
+                <ChatProvider>
+                  <SidebarProvider
+                    style={
+                      {
+                        "--sidebar-width": "calc(var(--spacing) * 72)",
+                        "--header-height": "calc(var(--spacing) * 12)",
+                      } as React.CSSProperties
+                    }
+                  >
+                    <ConnectedSidebar />
+                    <SidebarInset>
+                      <DynamicSiteHeader />
+                      <div className="flex flex-1 flex-col p-4 md:p-6">{children}</div>
+                    </SidebarInset>
+                  </SidebarProvider>
+                </ChatProvider>
               </HeaderProvider>
             </MorphikProvider>
           </div>

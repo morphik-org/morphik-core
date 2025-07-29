@@ -19,10 +19,10 @@ import { DocumentSelector } from "@/components/ui/document-selector";
 import { PreviewMessage } from "./ChatMessages";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
-import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { AgentPreviewMessage, AgentUIMessage, DisplayObject, SourceObject, ToolCall } from "./AgentChatMessages";
 import { ModelSelector } from "./ModelSelector";
 import { useHeader } from "@/contexts/header-context";
+import { useChatContext } from "@/components/connected-sidebar";
 
 interface ChatSectionProps {
   apiBaseUrl: string;
@@ -55,8 +55,19 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   isReadonly = false,
   onChatSubmit,
 }) => {
-  // Selected chat ID – start with fresh conversation
-  const [chatId, setChatId] = useState<string>(() => generateUUID());
+  // Use global chat state
+  const { activeChatId, setActiveChatId } = useChatContext();
+
+  // Generate a stable chatId when no active chat is selected
+  const [fallbackChatId] = useState(() => generateUUID());
+  const chatId = activeChatId || fallbackChatId;
+
+  // Set the fallback as active if no chat is currently active
+  useEffect(() => {
+    if (!activeChatId && fallbackChatId) {
+      setActiveChatId(fallbackChatId);
+    }
+  }, [activeChatId, fallbackChatId, setActiveChatId]);
 
   // State for streaming toggle
   const [streamingEnabled, setStreamingEnabled] = useState(true);
@@ -124,8 +135,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     ...queryOptions,
   };
 
-  // Sidebar collapsed state
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // State for settings visibility
   const [showSettings, setShowSettings] = useState(false);
@@ -565,22 +574,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
 
   return (
     <div className="relative -m-4 flex h-[calc(100vh-3rem)] w-[calc(100%+2rem)] bg-background md:-m-6 md:h-[calc(100vh-3rem)] md:w-[calc(100%+3rem)]">
-      {/* Sidebar */}
-      <ChatSidebar
-        apiBaseUrl={apiBaseUrl}
-        authToken={authToken}
-        activeChatId={chatId}
-        onSelect={id => {
-          // Clear chat cache when switching to ensure fresh data
-          clearChatCache(chatId, apiBaseUrl);
-          setChatId(id ?? generateUUID());
-        }}
-        collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed(prev => !prev)}
-      />
-
-      {/* Main chat area */}
-      <div className="flex h-full flex-1 flex-col overflow-hidden">
+      {/* Main chat area - now takes full width */}
+      <div className="flex h-full w-full flex-col overflow-hidden">
         {/* Conditional layout based on whether there are messages */}
         {(isAgentMode ? agentMessages.length === 0 : messages.length === 0) ? (
           /* Empty state - centered layout with controls */

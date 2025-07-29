@@ -31,6 +31,7 @@ import {
   IconMessageCircle,
   IconArrowRight,
   IconLink,
+  IconArrowLeft,
 } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav-main";
@@ -52,6 +53,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { normalizeToMorphikUri, getApiBaseUrlFromUri } from "@/lib/utils";
+import { ChatSidebar } from "@/components/chat/ChatSidebar";
+import { useMorphik } from "@/contexts/morphik-context";
 
 const data = {
   user: {
@@ -79,6 +82,7 @@ const data = {
       title: "Chat",
       url: "/chat",
       icon: IconMessage,
+      isSpecial: true, // Mark chat as special for custom handling
     },
     {
       title: "Knowledge Graph",
@@ -133,6 +137,10 @@ interface MorphikSidebarProps extends React.ComponentProps<typeof Sidebar> {
   showEditableUri?: boolean;
   connectionUri?: string | null;
   onUriChange?: (newUri: string) => void;
+  showChatView?: boolean;
+  onChatViewChange?: (show: boolean) => void;
+  activeChatId?: string;
+  onChatSelect?: (id: string | undefined) => void;
 }
 
 export function MorphikSidebar({
@@ -143,10 +151,15 @@ export function MorphikSidebar({
   showEditableUri = true,
   connectionUri,
   onUriChange,
+  showChatView = false,
+  onChatViewChange,
+  activeChatId,
+  onChatSelect,
   ...props
 }: MorphikSidebarProps) {
   const [mounted, setMounted] = React.useState(false);
   const [uriInput, setUriInput] = React.useState(connectionUri || "");
+  const { apiBaseUrl, authToken } = useMorphik();
 
   // Ensure component is mounted before rendering theme-dependent content
   React.useEffect(() => {
@@ -208,47 +221,118 @@ export function MorphikSidebar({
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      <SidebarContent>
-        {showEditableUri && (
-          <SidebarGroup>
-            <SidebarGroupContent className="px-2 py-2">
-              <form onSubmit={handleUriSubmit} className="space-y-2">
-                <Label htmlFor="connection-uri" className="text-xs text-muted-foreground">
-                  Connection URI
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="connection-uri"
-                    type="text"
-                    placeholder="http://localhost:8000"
-                    value={uriInput}
-                    onChange={e => setUriInput(e.target.value)}
-                    className="text-xs"
-                  />
-                  <Button type="submit" size="sm" variant="outline">
-                    <IconLink className="h-3 w-3" />
+      <SidebarContent className="flex flex-col">
+        {showChatView ? (
+          /* Chat view content */
+          <>
+            {/* Back button */}
+            <SidebarGroup>
+              <SidebarGroupContent className="px-2 py-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start gap-2 text-sm"
+                  onClick={() => onChatViewChange?.(false)}
+                >
+                  <IconArrowLeft className="h-4 w-4" />
+                  Back to Menu
+                </Button>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            {/* Chat sidebar content - customize it for our layout */}
+            <div className="flex-1 min-h-0 animate-in slide-in-from-right-1 duration-300 -mx-2">
+              <div className="h-full bg-transparent">
+                <ChatSidebar
+                  apiBaseUrl={apiBaseUrl}
+                  authToken={authToken}
+                  activeChatId={activeChatId}
+                  onSelect={(chatId) => {
+                    onChatSelect?.(chatId);
+                    // Navigate to chat page if not already there (safely)
+                    setTimeout(() => {
+                      if (typeof window !== 'undefined' && window.location.pathname !== '/chat') {
+                        window.location.href = '/chat';
+                      }
+                    }, 0);
+                  }}
+                  collapsed={false}
+                  onToggle={() => {}}
+                />
+              </div>
+            </div>
+
+            {/* Keep secondary nav at bottom even in chat view */}
+            <div className="mt-auto">
+              <NavSecondary items={data.navSecondary} />
+              {onUpgradeClick && (userProfile?.tier === "free" || !userProfile?.tier) && (
+                <div className="mx-2 mb-2 mt-2">
+                  <Button className="w-full justify-between" variant="outline" size="default" onClick={onUpgradeClick}>
+                    <div className="flex items-center gap-2">
+                      <span>Upgrade to</span>
+                      <Badge variant="secondary" className="text-xs">
+                        PRO
+                      </Badge>
+                    </div>
+                    <IconArrowRight className="h-4 w-4" />
                   </Button>
                 </div>
-                {mounted && <div className="text-xs text-muted-foreground">Current: {currentApiUrl}</div>}
-              </form>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-        <NavMain items={data.navMain} />
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
-        {/* Show upgrade button for free users in cloud UI only */}
-        {onUpgradeClick && (userProfile?.tier === "free" || !userProfile?.tier) && (
-          <div className="mx-2 mb-2 mt-2">
-            <Button className="w-full justify-between" variant="outline" size="default" onClick={onUpgradeClick}>
-              <div className="flex items-center gap-2">
-                <span>Upgrade to</span>
-                <Badge variant="secondary" className="text-xs">
-                  PRO
-                </Badge>
-              </div>
-              <IconArrowRight className="h-4 w-4" />
-            </Button>
-          </div>
+              )}
+            </div>
+          </>
+        ) : (
+          /* Main navigation content */
+          <>
+            <div className="animate-in slide-in-from-left-1 duration-300">
+              {showEditableUri && (
+                <SidebarGroup>
+                  <SidebarGroupContent className="px-2 py-2">
+                    <form onSubmit={handleUriSubmit} className="space-y-2">
+                      <Label htmlFor="connection-uri" className="text-xs text-muted-foreground">
+                        Connection URI
+                      </Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="connection-uri"
+                          type="text"
+                          placeholder="http://localhost:8000"
+                          value={uriInput}
+                          onChange={e => setUriInput(e.target.value)}
+                          className="text-xs"
+                        />
+                        <Button type="submit" size="sm" variant="outline">
+                          <IconLink className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      {mounted && <div className="text-xs text-muted-foreground">Current: {currentApiUrl}</div>}
+                    </form>
+                  </SidebarGroupContent>
+                </SidebarGroup>
+              )}
+              <NavMain
+                items={data.navMain}
+                onChatClick={() => onChatViewChange?.(true)}
+              />
+            </div>
+
+            {/* Secondary nav stays at bottom */}
+            <div className="mt-auto">
+              <NavSecondary items={data.navSecondary} />
+              {onUpgradeClick && (userProfile?.tier === "free" || !userProfile?.tier) && (
+                <div className="mx-2 mb-2 mt-2">
+                  <Button className="w-full justify-between" variant="outline" size="default" onClick={onUpgradeClick}>
+                    <div className="flex items-center gap-2">
+                      <span>Upgrade to</span>
+                      <Badge variant="secondary" className="text-xs">
+                        PRO
+                      </Badge>
+                    </div>
+                    <IconArrowRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          </>
         )}
       </SidebarContent>
       <SidebarFooter>

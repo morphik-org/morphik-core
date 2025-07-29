@@ -11,12 +11,15 @@ import {
 
 export function NavMain({
   items,
+  onChatClick,
 }: {
   items: {
     title: string;
     url: string;
     icon?: Icon;
+    isSpecial?: boolean;
   }[];
+  onChatClick?: () => void;
 }) {
   return (
     <SidebarGroup>
@@ -43,12 +46,30 @@ export function NavMain({
         <SidebarMenu>
           {items.map(item => (
             <SidebarMenuItem key={item.title}>
-              <SidebarMenuButton tooltip={item.title} asChild>
-                <a href={item.url}>
+              {item.isSpecial && item.title === "Chat" ? (
+                <SidebarMenuButton
+                  tooltip={item.title}
+                  onClick={() => {
+                    onChatClick?.();
+                    // Navigate to chat page (safely)
+                    setTimeout(() => {
+                      if (typeof window !== 'undefined' && window.location.pathname !== '/chat') {
+                        window.location.href = '/chat';
+                      }
+                    }, 0);
+                  }}
+                >
                   {item.icon && <item.icon />}
                   <span>{item.title}</span>
-                </a>
-              </SidebarMenuButton>
+                </SidebarMenuButton>
+              ) : (
+                <SidebarMenuButton tooltip={item.title} asChild>
+                  <a href={item.url}>
+                    {item.icon && <item.icon />}
+                    <span>{item.title}</span>
+                  </a>
+                </SidebarMenuButton>
+              )}
             </SidebarMenuItem>
           ))}
         </SidebarMenu>
