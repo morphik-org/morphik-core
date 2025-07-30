@@ -1,26 +1,24 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { useMorphikChat, clearChatCache } from "@/hooks/useMorphikChat";
+import { useMorphikChat } from "@/hooks/useMorphikChat";
 import { generateUUID } from "@/lib/utils";
 import type { QueryOptions } from "@/components/types";
 import type { UIMessage } from "./ChatMessages";
 import { FolderSummary } from "@/components/types";
 
 import { Settings, Spin, ArrowUp, Sparkles } from "./icons";
-import { Info } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DocumentSelector } from "@/components/ui/document-selector";
 import { PreviewMessage } from "./ChatMessages";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { AgentPreviewMessage, AgentUIMessage, DisplayObject, SourceObject, ToolCall } from "./AgentChatMessages";
-import { ModelSelector } from "./ModelSelector";
 import { useHeader } from "@/contexts/header-context";
 import { useChatContext } from "@/components/connected-sidebar";
 
@@ -76,7 +74,16 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   const [inlineCitationsEnabled, setInlineCitationsEnabled] = useState(true);
 
   // Initialize our custom hook
-  const { messages, input, setInput, status, handleSubmit, queryOptions, updateQueryOption } = useMorphikChat({
+  const {
+    messages,
+    input,
+    setInput,
+    status,
+    handleSubmit,
+    queryOptions,
+    updateQueryOption,
+    isLoading: chatLoading,
+  } = useMorphikChat({
     chatId,
     apiBaseUrl,
     authToken,
@@ -135,7 +142,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     ...queryOptions,
   };
 
-
   // State for settings visibility
   const [showSettings, setShowSettings] = useState(false);
   const [availableGraphs, setAvailableGraphs] = useState<string[]>([]);
@@ -156,16 +162,21 @@ const ChatSection: React.FC<ChatSectionProps> = ({
 
   // Model selection state
   const [selectedModel, setSelectedModel] = useState<string>("");
+  const [showModelSelector, setShowModelSelector] = useState(false);
 
   // Agent mode toggle and state
   const [isAgentMode, setIsAgentMode] = useState(false);
   const [agentMessages, setAgentMessages] = useState<AgentUIMessage[]>([]);
   const [agentStatus, setAgentStatus] = useState<"idle" | "submitted" | "completed">("idle");
 
+  // State for agent loading
+  const [agentHistoryLoading, setAgentHistoryLoading] = useState(false);
+
   // Load agent messages from chat history when switching to agent mode
   useEffect(() => {
     const loadAgentHistory = async () => {
       if (isAgentMode && chatId && apiBaseUrl && (authToken || apiBaseUrl.includes("localhost"))) {
+        setAgentHistoryLoading(true);
         try {
           const response = await fetch(`${apiBaseUrl}/chat/${chatId}`, {
             headers: {
@@ -199,10 +210,13 @@ const ChatSection: React.FC<ChatSectionProps> = ({
           }
         } catch (err) {
           console.error("Failed to load agent chat history", err);
+        } finally {
+          setAgentHistoryLoading(false);
         }
       } else if (!isAgentMode) {
         // Clear agent messages when switching back to regular chat mode
         setAgentMessages([]);
+        setAgentHistoryLoading(false);
       }
     };
 
@@ -572,124 +586,89 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     return () => setCustomBreadcrumbs(null);
   }, [setCustomBreadcrumbs]);
 
+  // Close model selector when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest(".model-selector-container")) {
+        setShowModelSelector(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   return (
     <div className="relative -m-4 flex h-[calc(100vh-3rem)] w-[calc(100%+2rem)] bg-background md:-m-6 md:h-[calc(100vh-3rem)] md:w-[calc(100%+3rem)]">
       {/* Main chat area - now takes full width */}
       <div className="flex h-full w-full flex-col overflow-hidden">
-        {/* Conditional layout based on whether there are messages */}
-        {(isAgentMode ? agentMessages.length === 0 : messages.length === 0) ? (
-          /* Empty state - centered layout with controls */
-          <div className="flex h-full flex-1 flex-col items-center justify-center transition-all duration-700 ease-out">
-            <div className="mb-12 flex flex-col items-center justify-center text-center">
-              <div className="mb-4 flex items-center gap-3">
-                <h1 className="text-4xl font-light text-foreground">How can I help?</h1>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                      >
-                        <Info className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-sm text-center">
-                      <p className="text-sm">
-                        {isAgentMode
-                          ? "Agent Mode: Advanced AI with reasoning, tool use, and multimodal capabilities. May take longer but provides deeper insights."
-                          : "Chat Mode: Fast document search and retrieval. Perfect for quick questions and finding specific information."}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-              <p className="max-w-2xl text-lg text-muted-foreground">
-                Ask me anything about your documents. I&apos;ll search through them and provide you with relevant
-                information.
-              </p>
-            </div>
+        {/* Top bar with model selector */}
+        {!isAgentMode && (
+          <div className="absolute left-0 top-0 z-10 flex items-center px-6 py-3">
+            {/* Model selector as pill */}
+            <div className="model-selector-container relative">
+              <button
+                className="flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/20"
+                onClick={() => setShowModelSelector(!showModelSelector)}
+              >
+                <span>{selectedModel === "default" || !selectedModel ? "Default" : selectedModel}</span>
+                <ChevronDown className={`h-3 w-3 transition-transform ${showModelSelector ? "rotate-180" : ""}`} />
+              </button>
 
-            {/* Centered input area for empty state */}
-            <div className="w-full max-w-4xl px-4">
-              {/* Controls Row - Folder Selection and Agent Mode */}
-              {!isReadonly && (
-                <div className="border-b border-border/50 pb-3 pt-3">
-                  <div className="flex items-center justify-between gap-4">
-                    {/* Left side - Document and Folder Selection (only in chat mode) */}
-                    {!isAgentMode && (
-                      <div className="mr-4 flex-1">
-                        <DocumentSelector
-                          documents={documents}
-                          folders={folders.map(folder => ({
-                            name: folder.name,
-                            doc_count: folder.doc_count || 0,
-                          }))}
-                          selectedDocuments={getCurrentSelectedDocuments()}
-                          selectedFolders={getCurrentSelectedFolders()}
-                          onDocumentSelectionChange={(selectedDocumentIds: string[]) => {
-                            updateDocumentFilter(selectedDocumentIds);
-                          }}
-                          onFolderSelectionChange={(selectedFolderNames: string[]) => {
-                            safeUpdateOption(
-                              "folder_name",
-                              selectedFolderNames.length > 0 ? selectedFolderNames : undefined
-                            );
-                          }}
-                          loading={loadingDocuments || loadingFolders}
-                          placeholder="Select documents and folders"
-                          className="w-full"
-                        />
+              {showModelSelector && (
+                <div className="absolute left-0 top-full z-50 mt-2 w-72 rounded-lg border bg-popover p-1 shadow-lg">
+                  <div className="max-h-80 overflow-y-auto">
+                    {/* Default Morphik option */}
+                    <div
+                      className={`group relative flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent ${
+                        selectedModel === "default" || !selectedModel ? "bg-accent" : ""
+                      }`}
+                      onClick={() => {
+                        handleModelChange("default");
+                        setShowModelSelector(false);
+                      }}
+                    >
+                      <span className="text-base">🤖</span>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium">Default</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">Morphik&apos;s recommended model</div>
                       </div>
-                    )}
-
-                    {/* Right side - Agent Mode and Settings */}
-                    <div className={`flex items-center gap-2 ${isAgentMode ? "ml-auto" : ""}`}>
-                      <Button
-                        variant={isAgentMode ? "default" : "outline"}
-                        size="sm"
-                        className="text-xs font-medium transition-all hover:border-primary/50"
-                        title="Goes deeper, reasons across documents and may return image-grounded answers"
-                        onClick={() => {
-                          setIsAgentMode(prev => !prev);
-                          setAgentStatus("idle");
-                          setShowSettings(false);
-                        }}
-                      >
-                        <span className="flex items-center gap-1.5">
-                          {!isAgentMode && <Sparkles className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400" />}
-                          <span>{isAgentMode ? "Chat Mode" : "Agent Mode"}</span>
-                        </span>
-                      </Button>
-                      {!isAgentMode && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex items-center gap-1 text-xs font-medium transition-all hover:border-primary/50"
-                          onClick={() => {
-                            setShowSettings(!showSettings);
-                            if (!showSettings && authToken) {
-                              fetchGraphs();
-                              fetchFolders();
-                              fetchDocuments();
-                            }
-                          }}
-                        >
-                          <Settings className="h-3.5 w-3.5" />
-                          <span>{showSettings ? "Hide" : "Settings"}</span>
-                        </Button>
-                      )}
                     </div>
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+        {/* Conditional layout based on whether there are messages */}
+        {chatLoading || agentHistoryLoading ? (
+          /* Loading state - show spinner while fetching chat history */
+          <div className="flex h-full flex-1 flex-col items-center justify-center">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Spin className="h-4 w-4 animate-spin" />
+              <span>Loading chat...</span>
+            </div>
+          </div>
+        ) : (isAgentMode ? agentMessages.length === 0 : messages.length === 0) ? (
+          /* Empty state - centered layout with controls */
+          <div className="flex h-full flex-1 flex-col items-center justify-center transition-all duration-700 ease-out">
+            <div className="mb-12 flex flex-col items-center justify-center text-center">
+              <div className="mb-4">
+                <h1 className="text-4xl font-light text-foreground">Let&apos;s dive into your knowledge</h1>
+              </div>
+            </div>
 
+            {/* Centered input area for empty state */}
+            <div className="w-full max-w-4xl px-4">
               {/* Input Form for centered state */}
-              <form onSubmit={isAgentMode ? handleAgentSubmit : handleSubmit} className="relative space-y-4 py-4">
-                <div className="relative">
+              <form onSubmit={isAgentMode ? handleAgentSubmit : handleSubmit} className="relative py-4">
+                <div className="relative rounded-2xl border border-border/30 bg-transparent shadow-sm backdrop-blur-sm">
                   <Textarea
                     ref={textareaRef}
-                    placeholder={isReadonly ? "Chat is read-only" : "Ask a question..."}
+                    placeholder={isReadonly ? "Chat is read-only" : "Ask anything"}
                     value={input}
                     onChange={handleInput}
                     onKeyDown={e => {
@@ -703,41 +682,116 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                       }
                     }}
                     disabled={isReadonly || (isAgentMode ? agentStatus === "submitted" : status === "loading")}
-                    className="min-h-[60px] resize-none pr-12 text-base"
+                    className="min-h-[120px] resize-none border-0 bg-transparent px-4 pb-16 pt-4 text-base focus-visible:ring-0 focus-visible:ring-offset-0"
                     style={{ height: "auto" }}
                   />
 
-                  <Button
-                    type="submit"
-                    disabled={
-                      !input.trim() || isReadonly || (isAgentMode ? agentStatus === "submitted" : status === "loading")
-                    }
-                    size="sm"
-                    className="absolute bottom-2 right-2 h-8 w-8 p-0"
-                  >
-                    {isAgentMode && agentStatus === "submitted" ? (
-                      <Spin className="h-4 w-4 animate-spin" />
-                    ) : status === "loading" ? (
-                      <Spin className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <ArrowUp className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
+                  {/* Controls inside chat input */}
+                  {!isReadonly && (
+                    <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between border-t border-border/50 p-3">
+                      {/* Left side - Document and Folder Selection (only in chat mode) */}
+                      {!isAgentMode && (
+                        <div className="mr-4 flex flex-1 items-center gap-2">
+                          <div className="flex-1">
+                            <DocumentSelector
+                              documents={documents}
+                              folders={folders.map(folder => ({
+                                name: folder.name,
+                                doc_count: folder.doc_count || 0,
+                              }))}
+                              selectedDocuments={getCurrentSelectedDocuments()}
+                              selectedFolders={getCurrentSelectedFolders()}
+                              onDocumentSelectionChange={(selectedDocumentIds: string[]) => {
+                                updateDocumentFilter(selectedDocumentIds);
+                              }}
+                              onFolderSelectionChange={(selectedFolderNames: string[]) => {
+                                safeUpdateOption(
+                                  "folder_name",
+                                  selectedFolderNames.length > 0 ? selectedFolderNames : undefined
+                                );
+                              }}
+                              loading={loadingDocuments || loadingFolders}
+                              placeholder="Select documents and folders"
+                              className="w-full"
+                            />
+                          </div>
+                          <Button
+                            variant={isAgentMode ? "default" : "outline"}
+                            size="sm"
+                            className="text-xs font-medium transition-all hover:border-primary/50"
+                            title="Goes deeper, reasons across documents and may return image-grounded answers"
+                            onClick={() => {
+                              setIsAgentMode(prev => !prev);
+                              setAgentStatus("idle");
+                              setShowSettings(false);
+                            }}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              {!isAgentMode && <Sparkles className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400" />}
+                              <span>{isAgentMode ? "Chat Mode" : "Agent Mode"}</span>
+                            </span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex items-center gap-1 text-xs font-medium transition-all hover:border-primary/50"
+                            onClick={() => {
+                              setShowSettings(!showSettings);
+                              if (!showSettings && authToken) {
+                                fetchGraphs();
+                                fetchFolders();
+                                fetchDocuments();
+                              }
+                            }}
+                          >
+                            <Settings className="h-3.5 w-3.5" />
+                            <span>{showSettings ? "Hide" : "Settings"}</span>
+                          </Button>
+                        </div>
+                      )}
 
-                {/* Model Selector - below input (always reserve space) */}
-                <div className="mt-2 flex min-h-[32px] items-center justify-between px-2">
-                  {!isAgentMode && (
-                    <ModelSelector
-                      apiBaseUrl={apiBaseUrl}
-                      authToken={authToken}
-                      selectedModel={selectedModel || "default"}
-                      onModelChange={handleModelChange}
-                      onRequestApiKey={() => {
-                        // Navigate to settings page with API keys tab
-                        window.location.href = "?section=settings";
-                      }}
-                    />
+                      {/* Agent mode controls */}
+                      {isAgentMode && (
+                        <div className="mr-4 flex flex-1 items-center gap-2">
+                          <Button
+                            variant={isAgentMode ? "default" : "outline"}
+                            size="sm"
+                            className="text-xs font-medium transition-all hover:border-primary/50"
+                            title="Goes deeper, reasons across documents and may return image-grounded answers"
+                            onClick={() => {
+                              setIsAgentMode(prev => !prev);
+                              setAgentStatus("idle");
+                              setShowSettings(false);
+                            }}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              {!isAgentMode && <Sparkles className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400" />}
+                              <span>{isAgentMode ? "Chat Mode" : "Agent Mode"}</span>
+                            </span>
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Submit button */}
+                      <Button
+                        type="submit"
+                        disabled={
+                          !input.trim() ||
+                          isReadonly ||
+                          (isAgentMode ? agentStatus === "submitted" : status === "loading")
+                        }
+                        size="sm"
+                        className="h-8 w-8 rounded-full p-0"
+                      >
+                        {isAgentMode && agentStatus === "submitted" ? (
+                          <Spin className="h-4 w-4 animate-spin" />
+                        ) : status === "loading" ? (
+                          <Spin className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <ArrowUp className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   )}
                 </div>
 
@@ -930,7 +984,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
           /* Messages present - normal layout */
           <div className="relative min-h-0 flex-1 transition-all duration-700 ease-out">
             <ScrollArea className="h-full" ref={messagesContainerRef}>
-              <div className="mx-auto flex max-w-4xl flex-col pb-32 pt-8">
+              <div className="mx-auto flex max-w-4xl flex-col pb-64 pt-8">
                 {(isAgentMode ? agentMessages : messages).map(msg =>
                   isAgentMode ? (
                     <AgentPreviewMessage key={msg.id} message={msg as AgentUIMessage} />
@@ -965,80 +1019,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
 
         {/* Input Area - only shown when there are messages */}
         {(isAgentMode ? agentMessages.length > 0 : messages.length > 0) && (
-          <div className="sticky bottom-0 w-full bg-background transition-all duration-700 ease-out">
-            <div className="mx-auto max-w-4xl px-4">
-              {/* Controls Row - Folder Selection and Agent Mode */}
-              {!isReadonly && (
-                <div className="border-b border-border/50 pb-3 pt-3">
-                  <div className="flex items-center justify-between gap-4">
-                    {/* Left side - Document and Folder Selection (only in chat mode) */}
-                    {!isAgentMode && (
-                      <div className="mr-4 flex-1">
-                        <DocumentSelector
-                          documents={documents}
-                          folders={folders.map(folder => ({
-                            name: folder.name,
-                            doc_count: folder.doc_count || 0,
-                          }))}
-                          selectedDocuments={getCurrentSelectedDocuments()}
-                          selectedFolders={getCurrentSelectedFolders()}
-                          onDocumentSelectionChange={(selectedDocumentIds: string[]) => {
-                            updateDocumentFilter(selectedDocumentIds);
-                          }}
-                          onFolderSelectionChange={(selectedFolderNames: string[]) => {
-                            safeUpdateOption(
-                              "folder_name",
-                              selectedFolderNames.length > 0 ? selectedFolderNames : undefined
-                            );
-                          }}
-                          loading={loadingDocuments || loadingFolders}
-                          placeholder="Select documents and folders"
-                          className="w-full"
-                        />
-                      </div>
-                    )}
-
-                    {/* Right side - Agent Mode and Settings */}
-                    <div className={`flex items-center gap-2 ${isAgentMode ? "ml-auto" : ""}`}>
-                      <Button
-                        variant={isAgentMode ? "default" : "outline"}
-                        size="sm"
-                        className="text-xs font-medium transition-all hover:border-primary/50"
-                        title="Goes deeper, reasons across documents and may return image-grounded answers"
-                        onClick={() => {
-                          setIsAgentMode(prev => !prev);
-                          setAgentStatus("idle");
-                          setShowSettings(false);
-                        }}
-                      >
-                        <span className="flex items-center gap-1.5">
-                          {!isAgentMode && <Sparkles className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400" />}
-                          <span>{isAgentMode ? "Chat Mode" : "Agent Mode"}</span>
-                        </span>
-                      </Button>
-                      {!isAgentMode && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex items-center gap-1 text-xs font-medium transition-all hover:border-primary/50"
-                          onClick={() => {
-                            setShowSettings(!showSettings);
-                            if (!showSettings && authToken) {
-                              fetchGraphs();
-                              fetchFolders();
-                              fetchDocuments();
-                            }
-                          }}
-                        >
-                          <Settings className="h-3.5 w-3.5" />
-                          <span>{showSettings ? "Hide" : "Settings"}</span>
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
+          <div className="sticky bottom-0 w-full transition-all duration-700 ease-out">
+            <div className="mx-auto max-w-4xl bg-white px-4 pb-2 dark:bg-black">
               <form
                 className="pb-6 pt-4"
                 onSubmit={e => {
@@ -1046,37 +1028,121 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                   submitForm();
                 }}
               >
-                <div className="relative w-full">
-                  <div className="relative flex items-end">
-                    <Textarea
-                      ref={textareaRef}
-                      placeholder="Send a message..."
-                      value={input}
-                      onChange={handleInput}
-                      className="max-h-[400px] min-h-[52px] w-full resize-none overflow-hidden rounded-lg border border-border bg-background pr-14 text-base transition-colors focus:border-primary"
-                      rows={1}
-                      autoFocus
-                      onKeyDown={event => {
-                        if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                          event.preventDefault();
-                          const busy = isAgentMode ? agentStatus !== "idle" : status !== "idle";
-                          if (busy) {
-                            console.log("Please wait for the model to finish its response");
-                          } else {
-                            submitForm();
-                          }
+                <div className="relative rounded-2xl border border-border/30 bg-transparent shadow-sm backdrop-blur-sm">
+                  <Textarea
+                    ref={textareaRef}
+                    placeholder="Send a message..."
+                    value={input}
+                    onChange={handleInput}
+                    className="min-h-[120px] resize-none border-0 bg-transparent px-4 pb-16 pt-4 text-base focus-visible:ring-0 focus-visible:ring-offset-0"
+                    autoFocus
+                    onKeyDown={event => {
+                      if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                        event.preventDefault();
+                        const busy = isAgentMode ? agentStatus !== "idle" : status !== "idle";
+                        if (busy) {
+                          console.log("Please wait for the model to finish its response");
+                        } else {
+                          submitForm();
                         }
-                      }}
-                    />
+                      }
+                    }}
+                  />
 
-                    <div className="absolute bottom-2 right-2 flex items-center">
+                  {/* Controls inside chat input */}
+                  {!isReadonly && (
+                    <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between border-t border-border/50 p-3">
+                      {/* Left side - Document and Folder Selection (only in chat mode) */}
+                      {!isAgentMode && (
+                        <div className="mr-4 flex flex-1 items-center gap-2">
+                          <div className="flex-1">
+                            <DocumentSelector
+                              documents={documents}
+                              folders={folders.map(folder => ({
+                                name: folder.name,
+                                doc_count: folder.doc_count || 0,
+                              }))}
+                              selectedDocuments={getCurrentSelectedDocuments()}
+                              selectedFolders={getCurrentSelectedFolders()}
+                              onDocumentSelectionChange={(selectedDocumentIds: string[]) => {
+                                updateDocumentFilter(selectedDocumentIds);
+                              }}
+                              onFolderSelectionChange={(selectedFolderNames: string[]) => {
+                                safeUpdateOption(
+                                  "folder_name",
+                                  selectedFolderNames.length > 0 ? selectedFolderNames : undefined
+                                );
+                              }}
+                              loading={loadingDocuments || loadingFolders}
+                              placeholder="Select documents and folders"
+                              className="w-full"
+                            />
+                          </div>
+                          <Button
+                            variant={isAgentMode ? "default" : "outline"}
+                            size="sm"
+                            className="text-xs font-medium transition-all hover:border-primary/50"
+                            title="Goes deeper, reasons across documents and may return image-grounded answers"
+                            onClick={() => {
+                              setIsAgentMode(prev => !prev);
+                              setAgentStatus("idle");
+                              setShowSettings(false);
+                            }}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              {!isAgentMode && <Sparkles className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400" />}
+                              <span>{isAgentMode ? "Chat Mode" : "Agent Mode"}</span>
+                            </span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex items-center gap-1 text-xs font-medium transition-all hover:border-primary/50"
+                            onClick={() => {
+                              setShowSettings(!showSettings);
+                              if (!showSettings && authToken) {
+                                fetchGraphs();
+                                fetchFolders();
+                                fetchDocuments();
+                              }
+                            }}
+                          >
+                            <Settings className="h-3.5 w-3.5" />
+                            <span>{showSettings ? "Hide" : "Settings"}</span>
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Agent mode controls */}
+                      {isAgentMode && (
+                        <div className="mr-4 flex flex-1 items-center gap-2">
+                          <Button
+                            variant={isAgentMode ? "default" : "outline"}
+                            size="sm"
+                            className="text-xs font-medium transition-all hover:border-primary/50"
+                            title="Goes deeper, reasons across documents and may return image-grounded answers"
+                            onClick={() => {
+                              setIsAgentMode(prev => !prev);
+                              setAgentStatus("idle");
+                              setShowSettings(false);
+                            }}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              {!isAgentMode && <Sparkles className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400" />}
+                              <span>{isAgentMode ? "Chat Mode" : "Agent Mode"}</span>
+                            </span>
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Submit button */}
                       <Button
                         onClick={submitForm}
-                        size="icon"
+                        size="sm"
                         disabled={
                           input.trim().length === 0 || (isAgentMode ? agentStatus !== "idle" : status !== "idle")
                         }
-                        className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-50"
+                        className="h-8 w-8 rounded-full p-0"
                       >
                         {isAgentMode ? (
                           agentStatus === "submitted" ? (
@@ -1100,22 +1166,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                         </span>
                       </Button>
                     </div>
-                  </div>
-                </div>
-
-                {/* Model Selector - below input (always reserve space) */}
-                <div className="mt-2 flex min-h-[32px] items-center justify-between px-2">
-                  {!isAgentMode && (
-                    <ModelSelector
-                      apiBaseUrl={apiBaseUrl}
-                      authToken={authToken}
-                      selectedModel={selectedModel || "default"}
-                      onModelChange={handleModelChange}
-                      onRequestApiKey={() => {
-                        // Navigate to settings page with API keys tab
-                        window.location.href = "?section=settings";
-                      }}
-                    />
                   )}
                 </div>
 

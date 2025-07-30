@@ -28,7 +28,7 @@ export function NavUser({ user, onLogout, onProfileNavigate }: NavUserProps) {
           onClick={() => setIsOpen(!isOpen)}
           className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
         >
-          <Avatar className="h-8 w-8 rounded-lg grayscale">
+          <Avatar className="h-6 w-6 rounded-lg grayscale">
             <AvatarImage src={user.avatar} alt={user.name} />
             <AvatarFallback className="rounded-lg">M</AvatarFallback>
           </Avatar>
@@ -36,7 +36,7 @@ export function NavUser({ user, onLogout, onProfileNavigate }: NavUserProps) {
             <span className="truncate font-medium">{user.name}</span>
             <span className="truncate text-xs text-muted-foreground">{user.email}</span>
           </div>
-          {isOpen ? <IconChevronUp className="ml-auto size-4" /> : <IconChevronDown className="ml-auto size-4" />}
+          {isOpen ? <IconChevronUp className="ml-auto h-4 w-4" /> : <IconChevronDown className="ml-auto h-4 w-4" />}
         </SidebarMenuButton>
       </SidebarMenuItem>
 
@@ -53,7 +53,7 @@ export function NavUser({ user, onLogout, onProfileNavigate }: NavUserProps) {
               }
             }}
           >
-            <IconUserCircle />
+            <IconUserCircle className="h-5 w-5" />
             <span>Account</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
@@ -69,7 +69,7 @@ export function NavUser({ user, onLogout, onProfileNavigate }: NavUserProps) {
               }
             }}
           >
-            <IconCreditCard />
+            <IconCreditCard className="h-5 w-5" />
             <span>Billing</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
@@ -85,7 +85,7 @@ export function NavUser({ user, onLogout, onProfileNavigate }: NavUserProps) {
               }
             }}
           >
-            <IconLogout />
+            <IconLogout className="h-5 w-5" />
             <span>Log out</span>
           </SidebarMenuButton>
         </SidebarMenuItem>

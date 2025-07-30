@@ -23,7 +23,7 @@ export function NavMain({
 }) {
   return (
     <SidebarGroup>
-      <SidebarGroupContent className="flex flex-col gap-2">
+      <SidebarGroupContent>
         <SidebarMenu>
           {/* <SidebarMenuItem className="flex items-center gap-2">
             <SidebarMenuButton
@@ -50,22 +50,22 @@ export function NavMain({
                 <SidebarMenuButton
                   tooltip={item.title}
                   onClick={() => {
-                    onChatClick?.();
-                    // Navigate to chat page (safely)
-                    setTimeout(() => {
-                      if (typeof window !== 'undefined' && window.location.pathname !== '/chat') {
-                        window.location.href = '/chat';
-                      }
-                    }, 0);
+                    // Only navigate if we're not already on chat page
+                    if (typeof window !== "undefined" && window.location.pathname !== "/chat") {
+                      window.location.href = "/chat";
+                    } else {
+                      // If already on chat page, just toggle chat view
+                      onChatClick?.();
+                    }
                   }}
                 >
-                  {item.icon && <item.icon />}
+                  {item.icon && <item.icon className="h-5 w-5" />}
                   <span>{item.title}</span>
                 </SidebarMenuButton>
               ) : (
                 <SidebarMenuButton tooltip={item.title} asChild>
                   <a href={item.url}>
-                    {item.icon && <item.icon />}
+                    {item.icon && <item.icon className="h-5 w-5" />}
                     <span>{item.title}</span>
                   </a>
                 </SidebarMenuButton>
