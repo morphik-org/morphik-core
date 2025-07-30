@@ -29,6 +29,7 @@ interface UseMorphikChatReturn {
   append: (message: Omit<UIMessage, "id" | "role" | "createdAt">) => Promise<void>;
   setMessages: React.Dispatch<React.SetStateAction<UIMessage[]>>;
   isLoading: boolean;
+  isLoadingHistory: boolean;
   queryOptions: QueryOptions;
   setQueryOptions: React.Dispatch<React.SetStateAction<QueryOptions>>;
   chatId: string;
@@ -65,6 +66,7 @@ export function useMorphikChat({
 }: UseMorphikChatProps): UseMorphikChatReturn {
   const [messages, setMessagesInternal] = useState<UIMessage[]>(initialMessages);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
 
@@ -101,7 +103,7 @@ export function useMorphikChat({
       }
 
       // Set loading state while fetching
-      setIsLoading(true);
+      setIsLoadingHistory(true);
 
       try {
         const response = await fetch(`${apiBaseUrl}/chat/${chatId}`, {
@@ -125,7 +127,7 @@ export function useMorphikChat({
       } catch (err) {
         console.error("Failed to load chat history", err);
       } finally {
-        setIsLoading(false);
+        setIsLoadingHistory(false);
       }
     };
 
@@ -525,6 +527,7 @@ export function useMorphikChat({
     append,
     setMessages,
     isLoading,
+    isLoadingHistory,
     queryOptions,
     setQueryOptions,
     chatId,

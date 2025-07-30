@@ -6,6 +6,8 @@ import { generateUUID } from "@/lib/utils";
 import type { QueryOptions } from "@/components/types";
 import type { UIMessage } from "./ChatMessages";
 import { FolderSummary } from "@/components/types";
+import { useModels } from "@/hooks/useModels";
+// import { ModelConfigAPI } from "@/lib/modelConfigApi";
 
 import { Settings, Spin, ArrowUp, Sparkles } from "./icons";
 import { ChevronDown } from "lucide-react";
@@ -21,6 +23,7 @@ import { Slider } from "@/components/ui/slider";
 import { AgentPreviewMessage, AgentUIMessage, DisplayObject, SourceObject, ToolCall } from "./AgentChatMessages";
 import { useHeader } from "@/contexts/header-context";
 import { useChatContext } from "@/components/connected-sidebar";
+import { useTheme } from "next-themes";
 
 interface ChatSectionProps {
   apiBaseUrl: string;
@@ -56,6 +59,10 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   // Use global chat state
   const { activeChatId, setActiveChatId } = useChatContext();
 
+  // Load server models using the same hook as ModelSelector
+  const { models: serverModels } = useModels(apiBaseUrl, authToken);
+  const { theme } = useTheme();
+
   // Generate a stable chatId when no active chat is selected
   const [fallbackChatId] = useState(() => generateUUID());
   const chatId = activeChatId || fallbackChatId;
@@ -82,7 +89,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     handleSubmit,
     queryOptions,
     updateQueryOption,
-    isLoading: chatLoading,
+    isLoading,
+    isLoadingHistory,
   } = useMorphikChat({
     chatId,
     apiBaseUrl,
@@ -91,6 +99,8 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     onChatSubmit,
     streamResponse: streamingEnabled,
   });
+
+  console.log("isLoading", isLoading);
 
   // Helper to safely update options (updateQueryOption may be undefined in readonly mode)
   const safeUpdateOption = useCallback(
@@ -160,9 +170,13 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     }[]
   >([]);
 
+  const [showModelSelector, setShowModelSelector] = useState(false);
+  const [availableModels, setAvailableModels] = useState<
+    Array<{ id: string; name: string; provider: string; description?: string }>
+  >([]);
+
   // Model selection state
   const [selectedModel, setSelectedModel] = useState<string>("");
-  const [showModelSelector, setShowModelSelector] = useState(false);
 
   // Agent mode toggle and state
   const [isAgentMode, setIsAgentMode] = useState(false);
@@ -599,6 +613,100 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Load custom models and combine with server models
+  useEffect(() => {
+    const loadModels = async () => {
+      const allModels = [...serverModels];
+
+      try {
+        // Load custom models from backend if authenticated
+        if (authToken) {
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://api.morphik.ai"}/models/custom`, {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          });
+
+          if (response.ok) {
+            const customModelsList = await response.json();
+            const transformedCustomModels = customModelsList.map(
+              (model: { id: string; name: string; provider: string }) => ({
+                id: `custom_${model.id}`,
+                name: model.name,
+                provider: model.provider,
+                description: `Custom ${model.provider} model`,
+              })
+            );
+            allModels.push(...transformedCustomModels);
+          }
+        } else {
+          // Fallback to localStorage
+          const savedModels = localStorage.getItem("morphik_custom_models");
+          if (savedModels) {
+            try {
+              const parsedModels = JSON.parse(savedModels);
+              const transformedCustomModels = parsedModels.map(
+                (model: { id: string; name: string; provider: string }) => ({
+                  id: `custom_${model.id}`,
+                  name: model.name,
+                  provider: model.provider,
+                  description: `Custom ${model.provider} model`,
+                })
+              );
+              allModels.push(...transformedCustomModels);
+            } catch (err) {
+              console.error("Failed to parse custom models:", err);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load custom models:", err);
+      }
+
+      setAvailableModels(allModels);
+    };
+
+    if (showModelSelector) {
+      loadModels();
+    }
+  }, [showModelSelector, serverModels, authToken]);
+
+  // Provider logos and icons
+  const getProviderIcon = (provider: string) => {
+    const providerLogos: Record<string, { light: string; dark: string } | string> = {
+      openai: {
+        light: "/provider-logos/OpenAI-black-monoblossom.png",
+        dark: "/provider-logos/OpenAI-white-monoblossom.png",
+      },
+      anthropic: { light: "/provider-logos/Anthropic-black.png", dark: "/provider-logos/Anthropic-white.png" },
+      google: { light: "/provider-logos/gemini.svg", dark: "/provider-logos/gemini.svg" },
+      groq: { light: "/provider-logos/Groq Logo_Black 25.svg", dark: "/provider-logos/Groq Logo_White 25.svg" },
+      ollama: { light: "/provider-logos/ollama-black.png", dark: "/provider-logos/ollamae-white.png" },
+      // Fallback to emojis for providers without logos
+      deepseek: "🌊",
+      configured: "⚙️",
+      together: "🤝",
+      azure: "☁️",
+      lemonade: "🍋",
+    };
+
+    const providerData = providerLogos[provider];
+
+    if (typeof providerData === "object" && providerData.light && providerData.dark) {
+      return (
+        <img
+          src={theme === "dark" ? providerData.dark : providerData.light}
+          alt={`${provider} logo`}
+          className="h-5 w-5 object-contain"
+        />
+      );
+    } else if (typeof providerData === "string") {
+      return <span className="text-base">{providerData}</span>;
+    } else {
+      return <span className="text-base">●</span>;
+    }
+  };
+
   return (
     <div className="relative -m-4 flex h-[calc(100vh-3rem)] w-[calc(100%+2rem)] bg-background md:-m-6 md:h-[calc(100vh-3rem)] md:w-[calc(100%+3rem)]">
       {/* Main chat area - now takes full width */}
@@ -612,7 +720,26 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                 className="flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/20"
                 onClick={() => setShowModelSelector(!showModelSelector)}
               >
-                <span>{selectedModel === "default" || !selectedModel ? "Default" : selectedModel}</span>
+                {selectedModel === "default" || !selectedModel ? (
+                  <>
+                    <span className="mr-1.5 text-base">🤖</span>
+                    <span>Default</span>
+                  </>
+                ) : (
+                  <>
+                    {(() => {
+                      const model = availableModels.find(m => m.id === selectedModel);
+                      return model ? (
+                        <>
+                          <span className="mr-1.5">{getProviderIcon(model.provider)}</span>
+                          <span>{model.name}</span>
+                        </>
+                      ) : (
+                        <span>{selectedModel}</span>
+                      );
+                    })()}
+                  </>
+                )}
                 <ChevronDown className={`h-3 w-3 transition-transform ${showModelSelector ? "rotate-180" : ""}`} />
               </button>
 
@@ -637,6 +764,30 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                         <div className="text-xs text-muted-foreground">Morphik&apos;s recommended model</div>
                       </div>
                     </div>
+
+                    {/* Available models */}
+                    {availableModels.map(model => (
+                      <div
+                        key={model.id}
+                        className={`group relative flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent ${
+                          selectedModel === model.id ? "bg-accent" : ""
+                        }`}
+                        onClick={() => {
+                          handleModelChange(model.id);
+                          setShowModelSelector(false);
+                        }}
+                      >
+                        {getProviderIcon(model.provider)}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-medium">{model.name}</span>
+                          </div>
+                          {model.description && (
+                            <div className="text-xs text-muted-foreground">{model.description}</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -644,7 +795,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
           </div>
         )}
         {/* Conditional layout based on whether there are messages */}
-        {chatLoading || agentHistoryLoading ? (
+        {isLoadingHistory || agentHistoryLoading ? (
           /* Loading state - show spinner while fetching chat history */
           <div className="flex h-full flex-1 flex-col items-center justify-center">
             <div className="flex items-center gap-2 text-muted-foreground">

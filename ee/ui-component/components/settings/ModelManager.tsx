@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { ModelConfigAPI } from "@/lib/modelConfigApi";
 import { CustomModel } from "@/components/types";
+import { useTheme } from "next-themes";
 
 interface ModelManagerProps {
   apiKeys: Record<string, { apiKey?: string; baseUrl?: string; [key: string]: unknown }>;
@@ -28,7 +29,10 @@ interface ModelManagerProps {
 const PROVIDER_INFO = {
   openai: {
     name: "OpenAI",
-    icon: "🟢",
+    logo: {
+      light: "/provider-logos/OpenAI-black-monoblossom.png",
+      dark: "/provider-logos/OpenAI-white-monoblossom.png",
+    },
     exampleConfig: {
       model: "gpt-4-turbo-preview",
       temperature: 0.7,
@@ -38,7 +42,7 @@ const PROVIDER_INFO = {
   },
   anthropic: {
     name: "Anthropic",
-    icon: "🔶",
+    logo: { light: "/provider-logos/Anthropic-black.png", dark: "/provider-logos/Anthropic-white.png" },
     exampleConfig: {
       model: "claude-3-opus-20240229",
       temperature: 0.7,
@@ -48,7 +52,7 @@ const PROVIDER_INFO = {
   },
   google: {
     name: "Google",
-    icon: "🔵",
+    logo: { light: "/provider-logos/gemini.svg", dark: "/provider-logos/gemini.svg" },
     exampleConfig: {
       model: "gemini/gemini-1.5-pro-latest",
       temperature: 0.7,
@@ -58,7 +62,7 @@ const PROVIDER_INFO = {
   },
   groq: {
     name: "Groq",
-    icon: "⚡",
+    logo: { light: "/provider-logos/Groq Logo_Black 25.svg", dark: "/provider-logos/Groq Logo_White 25.svg" },
     exampleConfig: {
       model: "groq/mixtral-8x7b-32768",
       temperature: 0.7,
@@ -78,7 +82,7 @@ const PROVIDER_INFO = {
   },
   ollama: {
     name: "Ollama",
-    icon: "🦙",
+    logo: { light: "/provider-logos/ollama-black.png", dark: "/provider-logos/ollamae-white.png" },
     exampleConfig: {
       model: "ollama/llama2",
       api_base: "http://localhost:11434",
@@ -107,6 +111,17 @@ const PROVIDER_INFO = {
     },
     docsUrl: "https://docs.litellm.ai/docs/providers/azure",
   },
+  lemonade: {
+    name: "Lemonade",
+    icon: "🍋",
+    exampleConfig: {
+      model: "openai/Qwen2.5-VL-7B-Instruct-GGUF",
+      api_base: "http://host.docker.internal:8020/api/v1",
+      vision: true,
+    },
+    docsUrl: "#",
+    requiresApiKey: false,
+  },
 };
 
 export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
@@ -118,8 +133,28 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
     provider: "",
     config: "",
   });
+  const { theme } = useTheme();
 
   const api = useMemo(() => new ModelConfigAPI(authToken || null), [authToken]);
+
+  const renderProviderIcon = (provider: string) => {
+    const providerInfo = PROVIDER_INFO[provider as keyof typeof PROVIDER_INFO];
+    if (!providerInfo) return <span className="text-xl">🔧</span>;
+
+    if ("logo" in providerInfo && providerInfo.logo) {
+      return (
+        <img
+          src={theme === "dark" ? providerInfo.logo.dark : providerInfo.logo.light}
+          alt={`${providerInfo.name} logo`}
+          className="h-5 w-5 object-contain"
+        />
+      );
+    } else if ("icon" in providerInfo) {
+      return <span className="text-xl">{providerInfo.icon || "🔧"}</span>;
+    } else {
+      return <span className="text-xl">🔧</span>;
+    }
+  };
 
   // Load saved models from backend or localStorage
   useEffect(() => {
@@ -196,8 +231,11 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
     try {
       const config = JSON.parse(newModel.config);
 
-      // Auto-inject API key if available for the provider
-      if (apiKeys[newModel.provider]?.apiKey && !config.api_key) {
+      // Auto-inject API key if available for the provider and provider requires it
+      const providerInfo = PROVIDER_INFO[newModel.provider as keyof typeof PROVIDER_INFO];
+      if (providerInfo && "requiresApiKey" in providerInfo && providerInfo.requiresApiKey === false) {
+        // Provider doesn't require API key, skip injection
+      } else if (apiKeys[newModel.provider]?.apiKey && !config.api_key) {
         config.api_key = apiKeys[newModel.provider].apiKey;
       }
 
@@ -328,7 +366,14 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
     });
   };
 
-  const availableProviders = Object.keys(apiKeys).filter(provider => apiKeys[provider]?.apiKey);
+  const availableProviders = Object.keys(PROVIDER_INFO).filter(provider => {
+    const providerInfo = PROVIDER_INFO[provider as keyof typeof PROVIDER_INFO];
+    // Include providers that don't require API keys or have API keys configured
+    return (
+      (providerInfo && "requiresApiKey" in providerInfo && providerInfo.requiresApiKey === false) ||
+      apiKeys[provider]?.apiKey
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -362,9 +407,7 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-xl">
-                      {PROVIDER_INFO[model.provider as keyof typeof PROVIDER_INFO]?.icon || "🔧"}
-                    </span>
+                    {renderProviderIcon(model.provider)}
                     {editingModel === model.id ? (
                       <Input
                         value={model.name}
@@ -460,7 +503,7 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
                     availableProviders.map(provider => (
                       <SelectItem key={provider} value={provider}>
                         <div className="flex items-center gap-2">
-                          <span>{PROVIDER_INFO[provider as keyof typeof PROVIDER_INFO]?.icon || "🔧"}</span>
+                          {renderProviderIcon(provider)}
                           <span>{PROVIDER_INFO[provider as keyof typeof PROVIDER_INFO]?.name || provider}</span>
                         </div>
                       </SelectItem>

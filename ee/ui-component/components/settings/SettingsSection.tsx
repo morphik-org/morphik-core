@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ModelManager } from "./ModelManager";
 import { useHeader } from "@/contexts/header-context";
 import { useChatContext } from "@/components/connected-sidebar";
+import { useTheme } from "next-themes";
 
 interface SettingsSectionProps {
   authToken?: string | null;
@@ -29,7 +30,10 @@ const PROVIDERS = [
   {
     id: "openai",
     name: "OpenAI",
-    icon: "🟢",
+    logo: {
+      light: "/provider-logos/OpenAI-black-monoblossom.png",
+      dark: "/provider-logos/OpenAI-white-monoblossom.png",
+    },
     description: "GPT-4, GPT-3.5, and other OpenAI models",
     fields: [
       { key: "apiKey", label: "API Key", type: "password", required: true },
@@ -40,7 +44,7 @@ const PROVIDERS = [
   {
     id: "anthropic",
     name: "Anthropic",
-    icon: "🔶",
+    logo: { light: "/provider-logos/Anthropic-black.png", dark: "/provider-logos/Anthropic-white.png" },
     description: "Claude 3.5 Sonnet, Haiku, and other Anthropic models",
     fields: [
       { key: "apiKey", label: "API Key", type: "password", required: true },
@@ -51,7 +55,7 @@ const PROVIDERS = [
   {
     id: "google",
     name: "Google Gemini",
-    icon: "🔵",
+    logo: { light: "/provider-logos/gemini.svg", dark: "/provider-logos/gemini.svg" },
     description: "Gemini Pro and Flash models",
     fields: [{ key: "apiKey", label: "API Key", type: "password", required: true }],
     docsUrl: "https://makersuite.google.com/app/apikey",
@@ -59,18 +63,10 @@ const PROVIDERS = [
   {
     id: "groq",
     name: "Groq",
-    icon: "⚡",
+    logo: { light: "/provider-logos/Groq Logo_Black 25.svg", dark: "/provider-logos/Groq Logo_White 25.svg" },
     description: "Fast inference for Llama and other models",
     fields: [{ key: "apiKey", label: "API Key", type: "password", required: true }],
     docsUrl: "https://console.groq.com/keys",
-  },
-  {
-    id: "deepseek",
-    name: "DeepSeek",
-    icon: "🌊",
-    description: "DeepSeek Chat and Coder models",
-    fields: [{ key: "apiKey", label: "API Key", type: "password", required: true }],
-    docsUrl: "https://platform.deepseek.com/api_keys",
   },
 ];
 
@@ -81,6 +77,7 @@ export function SettingsSection({ authToken }: SettingsSectionProps) {
   const [saving, setSaving] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const { setCustomBreadcrumbs } = useHeader();
+  const { theme } = useTheme();
 
   // Ensure client-side rendering is complete before showing dynamic content
   useEffect(() => {
@@ -273,7 +270,17 @@ export function SettingsSection({ authToken }: SettingsSectionProps) {
                     <CardHeader>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <span className="text-2xl">{provider.icon}</span>
+                          {"logo" in provider && provider.logo ? (
+                            <img
+                              src={theme === "dark" ? provider.logo.dark : provider.logo.light}
+                              alt={`${provider.name} logo`}
+                              className="h-8 w-8 object-contain"
+                            />
+                          ) : "icon" in provider ? (
+                            <span className="text-2xl">{provider.icon as string}</span>
+                          ) : (
+                            <span className="text-2xl">🔧</span>
+                          )}
                           <div>
                             <CardTitle>{provider.name}</CardTitle>
                             <CardDescription>{provider.description}</CardDescription>
