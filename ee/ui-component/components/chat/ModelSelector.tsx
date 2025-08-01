@@ -83,6 +83,9 @@ export function ModelSelector({
             customModelsList.forEach((model: { provider: string; config: { api_key?: string } }) => {
               // Check if the provider has an API key in the merged config
               // or if the model config contains an api_key
+              // or if the provider doesn't require an API key (like lemonade)
+              const providersWithoutApiKey = ["lemonade"];
+
               if (mergedConfig[model.provider]?.apiKey) {
                 providers.add(model.provider);
               } else if (
@@ -92,6 +95,9 @@ export function ModelSelector({
                 model.config.api_key
               ) {
                 // Model has its own API key
+                providers.add(model.provider);
+              } else if (providersWithoutApiKey.includes(model.provider)) {
+                // Provider doesn't require an API key
                 providers.add(model.provider);
               }
             });
@@ -135,8 +141,14 @@ export function ModelSelector({
 
             // Add custom model providers to available providers
             const config = JSON.parse(localStorage.getItem("morphik_api_keys") || "{}");
+            const providersWithoutApiKey = ["lemonade"];
+
             parsedModels.forEach((model: { provider: string; config: { api_key?: string } }) => {
-              if (config[model.provider]?.apiKey || model.config.api_key) {
+              if (
+                config[model.provider]?.apiKey ||
+                model.config.api_key ||
+                providersWithoutApiKey.includes(model.provider)
+              ) {
                 providers.add(model.provider);
               }
             });
@@ -229,6 +241,7 @@ export function ModelSelector({
     ollama: "🦙",
     together: "🤝",
     azure: "☁️",
+    lemonade: "🍋",
   };
 
   return (

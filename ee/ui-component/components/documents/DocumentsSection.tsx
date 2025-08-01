@@ -112,9 +112,6 @@ interface DocumentsSectionProps {
   onFoldersUpdate?: (folders: Array<{ id: string; name: string }>) => void;
 }
 
-// Debug render counter
-let renderCount = 0;
-
 // Helper to generate temporary IDs for optimistic updates
 const generateTempId = () => `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -149,18 +146,8 @@ const DocumentsSection = React.forwardRef<
     },
     ref
   ) => {
-    // Increment render counter for debugging
-    renderCount++;
-    console.log(`DocumentsSection rendered: #${renderCount}`);
-    // Ensure apiBaseUrl is correctly formatted, especially for localhost
+    // Ensure apiBaseUrl is correctly formatted
     const effectiveApiUrl = React.useMemo(() => {
-      console.log("DocumentsSection: Input apiBaseUrl:", apiBaseUrl);
-      // Check if it's a localhost URL and ensure it has the right format
-      if (apiBaseUrl.includes("localhost") || apiBaseUrl.includes("127.0.0.1")) {
-        if (!apiBaseUrl.includes("http")) {
-          return `http://${apiBaseUrl}`;
-        }
-      }
       return apiBaseUrl;
     }, [apiBaseUrl]);
 

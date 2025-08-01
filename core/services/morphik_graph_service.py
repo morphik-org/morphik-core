@@ -8,7 +8,7 @@ from core.database.base_database import BaseDatabase
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.models.auth import AuthContext
 from core.models.completion import ChunkSource, CompletionRequest, CompletionResponse
-from core.models.documents import ChunkResult
+from core.models.documents import ChunkResult, Document
 from core.models.graph import Graph
 from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
 
@@ -31,6 +31,81 @@ class MorphikGraphService:
         self.completion_model = completion_model
         self.base_url = base_url
         self.graph_api_key = graph_api_key
+
+    async def _prepare_document_content(self, doc: Document, document_service) -> str:
+        """
+        Prepare document content for graph processing.
+        If content is empty but storage info exists, parse the document internally.
+
+        Args:
+            doc: Document object from morphik database
+            document_service: DocumentService instance with storage access
+
+        Returns:
+            str: The document's text content (parsed if necessary)
+        """
+        doc_content = doc.system_metadata.get("content", "") if doc.system_metadata else ""
+
+        # If content is empty but we have storage info, parse the document internally
+        if not doc_content.strip() and doc.storage_info:
+            try:
+                logger.info(f"Document {doc.external_id} content is empty, parsing document internally...")
+
+                # Download the file from storage
+                bucket = doc.storage_info.get("bucket")
+                key = doc.storage_info.get("key")
+                if not bucket or not key:
+                    logger.warning(f"Missing storage info for document {doc.external_id}: bucket={bucket}, key={key}")
+                    return ""
+
+                file_content = await document_service.storage.download_file(bucket, key)
+
+                # Ensure file_content is bytes
+                if hasattr(file_content, "read"):
+                    file_content = file_content.read()
+
+                # Parse the file using the document service parser
+                additional_metadata, text = await document_service.parser.parse_file_to_text(file_content, doc.filename)
+
+                # Clean the extracted text to remove problematic escape characters
+                import re
+
+                text = re.sub(r"[\x00\u0000]", "", text)
+                text = re.sub(r"[^\x09\x0A\x0D\x20-\x7E]", "", text)
+
+                if text.strip():
+                    # Update the document with the parsed content
+                    logger.info(f"Successfully parsed document {doc.external_id}, content length: {len(text)}")
+
+                    # Update system_metadata with the parsed content
+                    updated_system_metadata = doc.system_metadata.copy() if doc.system_metadata else {}
+                    updated_system_metadata["content"] = text
+
+                    # Create auth context for the update (using minimal permissions needed)
+                    from core.models.auth import AuthContext, EntityType
+
+                    auth_context = AuthContext(
+                        entity_type=EntityType.DEVELOPER,
+                        entity_id="graph_service",
+                        app_id=doc.app_id,
+                        permissions={"write"},
+                        user_id="graph_service",
+                    )
+
+                    # Update the document in the database
+                    updates = {"system_metadata": updated_system_metadata}
+                    await document_service.db.update_document(doc.external_id, updates, auth_context)
+
+                    doc_content = text
+                else:
+                    logger.warning(f"Failed to extract text content from document {doc.external_id}")
+
+            except Exception as e:
+                logger.error(f"Failed to parse document {doc.external_id}: {e}")
+                # Return empty content on parsing failure rather than raising
+                return ""
+
+        return doc_content
 
     async def _make_api_request(
         self,
@@ -303,7 +378,8 @@ class MorphikGraphService:
                 failed_docs = 0
 
                 for doc in docs:
-                    doc_content = doc.system_metadata.get("content", "") if doc.system_metadata else ""
+                    doc_content = await self._prepare_document_content(doc, document_service)
+
                     if not doc_content.strip():
                         continue
 
@@ -400,7 +476,8 @@ class MorphikGraphService:
 
             try:
                 for doc in new_docs:
-                    doc_content = doc.system_metadata.get("content", "") if doc.system_metadata else ""
+                    doc_content = await self._prepare_document_content(doc, document_service)
+
                     if not doc_content.strip():
                         continue
 

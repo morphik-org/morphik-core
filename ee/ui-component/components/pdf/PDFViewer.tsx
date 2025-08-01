@@ -235,7 +235,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
       setCustomBreadcrumbs(null);
       setRightContent(null);
     };
-  }, [setCustomBreadcrumbs, setRightContent, isChatOpen]);
+  }, [setCustomBreadcrumbs, setRightContent, isChatOpen, setIsChatOpen]);
 
   // Handle chat resize functionality
   useEffect(() => {

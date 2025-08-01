@@ -21,6 +21,7 @@ import { HeaderProvider } from "@/contexts/header-context";
 import { AlertSystem } from "@/components/ui/alert-system";
 import { ThemeProvider } from "@/components/theme-provider";
 import { useRouter, usePathname } from "next/navigation";
+import { ChatProvider } from "@/components/connected-sidebar";
 
 /**
  * MorphikUI Component
@@ -30,7 +31,7 @@ import { useRouter, usePathname } from "next/navigation";
  */
 const MorphikUI: React.FC<MorphikUIProps> = props => {
   const {
-    connectionUri,
+    connectionUri: initialConnectionUri,
     apiBaseUrl = "http://localhost:8000",
     initialSection = "documents",
     initialFolder = null,
@@ -55,6 +56,29 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
 
   const [currentSection, setCurrentSection] = useState(initialSection);
   const [currentFolder, setCurrentFolder] = useState<string | null>(initialFolder);
+  const [showChatView, setShowChatView] = useState(false);
+  const connectionUri = initialConnectionUri;
+
+  const router = useRouter();
+  const pathname = usePathname() || "/";
+
+  // Handle chat view changes
+  const handleChatViewChange = useCallback(
+    (show: boolean) => {
+      setShowChatView(show);
+      // If hiding chat view while on chat section, go back to documents
+      if (!show && currentSection === "chat") {
+        setCurrentSection("documents");
+        // Also update the URL to reflect the section change
+        const segments = pathname.split("/").filter(Boolean);
+        if (segments.length > 0) {
+          const appId = segments[0];
+          router.push(`/${appId}/documents`);
+        }
+      }
+    },
+    [currentSection, pathname, router]
+  );
 
   const authToken = connectionUri ? extractTokenFromUri(connectionUri) : null;
   const effectiveApiBaseUrl = getApiBaseUrlFromUri(connectionUri ?? undefined, apiBaseUrl);
@@ -94,8 +118,12 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
     setCurrentSection(initialSection);
   }, [initialSection]);
 
-  const router = useRouter();
-  const pathname = usePathname() || "/";
+  // Sync chat view with section
+  useEffect(() => {
+    if (currentSection === "chat") {
+      setShowChatView(true);
+    }
+  }, [currentSection]);
 
   const handleSectionChange = useCallback(
     (section: string) => {
@@ -184,30 +212,33 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
           onUpgradeClick={onUpgradeClick}
         >
           <HeaderProvider>
-            <SidebarProvider
-              style={
-                {
-                  "--sidebar-width": "calc(var(--spacing) * 72)",
-                  "--header-height": "calc(var(--spacing) * 12)",
-                } as React.CSSProperties
-              }
-            >
-              <MorphikSidebarStateful
-                variant="inset"
-                currentSection={currentSection}
-                onSectionChange={handleSectionChange}
-                userProfile={userProfile}
-                onLogout={onLogout}
-                onProfileNavigate={onProfileNavigate}
-                onUpgradeClick={onUpgradeClick}
-                logoLight={logoLight}
-                logoDark={logoDark}
-              />
-              <SidebarInset>
-                <DynamicSiteHeader userProfile={userProfile} customBreadcrumbs={localBreadcrumbs} />
-                <div className="flex flex-1 flex-col p-4 md:p-6">{renderSection()}</div>
-              </SidebarInset>
-            </SidebarProvider>
+            <ChatProvider>
+              <SidebarProvider
+                style={
+                  {
+                    "--sidebar-width": "calc(var(--spacing) * 72)",
+                    "--header-height": "calc(var(--spacing) * 12)",
+                  } as React.CSSProperties
+                }
+              >
+                <MorphikSidebarStateful
+                  currentSection={currentSection}
+                  onSectionChange={handleSectionChange}
+                  userProfile={userProfile}
+                  onLogout={onLogout}
+                  onProfileNavigate={onProfileNavigate}
+                  onUpgradeClick={onUpgradeClick}
+                  logoLight={logoLight}
+                  logoDark={logoDark}
+                  showChatView={showChatView}
+                  onChatViewChange={handleChatViewChange}
+                />
+                <SidebarInset>
+                  <DynamicSiteHeader userProfile={userProfile} customBreadcrumbs={localBreadcrumbs} />
+                  <div className="flex flex-1 flex-col p-4 md:p-6">{renderSection()}</div>
+                </SidebarInset>
+              </SidebarProvider>
+            </ChatProvider>
           </HeaderProvider>
         </MorphikProvider>
       </div>

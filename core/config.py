@@ -1,5 +1,4 @@
 import os
-from collections import ChainMap
 from functools import lru_cache
 from typing import Any, Dict, List, Literal, Optional
 
@@ -160,6 +159,9 @@ class Settings(BaseSettings):
     # Workflows configuration
     WORKFLOW_MODEL: Optional[str] = None
 
+    # Local URI token for authentication
+    LOCAL_URI_TOKEN: Optional[str] = None
+
 
 @lru_cache()
 def get_settings() -> Settings:
@@ -171,119 +173,116 @@ def get_settings() -> Settings:
         config = tomli.load(f)
 
     em = "'{missing_value}' needed if '{field}' is set to '{value}'"
-    openai_config = {}
+    settings_dict = {}
 
-    # load api config
-    api_config = {
-        "HOST": config["api"]["host"],
-        "PORT": int(config["api"]["port"]),
-        "RELOAD": bool(config["api"]["reload"]),
-        "SENTRY_DSN": os.getenv("SENTRY_DSN", None),
-    }
+    # Load API config
+    settings_dict.update(
+        {
+            "HOST": config["api"]["host"],
+            "PORT": int(config["api"]["port"]),
+            "RELOAD": bool(config["api"]["reload"]),
+            "SENTRY_DSN": os.getenv("SENTRY_DSN", None),
+        }
+    )
 
-    # load auth config
-    auth_config = {
-        "JWT_ALGORITHM": config["auth"]["jwt_algorithm"],
-        "JWT_SECRET_KEY": os.environ.get("JWT_SECRET_KEY", "dev-secret-key"),  # Default for dev mode
-        "SESSION_SECRET_KEY": os.environ.get("SESSION_SECRET_KEY", "super-secret-dev-session-key"),
-        "dev_mode": config["auth"].get("dev_mode", False),
-        "dev_entity_type": config["auth"].get("dev_entity_type", "developer"),
-        "dev_entity_id": config["auth"].get("dev_entity_id", "dev_user"),
-        "dev_permissions": config["auth"].get("dev_permissions", ["read", "write", "admin"]),
-    }
+    # Load auth config
+    settings_dict.update(
+        {
+            "JWT_ALGORITHM": config["auth"]["jwt_algorithm"],
+            "JWT_SECRET_KEY": os.environ.get("JWT_SECRET_KEY", "dev-secret-key"),  # Default for dev mode
+            "SESSION_SECRET_KEY": os.environ.get("SESSION_SECRET_KEY", "super-secret-dev-session-key"),
+            "dev_mode": config["auth"].get("dev_mode", False),
+            "dev_entity_type": config["auth"].get("dev_entity_type", "developer"),
+            "dev_entity_id": config["auth"].get("dev_entity_id", "dev_user"),
+            "dev_permissions": config["auth"].get("dev_permissions", ["read", "write", "admin"]),
+        }
+    )
 
     # Only require JWT_SECRET_KEY in non-dev mode
-    if not auth_config["dev_mode"] and "JWT_SECRET_KEY" not in os.environ:
+    if not settings_dict["dev_mode"] and "JWT_SECRET_KEY" not in os.environ:
         raise ValueError("JWT_SECRET_KEY is required when dev_mode is disabled")
-    # Also require SESSION_SECRET_KEY in non-dev mode
-    if not auth_config["dev_mode"] and "SESSION_SECRET_KEY" not in os.environ:
-        # Or, if we want to be more strict and always require it via ENV:
-        # if "SESSION_SECRET_KEY" not in os.environ:
-        #     raise ValueError("SESSION_SECRET_KEY environment variable is required.")
-        # For now, align with JWT_SECRET_KEY's dev mode leniency.
-        pass  # Dev mode has a default, production should use ENV.
 
     # Load registered models if available
-    registered_models = {}
     if "registered_models" in config:
-        registered_models = {"REGISTERED_MODELS": config["registered_models"]}
+        settings_dict["REGISTERED_MODELS"] = config["registered_models"]
 
-    # load completion config
-    completion_config = {
-        "COMPLETION_PROVIDER": "litellm",
-    }
-
-    # Set the model key for LiteLLM
+    # Load completion config
+    settings_dict["COMPLETION_PROVIDER"] = "litellm"
     if "model" not in config["completion"]:
         raise ValueError("'model' is required in the completion configuration")
-    completion_config["COMPLETION_MODEL"] = config["completion"]["model"]
+    settings_dict["COMPLETION_MODEL"] = config["completion"]["model"]
 
-    # load agent config
-    agent_config = {"AGENT_MODEL": config["agent"]["model"]}
+    # Load agent config
     if "model" not in config["agent"]:
         raise ValueError("'model' is required in the agent configuration")
+    settings_dict["AGENT_MODEL"] = config["agent"]["model"]
 
-    # load database config
-    database_config = {
-        "DATABASE_PROVIDER": config["database"]["provider"],
-        "DATABASE_NAME": config["database"].get("name", None),
-        # Add database connection pool settings
-        "DB_POOL_SIZE": config["database"].get("pool_size", 20),
-        "DB_MAX_OVERFLOW": config["database"].get("max_overflow", 30),
-        "DB_POOL_RECYCLE": config["database"].get("pool_recycle", 3600),
-        "DB_POOL_TIMEOUT": config["database"].get("pool_timeout", 10),
-        "DB_POOL_PRE_PING": config["database"].get("pool_pre_ping", True),
-        "DB_MAX_RETRIES": config["database"].get("max_retries", 3),
-        "DB_RETRY_DELAY": config["database"].get("retry_delay", 1.0),
-    }
-    if database_config["DATABASE_PROVIDER"] != "postgres":
-        prov = database_config["DATABASE_PROVIDER"]
-        raise ValueError(f"Unknown database provider selected: '{prov}'")
+    # Load database config
+    settings_dict.update(
+        {
+            "DATABASE_PROVIDER": config["database"]["provider"],
+            "DATABASE_NAME": config["database"].get("name", None),
+            "DB_POOL_SIZE": config["database"].get("pool_size", 20),
+            "DB_MAX_OVERFLOW": config["database"].get("max_overflow", 30),
+            "DB_POOL_RECYCLE": config["database"].get("pool_recycle", 3600),
+            "DB_POOL_TIMEOUT": config["database"].get("pool_timeout", 10),
+            "DB_POOL_PRE_PING": config["database"].get("pool_pre_ping", True),
+            "DB_MAX_RETRIES": config["database"].get("max_retries", 3),
+            "DB_RETRY_DELAY": config["database"].get("retry_delay", 1.0),
+        }
+    )
+
+    if settings_dict["DATABASE_PROVIDER"] != "postgres":
+        raise ValueError(f"Unknown database provider selected: '{settings_dict['DATABASE_PROVIDER']}'")
 
     if "POSTGRES_URI" in os.environ:
-        database_config.update({"POSTGRES_URI": os.environ["POSTGRES_URI"]})
+        settings_dict["POSTGRES_URI"] = os.environ["POSTGRES_URI"]
     else:
-        msg = em.format(missing_value="POSTGRES_URI", field="database.provider", value="postgres")
-        raise ValueError(msg)
+        raise ValueError(em.format(missing_value="POSTGRES_URI", field="database.provider", value="postgres"))
 
-    # load embedding config
-    embedding_config = {
-        "EMBEDDING_PROVIDER": "litellm",
-        "VECTOR_DIMENSIONS": config["embedding"]["dimensions"],
-        "EMBEDDING_SIMILARITY_METRIC": config["embedding"]["similarity_metric"],
-    }
+    # Load embedding config
+    settings_dict.update(
+        {
+            "EMBEDDING_PROVIDER": "litellm",
+            "VECTOR_DIMENSIONS": config["embedding"]["dimensions"],
+            "EMBEDDING_SIMILARITY_METRIC": config["embedding"]["similarity_metric"],
+        }
+    )
 
-    # Set the model key for LiteLLM
     if "model" not in config["embedding"]:
         raise ValueError("'model' is required in the embedding configuration")
-    embedding_config["EMBEDDING_MODEL"] = config["embedding"]["model"]
+    settings_dict["EMBEDDING_MODEL"] = config["embedding"]["model"]
 
-    # load parser config
-    parser_config = {
-        "CHUNK_SIZE": config["parser"]["chunk_size"],
-        "CHUNK_OVERLAP": config["parser"]["chunk_overlap"],
-        "USE_UNSTRUCTURED_API": config["parser"]["use_unstructured_api"],
-        "USE_CONTEXTUAL_CHUNKING": config["parser"].get("use_contextual_chunking", False),
-    }
+    # Load parser config
+    settings_dict.update(
+        {
+            "CHUNK_SIZE": config["parser"]["chunk_size"],
+            "CHUNK_OVERLAP": config["parser"]["chunk_overlap"],
+            "USE_UNSTRUCTURED_API": config["parser"]["use_unstructured_api"],
+            "USE_CONTEXTUAL_CHUNKING": config["parser"].get("use_contextual_chunking", False),
+        }
+    )
 
-    # load parser XML config
+    # Load parser XML config
     if "xml" in config["parser"]:
         xml_config = config["parser"]["xml"]
-        parser_config["PARSER_XML"] = ParserXMLSettings(
+        settings_dict["PARSER_XML"] = ParserXMLSettings(
             max_tokens=xml_config.get("max_tokens", 350),
             preferred_unit_tags=xml_config.get("preferred_unit_tags", ["SECTION", "Section", "Article", "clause"]),
             ignore_tags=xml_config.get("ignore_tags", ["TOC", "INDEX"]),
         )
-    if parser_config["USE_UNSTRUCTURED_API"] and "UNSTRUCTURED_API_KEY" not in os.environ:
-        msg = em.format(missing_value="UNSTRUCTURED_API_KEY", field="parser.use_unstructured_api", value="true")
-        raise ValueError(msg)
-    elif parser_config["USE_UNSTRUCTURED_API"]:
-        parser_config.update({"UNSTRUCTURED_API_KEY": os.environ["UNSTRUCTURED_API_KEY"]})
 
-    # load reranker config
-    reranker_config = {"USE_RERANKING": config["reranker"]["use_reranker"]}
-    if reranker_config["USE_RERANKING"]:
-        reranker_config.update(
+    if settings_dict["USE_UNSTRUCTURED_API"] and "UNSTRUCTURED_API_KEY" not in os.environ:
+        raise ValueError(
+            em.format(missing_value="UNSTRUCTURED_API_KEY", field="parser.use_unstructured_api", value="true")
+        )
+    elif settings_dict["USE_UNSTRUCTURED_API"]:
+        settings_dict["UNSTRUCTURED_API_KEY"] = os.environ["UNSTRUCTURED_API_KEY"]
+
+    # Load reranker config
+    settings_dict["USE_RERANKING"] = config["reranker"]["use_reranker"]
+    if settings_dict["USE_RERANKING"]:
+        settings_dict.update(
             {
                 "RERANKER_PROVIDER": config["reranker"]["provider"],
                 "RERANKER_MODEL": config["reranker"]["model_name"],
@@ -294,16 +293,19 @@ def get_settings() -> Settings:
             }
         )
 
-    # load storage config
-    storage_config = {
-        "STORAGE_PROVIDER": config["storage"]["provider"],
-        "STORAGE_PATH": config["storage"]["storage_path"],
-    }
-    match storage_config["STORAGE_PROVIDER"]:
+    # Load storage config
+    settings_dict.update(
+        {
+            "STORAGE_PROVIDER": config["storage"]["provider"],
+            "STORAGE_PATH": config["storage"]["storage_path"],
+        }
+    )
+
+    match settings_dict["STORAGE_PROVIDER"]:
         case "local":
-            storage_config.update({"STORAGE_PATH": config["storage"]["storage_path"]})
+            settings_dict["STORAGE_PATH"] = config["storage"]["storage_path"]
         case "aws-s3" if all(key in os.environ for key in ["AWS_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY"]):
-            storage_config.update(
+            settings_dict.update(
                 {
                     "AWS_REGION": config["storage"]["region"],
                     "S3_BUCKET": config["storage"]["bucket_name"],
@@ -312,144 +314,109 @@ def get_settings() -> Settings:
                 }
             )
         case "aws-s3":
-            msg = em.format(missing_value="AWS credentials", field="storage.provider", value="aws-s3")
-            raise ValueError(msg)
+            raise ValueError(em.format(missing_value="AWS credentials", field="storage.provider", value="aws-s3"))
         case _:
-            prov = storage_config["STORAGE_PROVIDER"]
-            raise ValueError(f"Unknown storage provider selected: '{prov}'")
+            raise ValueError(f"Unknown storage provider selected: '{settings_dict['STORAGE_PROVIDER']}'")
 
-    # load vector store config
-    vector_store_config = {"VECTOR_STORE_PROVIDER": config["vector_store"]["provider"]}
-    if vector_store_config["VECTOR_STORE_PROVIDER"] != "pgvector":
-        prov = vector_store_config["VECTOR_STORE_PROVIDER"]
-        raise ValueError(f"Unknown vector store provider selected: '{prov}'")
+    # Load vector store config
+    settings_dict["VECTOR_STORE_PROVIDER"] = config["vector_store"]["provider"]
+    if settings_dict["VECTOR_STORE_PROVIDER"] != "pgvector":
+        raise ValueError(f"Unknown vector store provider selected: '{settings_dict['VECTOR_STORE_PROVIDER']}'")
 
     if "POSTGRES_URI" not in os.environ:
-        msg = em.format(missing_value="POSTGRES_URI", field="vector_store.provider", value="pgvector")
-        raise ValueError(msg)
+        raise ValueError(em.format(missing_value="POSTGRES_URI", field="vector_store.provider", value="pgvector"))
 
-    # load rules config
-    rules_config = {
-        "RULES_PROVIDER": "litellm",
-        "RULES_BATCH_SIZE": config["rules"]["batch_size"],
-    }
+    # Load rules config
+    settings_dict.update(
+        {
+            "RULES_PROVIDER": "litellm",
+            "RULES_BATCH_SIZE": config["rules"]["batch_size"],
+        }
+    )
 
-    # Set the model key for LiteLLM
     if "model" not in config["rules"]:
         raise ValueError("'model' is required in the rules configuration")
-    rules_config["RULES_MODEL"] = config["rules"]["model"]
+    settings_dict["RULES_MODEL"] = config["rules"]["model"]
 
-    # load morphik config
-    morphik_config = {
-        "ENABLE_COLPALI": config["morphik"]["enable_colpali"],
-        "COLPALI_MODE": config["morphik"].get("colpali_mode", "local"),
-        "MODE": config["morphik"].get("mode", "cloud"),  # Default to "cloud" mode
-        # API domain for core server
-        "API_DOMAIN": config["morphik"].get("api_domain", "api.morphik.ai"),
-        # Domain for Morphik embedding API
-        "MORPHIK_EMBEDDING_API_DOMAIN": config["morphik"].get(
-            "morphik_embedding_api_domain", config["morphik"].get("api_domain", "api.morphik.ai")
-        ),
-    }
-
-    # load pdf viewer config
-    pdf_viewer_config = {}
-    if "pdf_viewer" in config:
-        pdf_viewer_config = {
-            "PDF_VIEWER_FRONTEND_URL": config["pdf_viewer"].get("frontend_url", "https://morphik.ai/api/pdf")
-        }
-
-    # Redis config is now only read from environment variables
-    redis_config = {}
-
-    # load graph config
-    graph_config = (
+    # Load morphik config
+    settings_dict.update(
         {
-            "GRAPH_MODE": "local",
-            "GRAPH_PROVIDER": "litellm",
-            "ENABLE_ENTITY_RESOLUTION": config["graph"].get("enable_entity_resolution", True),
-        }
-        if config["graph"].get("mode", "local") == "local"
-        else {
-            "GRAPH_MODE": "api",
-            "MORPHIK_GRAPH_BASE_URL": config["graph"].get("base_url", "https://graph-api.morphik.ai"),
-            "MORPHIK_GRAPH_API_KEY": os.environ.get("MORPHIK_GRAPH_API_KEY", None),
+            "ENABLE_COLPALI": config["morphik"]["enable_colpali"],
+            "COLPALI_MODE": config["morphik"].get("colpali_mode", "local"),
+            "MODE": config["morphik"].get("mode", "cloud"),
+            "API_DOMAIN": config["morphik"].get("api_domain", "api.morphik.ai"),
+            "MORPHIK_EMBEDDING_API_DOMAIN": config["morphik"].get(
+                "morphik_embedding_api_domain", config["morphik"].get("api_domain", "api.morphik.ai")
+            ),
         }
     )
 
-    # Set the model key for LiteLLM
+    # Load pdf viewer config
+    if "pdf_viewer" in config:
+        settings_dict["PDF_VIEWER_FRONTEND_URL"] = config["pdf_viewer"].get(
+            "frontend_url", "https://morphik.ai/api/pdf"
+        )
+
+    # Load graph config
+    if config["graph"].get("mode", "local") == "local":
+        settings_dict.update(
+            {
+                "GRAPH_MODE": "local",
+                "GRAPH_PROVIDER": "litellm",
+                "ENABLE_ENTITY_RESOLUTION": config["graph"].get("enable_entity_resolution", True),
+            }
+        )
+    else:
+        settings_dict.update(
+            {
+                "GRAPH_MODE": "api",
+                "MORPHIK_GRAPH_BASE_URL": config["graph"].get("base_url", "https://graph-api.morphik.ai"),
+                "MORPHIK_GRAPH_API_KEY": os.environ.get("MORPHIK_GRAPH_API_KEY", None),
+            }
+        )
+
     if "model" not in config["graph"]:
         raise ValueError("'model' is required in the graph configuration")
-    graph_config["GRAPH_MODEL"] = config["graph"]["model"]
+    settings_dict["GRAPH_MODEL"] = config["graph"]["model"]
 
-    # load document analysis config
-    document_analysis_config = {}
+    # Load document analysis config
     if "document_analysis" in config:
-        document_analysis_config = {"DOCUMENT_ANALYSIS_MODEL": config["document_analysis"]["model"]}
+        settings_dict["DOCUMENT_ANALYSIS_MODEL"] = config["document_analysis"]["model"]
 
-    # load telemetry config
-    telemetry_config = {}
+    # Load telemetry config
     if "telemetry" in config:
-        telemetry_config = {
-            "TELEMETRY_ENABLED": config["telemetry"].get("enabled", True),
-            "HONEYCOMB_ENABLED": config["telemetry"].get("honeycomb_enabled", True),
-            "HONEYCOMB_ENDPOINT": config["telemetry"].get("honeycomb_endpoint", "https://api.honeycomb.io"),
-            "SERVICE_NAME": config["telemetry"].get("service_name", "morphik-core"),
-            "OTLP_TIMEOUT": config["telemetry"].get("otlp_timeout", 10),
-            "OTLP_MAX_RETRIES": config["telemetry"].get("otlp_max_retries", 3),
-            "OTLP_RETRY_DELAY": config["telemetry"].get("otlp_retry_delay", 1),
-            "OTLP_MAX_EXPORT_BATCH_SIZE": config["telemetry"].get("otlp_max_export_batch_size", 512),
-            "OTLP_SCHEDULE_DELAY_MILLIS": config["telemetry"].get("otlp_schedule_delay_millis", 5000),
-            "OTLP_MAX_QUEUE_SIZE": config["telemetry"].get("otlp_max_queue_size", 2048),
-        }
+        settings_dict.update(
+            {
+                "TELEMETRY_ENABLED": config["telemetry"].get("enabled", True),
+                "HONEYCOMB_ENABLED": config["telemetry"].get("honeycomb_enabled", True),
+                "HONEYCOMB_ENDPOINT": config["telemetry"].get("honeycomb_endpoint", "https://api.honeycomb.io"),
+                "SERVICE_NAME": config["telemetry"].get("service_name", "morphik-core"),
+                "OTLP_TIMEOUT": config["telemetry"].get("otlp_timeout", 10),
+                "OTLP_MAX_RETRIES": config["telemetry"].get("otlp_max_retries", 3),
+                "OTLP_RETRY_DELAY": config["telemetry"].get("otlp_retry_delay", 1),
+                "OTLP_MAX_EXPORT_BATCH_SIZE": config["telemetry"].get("otlp_max_export_batch_size", 512),
+                "OTLP_SCHEDULE_DELAY_MILLIS": config["telemetry"].get("otlp_schedule_delay_millis", 5000),
+                "OTLP_MAX_QUEUE_SIZE": config["telemetry"].get("otlp_max_queue_size", 2048),
+            }
+        )
 
-    # load workflows config
-    workflows_config = {}
+    # Load workflows config
     if "workflows" in config and "model" in config["workflows"]:
-        workflows_config = {
-            "WORKFLOW_MODEL": config["workflows"]["model"],
-        }
+        settings_dict["WORKFLOW_MODEL"] = config["workflows"]["model"]
 
-    # load multivector store config
-    multivector_store_config = {}
+    # Load LOCAL_URI_TOKEN from environment
+    settings_dict["LOCAL_URI_TOKEN"] = os.environ.get("LOCAL_URI_TOKEN")
+
+    # Load multivector store config
     if "multivector_store" in config:
-        multivector_store_config = {
-            "MULTIVECTOR_STORE_PROVIDER": config["multivector_store"].get("provider", "postgres"),
-        }
+        settings_dict["MULTIVECTOR_STORE_PROVIDER"] = config["multivector_store"].get("provider", "postgres")
 
         # Check for Turbopuffer API key if using morphik provider
-        if multivector_store_config["MULTIVECTOR_STORE_PROVIDER"] == "morphik":
+        if settings_dict["MULTIVECTOR_STORE_PROVIDER"] == "morphik":
             if "TURBOPUFFER_API_KEY" not in os.environ:
-                msg = em.format(
-                    missing_value="TURBOPUFFER_API_KEY", field="multivector_store.provider", value="morphik"
+                raise ValueError(
+                    em.format(missing_value="TURBOPUFFER_API_KEY", field="multivector_store.provider", value="morphik")
                 )
-                raise ValueError(msg)
-            multivector_store_config["TURBOPUFFER_API_KEY"] = os.environ["TURBOPUFFER_API_KEY"]
-
-    settings_dict = dict(
-        ChainMap(
-            api_config,
-            auth_config,
-            registered_models,
-            completion_config,
-            agent_config,
-            database_config,
-            embedding_config,
-            parser_config,
-            reranker_config,
-            storage_config,
-            vector_store_config,
-            multivector_store_config,
-            rules_config,
-            morphik_config,
-            pdf_viewer_config,
-            redis_config,
-            graph_config,
-            document_analysis_config,
-            telemetry_config,
-            workflows_config,
-            openai_config,
-        )
-    )
+            settings_dict["TURBOPUFFER_API_KEY"] = os.environ["TURBOPUFFER_API_KEY"]
 
     return Settings(**settings_dict)

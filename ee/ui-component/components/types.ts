@@ -30,7 +30,6 @@ export interface MorphikUIProps {
   connectionUri?: string | null; // Allow null/undefined initially
   apiBaseUrl?: string;
   isReadOnlyUri?: boolean; // Controls whether the URI can be edited
-  onUriChange?: (newUri: string) => void; // Callback when URI is changed
   onBackClick?: () => void; // Callback when back button is clicked
   appName?: string; // Name of the app to display in UI
   initialFolder?: string | null; // Initial folder to show

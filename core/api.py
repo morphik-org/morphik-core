@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import arq
 import jwt
+import requests
 import sentry_sdk
 import tomli
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query
@@ -1046,18 +1047,29 @@ async def get_recent_usage(
 async def generate_local_uri(
     name: str = Form("admin"),
     expiry_days: int = Form(30),
+    password_token: str = Form(...),
+    server_mode: bool = Form(False),
 ) -> Dict[str, str]:
     """Generate a development URI for running Morphik locally.
 
     Args:
         name: Developer name to embed in the token payload.
         expiry_days: Number of days the generated token should remain valid.
+        password_token: Authentication token that must match LOCAL_URI_TOKEN from .env.
+        server_mode: If True, return server IP instead of localhost.
 
     Returns:
         A dictionary containing the ``uri`` that can be used to connect to the
         local instance.
     """
     try:
+        # Authenticate with LOCAL_URI_TOKEN
+        if not settings.LOCAL_URI_TOKEN:
+            raise HTTPException(status_code=500, detail="LOCAL_URI_TOKEN not configured")
+
+        if password_token != settings.LOCAL_URI_TOKEN:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
         # Clean name
         name = name.replace(" ", "_").lower()
 
@@ -1075,11 +1087,32 @@ async def generate_local_uri(
         # Read config for host/port
         with open("morphik.toml", "rb") as f:
             config = tomli.load(f)
-        base_url = f"{config['api']['host']}:{config['api']['port']}".replace("localhost", "127.0.0.1")
+
+        # Determine base URL based on server_mode
+        if server_mode:
+            # Get external IP address
+            try:
+                response = requests.get("http://checkip.amazonaws.com", timeout=10)
+                if response.status_code == 200:
+                    external_ip = response.text.strip()
+                    base_url = f"{external_ip}:{config['api']['port']}"
+                else:
+                    # Fallback to localhost if request fails
+                    logger.warning("Failed to get external IP, falling back to localhost")
+                    base_url = f"{config['api']['host']}:{config['api']['port']}".replace("localhost", "127.0.0.1")
+            except requests.RequestException as e:
+                logger.warning(f"Failed to get external IP: {e}, falling back to localhost")
+                base_url = f"{config['api']['host']}:{config['api']['port']}".replace("localhost", "127.0.0.1")
+        else:
+            # Use localhost as before
+            base_url = f"{config['api']['host']}:{config['api']['port']}".replace("localhost", "127.0.0.1")
 
         # Generate URI
         uri = f"morphik://{name}:{token}@{base_url}"
         return {"uri": uri}
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         logger.error(f"Error generating local URI: {e}")
         raise HTTPException(status_code=500, detail=str(e))

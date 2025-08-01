@@ -35,7 +35,7 @@ interface UseChatSessionsReturn {
 
 // Global cache for chat sessions
 const chatSessionsCache = new Map<string, { sessions: ChatSessionMeta[]; timestamp: number }>();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes - longer cache for better UX
 
 export const clearChatSessionsCache = (apiBaseUrl?: string) => {
   if (apiBaseUrl) {
@@ -47,7 +47,7 @@ export const clearChatSessionsCache = (apiBaseUrl?: string) => {
 
 export function useChatSessions({ apiBaseUrl, authToken, limit = 100 }: UseChatSessionsProps): UseChatSessionsReturn {
   const [sessions, setSessions] = useState<ChatSessionMeta[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Start with loading state
 
   const fetchSessions = useCallback(
     async (forceRefresh = false) => {
@@ -57,10 +57,14 @@ export function useChatSessions({ apiBaseUrl, authToken, limit = 100 }: UseChatS
       // Check if we have valid cached data
       if (!forceRefresh && cached && Date.now() - cached.timestamp < CACHE_DURATION) {
         setSessions(cached.sessions);
+        setIsLoading(false);
         return;
       }
 
-      setIsLoading(true);
+      if (!cached) {
+        setIsLoading(true);
+      }
+
       try {
         const res = await fetch(`${apiBaseUrl}/chats?limit=${limit}`, {
           headers: {
@@ -97,8 +101,12 @@ export function useChatSessions({ apiBaseUrl, authToken, limit = 100 }: UseChatS
   );
 
   useEffect(() => {
-    fetchSessions();
-  }, [fetchSessions]);
+    if (apiBaseUrl) {
+      fetchSessions();
+    } else {
+      setIsLoading(false);
+    }
+  }, [fetchSessions, apiBaseUrl]);
 
   const reload = useCallback(() => {
     fetchSessions(true);

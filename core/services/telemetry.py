@@ -102,10 +102,16 @@ class FileSpanExporter:
         self.trace_file = self.log_dir / "traces.log"
 
     def export(self, spans):
-        with open(self.trace_file, "a") as f:
-            for span in spans:
-                f.write(json.dumps(self._format_span(span)) + "\n")
-        return True
+        try:
+            # Ensure the directory exists before writing
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+            with open(self.trace_file, "a") as f:
+                for span in spans:
+                    f.write(json.dumps(self._format_span(span)) + "\n")
+            return True
+        except Exception:
+            # Silently fail if we can't write logs
+            return False
 
     def shutdown(self):
         pass

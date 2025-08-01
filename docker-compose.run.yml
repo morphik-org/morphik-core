@@ -1,3 +1,9 @@
+# Purpose: Production Docker Compose configuration
+# This file is for end users running the pre-built Morphik image from ghcr.io
+# Downloaded by install_docker.sh script during installation
+# Use start-morphik.sh to run this with automatic port detection from morphik.toml
+# Note: Always mounts morphik.toml for configuration
+
 services:
   morphik:
     image: ghcr.io/morphik-org/morphik-core:latest
@@ -12,15 +18,14 @@ services:
       - REDIS_PORT=6379
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
-      # To use a custom config, create a 'morphik.toml' file locally and uncomment the following line.
-      # - ./morphik.toml:/app/morphik.toml:ro
+      # Configuration file (always mounted)
+      - ./morphik.toml:/app/morphik.toml:ro
       # Persist storage for uploaded files
       - ./storage:/app/storage
       # Persist logs
       - ./logs:/app/logs
       # Cache for HuggingFace models (e.g., rerankers)
       - huggingface_cache:/root/.cache/huggingface
-      - ./core:/app/core
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,12 +49,11 @@ services:
       - REDIS_PORT=6379
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
-      # To use a custom config, create a 'morphik.toml' file locally and uncomment the following line.
-      # - ./morphik.toml:/app/morphik.toml:ro
+      # Configuration file (always mounted)
+      - ./morphik.toml:/app/morphik.toml:ro
       - ./storage:/app/storage
       - ./logs:/app/logs
       - huggingface_cache:/root/.cache/huggingface
-      - ./core:/app/core
     depends_on:
       postgres:
         condition: service_healthy
@@ -109,6 +113,29 @@ services:
     networks:
       - morphik-network
 
+  ui:
+    image: node:22-alpine
+    container_name: morphik-ui
+    # Enable this profile to run the Web UI
+    profiles:
+      - ui
+    working_dir: /app
+    command: sh -c "npm install && npm run build && npm start"
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    ports:
+      - "3003:3003"
+    volumes:
+      - ./ee/ui-component:/app
+      - ui_node_modules:/app/node_modules
+      - ui_next:/app/.next
+    depends_on:
+      - morphik
+    networks:
+      - morphik-network
+
 networks:
   morphik-network:
     driver: bridge
@@ -118,3 +145,5 @@ volumes:
   redis_data:
   ollama_data:
   huggingface_cache:
+  ui_node_modules:
+  ui_next:

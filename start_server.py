@@ -252,6 +252,11 @@ def main():
         help="Skip Ollama availability check",
     )
     parser.add_argument(
+        "--skip-redis-check",
+        action="store_true",
+        help="Skip Redis container management (useful when running in Docker)",
+    )
+    parser.add_argument(
         "--workers",
         type=int,
         default=1,

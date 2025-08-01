@@ -127,6 +127,40 @@ export function generateUUID(): string {
 }
 
 /**
+ * Converts a simple HTTP URL to Morphik URI format for local development
+ * If already in Morphik format, returns as-is
+ *
+ * @param input - HTTP URL or Morphik URI
+ * @returns Morphik URI format or the original input if already valid
+ */
+export function normalizeToMorphikUri(input: string): string {
+  if (!input || input.trim() === "") {
+    return "";
+  }
+
+  // If already in morphik:// format, return as-is
+  if (input.startsWith("morphik://")) {
+    return input;
+  }
+
+  // If it's a simple HTTP/HTTPS URL, convert to morphik format
+  if (input.startsWith("http://") || input.startsWith("https://")) {
+    // For local development, create a simple morphik URI
+    // Format: morphik://local@host
+    const url = new URL(input);
+    return `morphik://local@${url.host}`;
+  }
+
+  // If it's just a host:port, assume http and convert
+  if (input.includes(":") && !input.includes("://")) {
+    return `morphik://local@${input}`;
+  }
+
+  // Default case - assume it's a host and add localhost prefix
+  return `morphik://local@${input}`;
+}
+
+/**
  * Format date to relative time (e.g. "2 hours ago")
  */
 export function formatRelativeTime(date: Date): string {

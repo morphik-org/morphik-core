@@ -259,7 +259,8 @@ async def process_ingestion_job(
 
             # Initialise a per-app MultiVectorStore for ColPali when needed
             colpali_vector_store = None
-            if use_colpali:
+            # Check both use_colpali parameter AND global enable_colpali setting
+            if use_colpali and settings.ENABLE_COLPALI:
                 try:
                     # Use render_as_string(hide_password=False) so the URI keeps the
                     # password – str(engine.url) masks it with "***" which breaks
@@ -1012,7 +1013,10 @@ async def startup(ctx):
     colpali_embedding_model = None
     colpali_vector_store = None
 
-    if settings.COLPALI_MODE != "off":
+    # Check enable_colpali first - if disabled, skip all ColPali initialization
+    if not settings.ENABLE_COLPALI:
+        logger.info("ColPali disabled by configuration (enable_colpali=false)")
+    elif settings.COLPALI_MODE != "off":
         logger.info(f"Initializing ColPali components (mode={settings.COLPALI_MODE}) ...")
         # Choose embedding implementation
         match settings.COLPALI_MODE:
@@ -1071,7 +1075,7 @@ async def startup(ctx):
         embedding_model=embedding_model,
         parser=parser,
         cache_factory=None,
-        enable_colpali=(settings.COLPALI_MODE != "off"),
+        enable_colpali=settings.ENABLE_COLPALI,
         colpali_embedding_model=colpali_embedding_model,
         colpali_vector_store=colpali_vector_store,
     )

@@ -283,7 +283,7 @@ class DocumentService:
 
         settings = get_settings()
         should_rerank = use_reranking if use_reranking is not None else settings.USE_RERANKING
-        using_colpali = use_colpali if use_colpali is not None else False
+        using_colpali = (use_colpali if use_colpali is not None else False) and settings.ENABLE_COLPALI
 
         # Build system filters for folder_name and end_user_id
         system_filters = {}
@@ -937,7 +937,8 @@ class DocumentService:
         retrieval_tasks = [self.vector_store.get_chunks_by_id(chunk_identifiers, auth.app_id)]
 
         # Add colpali vector store task if needed
-        if use_colpali and self.colpali_vector_store:
+        settings = get_settings()
+        if use_colpali and settings.ENABLE_COLPALI and self.colpali_vector_store:
             logger.info("Preparing to retrieve chunks from both regular and colpali vector stores")
             retrieval_tasks.append(self.colpali_vector_store.get_chunks_by_id(chunk_identifiers, auth.app_id))
 
@@ -1344,7 +1345,9 @@ class DocumentService:
 
         chunk_objects_multivector = []
 
-        if use_colpali and self.colpali_embedding_model:
+        # Check both use_colpali parameter AND global enable_colpali setting
+        settings = get_settings()
+        if use_colpali and settings.ENABLE_COLPALI and self.colpali_embedding_model:
             embeddings_multivector = await self.colpali_embedding_model.embed_for_ingestion(processed_chunks)
             logger.info(f"Generated {len(embeddings_multivector)} embeddings for multivector embedding")
             chunk_objects_multivector = self._create_chunk_objects(
@@ -1368,7 +1371,7 @@ class DocumentService:
         await self._store_chunks_and_doc(
             chunk_objects,
             doc,
-            use_colpali,
+            use_colpali and settings.ENABLE_COLPALI,
             chunk_objects_multivector,
             auth=auth,
         )
@@ -1385,10 +1388,12 @@ class DocumentService:
 
         # Determine the final page count for usage recording
         colpali_count_for_limit_fn = (
-            len(chunk_objects_multivector) if use_colpali and chunk_objects_multivector else None
+            len(chunk_objects_multivector)
+            if use_colpali and settings.ENABLE_COLPALI and chunk_objects_multivector
+            else None
         )
         final_page_count = estimate_pages_by_chars(len(content))
-        if use_colpali and colpali_count_for_limit_fn is not None:
+        if use_colpali and settings.ENABLE_COLPALI and colpali_count_for_limit_fn is not None:
             final_page_count = colpali_count_for_limit_fn
         final_page_count = max(1, final_page_count)  # Ensure minimum of 1 page
         logger.info(f"Determined final page count for ingest_text usage: {final_page_count}")
@@ -1401,7 +1406,7 @@ class DocumentService:
                     "ingest",
                     final_page_count,  # Use the determined final count
                     doc.external_id,
-                    use_colpali=use_colpali,  # Pass colpali status
+                    use_colpali=use_colpali and settings.ENABLE_COLPALI,  # Pass colpali status
                     colpali_chunks_count=colpali_count_for_limit_fn,  # Pass actual colpali count
                 )
             except Exception as rec_exc:
@@ -2515,7 +2520,8 @@ class DocumentService:
         """Process colpali multi-vector embeddings if enabled."""
         chunk_objects_multivector = []
 
-        if not (use_colpali and self.colpali_embedding_model and self.colpali_vector_store):
+        settings = get_settings()
+        if not (use_colpali and settings.ENABLE_COLPALI and self.colpali_embedding_model and self.colpali_vector_store):
             return chunk_objects_multivector
 
         # For file updates, we need special handling for images and PDFs

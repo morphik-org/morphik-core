@@ -289,7 +289,7 @@ async def get_multi_vector_store_for_app(app_id: str | None):
             if parsed.scheme.startswith("postgresql+asyncpg"):
                 parsed = parsed._replace(scheme="postgresql")
             q = parse_qs(parsed.query)
-            if "sslmode" not in q:
+            if "sslmode" not in q and settings.MODE == "cloud":
                 q["sslmode"] = ["require"]
             parsed = parsed._replace(query=urlencode(q, doseq=True))
             final_uri = urlunparse(parsed)
@@ -357,7 +357,7 @@ async def get_multi_vector_store_for_app(app_id: str | None):
 
         # Ensure sslmode=require in the query string (Neon tends to need it)
         q = parse_qs(parsed.query)
-        if "sslmode" not in q:
+        if "sslmode" not in q and settings.MODE == "cloud":
             q["sslmode"] = ["require"]
         parsed = parsed._replace(query=urlencode(q, doseq=True))
 

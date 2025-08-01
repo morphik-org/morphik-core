@@ -502,8 +502,12 @@ const GraphSection: React.FC<GraphSectionProps> = ({
   // );
 
   // Handle graph click
-  const handleGraphClick = (graph: Graph) => {
-    fetchGraph(graph.name);
+  const handleGraphClick = async (graph: Graph) => {
+    const fetchedGraph = await fetchGraph(graph.name);
+    if (fetchedGraph && fetchedGraph.system_metadata?.status !== "processing") {
+      // Automatically show visualization for completed graphs
+      setShowVisualization(true);
+    }
   };
 
   // Create a new graph

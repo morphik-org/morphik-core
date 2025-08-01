@@ -1,3 +1,8 @@
+# Purpose: Development Docker Compose configuration
+# This file is for local development - it builds images from source code
+# Use start-dev.sh to run this with automatic port detection from morphik.toml
+# Note: This is NOT for production use - see docker-compose.run.yml for production
+
 x-ollama-check: &ollama-check
   # This command reads the toml file and checks if any provider is set to "ollama"
   command: >
@@ -16,13 +21,12 @@ services:
   morphik:
     build: .
     ports:
+      # Note: Update this port mapping to match the port in morphik.toml
       - "8000:8000"
     environment:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
       - POSTGRES_URI=postgresql+asyncpg://morphik:morphik@postgres:5432/morphik
       - PGPASSWORD=morphik
-      - HOST=0.0.0.0
-      - PORT=8000
       - LOG_LEVEL=DEBUG
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -96,9 +100,7 @@ services:
       - morphik-network
 
   postgres:
-    build:
-      context: .
-      dockerfile: postgres.dockerfile
+    image: pgvector/pgvector:pg16
     shm_size: 128mb
     environment:
       - POSTGRES_USER=morphik
