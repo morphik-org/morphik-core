@@ -45,7 +45,9 @@ if [ "$ENV" = "docker" ]; then
 else
     # Load environment variables from .env
     if [ -f .env ]; then
-        export $(cat .env | grep -v '^#' | xargs)
+        set -a
+        source .env
+        set +a
     else
         echo "Error: .env file not found"
         exit 1
@@ -64,16 +66,24 @@ else
     USER_PASS=${URI%%@*}
     USER=${USER_PASS%:*}
     PASS=${USER_PASS#*:}
-    # Extract host, port and database
+    # Extract host, port and database (handle URL parameters)
     HOST_PORT_DB=${URI#*@}
     HOST_PORT=${HOST_PORT_DB%/*}
-    HOST=${HOST_PORT%:*}
-    PORT=${HOST_PORT#*:}
-    DB=${HOST_PORT_DB#*/}
+    # Check if port is specified
+    if [[ $HOST_PORT == *:* ]]; then
+        HOST=${HOST_PORT%:*}
+        PORT=${HOST_PORT#*:}
+    else
+        HOST=$HOST_PORT
+        PORT=5432  # Default PostgreSQL port
+    fi
+    # Extract database name and remove URL parameters
+    DB_WITH_PARAMS=${HOST_PORT_DB#*/}
+    DB=${DB_WITH_PARAMS%\?*}
 
-    # Execute the command using parsed connection details
-    PGPASSWORD=$PASS psql -h $HOST -p $PORT -U $USER -d $DB -c "$TRUNCATE_CMD"
-    PGPASSWORD=$PASS psql -h $HOST -p $PORT -U $USER -d $DB -c "$DROP_VECTOR_TABLE"
+    # Execute the command using parsed connection details with SSL
+    PGPASSWORD=$PASS PGSSLMODE=require psql -h $HOST -p $PORT -U $USER -d $DB -c "$TRUNCATE_CMD"
+    PGPASSWORD=$PASS PGSSLMODE=require psql -h $HOST -p $PORT -U $USER -d $DB -c "$DROP_VECTOR_TABLE"
     if [ $? -ne 0 ]; then
         echo "Error: Failed to clear tables in local environment"
         exit 1

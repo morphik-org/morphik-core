@@ -14,7 +14,7 @@ import arq
 import filetype
 import pdf2image
 import torch
-from colpali_engine.models import ColIdefics3, ColIdefics3Processor
+# from colpali_engine.models import ColIdefics3, ColIdefics3Processor
 from fastapi import HTTPException, UploadFile
 from filetype.types import IMAGE  # , DOCUMENT, document
 from PIL.Image import Image
@@ -26,7 +26,7 @@ from core.completion.base_completion import BaseCompletionModel
 from core.config import get_settings
 from core.database.base_database import BaseDatabase
 from core.embedding.base_embedding_model import BaseEmbeddingModel
-from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
+# from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
 from core.models.chat import ChatMessage
 from core.models.chunk import Chunk, DocumentChunk
@@ -84,10 +84,15 @@ class DocumentService:
                 if document_id not in folder.document_ids:
                     success = await self.db.add_document_to_folder(folder.id, document_id, auth)
                     if not success:
-                        logger.warning(f"Failed to add document {document_id} to existing folder {folder.name}")
+                        logger.warning(f"Failed to add document {document_id} to existing folder {folder.name}. This may be due to a race condition during ingestion - the document should be accessible shortly.")
+                        # Return the folder anyway since it exists, even if document addition failed
+                        # The retry mechanism in add_document_to_folder should handle transient issues
                     else:
+                        logger.info(f"Successfully added document {document_id} to existing folder {folder.name}")
                         # Queue workflows associated with this folder
                         await self._queue_folder_workflows(folder, document_id, auth)
+                else:
+                    logger.info(f"Document {document_id} is already in folder {folder.name}")
                 return folder  # Folder already exists
 
             # Create a new folder
@@ -198,7 +203,7 @@ class DocumentService:
         cache_factory: Optional[BaseCacheFactory] = None,
         reranker: Optional[BaseReranker] = None,
         enable_colpali: bool = False,
-        colpali_embedding_model: Optional[ColpaliEmbeddingModel] = None,
+        colpali_embedding_model = None, # Optional[ColpaliEmbeddingModel] = None,
         colpali_vector_store: Optional[BaseVectorStore] = None,
     ):
         self.db = database
@@ -308,9 +313,30 @@ class DocumentService:
         else:
             parallel_start = time.time()
 
+        # Create tasks with individual timing to measure embeddings vs auth separately
+        async def timed_embeddings():
+            embedding_start = time.time()
+            result = await asyncio.gather(*embedding_tasks)
+            embedding_duration = time.time() - embedding_start
+            if perf_tracker:
+                perf_tracker.add_suboperation("retrieve_embeddings", embedding_duration, "retrieve_embeddings_and_auth")
+            else:
+                phase_times["retrieve_embeddings"] = embedding_duration
+            return result
+        
+        async def timed_auth():
+            auth_start = time.time()
+            result = await self.db.find_authorized_and_filtered_documents(auth, filters, system_filters)
+            auth_duration = time.time() - auth_start
+            if perf_tracker:
+                perf_tracker.add_suboperation("retrieve_auth", auth_duration, "retrieve_embeddings_and_auth")
+            else:
+                phase_times["retrieve_auth"] = auth_duration
+            return result
+
         results = await asyncio.gather(
-            asyncio.gather(*embedding_tasks),
-            self.db.find_authorized_and_filtered_documents(auth, filters, system_filters),
+            timed_embeddings(),
+            timed_auth(),
         )
 
         embedding_results, doc_ids = results
@@ -318,7 +344,7 @@ class DocumentService:
         query_embedding_multivector = embedding_results[1] if len(embedding_results) > 1 else None
 
         if not perf_tracker:
-            phase_times["embeddings_and_auth"] = time.time() - parallel_start
+            phase_times["retrieve_embeddings_and_auth"] = time.time() - parallel_start
 
         logger.info("Generated query embedding")
 
@@ -485,66 +511,7 @@ class DocumentService:
         # IMPORTANT: Multivector chunks already have proper ColPali similarity scores from their vector store,
         # so we should preserve those. Only rescore regular text chunks to make them comparable.
 
-        try:
-            model_name = "vidore/colSmol-256M"
-            device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
-
-            model = ColIdefics3.from_pretrained(
-                model_name,
-                torch_dtype=torch.bfloat16,
-                device_map=device,
-                attn_implementation="eager",
-            ).eval()
-            processor = ColIdefics3Processor.from_pretrained(model_name)
-
-            # Process query representation once
-            query_rep = processor.process_queries([query]).to(device)
-            query_rep = model(**query_rep)
-
-            # Score regular chunks with batching to make them comparable to multivector chunks
-            if chunks:
-                logger.info(f"Reranking {len(chunks)} regular text chunks with ColPali for score consistency")
-                chunk_batches = self._batch_chunks_by_tokens(chunks)
-                for batch in chunk_batches:
-                    try:
-                        batch_chunks = processor.process_queries([chunk.content for chunk in batch]).to(device)
-                        multi_vec_representations = model(**batch_chunks)
-                        scores = processor.score_multi_vector(query_rep, multi_vec_representations)
-                        for chunk, score in zip(batch, scores[0]):
-                            chunk.score = score
-                    except Exception as e:
-                        logger.error(f"Error processing regular chunk batch: {e}")
-                        # Assign default scores to prevent chunks from being lost
-                        for chunk in batch:
-                            chunk.score = 0.0
-
-            # Preserve multivector chunks' original scores - they already have proper ColPali similarity scores
-            if chunks_multivector:
-                logger.info(f"Preserving original ColPali scores for {len(chunks_multivector)} multivector chunks")
-                # Log score distribution for debugging
-                mv_scores = [chunk.score for chunk in chunks_multivector]
-                if mv_scores:
-                    logger.debug(f"Multivector score range: {min(mv_scores):.3f} - {max(mv_scores):.3f}")
-
-            # Log regular chunk scores for debugging
-            if chunks:
-                reg_scores = [chunk.score for chunk in chunks]
-                if reg_scores:
-                    logger.debug(f"Regular chunk score range: {min(reg_scores):.3f} - {max(reg_scores):.3f}")
-
-            # Combine and sort all chunks
-            full_chunks = chunks + chunks_multivector
-            full_chunks.sort(key=lambda x: x.score, reverse=True)
-
-            logger.info(
-                f"Combined and sorted {len(full_chunks)} chunks (regular: {len(chunks)}, multivector: {len(chunks_multivector)})"
-            )
-            return full_chunks
-
-        except Exception as e:
-            logger.error(f"Error in ColPali reranking: {e}")
-            # Fallback to simple combination without reranking
-            return chunks_multivector + chunks
+        return chunks_multivector + chunks
 
     def _count_tokens_simple(self, text: str) -> int:
         """Simple token counting using whitespace splitting.

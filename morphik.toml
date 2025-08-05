@@ -5,7 +5,7 @@ reload = true
 
 [auth]
 jwt_algorithm = "HS256"
-dev_mode = true  # Enabled by default for easier local development
+dev_mode = false  # Enabled by default for easier local development
 dev_entity_id = "dev_user"  # Default dev user ID
 dev_entity_type = "developer"  # Default dev entity type
 dev_permissions = ["read", "write", "admin"]  # Default dev permissions
@@ -56,10 +56,10 @@ azure_embedding = { model_name = "text-embedding-ada-002", api_base = "YOUR_AZUR
 #### Component configurations ####
 
 [agent]
-model = "ollama_qwen_vision" # Model for the agent logic
+model = "openai_gpt4-1-mini" # Model for the agent logic
 
 [completion]
-model = "ollama_qwen_vision" #"openai_gpt4-1-mini"  # Reference to a key in registered_models
+model = "openai_gpt4-1-mini" #"openai_gpt4-1-mini"  # Reference to a key in registered_models
 default_max_tokens = "1000"
 default_temperature = 0.3
 
@@ -75,8 +75,8 @@ max_retries = 3          # Number of retries for database operations
 retry_delay = 1.0        # Initial delay between retries in seconds
 
 [embedding]
-model = "ollama_embedding"  # Reference to registered model
-dimensions = 768
+model = "openai_embedding"  # Reference to registered model
+dimensions = 1536
 similarity_metric = "cosine"
 
 [parser]
@@ -84,7 +84,7 @@ chunk_size = 6000
 chunk_overlap = 300
 use_unstructured_api = false
 use_contextual_chunking = false
-contextual_chunking_model = "ollama_qwen_vision"  # Reference to a key in registered_models
+contextual_chunking_model = "openai_gpt4-1-mini"  # Reference to a key in registered_models
 
 [parser.xml]
 max_tokens = 350
@@ -92,10 +92,10 @@ preferred_unit_tags = ["SECTION", "Section", "Article", "clause"]
 ignore_tags = ["TOC", "INDEX"]
 
 [document_analysis]
-model = "ollama_qwen_vision"  # Reference to a key in registered_models
+model = "openai_gpt4-1-mini"  # Reference to a key in registered_models
 
 [parser.vision]
-model = "ollama_qwen_vision"  # Reference to a key in registered_models
+model = "openai_gpt4-1-mini"  # Reference to a key in registered_models
 frame_sample_rate = -1  # Set to -1 to disable frame captioning
 
 [reranker]
@@ -107,24 +107,24 @@ passage_max_length = 512
 use_fp16 = true
 device = "mps" # use "cpu" if on docker and using a mac, "cuda" if cuda enabled device
 
-[storage]
-provider = "local"
-storage_path = "./storage"
-
 # [storage]
-# provider = "aws-s3"
-# region = "us-east-2"
-# bucket_name = "morphik-s3-storage"
-# storage_path = "morphik-storage"
+# provider = "local"
+# storage_path = "./storage"
+
+[storage]
+provider = "aws-s3"
+region = "us-east-2"
+bucket_name = "morphik-s3-storage"
+storage_path = "morphik-storage"
 
 [vector_store]
 provider = "pgvector"
 
 [multivector_store]
-provider = "postgres"  # "morphik" # "postgres"  # "morphik" # "postgres"  # "postgres" or "morphik" for fast implementation
+provider = "morphik" #  "postgres" #   (morphik is faster, but also proprietary) 
 
 [rules]
-model = "ollama_qwen_vision"
+model = "openai_gpt4-1-mini"
 batch_size = 4096
 
 [morphik]
@@ -132,8 +132,8 @@ enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"
 api_domain = "api.morphik.ai"  # API domain for cloud URIs
 # Only call the embedding API if colpali_mode is "api"
-morphik_embedding_api_domain = "http://localhost:6000"  # endpoint for multivector embedding service
-colpali_mode = "local" # "off", "local", or "api"
+morphik_embedding_api_domain = "https://embedding-api.morphik.ai"  # endpoint for multivector embedding service
+colpali_mode = "api" # "off", "local", or "api"
 
 [pdf_viewer]
 frontend_url = "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf" # "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf"
@@ -141,13 +141,14 @@ frontend_url = "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf" # 
 [workflows]
 model = "gemini_flash"  # Model for workflow extraction tasks
 
-[graph]
-model = "ollama_qwen_vision"
-enable_entity_resolution = true
-
 # [graph]
-# mode="api"
-# base_url="https://graph-api.morphik.ai"
+# model = "openai_gpt4-1-mini"
+# enable_entity_resolution = true
+
+[graph]
+mode="api"
+model = "openai_gpt4-1-mini"
+base_url="https://graph-api.morphik.ai"
 
 [telemetry]
 enabled = true

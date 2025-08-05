@@ -121,14 +121,33 @@ class PGVectorStore(BaseVectorStore):
         pool_timeout = getattr(settings, "DB_POOL_TIMEOUT", 10)
         pool_pre_ping = getattr(settings, "DB_POOL_PRE_PING", True)
 
-        # Use the URI exactly as provided without any modifications
-        # This ensures compatibility with Supabase and other PostgreSQL providers
+        # Strip parameters that asyncpg doesn't accept as keyword arguments
+        # These will raise "unexpected keyword argument" errors
+        from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+        
+        parsed = urlparse(uri)
+        query_params = parse_qs(parsed.query)
+        
+        # List of parameters that asyncpg doesn't accept
+        incompatible_params = ["sslmode", "channel_binding"]
+        removed_params = []
+        
+        for param in incompatible_params:
+            if param in query_params:
+                query_params.pop(param, None)
+                removed_params.append(param)
+        
+        if removed_params:
+            logger.debug(f"Removing parameters from PostgreSQL URI (not compatible with asyncpg): {removed_params}")
+            parsed = parsed._replace(query=urlencode(query_params, doseq=True))
+            uri = urlunparse(parsed)
+
         logger.info(
             f"Initializing vector store database engine with pool size={pool_size}, "
             f"max_overflow={max_overflow}, pool_recycle={pool_recycle}s"
         )
 
-        # Create the engine with the URI as is and improved connection pool settings
+        # Create the engine with improved connection pool settings
         self.engine = create_async_engine(
             uri,
             # Prevent connection timeouts by keeping connections alive
