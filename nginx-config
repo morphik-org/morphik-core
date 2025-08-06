@@ -1,21 +1,38 @@
 server {
     listen 80;
-    server_name <morphik_ai_domain>;
+    server_name sift-api.morphik.ai;
     return 301 https://$server_name$request_uri;
 }
 
 server {
     listen 443 ssl;
-    server_name <morphik_ai_domain>;
+    server_name sift-api.morphik.ai;
     
-    ssl_certificate /etc/letsencrypt/live/<morphik_ai_domain>/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/<morphik_ai_domain>/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/sift-api.morphik.ai/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/sift-api.morphik.ai/privkey.pem;
     
     location / {
+        # CORS headers for preflight requests
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' '*' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+            add_header 'Access-Control-Max-Age' 1728000 always;
+            add_header 'Content-Type' 'text/plain; charset=utf-8' always;
+            add_header 'Content-Length' 0 always;
+            return 204;
+        }
+        
+        # Proxy settings
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Additional proxy settings for larger file uploads
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 75s;
+        client_max_body_size 100M;
     }
 }

@@ -12,12 +12,13 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Type, Union
 
 import arq
 import filetype
+import fitz  # PyMuPDF - faster alternative to pdf2image
 import pdf2image
 import torch
 # from colpali_engine.models import ColIdefics3, ColIdefics3Processor
 from fastapi import HTTPException, UploadFile
 from filetype.types import IMAGE  # , DOCUMENT, document
-from PIL.Image import Image
+from PIL.Image import Image 
 from pydantic import BaseModel
 
 from core.cache.base_cache import BaseCache
@@ -1590,9 +1591,7 @@ class DocumentService:
         # open the bytes with Pillow; if that succeeds, treat it as an image.
         if file_type is None:
             try:
-                from PIL import Image as PILImage
-
-                PILImage.open(BytesIO(file_content)).verify()
+                Image.open(BytesIO(file_content)).verify()
                 logger.info("Heuristic image detection succeeded (Pillow). Treating as image.")
                 return [Chunk(content=file_content_base64, metadata={"is_image": True})]
             except Exception:
@@ -1607,9 +1606,7 @@ class DocumentService:
         # it is an image.
         if mime_type.startswith("image/"):
             try:
-                from PIL import Image as PILImage
-
-                img = PILImage.open(BytesIO(file_content))
+                img = Image.open(BytesIO(file_content))
                 # Resize and compress aggressively to minimize context window footprint
                 max_width = 256  # reduce width to shrink payload dramatically
                 if img.width > max_width:
@@ -1630,12 +1627,42 @@ class DocumentService:
             case file_type if file_type in IMAGE:
                 return [Chunk(content=file_content_base64, metadata={"is_image": True})]
             case "application/pdf":
-                logger.info("Working with PDF file!")
-                images = pdf2image.convert_from_bytes(file_content)
-                images_b64 = [self.img_to_base64_str(image) for image in images]
-                return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                logger.info("Working with PDF file - using PyMuPDF for faster processing!")
+                
+                try:
+                    # Load PDF document with PyMuPDF (much faster than pdf2image)
+                    pdf_document = fitz.open("pdf", file_content)
+                    images_b64 = []
+                    
+                    # Process each page individually for better memory management
+                    for page_num in range(len(pdf_document)):
+                        page = pdf_document[page_num]
+                        # Use 150 DPI for good balance of quality/speed (same as PDF viewer)
+                        mat = fitz.Matrix(150 / 72, 150 / 72)  # 150 DPI conversion matrix
+                        pix = page.get_pixmap(matrix=mat)
+                        img_data = pix.tobytes("png")
+                        
+                        # Convert to PIL Image and then to base64
+                        img = Image.open(BytesIO(img_data))
+                        images_b64.append(self.img_to_base64_str(img))
+                    
+                    pdf_document.close()  # Clean up resources
+                    
+                    logger.info(f"PyMuPDF processed {len(images_b64)} pages")
+                    return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                    
+                except Exception as e:
+                    # Fallback to pdf2image if PyMuPDF fails
+                    logger.warning(f"PyMuPDF failed ({e}), falling back to pdf2image")
+                    
+                    images = pdf2image.convert_from_bytes(file_content)
+                    images_b64 = [self.img_to_base64_str(image) for image in images]
+                    
+                    logger.info(f"pdf2image fallback processed {len(images_b64)} pages")
+                    return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
             case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/msword":
                 logger.info("Working with Word document!")
+                
                 # Check if file content is empty
                 if not file_content or len(file_content) == 0:
                     logger.error("Word document content is empty")
@@ -1702,9 +1729,42 @@ class DocumentService:
                         pdf_content = pdf_file.read()
 
                     try:
-                        images = pdf2image.convert_from_bytes(pdf_content)
-                        if not images:
-                            logger.warning("No images extracted from PDF")
+                        # Use PyMuPDF for PDF processing (faster than pdf2image)
+                        try:
+                            pdf_document = fitz.open("pdf", pdf_content)
+                            images_b64 = []
+                            
+                            # Process each page individually
+                            for page_num in range(len(pdf_document)):
+                                page = pdf_document[page_num]
+                                # Use 150 DPI for good balance of quality/speed
+                                mat = fitz.Matrix(150 / 72, 150 / 72)  # 150 DPI conversion matrix
+                                pix = page.get_pixmap(matrix=mat)
+                                img_data = pix.tobytes("png")
+                                
+                                # Convert to PIL Image and then to base64
+                                img = Image.open(BytesIO(img_data))
+                                images_b64.append(self.img_to_base64_str(img))
+                            
+                            pdf_document.close()  # Clean up resources
+                            
+                        except Exception as pymupdf_error:
+                            # Fallback to pdf2image if PyMuPDF fails
+                            logger.warning(f"PyMuPDF failed for Word document ({pymupdf_error}), falling back to pdf2image")
+                            images = pdf2image.convert_from_bytes(pdf_content)
+                            if not images:
+                                logger.warning("No images extracted from PDF")
+                                return [
+                                    Chunk(
+                                        content=chunk.content,
+                                        metadata=(chunk.metadata | {"is_image": False}),
+                                    )
+                                    for chunk in chunks
+                                ]
+                            images_b64 = [self.img_to_base64_str(image) for image in images]
+                        
+                        if not images_b64:
+                            logger.warning("No images extracted from Word document PDF")
                             return [
                                 Chunk(
                                     content=chunk.content,
@@ -1713,7 +1773,7 @@ class DocumentService:
                                 for chunk in chunks
                             ]
 
-                        images_b64 = [self.img_to_base64_str(image) for image in images]
+                        logger.info(f"Word document processed {len(images_b64)} pages")
                         return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
                     except Exception as pdf_error:
                         logger.error(f"Error converting PDF to images: {str(pdf_error)}")
