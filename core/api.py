@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware  # Import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from starlette.middleware.sessions import SessionMiddleware
+import uuid
 
 from core.agent import MorphikAgent
 from core.app_factory import lifespan
@@ -1090,6 +1091,7 @@ async def generate_local_uri(
         payload = {
             "type": "developer",
             "entity_id": name,
+            "app_id": str(uuid.uuid4()),
             "permissions": ["read", "write", "admin"],
             "exp": datetime.now(UTC) + timedelta(days=expiry_days),
         }
