@@ -34,8 +34,8 @@ gemini_flash = { model_name = "gemini/gemini-2.5-flash-preview-05-20" } # gemini
 # - Morphik in Docker, Ollama local: "http://host.docker.internal:11434"
 # - Both in Docker: "http://ollama:11434"
 
-# ollama_qwen_vision = { model_name = "gpt-4.1" } # {model_name = "groq/meta-llama/llama-4-scout-17b-16e-instruct"} #{ model_name = "ollama_chat/qwen2.5vl:latest", api_base = "http://localhost:11434", vision = true }
-ollama_qwen_vision = { model_name = "ollama_chat/qwen2.5vl:latest", api_base = "http://localhost:11434", vision = true }
+ollama_qwen_vision = { model_name = "gpt-4.1" } # {model_name = "groq/meta-llama/llama-4-scout-17b-16e-instruct"} #{ model_name = "ollama_chat/qwen2.5vl:latest", api_base = "http://localhost:11434", vision = true }
+# ollama_qwen_vision = { model_name = "ollama_chat/qwen2.5vl:latest", api_base = "http://localhost:11434", vision = true }
 
 ollama_llama_vision = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://localhost:11434", vision = true }
 ollama_qwen_1_5b = { model_name = "ollama_chat/qwen2:1.5b", api_base = "http://ollama:11434" }
@@ -132,8 +132,8 @@ enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"
 api_domain = "api.morphik.ai"  # API domain for cloud URIs
 # Only call the embedding API if colpali_mode is "api"
-morphik_embedding_api_domain = "http://localhost:6000"  # endpoint for multivector embedding service
-colpali_mode = "local" # "off", "local", or "api"
+morphik_embedding_api_domain = "https://embedding-api.morphik.ai" # "http://localhost:6000"  # endpoint for multivector embedding service
+colpali_mode = "api" # "local" # "off", "local", or "api"
 
 [pdf_viewer]
 frontend_url = "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf" # "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf"

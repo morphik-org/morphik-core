@@ -1,0 +1,280 @@
+[
+  {
+    "/retrieve/chunks": {
+      "post": {
+        "summary": "Retrieve Chunks",
+        "description": "Retrieve relevant chunks.\n\nArgs:\n    request: RetrieveRequest containing:\n        - query: Search query text\n        - filters: Optional metadata filters\n        - k: Number of results (default: 4)\n        - min_score: Minimum similarity threshold (default: 0.0)\n        - use_reranking: Whether to use reranking\n        - use_colpali: Whether to use ColPali-style embedding model\n        - folder_name: Optional folder to scope the search to\n        - end_user_id: Optional end-user ID to scope the search to\n    auth: Authentication context\n\nReturns:\n    List[ChunkResult]: List of relevant chunks",
+        "operationId": "retrieve_chunks_retrieve_chunks_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrieveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChunkResult"
+                  },
+                  "title": "Response Retrieve Chunks Retrieve Chunks Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "ChunkResult": {
+      "properties": {
+        "content": {
+          "type": "string",
+          "title": "Content"
+        },
+        "score": {
+          "type": "number",
+          "title": "Score"
+        },
+        "document_id": {
+          "type": "string",
+          "title": "Document Id"
+        },
+        "chunk_number": {
+          "type": "integer",
+          "title": "Chunk Number"
+        },
+        "metadata": {
+          "type": "object",
+          "title": "Metadata"
+        },
+        "content_type": {
+          "type": "string",
+          "title": "Content Type"
+        },
+        "filename": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Filename"
+        },
+        "download_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Download Url"
+        },
+        "is_padding": {
+          "type": "boolean",
+          "title": "Is Padding",
+          "description": "Whether this chunk was added as padding",
+          "default": false
+        }
+      },
+      "type": "object",
+      "required": [
+        "content",
+        "score",
+        "document_id",
+        "chunk_number",
+        "metadata",
+        "content_type"
+      ],
+      "title": "ChunkResult",
+      "description": "Query result at chunk level"
+    }
+  },
+  {
+    "HTTPValidationError": {
+      "properties": {
+        "detail": {
+          "items": {
+            "$ref": "#/components/schemas/ValidationError"
+          },
+          "type": "array",
+          "title": "Detail"
+        }
+      },
+      "type": "object",
+      "title": "HTTPValidationError"
+    }
+  },
+  {
+    "RetrieveRequest": {
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "title": "Query"
+        },
+        "filters": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Filters"
+        },
+        "k": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "title": "K",
+          "default": 4
+        },
+        "min_score": {
+          "type": "number",
+          "title": "Min Score",
+          "default": 0
+        },
+        "use_reranking": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Use Reranking"
+        },
+        "use_colpali": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Use Colpali"
+        },
+        "padding": {
+          "type": "integer",
+          "minimum": 0,
+          "title": "Padding",
+          "description": "Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only)",
+          "default": 0
+        },
+        "graph_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Graph Name",
+          "description": "Name of the graph to use for knowledge graph-enhanced retrieval"
+        },
+        "hop_depth": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "maximum": 3,
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Hop Depth",
+          "description": "Number of relationship hops to traverse in the graph",
+          "default": 1
+        },
+        "include_paths": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Include Paths",
+          "description": "Whether to include relationship paths in the response",
+          "default": false
+        },
+        "folder_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Folder Name",
+          "description": "Optional folder scope for the operation. Accepts a single folder name or a list of folder names."
+        },
+        "end_user_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "End User Id",
+          "description": "Optional end-user scope for the operation"
+        }
+      },
+      "type": "object",
+      "required": [
+        "query"
+      ],
+      "title": "RetrieveRequest",
+      "description": "Base retrieve request model"
+    }
+  }
+]
