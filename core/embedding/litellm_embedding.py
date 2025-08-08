@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import List, Union
 
 import litellm
@@ -60,6 +61,21 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
             for key, value in self.model_config.items():
                 if key != "model_name":  # Skip as we've already handled it
                     model_params[key] = value
+
+            # Ensure providers that don't require real API keys (e.g., Ollama, local OpenAI-compatible backends)
+            # still pass a dummy key to LiteLLM/OpenAI client to avoid AuthenticationError.
+            model_name_lower = str(self.model_config.get("model_name", "")).lower()
+            api_base = str(model_params.get("api_base", "")).lower()
+            looks_like_local_provider = (
+                "ollama" in model_name_lower
+                or "ollama" in api_base
+                or ":11434" in api_base
+                or "localhost" in api_base
+                or "host.docker.internal" in api_base
+            )
+            if looks_like_local_provider and "api_key" not in model_params:
+                # Use a harmless placeholder; some LiteLLM providers demand a key even if backend ignores it
+                model_params["api_key"] = os.environ.get("LITELLM_DUMMY_API_KEY", "ollama")
 
             # Call LiteLLM
             response = await litellm.aembedding(input=texts, **model_params)

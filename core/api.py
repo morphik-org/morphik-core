@@ -1,6 +1,7 @@
 import json
 import logging
 import time  # Add time import for profiling
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Optional, Union
 
@@ -14,7 +15,6 @@ from fastapi.middleware.cors import CORSMiddleware  # Import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from starlette.middleware.sessions import SessionMiddleware
-import uuid
 
 from core.agent import MorphikAgent
 from core.app_factory import lifespan
@@ -31,6 +31,7 @@ from core.models.documents import ChunkResult, Document, DocumentResult, Grouped
 from core.models.prompts import validate_prompt_overrides_with_http_exception
 from core.models.request import AgentQueryRequest, CompletionQueryRequest, GenerateUriRequest, RetrieveRequest
 from core.models.responses import ChatTitleResponse, ModelsResponse
+
 # from core.routes.cache import router as cache_router
 from core.routes.documents import router as documents_router
 from core.routes.folders import router as folders_router
@@ -60,6 +61,7 @@ class PerformanceTracker:
         self.phases = {}
         self.sub_operations = {}  # Track sub-operations for hierarchical display
         self.current_phase = None
+        self.sub_operations = {}  # Track sub-operations for hierarchical display
         self.phase_start = None
 
     def start_phase(self, phase_name: str):
@@ -97,14 +99,24 @@ class PerformanceTracker:
         logger.info(f"=== {self.operation_name} Performance Summary ===")
         logger.info(f"Total time: {total_time:.2f}s")
 
-        # Sort phases by duration (longest first)
+        # Sort phases by duration (longest first) and include sub-operations under each phase
         for phase, duration in sorted(self.phases.items(), key=lambda x: x[1], reverse=True):
             percentage = (duration / total_time) * 100 if total_time > 0 else 0
             logger.info(f"  - {phase}: {duration:.2f}s ({percentage:.1f}%)")
-            
+
             # Display sub-operations for this phase if any exist
             if phase in self.sub_operations:
-                for sub_name, sub_duration in sorted(self.sub_operations[phase].items(), key=lambda x: x[1], reverse=True):
+                for sub_name, sub_duration in sorted(
+                    self.sub_operations[phase].items(), key=lambda x: x[1], reverse=True
+                ):
+                    sub_percentage = (sub_duration / total_time) * 100 if total_time > 0 else 0
+                    logger.info(f"    - {sub_name}: {sub_duration:.2f}s ({sub_percentage:.1f}%)")
+
+            # Display sub-operations for this phase if any exist
+            if phase in self.sub_operations:
+                for sub_name, sub_duration in sorted(
+                    self.sub_operations[phase].items(), key=lambda x: x[1], reverse=True
+                ):
                     sub_percentage = (sub_duration / total_time) * 100 if total_time > 0 else 0
                     logger.info(f"    - {sub_name}: {sub_duration:.2f}s ({sub_percentage:.1f}%)")
 

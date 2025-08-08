@@ -617,16 +617,13 @@ async def process_ingestion_job(
 
             chunks_multivector = []
             if should_create_image_chunks:
-                import base64
-
                 import filetype
 
                 file_type = filetype.guess(file_content)
-                file_content_base64 = base64.b64encode(file_content).decode()
 
                 # Use the parsed chunks for ColPali/image rules – this will create image chunks if appropriate
                 chunks_multivector = document_service._create_chunks_multivector(
-                    file_type, file_content_base64, file_content, parsed_chunks
+                    file_type, None, file_content, parsed_chunks
                 )
                 logger.debug(
                     f"Created {len(chunks_multivector)} multivector/image chunks " f"(using_colpali={using_colpali})"
@@ -765,22 +762,52 @@ async def process_ingestion_job(
             # 12. Handle ColPali embeddings
             colpali_embed_start = time.time()
             chunk_objects_multivector = []
+            colpali_chunk_ids: List[str] = []
             if using_colpali:
-                colpali_embeddings = await document_service.colpali_embedding_model.embed_for_ingestion(
-                    processed_chunks_multivector
-                )
-                logger.debug(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
+                # Stream in batches to cap memory: embed -> store -> release
+                try:
+                    store_batch_size = int(os.getenv("COLPALI_STORE_BATCH_SIZE", "16"))
+                except Exception:
+                    store_batch_size = 16
 
-                chunk_objects_multivector = document_service._create_chunk_objects(
-                    doc.external_id, processed_chunks_multivector, colpali_embeddings
+                total = len(processed_chunks_multivector)
+                logger.info(
+                    f"ColPali streaming mode: processing {total} chunks with store batch size {store_batch_size}"
                 )
+
+                for start_idx in range(0, total, store_batch_size):
+                    end_idx = min(start_idx + store_batch_size, total)
+                    batch_chunks = processed_chunks_multivector[start_idx:end_idx]
+
+                    # Embed this batch
+                    batch_embeddings = await document_service.colpali_embedding_model.embed_for_ingestion(batch_chunks)
+                    logger.debug(
+                        f"ColPali batch embedded [{start_idx}:{end_idx}] -> {len(batch_embeddings)} embeddings"
+                    )
+
+                    # Create chunk objects for this batch
+                    batch_chunk_objects = document_service._create_chunk_objects(
+                        doc.external_id, batch_chunks, batch_embeddings
+                    )
+
+                    # Store this batch immediately to release memory pressure
+                    success, stored_ids = await document_service.colpali_vector_store.store_embeddings(
+                        batch_chunk_objects, auth.app_id if auth else None
+                    )
+                    if not success:
+                        raise RuntimeError("Failed to store ColPali batch embeddings")
+                    colpali_chunk_ids.extend(stored_ids)
+
+                # For compatibility with later summary logging
+                chunk_objects_multivector = []
+
             colpali_embed_time = time.time() - colpali_embed_start
             phase_times["colpali_generate_embeddings"] = colpali_embed_time
             if using_colpali:
-                embeddings_per_second = len(colpali_embeddings) / colpali_embed_time if colpali_embed_time > 0 else 0
+                eps = (len(colpali_chunk_ids) / colpali_embed_time) if colpali_embed_time > 0 else 0
                 logger.info(
-                    f"Colpali embedding took {colpali_embed_time:.2f}s for {len(colpali_embeddings)} embeddings "
-                    f"({embeddings_per_second:.2f} embeddings/s)"
+                    f"ColPali embed+store streaming took {colpali_embed_time:.2f}s for "
+                    f"{len(colpali_chunk_ids)} chunks ({eps:.2f} chunks/s)"
                 )
 
             # === Merge aggregated chunk metadata into document metadata ===
@@ -796,17 +823,45 @@ async def process_ingestion_job(
             # 11. Store chunks and update document with is_update=True
             await update_document_progress(document_service, document_id, auth, 5, total_steps, "Storing chunks")
             store_start = time.time()
-            await document_service._store_chunks_and_doc(
-                chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
-            )
+            if using_colpali:
+                # We already stored ColPali chunks in batches; just persist doc.chunk_ids via DB update
+                doc.chunk_ids = colpali_chunk_ids
+                await document_service.db.update_document(
+                    document_id=doc.external_id,
+                    updates={
+                        "chunk_ids": doc.chunk_ids,
+                        "metadata": doc.metadata,
+                        "system_metadata": doc.system_metadata,
+                        "filename": doc.filename,
+                        "content_type": doc.content_type,
+                        "storage_info": doc.storage_info,
+                        "storage_files": (
+                            [
+                                (
+                                    file.model_dump()
+                                    if hasattr(file, "model_dump")
+                                    else (file.dict() if hasattr(file, "dict") else file)
+                                )
+                                for file in doc.storage_files
+                            ]
+                            if doc.storage_files
+                            else []
+                        ),
+                    },
+                    auth=auth,
+                )
+            else:
+                await document_service._store_chunks_and_doc(
+                    chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
+                )
             store_time = time.time() - store_start
             phase_times["store_chunks_and_update_doc"] = store_time
 
             # ===== STORAGE SUMMARY =====
             # Log what was actually stored for clarity
             storage_summary = []
-            if using_colpali and chunk_objects_multivector:
-                storage_summary.append(f"ColPali vector store: {len(chunk_objects_multivector)} chunks")
+            if using_colpali:
+                storage_summary.append(f"ColPali vector store: {len(doc.chunk_ids)} chunks")
             if not using_colpali and chunk_objects:
                 storage_summary.append(f"Regular vector store: {len(chunk_objects)} chunks")
 
@@ -1149,10 +1204,11 @@ class WorkerSettings:
     redis_settings = redis_settings_from_env()
 
     # Result storage settings
-    keep_result_ms = 24 * 60 * 60 * 1000  # Keep results for 24 hours (24 * 60 * 60 * 1000 ms)
+    keep_result_ms = 15 * 60 * 1000  # Keep results for 15 minutes
 
-    # Concurrency settings - optimized for high-volume ingestion
-    max_jobs = 3  # Reduced to prevent resource contention during batch processing
+    # Concurrency settings - keep low by default to avoid OOM on small EC2s.
+    # Override with ARQ_MAX_JOBS if you have sufficient memory.
+    max_jobs = int(os.getenv("ARQ_MAX_JOBS", "1"))
 
     # Resource management
     health_check_interval = 600  # Extended to 10 minutes to reduce Redis overhead

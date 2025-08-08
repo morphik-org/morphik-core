@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional, Set, Union
 
@@ -129,32 +130,41 @@ class MorphikGraphService:
 
         timeout_config = httpx.Timeout(timeout)
         async with httpx.AsyncClient(timeout=timeout_config) as client:
-            try:
-                logger.debug(
-                    f"Making API request: {method} {url} Data: {json_data} Params: {params} Timeout: {timeout}s"
-                )
-                response = await client.request(method, url, json=json_data, headers=headers, params=params)
-                response.raise_for_status()  # Raise an exception for HTTP error codes (4xx or 5xx)
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    logger.debug(
+                        f"Making API request: {method} {url} Data: {json_data} Params: {params} Timeout: {timeout}s (attempt {attempt + 1}/{max_retries})"
+                    )
+                    response = await client.request(method, url, json=json_data, headers=headers, params=params)
+                    response.raise_for_status()  # Raise an exception for HTTP error codes (4xx or 5xx)
 
-                if response.status_code == 204:  # No Content
-                    return None
+                    if response.status_code == 204:  # No Content
+                        return None
 
-                if not response.content:  # Empty body for 200 OK etc.
-                    logger.info(f"API request to {url} returned {response.status_code} with empty body.")
-                    return {}
+                    if not response.content:  # Empty body for 200 OK etc.
+                        logger.info(f"API request to {url} returned {response.status_code} with empty body.")
+                        return {}
 
-                return response.json()
-            except httpx.HTTPStatusError as e:
-                logger.error(f"HTTP error for {method} {url}: {e.response.status_code} - {e.response.text}")
-                raise Exception(f"API request failed: {e.response.status_code}, {e.response.text}") from e
-            except httpx.RequestError as e:  # Covers connection errors, timeouts, etc.
-                logger.error(f"Request error for {method} {url}: {e}")
-                raise Exception(f"API request failed for {url}") from e
-            except ValueError as e:  # JSONDecodeError inherits from ValueError
-                logger.error(
-                    f"JSON decoding error for {method} {url}: {e}. Response text: {response.text if 'response' in locals() else 'N/A'}"
-                )
-                raise Exception(f"API response JSON decoding failed for {url}") from e
+                    return response.json()
+                except httpx.HTTPStatusError as e:
+                    status_code = e.response.status_code
+                    logger.error(f"HTTP error for {method} {url}: {status_code} - {e.response.text}")
+                    if status_code in (429, 500, 502, 503, 504) and attempt < max_retries - 1:
+                        await asyncio.sleep(1.0 * (attempt + 1))
+                        continue
+                    raise Exception(f"API request failed: {status_code}, {e.response.text}") from e
+                except httpx.RequestError as e:  # Covers connection errors, timeouts, etc.
+                    logger.error(f"Request error for {method} {url}: {e}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(1.0 * (attempt + 1))
+                        continue
+                    raise Exception(f"API request failed for {url}") from e
+                except ValueError as e:  # JSONDecodeError inherits from ValueError
+                    logger.error(
+                        f"JSON decoding error for {method} {url}: {e}. Response text: {response.text if 'response' in locals() else 'N/A'}"
+                    )
+                    raise Exception(f"API response JSON decoding failed for {url}") from e
 
     async def _find_graph(
         self, graph_name: str, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None
@@ -214,7 +224,7 @@ class MorphikGraphService:
                             local_graph.system_metadata["pipeline_stage"] = status_response["pipeline_stage"]
 
                         if remote_status == "completed":
-                            # Get graph statistics
+                            # Get graph statistics and only mark completed if non-empty
                             try:
                                 graph_data = await self._make_api_request(
                                     method="POST",
@@ -224,13 +234,20 @@ class MorphikGraphService:
                                     params={"nodes_num": 2000},
                                 )
 
-                                if graph_data:
-                                    nodes = graph_data.get("nodes", [])
-                                    links = graph_data.get("links", [])
-                                    local_graph.system_metadata["node_count"] = len(nodes)
-                                    local_graph.system_metadata["edge_count"] = len(links)
+                                nodes = (graph_data or {}).get("nodes", [])
+                                links = (graph_data or {}).get("links", [])
+                                local_graph.system_metadata["node_count"] = len(nodes)
+                                local_graph.system_metadata["edge_count"] = len(links)
+
+                                if len(nodes) == 0 and len(links) == 0:
+                                    # Treat as still processing/finishing to avoid empty UI
+                                    local_graph.system_metadata["status"] = "processing"
+                                    local_graph.system_metadata["pipeline_stage"] = "Finalizing"
+                                else:
+                                    local_graph.system_metadata["status"] = "completed"
                             except Exception as e:
                                 logger.warning(f"Failed to get graph statistics: {e}")
+                                # Keep existing status; don't mark completed blindly
 
             return local_graph
 
@@ -499,8 +516,8 @@ class MorphikGraphService:
                     f"Graph update {graph.id}: processed {successful_docs} documents successfully, {failed_docs} failed"
                 )
 
-                # Mark as completed for individual document processing
-                graph.system_metadata["status"] = "completed"
+                # Keep as processing; polling in get_graph will mark completed when nodes/links exist
+                graph.system_metadata["status"] = "processing"
 
                 # Update local graph object with new document IDs
                 current_doc_ids = set(graph.document_ids)
@@ -616,6 +633,18 @@ class MorphikGraphService:
                 # Ensure we have the expected structure
                 nodes = api_response.get("nodes", [])
                 links = api_response.get("links", [])
+
+                # Soft retry once if empty
+                if not nodes and not links:
+                    await asyncio.sleep(1.5)
+                    api_response = await self._make_api_request(
+                        method="POST",
+                        endpoint="/visualization",
+                        auth=auth,
+                        json_data=request_data,
+                    )
+                    nodes = (api_response or {}).get("nodes", [])
+                    links = (api_response or {}).get("links", [])
 
                 # Transform to match the expected format for the UI
                 formatted_nodes = []

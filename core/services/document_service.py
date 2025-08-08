@@ -14,11 +14,11 @@ import arq
 import filetype
 import fitz  # PyMuPDF - faster alternative to pdf2image
 import pdf2image
-import torch
+
 # from colpali_engine.models import ColIdefics3, ColIdefics3Processor
 from fastapi import HTTPException, UploadFile
 from filetype.types import IMAGE  # , DOCUMENT, document
-from PIL.Image import Image 
+from PIL import Image as PILImage
 from pydantic import BaseModel
 
 from core.cache.base_cache import BaseCache
@@ -27,6 +27,7 @@ from core.completion.base_completion import BaseCompletionModel
 from core.config import get_settings
 from core.database.base_database import BaseDatabase
 from core.embedding.base_embedding_model import BaseEmbeddingModel
+
 # from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
 from core.models.chat import ChatMessage
@@ -85,7 +86,9 @@ class DocumentService:
                 if document_id not in folder.document_ids:
                     success = await self.db.add_document_to_folder(folder.id, document_id, auth)
                     if not success:
-                        logger.warning(f"Failed to add document {document_id} to existing folder {folder.name}. This may be due to a race condition during ingestion - the document should be accessible shortly.")
+                        logger.warning(
+                            f"Failed to add document {document_id} to existing folder {folder.name}. This may be due to a race condition during ingestion - the document should be accessible shortly."
+                        )
                         # Return the folder anyway since it exists, even if document addition failed
                         # The retry mechanism in add_document_to_folder should handle transient issues
                     else:
@@ -204,7 +207,7 @@ class DocumentService:
         cache_factory: Optional[BaseCacheFactory] = None,
         reranker: Optional[BaseReranker] = None,
         enable_colpali: bool = False,
-        colpali_embedding_model = None, # Optional[ColpaliEmbeddingModel] = None,
+        colpali_embedding_model=None,  # Optional[ColpaliEmbeddingModel] = None,
         colpali_vector_store: Optional[BaseVectorStore] = None,
     ):
         self.db = database
@@ -324,7 +327,7 @@ class DocumentService:
             else:
                 phase_times["retrieve_embeddings"] = embedding_duration
             return result
-        
+
         async def timed_auth():
             auth_start = time.time()
             result = await self.db.find_authorized_and_filtered_documents(auth, filters, system_filters)
@@ -511,7 +514,6 @@ class DocumentService:
         # Use colpali as a reranker to get consistent similarity scores for both types of chunks
         # IMPORTANT: Multivector chunks already have proper ColPali similarity scores from their vector store,
         # so we should preserve those. Only rescore regular text chunks to make them comparable.
-
         return chunks_multivector + chunks
 
     def _count_tokens_simple(self, text: str) -> int:
@@ -669,7 +671,8 @@ class DocumentService:
             chunk_id.add(f"{chunk.document_id}-{chunk.chunk_number}")
 
         # Sort by score (original matched chunks first, then padding chunks)
-        chunks.sort(key=lambda x: f"{x.document_id}-{x.chunk_number}", reverse=False)
+        # Sort by (document_id, chunk_number) to ensure numeric order across chunks
+        chunks.sort(key=lambda x: (x.document_id, x.chunk_number))
 
         logger.info(f"Applied padding: returning {len(chunks)} image chunks (was {len(image_chunks)} image chunks)")
         return chunks
@@ -679,7 +682,7 @@ class DocumentService:
         original_chunk_results: List[ChunkResult],
         final_chunk_results: List[ChunkResult],
         padding: int,
-    ):  #  -> "GroupedChunkResponse"
+    ):  # -> "GroupedChunkResponse"
         """
         Create a grouped response directly from ChunkResult objects.
 
@@ -761,7 +764,7 @@ class DocumentService:
         end_user_id: Optional[str] = None,
         perf_tracker: Optional[Any] = None,
         padding: int = 0,
-    ):  #  -> "GroupedChunkResponse"
+    ):  # -> "GroupedChunkResponse"
         """
         Retrieve chunks with grouped response format that differentiates main chunks from padding.
 
@@ -1572,7 +1575,7 @@ class DocumentService:
 
         return doc
 
-    def img_to_base64_str(self, img: Image):
+    def img_to_base64_str(self, img: PILImage.Image):
         buffered = BytesIO()
         img.save(buffered, format="PNG")
         buffered.seek(0)
@@ -1580,7 +1583,13 @@ class DocumentService:
         img_str = "data:image/png;base64," + base64.b64encode(img_byte).decode()
         return img_str
 
-    def _create_chunks_multivector(self, file_type, file_content_base64: str, file_content: bytes, chunks: List[Chunk]):
+    def _create_chunks_multivector(
+        self,
+        file_type,
+        file_content_base64: Optional[str],
+        file_content: bytes,
+        chunks: List[Chunk],
+    ):
         # Handle the case where file_type is None
         mime_type = file_type.mime if file_type is not None else "text/plain"
         logger.info(f"Creating chunks for multivector embedding for file type {mime_type}")
@@ -1591,8 +1600,10 @@ class DocumentService:
         # open the bytes with Pillow; if that succeeds, treat it as an image.
         if file_type is None:
             try:
-                Image.open(BytesIO(file_content)).verify()
+                PILImage.open(BytesIO(file_content)).verify()
                 logger.info("Heuristic image detection succeeded (Pillow). Treating as image.")
+                if file_content_base64 is None:
+                    file_content_base64 = base64.b64encode(file_content).decode()
                 return [Chunk(content=file_content_base64, metadata={"is_image": True})]
             except Exception:
                 logger.info("File type is None and not an image – treating as text")
@@ -1606,7 +1617,7 @@ class DocumentService:
         # it is an image.
         if mime_type.startswith("image/"):
             try:
-                img = Image.open(BytesIO(file_content))
+                img = PILImage.open(BytesIO(file_content))
                 # Resize and compress aggressively to minimize context window footprint
                 max_width = 256  # reduce width to shrink payload dramatically
                 if img.width > max_width:
@@ -1621,48 +1632,56 @@ class DocumentService:
                 return [Chunk(content=img_b64, metadata={"is_image": True})]
             except Exception as e:
                 logger.error(f"Error resizing image for base64 encoding: {e}. Falling back to original size.")
+                if file_content_base64 is None:
+                    file_content_base64 = base64.b64encode(file_content).decode()
                 return [Chunk(content=file_content_base64, metadata={"is_image": True})]
 
         match mime_type:
             case file_type if file_type in IMAGE:
+                if file_content_base64 is None:
+                    file_content_base64 = base64.b64encode(file_content).decode()
                 return [Chunk(content=file_content_base64, metadata={"is_image": True})]
             case "application/pdf":
                 logger.info("Working with PDF file - using PyMuPDF for faster processing!")
-                
+
                 try:
                     # Load PDF document with PyMuPDF (much faster than pdf2image)
                     pdf_document = fitz.open("pdf", file_content)
                     images_b64 = []
-                    
+
                     # Process each page individually for better memory management
+                    try:
+                        dpi = int(os.getenv("COLPALI_PDF_DPI", "150"))
+                    except Exception:
+                        dpi = 150
+
                     for page_num in range(len(pdf_document)):
                         page = pdf_document[page_num]
-                        # Use 150 DPI for good balance of quality/speed (same as PDF viewer)
-                        mat = fitz.Matrix(150 / 72, 150 / 72)  # 150 DPI conversion matrix
+                        mat = fitz.Matrix(dpi / 72, dpi / 72)
                         pix = page.get_pixmap(matrix=mat)
                         img_data = pix.tobytes("png")
-                        
+
                         # Convert to PIL Image and then to base64
-                        img = Image.open(BytesIO(img_data))
+                        img = PILImage.open(BytesIO(img_data))
                         images_b64.append(self.img_to_base64_str(img))
-                    
+
                     pdf_document.close()  # Clean up resources
-                    
+
                     logger.info(f"PyMuPDF processed {len(images_b64)} pages")
                     return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
-                    
+
                 except Exception as e:
                     # Fallback to pdf2image if PyMuPDF fails
                     logger.warning(f"PyMuPDF failed ({e}), falling back to pdf2image")
-                    
+
                     images = pdf2image.convert_from_bytes(file_content)
                     images_b64 = [self.img_to_base64_str(image) for image in images]
-                    
+
                     logger.info(f"pdf2image fallback processed {len(images_b64)} pages")
                     return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
             case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/msword":
                 logger.info("Working with Word document!")
-                
+
                 # Check if file content is empty
                 if not file_content or len(file_content) == 0:
                     logger.error("Word document content is empty")
@@ -1733,24 +1752,29 @@ class DocumentService:
                         try:
                             pdf_document = fitz.open("pdf", pdf_content)
                             images_b64 = []
-                            
+
                             # Process each page individually
                             for page_num in range(len(pdf_document)):
                                 page = pdf_document[page_num]
-                                # Use 150 DPI for good balance of quality/speed
-                                mat = fitz.Matrix(150 / 72, 150 / 72)  # 150 DPI conversion matrix
+                                try:
+                                    dpi = int(os.getenv("COLPALI_PDF_DPI", "150"))
+                                except Exception:
+                                    dpi = 150
+                                mat = fitz.Matrix(dpi / 72, dpi / 72)
                                 pix = page.get_pixmap(matrix=mat)
                                 img_data = pix.tobytes("png")
-                                
+
                                 # Convert to PIL Image and then to base64
-                                img = Image.open(BytesIO(img_data))
+                                img = PILImage.open(BytesIO(img_data))
                                 images_b64.append(self.img_to_base64_str(img))
-                            
+
                             pdf_document.close()  # Clean up resources
-                            
+
                         except Exception as pymupdf_error:
                             # Fallback to pdf2image if PyMuPDF fails
-                            logger.warning(f"PyMuPDF failed for Word document ({pymupdf_error}), falling back to pdf2image")
+                            logger.warning(
+                                f"PyMuPDF failed for Word document ({pymupdf_error}), falling back to pdf2image"
+                            )
                             images = pdf2image.convert_from_bytes(pdf_content)
                             if not images:
                                 logger.warning("No images extracted from PDF")
@@ -1762,7 +1786,7 @@ class DocumentService:
                                     for chunk in chunks
                                 ]
                             images_b64 = [self.img_to_base64_str(image) for image in images]
-                        
+
                         if not images_b64:
                             logger.warning("No images extracted from Word document PDF")
                             return [

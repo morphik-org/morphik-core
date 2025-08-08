@@ -290,19 +290,19 @@ class PostgresDatabase(BaseDatabase):
         # Strip parameters that asyncpg doesn't accept as keyword arguments
         # These will raise "unexpected keyword argument" errors
         from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
-        
+
         parsed = urlparse(uri)
         query_params = parse_qs(parsed.query)
-        
+
         # List of parameters that asyncpg doesn't accept
         incompatible_params = ["sslmode", "channel_binding"]
         removed_params = []
-        
+
         for param in incompatible_params:
             if param in query_params:
                 query_params.pop(param, None)
                 removed_params.append(param)
-        
+
         if removed_params:
             logger.debug(f"Removing parameters from PostgreSQL URI (not compatible with asyncpg): {removed_params}")
             parsed = parsed._replace(query=urlencode(query_params, doseq=True))
@@ -1866,7 +1866,7 @@ class PostgresDatabase(BaseDatabase):
     async def add_document_to_folder(self, folder_id: str, document_id: str, auth: AuthContext) -> bool:
         """Add a document to a folder."""
         import asyncio
-        
+
         try:
             # First, get the folder model and check access
             async with self.async_session() as session:
@@ -1890,19 +1890,28 @@ class PostgresDatabase(BaseDatabase):
             # immediately visible due to transaction isolation
             max_retries = 3
             retry_delay = 0.5  # Start with 500ms delay
-            
+
             for attempt in range(max_retries):
                 document = await self.get_document(document_id, auth)
                 if document:
                     break
-                    
+
                 if attempt < max_retries - 1:  # Don't sleep on the last attempt
-                    logger.info(f"Document {document_id} not found on attempt {attempt + 1}/{max_retries}, retrying in {retry_delay}s...")
+                    logger.info(
+                        f"Document {document_id} not found on attempt {attempt + 1}/{max_retries}, retrying in {retry_delay}s..."
+                    )
                     await asyncio.sleep(retry_delay)
                     retry_delay *= 1.5  # Exponential backoff
                 else:
-                    logger.error(f"Document {document_id} not found or user does not have access after {max_retries} attempts")
+                    logger.error(
+                        f"Document {document_id} not found or user does not have access after {max_retries} attempts"
+                    )
                     return False
+
+            # Final verification after retries
+            if not document:
+                logger.error(f"Document {document_id} not found or user does not have access after retries")
+                return False
 
             # Check if the document is already in the folder
             if document_id in folder.document_ids:

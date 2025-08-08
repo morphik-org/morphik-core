@@ -50,6 +50,8 @@ interface Graph {
     status?: string;
     workflow_id?: string;
     run_id?: string;
+    node_count?: number;
+    edge_count?: number;
     [key: string]: unknown;
   };
 }
@@ -1068,7 +1070,20 @@ const GraphSection: React.FC<GraphSectionProps> = ({
                   Update Graph
                 </Button>
                 <Button
-                  onClick={() => setShowVisualization(true)}
+                  onClick={() => {
+                    const nodeCount = (selectedGraph.system_metadata?.node_count as number) || 0;
+                    if (nodeCount > 0) {
+                      setShowVisualization(true);
+                    } else {
+                      showAlert("Graph is still preparing. Try again shortly.", {
+                        type: "info",
+                        title: typeof selectedGraph.system_metadata?.pipeline_stage === "string"
+                          ? (selectedGraph.system_metadata?.pipeline_stage as string)
+                          : "Preparing graph",
+                        duration: 4000,
+                      });
+                    }
+                  }}
                   className="flex items-center"
                   disabled={selectedGraph.system_metadata?.status === "processing"}
                 >

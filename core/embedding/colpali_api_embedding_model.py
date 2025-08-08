@@ -39,6 +39,8 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         # Use the configured Morphik Embedding API domain
         domain = self.settings.MORPHIK_EMBEDDING_API_DOMAIN
         self.endpoint = f"{domain.rstrip('/')}/embeddings"
+        # Batching is handled at a higher layer (streaming embed+store).
+        # Here we issue at most one request per input type per batch.
 
     async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> List[MultiVector]:
         # Normalize to list
@@ -51,17 +53,17 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         results: List[MultiVector] = [[] for _ in chunks]
         text_inputs, image_inputs = partition_chunks(chunks)
 
-        # Batch image embeddings if needed
+        # Image embeddings
         if image_inputs:
             indices, inputs = zip(*image_inputs)
-            data = await self.call_api(inputs, "image")
+            data = await self.call_api(list(inputs), "image")
             for idx, emb in zip(indices, data):
                 results[idx] = emb
 
-        # Batch text embeddings if needed
+        # Text embeddings
         if text_inputs:
             indices, inputs = zip(*text_inputs)
-            data = await self.call_api(inputs, "text")
+            data = await self.call_api(list(inputs), "text")
             for idx, emb in zip(indices, data):
                 results[idx] = emb
 
