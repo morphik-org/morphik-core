@@ -651,17 +651,11 @@ class DocumentService:
         padded_image_chunks = [chunk for chunk in padded_chunks if chunk.content.startswith("data")]
         logger.debug(f"Filtered to {len(padded_image_chunks)} image chunks from {len(padded_chunks)} retrieved chunks")
 
-        # # Create a mapping to preserve original scores for matched chunks
-        # original_scores = {(chunk.document_id, chunk.chunk_number): chunk.score for chunk in image_chunks}
-
-        # # Apply original scores to matched chunks, set score to 0 for padding chunks
-        # for chunk in padded_image_chunks:
-        #     key = (chunk.document_id, chunk.chunk_number)
-        #     if key in original_scores:
-        #         chunk.score = original_scores[key]
-        #     else:
-        #         # This is a padding chunk, set a lower score
-        #         chunk.score = 0.0
+        # Preserve original scores for matched chunks; padding gets 0.0
+        original_scores = {(c.document_id, c.chunk_number): c.score for c in image_chunks}
+        for c in padded_image_chunks:
+            key = (c.document_id, c.chunk_number)
+            c.score = original_scores.get(key, 0.0)
         chunk_id = set()
         chunks = []
         for chunk in padded_image_chunks:
@@ -670,9 +664,8 @@ class DocumentService:
             chunks.append(chunk)
             chunk_id.add(f"{chunk.document_id}-{chunk.chunk_number}")
 
-        # Sort by score (original matched chunks first, then padding chunks)
-        # Sort by (document_id, chunk_number) to ensure numeric order across chunks
-        chunks.sort(key=lambda x: (x.document_id, x.chunk_number))
+        # Sort: matched chunks (higher score) first, then by document and page order
+        chunks.sort(key=lambda x: (-float(x.score or 0.0), x.document_id, x.chunk_number))
 
         logger.info(f"Applied padding: returning {len(chunks)} image chunks (was {len(image_chunks)} image chunks)")
         return chunks
@@ -1847,7 +1840,6 @@ class DocumentService:
         doc_id: str,
         chunks: List[Chunk],
         embeddings: List[List[float]],
-        start_index: int = 0,
     ) -> List[DocumentChunk]:
         """Helper to create chunk objects
 
@@ -1857,12 +1849,8 @@ class DocumentService:
         3. This approach is more efficient as it reduces the size of chunk metadata
         """
         return [
-            c.to_document_chunk(
-                chunk_number=i,
-                embedding=embedding,
-                document_id=doc_id,
-            )
-            for i, (embedding, c) in enumerate(zip(embeddings, chunks), start=start_index)
+            c.to_document_chunk(chunk_number=i, embedding=embedding, document_id=doc_id)
+            for i, (embedding, c) in enumerate(zip(embeddings, chunks))
         ]
 
     async def _store_chunks_and_doc(
