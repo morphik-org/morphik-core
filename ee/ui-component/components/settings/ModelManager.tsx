@@ -20,6 +20,7 @@ import {
 import { ModelConfigAPI } from "@/lib/modelConfigApi";
 import { CustomModel } from "@/components/types";
 import { useTheme } from "next-themes";
+import { useMorphik } from "@/contexts/morphik-context";
 
 interface ModelManagerProps {
   apiKeys: Record<string, { apiKey?: string; baseUrl?: string; [key: string]: unknown }>;
@@ -135,7 +136,8 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
   });
   const { theme } = useTheme();
 
-  const api = useMemo(() => new ModelConfigAPI(authToken || null), [authToken]);
+  const { apiBaseUrl } = useMorphik();
+  const api = useMemo(() => new ModelConfigAPI(authToken || null, apiBaseUrl), [authToken, apiBaseUrl]);
 
   const renderProviderIcon = (provider: string) => {
     const providerInfo = PROVIDER_INFO[provider as keyof typeof PROVIDER_INFO];
@@ -161,7 +163,7 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
     const loadModels = async () => {
       try {
         if (authToken) {
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://api.morphik.ai"}/models/custom`, {
+          const response = await fetch(`${apiBaseUrl}/models/custom`, {
             headers: {
               Authorization: `Bearer ${authToken}`,
             },
@@ -244,7 +246,7 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
 
       if (authToken) {
         // Save to backend using the new /models endpoint
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://api.morphik.ai"}/models`, {
+        const response = await fetch(`${apiBaseUrl}/models`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -305,7 +307,7 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
     try {
       if (authToken) {
         // Delete from backend
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://api.morphik.ai"}/models/${id}`, {
+        const response = await fetch(`${apiBaseUrl}/models/${id}`, {
           method: "DELETE",
           headers: {
             Authorization: `Bearer ${authToken}`,

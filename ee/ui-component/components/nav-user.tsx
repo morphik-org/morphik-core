@@ -4,7 +4,7 @@ import * as React from "react";
 import { IconCreditCard, IconLogout, IconUserCircle, IconChevronUp, IconChevronDown } from "@tabler/icons-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar-new";
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar-components";
 import { cn } from "@/lib/utils";
 
 interface NavUserProps {

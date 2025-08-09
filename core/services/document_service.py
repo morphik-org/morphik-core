@@ -1847,6 +1847,7 @@ class DocumentService:
         doc_id: str,
         chunks: List[Chunk],
         embeddings: List[List[float]],
+        start_index: int = 0,
     ) -> List[DocumentChunk]:
         """Helper to create chunk objects
 
@@ -1856,8 +1857,12 @@ class DocumentService:
         3. This approach is more efficient as it reduces the size of chunk metadata
         """
         return [
-            c.to_document_chunk(chunk_number=i, embedding=embedding, document_id=doc_id)
-            for i, (embedding, c) in enumerate(zip(embeddings, chunks))
+            c.to_document_chunk(
+                chunk_number=i,
+                embedding=embedding,
+                document_id=doc_id,
+            )
+            for i, (embedding, c) in enumerate(zip(embeddings, chunks), start=start_index)
         ]
 
     async def _store_chunks_and_doc(

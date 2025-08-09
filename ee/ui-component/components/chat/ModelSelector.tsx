@@ -41,7 +41,7 @@ export function ModelSelector({
   useEffect(() => {
     const loadAvailableProviders = async () => {
       const providers = new Set<string>();
-      const api = new ModelConfigAPI(authToken);
+      const api = new ModelConfigAPI(authToken, apiBaseUrl);
       setLoadingCustomModels(true);
 
       try {
@@ -57,7 +57,7 @@ export function ModelSelector({
 
         // Load custom models from new endpoint
         try {
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://api.morphik.ai"}/models/custom`, {
+          const response = await fetch(`${apiBaseUrl}/models/custom`, {
             headers: {
               Authorization: `Bearer ${authToken}`,
             },

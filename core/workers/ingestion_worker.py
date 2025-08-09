@@ -785,9 +785,9 @@ async def process_ingestion_job(
                         f"ColPali batch embedded [{start_idx}:{end_idx}] -> {len(batch_embeddings)} embeddings"
                     )
 
-                    # Create chunk objects for this batch
+                    # Create chunk objects for this batch with correct global indices
                     batch_chunk_objects = document_service._create_chunk_objects(
-                        doc.external_id, batch_chunks, batch_embeddings
+                        doc.external_id, batch_chunks, batch_embeddings, start_index=start_idx
                     )
 
                     # Store this batch immediately to release memory pressure

@@ -1,83 +1,16 @@
 "use client";
 
-import React, { useState, createContext, useContext, useCallback } from "react";
+import React from "react";
 import { useMorphik } from "@/contexts/morphik-context";
-import { MorphikSidebar } from "@/components/morphik-sidebar";
+import { MorphikSidebar } from "@/components/sidebar";
+import { usePathname } from "next/navigation";
+import { useChatContext } from "@/components/chat/chat-context";
 
-// Create a context for chat and settings state sharing
-interface ChatContextType {
-  activeChatId?: string;
-  setActiveChatId: (id: string | undefined) => void;
-  showChatView: boolean;
-  setShowChatView: (show: boolean) => void;
-  showSettingsView: boolean;
-  setShowSettingsView: (show: boolean) => void;
-  activeSettingsTab: string;
-  setActiveSettingsTab: (tab: string) => void;
-}
+// Chat context moved to components/chat/chat-context.tsx
 
-const ChatContext = createContext<ChatContextType | null>(null);
-
-export function useChatContext() {
-  const context = useContext(ChatContext);
-  if (!context) {
-    throw new Error("useChatContext must be used within a ChatProvider");
-  }
-  return context;
-}
-
-export function ChatProvider({ children }: { children: React.ReactNode }) {
-  const [showChatView, setShowChatView] = useState(false);
-  const [activeChatId, setActiveChatId] = useState<string | undefined>();
-  const [showSettingsView, setShowSettingsView] = useState(false);
-  const [activeSettingsTab, setActiveSettingsTab] = useState("api-keys");
-
-  // Memoize the setter functions to prevent unnecessary re-renders
-  const setActiveChatIdMemo = useCallback((id: string | undefined) => {
-    setActiveChatId(prev => (prev !== id ? id : prev));
-  }, []);
-
-  const setShowChatViewMemo = useCallback((show: boolean) => {
-    setShowChatView(prev => (prev !== show ? show : prev));
-  }, []);
-
-  const setShowSettingsViewMemo = useCallback((show: boolean) => {
-    setShowSettingsView(prev => (prev !== show ? show : prev));
-  }, []);
-
-  const setActiveSettingsTabMemo = useCallback((tab: string) => {
-    setActiveSettingsTab(prev => (prev !== tab ? tab : prev));
-  }, []);
-
-  // Memoize the context value to prevent unnecessary re-renders
-  const contextValue = React.useMemo(
-    () => ({
-      activeChatId,
-      setActiveChatId: setActiveChatIdMemo,
-      showChatView,
-      setShowChatView: setShowChatViewMemo,
-      showSettingsView,
-      setShowSettingsView: setShowSettingsViewMemo,
-      activeSettingsTab,
-      setActiveSettingsTab: setActiveSettingsTabMemo,
-    }),
-    [
-      activeChatId,
-      showChatView,
-      showSettingsView,
-      activeSettingsTab,
-      setActiveChatIdMemo,
-      setShowChatViewMemo,
-      setShowSettingsViewMemo,
-      setActiveSettingsTabMemo,
-    ]
-  );
-
-  return <ChatContext.Provider value={contextValue}>{children}</ChatContext.Provider>;
-}
-
-export function ConnectedSidebar() {
+export function SidebarContainer() {
   const { connectionUri, updateConnectionUri, userProfile, onLogout, onProfileNavigate, onUpgradeClick } = useMorphik();
+  const pathname = usePathname();
   const {
     showChatView,
     setShowChatView,
@@ -91,7 +24,7 @@ export function ConnectedSidebar() {
 
   // Ensure chat view is shown when on chat page
   React.useEffect(() => {
-    if (typeof window !== "undefined" && window.location.pathname === "/chat") {
+    if (pathname === "/chat") {
       // Clear any stale "manually hidden" state when navigating to chat from other pages
       // Only respect the manually hidden state if we're already on the chat page
       const wasOnChatPage = sessionStorage.getItem("lastPage") === "/chat";
@@ -112,11 +45,11 @@ export function ConnectedSidebar() {
       // Track current page for next navigation
       sessionStorage.setItem("lastPage", window.location.pathname);
     }
-  }, [showChatView, setShowChatView]); // Run when showChatView changes
+  }, [pathname, showChatView, setShowChatView]);
 
   // Ensure settings view is shown when on settings page
   React.useEffect(() => {
-    if (typeof window !== "undefined" && window.location.pathname === "/settings") {
+    if (pathname === "/settings") {
       // Clear any stale "manually hidden" state when navigating to settings from other pages
       const wasOnSettingsPage = sessionStorage.getItem("lastPage") === "/settings";
       const hasManuallyHidden = sessionStorage.getItem("settingsViewManuallyHidden") === "true";
@@ -133,7 +66,7 @@ export function ConnectedSidebar() {
       // Track that we're on settings page
       sessionStorage.setItem("lastPage", "/settings");
     }
-  }, [showSettingsView, setShowSettingsView]); // Run when showSettingsView changes
+  }, [pathname, showSettingsView, setShowSettingsView]);
 
   // Track when user manually hides chat view
   const handleChatViewChange = React.useCallback(

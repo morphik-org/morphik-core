@@ -1,5 +1,19 @@
 "use client";
 
+/*
+ * Sidebar components (low-level building blocks)
+ *
+ * This module provides the headless state + UI primitives that power the
+ * application sidebar: provider, trigger, rail, groups, menus, etc.
+ * Higher-level composition lives in `BaseSidebar` (AppSidebar composition).
+ *
+ * Usage layers:
+ * - Sidebar components (this file)
+ * - BaseSidebar (high-level composition of navigation + special panels)
+ * - MorphikSidebarLocal (URL-based for local dev)
+ * - MorphikSidebarRemote (section-based for remote/hosted usage)
+ */
+
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, VariantProps } from "class-variance-authority";
@@ -60,7 +74,18 @@ function SidebarProvider({
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
-  const [_open, _setOpen] = React.useState(defaultOpen);
+  const [_open, _setOpen] = React.useState<boolean>(() => {
+    if (typeof document === "undefined") return defaultOpen;
+    const match = document.cookie
+      .split(";")
+      .map(v => v.trim())
+      .find(v => v.startsWith(`${SIDEBAR_COOKIE_NAME}=`));
+    if (match) {
+      const value = match.split("=")[1];
+      return value === "true";
+    }
+    return defaultOpen;
+  });
   const open = openProp ?? _open;
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
@@ -71,11 +96,14 @@ function SidebarProvider({
         _setOpen(openState);
       }
 
-      // This sets the cookie to keep the sidebar state.
-      document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+      try {
+        document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+      } catch {}
     },
     [setOpenProp, open]
   );
+
+  // Removed restore-on-mount effect to avoid flicker; state is initialized from cookie synchronously.
 
   // Helper to toggle the sidebar.
   const toggleSidebar = React.useCallback(() => {

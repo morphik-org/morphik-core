@@ -1077,9 +1077,10 @@ const GraphSection: React.FC<GraphSectionProps> = ({
                     } else {
                       showAlert("Graph is still preparing. Try again shortly.", {
                         type: "info",
-                        title: typeof selectedGraph.system_metadata?.pipeline_stage === "string"
-                          ? (selectedGraph.system_metadata?.pipeline_stage as string)
-                          : "Preparing graph",
+                        title:
+                          typeof selectedGraph.system_metadata?.pipeline_stage === "string"
+                            ? (selectedGraph.system_metadata?.pipeline_stage as string)
+                            : "Preparing graph",
                         duration: 4000,
                       });
                     }

@@ -1,5 +1,5 @@
 /*
- * MorphikSidebarStateful - CLOUD UI VERSION
+ * MorphikSidebarRemote - REMOTE UI VERSION
  *
  * This sidebar is used by the cloud UI (morphik-cloud-ui) via:
  * TrackedMorphikUI → MorphikUI → MorphikSidebarStateful
@@ -8,7 +8,7 @@
  * - Section-based navigation (onSectionChange callbacks)
  * - Single-page app experience with dynamic content switching
  * - No URI editing capability (cloud manages connections)
- * - Used in production cloud deployments
+ * - Used in prod
  *
  * DO NOT add URI editing functionality here - it will affect cloud users!
  * For local development URI editing, see morphik-sidebar.tsx instead.
@@ -16,7 +16,7 @@
 "use client";
 
 import * as React from "react";
-import { BaseSidebar } from "@/components/base-sidebar";
+import { BaseSidebar } from "@/components/sidebar-base";
 import { createSectionNavigation } from "@/lib/navigation-utils";
 
 interface MorphikSidebarStatefulProps {
@@ -43,13 +43,15 @@ interface MorphikSidebarStatefulProps {
   onSettingsTabChange?: (tab: string) => void;
 }
 
-export function MorphikSidebarStateful({
+export function MorphikSidebarRemote({
   currentSection,
   onSectionChange,
   userProfile,
   onLogout,
   onProfileNavigate,
   onUpgradeClick,
+  logoLight,
+  logoDark,
   showChatView = false,
   onChatViewChange,
   activeChatId,
@@ -95,6 +97,8 @@ export function MorphikSidebarStateful({
       onLogout={onLogout}
       onProfileNavigate={onProfileNavigate}
       onUpgradeClick={onUpgradeClick}
+      logoLight={logoLight}
+      logoDark={logoDark}
       showChatView={showChatView}
       onChatViewChange={onChatViewChange}
       activeChatId={activeChatId}

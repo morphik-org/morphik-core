@@ -13,15 +13,16 @@ import { PDFViewer } from "@/components/pdf/PDFViewer";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { extractTokenFromUri, getApiBaseUrlFromUri } from "@/lib/utils";
 import { PDFAPIService } from "@/components/pdf/PDFAPIService";
-import { MorphikSidebarStateful } from "@/components/morphik-sidebar-stateful";
+import { MorphikSidebarRemote } from "@/components/sidebar-stateful";
+import { useChatContext } from "@/components/chat/chat-context";
 import { DynamicSiteHeader } from "@/components/dynamic-site-header";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar-new";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar-components";
 import { MorphikProvider } from "@/contexts/morphik-context";
 import { HeaderProvider } from "@/contexts/header-context";
 import { AlertSystem } from "@/components/ui/alert-system";
 import { ThemeProvider } from "@/components/theme-provider";
 import { useRouter, usePathname } from "next/navigation";
-import { ChatProvider } from "@/components/connected-sidebar";
+import { ChatProvider } from "@/components/chat/chat-context";
 
 /**
  * MorphikUI Component
@@ -57,6 +58,7 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
   const [currentSection, setCurrentSection] = useState(initialSection);
   const [currentFolder, setCurrentFolder] = useState<string | null>(initialFolder);
   const [showChatView, setShowChatView] = useState(false);
+  const [showSettingsView, setShowSettingsView] = useState(false);
   const connectionUri = initialConnectionUri;
 
   const router = useRouter();
@@ -118,15 +120,17 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
     setCurrentSection(initialSection);
   }, [initialSection]);
 
-  // Sync chat view with section
+  // Sync overlays with section (ensures leaving chat/settings hides their side panels)
   useEffect(() => {
-    if (currentSection === "chat") {
-      setShowChatView(true);
-    }
+    setShowChatView(currentSection === "chat");
+    setShowSettingsView(currentSection === "settings");
   }, [currentSection]);
 
   const handleSectionChange = useCallback(
     (section: string) => {
+      // Keep overlays consistent with section
+      setShowChatView(section === "chat");
+      setShowSettingsView(section === "settings");
       setCurrentSection(section as typeof initialSection);
 
       // --- update browser URL so Cloud mirrors standalone behaviour ----
@@ -200,6 +204,58 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
     }
   };
 
+  // Local wrapper to bridge ChatContext into the Sidebar props
+  const SidebarWithChatContext: React.FC<{
+    logoLight?: string;
+    logoDark?: string;
+    showChatView: boolean;
+    onChatViewChange: (show: boolean) => void;
+    showSettingsView: boolean;
+    onSettingsViewChange: (show: boolean) => void;
+    currentSection: string;
+    onSectionChange: (section: string) => void;
+    userProfile?: typeof userProfile;
+    onLogout?: typeof onLogout;
+    onProfileNavigate?: typeof onProfileNavigate;
+    onUpgradeClick?: typeof onUpgradeClick;
+  }> = ({
+    logoLight,
+    logoDark,
+    showChatView,
+    onChatViewChange,
+    showSettingsView,
+    onSettingsViewChange,
+    currentSection,
+    onSectionChange,
+    userProfile,
+    onLogout,
+    onProfileNavigate,
+    onUpgradeClick,
+  }) => {
+    const { activeChatId, setActiveChatId, activeSettingsTab, setActiveSettingsTab } = useChatContext();
+
+    return (
+      <MorphikSidebarRemote
+        currentSection={currentSection}
+        onSectionChange={onSectionChange}
+        userProfile={userProfile}
+        onLogout={onLogout}
+        onProfileNavigate={onProfileNavigate}
+        onUpgradeClick={onUpgradeClick}
+        logoLight={logoLight}
+        logoDark={logoDark}
+        showChatView={showChatView}
+        onChatViewChange={onChatViewChange}
+        activeChatId={activeChatId}
+        onChatSelect={setActiveChatId}
+        showSettingsView={showSettingsView}
+        onSettingsViewChange={onSettingsViewChange}
+        activeSettingsTab={activeSettingsTab}
+        onSettingsTabChange={setActiveSettingsTab}
+      />
+    );
+  };
+
   const contentInner = (
     <PDFAPIService sessionId={sessionId} userId={userId}>
       <div className="min-h-screen bg-sidebar">
@@ -221,7 +277,7 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
                   } as React.CSSProperties
                 }
               >
-                <MorphikSidebarStateful
+                <SidebarWithChatContext
                   currentSection={currentSection}
                   onSectionChange={handleSectionChange}
                   userProfile={userProfile}
@@ -232,6 +288,8 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
                   logoDark={logoDark}
                   showChatView={showChatView}
                   onChatViewChange={handleChatViewChange}
+                  showSettingsView={showSettingsView}
+                  onSettingsViewChange={setShowSettingsView}
                 />
                 <SidebarInset>
                   <DynamicSiteHeader userProfile={userProfile} customBreadcrumbs={localBreadcrumbs} />

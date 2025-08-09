@@ -22,8 +22,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { AgentPreviewMessage, AgentUIMessage, DisplayObject, SourceObject, ToolCall } from "./AgentChatMessages";
 import { useHeader } from "@/contexts/header-context";
-import { useChatContext } from "@/components/connected-sidebar";
+import { useChatContext } from "@/components/chat/chat-context";
 import { useTheme } from "next-themes";
+import { showAlert } from "@/components/ui/alert-system";
 
 interface ChatSectionProps {
   apiBaseUrl: string;
@@ -172,8 +173,16 @@ const ChatSection: React.FC<ChatSectionProps> = ({
 
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [availableModels, setAvailableModels] = useState<
-    Array<{ id: string; name: string; provider: string; description?: string }>
+    Array<{
+      id: string;
+      name: string;
+      provider: string;
+      description?: string;
+      enabled?: boolean;
+    }>
   >([]);
+
+  // Provider configuration is derived on demand; no need to store separately
 
   // Model selection state
   const [selectedModel, setSelectedModel] = useState<string>("");
@@ -613,47 +622,45 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Load custom models and combine with server models
+  // Load custom models, fetch configured providers, and combine with server models
   useEffect(() => {
-    const loadModels = async () => {
-      const allModels = [...serverModels];
+    const loadModelsAndConfig = async () => {
+      const allModels: Array<{
+        id: string;
+        name: string;
+        provider: string;
+        description?: string;
+      }> = [...serverModels];
 
       try {
         // Load custom models from backend if authenticated
         if (authToken) {
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://api.morphik.ai"}/models/custom`, {
-            headers: {
-              Authorization: `Bearer ${authToken}`,
-            },
+          const resp = await fetch(`${apiBaseUrl}/models/custom`, {
+            headers: { Authorization: `Bearer ${authToken}` },
           });
-
-          if (response.ok) {
-            const customModelsList = await response.json();
-            const transformedCustomModels = customModelsList.map(
-              (model: { id: string; name: string; provider: string }) => ({
-                id: `custom_${model.id}`,
-                name: model.name,
-                provider: model.provider,
-                description: `Custom ${model.provider} model`,
-              })
-            );
-            allModels.push(...transformedCustomModels);
+          if (resp.ok) {
+            const customModelsList = await resp.json();
+            const customTransformed = customModelsList.map((m: { id: string; name: string; provider: string }) => ({
+              id: `custom_${m.id}`,
+              name: m.name,
+              provider: m.provider,
+              description: `Custom ${m.provider} model`,
+            }));
+            allModels.push(...customTransformed);
           }
         } else {
           // Fallback to localStorage
           const savedModels = localStorage.getItem("morphik_custom_models");
           if (savedModels) {
             try {
-              const parsedModels = JSON.parse(savedModels);
-              const transformedCustomModels = parsedModels.map(
-                (model: { id: string; name: string; provider: string }) => ({
-                  id: `custom_${model.id}`,
-                  name: model.name,
-                  provider: model.provider,
-                  description: `Custom ${model.provider} model`,
-                })
-              );
-              allModels.push(...transformedCustomModels);
+              const parsed = JSON.parse(savedModels);
+              const customTransformed = parsed.map((m: { id: string; name: string; provider: string }) => ({
+                id: `custom_${m.id}`,
+                name: m.name,
+                provider: m.provider,
+                description: `Custom ${m.provider} model`,
+              }));
+              allModels.push(...customTransformed);
             } catch (err) {
               console.error("Failed to parse custom models:", err);
             }
@@ -663,13 +670,55 @@ const ChatSection: React.FC<ChatSectionProps> = ({
         console.error("Failed to load custom models:", err);
       }
 
-      setAvailableModels(allModels);
+      // Determine configured providers
+      const configured: Record<string, boolean> = {};
+      try {
+        if (authToken) {
+          const resp = await fetch(`${apiBaseUrl}/api-keys`, {
+            headers: { Authorization: `Bearer ${authToken}` },
+          });
+          if (resp.ok) {
+            const apiKeys = await resp.json();
+            for (const [prov, data] of Object.entries(apiKeys)) {
+              const d = data as { configured?: boolean };
+              configured[prov] = Boolean(d?.configured);
+            }
+          }
+        } else if (typeof window !== "undefined") {
+          const saved = localStorage.getItem("morphik_api_keys");
+          if (saved) {
+            try {
+              const localCfg = JSON.parse(saved) as Record<string, { apiKey?: string }>;
+              for (const [prov, val] of Object.entries(localCfg)) {
+                configured[prov] = Boolean(val?.apiKey);
+              }
+            } catch (e) {
+              console.error("Failed to parse local API keys:", e);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load API key configuration:", e);
+      }
+
+      // Some providers might not require keys (local/hosted)
+      const doesProviderRequireKey = (prov: string) => {
+        const requires = ["openai", "anthropic", "google", "groq", "deepseek", "together", "azure"];
+        return requires.includes(prov);
+      };
+
+      const withEnabled = allModels.map(m => ({
+        ...m,
+        enabled: !doesProviderRequireKey(m.provider) || configured[m.provider] === true,
+      }));
+
+      setAvailableModels(withEnabled);
     };
 
     if (showModelSelector) {
-      loadModels();
+      loadModelsAndConfig();
     }
-  }, [showModelSelector, serverModels, authToken]);
+  }, [showModelSelector, serverModels, authToken, apiBaseUrl]);
 
   // Provider logos and icons
   const getProviderIcon = (provider: string) => {
@@ -769,10 +818,17 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                     {availableModels.map(model => (
                       <div
                         key={model.id}
-                        className={`group relative flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent ${
+                        className={`group relative flex items-start gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent ${
                           selectedModel === model.id ? "bg-accent" : ""
-                        }`}
+                        } ${model.enabled === false ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                         onClick={() => {
+                          if (model.enabled === false) {
+                            showAlert(`Add your ${model.provider} API key in Settings to enable this model`, {
+                              type: "info",
+                              duration: 3500,
+                            });
+                            return;
+                          }
                           handleModelChange(model.id);
                           setShowModelSelector(false);
                         }}
@@ -782,8 +838,12 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                           <div className="flex items-center gap-1.5">
                             <span className="font-medium">{model.name}</span>
                           </div>
-                          {model.description && (
-                            <div className="text-xs text-muted-foreground">{model.description}</div>
+                          {model.enabled === false ? (
+                            <div className="text-xs text-muted-foreground">Add API key in Settings to enable</div>
+                          ) : (
+                            model.description && (
+                              <div className="text-xs text-muted-foreground">{model.description}</div>
+                            )
                           )}
                         </div>
                       </div>
