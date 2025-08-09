@@ -1,5 +1,5 @@
 /*
- * MorphikSidebar - LOCAL DEVELOPMENT VERSION
+ * MorphikSidebarLocal - LOCAL DEVELOPMENT VERSION
  *
  * This sidebar is used by the local ui-component dev server via:
  * layout.tsx → ConnectedSidebar → MorphikSidebar
@@ -16,7 +16,7 @@
 "use client";
 
 import * as React from "react";
-import { BaseSidebar } from "@/components/base-sidebar";
+import { BaseSidebar } from "@/components/sidebar-base";
 import { createUrlNavigation } from "@/lib/navigation-utils";
 
 interface MorphikSidebarProps {
@@ -42,7 +42,7 @@ interface MorphikSidebarProps {
   onSettingsTabChange?: (tab: string) => void;
 }
 
-export function MorphikSidebar({
+export function MorphikSidebarLocal({
   userProfile,
   onLogout,
   onProfileNavigate,
@@ -107,3 +107,6 @@ export function MorphikSidebar({
     />
   );
 }
+
+// Backward-compatible alias for existing imports
+export const MorphikSidebar = MorphikSidebarLocal;

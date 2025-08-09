@@ -10,7 +10,7 @@ import { showAlert } from "@/components/ui/alert-system";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ModelManager } from "./ModelManager";
 import { useHeader } from "@/contexts/header-context";
-import { useChatContext } from "@/components/connected-sidebar";
+import { useChatContext } from "@/components/chat/chat-context";
 import { useTheme } from "next-themes";
 
 interface SettingsSectionProps {
@@ -70,7 +70,10 @@ const PROVIDERS = [
   },
 ];
 
+import { useMorphik } from "@/contexts/morphik-context";
+
 export function SettingsSection({ authToken }: SettingsSectionProps) {
+  const { apiBaseUrl } = useMorphik();
   const { activeSettingsTab } = useChatContext();
   const [config, setConfig] = useState<APIKeyConfig>({});
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
@@ -105,7 +108,7 @@ export function SettingsSection({ authToken }: SettingsSectionProps) {
       // Then try to load from backend if we have authToken
       if (authToken) {
         try {
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://api.morphik.ai"}/api-keys`, {
+          const response = await fetch(`${apiBaseUrl}/api-keys`, {
             headers: {
               Authorization: `Bearer ${authToken}`,
             },
@@ -167,7 +170,7 @@ export function SettingsSection({ authToken }: SettingsSectionProps) {
         for (const [provider, providerConfig] of Object.entries(config)) {
           if (providerConfig.apiKey) {
             savePromises.push(
-              fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://api.morphik.ai"}/api-keys`, {
+              fetch(`${apiBaseUrl}/api-keys`, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",

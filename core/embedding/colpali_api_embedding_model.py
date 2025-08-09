@@ -1,6 +1,8 @@
+import io
 import logging
 from typing import List, Tuple, Union
 
+import numpy as np
 from httpx import AsyncClient, Timeout  # replacing httpx.AsyncClient for clarity
 
 from core.config import get_settings
@@ -37,6 +39,8 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         # Use the configured Morphik Embedding API domain
         domain = self.settings.MORPHIK_EMBEDDING_API_DOMAIN
         self.endpoint = f"{domain.rstrip('/')}/embeddings"
+        # Batching is handled at a higher layer (streaming embed+store).
+        # Here we issue at most one request per input type per batch.
 
     async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> List[MultiVector]:
         # Normalize to list
@@ -49,17 +53,17 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         results: List[MultiVector] = [[] for _ in chunks]
         text_inputs, image_inputs = partition_chunks(chunks)
 
-        # Batch image embeddings if needed
+        # Image embeddings
         if image_inputs:
             indices, inputs = zip(*image_inputs)
-            data = await self.call_api(inputs, "image")
+            data = await self.call_api(list(inputs), "image")
             for idx, emb in zip(indices, data):
                 results[idx] = emb
 
-        # Batch text embeddings if needed
+        # Text embeddings
         if text_inputs:
             indices, inputs = zip(*text_inputs)
-            data = await self.call_api(inputs, "text")
+            data = await self.call_api(list(inputs), "text")
             for idx, emb in zip(indices, data):
                 results[idx] = emb
 
@@ -79,5 +83,21 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         async with AsyncClient(timeout=timeout) as client:
             resp = await client.post(self.endpoint, json=payload, headers=headers)
             resp.raise_for_status()
-            data = resp.json()
-        return data.get("embeddings", [])
+
+            # Load .npz from response content
+            npz_data = np.load(io.BytesIO(resp.content))
+
+            # Extract metadata
+            count = int(npz_data["count"])
+            returned_input_type = str(npz_data["input_type"])
+
+            logger.debug(f"Received {count} embeddings for input_type: {returned_input_type}")
+
+            # Extract embeddings in order
+            embeddings = []
+            for i in range(count):
+                embedding_array = npz_data[f"emb_{i}"]
+                # Convert numpy array to list of lists (MultiVector format)
+                embeddings.append(embedding_array.tolist())
+
+            return embeddings

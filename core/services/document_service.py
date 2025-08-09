@@ -12,12 +12,13 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Type, Union
 
 import arq
 import filetype
+import fitz  # PyMuPDF - faster alternative to pdf2image
 import pdf2image
-import torch
-from colpali_engine.models import ColIdefics3, ColIdefics3Processor
+
+# from colpali_engine.models import ColIdefics3, ColIdefics3Processor
 from fastapi import HTTPException, UploadFile
 from filetype.types import IMAGE  # , DOCUMENT, document
-from PIL.Image import Image
+from PIL import Image as PILImage
 from pydantic import BaseModel
 
 from core.cache.base_cache import BaseCache
@@ -84,10 +85,17 @@ class DocumentService:
                 if document_id not in folder.document_ids:
                     success = await self.db.add_document_to_folder(folder.id, document_id, auth)
                     if not success:
-                        logger.warning(f"Failed to add document {document_id} to existing folder {folder.name}")
+                        logger.warning(
+                            f"Failed to add document {document_id} to existing folder {folder.name}. This may be due to a race condition during ingestion - the document should be accessible shortly."
+                        )
+                        # Return the folder anyway since it exists, even if document addition failed
+                        # The retry mechanism in add_document_to_folder should handle transient issues
                     else:
+                        logger.info(f"Successfully added document {document_id} to existing folder {folder.name}")
                         # Queue workflows associated with this folder
                         await self._queue_folder_workflows(folder, document_id, auth)
+                else:
+                    logger.info(f"Document {document_id} is already in folder {folder.name}")
                 return folder  # Folder already exists
 
             # Create a new folder
@@ -308,9 +316,30 @@ class DocumentService:
         else:
             parallel_start = time.time()
 
+        # Create tasks with individual timing to measure embeddings vs auth separately
+        async def timed_embeddings():
+            embedding_start = time.time()
+            result = await asyncio.gather(*embedding_tasks)
+            embedding_duration = time.time() - embedding_start
+            if perf_tracker:
+                perf_tracker.add_suboperation("retrieve_embeddings", embedding_duration, "retrieve_embeddings_and_auth")
+            else:
+                phase_times["retrieve_embeddings"] = embedding_duration
+            return result
+
+        async def timed_auth():
+            auth_start = time.time()
+            result = await self.db.find_authorized_and_filtered_documents(auth, filters, system_filters)
+            auth_duration = time.time() - auth_start
+            if perf_tracker:
+                perf_tracker.add_suboperation("retrieve_auth", auth_duration, "retrieve_embeddings_and_auth")
+            else:
+                phase_times["retrieve_auth"] = auth_duration
+            return result
+
         results = await asyncio.gather(
-            asyncio.gather(*embedding_tasks),
-            self.db.find_authorized_and_filtered_documents(auth, filters, system_filters),
+            timed_embeddings(),
+            timed_auth(),
         )
 
         embedding_results, doc_ids = results
@@ -318,7 +347,7 @@ class DocumentService:
         query_embedding_multivector = embedding_results[1] if len(embedding_results) > 1 else None
 
         if not perf_tracker:
-            phase_times["embeddings_and_auth"] = time.time() - parallel_start
+            phase_times["retrieve_embeddings_and_auth"] = time.time() - parallel_start
 
         logger.info("Generated query embedding")
 
@@ -484,67 +513,7 @@ class DocumentService:
         # Use colpali as a reranker to get consistent similarity scores for both types of chunks
         # IMPORTANT: Multivector chunks already have proper ColPali similarity scores from their vector store,
         # so we should preserve those. Only rescore regular text chunks to make them comparable.
-
-        try:
-            model_name = "vidore/colSmol-256M"
-            device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
-
-            model = ColIdefics3.from_pretrained(
-                model_name,
-                torch_dtype=torch.bfloat16,
-                device_map=device,
-                attn_implementation="eager",
-            ).eval()
-            processor = ColIdefics3Processor.from_pretrained(model_name)
-
-            # Process query representation once
-            query_rep = processor.process_queries([query]).to(device)
-            query_rep = model(**query_rep)
-
-            # Score regular chunks with batching to make them comparable to multivector chunks
-            if chunks:
-                logger.info(f"Reranking {len(chunks)} regular text chunks with ColPali for score consistency")
-                chunk_batches = self._batch_chunks_by_tokens(chunks)
-                for batch in chunk_batches:
-                    try:
-                        batch_chunks = processor.process_queries([chunk.content for chunk in batch]).to(device)
-                        multi_vec_representations = model(**batch_chunks)
-                        scores = processor.score_multi_vector(query_rep, multi_vec_representations)
-                        for chunk, score in zip(batch, scores[0]):
-                            chunk.score = score
-                    except Exception as e:
-                        logger.error(f"Error processing regular chunk batch: {e}")
-                        # Assign default scores to prevent chunks from being lost
-                        for chunk in batch:
-                            chunk.score = 0.0
-
-            # Preserve multivector chunks' original scores - they already have proper ColPali similarity scores
-            if chunks_multivector:
-                logger.info(f"Preserving original ColPali scores for {len(chunks_multivector)} multivector chunks")
-                # Log score distribution for debugging
-                mv_scores = [chunk.score for chunk in chunks_multivector]
-                if mv_scores:
-                    logger.debug(f"Multivector score range: {min(mv_scores):.3f} - {max(mv_scores):.3f}")
-
-            # Log regular chunk scores for debugging
-            if chunks:
-                reg_scores = [chunk.score for chunk in chunks]
-                if reg_scores:
-                    logger.debug(f"Regular chunk score range: {min(reg_scores):.3f} - {max(reg_scores):.3f}")
-
-            # Combine and sort all chunks
-            full_chunks = chunks + chunks_multivector
-            full_chunks.sort(key=lambda x: x.score, reverse=True)
-
-            logger.info(
-                f"Combined and sorted {len(full_chunks)} chunks (regular: {len(chunks)}, multivector: {len(chunks_multivector)})"
-            )
-            return full_chunks
-
-        except Exception as e:
-            logger.error(f"Error in ColPali reranking: {e}")
-            # Fallback to simple combination without reranking
-            return chunks_multivector + chunks
+        return chunks_multivector + chunks
 
     def _count_tokens_simple(self, text: str) -> int:
         """Simple token counting using whitespace splitting.
@@ -681,17 +650,11 @@ class DocumentService:
         padded_image_chunks = [chunk for chunk in padded_chunks if chunk.content.startswith("data")]
         logger.debug(f"Filtered to {len(padded_image_chunks)} image chunks from {len(padded_chunks)} retrieved chunks")
 
-        # # Create a mapping to preserve original scores for matched chunks
-        # original_scores = {(chunk.document_id, chunk.chunk_number): chunk.score for chunk in image_chunks}
-
-        # # Apply original scores to matched chunks, set score to 0 for padding chunks
-        # for chunk in padded_image_chunks:
-        #     key = (chunk.document_id, chunk.chunk_number)
-        #     if key in original_scores:
-        #         chunk.score = original_scores[key]
-        #     else:
-        #         # This is a padding chunk, set a lower score
-        #         chunk.score = 0.0
+        # Preserve original scores for matched chunks; padding gets 0.0
+        original_scores = {(c.document_id, c.chunk_number): c.score for c in image_chunks}
+        for c in padded_image_chunks:
+            key = (c.document_id, c.chunk_number)
+            c.score = original_scores.get(key, 0.0)
         chunk_id = set()
         chunks = []
         for chunk in padded_image_chunks:
@@ -700,8 +663,8 @@ class DocumentService:
             chunks.append(chunk)
             chunk_id.add(f"{chunk.document_id}-{chunk.chunk_number}")
 
-        # Sort by score (original matched chunks first, then padding chunks)
-        chunks.sort(key=lambda x: f"{x.document_id}-{x.chunk_number}", reverse=False)
+        # Sort: matched chunks (higher score) first, then by document and page order
+        chunks.sort(key=lambda x: (-float(x.score or 0.0), x.document_id, x.chunk_number))
 
         logger.info(f"Applied padding: returning {len(chunks)} image chunks (was {len(image_chunks)} image chunks)")
         return chunks
@@ -711,7 +674,7 @@ class DocumentService:
         original_chunk_results: List[ChunkResult],
         final_chunk_results: List[ChunkResult],
         padding: int,
-    ):  #  -> "GroupedChunkResponse"
+    ):  # -> "GroupedChunkResponse"
         """
         Create a grouped response directly from ChunkResult objects.
 
@@ -793,7 +756,7 @@ class DocumentService:
         end_user_id: Optional[str] = None,
         perf_tracker: Optional[Any] = None,
         padding: int = 0,
-    ):  #  -> "GroupedChunkResponse"
+    ):  # -> "GroupedChunkResponse"
         """
         Retrieve chunks with grouped response format that differentiates main chunks from padding.
 
@@ -1604,7 +1567,7 @@ class DocumentService:
 
         return doc
 
-    def img_to_base64_str(self, img: Image):
+    def img_to_base64_str(self, img: PILImage.Image):
         buffered = BytesIO()
         img.save(buffered, format="PNG")
         buffered.seek(0)
@@ -1612,7 +1575,13 @@ class DocumentService:
         img_str = "data:image/png;base64," + base64.b64encode(img_byte).decode()
         return img_str
 
-    def _create_chunks_multivector(self, file_type, file_content_base64: str, file_content: bytes, chunks: List[Chunk]):
+    def _create_chunks_multivector(
+        self,
+        file_type,
+        file_content_base64: Optional[str],
+        file_content: bytes,
+        chunks: List[Chunk],
+    ):
         # Handle the case where file_type is None
         mime_type = file_type.mime if file_type is not None else "text/plain"
         logger.info(f"Creating chunks for multivector embedding for file type {mime_type}")
@@ -1627,6 +1596,8 @@ class DocumentService:
 
                 PILImage.open(BytesIO(file_content)).verify()
                 logger.info("Heuristic image detection succeeded (Pillow). Treating as image.")
+                if file_content_base64 is None:
+                    file_content_base64 = base64.b64encode(file_content).decode()
                 return [Chunk(content=file_content_base64, metadata={"is_image": True})]
             except Exception:
                 logger.info("File type is None and not an image – treating as text")
@@ -1640,8 +1611,6 @@ class DocumentService:
         # it is an image.
         if mime_type.startswith("image/"):
             try:
-                from PIL import Image as PILImage
-
                 img = PILImage.open(BytesIO(file_content))
                 # Resize and compress aggressively to minimize context window footprint
                 max_width = 256  # reduce width to shrink payload dramatically
@@ -1657,16 +1626,53 @@ class DocumentService:
                 return [Chunk(content=img_b64, metadata={"is_image": True})]
             except Exception as e:
                 logger.error(f"Error resizing image for base64 encoding: {e}. Falling back to original size.")
+                if file_content_base64 is None:
+                    file_content_base64 = base64.b64encode(file_content).decode()
                 return [Chunk(content=file_content_base64, metadata={"is_image": True})]
 
         match mime_type:
             case file_type if file_type in IMAGE:
+                if file_content_base64 is None:
+                    file_content_base64 = base64.b64encode(file_content).decode()
                 return [Chunk(content=file_content_base64, metadata={"is_image": True})]
             case "application/pdf":
-                logger.info("Working with PDF file!")
-                images = pdf2image.convert_from_bytes(file_content)
-                images_b64 = [self.img_to_base64_str(image) for image in images]
-                return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                logger.info("Working with PDF file - using PyMuPDF for faster processing!")
+
+                try:
+                    # Load PDF document with PyMuPDF (much faster than pdf2image)
+                    pdf_document = fitz.open("pdf", file_content)
+                    images_b64 = []
+
+                    # Process each page individually for better memory management
+                    try:
+                        dpi = int(os.getenv("COLPALI_PDF_DPI", "150"))
+                    except Exception:
+                        dpi = 150
+
+                    for page_num in range(len(pdf_document)):
+                        page = pdf_document[page_num]
+                        mat = fitz.Matrix(dpi / 72, dpi / 72)
+                        pix = page.get_pixmap(matrix=mat)
+                        img_data = pix.tobytes("png")
+
+                        # Convert to PIL Image and then to base64
+                        img = PILImage.open(BytesIO(img_data))
+                        images_b64.append(self.img_to_base64_str(img))
+
+                    pdf_document.close()  # Clean up resources
+
+                    logger.info(f"PyMuPDF processed {len(images_b64)} pages")
+                    return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+
+                except Exception as e:
+                    # Fallback to pdf2image if PyMuPDF fails
+                    logger.warning(f"PyMuPDF failed ({e}), falling back to pdf2image")
+
+                    images = pdf2image.convert_from_bytes(file_content)
+                    images_b64 = [self.img_to_base64_str(image) for image in images]
+
+                    logger.info(f"pdf2image fallback processed {len(images_b64)} pages")
+                    return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
             case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/msword":
                 logger.info("Working with Word document!")
                 # Check if file content is empty
@@ -1735,9 +1741,47 @@ class DocumentService:
                         pdf_content = pdf_file.read()
 
                     try:
-                        images = pdf2image.convert_from_bytes(pdf_content)
-                        if not images:
-                            logger.warning("No images extracted from PDF")
+                        # Use PyMuPDF for PDF processing (faster than pdf2image)
+                        try:
+                            pdf_document = fitz.open("pdf", pdf_content)
+                            images_b64 = []
+
+                            # Process each page individually
+                            for page_num in range(len(pdf_document)):
+                                page = pdf_document[page_num]
+                                try:
+                                    dpi = int(os.getenv("COLPALI_PDF_DPI", "150"))
+                                except Exception:
+                                    dpi = 150
+                                mat = fitz.Matrix(dpi / 72, dpi / 72)
+                                pix = page.get_pixmap(matrix=mat)
+                                img_data = pix.tobytes("png")
+
+                                # Convert to PIL Image and then to base64
+                                img = PILImage.open(BytesIO(img_data))
+                                images_b64.append(self.img_to_base64_str(img))
+
+                            pdf_document.close()  # Clean up resources
+
+                        except Exception as pymupdf_error:
+                            # Fallback to pdf2image if PyMuPDF fails
+                            logger.warning(
+                                f"PyMuPDF failed for Word document ({pymupdf_error}), falling back to pdf2image"
+                            )
+                            images = pdf2image.convert_from_bytes(pdf_content)
+                            if not images:
+                                logger.warning("No images extracted from PDF")
+                                return [
+                                    Chunk(
+                                        content=chunk.content,
+                                        metadata=(chunk.metadata | {"is_image": False}),
+                                    )
+                                    for chunk in chunks
+                                ]
+                            images_b64 = [self.img_to_base64_str(image) for image in images]
+
+                        if not images_b64:
+                            logger.warning("No images extracted from Word document PDF")
                             return [
                                 Chunk(
                                     content=chunk.content,
@@ -1746,7 +1790,7 @@ class DocumentService:
                                 for chunk in chunks
                             ]
 
-                        images_b64 = [self.img_to_base64_str(image) for image in images]
+                        logger.info(f"Word document processed {len(images_b64)} pages")
                         return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
                     except Exception as pdf_error:
                         logger.error(f"Error converting PDF to images: {str(pdf_error)}")

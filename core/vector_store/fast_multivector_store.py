@@ -142,6 +142,7 @@ class FastMultiVectorStore(BaseVectorStore):
             rank_by=("vector", "ANN", encoded_query_embedding),
             top_k=min(10 * k, 75),
             include_attributes=["id", "document_id", "chunk_number", "content", "metadata", "multivector"],
+            consistency={"level": "eventual"},
         )
         t2 = time.perf_counter()
         logger.info(f"query_similar timing - ns.query: {(t2 - t1)*1000:.2f} ms")

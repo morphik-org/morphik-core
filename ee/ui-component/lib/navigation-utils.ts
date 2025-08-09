@@ -85,7 +85,7 @@ export const baseSecondaryNavItems: Omit<BaseNavItem, "type">[] = [
 export const externalNavItems = [
   {
     title: "Documentation",
-    url: "https://docs.morphik.com",
+    url: "https://docs.morphik.ai",
     icon: IconBook,
   },
   {
@@ -121,13 +121,22 @@ export const createUrlNavigation = (onChatClick: () => void, onSettingsClick?: (
     url: index === 0 ? "/settings" : "/logs",
   })),
   onItemClick: item => {
-    if (item.isSpecial && "url" in item && item.url === "/chat") {
-      onChatClick();
-      window.location.href = item.url;
-    } else if (item.isSpecial && "url" in item && item.url === "/settings" && onSettingsClick) {
-      onSettingsClick();
-      window.location.href = item.url;
-    } else if ("url" in item) {
+    if ("url" in item) {
+      // Settings: no dedicated page in local dev. Show overlay only.
+      if (item.isSpecial && item.url === "/settings" && onSettingsClick) {
+        // No dedicated /settings page in local dev. Show settings overlay only.
+        onSettingsClick();
+        return;
+      }
+
+      // Chat: if already on /chat, just open overlay. Otherwise navigate.
+      if (item.isSpecial && item.url === "/chat") {
+        if (typeof window !== "undefined" && window.location.pathname === "/chat") {
+          onChatClick();
+          return;
+        }
+      }
+
       window.location.href = item.url;
     }
   },

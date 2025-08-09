@@ -6,8 +6,6 @@ import {
   CustomModelCreate,
 } from "@/components/types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.morphik.ai";
-
 interface APIKeyConfig {
   [provider: string]: {
     apiKey?: string;
@@ -18,9 +16,11 @@ interface APIKeyConfig {
 
 export class ModelConfigAPI {
   private authToken: string | null;
+  private baseUrl: string;
 
-  constructor(authToken: string | null) {
+  constructor(authToken: string | null, baseUrl?: string) {
     this.authToken = authToken;
+    this.baseUrl = baseUrl || (process.env.NEXT_PUBLIC_API_URL as string) || "https://api.morphik.ai";
   }
 
   private getHeaders(): HeadersInit {
@@ -35,7 +35,7 @@ export class ModelConfigAPI {
 
   // List all model configurations
   async listConfigs(): Promise<ModelConfigResponse[]> {
-    const response = await fetch(`${API_BASE_URL}/model-config/`, {
+    const response = await fetch(`${this.baseUrl}/model-config/`, {
       method: "GET",
       headers: this.getHeaders(),
     });
@@ -49,7 +49,7 @@ export class ModelConfigAPI {
 
   // Get a specific model configuration
   async getConfig(configId: string): Promise<ModelConfigResponse> {
-    const response = await fetch(`${API_BASE_URL}/model-config/${configId}`, {
+    const response = await fetch(`${this.baseUrl}/model-config/${configId}`, {
       method: "GET",
       headers: this.getHeaders(),
     });
@@ -63,7 +63,7 @@ export class ModelConfigAPI {
 
   // Create a new model configuration
   async createConfig(config: ModelConfigCreate): Promise<ModelConfigResponse> {
-    const response = await fetch(`${API_BASE_URL}/model-config/`, {
+    const response = await fetch(`${this.baseUrl}/model-config/`, {
       method: "POST",
       headers: this.getHeaders(),
       body: JSON.stringify(config),
@@ -78,7 +78,7 @@ export class ModelConfigAPI {
 
   // Update an existing model configuration
   async updateConfig(configId: string, update: ModelConfigUpdate): Promise<ModelConfigResponse> {
-    const response = await fetch(`${API_BASE_URL}/model-config/${configId}`, {
+    const response = await fetch(`${this.baseUrl}/model-config/${configId}`, {
       method: "PUT",
       headers: this.getHeaders(),
       body: JSON.stringify(update),
@@ -93,7 +93,7 @@ export class ModelConfigAPI {
 
   // Delete a model configuration
   async deleteConfig(configId: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/model-config/${configId}`, {
+    const response = await fetch(`${this.baseUrl}/model-config/${configId}`, {
       method: "DELETE",
       headers: this.getHeaders(),
     });
@@ -105,7 +105,7 @@ export class ModelConfigAPI {
 
   // List custom models
   async listCustomModels(): Promise<CustomModel[]> {
-    const response = await fetch(`${API_BASE_URL}/model-config/custom-models/list`, {
+    const response = await fetch(`${this.baseUrl}/model-config/custom-models/list`, {
       method: "GET",
       headers: this.getHeaders(),
     });
@@ -119,7 +119,7 @@ export class ModelConfigAPI {
 
   // Create a custom model
   async createCustomModel(model: CustomModelCreate): Promise<CustomModel> {
-    const response = await fetch(`${API_BASE_URL}/model-config/custom-models`, {
+    const response = await fetch(`${this.baseUrl}/model-config/custom-models`, {
       method: "POST",
       headers: this.getHeaders(),
       body: JSON.stringify(model),
@@ -134,7 +134,7 @@ export class ModelConfigAPI {
 
   // Update a custom model
   async updateCustomModel(modelId: string, model: CustomModelCreate): Promise<CustomModel> {
-    const response = await fetch(`${API_BASE_URL}/model-config/custom-models/${modelId}`, {
+    const response = await fetch(`${this.baseUrl}/model-config/custom-models/${modelId}`, {
       method: "PUT",
       headers: this.getHeaders(),
       body: JSON.stringify(model),
@@ -149,7 +149,7 @@ export class ModelConfigAPI {
 
   // Delete a custom model
   async deleteCustomModel(modelId: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/model-config/custom-models/${modelId}`, {
+    const response = await fetch(`${this.baseUrl}/model-config/custom-models/${modelId}`, {
       method: "DELETE",
       headers: this.getHeaders(),
     });

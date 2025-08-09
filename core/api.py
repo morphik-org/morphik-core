@@ -1,6 +1,7 @@
 import json
 import logging
 import time  # Add time import for profiling
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Optional, Union
 
@@ -58,6 +59,7 @@ class PerformanceTracker:
         self.start_time = time.time()
         self.phases = {}
         self.current_phase = None
+        self.sub_operations = {}  # Track sub-operations for hierarchical display
         self.phase_start = None
 
     def start_phase(self, phase_name: str):
@@ -75,9 +77,15 @@ class PerformanceTracker:
             self.current_phase = None
             self.phase_start = None
 
-    def add_suboperation(self, name: str, duration: float):
-        """Add a sub-operation timing"""
-        self.phases[name] = duration
+    def add_suboperation(self, name: str, duration: float, parent_phase: str = None):
+        """Add a sub-operation timing that will be displayed under its parent phase"""
+        if parent_phase:
+            if parent_phase not in self.sub_operations:
+                self.sub_operations[parent_phase] = {}
+            self.sub_operations[parent_phase][name] = duration
+        else:
+            # If no parent specified, add as a regular phase
+            self.phases[name] = duration
 
     def log_summary(self, additional_info: str = ""):
         total_time = time.time() - self.start_time
@@ -89,10 +97,18 @@ class PerformanceTracker:
         logger.info(f"=== {self.operation_name} Performance Summary ===")
         logger.info(f"Total time: {total_time:.2f}s")
 
-        # Sort phases by duration (longest first)
+        # Sort phases by duration (longest first) and include sub-operations under each phase
         for phase, duration in sorted(self.phases.items(), key=lambda x: x[1], reverse=True):
             percentage = (duration / total_time) * 100 if total_time > 0 else 0
             logger.info(f"  - {phase}: {duration:.2f}s ({percentage:.1f}%)")
+
+            # Display sub-operations for this phase if any exist
+            if phase in self.sub_operations:
+                for sub_name, sub_duration in sorted(
+                    self.sub_operations[phase].items(), key=lambda x: x[1], reverse=True
+                ):
+                    sub_percentage = (sub_duration / total_time) * 100 if total_time > 0 else 0
+                    logger.info(f"    - {sub_name}: {sub_duration:.2f}s ({sub_percentage:.1f}%)")
 
         if additional_info:
             logger.info(additional_info)
@@ -1077,6 +1093,7 @@ async def generate_local_uri(
         payload = {
             "type": "developer",
             "entity_id": name,
+            "app_id": str(uuid.uuid4()),
             "permissions": ["read", "write", "admin"],
             "exp": datetime.now(UTC) + timedelta(days=expiry_days),
         }

@@ -150,12 +150,9 @@ async def ingest_file(
         if not success:
             raise Exception("Failed to store document metadata")
 
-        # Ensure folder exists (best-effort)
-        if folder_name:
-            try:
-                await document_service._ensure_folder_exists(folder_name, doc.external_id, auth)
-            except Exception as err:  # noqa: BLE001
-                logger.error("Error ensuring folder exists: %s", err)
+        # Note: Folder assignment is handled in the background worker to avoid race conditions
+        # during document ingestion. The worker will ensure the folder exists and add the
+        # document to it after all processing is complete.
 
         # ------------------------------------------------------------------
         # Read file content & pre-check storage limits
@@ -354,11 +351,7 @@ async def batch_ingest_files(
             if not success:
                 raise Exception(f"Failed to store document metadata for {file.filename}")
 
-            if folder_name:
-                try:
-                    await document_service._ensure_folder_exists(folder_name, doc.external_id, auth)
-                except Exception as err:  # noqa: BLE001
-                    logger.error("Error ensuring folder exists: %s", err)
+            # Note: Folder assignment is handled in the background worker to avoid race conditions
 
             file_content = await file.read()
 

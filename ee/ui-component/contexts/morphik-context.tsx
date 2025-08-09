@@ -129,12 +129,23 @@ export function MorphikProvider({
       return DEFAULT_API_BASE_URL;
     }
 
-    const url = connectionInfo.apiBaseUrl;
+    let url = connectionInfo.apiBaseUrl.trim();
 
     // Safety check: ensure it's a proper HTTP(S) URL
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
       console.error("[MorphikContext] Invalid apiBaseUrl:", url);
       return DEFAULT_API_BASE_URL;
+    }
+
+    // Force HTTPS for morphik.ai domains to avoid CORS preflight redirect failures
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "http:" && parsed.hostname.endsWith("morphik.ai")) {
+        parsed.protocol = "https:";
+        url = parsed.toString().replace(/\/$/, "");
+      }
+    } catch {
+      // ignore URL parse errors; fallback to original url
     }
 
     return url;

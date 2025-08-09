@@ -66,7 +66,17 @@ export function useChatSessions({ apiBaseUrl, authToken, limit = 100 }: UseChatS
       }
 
       try {
-        const res = await fetch(`${apiBaseUrl}/chats?limit=${limit}`, {
+        // Normalize to HTTPS for morphik.ai to avoid preflight redirects (CORS)
+        let base = apiBaseUrl;
+        try {
+          const u = new URL(apiBaseUrl);
+          if (u.protocol === "http:" && u.hostname.endsWith("morphik.ai")) {
+            u.protocol = "https:";
+            base = u.toString().replace(/\/$/, "");
+          }
+        } catch {}
+
+        const res = await fetch(`${base}/chats?limit=${limit}`, {
           headers: {
             ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           },

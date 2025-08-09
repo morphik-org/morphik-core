@@ -1,6 +1,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Key, Bot, ChevronLeft } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface SettingsSidebarProps {
   activeTab: string;
@@ -19,11 +20,40 @@ export const SettingsSidebar: React.FC<SettingsSidebarProps> = ({
 }) => {
   if (collapsed) {
     return (
-      <div className="flex h-full w-10 flex-col items-center border-r bg-muted/40">
-        <Button variant="ghost" size="icon" className="mt-2" onClick={onToggle} title="Expand">
-          {/* Add expand icon here if needed */}
-        </Button>
-      </div>
+      <TooltipProvider>
+        <div className="flex h-full w-10 flex-col items-center border-r bg-muted/40 py-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                aria-label="API Keys"
+                className="mt-1 rounded p-1 hover:bg-accent/40"
+                onClick={() => {
+                  onTabChange("api-keys");
+                  onToggle();
+                }}
+              >
+                <Key className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">API Keys</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                aria-label="Custom Models"
+                className="mt-2 rounded p-1 hover:bg-accent/40"
+                onClick={() => {
+                  onTabChange("models");
+                  onToggle();
+                }}
+              >
+                <Bot className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Custom Models</TooltipContent>
+          </Tooltip>
+        </div>
+      </TooltipProvider>
     );
   }
 

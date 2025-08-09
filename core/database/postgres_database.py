@@ -1844,6 +1844,8 @@ class PostgresDatabase(BaseDatabase):
 
     async def add_document_to_folder(self, folder_id: str, document_id: str, auth: AuthContext) -> bool:
         """Add a document to a folder."""
+        import asyncio
+
         try:
             # First, get the folder model and check access
             async with self.async_session() as session:
@@ -1862,10 +1864,32 @@ class PostgresDatabase(BaseDatabase):
                 if not folder:
                     return False
 
-            # Check if the document exists and user has access
-            document = await self.get_document(document_id, auth)
+            # Check if the document exists and user has access with retry logic
+            # This handles race conditions during ingestion where document might not be
+            # immediately visible due to transaction isolation
+            max_retries = 3
+            retry_delay = 0.5  # Start with 500ms delay
+
+            for attempt in range(max_retries):
+                document = await self.get_document(document_id, auth)
+                if document:
+                    break
+
+                if attempt < max_retries - 1:  # Don't sleep on the last attempt
+                    logger.info(
+                        f"Document {document_id} not found on attempt {attempt + 1}/{max_retries}, retrying in {retry_delay}s..."
+                    )
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 1.5  # Exponential backoff
+                else:
+                    logger.error(
+                        f"Document {document_id} not found or user does not have access after {max_retries} attempts"
+                    )
+                    return False
+
+            # Final verification after retries
             if not document:
-                logger.error(f"Document {document_id} not found or user does not have access")
+                logger.error(f"Document {document_id} not found or user does not have access after retries")
                 return False
 
             # Check if the document is already in the folder

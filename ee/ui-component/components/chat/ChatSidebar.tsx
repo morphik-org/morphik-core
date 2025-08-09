@@ -10,7 +10,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { RotateCw, Plus, ChevronsLeft, ChevronsRight, Search, MoreVertical, Edit3, Check, X } from "lucide-react";
+import { RotateCw, Plus, Search, MoreVertical, Edit3, Check, X } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 // import { DisplayObject } from "./AgentChatMessages"; // Potentially for a more robust type
 
 interface ChatSidebarProps {
@@ -115,7 +116,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = React.memo(function ChatS
   onSelect,
   activeChatId,
   collapsed,
-  onToggle,
+  // onToggle,
 }) {
   const { sessions, isLoading, reload } = useChatSessions({ apiBaseUrl, authToken });
   const [searchQuery, setSearchQuery] = useState("");
@@ -158,31 +159,32 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = React.memo(function ChatS
     }
   };
 
-  if (collapsed) {
-    return (
-      <div className="flex h-full w-10 flex-col items-center border-r bg-muted/40">
-        <Button variant="ghost" size="icon" className="mt-2" onClick={onToggle} title="Expand">
-          <ChevronsRight className="h-4 w-4" />
-        </Button>
-      </div>
-    );
-  }
+  if (collapsed) return null;
 
   return (
     <div className="flex h-full w-80 flex-col border-r bg-muted/40">
       <div className="flex h-12 items-center justify-between px-3 text-xs font-medium">
         <span className="text-sm text-muted-foreground">Chats</span>
-        <div className="flex items-center justify-center">
-          <Button variant="ghost" size="icon" onClick={() => onSelect(undefined)} title="New chat">
-            <Plus className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => reload()} title="Refresh chats">
-            <RotateCw className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={onToggle} title="Collapse sidebar">
-            <ChevronsLeft className="h-4 w-4" />
-          </Button>
-        </div>
+        <TooltipProvider>
+          <div className="flex items-center justify-center gap-1.5">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={() => onSelect(undefined)}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">New chat</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={() => reload()}>
+                  <RotateCw className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Refresh</TooltipContent>
+            </Tooltip>
+          </div>
+        </TooltipProvider>
       </div>
       <div className="px-3 pb-2">
         <div className="relative">
