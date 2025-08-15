@@ -180,3 +180,11 @@ class AgentQueryRequest(BaseModel):
         default="formatted",
         description="Display mode for images: 'formatted' (default) creates bounding boxes with Gemini, 'raw' returns uncropped images",
     )
+
+
+class DocumentPagesRequest(BaseModel):
+    """Request model for extracting pages from a document"""
+
+    document_id: str = Field(..., description="ID of the document to extract pages from")
+    start_page: int = Field(..., ge=1, description="Starting page number (1-indexed)")
+    end_page: int = Field(..., ge=1, description="Ending page number (1-indexed)")

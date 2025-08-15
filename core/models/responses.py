@@ -50,6 +50,16 @@ class FolderDeleteResponse(BaseModel):
     message: str
 
 
+class DocumentPagesResponse(BaseModel):
+    """Response for document pages extraction endpoint"""
+
+    document_id: str
+    pages: List[str]  # Base64-encoded images
+    start_page: int
+    end_page: int
+    total_pages: int
+
+
 class FolderRuleResponse(BaseModel):
     """Response for folder rule setting endpoint"""
 

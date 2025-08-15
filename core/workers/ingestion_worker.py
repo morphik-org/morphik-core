@@ -391,7 +391,7 @@ async def process_ingestion_job(
             # Detect file type early for optimization decisions
             file_type = None
             mime_type = None
-            is_colpali_native_format = False  # Images, PDFs, Word docs that ColPali converts to images
+            is_colpali_native_format = False  # Images, PDFs, Word docs, PPTs, Excel that ColPali converts to images
 
             try:
                 import filetype
@@ -399,14 +399,28 @@ async def process_ingestion_job(
                 file_type = filetype.guess(file_content)
                 if file_type:
                     mime_type = file_type.mime
+                else:
+                    # If filetype couldn't detect, use content_type from upload
+                    mime_type = content_type
+
+                if mime_type:
                     # These formats are handled natively by ColPali as images
                     is_colpali_native_format = (
                         mime_type.startswith("image/")
                         or mime_type == "application/pdf"
                         or mime_type
                         in [
+                            # Word documents
                             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                             "application/msword",
+                            # PowerPoint presentations
+                            "application/vnd.ms-powerpoint",
+                            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                            "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+                            # Excel spreadsheets
+                            "application/vnd.ms-excel",
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            "application/vnd.ms-excel.sheet.macroEnabled.12",
                         ]
                     )
             except Exception as e:

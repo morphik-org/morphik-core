@@ -1821,12 +1821,367 @@ class DocumentService:
                     ):
                         os.unlink(expected_pdf_path)
 
-            # case filetype.get_type(ext="txt"):
-            #     logger.info(f"Found text input: chunks for multivector embedding")
-            #     return chunks.copy()
-            # TODO: Add support for office documents
-            # case document.Xls | document.Xlsx | document.Ods |document.Odp:
-            #     logger.warning(f"Colpali is not supported for file type {file_type.mime} - skipping")
+            # PowerPoint presentations
+            case (
+                "application/vnd.ms-powerpoint"
+                | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                | "application/vnd.openxmlformats-officedocument.presentationml.slideshow"
+            ):
+                logger.info("Working with PowerPoint presentation!")
+
+                # Check if file content is empty
+                if not file_content or len(file_content) == 0:
+                    logger.error("PowerPoint presentation content is empty")
+                    return [
+                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        for chunk in chunks
+                    ]
+
+                # Try to convert to images, but fall back to text if LibreOffice is not available
+                try:
+                    # Check if LibreOffice is available
+                    import shutil
+                    import subprocess
+
+                    if not shutil.which("soffice"):
+                        logger.warning(
+                            "LibreOffice (soffice) not found in PATH. Falling back to text extraction for PowerPoint."
+                        )
+                        logger.info(
+                            "To enable visual PowerPoint processing, install LibreOffice: apt-get install libreoffice"
+                        )
+                        return [
+                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            for chunk in chunks
+                        ]
+
+                    # Determine file extension based on MIME type
+                    if mime_type == "application/vnd.ms-powerpoint":
+                        suffix = ".ppt"
+                    else:
+                        suffix = ".pptx"
+
+                    # Convert PowerPoint to PDF first using LibreOffice
+                    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_ppt:
+                        temp_ppt.write(file_content)
+                        temp_ppt_path = temp_ppt.name
+
+                    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf:
+                        temp_pdf_path = temp_pdf.name
+
+                    try:
+                        # Get the base filename without extension
+                        base_filename = os.path.splitext(os.path.basename(temp_ppt_path))[0]
+                        output_dir = os.path.dirname(temp_pdf_path)
+                        expected_pdf_path = os.path.join(output_dir, f"{base_filename}.pdf")
+
+                        # Convert PowerPoint to PDF with timeout
+                        result = subprocess.run(
+                            [
+                                "soffice",
+                                "--headless",
+                                "--convert-to",
+                                "pdf",
+                                "--outdir",
+                                output_dir,
+                                temp_ppt_path,
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=30,  # 30 second timeout
+                        )
+
+                        if result.returncode != 0:
+                            logger.warning(f"LibreOffice conversion failed for PowerPoint: {result.stderr}")
+                            logger.info("Falling back to text extraction for PowerPoint")
+                            return [
+                                Chunk(
+                                    content=chunk.content,
+                                    metadata=(chunk.metadata | {"is_image": False}),
+                                )
+                                for chunk in chunks
+                            ]
+
+                        # Check if the expected PDF file exists
+                        if not os.path.exists(expected_pdf_path) or os.path.getsize(expected_pdf_path) == 0:
+                            logger.warning(f"Generated PDF is empty or doesn't exist at: {expected_pdf_path}")
+                            logger.info("Falling back to text extraction for PowerPoint")
+                            return [
+                                Chunk(
+                                    content=chunk.content,
+                                    metadata=(chunk.metadata | {"is_image": False}),
+                                )
+                                for chunk in chunks
+                            ]
+
+                        # Now process the PDF
+                        with open(expected_pdf_path, "rb") as pdf_file:
+                            pdf_content = pdf_file.read()
+
+                        try:
+                            # Use PyMuPDF for PDF processing
+                            pdf_document = fitz.open("pdf", pdf_content)
+                            images_b64 = []
+
+                            # Process each slide as an image
+                            for page_num in range(len(pdf_document)):
+                                page = pdf_document[page_num]
+                                try:
+                                    dpi = int(os.getenv("COLPALI_PDF_DPI", "150"))
+                                except Exception:
+                                    dpi = 150
+                                mat = fitz.Matrix(dpi / 72, dpi / 72)
+                                pix = page.get_pixmap(matrix=mat)
+                                img_data = pix.tobytes("png")
+
+                                # Convert to PIL Image and then to base64
+                                img = PILImage.open(BytesIO(img_data))
+                                images_b64.append(self.img_to_base64_str(img))
+
+                            pdf_document.close()
+
+                            logger.info(
+                                f"PowerPoint presentation successfully processed {len(images_b64)} slides as images"
+                            )
+                            return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+
+                        except Exception as pymupdf_error:
+                            # Fallback to pdf2image if PyMuPDF fails
+                            logger.warning(f"PyMuPDF failed for PowerPoint ({pymupdf_error}), trying pdf2image")
+                            try:
+                                images = pdf2image.convert_from_bytes(pdf_content)
+                                images_b64 = [self.img_to_base64_str(image) for image in images]
+
+                                logger.info(
+                                    f"PowerPoint presentation processed {len(images_b64)} slides with pdf2image"
+                                )
+                                return [
+                                    Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64
+                                ]
+                            except Exception as pdf2image_error:
+                                logger.warning(f"pdf2image also failed: {pdf2image_error}")
+                                logger.info("Falling back to text extraction for PowerPoint")
+                                return [
+                                    Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                                    for chunk in chunks
+                                ]
+
+                    except subprocess.TimeoutExpired:
+                        logger.warning("LibreOffice conversion timed out for PowerPoint")
+                        logger.info("Falling back to text extraction")
+                        return [
+                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            for chunk in chunks
+                        ]
+                    except Exception as conversion_error:
+                        logger.warning(f"Error during PowerPoint conversion: {str(conversion_error)}")
+                        logger.info("Falling back to text extraction for PowerPoint")
+                        return [
+                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            for chunk in chunks
+                        ]
+                    finally:
+                        # Clean up temporary files
+                        try:
+                            if "temp_ppt_path" in locals() and os.path.exists(temp_ppt_path):
+                                os.unlink(temp_ppt_path)
+                            if "temp_pdf_path" in locals() and os.path.exists(temp_pdf_path):
+                                os.unlink(temp_pdf_path)
+                            if (
+                                "expected_pdf_path" in locals()
+                                and os.path.exists(expected_pdf_path)
+                                and expected_pdf_path != temp_pdf_path
+                            ):
+                                os.unlink(expected_pdf_path)
+                        except Exception as cleanup_error:
+                            logger.debug(f"Error cleaning up temporary files: {cleanup_error}")
+
+                except Exception as e:
+                    logger.warning(f"Unexpected error processing PowerPoint presentation: {str(e)}")
+                    logger.info("Falling back to text extraction for PowerPoint")
+                    return [
+                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        for chunk in chunks
+                    ]
+
+            # Excel spreadsheets
+            case (
+                "application/vnd.ms-excel"
+                | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                | "application/vnd.ms-excel.sheet.macroEnabled.12"
+            ):
+                logger.info("Working with Excel spreadsheet!")
+
+                # Check if file content is empty
+                if not file_content or len(file_content) == 0:
+                    logger.error("Excel spreadsheet content is empty")
+                    return [
+                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        for chunk in chunks
+                    ]
+
+                # Try to convert to images, but fall back to text if LibreOffice is not available
+                try:
+                    # Check if LibreOffice is available
+                    import shutil
+                    import subprocess
+
+                    if not shutil.which("soffice"):
+                        logger.warning(
+                            "LibreOffice (soffice) not found in PATH. Falling back to text extraction for Excel."
+                        )
+                        logger.info(
+                            "To enable visual Excel processing, install LibreOffice: apt-get install libreoffice"
+                        )
+                        return [
+                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            for chunk in chunks
+                        ]
+
+                    # Determine file extension based on MIME type
+                    if mime_type == "application/vnd.ms-excel":
+                        suffix = ".xls"
+                    else:
+                        suffix = ".xlsx"
+
+                    # Convert Excel to PDF first using LibreOffice
+                    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_excel:
+                        temp_excel.write(file_content)
+                        temp_excel_path = temp_excel.name
+
+                    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf:
+                        temp_pdf_path = temp_pdf.name
+
+                    try:
+                        # Get the base filename without extension
+                        base_filename = os.path.splitext(os.path.basename(temp_excel_path))[0]
+                        output_dir = os.path.dirname(temp_pdf_path)
+                        expected_pdf_path = os.path.join(output_dir, f"{base_filename}.pdf")
+
+                        # Convert Excel to PDF with timeout
+                        result = subprocess.run(
+                            [
+                                "soffice",
+                                "--headless",
+                                "--convert-to",
+                                "pdf",
+                                "--outdir",
+                                output_dir,
+                                temp_excel_path,
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=30,  # 30 second timeout
+                        )
+
+                        if result.returncode != 0:
+                            logger.warning(f"LibreOffice conversion failed for Excel: {result.stderr}")
+                            logger.info("Falling back to text extraction for Excel")
+                            return [
+                                Chunk(
+                                    content=chunk.content,
+                                    metadata=(chunk.metadata | {"is_image": False}),
+                                )
+                                for chunk in chunks
+                            ]
+
+                        # Check if the expected PDF file exists
+                        if not os.path.exists(expected_pdf_path) or os.path.getsize(expected_pdf_path) == 0:
+                            logger.warning(f"Generated PDF is empty or doesn't exist at: {expected_pdf_path}")
+                            logger.info("Falling back to text extraction for Excel")
+                            return [
+                                Chunk(
+                                    content=chunk.content,
+                                    metadata=(chunk.metadata | {"is_image": False}),
+                                )
+                                for chunk in chunks
+                            ]
+
+                        # Now process the PDF
+                        with open(expected_pdf_path, "rb") as pdf_file:
+                            pdf_content = pdf_file.read()
+
+                        try:
+                            # Use PyMuPDF for PDF processing
+                            pdf_document = fitz.open("pdf", pdf_content)
+                            images_b64 = []
+
+                            # Process each page/sheet as an image
+                            for page_num in range(len(pdf_document)):
+                                page = pdf_document[page_num]
+                                try:
+                                    dpi = int(os.getenv("COLPALI_PDF_DPI", "150"))
+                                except Exception:
+                                    dpi = 150
+                                mat = fitz.Matrix(dpi / 72, dpi / 72)
+                                pix = page.get_pixmap(matrix=mat)
+                                img_data = pix.tobytes("png")
+
+                                # Convert to PIL Image and then to base64
+                                img = PILImage.open(BytesIO(img_data))
+                                images_b64.append(self.img_to_base64_str(img))
+
+                            pdf_document.close()
+
+                            logger.info(f"Excel spreadsheet successfully processed {len(images_b64)} pages as images")
+                            return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+
+                        except Exception as pymupdf_error:
+                            # Fallback to pdf2image if PyMuPDF fails
+                            logger.warning(f"PyMuPDF failed for Excel ({pymupdf_error}), trying pdf2image")
+                            try:
+                                images = pdf2image.convert_from_bytes(pdf_content)
+                                images_b64 = [self.img_to_base64_str(image) for image in images]
+
+                                logger.info(f"Excel spreadsheet processed {len(images_b64)} pages with pdf2image")
+                                return [
+                                    Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64
+                                ]
+                            except Exception as pdf2image_error:
+                                logger.warning(f"pdf2image also failed: {pdf2image_error}")
+                                logger.info("Falling back to text extraction for Excel")
+                                return [
+                                    Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                                    for chunk in chunks
+                                ]
+
+                    except subprocess.TimeoutExpired:
+                        logger.warning("LibreOffice conversion timed out for Excel")
+                        logger.info("Falling back to text extraction")
+                        return [
+                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            for chunk in chunks
+                        ]
+                    except Exception as conversion_error:
+                        logger.warning(f"Error during Excel conversion: {str(conversion_error)}")
+                        logger.info("Falling back to text extraction for Excel")
+                        return [
+                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            for chunk in chunks
+                        ]
+                    finally:
+                        # Clean up temporary files
+                        try:
+                            if "temp_excel_path" in locals() and os.path.exists(temp_excel_path):
+                                os.unlink(temp_excel_path)
+                            if "temp_pdf_path" in locals() and os.path.exists(temp_pdf_path):
+                                os.unlink(temp_pdf_path)
+                            if (
+                                "expected_pdf_path" in locals()
+                                and os.path.exists(expected_pdf_path)
+                                and expected_pdf_path != temp_pdf_path
+                            ):
+                                os.unlink(expected_pdf_path)
+                        except Exception as cleanup_error:
+                            logger.debug(f"Error cleaning up temporary files: {cleanup_error}")
+
+                except Exception as e:
+                    logger.warning(f"Unexpected error processing Excel spreadsheet: {str(e)}")
+                    logger.info("Falling back to text extraction for Excel")
+                    return [
+                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                        for chunk in chunks
+                    ]
             # case file_type if file_type in DOCUMENT:
             #     pass
             case _:
@@ -2763,6 +3118,66 @@ class DocumentService:
 
         logger.info(f"Successfully deleted document {document_id} and all associated data")
         return True
+
+    async def extract_pdf_pages(
+        self,
+        bucket: str,
+        key: str,
+        start_page: int,
+        end_page: int,
+    ) -> Dict[str, Any]:
+        """
+        Extract specific pages from a PDF document as base64-encoded images.
+
+        Args:
+            bucket: Storage bucket containing the PDF
+            key: Storage key for the PDF file
+            start_page: Starting page number (1-indexed)
+            end_page: Ending page number (1-indexed)
+
+        Returns:
+            Dict containing:
+                - pages: List of base64-encoded images
+                - total_pages: Total number of pages in the PDF
+        """
+        try:
+            # Download the PDF file from storage
+            file_content = await self.storage.download_file(bucket, key)
+
+            # Open PDF directly from bytes using BytesIO
+            pdf_stream = BytesIO(file_content)
+            pdf_document = fitz.open(stream=pdf_stream, filetype="pdf")
+
+            total_pages = len(pdf_document)
+
+            # Validate page numbers
+            if start_page < 1 or end_page > total_pages:
+                raise ValueError(f"Page range {start_page}-{end_page} is invalid for PDF with {total_pages} pages")
+
+            # Extract pages as images
+            pages_base64 = []
+            for page_num in range(start_page - 1, end_page):  # Convert to 0-indexed
+                page = pdf_document[page_num]
+
+                # Render page as image with high DPI for quality
+                matrix = fitz.Matrix(2.0, 2.0)  # 2x scaling for better quality
+                pix = page.get_pixmap(matrix=matrix)
+
+                # Convert to PIL Image and save as JPEG for smaller size
+                img_data = pix.tobytes("jpeg", jpg_quality=85)  # Use JPEG with good quality
+                img = PILImage.open(BytesIO(img_data))
+
+                # Convert to base64
+                base64_str = self.img_to_base64_str(img)
+                pages_base64.append(base64_str)
+
+            pdf_document.close()
+
+            return {"pages": pages_base64, "total_pages": total_pages}
+
+        except Exception as e:
+            logger.error(f"Error extracting PDF pages from {bucket}/{key}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to extract PDF pages: {str(e)}")
 
     def close(self):
         """Close all resources."""
