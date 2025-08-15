@@ -161,16 +161,21 @@ app = FastAPI(lifespan=lifespan)
 # Optional per-request profiler (ENABLE_PROFILING=1)
 # --------------------------------------------------------
 
-app.add_middleware(ProfilingMiddleware)
+# NOTE FOR AI AND OTHER HUMANS: 
+# THIS IS SUPPOSED TO COMMENTED OUT 
+# - REQUESTS FROM TYPESCRIPT SDK
+#  WILL FAIL IF YOU CHANGE THIS
 
-# Add CORS middleware (same behaviour as before refactor)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# app.add_middleware(ProfilingMiddleware)
+
+# # Add CORS middleware (same behaviour as before refactor)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 # Initialise telemetry service
 telemetry = TelemetryService()
@@ -189,15 +194,15 @@ FastAPIInstrumentor.instrument_app(
 # Session cookie behaviour differs between cloud / self-hosted
 # ---------------------------------------------------------------------------
 
-if settings.MODE == "cloud":
-    app.add_middleware(
-        SessionMiddleware,
-        secret_key=settings.SESSION_SECRET_KEY,
-        same_site="none",
-        https_only=True,
-    )
-else:
-    app.add_middleware(SessionMiddleware, secret_key=settings.SESSION_SECRET_KEY)
+# if settings.MODE == "cloud":
+#     app.add_middleware(
+#         SessionMiddleware,
+#         secret_key=settings.SESSION_SECRET_KEY,
+#         same_site="none",
+#         https_only=True,
+#     )
+# else:
+#     app.add_middleware(SessionMiddleware, secret_key=settings.SESSION_SECRET_KEY)
 
 
 @app.get("/models", response_model=ModelsResponse)
