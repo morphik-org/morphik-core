@@ -3150,9 +3150,13 @@ class DocumentService:
 
             total_pages = len(pdf_document)
 
-            # Validate page numbers
-            if start_page < 1 or end_page > total_pages:
-                raise ValueError(f"Page range {start_page}-{end_page} is invalid for PDF with {total_pages} pages")
+            # Always clamp the page numbers to the total number of pages
+            start_page = max(1, start_page)
+            end_page = min(end_page, total_pages)
+
+            # # Validate page numbers
+            # if start_page < 1 or end_page > total_pages:
+            #     raise ValueError(f"Page range {start_page}-{end_page} is invalid for PDF with {total_pages} pages")
 
             # Extract pages as images
             pages_base64 = []
