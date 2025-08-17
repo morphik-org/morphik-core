@@ -69,6 +69,10 @@ dependencies = [
     "types-boto3[s3]>=1.39.1",
     "sentry-sdk[fastapi]>=2.33.0",
     "turbopuffer>=0.5.8",
+    "tesseract>=0.1.3",
+    "pytesseract>=0.3.13",
+    "pdf2image>=1.17.0",
+    "colpali-engine>=0.3.10",
 ]
 
 [dependency-groups]

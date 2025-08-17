@@ -38,7 +38,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 # Initialize OpenAI client
-load_dotenv(override=True)
+load_dotenv("../../.env.example", override=True)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 JUDGE_SYSTEM_PROMPT = "You are an evaluator comparing two answers to the same question."

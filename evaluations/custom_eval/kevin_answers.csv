@@ -1,0 +1,435 @@
+question,answer
+"Based on Palantir’s reported Q1 2024 and Q1 2025 revenue figures, what are the year-over-year growth rates for total revenue, total revenue excluding strategic commercial contracts, and US revenue; what is the standard deviation across those growth rates; what is the standard deviation of the quarter-over-quarter changes in the Rule of 40 score from Q2 2023 through Q1 2025; and how do these volatility metrics relate to the Rule of 40 score reported for Q1 2025?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.016874375,0.03621677....015597318,-0.01944284]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.016874375,0.03621677....015597318,-0.01944284]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.016874375,0.03621677....015597318,-0.01944284]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"Given Palantir’s total revenue excluding strategic commercial contracts and adjusted operating income for Q1 2024 and Q1 2025, and its US commercial customer counts for the trailing twelve months ended March 31, 2024 and March 31, 2025, by what percentage did operating expense per US commercial customer change year-over-year between Q1 2024 and Q1 2025?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"By how many millions of dollars did NVIDIA’s total other assets change between January 26, 2025 and April 27, 2025, by how many millions of dollars did assumed-liability acquisitions of property, equipment and intangible assets increase in the first quarter of fiscal year 2026 compared to the first quarter of fiscal year 2025, and what percentage of those Q1 FY2026 acquisitions was represented by the first-quarter intangible-asset amortization expense?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.03341941,0.003864579...,0.0313583,0.036864407]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.03341941,0.003864579...,0.0313583,0.036864407]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.03341941,0.003864579...,0.0313583,0.036864407]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"By how many dollars did the fair value of NVIDIA’s CoreWeave investment at April 27, 2025 exceed the carrying value reclassification adjustment recorded against non-marketable equity securities in long-term other assets in Q1 FY26?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[0.016054256,0.017504413...1635162,-0.00038840206]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[0.016054256,0.017504413...1635162,-0.00038840206]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[0.016054256,0.017504413...1635162,-0.00038840206]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"According to Palantir’s Q1 2025 investor presentation, under the false premise that the Rule of 40 score of 83% was derived by adding the adjusted free cash flow margin to the US government revenue quarter-over-quarter growth rate, what were each of those two percentages, what was the quarter-end balance in cash, cash equivalents, and US Treasury securities, how many deals of at least $1 million closed in the quarter, and what was the US Commercial Customer Count for the trailing twelve months ended March 31, 2025?","[Error: current transaction is aborted, commands ignored until end of transaction block
+]"
+"For NVIDIA, between the current period and the comparative prior period, which grew faster on a year-over-year basis: the combined stock-based compensation expense and depreciation and amortization in cash flows from operating activities, or the combined net change in unrealized gains (losses) on available-for-sale securities and total other income (expense), net in the consolidated statements of income, and by how many percentage points did the faster growth rate exceed the slower?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"Despite a claim that Nvidia's net cash provided by operating activities in the first quarter of fiscal year 2026 fell year-over-year, what were the actual year-over-year dollar change and the items cited as driving this shift?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"Despite the implication that removing strategic commercial contracts would temper Palantir’s growth in Q1 2025, by how many percentage points did the year-over-year growth rate of total revenue excluding strategic commercial contracts exceed the year-over-year growth rate of overall total revenue?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.039192345,-0.0169990....027844863,0.028302303]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.039192345,-0.0169990....027844863,0.028302303]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.039192345,-0.0169990....027844863,0.028302303]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"Between January 26, 2025 and April 27, 2025, what was the standard deviation of the quarter-over-quarter changes in estimated fair value across debt securities by contractual maturity (less than one year, one to five years, and total), what was the unrealized gain on corporate debt securities reported as of January 26, 2025, and what was the percentage increase in Level 1 money market funds fair value over the same period, considering the company's commentary that gross unrealized losses were driven primarily by changes in interest rates?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.0055437353,0.0103797...026006589,0.0063836956]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.0055437353,0.0103797...026006589,0.0063836956]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.0055437353,0.0103797...026006589,0.0063836956]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"After the one-time SAR-related expense hit in Q4 2024, by how many dollars did the acceleration in Palantir’s GAAP operating income—defined as the Q4 2024 to Q1 2025 sequential change minus the Q3 2024 to Q4 2024 sequential change—exceed the analogous acceleration in GAAP net income?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"Between January 26, 2025 and April 27, 2025, by how many percentage points did NVIDIA’s excess inventory purchase obligations as a percentage of its total accrued and other current liabilities change, and as of April 27, 2025, what percentage of its net long-term carrying amount of debt are its outstanding inventory purchase and long-term supply and capacity obligations?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.0072015016,0.0142855....033504233,0.025957705]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.0072015016,0.0142855....033504233,0.025957705]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.0072015016,0.0142855....033504233,0.025957705]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"For NVIDIA’s quarter ended April 27, 2025, what percentage of its remaining performance obligations for contracts greater than one year was unbilled, and for Palantir in Q1 2025, what percentage of its total remaining performance obligations was classified as long-term under its ASC 606 election?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.0025730513,-0.006852...02652873,0.00035197835]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.0025730513,-0.006852...02652873,0.00035197835]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.0025730513,-0.006852...02652873,0.00035197835]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"Between the trailing twelve months ended March 31, 2024 and March 31, 2025, how many non-US commercial customers did Palantir add and what percentage of the total global commercial customer growth did this addition represent?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.018358348,-0.0120861...0.019890597,0.01017442]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.018358348,-0.0120861...0.019890597,0.01017442]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.018358348,-0.0120861...0.019890597,0.01017442]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"What was the compound annual growth rate of NVIDIA’s operating lease obligations between fiscal years 2026 and 2028, and how does this growth relate to the company’s expectation to commence new data center and office operating leases from the second quarter of fiscal year 2026 through fiscal year 2030?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.036388107,-0.0057535....026561601,0.029522426]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.036388107,-0.0057535....026561601,0.029522426]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.036388107,-0.0057535....026561601,0.029522426]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"For the trailing twelve months ended March 31, 2025, what is the ratio of the standard deviation of quarter-over-quarter growth rates for US commercial customer count compared to total customer count, and what does this ratio imply about the volatility of US commercial expansion relative to management’s reported 65% year-over-year growth?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"For NVIDIA, for the first quarter of fiscal year 2026 compared to the first quarter of fiscal year 2025, what were the dollar increase in Interest income and the dollar decline in Other income (expense), net, and what was the primary driver identified for the change in Other income (expense), net?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"After deploying Palantir Eval-Driven Automation in AIP as showcased in the DevCon 2 overview, by how much did Wendy's QSCC shorten its supply chain problem resolution cycle and how much did Heineken accelerate its solution build time?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.018647607,-0.0014720....021686135,0.016596217]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.018647607,-0.0014720....021686135,0.016596217]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.018647607,-0.0014720....021686135,0.016596217]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"Management asserted that Palantir delivered an 85% adjusted gross margin, sub-$450 million of adjusted expenses, and $220 million of net income attributable to common stockholders in Q1 2025; what do the reconciliation tables actually report for those three metrics?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"Between January 26, 2025 and April 27, 2025, what was the change in Nvidia’s unamortized debt discount and issuance costs expressed as a percentage of the total scheduled long-term debt principal across all maturity buckets?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.0072015016,0.0142855....033504233,0.025957705]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.0072015016,0.0142855....033504233,0.025957705]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.0072015016,0.0142855....033504233,0.025957705]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"Which four factors did NVIDIA cite in Note 4 of its Q1 FY2026 financial statements for its effective tax rate being lower than the 21% U.S. federal statutory rate, what was that effective tax rate, and what estimated long-term annual effective tax rate did Palantir apply to its income tax effect for market-vesting SARs?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[0.0078722,0.0065200794,...49696914,-0.0023044548]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[0.0078722,0.0065200794,...49696914,-0.0023044548]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[0.0078722,0.0065200794,...49696914,-0.0023044548]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"Between the Magnificent 7’s expected EPS growth for 2025 and the US corporate mid-single-digit EPS growth forecast over the next 12 months, which forecast is higher and what percentage of its market capitalization did Goldman Sachs plan to repurchase under its share repurchase program?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.0034092516,-0.024278...25562009,-0.0020293165]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.0034092516,-0.024278...25562009,-0.0020293165]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.0034092516,-0.024278...25562009,-0.0020293165]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"If NVIDIA's Q2 2025 disclosure implied that the weighted average recognition period for RSUs, PSUs and market-based PSUs was shorter than that for ESPP, what are the actual weighted average recognition periods for those awards and which functional area recorded the lowest stock-based compensation expense in the quarter ended April 27 2025?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[0.022360476,-0.01769922...0.02479243,0.020131184]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[0.022360476,-0.01769922...0.02479243,0.020131184]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[0.022360476,-0.01769922...0.02479243,0.020131184]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"According to the “Securities registered pursuant to Section 12(b) of the Act” table, on which exchange is NVIDIA’s common stock listed, and under the definitions in Rule 12b-2 of the Exchange Act which filer category did NVIDIA meet for the quarter ended April 27, 2025, and what was its gross profit margin for that quarter?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"In the three months ended April 27, 2025, what percentage of Nvidia’s consolidated Operating income was absorbed by the All Other category’s Stock-based compensation expense and what percentage of the Compute & Networking segment’s Revenue was consumed by its Other segment items?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"In the first quarter of fiscal year 2026, what was NVIDIA's interest coverage ratio (interest income divided by interest expense) and what percentage of its net interest spread did net unrealized losses on publicly-held equity securities—driven by fair value volatility in investments including CoreWeave and Arm, Inc.—consume?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"What is the unweighted arithmetic average of Palantir’s Q1 2025 Rule of 40 score and its year-over-year growth rates in US revenue, US commercial revenue, total revenue, and total revenue excluding strategic commercial contracts?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.016874375,0.03621677....015597318,-0.01944284]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.016874375,0.03621677....015597318,-0.01944284]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.016874375,0.03621677....015597318,-0.01944284]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"For the Magnificent 7 (Mag 7) stocks, what is their year-to-date underperformance in percentage points versus the broad technology sector as of May 9, what is the percentage-point difference between their expected EPS growth in 2025 and that of the rest of the market, and what is their forward price-to-earnings multiple premium relative to the broad market?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"What percentage reduction in supply chain development time did Palantir deliver at Heineken, what projected unit economics improvement did it target with R1 RCM’s healthcare AI lab, and what ontology capability did it provide to Archer Aviation’s eVTOL program?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.018647607,-0.0014720....021686135,0.016596217]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.018647607,-0.0014720....021686135,0.016596217]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.018647607,-0.0014720....021686135,0.016596217]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"By how many percentage points did the U.S. dollar’s share of SWIFT trade finance settlements exceed its share of global central bank foreign exchange reserves as of December 31, 2024, and how many percentage points per annum is U.S. dollar depreciation projected by J.P. Morgan Asset Management to add to U.S. dollar–based total returns on European and Japanese equity investments over the next 10–15 years?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.040602688,0.01170993....049464263,0.025936317]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.040602688,0.01170993....049464263,0.025936317]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.040602688,0.01170993....049464263,0.025936317]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"For NVIDIA, comparing the quarters ended April 27, 2025 and April 28, 2024, by how many percentage points did the year-over-year growth rate of “Total revenue” in the Geographic Revenue by customer billing location table lag the year-over-year growth rate of “Deferred revenue additions” in the Deferred Revenue table?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.0025730513,-0.006852...02652873,0.00035197835]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.0025730513,-0.006852...02652873,0.00035197835]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.0025730513,-0.006852...02652873,0.00035197835]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"Under the Tariff Policy Uncertainty framework described in JPMorgan’s midyear report, what share of the 20 stocks driving 80% of the S&P 500’s year-to-date peak-to-trough losses were AI-exposed, what capex growth rate do analysts pencil in for the four major hyperscalers, and what percentage of the investable software universe is public?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"How many percentage points did Palantir’s Q1 2025 adjusted operating margin, described as reflecting aggressive investments in AIP and the US to drive operating leverage, exceed its Q1 2025 GAAP operating margin, and what was the Q1 2025 ratio of GAAP net income to GAAP operating income?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.0023188025,-0.003044...028910873,0.0055130343]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"By how many percentage points did the share of trading days with simultaneous declines in U.S. stocks, bonds and currency fall in 2025 relative to the three-year average, by how many percentage points has equity allocation drift increased since 2020, and which currency continues to hold the largest share of global central bank foreign exchange reserves?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.031930495,-0.0295136...032005133,0.0078049162]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.031930495,-0.0295136...032005133,0.0078049162]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.031930495,-0.0295136...032005133,0.0078049162]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"In NVIDIA's first quarter of fiscal 2026, by how many percentage points did interest income as a share of gross profit increase year-over-year, and how did that compare to the year-over-year percentage increase in research and development expenses?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.018647607,-0.0014720....021686135,0.016596217]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.018647607,-0.0014720....021686135,0.016596217]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.018647607,-0.0014720....021686135,0.016596217]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"What manufacturing lead times has NVIDIA previously experienced, which fiscal quarter saw gross margins negatively impacted by inventory provisions for low-yielding Blackwell material, and in which quarter are sample shipments of Blackwell Ultra expected to commence?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"What percentage of historical infrastructure total returns is driven by income, what tax rates were assumed for long-term and short-term capital gains in J.P. Morgan’s after-tax hedge fund performance analysis, and by what factor has client utilization of equity-linked structured notes increased this year compared to 2024?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[0.008136331,-0.00918995...056742127,-0.014904412]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[0.008136331,-0.00918995...056742127,-0.014904412]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[0.008136331,-0.00918995...056742127,-0.014904412]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"In Q1 2025, by how many percentage points does the year-over-year growth rate of total revenue excluding Strategic Commercial Contracts exceed the year-over-year growth rate of total revenue, and by how many percentage points lower is that excess than the spread between US commercial and US government revenue growth rates?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.039192345,-0.0169990....027844863,0.028302303]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.039192345,-0.0169990....027844863,0.028302303]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.039192345,-0.0169990....027844863,0.028302303]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"What is the ratio of the U.S. dollar's share of global central bank foreign exchange reserves in 2024 to the euro's share of SWIFT settlements, and by how many percentage points does the dollar's share of SWIFT trade finance settlements exceed its share of international debt?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.031930495,-0.0295136...032005133,0.0078049162]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.031930495,-0.0295136...032005133,0.0078049162]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.031930495,-0.0295136...032005133,0.0078049162]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"Between the first quarters of fiscal years 2025 and 2026, by how many basis points did NVIDIA’s operating lease cash flow conversion ratio—calculated as operating cash flow used for operating leases divided by operating lease expense—change?","[Error: current transaction is aborted, commands ignored until end of transaction block
+]"
+"According to Nvidia’s cash flow statement, when it was incorrectly claimed that net cash used in investing activities exceeded share repurchases for the period, what were the actual figures for net cash used in investing activities versus share repurchases and how did dividends paid compare to payments for employee stock plan taxes?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.027318148,0.0168592,....021840326,0.014829852]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.027318148,0.0168592,....021840326,0.014829852]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.027318148,0.0168592,....021840326,0.014829852]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"On a quarter-over-quarter basis, by how many millions of dollars did NVIDIA’s net working capital change, by how many millions of dollars did its retained earnings increase, and what percentage of that retained earnings increase was consumed by purchases of property and equipment and intangible assets?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"Under footnote 11 in J.P. Morgan’s midyear report article “IS THIS THE DOWNFALL OF THE U.S. DOLLAR?” what is the difference in percentage points between the net percentage of investors expecting continued dollar depreciation and the year-to-date share of trading days in 2025 with simultaneous declines in U.S. stocks, bonds and the dollar as defined by the market-credibility metric in the “Tracking the market’s perception of the dollar” section?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.031930495,-0.0295136...032005133,0.0078049162]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.031930495,-0.0295136...032005133,0.0078049162]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.031930495,-0.0295136...032005133,0.0078049162]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"In Q1 FY26, following the USG’s April 9, 2025 export licensing requirements that diminished demand for H20 products, what percentage of pre-licensing H20 sales did NVIDIA’s related excess inventory charge represent, and by how many percentage points did that percentage exceed Palantir’s Q1 2025 adjusted operating margin?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.025693242,-0.0082087...21686837,-0.0025675097]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"What is the full applicability date of the EU AI Act, what licensing requirement and compliance deadline would the US government's ""AI Diffusion"" IFR have imposed on NVIDIA's H200 and GB200 data center products, and which NVIDIA product category would the USG's ""Connected Vehicle"" import restrictions affect?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[0.004067079,0.037571713....005962596,0.032536633]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[0.004067079,0.037571713....005962596,0.032536633]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[0.004067079,0.037571713....005962596,0.032536633]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
+"What is the ratio of the net share of investors expecting further U.S. dollar depreciation to the three-year rolling share of trading days with simultaneous declines in U.S. stocks, bonds and currencies, and how does that ratio compare with the volatility multiple of an unhedged ex-U.S. aggregate bond portfolio relative to a U.S. dollar domestic bond portfolio over the last 20 years?","[Error: 3 validation errors for DocumentChunk
+embedding.list[float]
+  Input should be a valid list [type=list_type, input_value='[-0.031930495,-0.0295136...032005133,0.0078049162]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.list[list[float]]
+  Input should be a valid list [type=list_type, input_value='[-0.031930495,-0.0295136...032005133,0.0078049162]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/list_type
+embedding.is-instance[ndarray]
+  Input should be an instance of ndarray [type=is_instance_of, input_value='[-0.031930495,-0.0295136...032005133,0.0078049162]', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.11/v/is_instance_of]"
