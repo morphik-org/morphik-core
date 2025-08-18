@@ -1,0 +1,695 @@
+=== CONTEXT DEBUG FOR QUESTION ===
+Question: What percentage reduction in supply chain development time did Palantir deliver at Heineken, what projected unit economics improvement did it target with R1 RCM’s healthcare AI lab, and what ontology capability did it provide to Archer Aviation’s eVTOL program?
+
+Context:
+=== palantir_q1_investor_presentation.pdf, Page 10 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_010.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+© 2025 Palantr Technologies Inc.
+Business Update
+Q1
+High-stakes problems. High-impact solutions.
+Across industries, more US companies are naming Palantr in their vision for what’s next.
+R1 RCM is partnering with Palantr 
+to launch an advanced AI lab 
+designed to transform healthcare 
+workﬂows and improve unit 
+economics by up to 50%.
+Cit’s latest earnings release 
+highlighted how a new partnership 
+with Palantr will improve client 
+experience and operatonal agility 
+in their Wealth division.
+AIG expects their adopton of an 
+AI-powered underwritng soluton 
+leveraging AIP to double its 5-year 
+revenue CAGR from 10% to 20%.
+SOURCE: AIG INVESTOR DAY (3/31/2025)
+SOURCE: CITIGROUP (4/15/2025)
+Watch the interview
+
+Structured Layout:
+© 2025 Palantr Technologies Inc.
+
+Business Update
+Q1
+
+High-stakes problems. High-impact solutions.
+
+Across industries, more US companies are naming Palantr in their vision for what’s next.
+
+R1 RCM is partnering with Palantr 
+to launch an advanced AI lab 
+designed to transform healthcare 
+workﬂows and improve unit 
+economics by up to 50%.
+
+Cit’s latest earnings release 
+highlighted how a new partnership 
+with Palantr will improve client 
+experience and operatonal agility 
+in their Wealth division.
+
+AIG expects their adopton of an 
+AI-powered underwritng soluton 
+leveraging AIP to double its 5-year 
+revenue CAGR from 10% to 20%.
+
+SOURCE: AIG INVESTOR DAY (3/31/2025)
+SOURCE: CITIGROUP (4/15/2025)
+Watch the interview
+
+=== palantir_q1_investor_presentation.pdf, Page 9 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_009.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+© 2025 Palantr Technologies Inc.
+Business Update
+Q1
+At AIPCon 6, our partners showed how they drive outcomes with Palantir AIP in real time.
+Palantr sofware has redeﬁned 
+Wendy’s supply chain agility while 
+ensuring product superiority.
+“We’ve now taken a 
+problem that would 
+go on for weeks and 
+days and ﬁxed it in 
+ﬁve minutes, making 
+our people incredibly 
+eﬃcient.”
+PETE SUERKEN,
+PRESIDENT AND CEO OF WENDY’S QSCC
+With Palantr, Heineken is 
+transforming its supply chain 
+using AI agents to optmize 
+delivery and shipping.
+“In three months, 
+the team built 
+what took us three 
+years before.”
+LAURENS VAN DE ROTTE,
+COO AT HEINEKEN
+
+Structured Layout:
+© 2025 Palantr Technologies Inc.
+
+Business Update
+Q1
+
+At AIPCon 6, our partners showed how they drive outcomes with Palantir AIP in real time.
+
+Palantr sofware has redeﬁned 
+Wendy’s supply chain agility while 
+ensuring product superiority.
+
+“We’ve now taken a 
+problem that would 
+go on for weeks and 
+days and ﬁxed it in 
+ﬁve minutes, making 
+our people incredibly 
+eﬃcient.”
+
+PETE SUERKEN,
+PRESIDENT AND CEO OF WENDY’S QSCC
+
+With Palantr, Heineken is 
+transforming its supply chain 
+using AI agents to optmize 
+delivery and shipping.
+
+“In three months, 
+the team built 
+what took us three 
+years before.”
+
+LAURENS VAN DE ROTTE,
+COO AT HEINEKEN
+
+=== palantir_q1_investor_presentation.pdf, Page 11 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_011.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+© 2025 Palantr Technologies Inc.
+Business Update
+Q1
+Palantir and Archer 
+Aviation partner on
+AI development in 
+next-gen aviation.
+“We’ve been able to build an ontology 
+that takes the bill of materials of an 
+aircraf and lets us view it in a 
+hierarchical way that we really haven’t 
+been able to visualize before.”
+ADAM WORMOTH, SENIOR DIRECTOR OF PRODUCT, ARCHER AVIATION 
+IMAGE SOURCE: ARCHER AVIATION
+Read more
+
+Structured Layout:
+© 2025 Palantr Technologies Inc.
+
+Business Update
+Q1
+
+Palantir and Archer 
+Aviation partner on
+AI development in 
+next-gen aviation.
+
+“We’ve been able to build an ontology 
+that takes the bill of materials of an 
+aircraf and lets us view it in a 
+hierarchical way that we really haven’t 
+been able to visualize before.”
+
+ADAM WORMOTH, SENIOR DIRECTOR OF PRODUCT, ARCHER AVIATION
+
+IMAGE SOURCE: ARCHER AVIATION
+
+Read more
+
+=== jpm_midyear.pdf, Page 26 ===
+Visual content from: document_images/jpm_midyear_page_026.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+26 
+2025 MID-YEAR OUTLOOK
+WHY ISN’T ANYONE TALKING ABOUT AI ANYMORE?
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  
+  
+  
+As influential technology analyst Ben Thompson has 
+argued, the AI race is at an interesting juncture. Leading 
+research labs are still incentivized to raise funds and 
+invest in new models: They are competing to develop 
+a model that can improve itself. At the same time, 
+competition could drive prices lower, which encourages 
+differentiation and further adoption.15 
+We think agentic AI, programs that can operate with a 
+human-like level of intelligence and independence, will 
+likely dominate the next wave of software. We believe 
+market leaders will deliver both a better consumer 
+experience and productivity gains for enterprises 
+across sectors and geographies. 
+Indeed, the tech sectors in Europe and China were 
+closing the performance gap with U.S.-based tech 
+companies – after the release of ChatGPT in November 
+2022 and before the tariff shock hit markets. Finally, 
+private market exposure is crucial to accessing the trend 
+of AI expansion. Out of nearly 100,000 investable 
+software companies, only ~4,000 are public.16 
+The ultimate winners of the AI race may not yet exist. 
+The rise of cloud computing and the transition to mobile 
+phones in the 2010s created more than 30 companies 
+with greater than US$1 billion in annual revenues 
+(accounting for over US$1.9 trillion in public market 
+capitalization).17 The total addressable market for AI-
+related applications could surpass both the cloud and 
+mobile transitions, largely because the ultimate target is 
+employee compensation costs. 
+Skeptics of the AI boom point to the dot-com bubble 
+of the late 1990s. Before the bubble popped in 2000, 
+many companies sported excessive valuations premised 
+on business models that proved to be inadequate or 
+non-existent. And even companies with viable business 
+models struggled to justify their peak valuations. The 
+U.S. and European telecoms that built most of today’s 
+communication infrastructure (mobile, broadband, 
+fiber optic networks) have never regained their 2000 
+peaks, even as cell phone subscriptions have increased 
+over tenfold. 
+In our view, neither the levels of AI capex nor stock 
+valuations suggest an AI bubble in the market. Stock 
+prices have risen with earnings, and capex has not been 
+financed with equity or debt issuance. But we are closely 
+monitoring payback on AI projects and pockets of froth 
+(in valuations and/or capex levels) in sectors such as 
+data centers. 
+The most recent earnings data suggests that AI is 
+starting to deliver for companies and investors. AI 
+demand contributed nearly half of the 35% growth 
+reported by Microsoft’s cloud computing unit, and the 
+company processed over 100 trillion AI tokens in the 
+first quarter, a 5x increase from last year. 
+We will continue to focus on companies and sectors 
+poised to benefit from cost savings and productivity 
+gains from AI technology (e.g., software and financials). 
+We will also look for promising names in the agentic 
+application space. 
+People may not be talking about AI anymore, but they 
+should be. 
+15 Thompson, B. (February 25, 2025). AI Promise and Chip Precariousness. 
+16 Vista Equity Partners (March 2025). 
+17Huang, S., & Grady, P. (October 9, 2024). Generative AI’s Act o1. Companies used for this (non-exhaustive) statistic: Airbnb, Atlassian, Cloudflare, Crowdstrike, Datadog, Docusign, 
+Doordash, Dropbox, Dynatrace, Elastic, Lyft, MongoDB, Okta, Palantir, Paloalto, Paycom, Paylocity, Pinterest, Playtika, Robinhood, Salesforce, Shopify, Snapchat, Snowflake, Spotify, 
+Thetradedesk, Twilio, Uber, Unity, Workday, Zoom, Zoominfo, Zscaler.
+
+Structured Layout:
+26 
+2025 MID-YEAR OUTLOOK
+
+WHY ISN’T ANYONE TALKING ABOUT AI ANYMORE?
+
+As influential technology analyst Ben Thompson has 
+argued, the AI race is at an interesting juncture. Leading 
+research labs are still incentivized to raise funds and 
+invest in new models: They are competing to develop 
+a model that can improve itself. At the same time, 
+competition could drive prices lower, which encourages 
+differentiation and further adoption.15
+
+We think agentic AI, programs that can operate with a 
+human-like level of intelligence and independence, will 
+likely dominate the next wave of software. We believe 
+market leaders will deliver both a better consumer 
+experience and productivity gains for enterprises 
+across sectors and geographies.
+
+Indeed, the tech sectors in Europe and China were 
+closing the performance gap with U.S.-based tech 
+companies – after the release of ChatGPT in November 
+2022 and before the tariff shock hit markets. Finally, 
+private market exposure is crucial to accessing the trend 
+of AI expansion. Out of nearly 100,000 investable 
+software companies, only ~4,000 are public.16
+
+The ultimate winners of the AI race may not yet exist. 
+The rise of cloud computing and the transition to mobile 
+phones in the 2010s created more than 30 companies 
+with greater than US$1 billion in annual revenues 
+(accounting for over US$1.9 trillion in public market 
+capitalization).17 The total addressable market for AI-
+related applications could surpass both the cloud and 
+mobile transitions, largely because the ultimate target is 
+employee compensation costs.
+
+Skeptics of the AI boom point to the dot-com bubble 
+of the late 1990s. Before the bubble popped in 2000, 
+many companies sported excessive valuations premised 
+on business models that proved to be inadequate or 
+non-existent. And even companies with viable business 
+models struggled to justify their peak valuations. The 
+U.S. and European telecoms that built most of today’s 
+communication infrastructure (mobile, broadband, 
+fiber optic networks) have never regained their 2000 
+peaks, even as cell phone subscriptions have increased 
+over tenfold.
+
+In our view, neither the levels of AI capex nor stock 
+valuations suggest an AI bubble in the market. Stock 
+prices have risen with earnings, and capex has not been 
+financed with equity or debt issuance. But we are closely 
+monitoring payback on AI projects and pockets of froth 
+(in valuations and/or capex levels) in sectors such as 
+data centers.
+
+The most recent earnings data suggests that AI is 
+starting to deliver for companies and investors. AI 
+demand contributed nearly half of the 35% growth 
+reported by Microsoft’s cloud computing unit, and the 
+company processed over 100 trillion AI tokens in the 
+first quarter, a 5x increase from last year.
+
+We will continue to focus on companies and sectors 
+poised to benefit from cost savings and productivity 
+gains from AI technology (e.g., software and financials). 
+We will also look for promising names in the agentic 
+application space.
+
+People may not be talking about AI anymore, but they 
+should be.
+
+15 Thompson, B. (February 25, 2025). AI Promise and Chip Precariousness.
+
+16 Vista Equity Partners (March 2025).
+
+17Huang, S., & Grady, P. (October 9, 2024). Generative AI’s Act o1. Companies used for this (non-exhaustive) statistic: Airbnb, Atlassian, Cloudflare, Crowdstrike, Datadog, Docusign, 
+Doordash, Dropbox, Dynatrace, Elastic, Lyft, MongoDB, Okta, Palantir, Paloalto, Paycom, Paylocity, Pinterest, Playtika, Robinhood, Salesforce, Shopify, Snapchat, Snowflake, Spotify, 
+Thetradedesk, Twilio, Uber, Unity, Workday, Zoom, Zoominfo, Zscaler.
+
+=== nvidia_10q.pdf, Page 23 ===
+Visual content from: document_images/nvidia_10q_page_023.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+We believe the China AI market to be a significant opportunity and the existing and new export controls will greatly hinder our ability to address this opportunity
+and will continue to impact our revenue and operational results.
+We continue to execute Data Center compute product introductions, bringing new advanced architectures on a one-year product cadence. We expect to begin
+shipping samples and production units of our new Blackwell Ultra platforms in the second quarter of fiscal year 2026. Our product transitions and sophisticated
+system configurations may create challenges in managing supply and demand. This could result in revenue volatility, quality or production issues, increased
+inventory provisions, warranty costs, or product delays. Customers may postpone purchasing existing products due to frequent new releases or may adopt new
+technologies more gradually than anticipated, affecting our revenue timing and supply chain expenses.
+The recent rise of high-quality open-source foundation models is making advanced AI capabilities broadly accessible. Open-source AI is becoming increasingly
+important across the ecosystem and it is dependent on developer adoption. If the most widely adopted open-source models are developed or deployed on our
+competitors’ platforms, it could significantly weaken the influence of our platform, reduce developer engagement, and limit demand for our products and services.
+Future demand for our platform will depend on our ability to support, scale, and optimize the next generation of AI models—including open-source large
+language models—across our full stack of software and hardware offerings.
+The availability of data centers, energy, and capital to support the buildout of NVIDIA AI infrastructure by our customers is crucial, and any shortage of these
+resources could impact our future revenue and financial performance.
+In January 2025, the USG published the “AI Diffusion” IFR in the Federal Register. After a 120-day delayed compliance period, the IFR would have imposed a
+worldwide licensing requirement on all products classified under Export Control Classification Numbers, or ECCNs, 3A090.a, 4A090.a, or corresponding .z
+ECCNs, including all related software and technology. The licensing requirement would have applied to our most popular data center products, such as our H200
+and GB200. In May 2025, the USG announced that it would rescind the AI Diffusion IFR and implement a replacement rule. The scope, timing, and requirements
+of the forthcoming rule remain uncertain. The replacement rule may impose new restrictions on our products or operations and/or add license requirements that
+could have a material impact on our business, operating results, and financial condition.
+Changes in global trade policies, including the new export controls and tariffs, have increased the complexity and cost of our supply chain and may continue to
+do so. Ongoing uncertainty regarding the scope and application of such measures may adversely affect investment decisions by us and our partners, disrupt
+supply chain operations, and impact the timing and volume of customer purchases due to challenges in forecasting future costs and demand.
+We plan to increase our U.S.-based manufacturing and invest in specialized equipment and processes to support domestic production. This move is expected to
+strengthen our supply chain, boost resiliency and redundancy, and meet the growing demand for AI infrastructure. Our ability to increase manufacturing
+capabilities will depend on the domestic manufacturing ecosystem's capacity to ramp production supply to the required volume and on a timely basis.
+Macroeconomic factors, including tariffs, inflation, interest rate changes, capital market volatility, global supply chain constraints, and global economic and
+geopolitical developments, have direct and indirect impacts on our results of operations, particularly demand for our products. While difficult to isolate and
+quantify, these macroeconomic factors impact our supply chain and manufacturing costs, employee wages, costs for capital equipment and value of our
+investments. Our product and solution pricing generally does not fluctuate with short-term changes in our costs. Within our supply chain, we continuously
+manage product availability and costs with our vendors.
+Refer to “Item 1A. Risk Factors” for a discussion of these factors and other risks.
+First Quarter of Fiscal Year 2026 Summary
+Three Months Ended
+Quarter-over-Quarter
+Change
+Year-over-Year
+Change
+ 
+Apr 27, 2025
+Jan 26, 2025
+Apr 28, 2024
+($ in millions, except per share data)
+Revenue
+$
+44,062 
+$
+39,331 
+$
+26,044 
+12  %
+69  %
+Gross margin
+60.5 %
+73.0 %
+78.4 %
+(12.5) pts
+(17.9) pts
+Operating expenses
+$
+5,030 
+$
+4,689 
+$
+3,497 
+7  %
+44  %
+Operating income
+$
+21,638 
+$
+24,034 
+$
+16,909 
+(10) %
+28  %
+Net income
+$
+18,775 
+$
+22,091 
+$
+14,881 
+(15) %
+26  %
+Net income per diluted share
+$
+0.76 
+$
+0.89 
+$
+0.60 
+(15) %
+27  %
+23
+
+Table Data:
+Revenue | $ | 44,062 |  |  | $ | 39,331 |  |  | $ | 26,044 |  |  | 12 | % |  | 69 | %
+Gross margin | 60.5 |  | % |  | 73.0 |  | % |  | 78.4 |  | % |  | (12.5) | pts |  | (17.9) | pts
+Operating expenses | $ | 5,030 |  |  | $ | 4,689 |  |  | $ | 3,497 |  |  | 7 | % |  | 44 | %
+Operating income | $ | 21,638 |  |  | $ | 24,034 |  |  | $ | 16,909 |  |  | (10) | % |  | 28 | %
+Net income | $ | 18,775 |  |  | $ | 22,091 |  |  | $ | 14,881 |  |  | (15) | % |  | 26 | %
+Net income per diluted share | $ | 0.76 |  |  | $ | 0.89 |  |  | $ | 0.60 |  |  | (15) | % |  | 27 | %
+
+Structured Layout:
+We believe the China AI market to be a significant opportunity and the existing and new export controls will greatly hinder our ability to address this opportunity
+and will continue to impact our revenue and operational results.
+
+We continue to execute Data Center compute product introductions, bringing new advanced architectures on a one-year product cadence. We expect to begin
+shipping samples and production units of our new Blackwell Ultra platforms in the second quarter of fiscal year 2026. Our product transitions and sophisticated
+system configurations may create challenges in managing supply and demand. This could result in revenue volatility, quality or production issues, increased
+inventory provisions, warranty costs, or product delays. Customers may postpone purchasing existing products due to frequent new releases or may adopt new
+technologies more gradually than anticipated, affecting our revenue timing and supply chain expenses.
+
+The recent rise of high-quality open-source foundation models is making advanced AI capabilities broadly accessible. Open-source AI is becoming increasingly
+important across the ecosystem and it is dependent on developer adoption. If the most widely adopted open-source models are developed or deployed on our
+competitors’ platforms, it could significantly weaken the influence of our platform, reduce developer engagement, and limit demand for our products and services.
+Future demand for our platform will depend on our ability to support, scale, and optimize the next generation of AI models—including open-source large
+language models—across our full stack of software and hardware offerings.
+
+The availability of data centers, energy, and capital to support the buildout of NVIDIA AI infrastructure by our customers is crucial, and any shortage of these
+resources could impact our future revenue and financial performance.
+
+In January 2025, the USG published the “AI Diffusion” IFR in the Federal Register. After a 120-day delayed compliance period, the IFR would have imposed a
+worldwide licensing requirement on all products classified under Export Control Classification Numbers, or ECCNs, 3A090.a, 4A090.a, or corresponding .z
+ECCNs, including all related software and technology. The licensing requirement would have applied to our most popular data center products, such as our H200
+and GB200. In May 2025, the USG announced that it would rescind the AI Diffusion IFR and implement a replacement rule. The scope, timing, and requirements
+of the forthcoming rule remain uncertain. The replacement rule may impose new restrictions on our products or operations and/or add license requirements that
+could have a material impact on our business, operating results, and financial condition.
+
+Changes in global trade policies, including the new export controls and tariffs, have increased the complexity and cost of our supply chain and may continue to
+do so. Ongoing uncertainty regarding the scope and application of such measures may adversely affect investment decisions by us and our partners, disrupt
+supply chain operations, and impact the timing and volume of customer purchases due to challenges in forecasting future costs and demand.
+
+We plan to increase our U.S.-based manufacturing and invest in specialized equipment and processes to support domestic production. This move is expected to
+strengthen our supply chain, boost resiliency and redundancy, and meet the growing demand for AI infrastructure. Our ability to increase manufacturing
+capabilities will depend on the domestic manufacturing ecosystem's capacity to ramp production supply to the required volume and on a timely basis.
+
+Macroeconomic factors, including tariffs, inflation, interest rate changes, capital market volatility, global supply chain constraints, and global economic and
+geopolitical developments, have direct and indirect impacts on our results of operations, particularly demand for our products. While difficult to isolate and
+quantify, these macroeconomic factors impact our supply chain and manufacturing costs, employee wages, costs for capital equipment and value of our
+investments. Our product and solution pricing generally does not fluctuate with short-term changes in our costs. Within our supply chain, we continuously
+manage product availability and costs with our vendors.
+
+Refer to “Item 1A. Risk Factors” for a discussion of these factors and other risks.
+
+First Quarter of Fiscal Year 2026 Summary
+
+Three Months Ended
+Quarter-over-Quarter
+
+Change
+
+Year-over-Year
+
+Change
+ 
+Apr 27, 2025
+Jan 26, 2025
+Apr 28, 2024
+
+($ in millions, except per share data)
+Revenue
+$
+44,062 
+$
+39,331 
+$
+26,044 
+12  %
+69  %
+Gross margin
+60.5 %
+73.0 %
+78.4 %
+(12.5) pts
+(17.9) pts
+Operating expenses
+$
+5,030 
+$
+4,689 
+$
+3,497 
+7  %
+44  %
+Operating income
+$
+21,638 
+$
+24,034 
+$
+16,909 
+(10) %
+28  %
+Net income
+$
+18,775 
+$
+22,091 
+$
+14,881 
+(15) %
+26  %
+Net income per diluted share
+$
+0.76 
+$
+0.89 
+$
+0.60 
+(15) %
+27  %
+
+23
+
+=== jpm_midyear.pdf, Page 24 ===
+Visual content from: document_images/jpm_midyear_page_024.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+24 
+2025 MID-YEAR OUTLOOK
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+The uncertainty surrounding tariff policy has distracted 
+investors from another important secular trend: 
+artificial intelligence. 
+Even before “Liberation Day,” AI-linked stocks hit a wall 
+during the March sell-off in U.S. equity markets. Twenty 
+companies – nearly two-thirds of them exposed to AI – 
+accounted for 80% of the year-to-date peak-to-trough 
+losses in the S&P 500 before April 2. 
+No one could miss the spark for the AI stock sell-off: 
+Chinese startup DeepSeek launched a new AI model. 
+(Two quick definitions: Models are a category of 
+software, while the semiconductor chips that power the 
+models are hardware.) 
+DeepSeek challenged many of investors’ prevailing 
+assumptions about the resources needed to develop 
+high-performing AI models (e.g., capital, leading-edge 
+semiconductor chips and power). In other words, 
+DeepSeek could accomplish quite a lot, and at a much 
+lower cost than its competitors. 
+In the wake of the DeepSeek news, investors questioned 
+whether the so-called hyperscalers (providers of cloud 
+14 Empirical Research Partners (2025). Hyperscalers, Hyperspenders, Hyperextended. 
+computing, operators of data centers) would continue 
+their aggressive capex – and whether, and when, these 
+investments would pay off. 
+Hyperscalers, including Amazon and Meta, say they are 
+full steam ahead. Wall Street analysts are now penciling 
+in nearly 33% capex growth from the four major 
+hyperscalers over 2025 versus estimates of just over 
+20% capex growth at the start of the year.14 
+Confidence in greater 
+AI-driven productivity 
+We feel confident that AI will catalyze substantial 
+productivity gains for businesses, consumers and the 
+economy as a whole. Large language models can now 
+deliver PhD-level outputs, while their costs have declined 
+by between 80% and 99%. Further, users are increasingly 
+able to optimize their mixes of cost and performance. 
+Economic history is replete with examples of technologies 
+that enabled adoption after costs declined dramatically 
+(e.g., the Bessemer process of mass producing steel 
+from molten iron, air travel, personal computers and 
+semiconductors, mobile phones). 
+WHY ISN’T ANYONE TALKING ABOUT AI ANYMORE?
+
+Structured Layout:
+24 
+2025 MID-YEAR OUTLOOK
+
+The uncertainty surrounding tariff policy has distracted 
+investors from another important secular trend: 
+artificial intelligence.
+
+Even before “Liberation Day,” AI-linked stocks hit a wall 
+during the March sell-off in U.S. equity markets. Twenty 
+companies – nearly two-thirds of them exposed to AI – 
+accounted for 80% of the year-to-date peak-to-trough 
+losses in the S&P 500 before April 2.
+
+No one could miss the spark for the AI stock sell-off: 
+Chinese startup DeepSeek launched a new AI model. 
+(Two quick definitions: Models are a category of 
+software, while the semiconductor chips that power the 
+models are hardware.)
+
+DeepSeek challenged many of investors’ prevailing 
+assumptions about the resources needed to develop 
+high-performing AI models (e.g., capital, leading-edge 
+semiconductor chips and power). In other words, 
+DeepSeek could accomplish quite a lot, and at a much 
+lower cost than its competitors.
+
+In the wake of the DeepSeek news, investors questioned 
+whether the so-called hyperscalers (providers of cloud
+
+14 Empirical Research Partners (2025). Hyperscalers, Hyperspenders, Hyperextended.
+
+computing, operators of data centers) would continue 
+their aggressive capex – and whether, and when, these 
+investments would pay off.
+
+Hyperscalers, including Amazon and Meta, say they are 
+full steam ahead. Wall Street analysts are now penciling 
+in nearly 33% capex growth from the four major 
+hyperscalers over 2025 versus estimates of just over 
+20% capex growth at the start of the year.14
+
+Confidence in greater 
+AI-driven productivity
+
+We feel confident that AI will catalyze substantial 
+productivity gains for businesses, consumers and the 
+economy as a whole. Large language models can now 
+deliver PhD-level outputs, while their costs have declined 
+by between 80% and 99%. Further, users are increasingly 
+able to optimize their mixes of cost and performance. 
+Economic history is replete with examples of technologies 
+that enabled adoption after costs declined dramatically 
+(e.g., the Bessemer process of mass producing steel 
+from molten iron, air travel, personal computers and 
+semiconductors, mobile phones).
+
+WHY ISN’T ANYONE TALKING ABOUT AI ANYMORE?

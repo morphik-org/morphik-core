@@ -1,0 +1,883 @@
+=== CONTEXT DEBUG FOR QUESTION ===
+Question: Between the Magnificent 7’s expected EPS growth for 2025 and the US corporate mid-single-digit EPS growth forecast over the next 12 months, which forecast is higher and what percentage of its market capitalization did Goldman Sachs plan to repurchase under its share repurchase program?
+
+Context:
+=== jpm_midyear.pdf, Page 13 ===
+Visual content from: document_images/jpm_midyear_page_013.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+13 
+2025 MID-YEAR OUTLOOK
+SHOULD INVESTORS CHEER OR FEAR TRUMP 2.0?
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Will deregulation make a difference in the real economy? 
+While Congressional legislation will likely be a 
+challenge, deregulation is quietly delivering a positive 
+impact on the banking sector. We think investors may 
+underestimate its benefits. 
+Currently, large U.S. banks have built more than $200 
+billion of excess capital over current requirements. 
+Now that capital rules are likely to be softened, this 
+excess is likely to be deployed across three channels: 
+private sector loan growth, share buybacks and 
+banking sector consolidation. 
+The first channel, private sector loan growth, is a priority 
+of U.S. Treasury Secretary Scott Bessent. Before the 
+tariff shock, commercial and industrial loan demand was 
+inflecting higher, and the Trump administration would 
+like to accelerate the pace. On the buyback front, in Q1, 
+Goldman Sachs announced a share repurchase plan 
+worth 26% of its market capitalization. 
+Additionally, we expect that cost synergies, the benefits 
+of scaling up compliance technology demands and 
+geographic diversification will spur further banking 
+sector consolidation. U.S. regulators recently approved 
+Capital One’s purchase of Discover, which could bode 
+well for bank M&A activity. 
+Bank stocks should benefit over the medium term, and 
+existing preferred equity could be supported by less 
+supply going forward. Indeed, if the Trump administration 
+begins to focus on the pro-growth aspects of its agenda in 
+the second half of 2025, bank stocks may be among the 
+high-profile beneficiaries. 
+LOAN OFFICER SURVEY RESPONSES HIGHLIGHT ACCELERATING 
+COMMERCIAL AND INDUSTRIAL LOAN DEMAND 
+Net % of banks reporting stronger C&I loan demand, 1-year forward 
+C&I loan growth, % 
+80% 
+60 
+40 
+20 
+0 
+-20 
+-40 
+-60 
+-80 
+40% 
+30 
+20 
+10 
+0 
+-10 
+-20 
+-30 
+’90 
+’95 
+’00 
+’05 
+’10 
+’15 
+’20 
+’25
+  Net % of banks reporting stronger C&l loan demand (large & medium ﬁrms) (1-year forward, LHS)
+  Net % of banks reporting stronger C&l loan demand (small ﬁrms) (1-year forward, LHS)
+  C&l loan growth (RHS) 
+Sources: Federal Reserve Board, Haver Analytics. Data as of March 31, 2025.
+
+Structured Layout:
+13 
+2025 MID-YEAR OUTLOOK
+
+SHOULD INVESTORS CHEER OR FEAR TRUMP 2.0?
+
+Will deregulation make a difference in the real economy?
+
+While Congressional legislation will likely be a 
+challenge, deregulation is quietly delivering a positive 
+impact on the banking sector. We think investors may 
+underestimate its benefits.
+
+Currently, large U.S. banks have built more than $200 
+billion of excess capital over current requirements. 
+Now that capital rules are likely to be softened, this 
+excess is likely to be deployed across three channels: 
+private sector loan growth, share buybacks and 
+banking sector consolidation.
+
+The first channel, private sector loan growth, is a priority 
+of U.S. Treasury Secretary Scott Bessent. Before the 
+tariff shock, commercial and industrial loan demand was 
+inflecting higher, and the Trump administration would 
+like to accelerate the pace. On the buyback front, in Q1,
+
+Goldman Sachs announced a share repurchase plan 
+worth 26% of its market capitalization.
+
+Additionally, we expect that cost synergies, the benefits 
+of scaling up compliance technology demands and 
+geographic diversification will spur further banking 
+sector consolidation. U.S. regulators recently approved 
+Capital One’s purchase of Discover, which could bode 
+well for bank M&A activity.
+
+Bank stocks should benefit over the medium term, and 
+existing preferred equity could be supported by less 
+supply going forward. Indeed, if the Trump administration 
+begins to focus on the pro-growth aspects of its agenda in 
+the second half of 2025, bank stocks may be among the 
+high-profile beneficiaries.
+
+LOAN OFFICER SURVEY RESPONSES HIGHLIGHT ACCELERATING 
+COMMERCIAL AND INDUSTRIAL LOAN DEMAND
+
+Net % of banks reporting stronger C&I loan demand, 1-year forward 
+C&I loan growth, %
+
+80%
+
+60
+
+40
+
+20
+
+0
+
+-20
+
+-40
+
+-60
+
+-80
+
+40%
+
+30
+
+20
+
+10
+
+0
+
+-10
+
+-20
+
+-30 
+’90 
+’95 
+’00 
+’05 
+’10 
+’15 
+’20 
+’25
+
+Net % of banks reporting stronger C&l loan demand (large & medium ﬁrms) (1-year forward, LHS)
+
+Net % of banks reporting stronger C&l loan demand (small ﬁrms) (1-year forward, LHS)
+  C&l loan growth (RHS)
+
+Sources: Federal Reserve Board, Haver Analytics. Data as of March 31, 2025.
+
+=== jpm_midyear.pdf, Page 14 ===
+Visual content from: document_images/jpm_midyear_page_014.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+14 
+2025 MID-YEAR OUTLOOK
+SHOULD INVESTORS CHEER OR FEAR TRUMP 2.0?
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Will tech stocks get 
+a second wind? 
+Tech and tech-adjacent stocks have an outsized 
+influence on U.S. equity market performance. As of 
+May 9, the technology sector is down over 8%, and the 
+Magnificent 7 (Mag 7) stocks have fallen over 12% year­
+to-date. 
+But tech stocks could get a second wind: Company 
+earnings are strong, and valuations are not excessive. 
+What’s more, we’re big believers in the long-term 
+potential of AI, as we explore in a later section. 
+The Magnificent 7 is expected to deliver 15% EPS growth 
+in 2025 versus 8% EPS growth for the rest of the market. 
+So far this year, the tech stars have underperformed 
+the rest of the S&P 500, as investors worried that the 
+companies’ capex plans might be too aggressive. 
+On the valuation front, the Mag 7 stocks do not appear 
+cheap, at a 26x forward price-to-earnings multiple 
+(versus 20x for the broad market). But valuations 
+relative to the rest of the market are at their lowest 
+levels of the last 10 years. Another positive signal is the 
+Trump Administration’s decision to exempt, for now, 
+semiconductors and other electronic products from 
+tariffs. Indeed, the United States enjoys a tremendous 
+comparative advantage in technological innovation. 
+Eroding that strength by raising the cost of tech inputs 
+would be misguided, in our view. 
+To return to our opening question: Should investors 
+cheer or fear Trump 2.0? Tariff policy and the 
+uncertainty it generates will pressure economic growth 
+and corporate profits for the better part of the coming 
+year, we believe. But that may not stop a bull market. 
+The administration’s more investor-friendly proposals 
+(including lower interest rates, lower energy prices and 
+less regulation) may well materialize in the second half 
+of 2025. 
+Investors should get comfortable with uncertainty and 
+volatility. Choppy markets may last for a while, but 
+key developed market equity markets (United States, 
+Europe, Japan) should make new highs by the middle 
+of next year. After all, equity markets love to climb the 
+proverbial “wall of worry.”
+
+Structured Layout:
+14 
+2025 MID-YEAR OUTLOOK
+
+SHOULD INVESTORS CHEER OR FEAR TRUMP 2.0?
+
+Will tech stocks get 
+a second wind?
+
+Tech and tech-adjacent stocks have an outsized 
+influence on U.S. equity market performance. As of 
+May 9, the technology sector is down over 8%, and the 
+Magnificent 7 (Mag 7) stocks have fallen over 12% year­
+to-date.
+
+But tech stocks could get a second wind: Company 
+earnings are strong, and valuations are not excessive. 
+What’s more, we’re big believers in the long-term 
+potential of AI, as we explore in a later section.
+
+The Magnificent 7 is expected to deliver 15% EPS growth 
+in 2025 versus 8% EPS growth for the rest of the market. 
+So far this year, the tech stars have underperformed 
+the rest of the S&P 500, as investors worried that the 
+companies’ capex plans might be too aggressive.
+
+On the valuation front, the Mag 7 stocks do not appear 
+cheap, at a 26x forward price-to-earnings multiple 
+(versus 20x for the broad market). But valuations 
+relative to the rest of the market are at their lowest 
+levels of the last 10 years. Another positive signal is the 
+Trump Administration’s decision to exempt, for now, 
+semiconductors and other electronic products from 
+tariffs. Indeed, the United States enjoys a tremendous 
+comparative advantage in technological innovation. 
+Eroding that strength by raising the cost of tech inputs 
+would be misguided, in our view.
+
+To return to our opening question: Should investors 
+cheer or fear Trump 2.0? Tariff policy and the 
+uncertainty it generates will pressure economic growth 
+and corporate profits for the better part of the coming 
+year, we believe. But that may not stop a bull market. 
+The administration’s more investor-friendly proposals 
+(including lower interest rates, lower energy prices and 
+less regulation) may well materialize in the second half 
+of 2025.
+
+Investors should get comfortable with uncertainty and 
+volatility. Choppy markets may last for a while, but 
+key developed market equity markets (United States, 
+Europe, Japan) should make new highs by the middle 
+of next year. After all, equity markets love to climb the 
+proverbial “wall of worry.”
+
+=== nvidia_10q.pdf, Page 28 ===
+Visual content from: document_images/nvidia_10q_page_028.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Liquidity and Capital Resources
+ 
+Apr 27, 2025
+Jan 26, 2025
+ 
+(In millions)
+Cash and cash equivalents
+$
+15,234 
+$
+8,589 
+Marketable securities
+38,457 
+34,621 
+Cash, cash equivalents and marketable securities
+$
+53,691 
+$
+43,210 
+ 
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+ 
+(In millions)
+Net cash provided by operating activities
+$
+27,414 
+$
+15,345 
+Net cash used in investing activities
+$
+(5,216)
+$
+(5,693)
+Net cash used in financing activities
+$
+(15,553)
+$
+(9,345)
+Our investment policy requires the purchase of highly-rated fixed income securities, the diversification of investment types and credit exposures, and certain
+maturity limits on our portfolio.
+Cash provided by operating activities increased in the first quarter of fiscal year 2026 compared to the first quarter of fiscal year 2025, due to higher revenue and
+timing of cash collections.
+Cash used in investing activities decreased in the first quarter of fiscal year 2026 compared to the first quarter of fiscal year 2025, primarily driven by lower net
+purchases of marketable securities, partially offset by higher purchases of property and equipment.
+Cash used in financing activities increased in the first quarter of fiscal year 2026 compared to the first quarter of fiscal year 2025, mainly due to higher share
+repurchases.
+Liquidity
+Our primary sources of liquidity include cash, cash equivalents, marketable securities, and cash generated by our operations. As of April 27, 2025, we had $53.7
+billion in cash, cash equivalents, and marketable securities. We believe that we have sufficient liquidity to meet our operating requirements for at least the next
+twelve months and thereafter for the foreseeable future, including our future supply obligations and share purchases. We continuously evaluate our liquidity and
+capital resources, including our access to external capital, to ensure we can finance future capital requirements.
+Our marketable securities consist of publicly-held equity securities, debt securities issued by the U.S. government and its agencies, highly-rated corporations
+and financial institutions, and foreign government entities, as well as certificates of deposit issued by highly-rated financial institutions. These marketable
+securities are primarily denominated in U.S. dollars. Refer to Note 5 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this
+Quarterly Report on Form 10-Q for additional information.
+Except for approximately $1.7 billion of cash, cash equivalents, and marketable securities held outside the U.S. for which we have not accrued any related
+foreign or state taxes if we repatriate these amounts to the U.S., substantially all of our cash, cash equivalents and marketable securities held outside the U.S. at
+the end of the first quarter of fiscal year 2026 are available for use in the U.S. without incurring additional U.S. federal income taxes. We plan to make two
+estimated federal and state tax payments in the second quarter of fiscal year 2026, a substantial increase as compared with no estimated tax payments in the
+first quarter of fiscal year 2026.
+Capital Return to Shareholders
+We repurchased 126 million shares of our common stock for $14.5 billion during the first quarter of fiscal years 2026. As of April 27, 2025, we were authorized,
+subject to certain specifications, to repurchase up to $24.3 billion of our common stock.
+From April 28, 2025 through May 23, 2025, we repurchased 19 million shares for $2.3 billion pursuant to a pre-established trading plan. Our share repurchase
+program aims to offset dilution from shares issued to employees while maintaining adequate liquidity to meet our operating requirements. We may pursue
+additional share repurchases as we weigh market factors and other investment opportunities.
+We paid cash dividends to our shareholders of $244 million and $98 million during the first quarter of fiscal years 2026 and 2025, respectively. The payment of
+future cash dividends is subject to our Board of Directors' continuing determination that the declaration of dividends is in the best interests of our shareholders.
+28
+
+Table Data:
+Cash and cash equivalents | $ | 15,234 |  | $ | 8,589
+Marketable securities | 38,457 |  |  | 34,621 | 
+Cash, cash equivalents and marketable securities | $ | 53,691 |  | $ | 43,210
+Net cash provided by operating activities | $ | 27,414 |  | $ | 15,345
+Net cash used in investing activities | $ | (5,216) |  | $ | (5,693)
+Net cash used in financing activities | $ | (15,553) |  | $ | (9,345)
+
+Structured Layout:
+Liquidity and Capital Resources
+
+Apr 27, 2025
+Jan 26, 2025
+
+(In millions)
+Cash and cash equivalents
+$
+15,234 
+$
+8,589 
+Marketable securities
+38,457 
+34,621
+
+Cash, cash equivalents and marketable securities
+$
+53,691 
+$
+43,210
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+
+(In millions)
+Net cash provided by operating activities
+$
+27,414 
+$
+15,345 
+Net cash used in investing activities
+$
+(5,216)
+$
+(5,693)
+Net cash used in financing activities
+$
+(15,553)
+$
+(9,345)
+
+Our investment policy requires the purchase of highly-rated fixed income securities, the diversification of investment types and credit exposures, and certain
+maturity limits on our portfolio.
+
+Cash provided by operating activities increased in the first quarter of fiscal year 2026 compared to the first quarter of fiscal year 2025, due to higher revenue and
+timing of cash collections.
+
+Cash used in investing activities decreased in the first quarter of fiscal year 2026 compared to the first quarter of fiscal year 2025, primarily driven by lower net
+purchases of marketable securities, partially offset by higher purchases of property and equipment.
+
+Cash used in financing activities increased in the first quarter of fiscal year 2026 compared to the first quarter of fiscal year 2025, mainly due to higher share
+repurchases.
+
+Liquidity
+
+Our primary sources of liquidity include cash, cash equivalents, marketable securities, and cash generated by our operations. As of April 27, 2025, we had $53.7
+billion in cash, cash equivalents, and marketable securities. We believe that we have sufficient liquidity to meet our operating requirements for at least the next
+twelve months and thereafter for the foreseeable future, including our future supply obligations and share purchases. We continuously evaluate our liquidity and
+capital resources, including our access to external capital, to ensure we can finance future capital requirements.
+
+Our marketable securities consist of publicly-held equity securities, debt securities issued by the U.S. government and its agencies, highly-rated corporations
+and financial institutions, and foreign government entities, as well as certificates of deposit issued by highly-rated financial institutions. These marketable
+securities are primarily denominated in U.S. dollars. Refer to Note 5 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this
+Quarterly Report on Form 10-Q for additional information.
+
+Except for approximately $1.7 billion of cash, cash equivalents, and marketable securities held outside the U.S. for which we have not accrued any related
+foreign or state taxes if we repatriate these amounts to the U.S., substantially all of our cash, cash equivalents and marketable securities held outside the U.S. at
+the end of the first quarter of fiscal year 2026 are available for use in the U.S. without incurring additional U.S. federal income taxes. We plan to make two
+estimated federal and state tax payments in the second quarter of fiscal year 2026, a substantial increase as compared with no estimated tax payments in the
+first quarter of fiscal year 2026.
+
+Capital Return to Shareholders
+
+We repurchased 126 million shares of our common stock for $14.5 billion during the first quarter of fiscal years 2026. As of April 27, 2025, we were authorized,
+subject to certain specifications, to repurchase up to $24.3 billion of our common stock.
+
+From April 28, 2025 through May 23, 2025, we repurchased 19 million shares for $2.3 billion pursuant to a pre-established trading plan. Our share repurchase
+program aims to offset dilution from shares issued to employees while maintaining adequate liquidity to meet our operating requirements. We may pursue
+additional share repurchases as we weigh market factors and other investment opportunities.
+
+We paid cash dividends to our shareholders of $244 million and $98 million during the first quarter of fiscal years 2026 and 2025, respectively. The payment of
+future cash dividends is subject to our Board of Directors' continuing determination that the declaration of dividends is in the best interests of our shareholders.
+
+28
+
+=== jpm_midyear.pdf, Page 10 ===
+Visual content from: document_images/jpm_midyear_page_010.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+10 
+2025 MID-YEAR OUTLOOK
+SHOULD INVESTORS CHEER OR FEAR TRUMP 2.0?
+ 
+ 
+ 
+As we’ve said – and as investors well know – the pain 
+of Trump 2.0 arrived early for markets. U.S. policy 
+uncertainty has spiked, and business and household 
+confidence has collapsed, largely due to on-again, off-
+again announcements around tariff policy. Meanwhile, 
+the expected market benefits of Trump 2.0 – increased 
+M&A and capital market activity, additional corporate 
+tax cuts and extensive deregulation – have so far failed 
+to materialize. 
+No one can predict the ultimate size, scope or duration 
+of future tariffs, by the United States or its trading 
+partners. But their general outlines clearly signal an 
+abrupt and chaotic reversal of the post–World War 
+II trend toward free trade. Of all the administration’s 
+policies, tariffs spark the greatest investor unease. That’s 
+because higher tariffs, all else equal, lead to slower 
+growth, higher prices and lower corporate profits. 
+Our latest thinking suggests that the U.S. effective tariff 
+rate (after deals, exclusions and substitution effects are 
+accounted for) will settle in the mid-teens. That would 
+be the highest levels since the Smoot-Hawley era of the 
+early 1930s. Despite tariffs, we believe the U.S. economy 
+can manage slightly positive growth, with corporate 
+earnings per share growth in the mid-single digits over 
+the next 12 months. Tariff rates that remained at their 
+initial “Liberation Day” levels (the April 2 introduction of 
+new U.S. tariffs) would be enough to knock the U.S. and 
+likely global economies into recession this year. 
+WE ESTIMATE THAT THE U.S. EFFECTIVE TARIFF RATE WILL SETTLE IN THE MID-TEENS 
+U.S. effective tariff rate, % 
+30% 
+25% 
+20% 
+15% 
+10% 
+5% 
+0% 
+Tariﬀ rate 
+1900 
+1950 
+2000 
+    “Liberation Day” tariﬀ rate
+    Estimated range
+    Non-Liberation Day tariﬀ rate 
+Sources: Michael Cembalest, J.P. Morgan Asset & Wealth Management, Tax Foundation, JPM Global Economics, GS Global Investment Research. Data as of April 15, 2025. 
+“Liberation Day” tariff rate is as of April 2, and does not include exclusions or substitution effects. The estimated tariff range assumes a universal increase in the tariff 
+rate of 10% and announced exclusions with +/-5% to account for uncertainty. Non-Liberation Day tariffs include +25% global autos; +20% on China; +25% on Canada and 
+Mexico non-USMCA;  +25% on steel and aluminum.
+
+Table Data:
+| “Lib
+Tariff rate
+No |
+
+Structured Layout:
+10 
+2025 MID-YEAR OUTLOOK
+
+SHOULD INVESTORS CHEER OR FEAR TRUMP 2.0?
+
+As we’ve said – and as investors well know – the pain 
+of Trump 2.0 arrived early for markets. U.S. policy 
+uncertainty has spiked, and business and household 
+confidence has collapsed, largely due to on-again, off-
+again announcements around tariff policy. Meanwhile, 
+the expected market benefits of Trump 2.0 – increased 
+M&A and capital market activity, additional corporate 
+tax cuts and extensive deregulation – have so far failed 
+to materialize.
+
+No one can predict the ultimate size, scope or duration 
+of future tariffs, by the United States or its trading 
+partners. But their general outlines clearly signal an 
+abrupt and chaotic reversal of the post–World War 
+II trend toward free trade. Of all the administration’s
+
+policies, tariffs spark the greatest investor unease. That’s 
+because higher tariffs, all else equal, lead to slower 
+growth, higher prices and lower corporate profits.
+
+Our latest thinking suggests that the U.S. effective tariff 
+rate (after deals, exclusions and substitution effects are 
+accounted for) will settle in the mid-teens. That would 
+be the highest levels since the Smoot-Hawley era of the 
+early 1930s. Despite tariffs, we believe the U.S. economy 
+can manage slightly positive growth, with corporate 
+earnings per share growth in the mid-single digits over 
+the next 12 months. Tariff rates that remained at their 
+initial “Liberation Day” levels (the April 2 introduction of 
+new U.S. tariffs) would be enough to knock the U.S. and 
+likely global economies into recession this year.
+
+WE ESTIMATE THAT THE U.S. EFFECTIVE TARIFF RATE WILL SETTLE IN THE MID-TEENS
+
+U.S. effective tariff rate, %
+
+30%
+
+25%
+
+20%
+
+15%
+
+10%
+
+5%
+
+0%
+
+Tariﬀ rate
+
+1900 
+1950 
+2000
+
+“Liberation Day” tariﬀ rate
+
+Estimated range
+
+Non-Liberation Day tariﬀ rate
+
+Sources: Michael Cembalest, J.P. Morgan Asset & Wealth Management, Tax Foundation, JPM Global Economics, GS Global Investment Research. Data as of April 15, 2025. 
+“Liberation Day” tariff rate is as of April 2, and does not include exclusions or substitution effects. The estimated tariff range assumes a universal increase in the tariff 
+rate of 10% and announced exclusions with +/-5% to account for uncertainty. Non-Liberation Day tariffs include +25% global autos; +20% on China; +25% on Canada and 
+Mexico non-USMCA;  +25% on steel and aluminum.
+
+=== nvidia_10q.pdf, Page 37 ===
+Visual content from: document_images/nvidia_10q_page_037.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+(1)     Average price paid per share includes broker commissions, but excludes our liability under the 1% excise tax on the net amount of our share repurchases required by the Inflation Reduction Act of 2022.
+From April 28, 2025 through May 23, 2025, we repurchased 19 million shares for $2.3 billion pursuant to a pre-established trading plan. Our share repurchase
+program aims to offset dilution from shares issued to employees while maintaining adequate liquidity to meet our operating requirements. We may pursue
+additional share repurchases as we weigh market factors and other investment opportunities.
+Employee Equity Incentive Program Share Withholding
+We withhold shares of our common stock associated with net share settlements to cover tax withholding obligations of awards under our employee equity
+incentive program. During the first quarter of fiscal year 2026, we withheld approximately 13 million shares for a total value of $1.5 billion through net share
+settlements.
+Recent Sales of Unregistered Securities and Use of Proceeds
+On March 14, 2025, we acquired a company and agreed to issue to key employees a total of 363,818 shares of our common stock, valued at $44.3 million
+based on our closing stock price on the acquisition date. The shares will be issued in installments commencing in fiscal year 2026 and through fiscal year 2030.
+On March 24, 2025, we acquired a company and issued to key employees a total of 686,446 shares of our common stock, valued at $83.3 million based on our
+closing stock price on the issuance date.
+The above securities were issued in transactions not involving a public offering pursuant to an exemption from registration set forth in Section 4(a)(2) of the
+Securities Act (and Regulation D or Regulation S promulgated thereunder).
+Item 5. Other Information
+The following members of our Board of Directors and/or officers adopted, modified, or terminated a trading arrangement that is intended to satisfy the affirmative
+defense conditions of Rule 10b5-1(c):
+Name
+Title of Director or Officer
+Action
+Date
+Total Shares of
+Common Stock to be
+Sold
+Expiration Date
+Colette M. Kress
+Executive Vice President and
+Chief Financial Officer
+Adoption
+March 4, 2025
+500,000
+March 24, 2026
+A. Brooke Seawell
+Director
+Adoption
+March 19, 2025
+1,153,049*
+July 31, 2025
+Jen-Hsun Huang
+President, Chief Executive Officer
+and Director
+Adoption
+March 20, 2025
+6,000,000
+December 31, 2025
+*    Estimated assuming our closing stock price as of April 25, 2025. The number of shares is based on an estimate because the plan specifies a formulaic dollar
+amount of shares to be sold.
+37
+
+Table Data:
+Colette M. Kress |  | Executive Vice President and
+Chief Financial Officer |  | Adoption |  | March 4, 2025 |  | 500,000 |  | March 24, 2026
+A. Brooke Seawell |  | Director |  | Adoption |  | March 19, 2025 |  | 1,153,049* |  | July 31, 2025
+Jen-Hsun Huang |  | President, Chief Executive Officer
+and Director |  | Adoption |  | March 20, 2025 |  | 6,000,000 |  | December 31, 2025
+
+Structured Layout:
+(1)     Average price paid per share includes broker commissions, but excludes our liability under the 1% excise tax on the net amount of our share repurchases required by the Inflation Reduction Act of 2022.
+
+From April 28, 2025 through May 23, 2025, we repurchased 19 million shares for $2.3 billion pursuant to a pre-established trading plan. Our share repurchase
+program aims to offset dilution from shares issued to employees while maintaining adequate liquidity to meet our operating requirements. We may pursue
+additional share repurchases as we weigh market factors and other investment opportunities.
+
+Employee Equity Incentive Program Share Withholding
+
+We withhold shares of our common stock associated with net share settlements to cover tax withholding obligations of awards under our employee equity
+incentive program. During the first quarter of fiscal year 2026, we withheld approximately 13 million shares for a total value of $1.5 billion through net share
+settlements.
+
+Recent Sales of Unregistered Securities and Use of Proceeds
+
+On March 14, 2025, we acquired a company and agreed to issue to key employees a total of 363,818 shares of our common stock, valued at $44.3 million
+based on our closing stock price on the acquisition date. The shares will be issued in installments commencing in fiscal year 2026 and through fiscal year 2030.
+
+On March 24, 2025, we acquired a company and issued to key employees a total of 686,446 shares of our common stock, valued at $83.3 million based on our
+closing stock price on the issuance date.
+
+The above securities were issued in transactions not involving a public offering pursuant to an exemption from registration set forth in Section 4(a)(2) of the
+Securities Act (and Regulation D or Regulation S promulgated thereunder).
+
+Item 5. Other Information
+
+The following members of our Board of Directors and/or officers adopted, modified, or terminated a trading arrangement that is intended to satisfy the affirmative
+defense conditions of Rule 10b5-1(c):
+
+Name
+Title of Director or Officer
+Action
+Date
+Total Shares of
+Common Stock to be
+
+Sold
+
+Expiration Date
+
+Colette M. Kress
+Executive Vice President and
+
+Chief Financial Officer
+
+Adoption
+March 4, 2025
+500,000
+March 24, 2026
+
+A. Brooke Seawell
+Director
+Adoption
+March 19, 2025
+1,153,049*
+July 31, 2025
+Jen-Hsun Huang
+President, Chief Executive Officer
+
+and Director
+
+Adoption
+March 20, 2025
+6,000,000
+December 31, 2025
+
+*    Estimated assuming our closing stock price as of April 25, 2025. The number of shares is based on an estimate because the plan specifies a formulaic dollar
+amount of shares to be sold.
+
+37
+
+=== jpm_midyear.pdf, Page 28 ===
+Visual content from: document_images/jpm_midyear_page_028.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+28 
+2025 MID-YEAR OUTLOOK
+ 
+ 
+ 
+  
+Most of Wall Street expected an immediate revival in 
+dealmaking and capital market activity in the wake of 
+Donald Trump’s electoral victory. From election night 
+until the end of January, the capital markets subsector 
+(which includes investment banks and alternative 
+asset managers) rallied 10%, doubling the broad 
+market’s 5% rally. 
+Hopes of a dealmaking boom soon met the reality of 
+tariff-driven uncertainty, still-elevated interest rates 
+and choppy equity markets. While private market 
+dealmaking continues at a reasonable pace, the public 
+market arena (notably IPOs) has been very quiet. 
+The capital markets sector has surrendered most of its 
+post-election gains, and expectations for completed U.S. 
+M&A activity have been revised down from 25% growth 
+to just 7% growth.18 We spotted green shoots to start 
+the year (global M&A activity rose 17% year-over-year 
+in the first quarter, driven by sponsor-backed activity). 
+But the prospect of prolonged uncertainty has created 
+a cloudier outlook on the pace for dealmaking, at least 
+over the near term. 
+PUBLIC MARKET LIQUIDITY IS LIMITED, BUT THE OUTLOOK IS SLOWLY IMPROVING 
+Trailing 12-month high yield, leveraged loan and IPO volume as a % of GDP 
+8% 
+7% 
+6% 
+5% 
+4% 
+3% 
+2% 
+1% 
+0% 
+’97
+’99
+’01
+’03
+’05
+’07
+’09
+’11
+’13
+’15
+’17
+’19
+’21
+’23
+’25
+Sources: J.P. Morgan, Bank of America, Bloomberg Finance L.P., Haver Analytics. Data as of April 30, 2025. 
+Note: Liquidity defined as IPO, high yield bonds and leveraged loan issuance. Dashed line represents average. 
+18 Goldman Sachs (March 14, 2025). Policy uncertainty and market volatility create risk to the much anticipated rebound in capital markets activity. 
+WHAT’S THE DEAL WITH DEALMAKING?
+2.9%
+
+Table Data:
+|  |  |  |  |  |  |  | 2.9 |
+
+Structured Layout:
+28 
+2025 MID-YEAR OUTLOOK
+
+Most of Wall Street expected an immediate revival in 
+dealmaking and capital market activity in the wake of 
+Donald Trump’s electoral victory. From election night 
+until the end of January, the capital markets subsector 
+(which includes investment banks and alternative 
+asset managers) rallied 10%, doubling the broad 
+market’s 5% rally.
+
+Hopes of a dealmaking boom soon met the reality of 
+tariff-driven uncertainty, still-elevated interest rates 
+and choppy equity markets. While private market 
+dealmaking continues at a reasonable pace, the public 
+market arena (notably IPOs) has been very quiet.
+
+The capital markets sector has surrendered most of its 
+post-election gains, and expectations for completed U.S. 
+M&A activity have been revised down from 25% growth 
+to just 7% growth.18 We spotted green shoots to start 
+the year (global M&A activity rose 17% year-over-year 
+in the first quarter, driven by sponsor-backed activity). 
+But the prospect of prolonged uncertainty has created 
+a cloudier outlook on the pace for dealmaking, at least 
+over the near term.
+
+PUBLIC MARKET LIQUIDITY IS LIMITED, BUT THE OUTLOOK IS SLOWLY IMPROVING
+
+Trailing 12-month high yield, leveraged loan and IPO volume as a % of GDP
+
+8%
+
+7%
+
+6%
+
+5%
+
+4%
+
+3%
+
+2%
+
+1%
+
+0%
+
+’97
+’99
+’01
+’03
+’05
+’07
+’09
+’11
+’13
+’15
+’17
+’19
+’21
+’23
+’25
+
+Sources: J.P. Morgan, Bank of America, Bloomberg Finance L.P., Haver Analytics. Data as of April 30, 2025. 
+Note: Liquidity defined as IPO, high yield bonds and leveraged loan issuance. Dashed line represents average.
+
+18 Goldman Sachs (March 14, 2025). Policy uncertainty and market volatility create risk to the much anticipated rebound in capital markets activity.
+
+WHAT’S THE DEAL WITH DEALMAKING?
+
+2.9%

@@ -1,0 +1,610 @@
+=== CONTEXT DEBUG FOR QUESTION ===
+Question: Management asserted that Palantir delivered an 85% adjusted gross margin, sub-$450 million of adjusted expenses, and $220 million of net income attributable to common stockholders in Q1 2025; what do the reconciliation tables actually report for those three metrics?
+
+Context:
+=== palantir_q1_investor_presentation.pdf, Page 38 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_038.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Reconciliation of GAAP Earnings Per Share, Diluted to Adjusted Earnings Per Share, Diluted
+(AMOUNTS IN THOUSANDS, EXCEPT PER SHARE AMOUNTS)
+Net Income  Attributable to Common Stockholders
+Stock-Based Compensation
+Add / (Less):
+Employer Payroll Taxes Related to Stock-Based Compensation
+Income Tax Effects and Adjustments [1]
+Adjusted Net Income Attributable to Common Stockholders, Diluted
+Weighted-Average Shares Used in Computing Adjusted Earnings Per Share, Diluted
+Adjusted Earnings Per Share, Diluted
+Q1 2024
+$
+105,530
+125,651
+19,926
+(54,170)
+$
+196,937
+2,400,107
+$
+0.08
+Q1 2025
+$
+214,031
+155,339
+59,323
+(94,288)
+$
+334,405
+2,552,818
+$
+0.13
+Appendix
+[1] 
+Income tax eﬀect is based on an estmated long-term annual eﬀectve tax rate of 23.0% for each of the periods presented. The Company’s estmated long-term annual eﬀectve tax rate excludes certain
+ 
+noncash items, such as stock-based compensaton, and is used in order to provide consistency across periods by eliminatng the eﬀects of certain items, such as changes in the tax valuaton allowance.
+© 2025 Palantr Technologies Inc.
+
+Structured Layout:
+Reconciliation of GAAP Earnings Per Share, Diluted to Adjusted Earnings Per Share, Diluted
+
+(AMOUNTS IN THOUSANDS, EXCEPT PER SHARE AMOUNTS)
+
+Net Income  Attributable to Common Stockholders
+
+Stock-Based Compensation
+
+Add / (Less):
+
+Employer Payroll Taxes Related to Stock-Based Compensation
+
+Income Tax Effects and Adjustments [1]
+
+Adjusted Net Income Attributable to Common Stockholders, Diluted
+
+Weighted-Average Shares Used in Computing Adjusted Earnings Per Share, Diluted
+
+Adjusted Earnings Per Share, Diluted
+
+Q1 2024
+
+$
+105,530
+
+125,651
+
+19,926
+
+(54,170)
+
+$
+196,937
+
+2,400,107
+
+$
+0.08
+
+Q1 2025
+
+$
+214,031
+
+155,339
+
+59,323
+
+(94,288)
+
+$
+334,405
+
+2,552,818
+
+$
+0.13
+
+Appendix
+
+[1] 
+Income tax eﬀect is based on an estmated long-term annual eﬀectve tax rate of 23.0% for each of the periods presented. The Company’s estmated long-term annual eﬀectve tax rate excludes certain
+ 
+noncash items, such as stock-based compensaton, and is used in order to provide consistency across periods by eliminatng the eﬀects of certain items, such as changes in the tax valuaton allowance.
+© 2025 Palantr Technologies Inc.
+
+=== palantir_q1_investor_presentation.pdf, Page 35 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_035.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Reconciliation of Income from Operations to Adjusted Operating Income and Adjusted Operating Margin
+Excluding Stock-Based Compensation and Related Employer Payroll Taxes
+($ THOUSANDS)
+Income  From Operations
+Stock-Based Compensation 
+Add:
+Adjusted Operating Income
+Adjusted Operating Margin
+Employer Payroll Taxes Related to Stock-Based Compensation 
+Appendix
+Q1 2025
+$
+176,048
+155,339
+44%
+$
+390,710
+59,323
+© 2025 Palantr Technologies Inc.
+Q2 2024
+$
+105,339
+141,764
+37%
+$
+253,567
+6,464
+Q3 2024
+$
+113,140
+142,425
+38%
+$
+275,515
+19,950
+Q4 2024
+$
+11,043
+281,798
+45%
+$
+372,522
+79,681
+Q1 2024
+$
+80,881
+125,651
+36%
+$
+226,458
+19,926
+
+Structured Layout:
+Reconciliation of Income from Operations to Adjusted Operating Income and Adjusted Operating Margin
+
+Excluding Stock-Based Compensation and Related Employer Payroll Taxes
+
+($ THOUSANDS)
+
+Income  From Operations
+
+Stock-Based Compensation
+
+Add:
+
+Adjusted Operating Income
+
+Adjusted Operating Margin
+
+Employer Payroll Taxes Related to Stock-Based Compensation
+
+Appendix
+
+Q1 2025
+
+$
+176,048
+
+155,339
+
+44%
+
+$
+390,710
+
+59,323
+
+© 2025 Palantr Technologies Inc.
+
+Q2 2024
+
+$
+105,339
+
+141,764
+
+37%
+
+$
+253,567
+
+6,464
+
+Q3 2024
+
+$
+113,140
+
+142,425
+
+38%
+
+$
+275,515
+
+19,950
+
+Q4 2024
+
+$
+11,043
+
+281,798
+
+45%
+
+$
+372,522
+
+79,681
+
+Q1 2024
+
+$
+80,881
+
+125,651
+
+36%
+
+$
+226,458
+
+19,926
+
+=== palantir_q1_investor_presentation.pdf, Page 23 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_023.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+We contnue to invest aggressively 
+in AIP and the US while driving 
+operatng leverage at scale.
+Q1 2025 adjusted operatng income was 
+$391M, representng a margin of 44%.
+ADJUSTED OPERATING MARGIN
+$300M
+$450M
+$400M
+$350M
+$250M
+$200M
+$100M
+$150M
+$50M
+Q1 2025
+$391M
+44%
+$—M
+Financials
+Q1
+© 2025 Palantr Technologies Inc.
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+$254M
+37%
+$276M
+$373M
+38%
+45%
+$226M
+36%
+
+Structured Layout:
+We contnue to invest aggressively 
+in AIP and the US while driving 
+operatng leverage at scale.
+
+Q1 2025 adjusted operatng income was 
+$391M, representng a margin of 44%.
+
+ADJUSTED OPERATING MARGIN
+
+$300M
+
+$450M
+
+$400M
+
+$350M
+
+$250M
+
+$200M
+
+$100M
+
+$150M
+
+$50M
+
+Q1 2025
+
+$391M
+
+44%
+
+$—M
+
+Financials
+Q1
+
+© 2025 Palantr Technologies Inc.
+
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+
+$254M
+
+37%
+
+$276M
+
+$373M
+
+38%
+
+45%
+
+$226M
+
+36%
+
+=== palantir_q1_investor_presentation.pdf, Page 3 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_003.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Adjusted free cash ﬂow of $370 million; 42% margin
+Business Update
+Q1
+© 2025 Palantr Technologies Inc.
+Q1 2025 Highlights
+The term “Strategic Commercial Contracts” is as deﬁned in our Annual Report on Form 10-K ﬁled on February 18, 2025. Rule of 40 refers to the sum of our revenue growth rate year-over-year and our adjusted operatng margin. The value of deals closed reﬂects the total contract value of contracts that have been entered 
+into with, or awarded by, our government and commercial customers and includes existng contractual obligatons and unexercised contract optons available to those customers. Adjusted free cash ﬂow and adjusted free cash ﬂow margin exclude employer payroll taxes related to stock-based compensaton and 
+purchases of property and equipment. Adjusted operatng income and adjusted operatng margin excludes stock-based compensaton expense and related employer payroll taxes. Total contract value (“TCV”) is the total potental lifetme value of contracts entered into with, or awarded by, our customers at the tme of 
+contract executon and remaining deal value (“RDV”) is the total remaining value of contracts as of the end of the reportng period. Except as noted below, TCV and RDV each presume the exercise of all contract optons available to our customers and no terminaton of contracts. However, the majority of our contracts are 
+subject to terminaton provisions, including for convenience, and there can be no guarantee that contracts are not terminated or that contract optons will be exercised. Further, RDV may exclude all or some porton of the value of certain commercial contracts as a result of our ongoing assessments of customers’ ﬁnancial 
+conditon, including the consideraton of such customers’ ability and intenton to pay, and whether such contracts contnue to meet the criteria for revenue recogniton, among other factors. Adjusted EPS excludes stock-based compensaton expense, related employer payroll taxes, and income tax eﬀects and adjustments. 
+Please see the appendix for reconciliatons of these and other non-GAAP ﬁnancial measures to the most directly comparable GAAP measures.
+US commercial revenue grew +71% Y/Y and +19% Q/Q to $255 million
+US revenue grew +55% Y/Y and +13% Q/Q to $628 million
+US commercial remaining deal value (“RDV”) grew +127% Y/Y and +30% Q/Q to $2.3 billion
+Adjusted operatng income of $391 million; 44% margin
+US government revenue grew +45% Y/Y and +9% Q/Q to $373 million
+Closed 139 deals of at least $1 million, 51 deals of at least $5 million, and 31 deals of at least $10 million
+Revenue grew +39% Y/Y and +7% Q/Q to $884 million; +44% Y/Y and +7% Q/Q excluding Strategic Commercial Contracts
+Highest ever quarter of US commercial total contract value (“TCV”) of $810 million; +183% Y/Y
+Adjusted EPS of $0.13
+Rule of 40 score of 83%
+
+Structured Layout:
+Adjusted free cash ﬂow of $370 million; 42% margin
+
+Business Update
+Q1
+
+© 2025 Palantr Technologies Inc.
+
+Q1 2025 Highlights
+
+The term “Strategic Commercial Contracts” is as deﬁned in our Annual Report on Form 10-K ﬁled on February 18, 2025. Rule of 40 refers to the sum of our revenue growth rate year-over-year and our adjusted operatng margin. The value of deals closed reﬂects the total contract value of contracts that have been entered 
+into with, or awarded by, our government and commercial customers and includes existng contractual obligatons and unexercised contract optons available to those customers. Adjusted free cash ﬂow and adjusted free cash ﬂow margin exclude employer payroll taxes related to stock-based compensaton and 
+purchases of property and equipment. Adjusted operatng income and adjusted operatng margin excludes stock-based compensaton expense and related employer payroll taxes. Total contract value (“TCV”) is the total potental lifetme value of contracts entered into with, or awarded by, our customers at the tme of 
+contract executon and remaining deal value (“RDV”) is the total remaining value of contracts as of the end of the reportng period. Except as noted below, TCV and RDV each presume the exercise of all contract optons available to our customers and no terminaton of contracts. However, the majority of our contracts are 
+subject to terminaton provisions, including for convenience, and there can be no guarantee that contracts are not terminated or that contract optons will be exercised. Further, RDV may exclude all or some porton of the value of certain commercial contracts as a result of our ongoing assessments of customers’ ﬁnancial 
+conditon, including the consideraton of such customers’ ability and intenton to pay, and whether such contracts contnue to meet the criteria for revenue recogniton, among other factors. Adjusted EPS excludes stock-based compensaton expense, related employer payroll taxes, and income tax eﬀects and adjustments. 
+Please see the appendix for reconciliatons of these and other non-GAAP ﬁnancial measures to the most directly comparable GAAP measures.
+
+US commercial revenue grew +71% Y/Y and +19% Q/Q to $255 million
+
+US revenue grew +55% Y/Y and +13% Q/Q to $628 million
+
+US commercial remaining deal value (“RDV”) grew +127% Y/Y and +30% Q/Q to $2.3 billion
+
+Adjusted operatng income of $391 million; 44% margin
+
+US government revenue grew +45% Y/Y and +9% Q/Q to $373 million
+
+Closed 139 deals of at least $1 million, 51 deals of at least $5 million, and 31 deals of at least $10 million
+
+Revenue grew +39% Y/Y and +7% Q/Q to $884 million; +44% Y/Y and +7% Q/Q excluding Strategic Commercial Contracts
+
+Highest ever quarter of US commercial total contract value (“TCV”) of $810 million; +183% Y/Y
+
+Adjusted EPS of $0.13
+
+Rule of 40 score of 83%
+
+=== palantir_q1_investor_presentation.pdf, Page 28 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_028.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Q2 2025
+Adjusted income from operatons of between
+$401 million — $405 million.
+GAAP operatng income and net income in each 
+quarter of this year.
+Revenue of between
+$934 million — $938 million.
+For second quarter 2025, we expect: 
+For full year 2025, we expect: 
+FY 2025
+Adjusted income from operatons of between
+$1.711 billion — $1.723 billion.
+Adjusted free cash ﬂow of between
+$1.6 billion — $1.8 billion. 
+Revenue of between
+$3.890 billion — $3.902 billion.
+US commercial revenue in excess of
+$1.178 billion, representng a growth 
+rate of at least 68%.
+Financials
+Q1
+© 2025 Palantr Technologies Inc.
+
+Structured Layout:
+Q2 2025
+
+Adjusted income from operatons of between
+$401 million — $405 million.
+
+GAAP operatng income and net income in each 
+quarter of this year.
+
+Revenue of between
+$934 million — $938 million.
+
+For second quarter 2025, we expect: 
+For full year 2025, we expect:
+
+FY 2025
+
+Adjusted income from operatons of between
+$1.711 billion — $1.723 billion.
+
+Adjusted free cash ﬂow of between
+$1.6 billion — $1.8 billion.
+
+Revenue of between
+$3.890 billion — $3.902 billion.
+
+US commercial revenue in excess of
+$1.178 billion, representng a growth 
+rate of at least 68%.
+
+Financials
+Q1
+
+© 2025 Palantr Technologies Inc.
+
+=== palantir_q1_investor_presentation.pdf, Page 32 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_032.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Reconciliation of Rule of 40
+Year-Over-Year Revenue Growth
+Adjusted Operating Margin
+Rule of 40
+Q1 2024
+21%
+36%
+57%
+Q2 2024
+27%
+37%
+64%
+Q3 2024
+30%
+38%
+68%
+Q4 2024
+36%
+45%
+81%
+Q1 2025
+39%
+44%
+83%
+Q4 2023
+20%
+34%
+54%
+Q3 2023
+17%
+29%
+46%
+Q2 2023
+13%
+25%
+38%
+Appendix
+© 2025 Palantr Technologies Inc.
+
+Structured Layout:
+Reconciliation of Rule of 40
+
+Year-Over-Year Revenue Growth
+
+Adjusted Operating Margin
+
+Rule of 40
+
+Q1 2024
+
+21%
+
+36%
+
+57%
+
+Q2 2024
+
+27%
+
+37%
+
+64%
+
+Q3 2024
+
+30%
+
+38%
+
+68%
+
+Q4 2024
+
+36%
+
+45%
+
+81%
+
+Q1 2025
+
+39%
+
+44%
+
+83%
+
+Q4 2023
+
+20%
+
+34%
+
+54%
+
+Q3 2023
+
+17%
+
+29%
+
+46%
+
+Q2 2023
+
+13%
+
+25%
+
+38%
+
+Appendix
+
+© 2025 Palantr Technologies Inc.

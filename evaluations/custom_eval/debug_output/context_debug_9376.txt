@@ -1,0 +1,1094 @@
+=== CONTEXT DEBUG FOR QUESTION ===
+Question: If NVIDIA's Q2 2025 disclosure implied that the weighted average recognition period for RSUs, PSUs and market-based PSUs was shorter than that for ESPP, what are the actual weighted average recognition periods for those awards and which functional area recorded the lowest stock-based compensation expense in the quarter ended April 27 2025?
+
+Context:
+=== nvidia_10q.pdf, Page 9 ===
+Visual content from: document_images/nvidia_10q_page_009.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Note 2 - Stock-Based Compensation
+Stock-based compensation expense includes restricted stock units, or RSUs, performance stock units, or PSUs, market-based PSUs, and our employee stock
+purchase plan, or ESPP.
+Condensed Consolidated Statements of Income include stock-based compensation expense, net of amounts capitalized into inventory, as follows:
+ 
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+(In millions)
+Cost of revenue
+$
+64 
+$
+36 
+Research and development
+1,063 
+727 
+Sales, general and administrative
+347 
+248 
+Total
+$
+1,474 
+$
+1,011 
+Equity Award Activity
+The following is a summary of our equity award transactions under our equity incentive plans:
+RSUs, PSUs and Market-based PSUs Outstanding
+ 
+Number of Shares
+Weighted Average Grant-Date Fair
+Value Per Share
+(In millions, except per share data)
+Balance as of Jan 26, 2025
+274 
+$
+44.75 
+Granted
+44 
+$
+106.43 
+Vested
+(39)
+$
+32.98 
+Canceled and forfeited
+(2)
+$
+48.26 
+Balance as of Apr 27, 2025
+277 
+$
+56.32 
+As of April 27, 2025, aggregate unearned stock-based compensation expense was $15.3 billion, which is expected to be recognized over a weighted average
+period of 2.3 years for RSUs, PSUs, and market-based PSUs, and 1.1 years for ESPP.
+Note 3 - Net Income Per Share
+The following is the basic and diluted net income per share computations for the periods presented:
+ 
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+ 
+(In millions, except per share data)
+Numerator:
+ 
+ 
+Net income
+$
+18,775 
+$
+14,881 
+Denominator:
+Basic weighted average shares
+24,441 
+24,620 
+Dilutive impact of outstanding equity awards
+170 
+270 
+Diluted weighted average shares
+24,611 
+24,890 
+Net income per share:
+Basic (1)
+$
+0.77 
+$
+0.60 
+Diluted (2)
+$
+0.76 
+$
+0.60 
+Anti-dilutive equity awards excluded from diluted net income per share
+62 
+60 
+(1)    Net income divided by basic weighted average shares.
+(2)    Net income divided by diluted weighted average shares.
+Diluted net income per share was computed using the weighted average number of common and potentially dilutive shares outstanding during the period, using
+the treasury stock method.
+9
+
+Table Data:
+Cost of revenue | $ | 64 |  | $ | 36
+Research and development | 1,063 |  |  | 727 | 
+Sales, general and administrative | 347 |  |  | 248 | 
+Total | $ | 1,474 |  | $ | 1,011
+Balance as of Jan 26, 2025 | 274 |  | $ | 44.75
+Granted | 44 |  | $ | 106.43
+Vested | (39) |  | $ | 32.98
+Canceled and forfeited | (2) |  | $ | 48.26
+Balance as of Apr 27, 2025 | 277 |  | $ | 56.32
+Numerator: |  |  |  |  | 
+Net income | $ | 18,775 |  | $ | 14,881
+Denominator: |  |  |  |  | 
+Basic weighted average shares | 24,441 |  |  | 24,620 | 
+Dilutive impact of outstanding equity awards | 170 |  |  | 270 | 
+Diluted weighted average shares | 24,611 |  |  | 24,890 | 
+Net income per share: |  |  |  |  | 
+Basic (1) | $ | 0.77 |  | $ | 0.60
+Diluted (2) | $ | 0.76 |  | $ | 0.60
+Anti-dilutive equity awards excluded from diluted net income per share | 62 |  |  | 60 |
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Note 2 - Stock-Based Compensation
+
+Stock-based compensation expense includes restricted stock units, or RSUs, performance stock units, or PSUs, market-based PSUs, and our employee stock
+purchase plan, or ESPP.
+
+Condensed Consolidated Statements of Income include stock-based compensation expense, net of amounts capitalized into inventory, as follows:
+
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+
+(In millions)
+Cost of revenue
+$
+64 
+$
+36 
+Research and development
+1,063 
+727 
+Sales, general and administrative
+347 
+248
+
+Total
+$
+1,474 
+$
+1,011
+
+Equity Award Activity
+The following is a summary of our equity award transactions under our equity incentive plans:
+
+RSUs, PSUs and Market-based PSUs Outstanding
+
+Number of Shares
+
+Weighted Average Grant-Date Fair
+
+Value Per Share
+
+(In millions, except per share data)
+Balance as of Jan 26, 2025
+274 
+$
+44.75 
+Granted
+44 
+$
+106.43 
+Vested
+(39)
+$
+32.98 
+Canceled and forfeited
+(2)
+$
+48.26 
+Balance as of Apr 27, 2025
+277 
+$
+56.32
+
+As of April 27, 2025, aggregate unearned stock-based compensation expense was $15.3 billion, which is expected to be recognized over a weighted average
+period of 2.3 years for RSUs, PSUs, and market-based PSUs, and 1.1 years for ESPP.
+
+Note 3 - Net Income Per Share
+
+The following is the basic and diluted net income per share computations for the periods presented:
+
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+
+(In millions, except per share data)
+Numerator:
+ 
+ 
+Net income
+$
+18,775 
+$
+14,881 
+Denominator:
+
+Basic weighted average shares
+24,441 
+24,620 
+Dilutive impact of outstanding equity awards
+170 
+270
+
+Diluted weighted average shares
+24,611 
+24,890 
+Net income per share:
+
+Basic (1)
+$
+0.77 
+$
+0.60
+
+Diluted (2)
+$
+0.76 
+$
+0.60 
+Anti-dilutive equity awards excluded from diluted net income per share
+62 
+60
+
+(1)    Net income divided by basic weighted average shares.
+
+(2)    Net income divided by diluted weighted average shares.
+
+Diluted net income per share was computed using the weighted average number of common and potentially dilutive shares outstanding during the period, using
+the treasury stock method.
+
+9
+
+=== nvidia_10q.pdf, Page 19 ===
+Visual content from: document_images/nvidia_10q_page_019.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+expenses that are leveraged across our unified architecture and therefore allocated between our two segments. Our CODM reviews expenses on a consolidated
+basis, and expenses attributable to each segment are not regularly provided to our CODM.
+The Compute & Networking segment includes our Data Center accelerated computing platforms and artificial intelligence, or AI, solutions and software;
+networking; automotive platforms and autonomous and electric vehicle solutions; Jetson for robotics and other embedded platforms; and DGX Cloud computing
+services.
+The Graphics segment includes GeForce GPUs for gaming and PCs, the GeForce NOW game streaming service and related infrastructure, and solutions for
+gaming platforms; Quadro/NVIDIA RTX GPUs for enterprise workstation graphics; virtual GPU software for cloud-based visual and virtual computing; automotive
+platforms for infotainment systems; and Omniverse Enterprise software for building and operating industrial AI and digital twin applications.
+The “All Other” category includes the expenses that are not allocated to either Compute & Networking or Graphics for purposes of making operating decisions or
+assessing financial performance. The expenses include stock-based compensation expense, corporate infrastructure and support costs, acquisition-related and
+other costs, and other non-recurring charges and benefits that our CODM deems to be enterprise in nature.
+Our CODM does not review any information regarding total assets on a reportable segment basis. There are no intersegment transactions. The accounting
+policies for segment reporting are the same as for our consolidated financial statements. The table below presents details of our reportable segments and the
+“All Other” category.
+ 
+Compute &
+Networking
+Graphics
+All Other
+Consolidated
+ 
+(In millions)
+Three Months Ended Apr 27, 2025
+ 
+ 
+ 
+ 
+Revenue
+$
+39,589 
+$
+4,473 
+$
+— 
+$
+44,062 
+Other segment items (1)
+17,535 
+2,833 
+Operating income (loss)
+$
+22,054 
+$
+1,640 
+$
+(2,056)
+$
+21,638 
+Three Months Ended Apr 28, 2024
+ 
+ 
+ 
+ 
+Revenue
+$
+22,675 
+$
+3,369 
+$
+— 
+$
+26,044 
+Other segment items (1)
+5,628 
+2,128 
+Operating income (loss)
+$
+17,047 
+$
+1,241 
+$
+(1,379)
+$
+16,909 
+(1)    Other segment items for the Compute & Networking and Graphics reportable segments primarily include product costs and inventory provisions, compensation and benefits excluding stock-based
+compensation expense, compute and infrastructure expenses, and engineering development costs.
+Depreciation and amortization expense attributable to our Compute and Networking segment for the first quarter of fiscal years 2026 and 2025 was $296 million
+and $146 million, respectively. Depreciation and amortization expense attributable to our Graphics segment for the first quarter of fiscal years 2026 and 2025
+was $109 million and $86 million, respectively. Acquisition-related intangible amortization expense is not allocated to either Compute & Networking or Graphics
+for purposes of making operating decisions or assessing financial performance and is included in “All Other”.
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+(In millions)
+Reconciling items included in "All Other" category:
+Stock-based compensation expense
+$
+(1,474)
+$
+(1,011)
+Unallocated cost of revenue and operating expenses
+(419)
+(229)
+Acquisition-related and other costs
+(160)
+(140)
+Other
+(3)
+1 
+Total
+$
+(2,056)
+$
+(1,379)
+19
+
+Table Data:
+Three Months Ended Apr 27, 2025 |  |  |  |  |  |  |  |  |  |  | 
+Revenue | $ | 39,589 |  | $ | 4,473 |  | $ | — |  | $ | 44,062
+Other segment items (1) | 17,535 |  |  | 2,833 |  |  |  |  |  |  | 
+Operating income (loss) | $ | 22,054 |  | $ | 1,640 |  | $ | (2,056) |  | $ | 21,638
+Three Months Ended Apr 28, 2024 |  |  |  |  |  |  |  |  |  |  | 
+Revenue | $ | 22,675 |  | $ | 3,369 |  | $ | — |  | $ | 26,044
+Other segment items (1) | 5,628 |  |  | 2,128 |  |  |  |  |  |  | 
+Operating income (loss) | $ | 17,047 |  | $ | 1,241 |  | $ | (1,379) |  | $ | 16,909
+Stock-based compensation expense | $ | (1,474) |  | $ | (1,011)
+Unallocated cost of revenue and operating expenses | (419) |  |  | (229) | 
+Acquisition-related and other costs | (160) |  |  | (140) | 
+Other | (3) |  |  | 1 | 
+Total | $ | (2,056) |  | $ | (1,379)
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+expenses that are leveraged across our unified architecture and therefore allocated between our two segments. Our CODM reviews expenses on a consolidated
+basis, and expenses attributable to each segment are not regularly provided to our CODM.
+
+The Compute & Networking segment includes our Data Center accelerated computing platforms and artificial intelligence, or AI, solutions and software;
+networking; automotive platforms and autonomous and electric vehicle solutions; Jetson for robotics and other embedded platforms; and DGX Cloud computing
+services.
+
+The Graphics segment includes GeForce GPUs for gaming and PCs, the GeForce NOW game streaming service and related infrastructure, and solutions for
+gaming platforms; Quadro/NVIDIA RTX GPUs for enterprise workstation graphics; virtual GPU software for cloud-based visual and virtual computing; automotive
+platforms for infotainment systems; and Omniverse Enterprise software for building and operating industrial AI and digital twin applications.
+
+The “All Other” category includes the expenses that are not allocated to either Compute & Networking or Graphics for purposes of making operating decisions or
+assessing financial performance. The expenses include stock-based compensation expense, corporate infrastructure and support costs, acquisition-related and
+other costs, and other non-recurring charges and benefits that our CODM deems to be enterprise in nature.
+
+Our CODM does not review any information regarding total assets on a reportable segment basis. There are no intersegment transactions. The accounting
+policies for segment reporting are the same as for our consolidated financial statements. The table below presents details of our reportable segments and the
+“All Other” category.
+
+Compute &
+Networking
+Graphics
+All Other
+Consolidated
+
+(In millions)
+Three Months Ended Apr 27, 2025
+ 
+ 
+ 
+ 
+Revenue
+$
+39,589 
+$
+4,473 
+$
+— 
+$
+44,062 
+Other segment items (1)
+17,535 
+2,833 
+Operating income (loss)
+$
+22,054 
+$
+1,640 
+$
+(2,056)
+$
+21,638
+
+Three Months Ended Apr 28, 2024
+ 
+ 
+ 
+ 
+Revenue
+$
+22,675 
+$
+3,369 
+$
+— 
+$
+26,044 
+Other segment items (1)
+5,628 
+2,128 
+Operating income (loss)
+$
+17,047 
+$
+1,241 
+$
+(1,379)
+$
+16,909
+
+(1)    Other segment items for the Compute & Networking and Graphics reportable segments primarily include product costs and inventory provisions, compensation and benefits excluding stock-based
+
+compensation expense, compute and infrastructure expenses, and engineering development costs.
+
+Depreciation and amortization expense attributable to our Compute and Networking segment for the first quarter of fiscal years 2026 and 2025 was $296 million
+and $146 million, respectively. Depreciation and amortization expense attributable to our Graphics segment for the first quarter of fiscal years 2026 and 2025
+was $109 million and $86 million, respectively. Acquisition-related intangible amortization expense is not allocated to either Compute & Networking or Graphics
+for purposes of making operating decisions or assessing financial performance and is included in “All Other”.
+
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+
+(In millions)
+Reconciling items included in "All Other" category:
+Stock-based compensation expense
+$
+(1,474)
+$
+(1,011)
+Unallocated cost of revenue and operating expenses
+(419)
+(229)
+Acquisition-related and other costs
+(160)
+(140)
+Other
+(3)
+1
+
+Total
+$
+(2,056)
+$
+(1,379)
+
+19
+
+=== nvidia_10q.pdf, Page 17 ===
+Visual content from: document_images/nvidia_10q_page_017.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Total future purchase commitments as of April 27, 2025 are as follows:
+Purchase Commitments
+ 
+(In millions)
+Fiscal Year:
+ 
+2026 (excluding the first quarter of fiscal year 2026)
+$
+31,445 
+2027
+5,923 
+2028
+3,110 
+2029
+2,072 
+2030
+752 
+2031 and thereafter
+218 
+Total
+$
+43,520 
+Accrual for Product Warranty Liabilities
+The estimated amount of product warranty liabilities was $2.1 billion and $1.3 billion as of April 27, 2025 and January 26, 2025, respectively. The estimated
+product returns and product warranty activity consisted of the following:
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+(In millions)
+Balance at beginning of period
+$
+1,290 
+$
+306 
+Additions
+870 
+234 
+Utilization
+(80)
+(8)
+Balance at end of period
+$
+2,080 
+$
+532 
+We have provided indemnities for matters such as tax, product, and employee liabilities. We have included intellectual property indemnification provisions in our
+technology-related agreements with third parties. Maximum potential future payments cannot be estimated because many of these agreements do not have a
+maximum stated liability. We have not recorded any liability in our Condensed Consolidated Financial Statements for such indemnifications.
+Litigation
+Securities Class Action and Derivative Lawsuits
+The plaintiffs in the putative securities class action lawsuit, captioned 4:18-cv-07669-HSG, initially filed on December 21, 2018 in the United States District Court
+for the Northern District of California, and titled In Re NVIDIA Corporation Securities Litigation, filed an amended complaint on May 13, 2020. The amended
+complaint asserted that NVIDIA and certain NVIDIA executives violated Section 10(b) of the Securities Exchange Act of 1934, as amended, or the Exchange Act,
+and SEC Rule 10b-5, by making materially false or misleading statements related to channel inventory and the impact of cryptocurrency mining on GPU demand
+between May 10, 2017 and November 14, 2018. Plaintiffs also alleged that the NVIDIA executives who they named as defendants violated Section 20(a) of the
+Exchange Act. Plaintiffs sought class certification, an award of unspecified compensatory damages, an award of reasonable costs and expenses, including
+attorneys’ fees and expert fees, and further relief as the Court may deem just and proper. On March 2, 2021, the district court granted NVIDIA’s motion to
+dismiss the complaint without leave to amend, entered judgment in favor of NVIDIA and closed the case. On March 30, 2021, plaintiffs filed an appeal from
+judgment in the United States Court of Appeals for the Ninth Circuit, case number 21-15604. On August 25, 2023, a majority of a three-judge Ninth Circuit panel
+affirmed in part and reversed in part the district court’s dismissal of the case, with a third judge dissenting on the basis that the district court did not err in
+dismissing the case. On November 15, 2023, the Ninth Circuit denied NVIDIA’s petition for rehearing en banc of the Ninth Circuit panel’s majority decision to
+reverse in part the dismissal of the case, which NVIDIA had filed on October 10, 2023. On December 5, 2023, the Ninth Circuit granted NVIDIA’s motion to stay
+the mandate pending NVIDIA’s petition for a writ of certiorari in the Supreme Court of the United States and the Supreme Court’s final disposition of the matter.
+NVIDIA filed a petition for a writ of certiorari on March 4, 2024. On June 17, 2024, the Supreme Court of the United States granted NVIDIA’s petition for a writ of
+certiorari. After briefing and argument, the Supreme Court dismissed NVIDIA’s writ of certiorari as improvidently granted on December 11, 2024, and issued
+judgment on January 13, 2025. On February 20, 2025, the Ninth Circuit’s judgment, entered August 25, 2023 and corrected August 28, 2023, took effect, and the
+case was remanded to the district court for further proceedings.
+17
+
+Table Data:
+Fiscal Year: |  | 
+2026 (excluding the first quarter of fiscal year 2026) | $ | 31,445
+2027 | 5,923 | 
+2028 | 3,110 | 
+2029 | 2,072 | 
+2030 | 752 | 
+2031 and thereafter | 218 | 
+Total | $ | 43,520
+Balance at beginning of period | $ | 1,290 |  | $ | 306
+Additions | 870 |  |  | 234 | 
+Utilization | (80) |  |  | (8) | 
+Balance at end of period | $ | 2,080 |  | $ | 532
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Total future purchase commitments as of April 27, 2025 are as follows:
+
+Purchase Commitments
+ 
+(In millions)
+Fiscal Year:
+ 
+2026 (excluding the first quarter of fiscal year 2026)
+$
+31,445 
+2027
+5,923 
+2028
+3,110 
+2029
+2,072 
+2030
+752 
+2031 and thereafter
+218 
+Total
+$
+43,520
+
+Accrual for Product Warranty Liabilities
+
+The estimated amount of product warranty liabilities was $2.1 billion and $1.3 billion as of April 27, 2025 and January 26, 2025, respectively. The estimated
+product returns and product warranty activity consisted of the following:
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+
+(In millions)
+Balance at beginning of period
+$
+1,290 
+$
+306
+
+Additions
+870 
+234 
+Utilization
+(80)
+(8)
+
+Balance at end of period
+$
+2,080 
+$
+532
+
+We have provided indemnities for matters such as tax, product, and employee liabilities. We have included intellectual property indemnification provisions in our
+technology-related agreements with third parties. Maximum potential future payments cannot be estimated because many of these agreements do not have a
+maximum stated liability. We have not recorded any liability in our Condensed Consolidated Financial Statements for such indemnifications.
+
+Litigation
+
+Securities Class Action and Derivative Lawsuits
+
+The plaintiffs in the putative securities class action lawsuit, captioned 4:18-cv-07669-HSG, initially filed on December 21, 2018 in the United States District Court
+for the Northern District of California, and titled In Re NVIDIA Corporation Securities Litigation, filed an amended complaint on May 13, 2020. The amended
+complaint asserted that NVIDIA and certain NVIDIA executives violated Section 10(b) of the Securities Exchange Act of 1934, as amended, or the Exchange Act,
+and SEC Rule 10b-5, by making materially false or misleading statements related to channel inventory and the impact of cryptocurrency mining on GPU demand
+between May 10, 2017 and November 14, 2018. Plaintiffs also alleged that the NVIDIA executives who they named as defendants violated Section 20(a) of the
+Exchange Act. Plaintiffs sought class certification, an award of unspecified compensatory damages, an award of reasonable costs and expenses, including
+attorneys’ fees and expert fees, and further relief as the Court may deem just and proper. On March 2, 2021, the district court granted NVIDIA’s motion to
+dismiss the complaint without leave to amend, entered judgment in favor of NVIDIA and closed the case. On March 30, 2021, plaintiffs filed an appeal from
+judgment in the United States Court of Appeals for the Ninth Circuit, case number 21-15604. On August 25, 2023, a majority of a three-judge Ninth Circuit panel
+affirmed in part and reversed in part the district court’s dismissal of the case, with a third judge dissenting on the basis that the district court did not err in
+dismissing the case. On November 15, 2023, the Ninth Circuit denied NVIDIA’s petition for rehearing en banc of the Ninth Circuit panel’s majority decision to
+reverse in part the dismissal of the case, which NVIDIA had filed on October 10, 2023. On December 5, 2023, the Ninth Circuit granted NVIDIA’s motion to stay
+the mandate pending NVIDIA’s petition for a writ of certiorari in the Supreme Court of the United States and the Supreme Court’s final disposition of the matter.
+NVIDIA filed a petition for a writ of certiorari on March 4, 2024. On June 17, 2024, the Supreme Court of the United States granted NVIDIA’s petition for a writ of
+certiorari. After briefing and argument, the Supreme Court dismissed NVIDIA’s writ of certiorari as improvidently granted on December 11, 2024, and issued
+judgment on January 13, 2025. On February 20, 2025, the Ninth Circuit’s judgment, entered August 25, 2023 and corrected August 28, 2023, took effect, and the
+case was remanded to the district court for further proceedings.
+
+17
+
+=== nvidia_10q.pdf, Page 18 ===
+Visual content from: document_images/nvidia_10q_page_018.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+The putative derivative lawsuit pending in the United States District Court for the Northern District of California, captioned 4:19-cv-00341-HSG, initially filed
+January 18, 2019 and titled In re NVIDIA Corporation Consolidated Derivative Litigation, was stayed pending resolution of the plaintiffs’ appeal in the In Re
+NVIDIA Corporation Securities Litigation action. On February 22, 2022, the court administratively closed the case, but stated that it would reopen the case once
+the appeal in the In Re NVIDIA Corporation Securities Litigation action is resolved. The case has not yet been reopened by the court. The lawsuit asserts claims,
+purportedly on behalf of us, against certain officers and directors of the Company for breach of fiduciary duty, unjust enrichment, waste of corporate assets, and
+violations of Sections 14(a), 10(b), and 20(a) of the Exchange Act based on the dissemination of allegedly false and misleading statements related to channel
+inventory and the impact of cryptocurrency mining on GPU demand. The plaintiffs are seeking unspecified damages and other relief, including reforms and
+improvements to NVIDIA’s corporate governance and internal procedures.
+The putative derivative actions initially filed September 24, 2019 and pending in the United States District Court for the District of Delaware, Lipchitz v. Huang, et
+al. (Case No. 1:19-cv-01795-MN) and Nelson v. Huang, et. al. (Case No. 1:19-cv-01798-MN), were stayed pending resolution of the plaintiffs’ appeal in the In Re
+NVIDIA Corporation Securities Litigation action. On February 5, 2025, after the Supreme Court issued its judgment dismissing the Company’s petition for writ of
+certiorari as improvidently granted in the In Re NVIDIA Corporation Securities Litigation action, the district court extended the stay for 30 days while the parties
+discuss next steps and ordered the parties to file a joint status report by March 7, 2025. On March 7, 2025, the district court adopted the parties' stipulation to
+extend the stay until the final and complete resolution of the In Re NVIDIA Corporation Securities Litigation action. The lawsuits assert claims, purportedly on
+behalf of us, against certain officers and directors of the Company for breach of fiduciary duty, unjust enrichment, insider trading, misappropriation of information,
+corporate waste and violations of Sections 14(a), 10(b), and 20(a) of the Exchange Act based on the dissemination of allegedly false, and misleading statements
+related to channel inventory and the impact of cryptocurrency mining on GPU demand. The plaintiffs seek unspecified damages and other relief, including
+disgorgement of profits from the sale of NVIDIA stock and unspecified corporate governance measures.
+Another putative derivative action was filed on October 30, 2023 in the Court of Chancery of the State of Delaware, captioned Horanic v. Huang, et al. (Case No.
+2023-1096-KSJM). This lawsuit asserts claims, purportedly on behalf of us, against certain officers and directors of the Company for breach of fiduciary duty and
+insider trading based on the dissemination of allegedly false and misleading statements related to channel inventory and the impact of cryptocurrency mining on
+GPU demand. The plaintiffs seek unspecified damages and other relief, including disgorgement of profits from the sale of NVIDIA stock and reform of
+unspecified corporate governance measures. This derivative matter is stayed pending the final resolution of In Re NVIDIA Corporation Securities Litigation
+action.
+Accounting for Loss Contingencies
+As of April 27, 2025, there are no accrued contingent liabilities associated with the legal proceedings described above based on our belief that liabilities, while
+reasonably possible, are not probable. Further, any possible loss or range of loss in these matters cannot be reasonably estimated at this time. We are engaged
+in legal actions not described above arising in the ordinary course of business and, while there can be no assurance of favorable outcomes, we believe that the
+ultimate outcome of these actions will not have a material adverse effect on our operating results, liquidity or financial position.
+Note 12 - Shareholders’ Equity 
+Capital Return Program 
+We repurchased 126 million and 99 million shares of our common stock for $14.5 billion and $8.0 billion during the first quarter of fiscal years 2026 and 2025,
+respectively. As of April 27, 2025, we were authorized, subject to certain specifications, to repurchase up to $24.3 billion of our common stock.
+From April 28, 2025 through May 23, 2025, we repurchased 19 million shares for $2.3 billion pursuant to a pre-established trading plan. Our share repurchase
+program aims to offset dilution from shares issued to employees while maintaining adequate liquidity to meet our operating requirements. We may pursue
+additional share repurchases as we weigh market factors and other investment opportunities.
+We paid cash dividends to our shareholders of $244 million and $98 million during the first quarter of fiscal years 2026 and 2025, respectively. The payment of
+future cash dividends is subject to our Board of Directors' continuing determination that the declaration of dividends is in the best interests of our shareholders.
+Note 13 - Segment Information
+Our Chief Executive Officer is our chief operating decision maker, or CODM, and reviews financial information presented on an operating segment basis for
+purposes of making decisions and assessing financial performance. Our CODM assesses operating performance of each segment based on regularly provided
+segment revenue and segment operating income. Operating results by segment include costs or expenses directly attributable to each segment, and costs or
+18
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+The putative derivative lawsuit pending in the United States District Court for the Northern District of California, captioned 4:19-cv-00341-HSG, initially filed
+January 18, 2019 and titled In re NVIDIA Corporation Consolidated Derivative Litigation, was stayed pending resolution of the plaintiffs’ appeal in the In Re
+NVIDIA Corporation Securities Litigation action. On February 22, 2022, the court administratively closed the case, but stated that it would reopen the case once
+the appeal in the In Re NVIDIA Corporation Securities Litigation action is resolved. The case has not yet been reopened by the court. The lawsuit asserts claims,
+purportedly on behalf of us, against certain officers and directors of the Company for breach of fiduciary duty, unjust enrichment, waste of corporate assets, and
+violations of Sections 14(a), 10(b), and 20(a) of the Exchange Act based on the dissemination of allegedly false and misleading statements related to channel
+inventory and the impact of cryptocurrency mining on GPU demand. The plaintiffs are seeking unspecified damages and other relief, including reforms and
+improvements to NVIDIA’s corporate governance and internal procedures.
+
+The putative derivative actions initially filed September 24, 2019 and pending in the United States District Court for the District of Delaware, Lipchitz v. Huang, et
+al. (Case No. 1:19-cv-01795-MN) and Nelson v. Huang, et. al. (Case No. 1:19-cv-01798-MN), were stayed pending resolution of the plaintiffs’ appeal in the In Re
+NVIDIA Corporation Securities Litigation action. On February 5, 2025, after the Supreme Court issued its judgment dismissing the Company’s petition for writ of
+certiorari as improvidently granted in the In Re NVIDIA Corporation Securities Litigation action, the district court extended the stay for 30 days while the parties
+discuss next steps and ordered the parties to file a joint status report by March 7, 2025. On March 7, 2025, the district court adopted the parties' stipulation to
+extend the stay until the final and complete resolution of the In Re NVIDIA Corporation Securities Litigation action. The lawsuits assert claims, purportedly on
+behalf of us, against certain officers and directors of the Company for breach of fiduciary duty, unjust enrichment, insider trading, misappropriation of information,
+corporate waste and violations of Sections 14(a), 10(b), and 20(a) of the Exchange Act based on the dissemination of allegedly false, and misleading statements
+related to channel inventory and the impact of cryptocurrency mining on GPU demand. The plaintiffs seek unspecified damages and other relief, including
+disgorgement of profits from the sale of NVIDIA stock and unspecified corporate governance measures.
+
+Another putative derivative action was filed on October 30, 2023 in the Court of Chancery of the State of Delaware, captioned Horanic v. Huang, et al. (Case No.
+2023-1096-KSJM). This lawsuit asserts claims, purportedly on behalf of us, against certain officers and directors of the Company for breach of fiduciary duty and
+insider trading based on the dissemination of allegedly false and misleading statements related to channel inventory and the impact of cryptocurrency mining on
+GPU demand. The plaintiffs seek unspecified damages and other relief, including disgorgement of profits from the sale of NVIDIA stock and reform of
+unspecified corporate governance measures. This derivative matter is stayed pending the final resolution of In Re NVIDIA Corporation Securities Litigation
+action.
+
+Accounting for Loss Contingencies
+
+As of April 27, 2025, there are no accrued contingent liabilities associated with the legal proceedings described above based on our belief that liabilities, while
+reasonably possible, are not probable. Further, any possible loss or range of loss in these matters cannot be reasonably estimated at this time. We are engaged
+in legal actions not described above arising in the ordinary course of business and, while there can be no assurance of favorable outcomes, we believe that the
+ultimate outcome of these actions will not have a material adverse effect on our operating results, liquidity or financial position.
+
+Note 12 - Shareholders’ Equity
+
+Capital Return Program
+
+We repurchased 126 million and 99 million shares of our common stock for $14.5 billion and $8.0 billion during the first quarter of fiscal years 2026 and 2025,
+respectively. As of April 27, 2025, we were authorized, subject to certain specifications, to repurchase up to $24.3 billion of our common stock.
+
+From April 28, 2025 through May 23, 2025, we repurchased 19 million shares for $2.3 billion pursuant to a pre-established trading plan. Our share repurchase
+program aims to offset dilution from shares issued to employees while maintaining adequate liquidity to meet our operating requirements. We may pursue
+additional share repurchases as we weigh market factors and other investment opportunities.
+
+We paid cash dividends to our shareholders of $244 million and $98 million during the first quarter of fiscal years 2026 and 2025, respectively. The payment of
+future cash dividends is subject to our Board of Directors' continuing determination that the declaration of dividends is in the best interests of our shareholders.
+
+Note 13 - Segment Information
+
+Our Chief Executive Officer is our chief operating decision maker, or CODM, and reviews financial information presented on an operating segment basis for
+purposes of making decisions and assessing financial performance. Our CODM assesses operating performance of each segment based on regularly provided
+segment revenue and segment operating income. Operating results by segment include costs or expenses directly attributable to each segment, and costs or
+
+18
+
+=== nvidia_10q.pdf, Page 8 ===
+Visual content from: document_images/nvidia_10q_page_008.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA Corporation and Subsidiaries
+Notes to Condensed Consolidated Financial Statements
+(Unaudited)
+Note 1 - Summary of Significant Accounting Policies
+Basis of Presentation
+The accompanying unaudited condensed consolidated financial statements were prepared in accordance with accounting principles generally accepted in the
+United States of America, or U.S. GAAP, for interim financial information and with the instructions to Form 10-Q and Article 10 of Securities and Exchange
+Commission, or SEC, Regulation S-X. The January  26, 2025 consolidated balance sheet was derived from our audited consolidated financial statements
+included in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025, as filed with the SEC, but does not include all disclosures required by
+U.S. GAAP. In the opinion of management, all adjustments, consisting only of normal recurring adjustments considered necessary for a fair presentation of
+results of operations and financial position, have been included. The results for the interim periods presented are not necessarily indicative of the results
+expected for any future period. The following information should be read in conjunction with the audited consolidated financial statements and notes thereto
+included in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025.
+Certain balances from the prior fiscal year have been reclassified to conform to the current period presentation.
+In June 2024, we executed a ten-for-one stock split of our common stock. All share, equity award and per share amounts presented herein have been
+retrospectively adjusted to reflect the stock split.
+Significant Accounting Policies
+There have been no material changes to our significant accounting policies disclosed in Note 1 - Organization and Summary of Significant Accounting Policies,
+of the Notes to the Consolidated Financial Statements included in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025.
+Fiscal Year
+Fiscal years 2026 and 2025 are both 52-week years ending on the last Sunday in January. The first quarters of fiscal years 2026 and 2025 were both 13-week
+quarters.
+Principles of Consolidation
+Our condensed consolidated financial statements include the accounts of NVIDIA Corporation and our wholly-owned subsidiaries. All intercompany balances
+and transactions have been eliminated in consolidation.
+Use of Estimates
+The preparation of financial statements in conformity with U.S. GAAP requires management to make estimates and assumptions that affect the reported
+amounts of assets and liabilities and disclosures of contingent assets and liabilities at the date of the financial statements and the reported amounts of revenue
+and expenses during the reporting period. Actual results could differ materially from our estimates. On an on-going basis, we evaluate our estimates, including
+those related to accounts receivable, cash equivalents and marketable securities, goodwill, income taxes, inventories and product purchase commitments,
+investigation and settlement costs, litigation, non-marketable equity securities, other contingencies, property, plant, and equipment, restructuring and other
+charges, revenue recognition, and stock-based compensation. These estimates are based on historical facts and various other assumptions that we believe are
+reasonable.
+Recently Issued Accounting Pronouncements
+Recent Accounting Pronouncements Not Yet Adopted
+In December 2023, the FASB issued a new accounting standard which includes new and updated income tax disclosures, including disaggregation of
+information in the rate reconciliation and income taxes paid. We will adopt this standard in our fiscal year 2026 annual report. We are currently assessing the
+effect of the adoption of this standard on our disclosures that will be included in our Form 10-K for the year ending January 25, 2026.
+In November 2024, the FASB issued a new accounting standard requiring disclosures of certain additional expense information on an annual and interim basis,
+including, among other items, the amounts of purchases of inventory, employee compensation, depreciation and intangible asset amortization included within
+each income statement expense caption, as applicable. We will adopt this standard in our fiscal year 2028 annual report. We do not expect the adoption of this
+standard to have a material impact on our Consolidated Financial Statements other than additional disclosures.
+8
+
+Structured Layout:
+NVIDIA Corporation and Subsidiaries
+Notes to Condensed Consolidated Financial Statements
+
+(Unaudited)
+
+Note 1 - Summary of Significant Accounting Policies
+
+Basis of Presentation
+
+The accompanying unaudited condensed consolidated financial statements were prepared in accordance with accounting principles generally accepted in the
+United States of America, or U.S. GAAP, for interim financial information and with the instructions to Form 10-Q and Article 10 of Securities and Exchange
+Commission, or SEC, Regulation S-X. The January  26, 2025 consolidated balance sheet was derived from our audited consolidated financial statements
+included in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025, as filed with the SEC, but does not include all disclosures required by
+U.S. GAAP. In the opinion of management, all adjustments, consisting only of normal recurring adjustments considered necessary for a fair presentation of
+results of operations and financial position, have been included. The results for the interim periods presented are not necessarily indicative of the results
+expected for any future period. The following information should be read in conjunction with the audited consolidated financial statements and notes thereto
+included in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025.
+
+Certain balances from the prior fiscal year have been reclassified to conform to the current period presentation.
+
+In June 2024, we executed a ten-for-one stock split of our common stock. All share, equity award and per share amounts presented herein have been
+retrospectively adjusted to reflect the stock split.
+
+Significant Accounting Policies
+There have been no material changes to our significant accounting policies disclosed in Note 1 - Organization and Summary of Significant Accounting Policies,
+of the Notes to the Consolidated Financial Statements included in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025.
+
+Fiscal Year
+
+Fiscal years 2026 and 2025 are both 52-week years ending on the last Sunday in January. The first quarters of fiscal years 2026 and 2025 were both 13-week
+quarters.
+
+Principles of Consolidation
+
+Our condensed consolidated financial statements include the accounts of NVIDIA Corporation and our wholly-owned subsidiaries. All intercompany balances
+and transactions have been eliminated in consolidation.
+
+Use of Estimates
+
+The preparation of financial statements in conformity with U.S. GAAP requires management to make estimates and assumptions that affect the reported
+amounts of assets and liabilities and disclosures of contingent assets and liabilities at the date of the financial statements and the reported amounts of revenue
+and expenses during the reporting period. Actual results could differ materially from our estimates. On an on-going basis, we evaluate our estimates, including
+those related to accounts receivable, cash equivalents and marketable securities, goodwill, income taxes, inventories and product purchase commitments,
+investigation and settlement costs, litigation, non-marketable equity securities, other contingencies, property, plant, and equipment, restructuring and other
+charges, revenue recognition, and stock-based compensation. These estimates are based on historical facts and various other assumptions that we believe are
+reasonable.
+
+Recently Issued Accounting Pronouncements
+
+Recent Accounting Pronouncements Not Yet Adopted
+
+In December 2023, the FASB issued a new accounting standard which includes new and updated income tax disclosures, including disaggregation of
+information in the rate reconciliation and income taxes paid. We will adopt this standard in our fiscal year 2026 annual report. We are currently assessing the
+effect of the adoption of this standard on our disclosures that will be included in our Form 10-K for the year ending January 25, 2026.
+
+In November 2024, the FASB issued a new accounting standard requiring disclosures of certain additional expense information on an annual and interim basis,
+including, among other items, the amounts of purchases of inventory, employee compensation, depreciation and intangible asset amortization included within
+each income statement expense caption, as applicable. We will adopt this standard in our fiscal year 2028 annual report. We do not expect the adoption of this
+standard to have a material impact on our Consolidated Financial Statements other than additional disclosures.
+
+8
+
+=== nvidia_10q.pdf, Page 2 ===
+Visual content from: document_images/nvidia_10q_page_002.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA Corporation
+Form 10-Q
+For the Quarter Ended April 27, 2025
+Table of Contents
+ 
+ 
+Page
+ 
+Part I : Financial Information
+ 
+Item 1.
+Financial Statements (Unaudited)
+ 
+ 
+a) Condensed Consolidated Statements of Income for the three months ended April 27, 2025 and April 28, 2024
+3
+b) Condensed Consolidated Statements of Comprehensive Income for the three months ended April 27, 2025 and April 28, 2024
+4
+ 
+c) Condensed Consolidated Balance Sheets as of April 27, 2025 and January 26, 2025
+5
+d) Condensed Consolidated Statements of Shareholders' Equity for the three months ended April 27, 2025 and April 28, 2024
+6
+ 
+e) Condensed Consolidated Statements of Cash Flows for the three months ended April 27, 2025 and April 28, 2024
+7
+ 
+f) Notes to Condensed Consolidated Financial Statements
+8
+Item 2.
+Management’s Discussion and Analysis of Financial Condition and Results of Operations
+22
+Item 3.
+Quantitative and Qualitative Disclosures About Market Risk
+29
+Item 4.
+Controls and Procedures
+30
+ 
+Part II : Other Information
+ 
+Item 1.
+Legal Proceedings
+30
+Item 1A.
+Risk Factors
+30
+Item 2.
+Unregistered Sales of Equity Securities and Use of Proceeds
+36
+Item 5.
+Other Information
+37
+Item 6.
+Exhibits
+38
+Signature
+ 
+39
+Where You Can Find More Information
+Investors and others should note that we announce material financial information to our investors using our investor relations website, press releases, SEC
+filings and public conference calls and webcasts. We also use the following social media channels as a means of disclosing information about the company, our
+products, our planned financial and other announcements and attendance at upcoming investor and industry conferences, and other matters, and for complying
+with our disclosure obligations under Regulation FD:
+NVIDIA Corporate Blog (http://blogs.nvidia.com)
+NVIDIA Technical Blog (http://developer.nvidia.com/blog/)
+NVIDIA LinkedIn Page (http://www.linkedin.com/company/nvidia)
+NVIDIA Facebook Page (https://www.facebook.com/nvidia)
+NVIDIA Instagram Page (https://www.instagram.com/nvidia)
+NVIDIA X Account (https://x.com/nvidia)
+In addition, investors and others can view NVIDIA videos on YouTube (https://www.YouTube.com/nvidia).
+The information we post through these social media channels may be deemed material. Accordingly, investors should monitor these accounts and the blog, in
+addition to following our press releases, SEC filings and public conference calls and webcasts. This list may be updated from time to time. The information we
+post through these channels is not a part of this Quarterly Report on Form 10-Q. These channels may be updated from time to time on NVIDIA's investor
+relations website.
+2
+
+Structured Layout:
+NVIDIA Corporation
+
+Form 10-Q
+For the Quarter Ended April 27, 2025
+
+Table of Contents
+ 
+ 
+Page
+ 
+Part I : Financial Information
+
+Item 1.
+Financial Statements (Unaudited)
+
+a) Condensed Consolidated Statements of Income for the three months ended April 27, 2025 and April 28, 2024
+3
+b) Condensed Consolidated Statements of Comprehensive Income for the three months ended April 27, 2025 and April 28, 2024
+4
+ 
+c) Condensed Consolidated Balance Sheets as of April 27, 2025 and January 26, 2025
+5
+d) Condensed Consolidated Statements of Shareholders' Equity for the three months ended April 27, 2025 and April 28, 2024
+6
+ 
+e) Condensed Consolidated Statements of Cash Flows for the three months ended April 27, 2025 and April 28, 2024
+7
+ 
+f) Notes to Condensed Consolidated Financial Statements
+8
+
+Item 2.
+Management’s Discussion and Analysis of Financial Condition and Results of Operations
+22
+
+Item 3.
+Quantitative and Qualitative Disclosures About Market Risk
+29
+
+Item 4.
+Controls and Procedures
+30
+
+Part II : Other Information
+
+Item 1.
+Legal Proceedings
+30
+
+Item 1A.
+Risk Factors
+30
+
+Item 2.
+Unregistered Sales of Equity Securities and Use of Proceeds
+36
+
+Item 5.
+Other Information
+37
+
+Item 6.
+Exhibits
+38
+
+Signature
+ 
+39
+
+Where You Can Find More Information
+
+Investors and others should note that we announce material financial information to our investors using our investor relations website, press releases, SEC
+filings and public conference calls and webcasts. We also use the following social media channels as a means of disclosing information about the company, our
+products, our planned financial and other announcements and attendance at upcoming investor and industry conferences, and other matters, and for complying
+with our disclosure obligations under Regulation FD:
+
+NVIDIA Corporate Blog (http://blogs.nvidia.com)
+
+NVIDIA Technical Blog (http://developer.nvidia.com/blog/)
+
+NVIDIA LinkedIn Page (http://www.linkedin.com/company/nvidia)
+
+NVIDIA Facebook Page (https://www.facebook.com/nvidia)
+
+NVIDIA Instagram Page (https://www.instagram.com/nvidia)
+
+NVIDIA X Account (https://x.com/nvidia)
+
+In addition, investors and others can view NVIDIA videos on YouTube (https://www.YouTube.com/nvidia).
+
+The information we post through these social media channels may be deemed material. Accordingly, investors should monitor these accounts and the blog, in
+addition to following our press releases, SEC filings and public conference calls and webcasts. This list may be updated from time to time. The information we
+post through these channels is not a part of this Quarterly Report on Form 10-Q. These channels may be updated from time to time on NVIDIA's investor
+relations website.
+
+2

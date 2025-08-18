@@ -1,0 +1,1212 @@
+=== CONTEXT DEBUG FOR QUESTION ===
+Question: What was the compound annual growth rate of NVIDIA’s operating lease obligations between fiscal years 2026 and 2028, and how does this growth relate to the company’s expectation to commence new data center and office operating leases from the second quarter of fiscal year 2026 through fiscal year 2030?
+
+Context:
+=== nvidia_10q.pdf, Page 21 ===
+Visual content from: document_images/nvidia_10q_page_021.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA Corporation and Subsidiaries
+Notes to Condensed Consolidated Financial Statements (Continued)
+(Unaudited)
+Operating Lease Obligations
+ 
+(In millions)
+Fiscal Year:
+ 
+2026 (excluding the first quarter of fiscal year 2026)
+$
+274 
+2027
+346 
+2028
+349 
+2029
+308 
+2030
+233 
+2031 and thereafter
+611 
+Total
+2,121 
+Less imputed interest
+300 
+Present value of net future minimum lease payments
+1,821 
+Less short-term operating lease liabilities
+300 
+Long-term operating lease liabilities
+$
+1,521 
+Between the second quarter of fiscal year 2026 and fiscal year 2030, we expect to commence leases with future obligations of $7.4 billion primarily of data
+center and office operating leases, with lease terms of 2 to 15.5 years.
+Operating lease expenses were $101 million and $80 million for the first quarter of fiscal years 2026 and 2025, respectively. Short-term and variable lease
+expenses for the first quarter of fiscal years 2026 and 2025 were not significant.
+Other information related to leases was as follows:
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+ 
+(In millions)
+Supplemental cash flows information
+ 
+Operating cash flow used for operating leases
+$
+96 
+$
+69 
+Operating lease assets obtained in exchange for lease obligations
+$
+98 
+$
+250 
+As of April 27, 2025, our operating leases have a weighted average remaining lease term of 6.7 years and a weighted average discount rate of 4.27%. As of
+January 26, 2025, our operating leases had a weighted average remaining lease term of 6.5 years and a weighted average discount rate of 4.16%.
+21
+
+Table Data:
+Fiscal Year: |  | 
+2026 (excluding the first quarter of fiscal year 2026) | $ | 274
+2027 | 346 | 
+2028 | 349 | 
+2029 | 308 | 
+2030 | 233 | 
+2031 and thereafter | 611 | 
+Total | 2,121 | 
+Less imputed interest | 300 | 
+Present value of net future minimum lease payments | 1,821 | 
+Less short-term operating lease liabilities | 300 | 
+Long-term operating lease liabilities | $ | 1,521
+Supplemental cash flows information |  |  |  |  | 
+Operating cash flow used for operating leases | $ | 96 |  | $ | 69
+Operating lease assets obtained in exchange for lease obligations | $ | 98 |  | $ | 250
+
+Structured Layout:
+NVIDIA Corporation and Subsidiaries
+Notes to Condensed Consolidated Financial Statements (Continued)
+
+(Unaudited)
+
+Operating Lease Obligations
+ 
+(In millions)
+Fiscal Year:
+ 
+2026 (excluding the first quarter of fiscal year 2026)
+$
+274 
+2027
+346 
+2028
+349 
+2029
+308 
+2030
+233 
+2031 and thereafter
+611 
+Total
+2,121 
+Less imputed interest
+300 
+Present value of net future minimum lease payments
+1,821 
+Less short-term operating lease liabilities
+300
+
+Long-term operating lease liabilities
+$
+1,521
+
+Between the second quarter of fiscal year 2026 and fiscal year 2030, we expect to commence leases with future obligations of $7.4 billion primarily of data
+center and office operating leases, with lease terms of 2 to 15.5 years.
+
+Operating lease expenses were $101 million and $80 million for the first quarter of fiscal years 2026 and 2025, respectively. Short-term and variable lease
+expenses for the first quarter of fiscal years 2026 and 2025 were not significant.
+
+Other information related to leases was as follows:
+
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+
+(In millions)
+Supplemental cash flows information
+ 
+Operating cash flow used for operating leases
+$
+96 
+$
+69 
+Operating lease assets obtained in exchange for lease obligations
+$
+98 
+$
+250
+
+As of April 27, 2025, our operating leases have a weighted average remaining lease term of 6.7 years and a weighted average discount rate of 4.27%. As of
+January 26, 2025, our operating leases had a weighted average remaining lease term of 6.5 years and a weighted average discount rate of 4.16%.
+
+21
+
+=== nvidia_10q.pdf, Page 20 ===
+Visual content from: document_images/nvidia_10q_page_020.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Revenue by geographic area is based upon the billing location of the customer. The end customer and shipping location may be different from our customer’s
+billing location.
+ 
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+ 
+(In millions)
+Geographic Revenue based upon Customer Billing Location:
+ 
+ 
+United States
+$
+20,739 
+$
+13,496 
+Singapore (1)
+9,017 
+4,037 
+Taiwan
+7,158 
+4,373 
+China (including Hong Kong)
+5,522 
+2,491 
+Other
+1,626 
+1,647 
+Total revenue
+$
+44,062 
+$
+26,044 
+(1)        Singapore represented 20% of the first quarter of fiscal year 2026 total revenue based upon customer billing location. Customers use Singapore to
+centralize invoicing while our products are almost always shipped elsewhere. Over 99% of controlled Data Center compute revenue billed to Singapore was
+for orders from U.S.-based customers. Controlled Data Center compute refers to the following NVIDIA products, and any others we develop that meet the
+characteristics of Export Control Classification Numbers 3A090.a or 4A090.a, including but not limited to: A100, A800, H100, H200, H800, B100, B200,
+GB200, L4, L40S, and RTX 6000 Ada.
+Revenue from sales to customers outside of the United States accounted for 53% and 48% of total revenue for the first quarter of fiscal years 2026 and 2025,
+respectively.
+We refer to customers who purchase products directly from NVIDIA as direct customers, such as add-in board manufacturers, distributors, ODMs, OEMs, and
+system integrators. We have certain customers that may purchase products directly from NVIDIA and may use either internal resources or third-party system
+integrators to complete their build. We also have indirect customers, who purchase products through our direct customers; indirect customers include cloud
+service providers, or CSPs, consumer internet companies, enterprises, and public sector entities.
+Sales to one direct customer, Customer A, represented 16% of total revenue and sales to a second direct customer, Customer B, represented 14% of total
+revenue for the first quarter of fiscal year 2026, both of which were attributable to the Compute & Networking segment. Sales to two direct customers
+represented 11% and 13% of total revenue for the first quarter of fiscal year 2025, both of which were attributable to the Compute & Networking segment.
+The following table summarizes revenue by specialized markets:
+ 
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+ 
+(In millions)
+Revenue by End Market:
+ 
+ 
+Data Center
+$
+39,112 
+$
+22,563 
+Compute
+34,155 
+19,392 
+Networking
+4,957 
+3,171 
+Gaming
+3,763 
+2,647 
+Professional Visualization
+509 
+427 
+Automotive
+567 
+329 
+OEM and Other
+111 
+78 
+Total revenue
+$
+44,062 
+$
+26,044 
+Note 14 - Leases
+Our lease obligations primarily consist of operating leases for our headquarters' campus and domestic and international offices and data centers, with lease
+periods expiring between fiscal years 2026 and 2041.
+Future minimum lease obligations under our non-cancelable lease agreements as of April 27, 2025 were as follows:
+20
+
+Table Data:
+United States | $ | 20,739 |  | $ | 13,496
+Singapore (1) | 9,017 |  |  | 4,037 | 
+Taiwan | 7,158 |  |  | 4,373 | 
+China (including Hong Kong) | 5,522 |  |  | 2,491 | 
+Other | 1,626 |  |  | 1,647 | 
+Total revenue | $ | 44,062 |  | $ | 26,044
+Data Center | $ | 39,112 |  | $ | 22,563
+Compute | 34,155 |  |  | 19,392 | 
+Networking | 4,957 |  |  | 3,171 | 
+Gaming | 3,763 |  |  | 2,647 | 
+Professional Visualization | 509 |  |  | 427 | 
+Automotive | 567 |  |  | 329 | 
+OEM and Other | 111 |  |  | 78 | 
+Total revenue | $ | 44,062 |  | $ | 26,044
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Revenue by geographic area is based upon the billing location of the customer. The end customer and shipping location may be different from our customer’s
+billing location.
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+
+(In millions)
+Geographic Revenue based upon Customer Billing Location:
+ 
+ 
+United States
+$
+20,739 
+$
+13,496 
+Singapore (1)
+9,017 
+4,037 
+Taiwan
+7,158 
+4,373 
+China (including Hong Kong)
+5,522 
+2,491 
+Other
+1,626 
+1,647
+
+Total revenue
+$
+44,062 
+$
+26,044
+
+(1)        Singapore represented 20% of the first quarter of fiscal year 2026 total revenue based upon customer billing location. Customers use Singapore to
+
+centralize invoicing while our products are almost always shipped elsewhere. Over 99% of controlled Data Center compute revenue billed to Singapore was
+for orders from U.S.-based customers. Controlled Data Center compute refers to the following NVIDIA products, and any others we develop that meet the
+characteristics of Export Control Classification Numbers 3A090.a or 4A090.a, including but not limited to: A100, A800, H100, H200, H800, B100, B200,
+GB200, L4, L40S, and RTX 6000 Ada.
+
+Revenue from sales to customers outside of the United States accounted for 53% and 48% of total revenue for the first quarter of fiscal years 2026 and 2025,
+respectively.
+
+We refer to customers who purchase products directly from NVIDIA as direct customers, such as add-in board manufacturers, distributors, ODMs, OEMs, and
+system integrators. We have certain customers that may purchase products directly from NVIDIA and may use either internal resources or third-party system
+integrators to complete their build. We also have indirect customers, who purchase products through our direct customers; indirect customers include cloud
+service providers, or CSPs, consumer internet companies, enterprises, and public sector entities.
+
+Sales to one direct customer, Customer A, represented 16% of total revenue and sales to a second direct customer, Customer B, represented 14% of total
+revenue for the first quarter of fiscal year 2026, both of which were attributable to the Compute & Networking segment. Sales to two direct customers
+represented 11% and 13% of total revenue for the first quarter of fiscal year 2025, both of which were attributable to the Compute & Networking segment.
+
+The following table summarizes revenue by specialized markets:
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+
+(In millions)
+Revenue by End Market:
+ 
+ 
+Data Center
+$
+39,112 
+$
+22,563 
+Compute
+34,155 
+19,392 
+Networking
+4,957 
+3,171 
+Gaming
+3,763 
+2,647 
+Professional Visualization
+509 
+427 
+Automotive
+567 
+329 
+OEM and Other
+111 
+78
+
+Total revenue
+$
+44,062 
+$
+26,044
+
+Note 14 - Leases
+
+Our lease obligations primarily consist of operating leases for our headquarters' campus and domestic and international offices and data centers, with lease
+periods expiring between fiscal years 2026 and 2041.
+
+Future minimum lease obligations under our non-cancelable lease agreements as of April 27, 2025 were as follows:
+
+20
+
+=== nvidia_10q.pdf, Page 26 ===
+Visual content from: document_images/nvidia_10q_page_026.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Reportable segment operating income – The year over year increase in Compute & Networking segment operating income in the first quarter of fiscal year 2026
+was driven by growth in revenue, partially offset by a $4.5 billion charge associated with H20 excess inventory and purchase obligations. The year over year
+increase in Graphics segment operating income in the first quarter of fiscal year 2026 was driven by growth in revenue.
+All Other operating loss – The year over year increase in the first quarter of fiscal year 2026 was due to an increase in stock-based compensation expense
+reflecting employee growth.
+Concentration of Revenue
+We refer to customers who purchase products directly from NVIDIA as direct customers, such as add-in board manufacturers, distributors, ODMs, OEMs, and
+system integrators. We have certain customers that may purchase products directly from NVIDIA and may use either internal resources or third-party system
+integrators to complete their build. We also have indirect customers, who purchase products through our direct customers; indirect customers include CSPs,
+consumer internet companies, enterprises, and public sector entities.
+Direct Customers – Sales to one direct customer, Customer A, represented 16% of total revenue and sales to a second direct customer, Customer B,
+represented 14% of total revenue for the first quarter of fiscal year 2026, both of which were attributable to the Compute & Networking segment. Sales to two
+direct customers represented 11% and 13% of total revenue for the first quarter of fiscal year 2025, both of which were attributable to the Compute & Networking
+segment.
+Indirect Customers – Indirect customer revenue is an estimation based upon multiple factors including customer purchase order information, product
+specifications, internal sales data, and other sources. Actual indirect customer revenue may differ from our estimates. For the first quarter of fiscal year 2026, two
+indirect customers which primarily purchase our products through system integrators and distributors, including through Direct Customers A and B, are estimated
+to represent 10% or more of total revenue, attributable to the Compute & Networking segment.
+We estimate that in the first quarter of fiscal year 2026, an AI research and deployment company contributed to a meaningful amount of our revenue, through
+one of the above indirect customers and through other indirect customers that provide cloud services.
+We have experienced periods where we receive a significant amount of our revenue from a limited number of customers, and this trend may continue.
+Revenue by geographic region is designated based on the billing location even if the revenue may be attributable to indirect customers in a different location.
+Revenue from sales to customers outside of the United States accounted for 53% and 48% of total revenue for the first quarter of fiscal years 2026 and 2025,
+respectively.
+Gross Profit and Gross Margin
+Gross profit consists of total net revenue less cost of revenue. Cost of revenue consists primarily of the cost of semiconductors, including wafer fabrication,
+assembly, testing and packaging, board and device costs, manufacturing support costs, including labor and overhead associated with such purchases, final test
+yield fallout, inventory and warranty provisions, memory and component costs, tariffs, and shipping costs. Cost of revenue also includes acquisition-related
+intangible amortization expense, costs for license and development and service arrangements, IP-related costs, and stock-based compensation related to
+personnel associated with manufacturing operations.
+Gross margins decreased to 60.5% for the first quarter of fiscal year 2026 compared to 78.4% for the first quarter of fiscal year 2025, primarily due to a $4.5
+billion charge associated with H20 excess inventory and purchase obligations and the initial ramp of more sophisticated systems within Data Center.
+Provisions for inventory and excess inventory purchase obligations totaled $5.3 billion, including $4.5 billion associated with H20 excess inventory and purchase
+obligations, and $393 million for the first quarter of fiscal years 2026 and 2025, respectively. Sales of previously reserved inventory and settlements of excess
+inventory purchase obligations resulted in a provision release of $436 million and $114 million for the first quarter of fiscal years 2026 and 2025, respectively.
+The net effect of provisions for inventory and excess inventory purchase obligations on our gross margin was an unfavorable impact of 11.0% and 1.1% in the
+first quarter of fiscal years 2026 and 2025, respectively.
+26
+
+Structured Layout:
+Reportable segment operating income – The year over year increase in Compute & Networking segment operating income in the first quarter of fiscal year 2026
+was driven by growth in revenue, partially offset by a $4.5 billion charge associated with H20 excess inventory and purchase obligations. The year over year
+increase in Graphics segment operating income in the first quarter of fiscal year 2026 was driven by growth in revenue.
+
+All Other operating loss – The year over year increase in the first quarter of fiscal year 2026 was due to an increase in stock-based compensation expense
+reflecting employee growth.
+
+Concentration of Revenue
+
+We refer to customers who purchase products directly from NVIDIA as direct customers, such as add-in board manufacturers, distributors, ODMs, OEMs, and
+system integrators. We have certain customers that may purchase products directly from NVIDIA and may use either internal resources or third-party system
+integrators to complete their build. We also have indirect customers, who purchase products through our direct customers; indirect customers include CSPs,
+consumer internet companies, enterprises, and public sector entities.
+
+Direct Customers – Sales to one direct customer, Customer A, represented 16% of total revenue and sales to a second direct customer, Customer B,
+represented 14% of total revenue for the first quarter of fiscal year 2026, both of which were attributable to the Compute & Networking segment. Sales to two
+direct customers represented 11% and 13% of total revenue for the first quarter of fiscal year 2025, both of which were attributable to the Compute & Networking
+segment.
+
+Indirect Customers – Indirect customer revenue is an estimation based upon multiple factors including customer purchase order information, product
+specifications, internal sales data, and other sources. Actual indirect customer revenue may differ from our estimates. For the first quarter of fiscal year 2026, two
+indirect customers which primarily purchase our products through system integrators and distributors, including through Direct Customers A and B, are estimated
+to represent 10% or more of total revenue, attributable to the Compute & Networking segment.
+
+We estimate that in the first quarter of fiscal year 2026, an AI research and deployment company contributed to a meaningful amount of our revenue, through
+one of the above indirect customers and through other indirect customers that provide cloud services.
+
+We have experienced periods where we receive a significant amount of our revenue from a limited number of customers, and this trend may continue.
+
+Revenue by geographic region is designated based on the billing location even if the revenue may be attributable to indirect customers in a different location.
+Revenue from sales to customers outside of the United States accounted for 53% and 48% of total revenue for the first quarter of fiscal years 2026 and 2025,
+respectively.
+
+Gross Profit and Gross Margin
+
+Gross profit consists of total net revenue less cost of revenue. Cost of revenue consists primarily of the cost of semiconductors, including wafer fabrication,
+assembly, testing and packaging, board and device costs, manufacturing support costs, including labor and overhead associated with such purchases, final test
+yield fallout, inventory and warranty provisions, memory and component costs, tariffs, and shipping costs. Cost of revenue also includes acquisition-related
+intangible amortization expense, costs for license and development and service arrangements, IP-related costs, and stock-based compensation related to
+personnel associated with manufacturing operations.
+
+Gross margins decreased to 60.5% for the first quarter of fiscal year 2026 compared to 78.4% for the first quarter of fiscal year 2025, primarily due to a $4.5
+billion charge associated with H20 excess inventory and purchase obligations and the initial ramp of more sophisticated systems within Data Center.
+
+Provisions for inventory and excess inventory purchase obligations totaled $5.3 billion, including $4.5 billion associated with H20 excess inventory and purchase
+obligations, and $393 million for the first quarter of fiscal years 2026 and 2025, respectively. Sales of previously reserved inventory and settlements of excess
+inventory purchase obligations resulted in a provision release of $436 million and $114 million for the first quarter of fiscal years 2026 and 2025, respectively.
+The net effect of provisions for inventory and excess inventory purchase obligations on our gross margin was an unfavorable impact of 11.0% and 1.1% in the
+first quarter of fiscal years 2026 and 2025, respectively.
+
+26
+
+=== nvidia_10q.pdf, Page 14 ===
+Visual content from: document_images/nvidia_10q_page_014.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Property and Equipment:
+Property, equipment and intangible assets acquired by assuming related liabilities for the first quarter of fiscal years 2026 and 2025 were $408 million and
+$147 million, respectively.
+ 
+Apr 27, 2025
+Jan 26, 2025
+Other Assets (Long Term):
+(In millions)
+Non-marketable equity securities
+$
+3,240 
+$
+3,387 
+Prepaid supply and capacity agreements (1)
+2,079 
+1,747 
+Income tax receivable
+895 
+750 
+Prepaid royalties
+334 
+340 
+Other
+240 
+201 
+Total other assets
+$
+6,788 
+$
+6,425 
+(1)    Prepaid supply and capacity agreements of $2.1 billion and $3.3 billion were included in Prepaid expenses and other current assets as of April 27, 2025 and January 26, 2025, respectively.
+ 
+Apr 27, 2025
+Jan 26, 2025
+Accrued and Other Current Liabilities:
+(In millions)
+Taxes payable
+$
+5,672 
+$
+881 
+Excess inventory purchase obligations (1)
+4,310 
+2,095 
+Customer program accruals
+4,261 
+4,880 
+Product warranty and return provisions
+2,168 
+1,373 
+Deferred revenue (2)
+1,074 
+837 
+Accrued payroll and related expenses
+748 
+848 
+Unsettled share repurchases
+306 
+132 
+Operating leases
+300 
+288 
+Licenses and royalties
+144 
+175 
+Other
+228 
+228 
+Total accrued and other current liabilities
+$
+19,211 
+$
+11,737 
+(1)    We recorded excess inventory purchase obligation charges of $3.0 billion in cost of revenue, including $2.6 billion for H20 product orders for the first quarter of fiscal year 2026. The $2.6 billion excess
+inventory purchase obligation charge for H20 product orders is part of the overall $4.5 billion charge associated with H20 product excess inventory and purchase obligations; the remaining portion is
+included in Inventories. We recorded excess inventory purchase obligation charges of $183 million in cost of revenue for the first quarter of fiscal year 2025.
+(2)    Includes customer advances and unearned revenue related to hardware support, software support, cloud services, and license and development arrangements. The balance as of April 27, 2025 and
+January 26, 2025 included $287 million and $81 million of customer advances, respectively.
+ 
+Apr 27, 2025
+Jan 26, 2025
+Other Long-Term Liabilities:
+(In millions)
+Income tax payable (1)
+$
+2,509 
+$
+2,188 
+Deferred income tax
+1,082 
+886 
+Deferred revenue (2)
+1,004 
+976 
+Licenses payable
+112 
+116 
+Other
+177 
+79 
+Total other long-term liabilities
+$
+4,884 
+$
+4,245 
+(1)    Income tax payable is comprised of unrecognized tax benefits and related interest and penalties.
+(2)    Includes unearned revenue related to hardware support, software support and cloud services.
+14
+
+Table Data:
+Non-marketable equity securities | $ | 3,240 |  | $ | 3,387
+Prepaid supply and capacity agreements (1) | 2,079 |  |  | 1,747 | 
+Income tax receivable | 895 |  |  | 750 | 
+Prepaid royalties | 334 |  |  | 340 | 
+Other | 240 |  |  | 201 | 
+Total other assets | $ | 6,788 |  | $ | 6,425
+Taxes payable | $ | 5,672 |  | $ | 881
+Excess inventory purchase obligations (1) | 4,310 |  |  | 2,095 | 
+Customer program accruals | 4,261 |  |  | 4,880 | 
+Product warranty and return provisions | 2,168 |  |  | 1,373 | 
+Deferred revenue (2) | 1,074 |  |  | 837 | 
+Accrued payroll and related expenses | 748 |  |  | 848 | 
+Unsettled share repurchases | 306 |  |  | 132 | 
+Operating leases | 300 |  |  | 288 | 
+Licenses and royalties | 144 |  |  | 175 | 
+Other | 228 |  |  | 228 | 
+Total accrued and other current liabilities | $ | 19,211 |  | $ | 11,737
+Income tax payable (1) | $ | 2,509 |  | $ | 2,188
+Deferred income tax | 1,082 |  |  | 886 | 
+Deferred revenue (2) | 1,004 |  |  | 976 | 
+Licenses payable | 112 |  |  | 116 | 
+Other | 177 |  |  | 79 | 
+Total other long-term liabilities | $ | 4,884 |  | $ | 4,245
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Property and Equipment:
+
+Property, equipment and intangible assets acquired by assuming related liabilities for the first quarter of fiscal years 2026 and 2025 were $408 million and
+$147 million, respectively.
+
+Apr 27, 2025
+Jan 26, 2025
+
+Other Assets (Long Term):
+(In millions)
+Non-marketable equity securities
+$
+3,240 
+$
+3,387 
+Prepaid supply and capacity agreements (1)
+2,079 
+1,747 
+Income tax receivable
+895 
+750 
+Prepaid royalties
+334 
+340 
+Other
+240 
+201 
+Total other assets
+$
+6,788 
+$
+6,425
+
+(1)    Prepaid supply and capacity agreements of $2.1 billion and $3.3 billion were included in Prepaid expenses and other current assets as of April 27, 2025 and January 26, 2025, respectively.
+
+Apr 27, 2025
+Jan 26, 2025
+
+Accrued and Other Current Liabilities:
+(In millions)
+Taxes payable
+$
+5,672 
+$
+881 
+Excess inventory purchase obligations (1)
+4,310 
+2,095 
+Customer program accruals
+4,261 
+4,880 
+Product warranty and return provisions
+2,168 
+1,373 
+Deferred revenue (2)
+1,074 
+837 
+Accrued payroll and related expenses
+748 
+848 
+Unsettled share repurchases
+306 
+132 
+Operating leases
+300 
+288 
+Licenses and royalties
+144 
+175 
+Other
+228 
+228
+
+Total accrued and other current liabilities
+$
+19,211 
+$
+11,737
+
+(1)    We recorded excess inventory purchase obligation charges of $3.0 billion in cost of revenue, including $2.6 billion for H20 product orders for the first quarter of fiscal year 2026. The $2.6 billion excess
+
+inventory purchase obligation charge for H20 product orders is part of the overall $4.5 billion charge associated with H20 product excess inventory and purchase obligations; the remaining portion is
+included in Inventories. We recorded excess inventory purchase obligation charges of $183 million in cost of revenue for the first quarter of fiscal year 2025.
+
+(2)    Includes customer advances and unearned revenue related to hardware support, software support, cloud services, and license and development arrangements. The balance as of April 27, 2025 and
+
+January 26, 2025 included $287 million and $81 million of customer advances, respectively.
+
+Apr 27, 2025
+Jan 26, 2025
+
+Other Long-Term Liabilities:
+(In millions)
+Income tax payable (1)
+$
+2,509 
+$
+2,188 
+Deferred income tax
+1,082 
+886 
+Deferred revenue (2)
+1,004 
+976 
+Licenses payable
+112 
+116 
+Other
+177 
+79 
+Total other long-term liabilities
+$
+4,884 
+$
+4,245
+
+(1)    Income tax payable is comprised of unrecognized tax benefits and related interest and penalties.
+
+(2)    Includes unearned revenue related to hardware support, software support and cloud services.
+
+14
+
+=== nvidia_10q.pdf, Page 16 ===
+Visual content from: document_images/nvidia_10q_page_016.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Note 10 - Debt
+Long-Term Debt
+Expected
+Remaining Term
+(years)
+Effective
+Interest Rate
+Carrying Value at
+Apr 27, 2025
+Jan 26, 2025
+(In millions)
+3.20% Notes Due 2026
+1.4
+3.31%
+$
+1,000 
+$
+1,000 
+1.55% Notes Due 2028
+3.1
+1.64%
+1,250 
+1,250 
+2.85% Notes Due 2030
+4.9
+2.93%
+1,500 
+1,500 
+2.00% Notes Due 2031
+6.1
+2.09%
+1,250 
+1,250 
+3.50% Notes Due 2040
+14.9
+3.54%
+1,000 
+1,000 
+3.50% Notes Due 2050
+24.9
+3.54%
+2,000 
+2,000 
+3.70% Notes Due 2060
+35.0
+3.73%
+500 
+500 
+Unamortized debt discount and issuance costs
+(36)
+(37)
+Net long-term carrying amount
+$
+8,464 
+$
+8,463 
+As of April 27, 2025 and January 26, 2025, the estimated fair value of debt was $7.3 billion and $7.2 billion, respectively. The estimated fair values are based on
+Level 2 inputs.
+Our notes are unsecured senior obligations. Existing and future liabilities of our subsidiaries will be effectively senior to the notes. Our notes pay interest semi-
+annually. We may redeem each of our notes prior to maturity, subject to a make-whole premium. The maturity of the notes is calendar year.
+As of April 27, 2025, we complied with the required covenants, which are non-financial in nature, under the outstanding notes.
+Commercial Paper
+We have a $575 million commercial paper program to support general corporate purposes. As of April 27, 2025, we had no commercial paper outstanding.
+Note 11 - Commitments and Contingencies
+Purchase Obligations
+Our purchase obligations reflect our commitment to purchase components used to manufacture our products, including long-term supply and capacity
+agreements, certain software and technology licenses, other goods and services and long-lived assets.
+As of April 27, 2025, we had outstanding inventory purchase and long-term supply and capacity obligations totaling $29.8 billion, an increase from the prior year
+led by commitments, capacity and components for our Blackwell architecture. We enter into agreements with contract manufacturers that allow them to procure
+inventory based upon our defined criteria, and in certain instances, these agreements are cancellable, able to be rescheduled, or adjustable for our business
+needs prior to placing firm orders. Though, changes to these agreements may result in additional costs. Other non-inventory purchase obligations were
+$13.7  billion, including $10.6  billion of multi-year cloud service agreements. We expect our cloud service agreements to primarily be used to support our
+research and development efforts, as well as our DGX Cloud offerings.
+16
+
+Table Data:
+3.20% Notes Due 2026 |  | 1.4 |  | 3.31% |  | $ | 1,000 |  | $ | 1,000
+1.55% Notes Due 2028 |  | 3.1 |  | 1.64% |  | 1,250 |  |  | 1,250 | 
+2.85% Notes Due 2030 |  | 4.9 |  | 2.93% |  | 1,500 |  |  | 1,500 | 
+2.00% Notes Due 2031 |  | 6.1 |  | 2.09% |  | 1,250 |  |  | 1,250 | 
+3.50% Notes Due 2040 |  | 14.9 |  | 3.54% |  | 1,000 |  |  | 1,000 | 
+3.50% Notes Due 2050 |  | 24.9 |  | 3.54% |  | 2,000 |  |  | 2,000 | 
+3.70% Notes Due 2060 |  | 35.0 |  | 3.73% |  | 500 |  |  | 500 | 
+Unamortized debt discount and issuance costs |  |  |  |  |  | (36) |  |  | (37) | 
+Net long-term carrying amount |  |  |  |  |  | $ | 8,464 |  | $ | 8,463
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Note 10 - Debt
+
+Long-Term Debt
+
+Expected
+Remaining Term
+
+(years)
+
+Effective
+Interest Rate
+
+Carrying Value at
+
+Apr 27, 2025
+Jan 26, 2025
+
+(In millions)
+3.20% Notes Due 2026
+1.4
+3.31%
+$
+1,000 
+$
+1,000 
+1.55% Notes Due 2028
+3.1
+1.64%
+1,250 
+1,250 
+2.85% Notes Due 2030
+4.9
+2.93%
+1,500 
+1,500 
+2.00% Notes Due 2031
+6.1
+2.09%
+1,250 
+1,250 
+3.50% Notes Due 2040
+14.9
+3.54%
+1,000 
+1,000 
+3.50% Notes Due 2050
+24.9
+3.54%
+2,000 
+2,000 
+3.70% Notes Due 2060
+35.0
+3.73%
+500 
+500 
+Unamortized debt discount and issuance costs
+(36)
+(37)
+
+Net long-term carrying amount
+$
+8,464 
+$
+8,463
+
+As of April 27, 2025 and January 26, 2025, the estimated fair value of debt was $7.3 billion and $7.2 billion, respectively. The estimated fair values are based on
+Level 2 inputs.
+
+Our notes are unsecured senior obligations. Existing and future liabilities of our subsidiaries will be effectively senior to the notes. Our notes pay interest semi-
+annually. We may redeem each of our notes prior to maturity, subject to a make-whole premium. The maturity of the notes is calendar year.
+
+As of April 27, 2025, we complied with the required covenants, which are non-financial in nature, under the outstanding notes.
+
+Commercial Paper
+
+We have a $575 million commercial paper program to support general corporate purposes. As of April 27, 2025, we had no commercial paper outstanding.
+
+Note 11 - Commitments and Contingencies
+
+Purchase Obligations
+
+Our purchase obligations reflect our commitment to purchase components used to manufacture our products, including long-term supply and capacity
+agreements, certain software and technology licenses, other goods and services and long-lived assets.
+
+As of April 27, 2025, we had outstanding inventory purchase and long-term supply and capacity obligations totaling $29.8 billion, an increase from the prior year
+led by commitments, capacity and components for our Blackwell architecture. We enter into agreements with contract manufacturers that allow them to procure
+inventory based upon our defined criteria, and in certain instances, these agreements are cancellable, able to be rescheduled, or adjustable for our business
+needs prior to placing firm orders. Though, changes to these agreements may result in additional costs. Other non-inventory purchase obligations were
+$13.7  billion, including $10.6  billion of multi-year cloud service agreements. We expect our cloud service agreements to primarily be used to support our
+research and development efforts, as well as our DGX Cloud offerings.
+
+16
+
+=== nvidia_10q.pdf, Page 13 ===
+Visual content from: document_images/nvidia_10q_page_013.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Note 7 - Amortizable Intangible Assets and Goodwill
+The components of our amortizable intangible assets are as follows:
+ 
+Apr 27, 2025
+Jan 26, 2025
+ 
+Gross
+Carrying
+Amount
+Accumulated
+Amortization
+Net Carrying
+Amount
+Gross
+Carrying
+Amount
+Accumulated
+Amortization
+Net Carrying
+Amount
+ 
+(In millions)
+Acquisition-related intangible assets
+$
+3,008 
+$
+(2,416)
+$
+592 
+$
+2,900 
+$
+(2,264)
+$
+636 
+Patents and licensed technology
+459 
+(282)
+177 
+449 
+(278)
+171 
+Total intangible assets
+$
+3,467 
+$
+(2,698)
+$
+769 
+$
+3,349 
+$
+(2,542)
+$
+807 
+Amortization expense associated with intangible assets was $159 million and $143 million for the first quarter of fiscal years 2026 and 2025, respectively.
+The following table outlines the estimated future amortization expense related to the net carrying amount of intangible assets as of April 27, 2025:
+Future Amortization Expense
+ 
+(In millions)
+Fiscal Year:
+ 
+2026 (excluding the first quarter of fiscal year 2026)
+$
+229 
+2027
+276 
+2028
+123 
+2029
+38 
+2030
+11 
+2031 and thereafter
+92 
+Total
+$
+769 
+In the first quarter of fiscal year 2026, goodwill increased by $310 million from acquisitions and was allocated to our Compute & Networking reporting unit.
+Note 8 - Balance Sheet Components
+We refer to customers who purchase products directly from NVIDIA as direct customers, such as add-in board manufacturers, distributors, original device
+manufacturers, or ODMs, original equipment manufacturers, or OEMs, and system integrators. We have certain customers that may purchase products directly
+from NVIDIA and may use either internal resources or third-party system integrators to complete their build. Three direct customers accounted for 27%, 18% and
+12% of our accounts receivable balance as of April 27, 2025. Two direct customers accounted for 17% and 16% of our accounts receivable balance as of
+January 26, 2025.
+Certain balance sheet components are as follows:
+ 
+Apr 27, 2025
+Jan 26, 2025
+Inventories:
+(In millions)
+Raw materials
+$
+2,525 
+$
+3,408 
+Work in process
+5,339 
+3,399 
+Finished goods
+3,469 
+3,273 
+Total inventories (1)
+$
+11,333 
+$
+10,080 
+(1)    We recorded an inventory provision of $2.3 billion in cost of revenue, including $1.9 billion for H20 product inventory for the first quarter of fiscal year 2026. The $1.9 billion inventory provision for H20
+product inventory is part of the overall $4.5 billion charge associated with H20 product excess inventory and purchase obligations; the remaining portion is included in excess inventory purchase
+obligation liabilities. We recorded an inventory provision of $210 million in cost of revenue for the first quarter of fiscal year 2025.
+13
+
+Table Data:
+Acquisition-related intangible assets | $ | 3,008 |  | $ | (2,416) |  | $ | 592 |  | $ | 2,900 |  | $ | (2,264) |  | $ | 636
+Patents and licensed technology | 459 |  |  | (282) |  |  | 177 |  |  | 449 |  |  | (278) |  |  | 171 | 
+Total intangible assets | $ | 3,467 |  | $ | (2,698) |  | $ | 769 |  | $ | 3,349 |  | $ | (2,542) |  | $ | 807
+Fiscal Year: |  | 
+2026 (excluding the first quarter of fiscal year 2026) | $ | 229
+2027 | 276 | 
+2028 | 123 | 
+2029 | 38 | 
+2030 | 11 | 
+2031 and thereafter | 92 | 
+Total | $ | 769
+Raw materials | $ | 2,525 |  | $ | 3,408
+Work in process | 5,339 |  |  | 3,399 | 
+Finished goods | 3,469 |  |  | 3,273 | 
+Total inventories (1) | $ | 11,333 |  | $ | 10,080
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Note 7 - Amortizable Intangible Assets and Goodwill
+
+The components of our amortizable intangible assets are as follows:
+
+Apr 27, 2025
+Jan 26, 2025
+
+Gross
+Carrying
+
+Amount
+
+Accumulated
+
+Amortization
+
+Net Carrying
+
+Amount
+
+Gross
+Carrying
+
+Amount
+
+Accumulated
+
+Amortization
+
+Net Carrying
+
+Amount
+
+(In millions)
+Acquisition-related intangible assets
+$
+3,008 
+$
+(2,416)
+$
+592 
+$
+2,900 
+$
+(2,264)
+$
+636 
+Patents and licensed technology
+459 
+(282)
+177 
+449 
+(278)
+171 
+Total intangible assets
+$
+3,467 
+$
+(2,698)
+$
+769 
+$
+3,349 
+$
+(2,542)
+$
+807
+
+Amortization expense associated with intangible assets was $159 million and $143 million for the first quarter of fiscal years 2026 and 2025, respectively.
+
+The following table outlines the estimated future amortization expense related to the net carrying amount of intangible assets as of April 27, 2025:
+
+Future Amortization Expense
+ 
+(In millions)
+Fiscal Year:
+ 
+2026 (excluding the first quarter of fiscal year 2026)
+$
+229 
+2027
+276 
+2028
+123 
+2029
+38 
+2030
+11 
+2031 and thereafter
+92
+
+Total
+$
+769
+
+In the first quarter of fiscal year 2026, goodwill increased by $310 million from acquisitions and was allocated to our Compute & Networking reporting unit.
+
+Note 8 - Balance Sheet Components
+
+We refer to customers who purchase products directly from NVIDIA as direct customers, such as add-in board manufacturers, distributors, original device
+manufacturers, or ODMs, original equipment manufacturers, or OEMs, and system integrators. We have certain customers that may purchase products directly
+from NVIDIA and may use either internal resources or third-party system integrators to complete their build. Three direct customers accounted for 27%, 18% and
+12% of our accounts receivable balance as of April 27, 2025. Two direct customers accounted for 17% and 16% of our accounts receivable balance as of
+January 26, 2025.
+
+Certain balance sheet components are as follows:
+
+Apr 27, 2025
+Jan 26, 2025
+
+Inventories:
+(In millions)
+Raw materials
+$
+2,525 
+$
+3,408 
+Work in process
+5,339 
+3,399 
+Finished goods
+3,469 
+3,273 
+Total inventories (1)
+$
+11,333 
+$
+10,080
+
+(1)    We recorded an inventory provision of $2.3 billion in cost of revenue, including $1.9 billion for H20 product inventory for the first quarter of fiscal year 2026. The $1.9 billion inventory provision for H20
+
+product inventory is part of the overall $4.5 billion charge associated with H20 product excess inventory and purchase obligations; the remaining portion is included in excess inventory purchase
+obligation liabilities. We recorded an inventory provision of $210 million in cost of revenue for the first quarter of fiscal year 2025.
+
+13

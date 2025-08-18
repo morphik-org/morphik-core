@@ -1,0 +1,649 @@
+=== CONTEXT DEBUG FOR QUESTION ===
+Question: According to the “Securities registered pursuant to Section 12(b) of the Act” table, on which exchange is NVIDIA’s common stock listed, and under the definitions in Rule 12b-2 of the Exchange Act which filer category did NVIDIA meet for the quarter ended April 27, 2025, and what was its gross profit margin for that quarter?
+
+Context:
+=== nvidia_10q.pdf, Page 1 ===
+Visual content from: document_images/nvidia_10q_page_001.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+UNITED STATES
+SECURITIES AND EXCHANGE COMMISSION
+Washington, D.C. 20549
+FORM 10-Q
+☒
+QUARTERLY REPORT PURSUANT TO SECTION 13 OR 15(d) OF THE SECURITIES EXCHANGE ACT OF 1934
+For the quarterly period ended April 27, 2025
+OR
+☐
+TRANSITION REPORT PURSUANT TO SECTION 13 OR 15(d) OF THE SECURITIES EXCHANGE ACT OF 1934
+Commission File Number: 0-23985
+NVIDIA CORPORATION
+(Exact name of registrant as specified in its charter)
+Delaware
+94-3177549
+(State or other jurisdiction of
+(I.R.S. Employer
+incorporation or organization)
+Identification No.)
+2788 San Tomas Expressway, Santa Clara, California
+95051
+(Address of principal executive offices)
+(Zip Code)
+(408) 486-2000
+(Registrant's telephone number, including area code)
+N/A
+(Former name, former address and former fiscal year, if changed since last report)
+Securities registered pursuant to Section 12(b) of the Act:
+Title of each class
+Trading Symbol(s)
+Name of each exchange on which registered
+Common Stock, $0.001 par value per share
+NVDA
+The Nasdaq Global Select Market
+Indicate by check mark whether the registrant (1) has filed all reports required to be filed by Section 13 or 15(d) of the Securities Exchange Act of 1934 during the preceding 12
+months (or for such shorter period that the registrant was required to file such reports), and (2) has been subject to such filing requirements for the past 90 days. Yes ☒ No ☐
+Indicate by check mark whether the registrant has submitted electronically every Interactive Data File required to be submitted pursuant to Rule 405 of Regulation S-T (§232.405 of
+this chapter) during the preceding 12 months (or for such shorter period that the registrant was required to submit such files). Yes ☒ No ☐
+Indicate by check mark whether the registrant is a large accelerated filer, an accelerated filer, a non-accelerated filer, a smaller reporting company, or an emerging growth company.
+See the definitions of “large accelerated filer,” “accelerated filer,” “smaller reporting company,” and “emerging growth company” in Rule 12b-2 of the Exchange Act.
+Large accelerated filer
+☒
+Accelerated filer
+☐
+Non-accelerated filer
+☐
+Smaller reporting company
+☐
+Emerging growth company
+☐
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial
+accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+Indicate by check mark whether the registrant is a shell company (as defined in Rule 12b-2 of the Exchange Act). Yes ☐ No ☒
+The number of shares of common stock, $0.001 par value, outstanding as of May 23, 2025, was 24.4 billion.
+
+Structured Layout:
+UNITED STATES
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 10-Q
+
+☒
+QUARTERLY REPORT PURSUANT TO SECTION 13 OR 15(d) OF THE SECURITIES EXCHANGE ACT OF 1934
+
+For the quarterly period ended April 27, 2025
+
+OR
+☐
+TRANSITION REPORT PURSUANT TO SECTION 13 OR 15(d) OF THE SECURITIES EXCHANGE ACT OF 1934
+
+Commission File Number: 0-23985
+
+NVIDIA CORPORATION
+(Exact name of registrant as specified in its charter)
+
+Delaware
+94-3177549
+(State or other jurisdiction of
+(I.R.S. Employer
+incorporation or organization)
+Identification No.)
+
+2788 San Tomas Expressway, Santa Clara, California
+95051
+(Address of principal executive offices)
+(Zip Code)
+
+(408) 486-2000
+(Registrant's telephone number, including area code)
+
+N/A
+(Former name, former address and former fiscal year, if changed since last report)
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+Trading Symbol(s)
+Name of each exchange on which registered
+Common Stock, $0.001 par value per share
+NVDA
+The Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant (1) has filed all reports required to be filed by Section 13 or 15(d) of the Securities Exchange Act of 1934 during the preceding 12
+months (or for such shorter period that the registrant was required to file such reports), and (2) has been subject to such filing requirements for the past 90 days. Yes ☒ No ☐
+
+Indicate by check mark whether the registrant has submitted electronically every Interactive Data File required to be submitted pursuant to Rule 405 of Regulation S-T (§232.405 of
+this chapter) during the preceding 12 months (or for such shorter period that the registrant was required to submit such files). Yes ☒ No ☐
+
+Indicate by check mark whether the registrant is a large accelerated filer, an accelerated filer, a non-accelerated filer, a smaller reporting company, or an emerging growth company.
+See the definitions of “large accelerated filer,” “accelerated filer,” “smaller reporting company,” and “emerging growth company” in Rule 12b-2 of the Exchange Act.
+
+Large accelerated filer
+☒
+Accelerated filer
+☐
+Non-accelerated filer
+☐
+Smaller reporting company
+☐
+Emerging growth company
+☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial
+accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Indicate by check mark whether the registrant is a shell company (as defined in Rule 12b-2 of the Exchange Act). Yes ☐ No ☒
+
+The number of shares of common stock, $0.001 par value, outstanding as of May 23, 2025, was 24.4 billion.
+
+=== nvidia_10q.pdf, Page 42 ===
+Visual content from: document_images/nvidia_10q_page_042.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+EXHIBIT 32.1
+CERTIFICATION
+Pursuant to the requirement set forth in Rule 13a-14(b) of the Securities Exchange Act of 1934, as amended (the “Exchange Act”), and Section
+1350 of Chapter 63 of Title 18 of the United States Code (18 U.S.C. § 1350), Jen-Hsun Huang, the President and Chief Executive Officer of
+NVIDIA Corporation (the “Company”), hereby certifies that, to the best of his knowledge:
+1.  The Company’s Quarterly Report on Form 10-Q for the period ended April 27, 2025, to which this Certification is attached as Exhibit 32.1 (the
+“Periodic Report”), fully complies with the requirements of Section 13(a) or Section 15(d) of the Exchange Act; and
+2.  The information contained in the Periodic Report fairly presents, in all material respects, the financial condition of the Company at the end of
+the period covered by the Periodic Report and results of operations of the Company for the period covered by the Periodic Report.
+Date: May 28, 2025
+/s/JEN-HSUN HUANG
+Jen-Hsun Huang    
+President and Chief Executive Officer
+A signed original of this written statement required by Section 906 of 18 U.S.C. § 1350 has been provided to NVIDIA Corporation and will be
+retained by NVIDIA Corporation and furnished to the Securities and Exchange Commission or its staff upon request.
+ 
+This certification accompanies the Form 10-Q to which it relates, is not deemed filed with the Securities and Exchange Commission and is not to
+be incorporated by reference into any filing of the Company under the Securities Act of 1933, as amended, or the Exchange Act (whether made
+before or after the date of the Form 10-Q), irrespective of any general incorporation language contained in such filing.
+
+Structured Layout:
+EXHIBIT 32.1
+
+CERTIFICATION
+
+Pursuant to the requirement set forth in Rule 13a-14(b) of the Securities Exchange Act of 1934, as amended (the “Exchange Act”), and Section
+1350 of Chapter 63 of Title 18 of the United States Code (18 U.S.C. § 1350), Jen-Hsun Huang, the President and Chief Executive Officer of
+NVIDIA Corporation (the “Company”), hereby certifies that, to the best of his knowledge:
+
+1.  The Company’s Quarterly Report on Form 10-Q for the period ended April 27, 2025, to which this Certification is attached as Exhibit 32.1 (the
+“Periodic Report”), fully complies with the requirements of Section 13(a) or Section 15(d) of the Exchange Act; and
+
+2.  The information contained in the Periodic Report fairly presents, in all material respects, the financial condition of the Company at the end of
+the period covered by the Periodic Report and results of operations of the Company for the period covered by the Periodic Report.
+
+Date: May 28, 2025
+
+/s/JEN-HSUN HUANG
+
+Jen-Hsun Huang    
+President and Chief Executive Officer
+
+A signed original of this written statement required by Section 906 of 18 U.S.C. § 1350 has been provided to NVIDIA Corporation and will be
+retained by NVIDIA Corporation and furnished to the Securities and Exchange Commission or its staff upon request.
+
+This certification accompanies the Form 10-Q to which it relates, is not deemed filed with the Securities and Exchange Commission and is not to
+be incorporated by reference into any filing of the Company under the Securities Act of 1933, as amended, or the Exchange Act (whether made
+before or after the date of the Form 10-Q), irrespective of any general incorporation language contained in such filing.
+
+=== nvidia_10q.pdf, Page 43 ===
+Visual content from: document_images/nvidia_10q_page_043.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+EXHIBIT 32.2
+CERTIFICATION
+Pursuant to the requirement set forth in Rule 13a-14(b) of the Securities Exchange Act of 1934, as amended (the “Exchange Act”), and Section
+1350 of Chapter 63 of Title 18 of the United States Code (18 U.S.C. § 1350), Colette M. Kress, the Executive Vice President and Chief Financial
+Officer of NVIDIA Corporation (the “Company”), hereby certifies that, to the best of her knowledge:
+1. The Company’s Quarterly Report on Form 10-Q for the period ended April 27, 2025, to which this Certification is attached as Exhibit 32.2 (the
+“Periodic Report”), fully complies with the requirements of Section 13(a) or Section 15(d) of the Exchange Act; and
+2. The information contained in the Periodic Report fairly presents, in all material respects, the financial condition of the Company at the end of
+the period covered by the Periodic Report and results of operations of the Company for the period covered by the Periodic Report.
+Date: May 28, 2025
+/s/ COLETTE M. KRESS
+Colette M. Kress
+Executive Vice President and Chief Financial Officer
+           
+  
+A signed original of this written statement required by Section 906 of 18 U.S.C. § 1350 has been provided to NVIDIA Corporation and will be
+retained by NVIDIA Corporation and furnished to the Securities and Exchange Commission or its staff upon request.
+ 
+This certification accompanies the Form 10-Q to which it relates, is not deemed filed with the Securities and Exchange Commission and is not to
+be incorporated by reference into any filing of the Company under the Securities Act of 1933, as amended, or the Exchange Act (whether made
+before or after the date of the Form 10-Q), irrespective of any general incorporation language contained in such filing.
+
+Structured Layout:
+EXHIBIT 32.2
+
+CERTIFICATION
+
+Pursuant to the requirement set forth in Rule 13a-14(b) of the Securities Exchange Act of 1934, as amended (the “Exchange Act”), and Section
+1350 of Chapter 63 of Title 18 of the United States Code (18 U.S.C. § 1350), Colette M. Kress, the Executive Vice President and Chief Financial
+Officer of NVIDIA Corporation (the “Company”), hereby certifies that, to the best of her knowledge:
+
+1. The Company’s Quarterly Report on Form 10-Q for the period ended April 27, 2025, to which this Certification is attached as Exhibit 32.2 (the
+“Periodic Report”), fully complies with the requirements of Section 13(a) or Section 15(d) of the Exchange Act; and
+
+2. The information contained in the Periodic Report fairly presents, in all material respects, the financial condition of the Company at the end of
+the period covered by the Periodic Report and results of operations of the Company for the period covered by the Periodic Report.
+
+Date: May 28, 2025
+
+/s/ COLETTE M. KRESS
+Colette M. Kress
+Executive Vice President and Chief Financial Officer
+
+A signed original of this written statement required by Section 906 of 18 U.S.C. § 1350 has been provided to NVIDIA Corporation and will be
+retained by NVIDIA Corporation and furnished to the Securities and Exchange Commission or its staff upon request.
+
+This certification accompanies the Form 10-Q to which it relates, is not deemed filed with the Securities and Exchange Commission and is not to
+be incorporated by reference into any filing of the Company under the Securities Act of 1933, as amended, or the Exchange Act (whether made
+before or after the date of the Form 10-Q), irrespective of any general incorporation language contained in such filing.
+
+=== nvidia_10q.pdf, Page 18 ===
+Visual content from: document_images/nvidia_10q_page_018.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+The putative derivative lawsuit pending in the United States District Court for the Northern District of California, captioned 4:19-cv-00341-HSG, initially filed
+January 18, 2019 and titled In re NVIDIA Corporation Consolidated Derivative Litigation, was stayed pending resolution of the plaintiffs’ appeal in the In Re
+NVIDIA Corporation Securities Litigation action. On February 22, 2022, the court administratively closed the case, but stated that it would reopen the case once
+the appeal in the In Re NVIDIA Corporation Securities Litigation action is resolved. The case has not yet been reopened by the court. The lawsuit asserts claims,
+purportedly on behalf of us, against certain officers and directors of the Company for breach of fiduciary duty, unjust enrichment, waste of corporate assets, and
+violations of Sections 14(a), 10(b), and 20(a) of the Exchange Act based on the dissemination of allegedly false and misleading statements related to channel
+inventory and the impact of cryptocurrency mining on GPU demand. The plaintiffs are seeking unspecified damages and other relief, including reforms and
+improvements to NVIDIA’s corporate governance and internal procedures.
+The putative derivative actions initially filed September 24, 2019 and pending in the United States District Court for the District of Delaware, Lipchitz v. Huang, et
+al. (Case No. 1:19-cv-01795-MN) and Nelson v. Huang, et. al. (Case No. 1:19-cv-01798-MN), were stayed pending resolution of the plaintiffs’ appeal in the In Re
+NVIDIA Corporation Securities Litigation action. On February 5, 2025, after the Supreme Court issued its judgment dismissing the Company’s petition for writ of
+certiorari as improvidently granted in the In Re NVIDIA Corporation Securities Litigation action, the district court extended the stay for 30 days while the parties
+discuss next steps and ordered the parties to file a joint status report by March 7, 2025. On March 7, 2025, the district court adopted the parties' stipulation to
+extend the stay until the final and complete resolution of the In Re NVIDIA Corporation Securities Litigation action. The lawsuits assert claims, purportedly on
+behalf of us, against certain officers and directors of the Company for breach of fiduciary duty, unjust enrichment, insider trading, misappropriation of information,
+corporate waste and violations of Sections 14(a), 10(b), and 20(a) of the Exchange Act based on the dissemination of allegedly false, and misleading statements
+related to channel inventory and the impact of cryptocurrency mining on GPU demand. The plaintiffs seek unspecified damages and other relief, including
+disgorgement of profits from the sale of NVIDIA stock and unspecified corporate governance measures.
+Another putative derivative action was filed on October 30, 2023 in the Court of Chancery of the State of Delaware, captioned Horanic v. Huang, et al. (Case No.
+2023-1096-KSJM). This lawsuit asserts claims, purportedly on behalf of us, against certain officers and directors of the Company for breach of fiduciary duty and
+insider trading based on the dissemination of allegedly false and misleading statements related to channel inventory and the impact of cryptocurrency mining on
+GPU demand. The plaintiffs seek unspecified damages and other relief, including disgorgement of profits from the sale of NVIDIA stock and reform of
+unspecified corporate governance measures. This derivative matter is stayed pending the final resolution of In Re NVIDIA Corporation Securities Litigation
+action.
+Accounting for Loss Contingencies
+As of April 27, 2025, there are no accrued contingent liabilities associated with the legal proceedings described above based on our belief that liabilities, while
+reasonably possible, are not probable. Further, any possible loss or range of loss in these matters cannot be reasonably estimated at this time. We are engaged
+in legal actions not described above arising in the ordinary course of business and, while there can be no assurance of favorable outcomes, we believe that the
+ultimate outcome of these actions will not have a material adverse effect on our operating results, liquidity or financial position.
+Note 12 - Shareholders’ Equity 
+Capital Return Program 
+We repurchased 126 million and 99 million shares of our common stock for $14.5 billion and $8.0 billion during the first quarter of fiscal years 2026 and 2025,
+respectively. As of April 27, 2025, we were authorized, subject to certain specifications, to repurchase up to $24.3 billion of our common stock.
+From April 28, 2025 through May 23, 2025, we repurchased 19 million shares for $2.3 billion pursuant to a pre-established trading plan. Our share repurchase
+program aims to offset dilution from shares issued to employees while maintaining adequate liquidity to meet our operating requirements. We may pursue
+additional share repurchases as we weigh market factors and other investment opportunities.
+We paid cash dividends to our shareholders of $244 million and $98 million during the first quarter of fiscal years 2026 and 2025, respectively. The payment of
+future cash dividends is subject to our Board of Directors' continuing determination that the declaration of dividends is in the best interests of our shareholders.
+Note 13 - Segment Information
+Our Chief Executive Officer is our chief operating decision maker, or CODM, and reviews financial information presented on an operating segment basis for
+purposes of making decisions and assessing financial performance. Our CODM assesses operating performance of each segment based on regularly provided
+segment revenue and segment operating income. Operating results by segment include costs or expenses directly attributable to each segment, and costs or
+18
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+The putative derivative lawsuit pending in the United States District Court for the Northern District of California, captioned 4:19-cv-00341-HSG, initially filed
+January 18, 2019 and titled In re NVIDIA Corporation Consolidated Derivative Litigation, was stayed pending resolution of the plaintiffs’ appeal in the In Re
+NVIDIA Corporation Securities Litigation action. On February 22, 2022, the court administratively closed the case, but stated that it would reopen the case once
+the appeal in the In Re NVIDIA Corporation Securities Litigation action is resolved. The case has not yet been reopened by the court. The lawsuit asserts claims,
+purportedly on behalf of us, against certain officers and directors of the Company for breach of fiduciary duty, unjust enrichment, waste of corporate assets, and
+violations of Sections 14(a), 10(b), and 20(a) of the Exchange Act based on the dissemination of allegedly false and misleading statements related to channel
+inventory and the impact of cryptocurrency mining on GPU demand. The plaintiffs are seeking unspecified damages and other relief, including reforms and
+improvements to NVIDIA’s corporate governance and internal procedures.
+
+The putative derivative actions initially filed September 24, 2019 and pending in the United States District Court for the District of Delaware, Lipchitz v. Huang, et
+al. (Case No. 1:19-cv-01795-MN) and Nelson v. Huang, et. al. (Case No. 1:19-cv-01798-MN), were stayed pending resolution of the plaintiffs’ appeal in the In Re
+NVIDIA Corporation Securities Litigation action. On February 5, 2025, after the Supreme Court issued its judgment dismissing the Company’s petition for writ of
+certiorari as improvidently granted in the In Re NVIDIA Corporation Securities Litigation action, the district court extended the stay for 30 days while the parties
+discuss next steps and ordered the parties to file a joint status report by March 7, 2025. On March 7, 2025, the district court adopted the parties' stipulation to
+extend the stay until the final and complete resolution of the In Re NVIDIA Corporation Securities Litigation action. The lawsuits assert claims, purportedly on
+behalf of us, against certain officers and directors of the Company for breach of fiduciary duty, unjust enrichment, insider trading, misappropriation of information,
+corporate waste and violations of Sections 14(a), 10(b), and 20(a) of the Exchange Act based on the dissemination of allegedly false, and misleading statements
+related to channel inventory and the impact of cryptocurrency mining on GPU demand. The plaintiffs seek unspecified damages and other relief, including
+disgorgement of profits from the sale of NVIDIA stock and unspecified corporate governance measures.
+
+Another putative derivative action was filed on October 30, 2023 in the Court of Chancery of the State of Delaware, captioned Horanic v. Huang, et al. (Case No.
+2023-1096-KSJM). This lawsuit asserts claims, purportedly on behalf of us, against certain officers and directors of the Company for breach of fiduciary duty and
+insider trading based on the dissemination of allegedly false and misleading statements related to channel inventory and the impact of cryptocurrency mining on
+GPU demand. The plaintiffs seek unspecified damages and other relief, including disgorgement of profits from the sale of NVIDIA stock and reform of
+unspecified corporate governance measures. This derivative matter is stayed pending the final resolution of In Re NVIDIA Corporation Securities Litigation
+action.
+
+Accounting for Loss Contingencies
+
+As of April 27, 2025, there are no accrued contingent liabilities associated with the legal proceedings described above based on our belief that liabilities, while
+reasonably possible, are not probable. Further, any possible loss or range of loss in these matters cannot be reasonably estimated at this time. We are engaged
+in legal actions not described above arising in the ordinary course of business and, while there can be no assurance of favorable outcomes, we believe that the
+ultimate outcome of these actions will not have a material adverse effect on our operating results, liquidity or financial position.
+
+Note 12 - Shareholders’ Equity
+
+Capital Return Program
+
+We repurchased 126 million and 99 million shares of our common stock for $14.5 billion and $8.0 billion during the first quarter of fiscal years 2026 and 2025,
+respectively. As of April 27, 2025, we were authorized, subject to certain specifications, to repurchase up to $24.3 billion of our common stock.
+
+From April 28, 2025 through May 23, 2025, we repurchased 19 million shares for $2.3 billion pursuant to a pre-established trading plan. Our share repurchase
+program aims to offset dilution from shares issued to employees while maintaining adequate liquidity to meet our operating requirements. We may pursue
+additional share repurchases as we weigh market factors and other investment opportunities.
+
+We paid cash dividends to our shareholders of $244 million and $98 million during the first quarter of fiscal years 2026 and 2025, respectively. The payment of
+future cash dividends is subject to our Board of Directors' continuing determination that the declaration of dividends is in the best interests of our shareholders.
+
+Note 13 - Segment Information
+
+Our Chief Executive Officer is our chief operating decision maker, or CODM, and reviews financial information presented on an operating segment basis for
+purposes of making decisions and assessing financial performance. Our CODM assesses operating performance of each segment based on regularly provided
+segment revenue and segment operating income. Operating results by segment include costs or expenses directly attributable to each segment, and costs or
+
+18
+
+=== nvidia_10q.pdf, Page 22 ===
+Visual content from: document_images/nvidia_10q_page_022.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Forward-Looking Statements 
+This Quarterly Report on Form 10-Q contains forward-looking statements within the meaning of Section 27A of the Securities Act of 1933, as amended, and
+Section 21E of the Securities Exchange Act of 1934, as amended, which are subject to the “safe harbor” created by those sections based on management’s
+beliefs and assumptions and on information currently available to management. In some cases, you can identify forward-looking statements by terms such as
+“may,” “will,” “should,” “could,” “goal,” “would,” “expect,” “plan,” “anticipate,” “believe,” “estimate,” “project,” “predict,” “potential” and similar expressions intended
+to identify forward-looking statements. These statements involve known and unknown risks, uncertainties and other factors, which may cause our actual results,
+performance, time frames or achievements to be materially different from any future results, performance, time frames or achievements expressed or implied by
+the forward-looking statements. We discuss many of these risks, uncertainties and other factors in this Quarterly Report on Form 10-Q and our Annual Report on
+Form 10-K for the fiscal year ended January 26, 2025 in greater detail under the heading “Risk Factors” of such reports. Given these risks, uncertainties, and
+other factors, you should not place undue reliance on these forward-looking statements. Also, these forward-looking statements represent our estimates and
+assumptions only as of the date of this filing. You should read this Quarterly Report on Form 10-Q completely and understand that our actual future results may
+be materially different from what we expect. We hereby qualify our forward-looking statements by these cautionary statements. Except as required by law, we
+assume no obligation to update these forward-looking statements publicly, or to update the reasons actual results could differ materially from those anticipated in
+these forward-looking statements, even if new information becomes available in the future.
+All references to “NVIDIA,” “we,” “us,” “our” or the “Company” mean NVIDIA Corporation and its subsidiaries.
+© 2025 NVIDIA Corporation. All rights reserved.
+The following discussion and analysis of our financial condition and results of operations should be read in conjunction with the risk factors set forth in Item 1A.
+“Risk Factors” of our Annual Report on Form 10-K for the fiscal year ended January 26, 2025 and Part II, Item 1A. “Risk Factors” of this Quarterly Report on
+Form 10-Q and our Condensed Consolidated Financial Statements and related Notes thereto, as well as other cautionary statements and risks described
+elsewhere in this Quarterly Report on Form 10-Q and our other filings with the SEC, before deciding to purchase, hold, or sell shares of our common stock.
+Overview
+Our Company and Our Businesses
+NVIDIA pioneered accelerated computing to help solve the most challenging computational problems. Since our original focus on PC graphics, we have
+expanded to several other large and important computationally intensive fields. Fueled by the sustained demand for exceptional 3D graphics and the scale of the
+gaming market, NVIDIA has leveraged its GPU architecture to create platforms for scientific computing, AI, data science, AV, robotics, and digital twin
+applications.
+Our two operating segments are "Compute & Networking" and "Graphics," as described in Note 13 of the Notes to Condensed Consolidated Financial
+Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q.
+Headquartered in Santa Clara, California, NVIDIA was incorporated in California in April 1993 and reincorporated in Delaware in April 1998.
+Recent Developments, Future Objectives and Challenges
+Revenue growth in the first quarter of fiscal year 2026 was driven by data center compute and networking platforms for accelerated computing and AI solutions.
+Our Blackwell GPU revenue ramp continued during the quarter, extending beyond large cloud service providers to include consumer internet companies and
+regional cloud service providers.
+On April 9, 2025, the U.S. government, or USG, informed us that it requires a license for export to China (including Hong Kong and Macau) and D:5 countries, or
+to companies headquartered or with an ultimate parent therein, of our H20 integrated circuits and any other circuits achieving the H20’s memory bandwidth,
+interconnect bandwidth, or combination thereof. As a result of these new requirements, we incurred a $4.5 billion charge in the first quarter of fiscal year 2026
+associated with H20 excess inventory and purchase obligations as the demand for H20 products diminished. The $4.5 billion charge was less than what we
+initially anticipated as we were able to re-use certain materials. Sales of our H20 products were $4.6 billion for the first quarter of fiscal year 2026 prior to the
+new export licensing requirements. The H20 export licensing requirements have impacted our current revenue and will also negatively affect our future revenue.
+We are still evaluating our limited options to supply Data Center compute products compliant with the USG’s export control rules. The export controls applicable
+to China are complex and address a variety of parameters, including the total processing performance of a chip, the “performance density” of a chip, the
+interconnect bandwidth of a chip, and the memory bandwidth of a chip. We may be unable to create a competitive product for China’s data center market that
+receives approval from the USG. In that event, we would effectively be foreclosed from competing in China's data center computing/compute market, with a
+material and adverse impact on our business, operating results, and financial condition.
+22
+
+Structured Layout:
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+
+Forward-Looking Statements 
+This Quarterly Report on Form 10-Q contains forward-looking statements within the meaning of Section 27A of the Securities Act of 1933, as amended, and
+Section 21E of the Securities Exchange Act of 1934, as amended, which are subject to the “safe harbor” created by those sections based on management’s
+beliefs and assumptions and on information currently available to management. In some cases, you can identify forward-looking statements by terms such as
+“may,” “will,” “should,” “could,” “goal,” “would,” “expect,” “plan,” “anticipate,” “believe,” “estimate,” “project,” “predict,” “potential” and similar expressions intended
+to identify forward-looking statements. These statements involve known and unknown risks, uncertainties and other factors, which may cause our actual results,
+performance, time frames or achievements to be materially different from any future results, performance, time frames or achievements expressed or implied by
+the forward-looking statements. We discuss many of these risks, uncertainties and other factors in this Quarterly Report on Form 10-Q and our Annual Report on
+Form 10-K for the fiscal year ended January 26, 2025 in greater detail under the heading “Risk Factors” of such reports. Given these risks, uncertainties, and
+other factors, you should not place undue reliance on these forward-looking statements. Also, these forward-looking statements represent our estimates and
+assumptions only as of the date of this filing. You should read this Quarterly Report on Form 10-Q completely and understand that our actual future results may
+be materially different from what we expect. We hereby qualify our forward-looking statements by these cautionary statements. Except as required by law, we
+assume no obligation to update these forward-looking statements publicly, or to update the reasons actual results could differ materially from those anticipated in
+these forward-looking statements, even if new information becomes available in the future.
+
+All references to “NVIDIA,” “we,” “us,” “our” or the “Company” mean NVIDIA Corporation and its subsidiaries.
+
+© 2025 NVIDIA Corporation. All rights reserved.
+
+The following discussion and analysis of our financial condition and results of operations should be read in conjunction with the risk factors set forth in Item 1A.
+“Risk Factors” of our Annual Report on Form 10-K for the fiscal year ended January 26, 2025 and Part II, Item 1A. “Risk Factors” of this Quarterly Report on
+Form 10-Q and our Condensed Consolidated Financial Statements and related Notes thereto, as well as other cautionary statements and risks described
+elsewhere in this Quarterly Report on Form 10-Q and our other filings with the SEC, before deciding to purchase, hold, or sell shares of our common stock.
+
+Overview
+
+Our Company and Our Businesses
+
+NVIDIA pioneered accelerated computing to help solve the most challenging computational problems. Since our original focus on PC graphics, we have
+expanded to several other large and important computationally intensive fields. Fueled by the sustained demand for exceptional 3D graphics and the scale of the
+gaming market, NVIDIA has leveraged its GPU architecture to create platforms for scientific computing, AI, data science, AV, robotics, and digital twin
+applications.
+
+Our two operating segments are "Compute & Networking" and "Graphics," as described in Note 13 of the Notes to Condensed Consolidated Financial
+Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q.
+
+Headquartered in Santa Clara, California, NVIDIA was incorporated in California in April 1993 and reincorporated in Delaware in April 1998.
+
+Recent Developments, Future Objectives and Challenges
+
+Revenue growth in the first quarter of fiscal year 2026 was driven by data center compute and networking platforms for accelerated computing and AI solutions.
+Our Blackwell GPU revenue ramp continued during the quarter, extending beyond large cloud service providers to include consumer internet companies and
+regional cloud service providers.
+
+On April 9, 2025, the U.S. government, or USG, informed us that it requires a license for export to China (including Hong Kong and Macau) and D:5 countries, or
+to companies headquartered or with an ultimate parent therein, of our H20 integrated circuits and any other circuits achieving the H20’s memory bandwidth,
+interconnect bandwidth, or combination thereof. As a result of these new requirements, we incurred a $4.5 billion charge in the first quarter of fiscal year 2026
+associated with H20 excess inventory and purchase obligations as the demand for H20 products diminished. The $4.5 billion charge was less than what we
+initially anticipated as we were able to re-use certain materials. Sales of our H20 products were $4.6 billion for the first quarter of fiscal year 2026 prior to the
+new export licensing requirements. The H20 export licensing requirements have impacted our current revenue and will also negatively affect our future revenue.
+We are still evaluating our limited options to supply Data Center compute products compliant with the USG’s export control rules. The export controls applicable
+to China are complex and address a variety of parameters, including the total processing performance of a chip, the “performance density” of a chip, the
+interconnect bandwidth of a chip, and the memory bandwidth of a chip. We may be unable to create a competitive product for China’s data center market that
+receives approval from the USG. In that event, we would effectively be foreclosed from competing in China's data center computing/compute market, with a
+material and adverse impact on our business, operating results, and financial condition.
+
+22
+
+=== nvidia_10q.pdf, Page 2 ===
+Visual content from: document_images/nvidia_10q_page_002.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA Corporation
+Form 10-Q
+For the Quarter Ended April 27, 2025
+Table of Contents
+ 
+ 
+Page
+ 
+Part I : Financial Information
+ 
+Item 1.
+Financial Statements (Unaudited)
+ 
+ 
+a) Condensed Consolidated Statements of Income for the three months ended April 27, 2025 and April 28, 2024
+3
+b) Condensed Consolidated Statements of Comprehensive Income for the three months ended April 27, 2025 and April 28, 2024
+4
+ 
+c) Condensed Consolidated Balance Sheets as of April 27, 2025 and January 26, 2025
+5
+d) Condensed Consolidated Statements of Shareholders' Equity for the three months ended April 27, 2025 and April 28, 2024
+6
+ 
+e) Condensed Consolidated Statements of Cash Flows for the three months ended April 27, 2025 and April 28, 2024
+7
+ 
+f) Notes to Condensed Consolidated Financial Statements
+8
+Item 2.
+Management’s Discussion and Analysis of Financial Condition and Results of Operations
+22
+Item 3.
+Quantitative and Qualitative Disclosures About Market Risk
+29
+Item 4.
+Controls and Procedures
+30
+ 
+Part II : Other Information
+ 
+Item 1.
+Legal Proceedings
+30
+Item 1A.
+Risk Factors
+30
+Item 2.
+Unregistered Sales of Equity Securities and Use of Proceeds
+36
+Item 5.
+Other Information
+37
+Item 6.
+Exhibits
+38
+Signature
+ 
+39
+Where You Can Find More Information
+Investors and others should note that we announce material financial information to our investors using our investor relations website, press releases, SEC
+filings and public conference calls and webcasts. We also use the following social media channels as a means of disclosing information about the company, our
+products, our planned financial and other announcements and attendance at upcoming investor and industry conferences, and other matters, and for complying
+with our disclosure obligations under Regulation FD:
+NVIDIA Corporate Blog (http://blogs.nvidia.com)
+NVIDIA Technical Blog (http://developer.nvidia.com/blog/)
+NVIDIA LinkedIn Page (http://www.linkedin.com/company/nvidia)
+NVIDIA Facebook Page (https://www.facebook.com/nvidia)
+NVIDIA Instagram Page (https://www.instagram.com/nvidia)
+NVIDIA X Account (https://x.com/nvidia)
+In addition, investors and others can view NVIDIA videos on YouTube (https://www.YouTube.com/nvidia).
+The information we post through these social media channels may be deemed material. Accordingly, investors should monitor these accounts and the blog, in
+addition to following our press releases, SEC filings and public conference calls and webcasts. This list may be updated from time to time. The information we
+post through these channels is not a part of this Quarterly Report on Form 10-Q. These channels may be updated from time to time on NVIDIA's investor
+relations website.
+2
+
+Structured Layout:
+NVIDIA Corporation
+
+Form 10-Q
+For the Quarter Ended April 27, 2025
+
+Table of Contents
+ 
+ 
+Page
+ 
+Part I : Financial Information
+
+Item 1.
+Financial Statements (Unaudited)
+
+a) Condensed Consolidated Statements of Income for the three months ended April 27, 2025 and April 28, 2024
+3
+b) Condensed Consolidated Statements of Comprehensive Income for the three months ended April 27, 2025 and April 28, 2024
+4
+ 
+c) Condensed Consolidated Balance Sheets as of April 27, 2025 and January 26, 2025
+5
+d) Condensed Consolidated Statements of Shareholders' Equity for the three months ended April 27, 2025 and April 28, 2024
+6
+ 
+e) Condensed Consolidated Statements of Cash Flows for the three months ended April 27, 2025 and April 28, 2024
+7
+ 
+f) Notes to Condensed Consolidated Financial Statements
+8
+
+Item 2.
+Management’s Discussion and Analysis of Financial Condition and Results of Operations
+22
+
+Item 3.
+Quantitative and Qualitative Disclosures About Market Risk
+29
+
+Item 4.
+Controls and Procedures
+30
+
+Part II : Other Information
+
+Item 1.
+Legal Proceedings
+30
+
+Item 1A.
+Risk Factors
+30
+
+Item 2.
+Unregistered Sales of Equity Securities and Use of Proceeds
+36
+
+Item 5.
+Other Information
+37
+
+Item 6.
+Exhibits
+38
+
+Signature
+ 
+39
+
+Where You Can Find More Information
+
+Investors and others should note that we announce material financial information to our investors using our investor relations website, press releases, SEC
+filings and public conference calls and webcasts. We also use the following social media channels as a means of disclosing information about the company, our
+products, our planned financial and other announcements and attendance at upcoming investor and industry conferences, and other matters, and for complying
+with our disclosure obligations under Regulation FD:
+
+NVIDIA Corporate Blog (http://blogs.nvidia.com)
+
+NVIDIA Technical Blog (http://developer.nvidia.com/blog/)
+
+NVIDIA LinkedIn Page (http://www.linkedin.com/company/nvidia)
+
+NVIDIA Facebook Page (https://www.facebook.com/nvidia)
+
+NVIDIA Instagram Page (https://www.instagram.com/nvidia)
+
+NVIDIA X Account (https://x.com/nvidia)
+
+In addition, investors and others can view NVIDIA videos on YouTube (https://www.YouTube.com/nvidia).
+
+The information we post through these social media channels may be deemed material. Accordingly, investors should monitor these accounts and the blog, in
+addition to following our press releases, SEC filings and public conference calls and webcasts. This list may be updated from time to time. The information we
+post through these channels is not a part of this Quarterly Report on Form 10-Q. These channels may be updated from time to time on NVIDIA's investor
+relations website.
+
+2

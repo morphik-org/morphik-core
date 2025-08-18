@@ -1,0 +1,1096 @@
+=== CONTEXT DEBUG FOR QUESTION ===
+Question: In the first quarter of fiscal year 2026, what was NVIDIA's interest coverage ratio (interest income divided by interest expense) and what percentage of its net interest spread did net unrealized losses on publicly-held equity securities—driven by fair value volatility in investments including CoreWeave and Arm, Inc.—consume?
+
+Context:
+=== nvidia_10q.pdf, Page 26 ===
+Visual content from: document_images/nvidia_10q_page_026.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Reportable segment operating income – The year over year increase in Compute & Networking segment operating income in the first quarter of fiscal year 2026
+was driven by growth in revenue, partially offset by a $4.5 billion charge associated with H20 excess inventory and purchase obligations. The year over year
+increase in Graphics segment operating income in the first quarter of fiscal year 2026 was driven by growth in revenue.
+All Other operating loss – The year over year increase in the first quarter of fiscal year 2026 was due to an increase in stock-based compensation expense
+reflecting employee growth.
+Concentration of Revenue
+We refer to customers who purchase products directly from NVIDIA as direct customers, such as add-in board manufacturers, distributors, ODMs, OEMs, and
+system integrators. We have certain customers that may purchase products directly from NVIDIA and may use either internal resources or third-party system
+integrators to complete their build. We also have indirect customers, who purchase products through our direct customers; indirect customers include CSPs,
+consumer internet companies, enterprises, and public sector entities.
+Direct Customers – Sales to one direct customer, Customer A, represented 16% of total revenue and sales to a second direct customer, Customer B,
+represented 14% of total revenue for the first quarter of fiscal year 2026, both of which were attributable to the Compute & Networking segment. Sales to two
+direct customers represented 11% and 13% of total revenue for the first quarter of fiscal year 2025, both of which were attributable to the Compute & Networking
+segment.
+Indirect Customers – Indirect customer revenue is an estimation based upon multiple factors including customer purchase order information, product
+specifications, internal sales data, and other sources. Actual indirect customer revenue may differ from our estimates. For the first quarter of fiscal year 2026, two
+indirect customers which primarily purchase our products through system integrators and distributors, including through Direct Customers A and B, are estimated
+to represent 10% or more of total revenue, attributable to the Compute & Networking segment.
+We estimate that in the first quarter of fiscal year 2026, an AI research and deployment company contributed to a meaningful amount of our revenue, through
+one of the above indirect customers and through other indirect customers that provide cloud services.
+We have experienced periods where we receive a significant amount of our revenue from a limited number of customers, and this trend may continue.
+Revenue by geographic region is designated based on the billing location even if the revenue may be attributable to indirect customers in a different location.
+Revenue from sales to customers outside of the United States accounted for 53% and 48% of total revenue for the first quarter of fiscal years 2026 and 2025,
+respectively.
+Gross Profit and Gross Margin
+Gross profit consists of total net revenue less cost of revenue. Cost of revenue consists primarily of the cost of semiconductors, including wafer fabrication,
+assembly, testing and packaging, board and device costs, manufacturing support costs, including labor and overhead associated with such purchases, final test
+yield fallout, inventory and warranty provisions, memory and component costs, tariffs, and shipping costs. Cost of revenue also includes acquisition-related
+intangible amortization expense, costs for license and development and service arrangements, IP-related costs, and stock-based compensation related to
+personnel associated with manufacturing operations.
+Gross margins decreased to 60.5% for the first quarter of fiscal year 2026 compared to 78.4% for the first quarter of fiscal year 2025, primarily due to a $4.5
+billion charge associated with H20 excess inventory and purchase obligations and the initial ramp of more sophisticated systems within Data Center.
+Provisions for inventory and excess inventory purchase obligations totaled $5.3 billion, including $4.5 billion associated with H20 excess inventory and purchase
+obligations, and $393 million for the first quarter of fiscal years 2026 and 2025, respectively. Sales of previously reserved inventory and settlements of excess
+inventory purchase obligations resulted in a provision release of $436 million and $114 million for the first quarter of fiscal years 2026 and 2025, respectively.
+The net effect of provisions for inventory and excess inventory purchase obligations on our gross margin was an unfavorable impact of 11.0% and 1.1% in the
+first quarter of fiscal years 2026 and 2025, respectively.
+26
+
+Structured Layout:
+Reportable segment operating income – The year over year increase in Compute & Networking segment operating income in the first quarter of fiscal year 2026
+was driven by growth in revenue, partially offset by a $4.5 billion charge associated with H20 excess inventory and purchase obligations. The year over year
+increase in Graphics segment operating income in the first quarter of fiscal year 2026 was driven by growth in revenue.
+
+All Other operating loss – The year over year increase in the first quarter of fiscal year 2026 was due to an increase in stock-based compensation expense
+reflecting employee growth.
+
+Concentration of Revenue
+
+We refer to customers who purchase products directly from NVIDIA as direct customers, such as add-in board manufacturers, distributors, ODMs, OEMs, and
+system integrators. We have certain customers that may purchase products directly from NVIDIA and may use either internal resources or third-party system
+integrators to complete their build. We also have indirect customers, who purchase products through our direct customers; indirect customers include CSPs,
+consumer internet companies, enterprises, and public sector entities.
+
+Direct Customers – Sales to one direct customer, Customer A, represented 16% of total revenue and sales to a second direct customer, Customer B,
+represented 14% of total revenue for the first quarter of fiscal year 2026, both of which were attributable to the Compute & Networking segment. Sales to two
+direct customers represented 11% and 13% of total revenue for the first quarter of fiscal year 2025, both of which were attributable to the Compute & Networking
+segment.
+
+Indirect Customers – Indirect customer revenue is an estimation based upon multiple factors including customer purchase order information, product
+specifications, internal sales data, and other sources. Actual indirect customer revenue may differ from our estimates. For the first quarter of fiscal year 2026, two
+indirect customers which primarily purchase our products through system integrators and distributors, including through Direct Customers A and B, are estimated
+to represent 10% or more of total revenue, attributable to the Compute & Networking segment.
+
+We estimate that in the first quarter of fiscal year 2026, an AI research and deployment company contributed to a meaningful amount of our revenue, through
+one of the above indirect customers and through other indirect customers that provide cloud services.
+
+We have experienced periods where we receive a significant amount of our revenue from a limited number of customers, and this trend may continue.
+
+Revenue by geographic region is designated based on the billing location even if the revenue may be attributable to indirect customers in a different location.
+Revenue from sales to customers outside of the United States accounted for 53% and 48% of total revenue for the first quarter of fiscal years 2026 and 2025,
+respectively.
+
+Gross Profit and Gross Margin
+
+Gross profit consists of total net revenue less cost of revenue. Cost of revenue consists primarily of the cost of semiconductors, including wafer fabrication,
+assembly, testing and packaging, board and device costs, manufacturing support costs, including labor and overhead associated with such purchases, final test
+yield fallout, inventory and warranty provisions, memory and component costs, tariffs, and shipping costs. Cost of revenue also includes acquisition-related
+intangible amortization expense, costs for license and development and service arrangements, IP-related costs, and stock-based compensation related to
+personnel associated with manufacturing operations.
+
+Gross margins decreased to 60.5% for the first quarter of fiscal year 2026 compared to 78.4% for the first quarter of fiscal year 2025, primarily due to a $4.5
+billion charge associated with H20 excess inventory and purchase obligations and the initial ramp of more sophisticated systems within Data Center.
+
+Provisions for inventory and excess inventory purchase obligations totaled $5.3 billion, including $4.5 billion associated with H20 excess inventory and purchase
+obligations, and $393 million for the first quarter of fiscal years 2026 and 2025, respectively. Sales of previously reserved inventory and settlements of excess
+inventory purchase obligations resulted in a provision release of $436 million and $114 million for the first quarter of fiscal years 2026 and 2025, respectively.
+The net effect of provisions for inventory and excess inventory purchase obligations on our gross margin was an unfavorable impact of 11.0% and 1.1% in the
+first quarter of fiscal years 2026 and 2025, respectively.
+
+26
+
+=== nvidia_10q.pdf, Page 10 ===
+Visual content from: document_images/nvidia_10q_page_010.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Note 4 - Income Taxes
+Income tax expense was $3.1 billion and $2.4 billion for the first quarter of fiscal years 2026 and 2025, respectively. Income tax as a percentage of income
+before income tax was an expense of 14.3% and 13.9% for the first quarter of fiscal years 2026 and 2025, respectively.
+The effective tax rate increased primarily due to a lower tax benefit from stock-based compensation, partially offset by an increase in tax benefit from the foreign-
+derived intangible income deduction.
+Our effective tax rates for the first quarter of fiscal years 2026 and 2025 were lower than the U.S. federal statutory rate of 21% primarily due to tax benefits from
+the foreign-derived intangible income deduction, stock-based compensation, income earned in jurisdictions that are subject to taxes at rates lower than the U.S.
+federal statutory tax rate, and the U.S. federal research tax credit.
+Given our current and possible future earnings, we believe that we may release the valuation allowance associated with certain state deferred tax assets in the
+near term, which would decrease our income tax expense for the period the release is recorded. The timing and amount of the valuation allowance release could
+vary based on our assessment of all available information.
+While we believe that we have adequately provided for all uncertain tax positions, or tax positions where we believe it is not more-likely-than-not that the position
+will be sustained upon review, amounts asserted by tax authorities could be greater or less than our accrued position. Accordingly, our provisions on federal,
+state and foreign tax related matters to be recorded in the future may change as revised estimates are made or the underlying matters are settled or otherwise
+resolved with the respective tax authorities.
+Note 5 - Cash Equivalents and Marketable Securities
+The following is a summary of cash equivalents and marketable securities:
+ 
+Apr 27, 2025
+Amortized
+Cost
+Unrealized
+Gain
+Unrealized
+Loss
+Estimated
+Fair Value
+Reported as
+ 
+Cash Equivalents
+Marketable
+Securities
+ 
+(In millions)
+Debt securities issued by the U.S. Treasury $
+23,135 
+$
+120 
+$
+(4)
+$
+23,251 
+$
+5,414 
+$
+17,837 
+Corporate debt securities
+19,976 
+85 
+(10)
+20,051 
+2,868 
+17,183 
+Money market funds
+6,522 
+— 
+— 
+6,522 
+6,522 
+— 
+Debt securities issued by U.S. government
+agencies
+2,134 
+12 
+(1)
+2,145 
+— 
+2,145 
+Certificates of deposit
+126 
+— 
+— 
+126 
+126 
+— 
+Foreign government bonds
+40 
+1 
+— 
+41 
+— 
+41 
+Total debt securities with fair value
+adjustments recorded in other comprehensive
+income
+51,933 
+218 
+(15)
+52,136 
+14,930 
+37,206 
+Publicly-held equity securities (1)
+1,251 
+— 
+1,251 
+Total
+$
+51,933 
+$
+218 
+$
+(15)
+$
+53,387 
+$
+14,930 
+$
+38,457 
+(1)    The balance as of the first quarter of fiscal year 2026 includes an investment in CoreWeave, Inc., or CoreWeave, which was reclassified from non-marketable equity securities to marketable securities
+following public market trading. The fair value of the investment as of April 27, 2025 was $1 billion and is subject to a short-term restriction on the ability to sell.
+Net unrealized losses on investments in publicly-held equity securities held at period end were $222  million for the first quarter of fiscal year 2026. Net
+unrealized gains on investments in publicly-held equity securities held at period end were not significant for the first quarter of fiscal year 2025.
+10
+
+Table Data:
+Debt securities issued by the U.S. Treasury | $ | 23,135 |  | $ | 120 |  | $ | (4) |  | $ | 23,251 |  | $ | 5,414 |  | $ | 17,837
+Corporate debt securities | 19,976 |  |  | 85 |  |  | (10) |  |  | 20,051 |  |  | 2,868 |  |  | 17,183 | 
+Money market funds | 6,522 |  |  | — |  |  | — |  |  | 6,522 |  |  | 6,522 |  |  | — | 
+Debt securities issued by U.S. government
+agencies | 2,134 |  |  | 12 |  |  | (1) |  |  | 2,145 |  |  | — |  |  | 2,145 | 
+Certificates of deposit | 126 |  |  | — |  |  | — |  |  | 126 |  |  | 126 |  |  | — | 
+Foreign government bonds | 40 |  |  | 1 |  |  | — |  |  | 41 |  |  | — |  |  | 41 | 
+Total debt securities with fair value
+adjustments recorded in other comprehensive
+income | 51,933 |  |  | 218 |  |  | (15) |  |  | 52,136 |  |  | 14,930 |  |  | 37,206 | 
+Publicly-held equity securities (1) |  |  |  |  |  |  |  |  |  | 1,251 |  |  | — |  |  | 1,251 | 
+Total | $ | 51,933 |  | $ | 218 |  | $ | (15) |  | $ | 53,387 |  | $ | 14,930 |  | $ | 38,457
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Note 4 - Income Taxes
+
+Income tax expense was $3.1 billion and $2.4 billion for the first quarter of fiscal years 2026 and 2025, respectively. Income tax as a percentage of income
+before income tax was an expense of 14.3% and 13.9% for the first quarter of fiscal years 2026 and 2025, respectively.
+
+The effective tax rate increased primarily due to a lower tax benefit from stock-based compensation, partially offset by an increase in tax benefit from the foreign-
+derived intangible income deduction.
+
+Our effective tax rates for the first quarter of fiscal years 2026 and 2025 were lower than the U.S. federal statutory rate of 21% primarily due to tax benefits from
+the foreign-derived intangible income deduction, stock-based compensation, income earned in jurisdictions that are subject to taxes at rates lower than the U.S.
+federal statutory tax rate, and the U.S. federal research tax credit.
+
+Given our current and possible future earnings, we believe that we may release the valuation allowance associated with certain state deferred tax assets in the
+near term, which would decrease our income tax expense for the period the release is recorded. The timing and amount of the valuation allowance release could
+vary based on our assessment of all available information.
+
+While we believe that we have adequately provided for all uncertain tax positions, or tax positions where we believe it is not more-likely-than-not that the position
+will be sustained upon review, amounts asserted by tax authorities could be greater or less than our accrued position. Accordingly, our provisions on federal,
+state and foreign tax related matters to be recorded in the future may change as revised estimates are made or the underlying matters are settled or otherwise
+resolved with the respective tax authorities.
+
+Note 5 - Cash Equivalents and Marketable Securities
+
+The following is a summary of cash equivalents and marketable securities:
+
+Apr 27, 2025
+
+Amortized
+
+Cost
+
+Unrealized
+
+Gain
+
+Unrealized
+
+Loss
+
+Estimated
+Fair Value
+
+Reported as
+
+Cash Equivalents
+
+Marketable
+
+Securities
+
+(In millions)
+Debt securities issued by the U.S. Treasury $
+23,135 
+$
+120 
+$
+(4)
+$
+23,251 
+$
+5,414 
+$
+17,837 
+Corporate debt securities
+19,976 
+85 
+(10)
+20,051 
+2,868 
+17,183 
+Money market funds
+6,522 
+— 
+— 
+6,522 
+6,522 
+— 
+Debt securities issued by U.S. government
+agencies
+2,134 
+12 
+(1)
+2,145 
+— 
+2,145 
+Certificates of deposit
+126 
+— 
+— 
+126 
+126 
+— 
+Foreign government bonds
+40 
+1 
+— 
+41 
+— 
+41 
+Total debt securities with fair value
+adjustments recorded in other comprehensive
+income
+51,933 
+218 
+(15)
+52,136 
+14,930 
+37,206 
+Publicly-held equity securities (1)
+1,251 
+— 
+1,251
+
+Total
+$
+51,933 
+$
+218 
+$
+(15)
+$
+53,387 
+$
+14,930 
+$
+38,457
+
+(1)    The balance as of the first quarter of fiscal year 2026 includes an investment in CoreWeave, Inc., or CoreWeave, which was reclassified from non-marketable equity securities to marketable securities
+
+following public market trading. The fair value of the investment as of April 27, 2025 was $1 billion and is subject to a short-term restriction on the ability to sell.
+
+Net unrealized losses on investments in publicly-held equity securities held at period end were $222  million for the first quarter of fiscal year 2026. Net
+unrealized gains on investments in publicly-held equity securities held at period end were not significant for the first quarter of fiscal year 2025.
+
+10
+
+=== nvidia_10q.pdf, Page 17 ===
+Visual content from: document_images/nvidia_10q_page_017.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Total future purchase commitments as of April 27, 2025 are as follows:
+Purchase Commitments
+ 
+(In millions)
+Fiscal Year:
+ 
+2026 (excluding the first quarter of fiscal year 2026)
+$
+31,445 
+2027
+5,923 
+2028
+3,110 
+2029
+2,072 
+2030
+752 
+2031 and thereafter
+218 
+Total
+$
+43,520 
+Accrual for Product Warranty Liabilities
+The estimated amount of product warranty liabilities was $2.1 billion and $1.3 billion as of April 27, 2025 and January 26, 2025, respectively. The estimated
+product returns and product warranty activity consisted of the following:
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+(In millions)
+Balance at beginning of period
+$
+1,290 
+$
+306 
+Additions
+870 
+234 
+Utilization
+(80)
+(8)
+Balance at end of period
+$
+2,080 
+$
+532 
+We have provided indemnities for matters such as tax, product, and employee liabilities. We have included intellectual property indemnification provisions in our
+technology-related agreements with third parties. Maximum potential future payments cannot be estimated because many of these agreements do not have a
+maximum stated liability. We have not recorded any liability in our Condensed Consolidated Financial Statements for such indemnifications.
+Litigation
+Securities Class Action and Derivative Lawsuits
+The plaintiffs in the putative securities class action lawsuit, captioned 4:18-cv-07669-HSG, initially filed on December 21, 2018 in the United States District Court
+for the Northern District of California, and titled In Re NVIDIA Corporation Securities Litigation, filed an amended complaint on May 13, 2020. The amended
+complaint asserted that NVIDIA and certain NVIDIA executives violated Section 10(b) of the Securities Exchange Act of 1934, as amended, or the Exchange Act,
+and SEC Rule 10b-5, by making materially false or misleading statements related to channel inventory and the impact of cryptocurrency mining on GPU demand
+between May 10, 2017 and November 14, 2018. Plaintiffs also alleged that the NVIDIA executives who they named as defendants violated Section 20(a) of the
+Exchange Act. Plaintiffs sought class certification, an award of unspecified compensatory damages, an award of reasonable costs and expenses, including
+attorneys’ fees and expert fees, and further relief as the Court may deem just and proper. On March 2, 2021, the district court granted NVIDIA’s motion to
+dismiss the complaint without leave to amend, entered judgment in favor of NVIDIA and closed the case. On March 30, 2021, plaintiffs filed an appeal from
+judgment in the United States Court of Appeals for the Ninth Circuit, case number 21-15604. On August 25, 2023, a majority of a three-judge Ninth Circuit panel
+affirmed in part and reversed in part the district court’s dismissal of the case, with a third judge dissenting on the basis that the district court did not err in
+dismissing the case. On November 15, 2023, the Ninth Circuit denied NVIDIA’s petition for rehearing en banc of the Ninth Circuit panel’s majority decision to
+reverse in part the dismissal of the case, which NVIDIA had filed on October 10, 2023. On December 5, 2023, the Ninth Circuit granted NVIDIA’s motion to stay
+the mandate pending NVIDIA’s petition for a writ of certiorari in the Supreme Court of the United States and the Supreme Court’s final disposition of the matter.
+NVIDIA filed a petition for a writ of certiorari on March 4, 2024. On June 17, 2024, the Supreme Court of the United States granted NVIDIA’s petition for a writ of
+certiorari. After briefing and argument, the Supreme Court dismissed NVIDIA’s writ of certiorari as improvidently granted on December 11, 2024, and issued
+judgment on January 13, 2025. On February 20, 2025, the Ninth Circuit’s judgment, entered August 25, 2023 and corrected August 28, 2023, took effect, and the
+case was remanded to the district court for further proceedings.
+17
+
+Table Data:
+Fiscal Year: |  | 
+2026 (excluding the first quarter of fiscal year 2026) | $ | 31,445
+2027 | 5,923 | 
+2028 | 3,110 | 
+2029 | 2,072 | 
+2030 | 752 | 
+2031 and thereafter | 218 | 
+Total | $ | 43,520
+Balance at beginning of period | $ | 1,290 |  | $ | 306
+Additions | 870 |  |  | 234 | 
+Utilization | (80) |  |  | (8) | 
+Balance at end of period | $ | 2,080 |  | $ | 532
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Total future purchase commitments as of April 27, 2025 are as follows:
+
+Purchase Commitments
+ 
+(In millions)
+Fiscal Year:
+ 
+2026 (excluding the first quarter of fiscal year 2026)
+$
+31,445 
+2027
+5,923 
+2028
+3,110 
+2029
+2,072 
+2030
+752 
+2031 and thereafter
+218 
+Total
+$
+43,520
+
+Accrual for Product Warranty Liabilities
+
+The estimated amount of product warranty liabilities was $2.1 billion and $1.3 billion as of April 27, 2025 and January 26, 2025, respectively. The estimated
+product returns and product warranty activity consisted of the following:
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+
+(In millions)
+Balance at beginning of period
+$
+1,290 
+$
+306
+
+Additions
+870 
+234 
+Utilization
+(80)
+(8)
+
+Balance at end of period
+$
+2,080 
+$
+532
+
+We have provided indemnities for matters such as tax, product, and employee liabilities. We have included intellectual property indemnification provisions in our
+technology-related agreements with third parties. Maximum potential future payments cannot be estimated because many of these agreements do not have a
+maximum stated liability. We have not recorded any liability in our Condensed Consolidated Financial Statements for such indemnifications.
+
+Litigation
+
+Securities Class Action and Derivative Lawsuits
+
+The plaintiffs in the putative securities class action lawsuit, captioned 4:18-cv-07669-HSG, initially filed on December 21, 2018 in the United States District Court
+for the Northern District of California, and titled In Re NVIDIA Corporation Securities Litigation, filed an amended complaint on May 13, 2020. The amended
+complaint asserted that NVIDIA and certain NVIDIA executives violated Section 10(b) of the Securities Exchange Act of 1934, as amended, or the Exchange Act,
+and SEC Rule 10b-5, by making materially false or misleading statements related to channel inventory and the impact of cryptocurrency mining on GPU demand
+between May 10, 2017 and November 14, 2018. Plaintiffs also alleged that the NVIDIA executives who they named as defendants violated Section 20(a) of the
+Exchange Act. Plaintiffs sought class certification, an award of unspecified compensatory damages, an award of reasonable costs and expenses, including
+attorneys’ fees and expert fees, and further relief as the Court may deem just and proper. On March 2, 2021, the district court granted NVIDIA’s motion to
+dismiss the complaint without leave to amend, entered judgment in favor of NVIDIA and closed the case. On March 30, 2021, plaintiffs filed an appeal from
+judgment in the United States Court of Appeals for the Ninth Circuit, case number 21-15604. On August 25, 2023, a majority of a three-judge Ninth Circuit panel
+affirmed in part and reversed in part the district court’s dismissal of the case, with a third judge dissenting on the basis that the district court did not err in
+dismissing the case. On November 15, 2023, the Ninth Circuit denied NVIDIA’s petition for rehearing en banc of the Ninth Circuit panel’s majority decision to
+reverse in part the dismissal of the case, which NVIDIA had filed on October 10, 2023. On December 5, 2023, the Ninth Circuit granted NVIDIA’s motion to stay
+the mandate pending NVIDIA’s petition for a writ of certiorari in the Supreme Court of the United States and the Supreme Court’s final disposition of the matter.
+NVIDIA filed a petition for a writ of certiorari on March 4, 2024. On June 17, 2024, the Supreme Court of the United States granted NVIDIA’s petition for a writ of
+certiorari. After briefing and argument, the Supreme Court dismissed NVIDIA’s writ of certiorari as improvidently granted on December 11, 2024, and issued
+judgment on January 13, 2025. On February 20, 2025, the Ninth Circuit’s judgment, entered August 25, 2023 and corrected August 28, 2023, took effect, and the
+case was remanded to the district court for further proceedings.
+
+17
+
+=== nvidia_10q.pdf, Page 12 ===
+Visual content from: document_images/nvidia_10q_page_012.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Note 6 - Fair Value of Financial Assets and Non-marketable Equity Securities
+The fair values of our financial assets are determined using quoted market prices of identical assets or market prices of similar assets from active markets. We
+review fair value classification on a quarterly basis.
+Pricing Category
+Fair Value at
+Apr 27, 2025
+Jan 26, 2025
+(In millions)
+Assets
+Cash equivalents and marketable securities:
+Money market funds
+Level 1
+$
+6,522 
+$
+3,760 
+Publicly-held equity securities
+Level 1
+$
+1,251 
+$
+381 
+Debt securities issued by the U.S. Treasury
+Level 2
+$
+23,251 
+$
+16,769 
+Corporate debt securities
+Level 2
+$
+20,051 
+$
+18,526 
+Debt securities issued by U.S. government agencies
+Level 2
+$
+2,145 
+$
+2,777 
+Certificates of deposit
+Level 2
+$
+126 
+$
+97 
+Foreign government bonds
+Level 2
+$
+41 
+$
+177 
+Non-marketable Equity Securities
+Our non-marketable equity securities are recorded in long-term other assets on our Condensed Consolidated Balance Sheets and valued under the
+measurement alternative. Gains and losses on these investments, realized and unrealized, are recognized in Other income (expense), net on our Condensed
+Consolidated Statements of Income.
+Adjustments to the carrying value of our non-marketable equity securities during the first quarter of fiscal years 2026 and 2025 were as follows:
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+(In millions)
+Balance at beginning of period
+$
+3,387 
+$
+1,321 
+Adjustments related to non-marketable equity securities:
+Net additions
+649 
+127 
+Unrealized gains
+63 
+15 
+Reclassification (1)
+(843)
+— 
+Impairments and unrealized losses
+(16)
+— 
+Balance at end of period
+$
+3,240 
+$
+1,463 
+(1)    In the first quarter of fiscal year 2026, our investment in CoreWeave was reclassified from non-marketable equity securities to marketable securities following public market trading.
+Non-marketable equity securities had cumulative gross unrealized gains of $396 million and $285 million, and cumulative gross unrealized losses and
+impairments of $110 million and $45 million on securities held as of April 27, 2025 and April 28, 2024, respectively.
+12
+
+Table Data:
+Assets |  |  |  |  |  |  | 
+Cash equivalents and marketable securities: |  |  |  |  |  |  | 
+Money market funds | Level 1 |  | $ | 6,522 |  | $ | 3,760
+Publicly-held equity securities | Level 1 |  | $ | 1,251 |  | $ | 381
+Debt securities issued by the U.S. Treasury | Level 2 |  | $ | 23,251 |  | $ | 16,769
+Corporate debt securities | Level 2 |  | $ | 20,051 |  | $ | 18,526
+Debt securities issued by U.S. government agencies | Level 2 |  | $ | 2,145 |  | $ | 2,777
+Certificates of deposit | Level 2 |  | $ | 126 |  | $ | 97
+Foreign government bonds | Level 2 |  | $ | 41 |  | $ | 177
+Balance at beginning of period | $ | 3,387 |  | $ 1,321
+Adjustments related to non-marketable equity securities: |  |  |  | 
+Net additions | 649 |  |  | 127
+Unrealized gains | 63 |  |  | 15
+Reclassification (1) | (843) |  |  | —
+Impairments and unrealized losses | (16) |  |  | —
+Balance at end of period | $ | 3,240 |  | $ 1,463
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Note 6 - Fair Value of Financial Assets and Non-marketable Equity Securities
+
+The fair values of our financial assets are determined using quoted market prices of identical assets or market prices of similar assets from active markets. We
+review fair value classification on a quarterly basis.
+
+Pricing Category
+
+Fair Value at
+
+Apr 27, 2025
+Jan 26, 2025
+
+(In millions)
+Assets
+Cash equivalents and marketable securities:
+
+Money market funds
+Level 1
+$
+6,522 
+$
+3,760 
+Publicly-held equity securities
+Level 1
+$
+1,251 
+$
+381 
+Debt securities issued by the U.S. Treasury
+Level 2
+$
+23,251 
+$
+16,769 
+Corporate debt securities
+Level 2
+$
+20,051 
+$
+18,526 
+Debt securities issued by U.S. government agencies
+Level 2
+$
+2,145 
+$
+2,777 
+Certificates of deposit
+Level 2
+$
+126 
+$
+97 
+Foreign government bonds
+Level 2
+$
+41 
+$
+177
+
+Non-marketable Equity Securities
+
+Our non-marketable equity securities are recorded in long-term other assets on our Condensed Consolidated Balance Sheets and valued under the
+measurement alternative. Gains and losses on these investments, realized and unrealized, are recognized in Other income (expense), net on our Condensed
+Consolidated Statements of Income.
+
+Adjustments to the carrying value of our non-marketable equity securities during the first quarter of fiscal years 2026 and 2025 were as follows:
+
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+
+(In millions)
+Balance at beginning of period
+$
+3,387 
+$
+1,321 
+Adjustments related to non-marketable equity securities:
+
+Net additions
+649 
+127 
+Unrealized gains
+63 
+15 
+Reclassification (1)
+(843)
+— 
+Impairments and unrealized losses
+(16)
+— 
+Balance at end of period
+$
+3,240 
+$
+1,463
+
+(1)    In the first quarter of fiscal year 2026, our investment in CoreWeave was reclassified from non-marketable equity securities to marketable securities following public market trading.
+
+Non-marketable equity securities had cumulative gross unrealized gains of $396 million and $285 million, and cumulative gross unrealized losses and
+impairments of $110 million and $45 million on securities held as of April 27, 2025 and April 28, 2024, respectively.
+
+12
+
+=== nvidia_10q.pdf, Page 18 ===
+Visual content from: document_images/nvidia_10q_page_018.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+The putative derivative lawsuit pending in the United States District Court for the Northern District of California, captioned 4:19-cv-00341-HSG, initially filed
+January 18, 2019 and titled In re NVIDIA Corporation Consolidated Derivative Litigation, was stayed pending resolution of the plaintiffs’ appeal in the In Re
+NVIDIA Corporation Securities Litigation action. On February 22, 2022, the court administratively closed the case, but stated that it would reopen the case once
+the appeal in the In Re NVIDIA Corporation Securities Litigation action is resolved. The case has not yet been reopened by the court. The lawsuit asserts claims,
+purportedly on behalf of us, against certain officers and directors of the Company for breach of fiduciary duty, unjust enrichment, waste of corporate assets, and
+violations of Sections 14(a), 10(b), and 20(a) of the Exchange Act based on the dissemination of allegedly false and misleading statements related to channel
+inventory and the impact of cryptocurrency mining on GPU demand. The plaintiffs are seeking unspecified damages and other relief, including reforms and
+improvements to NVIDIA’s corporate governance and internal procedures.
+The putative derivative actions initially filed September 24, 2019 and pending in the United States District Court for the District of Delaware, Lipchitz v. Huang, et
+al. (Case No. 1:19-cv-01795-MN) and Nelson v. Huang, et. al. (Case No. 1:19-cv-01798-MN), were stayed pending resolution of the plaintiffs’ appeal in the In Re
+NVIDIA Corporation Securities Litigation action. On February 5, 2025, after the Supreme Court issued its judgment dismissing the Company’s petition for writ of
+certiorari as improvidently granted in the In Re NVIDIA Corporation Securities Litigation action, the district court extended the stay for 30 days while the parties
+discuss next steps and ordered the parties to file a joint status report by March 7, 2025. On March 7, 2025, the district court adopted the parties' stipulation to
+extend the stay until the final and complete resolution of the In Re NVIDIA Corporation Securities Litigation action. The lawsuits assert claims, purportedly on
+behalf of us, against certain officers and directors of the Company for breach of fiduciary duty, unjust enrichment, insider trading, misappropriation of information,
+corporate waste and violations of Sections 14(a), 10(b), and 20(a) of the Exchange Act based on the dissemination of allegedly false, and misleading statements
+related to channel inventory and the impact of cryptocurrency mining on GPU demand. The plaintiffs seek unspecified damages and other relief, including
+disgorgement of profits from the sale of NVIDIA stock and unspecified corporate governance measures.
+Another putative derivative action was filed on October 30, 2023 in the Court of Chancery of the State of Delaware, captioned Horanic v. Huang, et al. (Case No.
+2023-1096-KSJM). This lawsuit asserts claims, purportedly on behalf of us, against certain officers and directors of the Company for breach of fiduciary duty and
+insider trading based on the dissemination of allegedly false and misleading statements related to channel inventory and the impact of cryptocurrency mining on
+GPU demand. The plaintiffs seek unspecified damages and other relief, including disgorgement of profits from the sale of NVIDIA stock and reform of
+unspecified corporate governance measures. This derivative matter is stayed pending the final resolution of In Re NVIDIA Corporation Securities Litigation
+action.
+Accounting for Loss Contingencies
+As of April 27, 2025, there are no accrued contingent liabilities associated with the legal proceedings described above based on our belief that liabilities, while
+reasonably possible, are not probable. Further, any possible loss or range of loss in these matters cannot be reasonably estimated at this time. We are engaged
+in legal actions not described above arising in the ordinary course of business and, while there can be no assurance of favorable outcomes, we believe that the
+ultimate outcome of these actions will not have a material adverse effect on our operating results, liquidity or financial position.
+Note 12 - Shareholders’ Equity 
+Capital Return Program 
+We repurchased 126 million and 99 million shares of our common stock for $14.5 billion and $8.0 billion during the first quarter of fiscal years 2026 and 2025,
+respectively. As of April 27, 2025, we were authorized, subject to certain specifications, to repurchase up to $24.3 billion of our common stock.
+From April 28, 2025 through May 23, 2025, we repurchased 19 million shares for $2.3 billion pursuant to a pre-established trading plan. Our share repurchase
+program aims to offset dilution from shares issued to employees while maintaining adequate liquidity to meet our operating requirements. We may pursue
+additional share repurchases as we weigh market factors and other investment opportunities.
+We paid cash dividends to our shareholders of $244 million and $98 million during the first quarter of fiscal years 2026 and 2025, respectively. The payment of
+future cash dividends is subject to our Board of Directors' continuing determination that the declaration of dividends is in the best interests of our shareholders.
+Note 13 - Segment Information
+Our Chief Executive Officer is our chief operating decision maker, or CODM, and reviews financial information presented on an operating segment basis for
+purposes of making decisions and assessing financial performance. Our CODM assesses operating performance of each segment based on regularly provided
+segment revenue and segment operating income. Operating results by segment include costs or expenses directly attributable to each segment, and costs or
+18
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+The putative derivative lawsuit pending in the United States District Court for the Northern District of California, captioned 4:19-cv-00341-HSG, initially filed
+January 18, 2019 and titled In re NVIDIA Corporation Consolidated Derivative Litigation, was stayed pending resolution of the plaintiffs’ appeal in the In Re
+NVIDIA Corporation Securities Litigation action. On February 22, 2022, the court administratively closed the case, but stated that it would reopen the case once
+the appeal in the In Re NVIDIA Corporation Securities Litigation action is resolved. The case has not yet been reopened by the court. The lawsuit asserts claims,
+purportedly on behalf of us, against certain officers and directors of the Company for breach of fiduciary duty, unjust enrichment, waste of corporate assets, and
+violations of Sections 14(a), 10(b), and 20(a) of the Exchange Act based on the dissemination of allegedly false and misleading statements related to channel
+inventory and the impact of cryptocurrency mining on GPU demand. The plaintiffs are seeking unspecified damages and other relief, including reforms and
+improvements to NVIDIA’s corporate governance and internal procedures.
+
+The putative derivative actions initially filed September 24, 2019 and pending in the United States District Court for the District of Delaware, Lipchitz v. Huang, et
+al. (Case No. 1:19-cv-01795-MN) and Nelson v. Huang, et. al. (Case No. 1:19-cv-01798-MN), were stayed pending resolution of the plaintiffs’ appeal in the In Re
+NVIDIA Corporation Securities Litigation action. On February 5, 2025, after the Supreme Court issued its judgment dismissing the Company’s petition for writ of
+certiorari as improvidently granted in the In Re NVIDIA Corporation Securities Litigation action, the district court extended the stay for 30 days while the parties
+discuss next steps and ordered the parties to file a joint status report by March 7, 2025. On March 7, 2025, the district court adopted the parties' stipulation to
+extend the stay until the final and complete resolution of the In Re NVIDIA Corporation Securities Litigation action. The lawsuits assert claims, purportedly on
+behalf of us, against certain officers and directors of the Company for breach of fiduciary duty, unjust enrichment, insider trading, misappropriation of information,
+corporate waste and violations of Sections 14(a), 10(b), and 20(a) of the Exchange Act based on the dissemination of allegedly false, and misleading statements
+related to channel inventory and the impact of cryptocurrency mining on GPU demand. The plaintiffs seek unspecified damages and other relief, including
+disgorgement of profits from the sale of NVIDIA stock and unspecified corporate governance measures.
+
+Another putative derivative action was filed on October 30, 2023 in the Court of Chancery of the State of Delaware, captioned Horanic v. Huang, et al. (Case No.
+2023-1096-KSJM). This lawsuit asserts claims, purportedly on behalf of us, against certain officers and directors of the Company for breach of fiduciary duty and
+insider trading based on the dissemination of allegedly false and misleading statements related to channel inventory and the impact of cryptocurrency mining on
+GPU demand. The plaintiffs seek unspecified damages and other relief, including disgorgement of profits from the sale of NVIDIA stock and reform of
+unspecified corporate governance measures. This derivative matter is stayed pending the final resolution of In Re NVIDIA Corporation Securities Litigation
+action.
+
+Accounting for Loss Contingencies
+
+As of April 27, 2025, there are no accrued contingent liabilities associated with the legal proceedings described above based on our belief that liabilities, while
+reasonably possible, are not probable. Further, any possible loss or range of loss in these matters cannot be reasonably estimated at this time. We are engaged
+in legal actions not described above arising in the ordinary course of business and, while there can be no assurance of favorable outcomes, we believe that the
+ultimate outcome of these actions will not have a material adverse effect on our operating results, liquidity or financial position.
+
+Note 12 - Shareholders’ Equity
+
+Capital Return Program
+
+We repurchased 126 million and 99 million shares of our common stock for $14.5 billion and $8.0 billion during the first quarter of fiscal years 2026 and 2025,
+respectively. As of April 27, 2025, we were authorized, subject to certain specifications, to repurchase up to $24.3 billion of our common stock.
+
+From April 28, 2025 through May 23, 2025, we repurchased 19 million shares for $2.3 billion pursuant to a pre-established trading plan. Our share repurchase
+program aims to offset dilution from shares issued to employees while maintaining adequate liquidity to meet our operating requirements. We may pursue
+additional share repurchases as we weigh market factors and other investment opportunities.
+
+We paid cash dividends to our shareholders of $244 million and $98 million during the first quarter of fiscal years 2026 and 2025, respectively. The payment of
+future cash dividends is subject to our Board of Directors' continuing determination that the declaration of dividends is in the best interests of our shareholders.
+
+Note 13 - Segment Information
+
+Our Chief Executive Officer is our chief operating decision maker, or CODM, and reviews financial information presented on an operating segment basis for
+purposes of making decisions and assessing financial performance. Our CODM assesses operating performance of each segment based on regularly provided
+segment revenue and segment operating income. Operating results by segment include costs or expenses directly attributable to each segment, and costs or
+
+18
+
+=== nvidia_10q.pdf, Page 27 ===
+Visual content from: document_images/nvidia_10q_page_027.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Operating Expenses
+ 
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+$
+Change
+%
+Change
+ 
+($ in millions)
+Research and development expenses $
+3,989 
+$
+2,720 
+$
+1,269 
+47 %
+Sales, general and administrative
+expenses
+1,041 
+777 
+264 
+34 %
+Total operating expenses
+$
+5,030 
+$
+3,497 
+$
+1,533 
+44 %
+The increase in research and development expenses for the first quarter of fiscal year 2026 was driven by a 34% increase in compensation and benefits,
+including stock-based compensation, reflecting employee growth and compensation increases, a 70% increase in compute and infrastructure, and a 182%
+increase in engineering development costs for new product introductions.
+The increase in sales, general and administrative expenses for the first quarter of fiscal year 2026 were primarily driven by compensation and benefits, including
+stock-based compensation, reflecting employee growth and compensation increases.
+Total Other Income (Expense), Net
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+$
+Change
+ 
+($ in millions)
+Interest income
+$
+515 
+$
+359 
+$
+156 
+Interest expense
+(63)
+(64)
+1 
+Other income (expense), net
+(180)
+75 
+(255)
+Total other income (expense), net
+$
+272 
+$
+370 
+$
+(98)
+The increase in interest income for the first quarter of fiscal year 2026 was primarily due to growth in cash, cash equivalents, and debt securities.
+Interest expense is comprised of coupon interest and debt discount amortization related to our notes.
+Other income (expense), net consists of realized or unrealized gains and losses from investments in non-marketable equity securities, publicly-held equity
+securities, and the impact of changes in foreign currency rates. The change in Other income (expense), net, compared to the first quarter of fiscal year 2025,
+was primarily driven by unrealized losses in our publicly-held equity securities due to fair value volatility in our investments, particularly CoreWeave and Arm, Inc.
+Refer to Notes 5 and 6 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q for additional
+information regarding our investments in non-marketable equity securities and publicly-held equity securities.
+Income Taxes
+Income tax expense was $3.1 billion and $2.4 billion for the first quarter of fiscal years 2026 and 2025, respectively. Income tax as a percentage of income
+before income tax was an expense of 14.3% and 13.9% for the first quarter of fiscal years 2026 and 2025, respectively.
+The effective tax rate increased primarily due to a lower tax benefit from stock-based compensation, partially offset by an increase in tax benefit from the foreign-
+derived intangible income deduction.
+Given our current and possible future earnings, we believe that we may release the valuation allowance associated with certain state deferred tax assets in the
+near term, which would decrease our income tax expense for the period the release is recorded. The timing and amount of the valuation allowance release could
+vary based on our assessment of all available information.
+Refer to Note 4 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q for additional information.
+27
+
+Table Data:
+Research and development expenses | $ | 3,989 |  | $ | 2,720 |  | $ | 1,269 |  | 47 | %
+Sales, general and administrative
+expenses | 1,041 |  |  | 777 |  |  | 264 |  |  | 34 | %
+Total operating expenses | $ | 5,030 |  | $ | 3,497 |  | $ | 1,533 |  | 44 | %
+Interest income | $ | 515 |  | $ | 359 |  | $ | 156
+Interest expense | (63) |  |  | (64) |  |  | 1 | 
+Other income (expense), net | (180) |  |  | 75 |  |  | (255) | 
+Total other income (expense), net | $ | 272 |  | $ | 370 |  | $ | (98)
+
+Structured Layout:
+Operating Expenses
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+
+$
+Change
+
+%
+Change
+
+($ in millions)
+Research and development expenses $
+3,989 
+$
+2,720 
+$
+1,269 
+47 %
+Sales, general and administrative
+expenses
+1,041 
+777 
+264 
+34 %
+Total operating expenses
+$
+5,030 
+$
+3,497 
+$
+1,533 
+44 %
+
+The increase in research and development expenses for the first quarter of fiscal year 2026 was driven by a 34% increase in compensation and benefits,
+including stock-based compensation, reflecting employee growth and compensation increases, a 70% increase in compute and infrastructure, and a 182%
+increase in engineering development costs for new product introductions.
+
+The increase in sales, general and administrative expenses for the first quarter of fiscal year 2026 were primarily driven by compensation and benefits, including
+stock-based compensation, reflecting employee growth and compensation increases.
+
+Total Other Income (Expense), Net
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+
+$
+Change
+
+($ in millions)
+Interest income
+$
+515 
+$
+359 
+$
+156 
+Interest expense
+(63)
+(64)
+1 
+Other income (expense), net
+(180)
+75 
+(255)
+Total other income (expense), net
+$
+272 
+$
+370 
+$
+(98)
+
+The increase in interest income for the first quarter of fiscal year 2026 was primarily due to growth in cash, cash equivalents, and debt securities.
+
+Interest expense is comprised of coupon interest and debt discount amortization related to our notes.
+
+Other income (expense), net consists of realized or unrealized gains and losses from investments in non-marketable equity securities, publicly-held equity
+securities, and the impact of changes in foreign currency rates. The change in Other income (expense), net, compared to the first quarter of fiscal year 2025,
+was primarily driven by unrealized losses in our publicly-held equity securities due to fair value volatility in our investments, particularly CoreWeave and Arm, Inc.
+Refer to Notes 5 and 6 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q for additional
+information regarding our investments in non-marketable equity securities and publicly-held equity securities.
+
+Income Taxes
+
+Income tax expense was $3.1 billion and $2.4 billion for the first quarter of fiscal years 2026 and 2025, respectively. Income tax as a percentage of income
+before income tax was an expense of 14.3% and 13.9% for the first quarter of fiscal years 2026 and 2025, respectively.
+
+The effective tax rate increased primarily due to a lower tax benefit from stock-based compensation, partially offset by an increase in tax benefit from the foreign-
+derived intangible income deduction.
+
+Given our current and possible future earnings, we believe that we may release the valuation allowance associated with certain state deferred tax assets in the
+near term, which would decrease our income tax expense for the period the release is recorded. The timing and amount of the valuation allowance release could
+vary based on our assessment of all available information.
+
+Refer to Note 4 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q for additional information.
+
+27

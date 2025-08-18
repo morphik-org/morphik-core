@@ -1,0 +1,951 @@
+=== CONTEXT DEBUG FOR QUESTION ===
+Question: Which four factors did NVIDIA cite in Note 4 of its Q1 FY2026 financial statements for its effective tax rate being lower than the 21% U.S. federal statutory rate, what was that effective tax rate, and what estimated long-term annual effective tax rate did Palantir apply to its income tax effect for market-vesting SARs?
+
+Context:
+=== nvidia_10q.pdf, Page 10 ===
+Visual content from: document_images/nvidia_10q_page_010.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Note 4 - Income Taxes
+Income tax expense was $3.1 billion and $2.4 billion for the first quarter of fiscal years 2026 and 2025, respectively. Income tax as a percentage of income
+before income tax was an expense of 14.3% and 13.9% for the first quarter of fiscal years 2026 and 2025, respectively.
+The effective tax rate increased primarily due to a lower tax benefit from stock-based compensation, partially offset by an increase in tax benefit from the foreign-
+derived intangible income deduction.
+Our effective tax rates for the first quarter of fiscal years 2026 and 2025 were lower than the U.S. federal statutory rate of 21% primarily due to tax benefits from
+the foreign-derived intangible income deduction, stock-based compensation, income earned in jurisdictions that are subject to taxes at rates lower than the U.S.
+federal statutory tax rate, and the U.S. federal research tax credit.
+Given our current and possible future earnings, we believe that we may release the valuation allowance associated with certain state deferred tax assets in the
+near term, which would decrease our income tax expense for the period the release is recorded. The timing and amount of the valuation allowance release could
+vary based on our assessment of all available information.
+While we believe that we have adequately provided for all uncertain tax positions, or tax positions where we believe it is not more-likely-than-not that the position
+will be sustained upon review, amounts asserted by tax authorities could be greater or less than our accrued position. Accordingly, our provisions on federal,
+state and foreign tax related matters to be recorded in the future may change as revised estimates are made or the underlying matters are settled or otherwise
+resolved with the respective tax authorities.
+Note 5 - Cash Equivalents and Marketable Securities
+The following is a summary of cash equivalents and marketable securities:
+ 
+Apr 27, 2025
+Amortized
+Cost
+Unrealized
+Gain
+Unrealized
+Loss
+Estimated
+Fair Value
+Reported as
+ 
+Cash Equivalents
+Marketable
+Securities
+ 
+(In millions)
+Debt securities issued by the U.S. Treasury $
+23,135 
+$
+120 
+$
+(4)
+$
+23,251 
+$
+5,414 
+$
+17,837 
+Corporate debt securities
+19,976 
+85 
+(10)
+20,051 
+2,868 
+17,183 
+Money market funds
+6,522 
+— 
+— 
+6,522 
+6,522 
+— 
+Debt securities issued by U.S. government
+agencies
+2,134 
+12 
+(1)
+2,145 
+— 
+2,145 
+Certificates of deposit
+126 
+— 
+— 
+126 
+126 
+— 
+Foreign government bonds
+40 
+1 
+— 
+41 
+— 
+41 
+Total debt securities with fair value
+adjustments recorded in other comprehensive
+income
+51,933 
+218 
+(15)
+52,136 
+14,930 
+37,206 
+Publicly-held equity securities (1)
+1,251 
+— 
+1,251 
+Total
+$
+51,933 
+$
+218 
+$
+(15)
+$
+53,387 
+$
+14,930 
+$
+38,457 
+(1)    The balance as of the first quarter of fiscal year 2026 includes an investment in CoreWeave, Inc., or CoreWeave, which was reclassified from non-marketable equity securities to marketable securities
+following public market trading. The fair value of the investment as of April 27, 2025 was $1 billion and is subject to a short-term restriction on the ability to sell.
+Net unrealized losses on investments in publicly-held equity securities held at period end were $222  million for the first quarter of fiscal year 2026. Net
+unrealized gains on investments in publicly-held equity securities held at period end were not significant for the first quarter of fiscal year 2025.
+10
+
+Table Data:
+Debt securities issued by the U.S. Treasury | $ | 23,135 |  | $ | 120 |  | $ | (4) |  | $ | 23,251 |  | $ | 5,414 |  | $ | 17,837
+Corporate debt securities | 19,976 |  |  | 85 |  |  | (10) |  |  | 20,051 |  |  | 2,868 |  |  | 17,183 | 
+Money market funds | 6,522 |  |  | — |  |  | — |  |  | 6,522 |  |  | 6,522 |  |  | — | 
+Debt securities issued by U.S. government
+agencies | 2,134 |  |  | 12 |  |  | (1) |  |  | 2,145 |  |  | — |  |  | 2,145 | 
+Certificates of deposit | 126 |  |  | — |  |  | — |  |  | 126 |  |  | 126 |  |  | — | 
+Foreign government bonds | 40 |  |  | 1 |  |  | — |  |  | 41 |  |  | — |  |  | 41 | 
+Total debt securities with fair value
+adjustments recorded in other comprehensive
+income | 51,933 |  |  | 218 |  |  | (15) |  |  | 52,136 |  |  | 14,930 |  |  | 37,206 | 
+Publicly-held equity securities (1) |  |  |  |  |  |  |  |  |  | 1,251 |  |  | — |  |  | 1,251 | 
+Total | $ | 51,933 |  | $ | 218 |  | $ | (15) |  | $ | 53,387 |  | $ | 14,930 |  | $ | 38,457
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Note 4 - Income Taxes
+
+Income tax expense was $3.1 billion and $2.4 billion for the first quarter of fiscal years 2026 and 2025, respectively. Income tax as a percentage of income
+before income tax was an expense of 14.3% and 13.9% for the first quarter of fiscal years 2026 and 2025, respectively.
+
+The effective tax rate increased primarily due to a lower tax benefit from stock-based compensation, partially offset by an increase in tax benefit from the foreign-
+derived intangible income deduction.
+
+Our effective tax rates for the first quarter of fiscal years 2026 and 2025 were lower than the U.S. federal statutory rate of 21% primarily due to tax benefits from
+the foreign-derived intangible income deduction, stock-based compensation, income earned in jurisdictions that are subject to taxes at rates lower than the U.S.
+federal statutory tax rate, and the U.S. federal research tax credit.
+
+Given our current and possible future earnings, we believe that we may release the valuation allowance associated with certain state deferred tax assets in the
+near term, which would decrease our income tax expense for the period the release is recorded. The timing and amount of the valuation allowance release could
+vary based on our assessment of all available information.
+
+While we believe that we have adequately provided for all uncertain tax positions, or tax positions where we believe it is not more-likely-than-not that the position
+will be sustained upon review, amounts asserted by tax authorities could be greater or less than our accrued position. Accordingly, our provisions on federal,
+state and foreign tax related matters to be recorded in the future may change as revised estimates are made or the underlying matters are settled or otherwise
+resolved with the respective tax authorities.
+
+Note 5 - Cash Equivalents and Marketable Securities
+
+The following is a summary of cash equivalents and marketable securities:
+
+Apr 27, 2025
+
+Amortized
+
+Cost
+
+Unrealized
+
+Gain
+
+Unrealized
+
+Loss
+
+Estimated
+Fair Value
+
+Reported as
+
+Cash Equivalents
+
+Marketable
+
+Securities
+
+(In millions)
+Debt securities issued by the U.S. Treasury $
+23,135 
+$
+120 
+$
+(4)
+$
+23,251 
+$
+5,414 
+$
+17,837 
+Corporate debt securities
+19,976 
+85 
+(10)
+20,051 
+2,868 
+17,183 
+Money market funds
+6,522 
+— 
+— 
+6,522 
+6,522 
+— 
+Debt securities issued by U.S. government
+agencies
+2,134 
+12 
+(1)
+2,145 
+— 
+2,145 
+Certificates of deposit
+126 
+— 
+— 
+126 
+126 
+— 
+Foreign government bonds
+40 
+1 
+— 
+41 
+— 
+41 
+Total debt securities with fair value
+adjustments recorded in other comprehensive
+income
+51,933 
+218 
+(15)
+52,136 
+14,930 
+37,206 
+Publicly-held equity securities (1)
+1,251 
+— 
+1,251
+
+Total
+$
+51,933 
+$
+218 
+$
+(15)
+$
+53,387 
+$
+14,930 
+$
+38,457
+
+(1)    The balance as of the first quarter of fiscal year 2026 includes an investment in CoreWeave, Inc., or CoreWeave, which was reclassified from non-marketable equity securities to marketable securities
+
+following public market trading. The fair value of the investment as of April 27, 2025 was $1 billion and is subject to a short-term restriction on the ability to sell.
+
+Net unrealized losses on investments in publicly-held equity securities held at period end were $222  million for the first quarter of fiscal year 2026. Net
+unrealized gains on investments in publicly-held equity securities held at period end were not significant for the first quarter of fiscal year 2025.
+
+10
+
+=== palantir_q1_investor_presentation.pdf, Page 37 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_037.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Appendix
+Reconciliation of GAAP Net Income to Net Income When Excluding One-Time SAR-Related Expenses
+(AMOUNTS IN THOUSANDS)
+Net Income Attributable to Common Stockholders
+Accelerated Stock-Based Compensation Expense Related to Market-Vesting SARs
+Net Income When Excluding One-Time SAR-Related Expenses
+Employer Payroll Taxes Related to Market-Vesting SARs  
+Income Tax Effects and Adjustments Related to Market-Vesting SARs [1]
+Q4 2024
+$
+79,009
+115,776
+$
+164,714
+15,528
+(45,599)
+Add / (Less):
+[1] 
+Income tax eﬀect is based on an estmated long-term annual eﬀectve tax rate of 23.0% for the period ended 2024. The Company’s estmated long-term annual eﬀectve tax rate excludes certain noncash items, such   
+                 as stock-based compensaton, and is used in order to provide consistency across periods by eliminatng the eﬀects of certain items, such as changes in the tax valuaton allowance.
+© 2025 Palantr Technologies Inc.
+
+Structured Layout:
+Appendix
+
+Reconciliation of GAAP Net Income to Net Income When Excluding One-Time SAR-Related Expenses
+
+(AMOUNTS IN THOUSANDS)
+
+Net Income Attributable to Common Stockholders
+
+Accelerated Stock-Based Compensation Expense Related to Market-Vesting SARs
+
+Net Income When Excluding One-Time SAR-Related Expenses
+
+Employer Payroll Taxes Related to Market-Vesting SARs
+
+Income Tax Effects and Adjustments Related to Market-Vesting SARs [1]
+
+Q4 2024
+
+$
+79,009
+
+115,776
+
+$
+164,714
+
+15,528
+
+(45,599)
+
+Add / (Less):
+
+[1] 
+Income tax eﬀect is based on an estmated long-term annual eﬀectve tax rate of 23.0% for the period ended 2024. The Company’s estmated long-term annual eﬀectve tax rate excludes certain noncash items, such   
+                 as stock-based compensaton, and is used in order to provide consistency across periods by eliminatng the eﬀects of certain items, such as changes in the tax valuaton allowance.
+© 2025 Palantr Technologies Inc.
+
+=== nvidia_10q.pdf, Page 22 ===
+Visual content from: document_images/nvidia_10q_page_022.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Forward-Looking Statements 
+This Quarterly Report on Form 10-Q contains forward-looking statements within the meaning of Section 27A of the Securities Act of 1933, as amended, and
+Section 21E of the Securities Exchange Act of 1934, as amended, which are subject to the “safe harbor” created by those sections based on management’s
+beliefs and assumptions and on information currently available to management. In some cases, you can identify forward-looking statements by terms such as
+“may,” “will,” “should,” “could,” “goal,” “would,” “expect,” “plan,” “anticipate,” “believe,” “estimate,” “project,” “predict,” “potential” and similar expressions intended
+to identify forward-looking statements. These statements involve known and unknown risks, uncertainties and other factors, which may cause our actual results,
+performance, time frames or achievements to be materially different from any future results, performance, time frames or achievements expressed or implied by
+the forward-looking statements. We discuss many of these risks, uncertainties and other factors in this Quarterly Report on Form 10-Q and our Annual Report on
+Form 10-K for the fiscal year ended January 26, 2025 in greater detail under the heading “Risk Factors” of such reports. Given these risks, uncertainties, and
+other factors, you should not place undue reliance on these forward-looking statements. Also, these forward-looking statements represent our estimates and
+assumptions only as of the date of this filing. You should read this Quarterly Report on Form 10-Q completely and understand that our actual future results may
+be materially different from what we expect. We hereby qualify our forward-looking statements by these cautionary statements. Except as required by law, we
+assume no obligation to update these forward-looking statements publicly, or to update the reasons actual results could differ materially from those anticipated in
+these forward-looking statements, even if new information becomes available in the future.
+All references to “NVIDIA,” “we,” “us,” “our” or the “Company” mean NVIDIA Corporation and its subsidiaries.
+© 2025 NVIDIA Corporation. All rights reserved.
+The following discussion and analysis of our financial condition and results of operations should be read in conjunction with the risk factors set forth in Item 1A.
+“Risk Factors” of our Annual Report on Form 10-K for the fiscal year ended January 26, 2025 and Part II, Item 1A. “Risk Factors” of this Quarterly Report on
+Form 10-Q and our Condensed Consolidated Financial Statements and related Notes thereto, as well as other cautionary statements and risks described
+elsewhere in this Quarterly Report on Form 10-Q and our other filings with the SEC, before deciding to purchase, hold, or sell shares of our common stock.
+Overview
+Our Company and Our Businesses
+NVIDIA pioneered accelerated computing to help solve the most challenging computational problems. Since our original focus on PC graphics, we have
+expanded to several other large and important computationally intensive fields. Fueled by the sustained demand for exceptional 3D graphics and the scale of the
+gaming market, NVIDIA has leveraged its GPU architecture to create platforms for scientific computing, AI, data science, AV, robotics, and digital twin
+applications.
+Our two operating segments are "Compute & Networking" and "Graphics," as described in Note 13 of the Notes to Condensed Consolidated Financial
+Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q.
+Headquartered in Santa Clara, California, NVIDIA was incorporated in California in April 1993 and reincorporated in Delaware in April 1998.
+Recent Developments, Future Objectives and Challenges
+Revenue growth in the first quarter of fiscal year 2026 was driven by data center compute and networking platforms for accelerated computing and AI solutions.
+Our Blackwell GPU revenue ramp continued during the quarter, extending beyond large cloud service providers to include consumer internet companies and
+regional cloud service providers.
+On April 9, 2025, the U.S. government, or USG, informed us that it requires a license for export to China (including Hong Kong and Macau) and D:5 countries, or
+to companies headquartered or with an ultimate parent therein, of our H20 integrated circuits and any other circuits achieving the H20’s memory bandwidth,
+interconnect bandwidth, or combination thereof. As a result of these new requirements, we incurred a $4.5 billion charge in the first quarter of fiscal year 2026
+associated with H20 excess inventory and purchase obligations as the demand for H20 products diminished. The $4.5 billion charge was less than what we
+initially anticipated as we were able to re-use certain materials. Sales of our H20 products were $4.6 billion for the first quarter of fiscal year 2026 prior to the
+new export licensing requirements. The H20 export licensing requirements have impacted our current revenue and will also negatively affect our future revenue.
+We are still evaluating our limited options to supply Data Center compute products compliant with the USG’s export control rules. The export controls applicable
+to China are complex and address a variety of parameters, including the total processing performance of a chip, the “performance density” of a chip, the
+interconnect bandwidth of a chip, and the memory bandwidth of a chip. We may be unable to create a competitive product for China’s data center market that
+receives approval from the USG. In that event, we would effectively be foreclosed from competing in China's data center computing/compute market, with a
+material and adverse impact on our business, operating results, and financial condition.
+22
+
+Structured Layout:
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+
+Forward-Looking Statements 
+This Quarterly Report on Form 10-Q contains forward-looking statements within the meaning of Section 27A of the Securities Act of 1933, as amended, and
+Section 21E of the Securities Exchange Act of 1934, as amended, which are subject to the “safe harbor” created by those sections based on management’s
+beliefs and assumptions and on information currently available to management. In some cases, you can identify forward-looking statements by terms such as
+“may,” “will,” “should,” “could,” “goal,” “would,” “expect,” “plan,” “anticipate,” “believe,” “estimate,” “project,” “predict,” “potential” and similar expressions intended
+to identify forward-looking statements. These statements involve known and unknown risks, uncertainties and other factors, which may cause our actual results,
+performance, time frames or achievements to be materially different from any future results, performance, time frames or achievements expressed or implied by
+the forward-looking statements. We discuss many of these risks, uncertainties and other factors in this Quarterly Report on Form 10-Q and our Annual Report on
+Form 10-K for the fiscal year ended January 26, 2025 in greater detail under the heading “Risk Factors” of such reports. Given these risks, uncertainties, and
+other factors, you should not place undue reliance on these forward-looking statements. Also, these forward-looking statements represent our estimates and
+assumptions only as of the date of this filing. You should read this Quarterly Report on Form 10-Q completely and understand that our actual future results may
+be materially different from what we expect. We hereby qualify our forward-looking statements by these cautionary statements. Except as required by law, we
+assume no obligation to update these forward-looking statements publicly, or to update the reasons actual results could differ materially from those anticipated in
+these forward-looking statements, even if new information becomes available in the future.
+
+All references to “NVIDIA,” “we,” “us,” “our” or the “Company” mean NVIDIA Corporation and its subsidiaries.
+
+© 2025 NVIDIA Corporation. All rights reserved.
+
+The following discussion and analysis of our financial condition and results of operations should be read in conjunction with the risk factors set forth in Item 1A.
+“Risk Factors” of our Annual Report on Form 10-K for the fiscal year ended January 26, 2025 and Part II, Item 1A. “Risk Factors” of this Quarterly Report on
+Form 10-Q and our Condensed Consolidated Financial Statements and related Notes thereto, as well as other cautionary statements and risks described
+elsewhere in this Quarterly Report on Form 10-Q and our other filings with the SEC, before deciding to purchase, hold, or sell shares of our common stock.
+
+Overview
+
+Our Company and Our Businesses
+
+NVIDIA pioneered accelerated computing to help solve the most challenging computational problems. Since our original focus on PC graphics, we have
+expanded to several other large and important computationally intensive fields. Fueled by the sustained demand for exceptional 3D graphics and the scale of the
+gaming market, NVIDIA has leveraged its GPU architecture to create platforms for scientific computing, AI, data science, AV, robotics, and digital twin
+applications.
+
+Our two operating segments are "Compute & Networking" and "Graphics," as described in Note 13 of the Notes to Condensed Consolidated Financial
+Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q.
+
+Headquartered in Santa Clara, California, NVIDIA was incorporated in California in April 1993 and reincorporated in Delaware in April 1998.
+
+Recent Developments, Future Objectives and Challenges
+
+Revenue growth in the first quarter of fiscal year 2026 was driven by data center compute and networking platforms for accelerated computing and AI solutions.
+Our Blackwell GPU revenue ramp continued during the quarter, extending beyond large cloud service providers to include consumer internet companies and
+regional cloud service providers.
+
+On April 9, 2025, the U.S. government, or USG, informed us that it requires a license for export to China (including Hong Kong and Macau) and D:5 countries, or
+to companies headquartered or with an ultimate parent therein, of our H20 integrated circuits and any other circuits achieving the H20’s memory bandwidth,
+interconnect bandwidth, or combination thereof. As a result of these new requirements, we incurred a $4.5 billion charge in the first quarter of fiscal year 2026
+associated with H20 excess inventory and purchase obligations as the demand for H20 products diminished. The $4.5 billion charge was less than what we
+initially anticipated as we were able to re-use certain materials. Sales of our H20 products were $4.6 billion for the first quarter of fiscal year 2026 prior to the
+new export licensing requirements. The H20 export licensing requirements have impacted our current revenue and will also negatively affect our future revenue.
+We are still evaluating our limited options to supply Data Center compute products compliant with the USG’s export control rules. The export controls applicable
+to China are complex and address a variety of parameters, including the total processing performance of a chip, the “performance density” of a chip, the
+interconnect bandwidth of a chip, and the memory bandwidth of a chip. We may be unable to create a competitive product for China’s data center market that
+receives approval from the USG. In that event, we would effectively be foreclosed from competing in China's data center computing/compute market, with a
+material and adverse impact on our business, operating results, and financial condition.
+
+22
+
+=== nvidia_10q.pdf, Page 16 ===
+Visual content from: document_images/nvidia_10q_page_016.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Note 10 - Debt
+Long-Term Debt
+Expected
+Remaining Term
+(years)
+Effective
+Interest Rate
+Carrying Value at
+Apr 27, 2025
+Jan 26, 2025
+(In millions)
+3.20% Notes Due 2026
+1.4
+3.31%
+$
+1,000 
+$
+1,000 
+1.55% Notes Due 2028
+3.1
+1.64%
+1,250 
+1,250 
+2.85% Notes Due 2030
+4.9
+2.93%
+1,500 
+1,500 
+2.00% Notes Due 2031
+6.1
+2.09%
+1,250 
+1,250 
+3.50% Notes Due 2040
+14.9
+3.54%
+1,000 
+1,000 
+3.50% Notes Due 2050
+24.9
+3.54%
+2,000 
+2,000 
+3.70% Notes Due 2060
+35.0
+3.73%
+500 
+500 
+Unamortized debt discount and issuance costs
+(36)
+(37)
+Net long-term carrying amount
+$
+8,464 
+$
+8,463 
+As of April 27, 2025 and January 26, 2025, the estimated fair value of debt was $7.3 billion and $7.2 billion, respectively. The estimated fair values are based on
+Level 2 inputs.
+Our notes are unsecured senior obligations. Existing and future liabilities of our subsidiaries will be effectively senior to the notes. Our notes pay interest semi-
+annually. We may redeem each of our notes prior to maturity, subject to a make-whole premium. The maturity of the notes is calendar year.
+As of April 27, 2025, we complied with the required covenants, which are non-financial in nature, under the outstanding notes.
+Commercial Paper
+We have a $575 million commercial paper program to support general corporate purposes. As of April 27, 2025, we had no commercial paper outstanding.
+Note 11 - Commitments and Contingencies
+Purchase Obligations
+Our purchase obligations reflect our commitment to purchase components used to manufacture our products, including long-term supply and capacity
+agreements, certain software and technology licenses, other goods and services and long-lived assets.
+As of April 27, 2025, we had outstanding inventory purchase and long-term supply and capacity obligations totaling $29.8 billion, an increase from the prior year
+led by commitments, capacity and components for our Blackwell architecture. We enter into agreements with contract manufacturers that allow them to procure
+inventory based upon our defined criteria, and in certain instances, these agreements are cancellable, able to be rescheduled, or adjustable for our business
+needs prior to placing firm orders. Though, changes to these agreements may result in additional costs. Other non-inventory purchase obligations were
+$13.7  billion, including $10.6  billion of multi-year cloud service agreements. We expect our cloud service agreements to primarily be used to support our
+research and development efforts, as well as our DGX Cloud offerings.
+16
+
+Table Data:
+3.20% Notes Due 2026 |  | 1.4 |  | 3.31% |  | $ | 1,000 |  | $ | 1,000
+1.55% Notes Due 2028 |  | 3.1 |  | 1.64% |  | 1,250 |  |  | 1,250 | 
+2.85% Notes Due 2030 |  | 4.9 |  | 2.93% |  | 1,500 |  |  | 1,500 | 
+2.00% Notes Due 2031 |  | 6.1 |  | 2.09% |  | 1,250 |  |  | 1,250 | 
+3.50% Notes Due 2040 |  | 14.9 |  | 3.54% |  | 1,000 |  |  | 1,000 | 
+3.50% Notes Due 2050 |  | 24.9 |  | 3.54% |  | 2,000 |  |  | 2,000 | 
+3.70% Notes Due 2060 |  | 35.0 |  | 3.73% |  | 500 |  |  | 500 | 
+Unamortized debt discount and issuance costs |  |  |  |  |  | (36) |  |  | (37) | 
+Net long-term carrying amount |  |  |  |  |  | $ | 8,464 |  | $ | 8,463
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Note 10 - Debt
+
+Long-Term Debt
+
+Expected
+Remaining Term
+
+(years)
+
+Effective
+Interest Rate
+
+Carrying Value at
+
+Apr 27, 2025
+Jan 26, 2025
+
+(In millions)
+3.20% Notes Due 2026
+1.4
+3.31%
+$
+1,000 
+$
+1,000 
+1.55% Notes Due 2028
+3.1
+1.64%
+1,250 
+1,250 
+2.85% Notes Due 2030
+4.9
+2.93%
+1,500 
+1,500 
+2.00% Notes Due 2031
+6.1
+2.09%
+1,250 
+1,250 
+3.50% Notes Due 2040
+14.9
+3.54%
+1,000 
+1,000 
+3.50% Notes Due 2050
+24.9
+3.54%
+2,000 
+2,000 
+3.70% Notes Due 2060
+35.0
+3.73%
+500 
+500 
+Unamortized debt discount and issuance costs
+(36)
+(37)
+
+Net long-term carrying amount
+$
+8,464 
+$
+8,463
+
+As of April 27, 2025 and January 26, 2025, the estimated fair value of debt was $7.3 billion and $7.2 billion, respectively. The estimated fair values are based on
+Level 2 inputs.
+
+Our notes are unsecured senior obligations. Existing and future liabilities of our subsidiaries will be effectively senior to the notes. Our notes pay interest semi-
+annually. We may redeem each of our notes prior to maturity, subject to a make-whole premium. The maturity of the notes is calendar year.
+
+As of April 27, 2025, we complied with the required covenants, which are non-financial in nature, under the outstanding notes.
+
+Commercial Paper
+
+We have a $575 million commercial paper program to support general corporate purposes. As of April 27, 2025, we had no commercial paper outstanding.
+
+Note 11 - Commitments and Contingencies
+
+Purchase Obligations
+
+Our purchase obligations reflect our commitment to purchase components used to manufacture our products, including long-term supply and capacity
+agreements, certain software and technology licenses, other goods and services and long-lived assets.
+
+As of April 27, 2025, we had outstanding inventory purchase and long-term supply and capacity obligations totaling $29.8 billion, an increase from the prior year
+led by commitments, capacity and components for our Blackwell architecture. We enter into agreements with contract manufacturers that allow them to procure
+inventory based upon our defined criteria, and in certain instances, these agreements are cancellable, able to be rescheduled, or adjustable for our business
+needs prior to placing firm orders. Though, changes to these agreements may result in additional costs. Other non-inventory purchase obligations were
+$13.7  billion, including $10.6  billion of multi-year cloud service agreements. We expect our cloud service agreements to primarily be used to support our
+research and development efforts, as well as our DGX Cloud offerings.
+
+16
+
+=== nvidia_10q.pdf, Page 17 ===
+Visual content from: document_images/nvidia_10q_page_017.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Total future purchase commitments as of April 27, 2025 are as follows:
+Purchase Commitments
+ 
+(In millions)
+Fiscal Year:
+ 
+2026 (excluding the first quarter of fiscal year 2026)
+$
+31,445 
+2027
+5,923 
+2028
+3,110 
+2029
+2,072 
+2030
+752 
+2031 and thereafter
+218 
+Total
+$
+43,520 
+Accrual for Product Warranty Liabilities
+The estimated amount of product warranty liabilities was $2.1 billion and $1.3 billion as of April 27, 2025 and January 26, 2025, respectively. The estimated
+product returns and product warranty activity consisted of the following:
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+(In millions)
+Balance at beginning of period
+$
+1,290 
+$
+306 
+Additions
+870 
+234 
+Utilization
+(80)
+(8)
+Balance at end of period
+$
+2,080 
+$
+532 
+We have provided indemnities for matters such as tax, product, and employee liabilities. We have included intellectual property indemnification provisions in our
+technology-related agreements with third parties. Maximum potential future payments cannot be estimated because many of these agreements do not have a
+maximum stated liability. We have not recorded any liability in our Condensed Consolidated Financial Statements for such indemnifications.
+Litigation
+Securities Class Action and Derivative Lawsuits
+The plaintiffs in the putative securities class action lawsuit, captioned 4:18-cv-07669-HSG, initially filed on December 21, 2018 in the United States District Court
+for the Northern District of California, and titled In Re NVIDIA Corporation Securities Litigation, filed an amended complaint on May 13, 2020. The amended
+complaint asserted that NVIDIA and certain NVIDIA executives violated Section 10(b) of the Securities Exchange Act of 1934, as amended, or the Exchange Act,
+and SEC Rule 10b-5, by making materially false or misleading statements related to channel inventory and the impact of cryptocurrency mining on GPU demand
+between May 10, 2017 and November 14, 2018. Plaintiffs also alleged that the NVIDIA executives who they named as defendants violated Section 20(a) of the
+Exchange Act. Plaintiffs sought class certification, an award of unspecified compensatory damages, an award of reasonable costs and expenses, including
+attorneys’ fees and expert fees, and further relief as the Court may deem just and proper. On March 2, 2021, the district court granted NVIDIA’s motion to
+dismiss the complaint without leave to amend, entered judgment in favor of NVIDIA and closed the case. On March 30, 2021, plaintiffs filed an appeal from
+judgment in the United States Court of Appeals for the Ninth Circuit, case number 21-15604. On August 25, 2023, a majority of a three-judge Ninth Circuit panel
+affirmed in part and reversed in part the district court’s dismissal of the case, with a third judge dissenting on the basis that the district court did not err in
+dismissing the case. On November 15, 2023, the Ninth Circuit denied NVIDIA’s petition for rehearing en banc of the Ninth Circuit panel’s majority decision to
+reverse in part the dismissal of the case, which NVIDIA had filed on October 10, 2023. On December 5, 2023, the Ninth Circuit granted NVIDIA’s motion to stay
+the mandate pending NVIDIA’s petition for a writ of certiorari in the Supreme Court of the United States and the Supreme Court’s final disposition of the matter.
+NVIDIA filed a petition for a writ of certiorari on March 4, 2024. On June 17, 2024, the Supreme Court of the United States granted NVIDIA’s petition for a writ of
+certiorari. After briefing and argument, the Supreme Court dismissed NVIDIA’s writ of certiorari as improvidently granted on December 11, 2024, and issued
+judgment on January 13, 2025. On February 20, 2025, the Ninth Circuit’s judgment, entered August 25, 2023 and corrected August 28, 2023, took effect, and the
+case was remanded to the district court for further proceedings.
+17
+
+Table Data:
+Fiscal Year: |  | 
+2026 (excluding the first quarter of fiscal year 2026) | $ | 31,445
+2027 | 5,923 | 
+2028 | 3,110 | 
+2029 | 2,072 | 
+2030 | 752 | 
+2031 and thereafter | 218 | 
+Total | $ | 43,520
+Balance at beginning of period | $ | 1,290 |  | $ | 306
+Additions | 870 |  |  | 234 | 
+Utilization | (80) |  |  | (8) | 
+Balance at end of period | $ | 2,080 |  | $ | 532
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Total future purchase commitments as of April 27, 2025 are as follows:
+
+Purchase Commitments
+ 
+(In millions)
+Fiscal Year:
+ 
+2026 (excluding the first quarter of fiscal year 2026)
+$
+31,445 
+2027
+5,923 
+2028
+3,110 
+2029
+2,072 
+2030
+752 
+2031 and thereafter
+218 
+Total
+$
+43,520
+
+Accrual for Product Warranty Liabilities
+
+The estimated amount of product warranty liabilities was $2.1 billion and $1.3 billion as of April 27, 2025 and January 26, 2025, respectively. The estimated
+product returns and product warranty activity consisted of the following:
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+
+(In millions)
+Balance at beginning of period
+$
+1,290 
+$
+306
+
+Additions
+870 
+234 
+Utilization
+(80)
+(8)
+
+Balance at end of period
+$
+2,080 
+$
+532
+
+We have provided indemnities for matters such as tax, product, and employee liabilities. We have included intellectual property indemnification provisions in our
+technology-related agreements with third parties. Maximum potential future payments cannot be estimated because many of these agreements do not have a
+maximum stated liability. We have not recorded any liability in our Condensed Consolidated Financial Statements for such indemnifications.
+
+Litigation
+
+Securities Class Action and Derivative Lawsuits
+
+The plaintiffs in the putative securities class action lawsuit, captioned 4:18-cv-07669-HSG, initially filed on December 21, 2018 in the United States District Court
+for the Northern District of California, and titled In Re NVIDIA Corporation Securities Litigation, filed an amended complaint on May 13, 2020. The amended
+complaint asserted that NVIDIA and certain NVIDIA executives violated Section 10(b) of the Securities Exchange Act of 1934, as amended, or the Exchange Act,
+and SEC Rule 10b-5, by making materially false or misleading statements related to channel inventory and the impact of cryptocurrency mining on GPU demand
+between May 10, 2017 and November 14, 2018. Plaintiffs also alleged that the NVIDIA executives who they named as defendants violated Section 20(a) of the
+Exchange Act. Plaintiffs sought class certification, an award of unspecified compensatory damages, an award of reasonable costs and expenses, including
+attorneys’ fees and expert fees, and further relief as the Court may deem just and proper. On March 2, 2021, the district court granted NVIDIA’s motion to
+dismiss the complaint without leave to amend, entered judgment in favor of NVIDIA and closed the case. On March 30, 2021, plaintiffs filed an appeal from
+judgment in the United States Court of Appeals for the Ninth Circuit, case number 21-15604. On August 25, 2023, a majority of a three-judge Ninth Circuit panel
+affirmed in part and reversed in part the district court’s dismissal of the case, with a third judge dissenting on the basis that the district court did not err in
+dismissing the case. On November 15, 2023, the Ninth Circuit denied NVIDIA’s petition for rehearing en banc of the Ninth Circuit panel’s majority decision to
+reverse in part the dismissal of the case, which NVIDIA had filed on October 10, 2023. On December 5, 2023, the Ninth Circuit granted NVIDIA’s motion to stay
+the mandate pending NVIDIA’s petition for a writ of certiorari in the Supreme Court of the United States and the Supreme Court’s final disposition of the matter.
+NVIDIA filed a petition for a writ of certiorari on March 4, 2024. On June 17, 2024, the Supreme Court of the United States granted NVIDIA’s petition for a writ of
+certiorari. After briefing and argument, the Supreme Court dismissed NVIDIA’s writ of certiorari as improvidently granted on December 11, 2024, and issued
+judgment on January 13, 2025. On February 20, 2025, the Ninth Circuit’s judgment, entered August 25, 2023 and corrected August 28, 2023, took effect, and the
+case was remanded to the district court for further proceedings.
+
+17
+
+=== nvidia_10q.pdf, Page 29 ===
+Visual content from: document_images/nvidia_10q_page_029.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+The U.S. Inflation Reduction Act of 2022 requires a 1% excise tax on certain share repurchases in excess of shares issued for employee compensation made
+after December 31, 2022. The excise tax is included in our share repurchase cost and was not material for the first quarter of fiscal years 2026 and 2025.
+Outstanding Indebtedness and Commercial Paper Program
+Our aggregate debt maturities as of April 27, 2025, by year payable, are as follows:
+ 
+Apr 27, 2025
+ 
+(In millions)
+Due in one to five years
+$
+3,750 
+Due in five to ten years
+1,250 
+Due in greater than ten years
+3,500 
+Unamortized debt discount and issuance costs
+(36)
+Net long-term carrying amount
+$
+8,464 
+We have a $575 million commercial paper program to support general corporate purposes. As of April 27, 2025, we had no commercial paper outstanding.
+Refer to Note 10 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q for further discussion.
+Material Cash Requirements and Other Obligations
+Unrecognized tax benefits were $2.5 billion, which includes related interest and penalties, were recorded in non-current income tax payable as of April 27, 2025.
+We are unable to estimate the timing of any potential tax liability, interest payments, or penalties in individual years due to uncertainties in the underlying income
+tax positions and the timing of the effective settlement of such tax positions. Refer to Note 4 of the Notes to Condensed Consolidated Financial Statements for
+further information.
+Other than the contractual obligations described above, there were no material changes outside the ordinary course of business in our contractual obligations
+from those disclosed in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025. Refer to Item 7, “Management’s Discussion and Analysis of
+Financial Condition and Results of Operations - Liquidity and Capital Resources” in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025
+for a description of our contractual obligations. For a description of our long-term debt, purchase obligations, and operating lease obligations, refer to Notes 10,
+11, and 14 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q, respectively.
+Climate Change
+To date, there has been no material impact to our results of operations associated with global sustainability regulations, compliance, costs from sourcing
+renewable energy or climate-related business trends.
+Adoption of New and Recently Issued Accounting Pronouncements
+There has been no adoption of any new and recently issued accounting pronouncements.
+Item 3. Quantitative and Qualitative Disclosures about Market Risk
+Investment and Interest Rate Risk
+Financial market risks related to investment and interest rate risk are described in Part II, Item 7A, “Quantitative and Qualitative Disclosures About Market Risk”
+in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025. As of April 27, 2025, there have been no material changes to the financial market
+risks described as of January 26, 2025.
+Foreign Exchange Rate Risk
+The impact of foreign currency transactions related to foreign exchange rate risk is described in Part II, Item 7A, “Quantitative and Qualitative Disclosures About
+Market Risk” in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025. As of April 27, 2025, there have been no material changes to the
+foreign exchange rate risks described as of January 26, 2025.
+29
+
+Table Data:
+Due in one to five years |  | $ | 3,750
+Due in five to ten years |  | 1,250 | 
+Due in greater than ten years |  | 3,500 | 
+Unamortized debt discount and issuance costs |  | (36) | 
+Net long-term carrying amount |  | $ | 8,464
+
+Structured Layout:
+The U.S. Inflation Reduction Act of 2022 requires a 1% excise tax on certain share repurchases in excess of shares issued for employee compensation made
+after December 31, 2022. The excise tax is included in our share repurchase cost and was not material for the first quarter of fiscal years 2026 and 2025.
+
+Outstanding Indebtedness and Commercial Paper Program
+
+Our aggregate debt maturities as of April 27, 2025, by year payable, are as follows:
+
+Apr 27, 2025
+
+(In millions)
+Due in one to five years
+$
+3,750 
+Due in five to ten years
+1,250 
+Due in greater than ten years
+3,500 
+Unamortized debt discount and issuance costs
+(36)
+
+Net long-term carrying amount
+$
+8,464
+
+We have a $575 million commercial paper program to support general corporate purposes. As of April 27, 2025, we had no commercial paper outstanding.
+
+Refer to Note 10 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q for further discussion.
+
+Material Cash Requirements and Other Obligations
+
+Unrecognized tax benefits were $2.5 billion, which includes related interest and penalties, were recorded in non-current income tax payable as of April 27, 2025.
+We are unable to estimate the timing of any potential tax liability, interest payments, or penalties in individual years due to uncertainties in the underlying income
+tax positions and the timing of the effective settlement of such tax positions. Refer to Note 4 of the Notes to Condensed Consolidated Financial Statements for
+further information.
+
+Other than the contractual obligations described above, there were no material changes outside the ordinary course of business in our contractual obligations
+from those disclosed in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025. Refer to Item 7, “Management’s Discussion and Analysis of
+Financial Condition and Results of Operations - Liquidity and Capital Resources” in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025
+for a description of our contractual obligations. For a description of our long-term debt, purchase obligations, and operating lease obligations, refer to Notes 10,
+11, and 14 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q, respectively.
+
+Climate Change
+
+To date, there has been no material impact to our results of operations associated with global sustainability regulations, compliance, costs from sourcing
+renewable energy or climate-related business trends.
+
+Adoption of New and Recently Issued Accounting Pronouncements
+
+There has been no adoption of any new and recently issued accounting pronouncements.
+
+Item 3. Quantitative and Qualitative Disclosures about Market Risk
+
+Investment and Interest Rate Risk
+
+Financial market risks related to investment and interest rate risk are described in Part II, Item 7A, “Quantitative and Qualitative Disclosures About Market Risk”
+in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025. As of April 27, 2025, there have been no material changes to the financial market
+risks described as of January 26, 2025.
+
+Foreign Exchange Rate Risk
+The impact of foreign currency transactions related to foreign exchange rate risk is described in Part II, Item 7A, “Quantitative and Qualitative Disclosures About
+Market Risk” in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025. As of April 27, 2025, there have been no material changes to the
+foreign exchange rate risks described as of January 26, 2025.
+
+29

@@ -1,0 +1,524 @@
+=== CONTEXT DEBUG FOR QUESTION ===
+Question: Given Palantir’s total revenue excluding strategic commercial contracts and adjusted operating income for Q1 2024 and Q1 2025, and its US commercial customer counts for the trailing twelve months ended March 31, 2024 and March 31, 2025, by what percentage did operating expense per US commercial customer change year-over-year between Q1 2024 and Q1 2025?
+
+Context:
+=== palantir_q1_investor_presentation.pdf, Page 3 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_003.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Adjusted free cash ﬂow of $370 million; 42% margin
+Business Update
+Q1
+© 2025 Palantr Technologies Inc.
+Q1 2025 Highlights
+The term “Strategic Commercial Contracts” is as deﬁned in our Annual Report on Form 10-K ﬁled on February 18, 2025. Rule of 40 refers to the sum of our revenue growth rate year-over-year and our adjusted operatng margin. The value of deals closed reﬂects the total contract value of contracts that have been entered 
+into with, or awarded by, our government and commercial customers and includes existng contractual obligatons and unexercised contract optons available to those customers. Adjusted free cash ﬂow and adjusted free cash ﬂow margin exclude employer payroll taxes related to stock-based compensaton and 
+purchases of property and equipment. Adjusted operatng income and adjusted operatng margin excludes stock-based compensaton expense and related employer payroll taxes. Total contract value (“TCV”) is the total potental lifetme value of contracts entered into with, or awarded by, our customers at the tme of 
+contract executon and remaining deal value (“RDV”) is the total remaining value of contracts as of the end of the reportng period. Except as noted below, TCV and RDV each presume the exercise of all contract optons available to our customers and no terminaton of contracts. However, the majority of our contracts are 
+subject to terminaton provisions, including for convenience, and there can be no guarantee that contracts are not terminated or that contract optons will be exercised. Further, RDV may exclude all or some porton of the value of certain commercial contracts as a result of our ongoing assessments of customers’ ﬁnancial 
+conditon, including the consideraton of such customers’ ability and intenton to pay, and whether such contracts contnue to meet the criteria for revenue recogniton, among other factors. Adjusted EPS excludes stock-based compensaton expense, related employer payroll taxes, and income tax eﬀects and adjustments. 
+Please see the appendix for reconciliatons of these and other non-GAAP ﬁnancial measures to the most directly comparable GAAP measures.
+US commercial revenue grew +71% Y/Y and +19% Q/Q to $255 million
+US revenue grew +55% Y/Y and +13% Q/Q to $628 million
+US commercial remaining deal value (“RDV”) grew +127% Y/Y and +30% Q/Q to $2.3 billion
+Adjusted operatng income of $391 million; 44% margin
+US government revenue grew +45% Y/Y and +9% Q/Q to $373 million
+Closed 139 deals of at least $1 million, 51 deals of at least $5 million, and 31 deals of at least $10 million
+Revenue grew +39% Y/Y and +7% Q/Q to $884 million; +44% Y/Y and +7% Q/Q excluding Strategic Commercial Contracts
+Highest ever quarter of US commercial total contract value (“TCV”) of $810 million; +183% Y/Y
+Adjusted EPS of $0.13
+Rule of 40 score of 83%
+
+Structured Layout:
+Adjusted free cash ﬂow of $370 million; 42% margin
+
+Business Update
+Q1
+
+© 2025 Palantr Technologies Inc.
+
+Q1 2025 Highlights
+
+The term “Strategic Commercial Contracts” is as deﬁned in our Annual Report on Form 10-K ﬁled on February 18, 2025. Rule of 40 refers to the sum of our revenue growth rate year-over-year and our adjusted operatng margin. The value of deals closed reﬂects the total contract value of contracts that have been entered 
+into with, or awarded by, our government and commercial customers and includes existng contractual obligatons and unexercised contract optons available to those customers. Adjusted free cash ﬂow and adjusted free cash ﬂow margin exclude employer payroll taxes related to stock-based compensaton and 
+purchases of property and equipment. Adjusted operatng income and adjusted operatng margin excludes stock-based compensaton expense and related employer payroll taxes. Total contract value (“TCV”) is the total potental lifetme value of contracts entered into with, or awarded by, our customers at the tme of 
+contract executon and remaining deal value (“RDV”) is the total remaining value of contracts as of the end of the reportng period. Except as noted below, TCV and RDV each presume the exercise of all contract optons available to our customers and no terminaton of contracts. However, the majority of our contracts are 
+subject to terminaton provisions, including for convenience, and there can be no guarantee that contracts are not terminated or that contract optons will be exercised. Further, RDV may exclude all or some porton of the value of certain commercial contracts as a result of our ongoing assessments of customers’ ﬁnancial 
+conditon, including the consideraton of such customers’ ability and intenton to pay, and whether such contracts contnue to meet the criteria for revenue recogniton, among other factors. Adjusted EPS excludes stock-based compensaton expense, related employer payroll taxes, and income tax eﬀects and adjustments. 
+Please see the appendix for reconciliatons of these and other non-GAAP ﬁnancial measures to the most directly comparable GAAP measures.
+
+US commercial revenue grew +71% Y/Y and +19% Q/Q to $255 million
+
+US revenue grew +55% Y/Y and +13% Q/Q to $628 million
+
+US commercial remaining deal value (“RDV”) grew +127% Y/Y and +30% Q/Q to $2.3 billion
+
+Adjusted operatng income of $391 million; 44% margin
+
+US government revenue grew +45% Y/Y and +9% Q/Q to $373 million
+
+Closed 139 deals of at least $1 million, 51 deals of at least $5 million, and 31 deals of at least $10 million
+
+Revenue grew +39% Y/Y and +7% Q/Q to $884 million; +44% Y/Y and +7% Q/Q excluding Strategic Commercial Contracts
+
+Highest ever quarter of US commercial total contract value (“TCV”) of $810 million; +183% Y/Y
+
+Adjusted EPS of $0.13
+
+Rule of 40 score of 83%
+
+=== palantir_q1_investor_presentation.pdf, Page 14 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_014.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+US commercial contnues to accelerate in Q1 2025 alongside AIP revoluton
+Financials
+Q1
+2x Y/Y
+US Commercial Deals Closed of $1M or Greater
+US Commercial Total Contract Value
+$810M
+US Commercial Total Contract Value
++183% Y/Y
++71% Y/Y
+US Commercial Revenue
++19% Q/Q
+US Commercial Revenue
++65% Y/Y
+US Commercial Customer Count
++13% Q/Q
+US Commercial Customer Count
++127% Y/Y
+US Commercial Remaining Deal Value
++30% Q/Q
+US Commercial Remaining Deal Value
+© 2025 Palantr Technologies Inc.
+We deﬁne a customer as an organizaton from which we have recognized revenue during the trailing twelve months period.
+
+Structured Layout:
+US commercial contnues to accelerate in Q1 2025 alongside AIP revoluton
+
+Financials
+Q1
+
+2x Y/Y
+
+US Commercial Deals Closed of $1M or Greater
+
+US Commercial Total Contract Value
+
+$810M
+
+US Commercial Total Contract Value
++183% Y/Y
+
++71% Y/Y
+
+US Commercial Revenue
++19% Q/Q
+
+US Commercial Revenue
+
++65% Y/Y
+
+US Commercial Customer Count
++13% Q/Q
+
+US Commercial Customer Count
+
++127% Y/Y
+
+US Commercial Remaining Deal Value
++30% Q/Q
+
+US Commercial Remaining Deal Value
+
+© 2025 Palantr Technologies Inc.
+We deﬁne a customer as an organizaton from which we have recognized revenue during the trailing twelve months period.
+
+=== palantir_q1_investor_presentation.pdf, Page 24 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_024.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Financials
+Q1
+US Commercial Customer Count
+150
+250
+300
+500
+450
+350
+400
+200
+100
+50
+432
+TTM ENDED
+MAR 31, 2025
+© 2025 Palantr Technologies Inc.
+TTM ENDED
+JUN 30, 2024
+TTM ENDED
+MAR 31, 2024
+262
+295
+321
+382
++13%
++9%
++19%
+TTM ENDED
+SEP 30, 2024
+TTM ENDED
+DEC 31, 2024
++65% Y/Y
++13%
+
+Structured Layout:
+Financials
+Q1
+
+US Commercial Customer Count
+
+150
+
+250
+
+300
+
+500
+
+450
+
+350
+
+400
+
+200
+
+100
+
+50
+
+432
+
+TTM ENDED
+MAR 31, 2025
+
+© 2025 Palantr Technologies Inc.
+
+TTM ENDED
+JUN 30, 2024
+TTM ENDED
+MAR 31, 2024
+
+262
+
+295
+
+321
+
+382
+
++13%
+
++9%
+
++19%
+
+TTM ENDED
+SEP 30, 2024
+TTM ENDED
+DEC 31, 2024
+
++65% Y/Y
+
++13%
+
+=== palantir_q1_investor_presentation.pdf, Page 25 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_025.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Financials
+Q1
+Customer Count
+769
+TTM ENDED
+MAR 31, 2025
+500
+300
+400
+600
+900
+800
+700
+200
+100
+Commercial Customer Count
+622
+700
+600
+500
+200
+300
+400
+100
+TTM ENDED
+MAR 31, 2025
+© 2025 Palantr Technologies Inc.
+593
+629
+711
+TTM ENDED
+JUN 30, 2024
+TTM ENDED
+SEP 30, 2024
+TTM ENDED
+DEC 31, 2024
+TTM ENDED
+MAR 31, 2024
++7%
++6%
++13%
+554
++8%
++39% Y/Y
+467
+498
+571
++9%
++7%
++15%
++9%
+427
++46% Y/Y
+TTM ENDED
+JUN 30, 2024
+TTM ENDED
+SEP 30, 2024
+TTM ENDED
+DEC 31, 2024
+TTM ENDED
+MAR 31, 2024
+
+Structured Layout:
+Financials
+Q1
+
+Customer Count
+
+769
+
+TTM ENDED
+MAR 31, 2025
+
+500
+
+300
+
+400
+
+600
+
+900
+
+800
+
+700
+
+200
+
+100
+
+Commercial Customer Count
+
+622
+
+700
+
+600
+
+500
+
+200
+
+300
+
+400
+
+100
+
+TTM ENDED
+MAR 31, 2025
+
+© 2025 Palantr Technologies Inc.
+
+593
+
+629
+
+711
+
+TTM ENDED
+JUN 30, 2024
+TTM ENDED
+SEP 30, 2024
+TTM ENDED
+DEC 31, 2024
+TTM ENDED
+MAR 31, 2024
+
++7%
+
++6%
+
++13%
+554
+
++8%
+
++39% Y/Y
+
+467
+498
+
+571
+
++9%
+
++7%
+
++15%
+
++9%
+
+427
+
++46% Y/Y
+
+TTM ENDED
+JUN 30, 2024
+TTM ENDED
+SEP 30, 2024
+TTM ENDED
+DEC 31, 2024
+TTM ENDED
+MAR 31, 2024
+
+=== palantir_q1_investor_presentation.pdf, Page 28 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_028.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Q2 2025
+Adjusted income from operatons of between
+$401 million — $405 million.
+GAAP operatng income and net income in each 
+quarter of this year.
+Revenue of between
+$934 million — $938 million.
+For second quarter 2025, we expect: 
+For full year 2025, we expect: 
+FY 2025
+Adjusted income from operatons of between
+$1.711 billion — $1.723 billion.
+Adjusted free cash ﬂow of between
+$1.6 billion — $1.8 billion. 
+Revenue of between
+$3.890 billion — $3.902 billion.
+US commercial revenue in excess of
+$1.178 billion, representng a growth 
+rate of at least 68%.
+Financials
+Q1
+© 2025 Palantr Technologies Inc.
+
+Structured Layout:
+Q2 2025
+
+Adjusted income from operatons of between
+$401 million — $405 million.
+
+GAAP operatng income and net income in each 
+quarter of this year.
+
+Revenue of between
+$934 million — $938 million.
+
+For second quarter 2025, we expect: 
+For full year 2025, we expect:
+
+FY 2025
+
+Adjusted income from operatons of between
+$1.711 billion — $1.723 billion.
+
+Adjusted free cash ﬂow of between
+$1.6 billion — $1.8 billion.
+
+Revenue of between
+$3.890 billion — $3.902 billion.
+
+US commercial revenue in excess of
+$1.178 billion, representng a growth 
+rate of at least 68%.
+
+Financials
+Q1
+
+© 2025 Palantr Technologies Inc.
+
+=== palantir_q1_investor_presentation.pdf, Page 22 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_022.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Financials
+Q1
+Total revenue excluding 
+strategic commercial contracts 
+grew 44% Y/Y and 7% Q/Q.
+Q1 2024
+Q1 2025
+Total Revenue Growth excl. Strategic
+Commercial Contracts
+$600M
+$400M
+$879M
+$610M
++44%
+$800M
+$1000M
+//
+© 2025 Palantr Technologies Inc.
+
+Structured Layout:
+Financials
+Q1
+
+Total revenue excluding 
+strategic commercial contracts 
+grew 44% Y/Y and 7% Q/Q.
+
+Q1 2024
+Q1 2025
+
+Total Revenue Growth excl. Strategic
+Commercial Contracts
+
+$600M
+
+$400M
+
+$879M
+
+$610M
+
++44%
+
+$800M
+
+$1000M
+
+//
+
+© 2025 Palantr Technologies Inc.

@@ -1,0 +1,993 @@
+=== CONTEXT DEBUG FOR QUESTION ===
+Question: In NVIDIA's first quarter of fiscal 2026, by how many percentage points did interest income as a share of gross profit increase year-over-year, and how did that compare to the year-over-year percentage increase in research and development expenses?
+
+Context:
+=== nvidia_10q.pdf, Page 26 ===
+Visual content from: document_images/nvidia_10q_page_026.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Reportable segment operating income – The year over year increase in Compute & Networking segment operating income in the first quarter of fiscal year 2026
+was driven by growth in revenue, partially offset by a $4.5 billion charge associated with H20 excess inventory and purchase obligations. The year over year
+increase in Graphics segment operating income in the first quarter of fiscal year 2026 was driven by growth in revenue.
+All Other operating loss – The year over year increase in the first quarter of fiscal year 2026 was due to an increase in stock-based compensation expense
+reflecting employee growth.
+Concentration of Revenue
+We refer to customers who purchase products directly from NVIDIA as direct customers, such as add-in board manufacturers, distributors, ODMs, OEMs, and
+system integrators. We have certain customers that may purchase products directly from NVIDIA and may use either internal resources or third-party system
+integrators to complete their build. We also have indirect customers, who purchase products through our direct customers; indirect customers include CSPs,
+consumer internet companies, enterprises, and public sector entities.
+Direct Customers – Sales to one direct customer, Customer A, represented 16% of total revenue and sales to a second direct customer, Customer B,
+represented 14% of total revenue for the first quarter of fiscal year 2026, both of which were attributable to the Compute & Networking segment. Sales to two
+direct customers represented 11% and 13% of total revenue for the first quarter of fiscal year 2025, both of which were attributable to the Compute & Networking
+segment.
+Indirect Customers – Indirect customer revenue is an estimation based upon multiple factors including customer purchase order information, product
+specifications, internal sales data, and other sources. Actual indirect customer revenue may differ from our estimates. For the first quarter of fiscal year 2026, two
+indirect customers which primarily purchase our products through system integrators and distributors, including through Direct Customers A and B, are estimated
+to represent 10% or more of total revenue, attributable to the Compute & Networking segment.
+We estimate that in the first quarter of fiscal year 2026, an AI research and deployment company contributed to a meaningful amount of our revenue, through
+one of the above indirect customers and through other indirect customers that provide cloud services.
+We have experienced periods where we receive a significant amount of our revenue from a limited number of customers, and this trend may continue.
+Revenue by geographic region is designated based on the billing location even if the revenue may be attributable to indirect customers in a different location.
+Revenue from sales to customers outside of the United States accounted for 53% and 48% of total revenue for the first quarter of fiscal years 2026 and 2025,
+respectively.
+Gross Profit and Gross Margin
+Gross profit consists of total net revenue less cost of revenue. Cost of revenue consists primarily of the cost of semiconductors, including wafer fabrication,
+assembly, testing and packaging, board and device costs, manufacturing support costs, including labor and overhead associated with such purchases, final test
+yield fallout, inventory and warranty provisions, memory and component costs, tariffs, and shipping costs. Cost of revenue also includes acquisition-related
+intangible amortization expense, costs for license and development and service arrangements, IP-related costs, and stock-based compensation related to
+personnel associated with manufacturing operations.
+Gross margins decreased to 60.5% for the first quarter of fiscal year 2026 compared to 78.4% for the first quarter of fiscal year 2025, primarily due to a $4.5
+billion charge associated with H20 excess inventory and purchase obligations and the initial ramp of more sophisticated systems within Data Center.
+Provisions for inventory and excess inventory purchase obligations totaled $5.3 billion, including $4.5 billion associated with H20 excess inventory and purchase
+obligations, and $393 million for the first quarter of fiscal years 2026 and 2025, respectively. Sales of previously reserved inventory and settlements of excess
+inventory purchase obligations resulted in a provision release of $436 million and $114 million for the first quarter of fiscal years 2026 and 2025, respectively.
+The net effect of provisions for inventory and excess inventory purchase obligations on our gross margin was an unfavorable impact of 11.0% and 1.1% in the
+first quarter of fiscal years 2026 and 2025, respectively.
+26
+
+Structured Layout:
+Reportable segment operating income – The year over year increase in Compute & Networking segment operating income in the first quarter of fiscal year 2026
+was driven by growth in revenue, partially offset by a $4.5 billion charge associated with H20 excess inventory and purchase obligations. The year over year
+increase in Graphics segment operating income in the first quarter of fiscal year 2026 was driven by growth in revenue.
+
+All Other operating loss – The year over year increase in the first quarter of fiscal year 2026 was due to an increase in stock-based compensation expense
+reflecting employee growth.
+
+Concentration of Revenue
+
+We refer to customers who purchase products directly from NVIDIA as direct customers, such as add-in board manufacturers, distributors, ODMs, OEMs, and
+system integrators. We have certain customers that may purchase products directly from NVIDIA and may use either internal resources or third-party system
+integrators to complete their build. We also have indirect customers, who purchase products through our direct customers; indirect customers include CSPs,
+consumer internet companies, enterprises, and public sector entities.
+
+Direct Customers – Sales to one direct customer, Customer A, represented 16% of total revenue and sales to a second direct customer, Customer B,
+represented 14% of total revenue for the first quarter of fiscal year 2026, both of which were attributable to the Compute & Networking segment. Sales to two
+direct customers represented 11% and 13% of total revenue for the first quarter of fiscal year 2025, both of which were attributable to the Compute & Networking
+segment.
+
+Indirect Customers – Indirect customer revenue is an estimation based upon multiple factors including customer purchase order information, product
+specifications, internal sales data, and other sources. Actual indirect customer revenue may differ from our estimates. For the first quarter of fiscal year 2026, two
+indirect customers which primarily purchase our products through system integrators and distributors, including through Direct Customers A and B, are estimated
+to represent 10% or more of total revenue, attributable to the Compute & Networking segment.
+
+We estimate that in the first quarter of fiscal year 2026, an AI research and deployment company contributed to a meaningful amount of our revenue, through
+one of the above indirect customers and through other indirect customers that provide cloud services.
+
+We have experienced periods where we receive a significant amount of our revenue from a limited number of customers, and this trend may continue.
+
+Revenue by geographic region is designated based on the billing location even if the revenue may be attributable to indirect customers in a different location.
+Revenue from sales to customers outside of the United States accounted for 53% and 48% of total revenue for the first quarter of fiscal years 2026 and 2025,
+respectively.
+
+Gross Profit and Gross Margin
+
+Gross profit consists of total net revenue less cost of revenue. Cost of revenue consists primarily of the cost of semiconductors, including wafer fabrication,
+assembly, testing and packaging, board and device costs, manufacturing support costs, including labor and overhead associated with such purchases, final test
+yield fallout, inventory and warranty provisions, memory and component costs, tariffs, and shipping costs. Cost of revenue also includes acquisition-related
+intangible amortization expense, costs for license and development and service arrangements, IP-related costs, and stock-based compensation related to
+personnel associated with manufacturing operations.
+
+Gross margins decreased to 60.5% for the first quarter of fiscal year 2026 compared to 78.4% for the first quarter of fiscal year 2025, primarily due to a $4.5
+billion charge associated with H20 excess inventory and purchase obligations and the initial ramp of more sophisticated systems within Data Center.
+
+Provisions for inventory and excess inventory purchase obligations totaled $5.3 billion, including $4.5 billion associated with H20 excess inventory and purchase
+obligations, and $393 million for the first quarter of fiscal years 2026 and 2025, respectively. Sales of previously reserved inventory and settlements of excess
+inventory purchase obligations resulted in a provision release of $436 million and $114 million for the first quarter of fiscal years 2026 and 2025, respectively.
+The net effect of provisions for inventory and excess inventory purchase obligations on our gross margin was an unfavorable impact of 11.0% and 1.1% in the
+first quarter of fiscal years 2026 and 2025, respectively.
+
+26
+
+=== nvidia_10q.pdf, Page 25 ===
+Visual content from: document_images/nvidia_10q_page_025.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Results of Operations
+The following table sets forth, for the periods indicated, certain items in our Condensed Consolidated Statements of Income expressed as a percentage of
+revenue.
+ 
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+Revenue
+100.0 %
+100.0 %
+     Cost of revenue
+39.5 
+21.6 
+Gross profit
+60.5 
+78.4 
+Operating expenses
+ 
+     Research and development
+9.1 
+10.4 
+     Sales, general and administrative
+2.4 
+3.0 
+Total operating expenses
+11.5 
+13.4 
+Operating income
+49.0 
+65.0 
+     Interest income
+1.2 
+1.4 
+     Interest expense
+(0.1)
+(0.2)
+     Other income (expense), net
+(0.4)
+0.3 
+Total other income (expense), net
+0.7 
+1.5 
+Income before income tax
+49.7 
+66.5 
+Income tax expense
+7.1 
+9.2 
+Net income
+42.6 %
+57.3 %
+Revenue by Reportable Segments
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+$
+Change
+%
+Change
+ 
+($ in millions)
+Compute & Networking
+$
+39,589 
+$
+22,675 
+$
+16,914 
+75 %
+Graphics
+4,473 
+3,369 
+1,104 
+33 %
+Total
+$
+44,062 
+$
+26,044 
+$
+18,018 
+69 %
+Operating Income by Reportable Segments
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+$
+Change
+%
+Change
+ 
+($ in millions)
+Compute & Networking
+$
+22,054 
+$
+17,047 
+$
+5,007 
+29 %
+Graphics
+1,640 
+1,241 
+399 
+32 %
+All Other
+(2,056)
+(1,379)
+(677)
+49 %
+Total
+$
+21,638 
+$
+16,909 
+$
+4,729 
+28 %
+Compute & Networking revenue – The year over year increase in the first quarter of fiscal year 2026 was driven by demand for our accelerated computing
+platform used for large language models, recommendation engines, and generative and agentic AI applications. Revenue from Data Center computing grew
+76% year-on-year compared to the first quarter of fiscal year 2025, driven by demand for our Blackwell computing platform. Revenue from Data Center
+networking grew 56% year-on-year compared to the first quarter of fiscal year 2025 driven by the growth of NVLink compute fabric in our GB200 systems and
+continued adoption of Ethernet for AI solutions at cloud service providers and consumer internet companies.
+Graphics revenue – The year over year increase in the first quarter of fiscal year 2026 was driven by sales of our Blackwell architecture.
+25
+
+Table Data:
+Revenue | 100.0 | % |  | 100.0 | %
+Cost of revenue | 39.5 |  |  | 21.6 | 
+Gross profit | 60.5 |  |  | 78.4 | 
+Operating expenses |  |  |  |  | 
+Research and development | 9.1 |  |  | 10.4 | 
+Sales, general and administrative | 2.4 |  |  | 3.0 | 
+Total operating expenses | 11.5 |  |  | 13.4 | 
+Operating income | 49.0 |  |  | 65.0 | 
+Interest income | 1.2 |  |  | 1.4 | 
+Interest expense | (0.1) |  |  | (0.2) | 
+Other income (expense), net | (0.4) |  |  | 0.3 | 
+Total other income (expense), net | 0.7 |  |  | 1.5 | 
+Income before income tax | 49.7 |  |  | 66.5 | 
+Income tax expense | 7.1 |  |  | 9.2 | 
+Net income | 42.6 | % |  | 57.3 | %
+Compute & Networking | $ | 39,589 |  | $ | 22,675 |  | $ | 16,914 |  | 75 | %
+Graphics | 4,473 |  |  | 3,369 |  |  | 1,104 |  |  | 33 | %
+Total | $ | 44,062 |  | $ | 26,044 |  | $ | 18,018 |  | 69 | %
+Compute & Networking | $ | 22,054 |  | $ | 17,047 |  | $ | 5,007 |  | 29 | %
+Graphics | 1,640 |  |  | 1,241 |  |  | 399 |  |  | 32 | %
+All Other | (2,056) |  |  | (1,379) |  |  | (677) |  |  | 49 | %
+Total | $ | 21,638 |  | $ | 16,909 |  | $ | 4,729 |  | 28 | %
+
+Structured Layout:
+Results of Operations
+
+The following table sets forth, for the periods indicated, certain items in our Condensed Consolidated Statements of Income expressed as a percentage of
+revenue.
+
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+Revenue
+100.0 %
+100.0 %
+     Cost of revenue
+39.5 
+21.6 
+Gross profit
+60.5 
+78.4 
+Operating expenses
+ 
+     Research and development
+9.1 
+10.4 
+     Sales, general and administrative
+2.4 
+3.0 
+Total operating expenses
+11.5 
+13.4 
+Operating income
+49.0 
+65.0 
+     Interest income
+1.2 
+1.4 
+     Interest expense
+(0.1)
+(0.2)
+     Other income (expense), net
+(0.4)
+0.3
+
+Total other income (expense), net
+0.7 
+1.5 
+Income before income tax
+49.7 
+66.5 
+Income tax expense
+7.1 
+9.2
+
+Net income
+42.6 %
+57.3 %
+
+Revenue by Reportable Segments
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+$
+Change
+
+%
+Change
+
+($ in millions)
+Compute & Networking
+$
+39,589 
+$
+22,675 
+$
+16,914 
+75 %
+Graphics
+4,473 
+3,369 
+1,104 
+33 %
+Total
+$
+44,062 
+$
+26,044 
+$
+18,018 
+69 %
+
+Operating Income by Reportable Segments
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+$
+Change
+
+%
+Change
+
+($ in millions)
+Compute & Networking
+$
+22,054 
+$
+17,047 
+$
+5,007 
+29 %
+Graphics
+1,640 
+1,241 
+399 
+32 %
+All Other
+(2,056)
+(1,379)
+(677)
+49 %
+Total
+$
+21,638 
+$
+16,909 
+$
+4,729 
+28 %
+
+Compute & Networking revenue – The year over year increase in the first quarter of fiscal year 2026 was driven by demand for our accelerated computing
+platform used for large language models, recommendation engines, and generative and agentic AI applications. Revenue from Data Center computing grew
+76% year-on-year compared to the first quarter of fiscal year 2025, driven by demand for our Blackwell computing platform. Revenue from Data Center
+networking grew 56% year-on-year compared to the first quarter of fiscal year 2025 driven by the growth of NVLink compute fabric in our GB200 systems and
+continued adoption of Ethernet for AI solutions at cloud service providers and consumer internet companies.
+
+Graphics revenue – The year over year increase in the first quarter of fiscal year 2026 was driven by sales of our Blackwell architecture.
+
+25
+
+=== nvidia_10q.pdf, Page 3 ===
+Visual content from: document_images/nvidia_10q_page_003.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Part I. Financial Information
+Item 1. Financial Statements (Unaudited)
+NVIDIA Corporation and Subsidiaries
+Condensed Consolidated Statements of Income
+(In millions, except per share data)
+(Unaudited)
+ 
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+Revenue
+$
+44,062 
+$
+26,044 
+Cost of revenue
+17,394 
+5,638 
+Gross profit
+26,668 
+20,406 
+Operating expenses
+ 
+ 
+Research and development
+3,989 
+2,720 
+Sales, general and administrative
+1,041 
+777 
+Total operating expenses
+5,030 
+3,497 
+Operating income
+21,638 
+16,909 
+Interest income
+515 
+359 
+Interest expense
+(63)
+(64)
+Other income (expense), net
+(180)
+75 
+Total other income (expense), net
+272 
+370 
+Income before income tax
+21,910 
+17,279 
+Income tax expense
+3,135 
+2,398 
+Net income
+$
+18,775 
+$
+14,881 
+Net income per share:
+Basic
+$
+0.77 
+$
+0.60 
+Diluted
+$
+0.76 
+$
+0.60 
+Weighted average shares used in per share computation:
+Basic
+24,441 
+24,620 
+Diluted
+24,611 
+24,890 
+See accompanying Notes to Condensed Consolidated Financial Statements.
+3
+
+Table Data:
+Revenue | $ | 44,062 |  | $ | 26,044
+Cost of revenue | 17,394 |  |  | 5,638 | 
+Gross profit | 26,668 |  |  | 20,406 | 
+Operating expenses |  |  |  |  | 
+Research and development | 3,989 |  |  | 2,720 | 
+Sales, general and administrative | 1,041 |  |  | 777 | 
+Total operating expenses | 5,030 |  |  | 3,497 | 
+Operating income | 21,638 |  |  | 16,909 | 
+Interest income | 515 |  |  | 359 | 
+Interest expense | (63) |  |  | (64) | 
+Other income (expense), net | (180) |  |  | 75 | 
+Total other income (expense), net | 272 |  |  | 370 | 
+Income before income tax | 21,910 |  |  | 17,279 | 
+Income tax expense | 3,135 |  |  | 2,398 | 
+Net income | $ | 18,775 |  | $ | 14,881
+Net income per share: |  |  |  |  | 
+Basic | $ | 0.77 |  | $ | 0.60
+Diluted | $ | 0.76 |  | $ | 0.60
+Weighted average shares used in per share computation: |  |  |  |  | 
+Basic | 24,441 |  |  | 24,620 | 
+Diluted | 24,611 |  |  | 24,890 |
+
+Structured Layout:
+Part I. Financial Information
+
+Item 1. Financial Statements (Unaudited)
+
+NVIDIA Corporation and Subsidiaries
+Condensed Consolidated Statements of Income
+
+(In millions, except per share data)
+
+(Unaudited)
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+
+Revenue
+$
+44,062 
+$
+26,044 
+Cost of revenue
+17,394 
+5,638 
+Gross profit
+26,668 
+20,406 
+Operating expenses
+ 
+ 
+Research and development
+3,989 
+2,720 
+Sales, general and administrative
+1,041 
+777 
+Total operating expenses
+5,030 
+3,497 
+Operating income
+21,638 
+16,909 
+Interest income
+515 
+359 
+Interest expense
+(63)
+(64)
+Other income (expense), net
+(180)
+75
+
+Total other income (expense), net
+272 
+370 
+Income before income tax
+21,910 
+17,279 
+Income tax expense
+3,135 
+2,398
+
+Net income
+$
+18,775 
+$
+14,881
+
+Net income per share:
+
+Basic
+$
+0.77 
+$
+0.60
+
+Diluted
+$
+0.76 
+$
+0.60
+
+Weighted average shares used in per share computation:
+
+Basic
+24,441 
+24,620
+
+Diluted
+24,611 
+24,890
+
+See accompanying Notes to Condensed Consolidated Financial Statements.
+
+3
+
+=== nvidia_10q.pdf, Page 22 ===
+Visual content from: document_images/nvidia_10q_page_022.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Forward-Looking Statements 
+This Quarterly Report on Form 10-Q contains forward-looking statements within the meaning of Section 27A of the Securities Act of 1933, as amended, and
+Section 21E of the Securities Exchange Act of 1934, as amended, which are subject to the “safe harbor” created by those sections based on management’s
+beliefs and assumptions and on information currently available to management. In some cases, you can identify forward-looking statements by terms such as
+“may,” “will,” “should,” “could,” “goal,” “would,” “expect,” “plan,” “anticipate,” “believe,” “estimate,” “project,” “predict,” “potential” and similar expressions intended
+to identify forward-looking statements. These statements involve known and unknown risks, uncertainties and other factors, which may cause our actual results,
+performance, time frames or achievements to be materially different from any future results, performance, time frames or achievements expressed or implied by
+the forward-looking statements. We discuss many of these risks, uncertainties and other factors in this Quarterly Report on Form 10-Q and our Annual Report on
+Form 10-K for the fiscal year ended January 26, 2025 in greater detail under the heading “Risk Factors” of such reports. Given these risks, uncertainties, and
+other factors, you should not place undue reliance on these forward-looking statements. Also, these forward-looking statements represent our estimates and
+assumptions only as of the date of this filing. You should read this Quarterly Report on Form 10-Q completely and understand that our actual future results may
+be materially different from what we expect. We hereby qualify our forward-looking statements by these cautionary statements. Except as required by law, we
+assume no obligation to update these forward-looking statements publicly, or to update the reasons actual results could differ materially from those anticipated in
+these forward-looking statements, even if new information becomes available in the future.
+All references to “NVIDIA,” “we,” “us,” “our” or the “Company” mean NVIDIA Corporation and its subsidiaries.
+© 2025 NVIDIA Corporation. All rights reserved.
+The following discussion and analysis of our financial condition and results of operations should be read in conjunction with the risk factors set forth in Item 1A.
+“Risk Factors” of our Annual Report on Form 10-K for the fiscal year ended January 26, 2025 and Part II, Item 1A. “Risk Factors” of this Quarterly Report on
+Form 10-Q and our Condensed Consolidated Financial Statements and related Notes thereto, as well as other cautionary statements and risks described
+elsewhere in this Quarterly Report on Form 10-Q and our other filings with the SEC, before deciding to purchase, hold, or sell shares of our common stock.
+Overview
+Our Company and Our Businesses
+NVIDIA pioneered accelerated computing to help solve the most challenging computational problems. Since our original focus on PC graphics, we have
+expanded to several other large and important computationally intensive fields. Fueled by the sustained demand for exceptional 3D graphics and the scale of the
+gaming market, NVIDIA has leveraged its GPU architecture to create platforms for scientific computing, AI, data science, AV, robotics, and digital twin
+applications.
+Our two operating segments are "Compute & Networking" and "Graphics," as described in Note 13 of the Notes to Condensed Consolidated Financial
+Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q.
+Headquartered in Santa Clara, California, NVIDIA was incorporated in California in April 1993 and reincorporated in Delaware in April 1998.
+Recent Developments, Future Objectives and Challenges
+Revenue growth in the first quarter of fiscal year 2026 was driven by data center compute and networking platforms for accelerated computing and AI solutions.
+Our Blackwell GPU revenue ramp continued during the quarter, extending beyond large cloud service providers to include consumer internet companies and
+regional cloud service providers.
+On April 9, 2025, the U.S. government, or USG, informed us that it requires a license for export to China (including Hong Kong and Macau) and D:5 countries, or
+to companies headquartered or with an ultimate parent therein, of our H20 integrated circuits and any other circuits achieving the H20’s memory bandwidth,
+interconnect bandwidth, or combination thereof. As a result of these new requirements, we incurred a $4.5 billion charge in the first quarter of fiscal year 2026
+associated with H20 excess inventory and purchase obligations as the demand for H20 products diminished. The $4.5 billion charge was less than what we
+initially anticipated as we were able to re-use certain materials. Sales of our H20 products were $4.6 billion for the first quarter of fiscal year 2026 prior to the
+new export licensing requirements. The H20 export licensing requirements have impacted our current revenue and will also negatively affect our future revenue.
+We are still evaluating our limited options to supply Data Center compute products compliant with the USG’s export control rules. The export controls applicable
+to China are complex and address a variety of parameters, including the total processing performance of a chip, the “performance density” of a chip, the
+interconnect bandwidth of a chip, and the memory bandwidth of a chip. We may be unable to create a competitive product for China’s data center market that
+receives approval from the USG. In that event, we would effectively be foreclosed from competing in China's data center computing/compute market, with a
+material and adverse impact on our business, operating results, and financial condition.
+22
+
+Structured Layout:
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+
+Forward-Looking Statements 
+This Quarterly Report on Form 10-Q contains forward-looking statements within the meaning of Section 27A of the Securities Act of 1933, as amended, and
+Section 21E of the Securities Exchange Act of 1934, as amended, which are subject to the “safe harbor” created by those sections based on management’s
+beliefs and assumptions and on information currently available to management. In some cases, you can identify forward-looking statements by terms such as
+“may,” “will,” “should,” “could,” “goal,” “would,” “expect,” “plan,” “anticipate,” “believe,” “estimate,” “project,” “predict,” “potential” and similar expressions intended
+to identify forward-looking statements. These statements involve known and unknown risks, uncertainties and other factors, which may cause our actual results,
+performance, time frames or achievements to be materially different from any future results, performance, time frames or achievements expressed or implied by
+the forward-looking statements. We discuss many of these risks, uncertainties and other factors in this Quarterly Report on Form 10-Q and our Annual Report on
+Form 10-K for the fiscal year ended January 26, 2025 in greater detail under the heading “Risk Factors” of such reports. Given these risks, uncertainties, and
+other factors, you should not place undue reliance on these forward-looking statements. Also, these forward-looking statements represent our estimates and
+assumptions only as of the date of this filing. You should read this Quarterly Report on Form 10-Q completely and understand that our actual future results may
+be materially different from what we expect. We hereby qualify our forward-looking statements by these cautionary statements. Except as required by law, we
+assume no obligation to update these forward-looking statements publicly, or to update the reasons actual results could differ materially from those anticipated in
+these forward-looking statements, even if new information becomes available in the future.
+
+All references to “NVIDIA,” “we,” “us,” “our” or the “Company” mean NVIDIA Corporation and its subsidiaries.
+
+© 2025 NVIDIA Corporation. All rights reserved.
+
+The following discussion and analysis of our financial condition and results of operations should be read in conjunction with the risk factors set forth in Item 1A.
+“Risk Factors” of our Annual Report on Form 10-K for the fiscal year ended January 26, 2025 and Part II, Item 1A. “Risk Factors” of this Quarterly Report on
+Form 10-Q and our Condensed Consolidated Financial Statements and related Notes thereto, as well as other cautionary statements and risks described
+elsewhere in this Quarterly Report on Form 10-Q and our other filings with the SEC, before deciding to purchase, hold, or sell shares of our common stock.
+
+Overview
+
+Our Company and Our Businesses
+
+NVIDIA pioneered accelerated computing to help solve the most challenging computational problems. Since our original focus on PC graphics, we have
+expanded to several other large and important computationally intensive fields. Fueled by the sustained demand for exceptional 3D graphics and the scale of the
+gaming market, NVIDIA has leveraged its GPU architecture to create platforms for scientific computing, AI, data science, AV, robotics, and digital twin
+applications.
+
+Our two operating segments are "Compute & Networking" and "Graphics," as described in Note 13 of the Notes to Condensed Consolidated Financial
+Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q.
+
+Headquartered in Santa Clara, California, NVIDIA was incorporated in California in April 1993 and reincorporated in Delaware in April 1998.
+
+Recent Developments, Future Objectives and Challenges
+
+Revenue growth in the first quarter of fiscal year 2026 was driven by data center compute and networking platforms for accelerated computing and AI solutions.
+Our Blackwell GPU revenue ramp continued during the quarter, extending beyond large cloud service providers to include consumer internet companies and
+regional cloud service providers.
+
+On April 9, 2025, the U.S. government, or USG, informed us that it requires a license for export to China (including Hong Kong and Macau) and D:5 countries, or
+to companies headquartered or with an ultimate parent therein, of our H20 integrated circuits and any other circuits achieving the H20’s memory bandwidth,
+interconnect bandwidth, or combination thereof. As a result of these new requirements, we incurred a $4.5 billion charge in the first quarter of fiscal year 2026
+associated with H20 excess inventory and purchase obligations as the demand for H20 products diminished. The $4.5 billion charge was less than what we
+initially anticipated as we were able to re-use certain materials. Sales of our H20 products were $4.6 billion for the first quarter of fiscal year 2026 prior to the
+new export licensing requirements. The H20 export licensing requirements have impacted our current revenue and will also negatively affect our future revenue.
+We are still evaluating our limited options to supply Data Center compute products compliant with the USG’s export control rules. The export controls applicable
+to China are complex and address a variety of parameters, including the total processing performance of a chip, the “performance density” of a chip, the
+interconnect bandwidth of a chip, and the memory bandwidth of a chip. We may be unable to create a competitive product for China’s data center market that
+receives approval from the USG. In that event, we would effectively be foreclosed from competing in China's data center computing/compute market, with a
+material and adverse impact on our business, operating results, and financial condition.
+
+22
+
+=== nvidia_10q.pdf, Page 24 ===
+Visual content from: document_images/nvidia_10q_page_024.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+On April 9, 2025, we were informed by the USG that a license is required for exports of our H20 products into the China market. As a result of these new
+requirements, we incurred a $4.5 billion charge in the first quarter of fiscal year 2026 associated with H20 excess inventory and purchase obligations as the
+demand for H20 products diminished. The $4.5 billion charge was less than what we initially anticipated as we were able to re-use certain materials. Sales of our
+H20 products were $4.6 billion for the first quarter of fiscal year 2026 prior to the new export licensing requirements. The H20 export licensing requirements have
+impacted our current revenue and will also negatively affect our future revenue.
+Revenue was $44.1 billion, up 69% from a year ago and up 12% sequentially.
+Data Center revenue was $39.1 billion, up 73% from a year ago and up 10% sequentially. The strong year-on-year and sequential growth was driven by demand
+for our accelerated computing platform used for large language models, recommendation engines, and generative and agentic AI applications. We saw our
+Blackwell architecture ramp expand to all customer categories, while large cloud service providers remained our largest at just under 50% of Data Center
+revenue. Data Center compute revenue was $34.2 billion, up 76% from a year ago and up 5% sequentially. Networking revenue was $5.0 billion, up 56% from a
+year ago and up 64% sequentially, driven by the growth of NVLink compute fabric in our GB200 systems and continued adoption of Ethernet for AI solutions at
+cloud service providers and consumer internet companies.
+Gaming revenue was up 42% from a year ago and up 48% sequentially, driven by sales of our Blackwell architecture.
+Professional Visualization revenue was up 19% from a year ago and flat sequentially. The increase from a year ago was driven by broader adoption of Ada RTX
+workstation GPUs, addressing workflows in AI acceleration, real-time graphics rendering and data simulation.
+Automotive revenue was up 72% from a year ago and down 1% sequentially. The increase from a year ago was driven by sales of our self-driving platforms.
+Gross margin decreased from a year ago and sequentially, primarily due to a $4.5 billion charge associated with H20 excess inventory and purchase obligations
+and the initial ramp of more sophisticated systems within Data Center.
+Operating expenses were up 44% from a year ago and up 7% sequentially. The year-on-year increase was primarily driven by higher compensation and benefits
+expenses due to employee growth and compensation increases, and compute, infrastructure and engineering development costs for new product introductions.
+The sequential increase was primarily driven by higher compensation and benefits due to compensation increases and employee growth.
+Financial Information by Business Segment and Geographic Data
+Refer to Note 13 of the Notes to the Condensed Consolidated Financial Statements for disclosure regarding segment information.
+Critical Accounting Policies and Estimates
+Refer to Part II, Item 7, "Critical Accounting Policies and Estimates" of our Annual Report on Form 10-K for the fiscal year ended January 26, 2025. There have
+been no material changes to our Critical Accounting Policies and Estimates.
+24
+
+Structured Layout:
+On April 9, 2025, we were informed by the USG that a license is required for exports of our H20 products into the China market. As a result of these new
+requirements, we incurred a $4.5 billion charge in the first quarter of fiscal year 2026 associated with H20 excess inventory and purchase obligations as the
+demand for H20 products diminished. The $4.5 billion charge was less than what we initially anticipated as we were able to re-use certain materials. Sales of our
+H20 products were $4.6 billion for the first quarter of fiscal year 2026 prior to the new export licensing requirements. The H20 export licensing requirements have
+impacted our current revenue and will also negatively affect our future revenue.
+
+Revenue was $44.1 billion, up 69% from a year ago and up 12% sequentially.
+
+Data Center revenue was $39.1 billion, up 73% from a year ago and up 10% sequentially. The strong year-on-year and sequential growth was driven by demand
+for our accelerated computing platform used for large language models, recommendation engines, and generative and agentic AI applications. We saw our
+Blackwell architecture ramp expand to all customer categories, while large cloud service providers remained our largest at just under 50% of Data Center
+revenue. Data Center compute revenue was $34.2 billion, up 76% from a year ago and up 5% sequentially. Networking revenue was $5.0 billion, up 56% from a
+year ago and up 64% sequentially, driven by the growth of NVLink compute fabric in our GB200 systems and continued adoption of Ethernet for AI solutions at
+cloud service providers and consumer internet companies.
+
+Gaming revenue was up 42% from a year ago and up 48% sequentially, driven by sales of our Blackwell architecture.
+
+Professional Visualization revenue was up 19% from a year ago and flat sequentially. The increase from a year ago was driven by broader adoption of Ada RTX
+workstation GPUs, addressing workflows in AI acceleration, real-time graphics rendering and data simulation.
+
+Automotive revenue was up 72% from a year ago and down 1% sequentially. The increase from a year ago was driven by sales of our self-driving platforms.
+
+Gross margin decreased from a year ago and sequentially, primarily due to a $4.5 billion charge associated with H20 excess inventory and purchase obligations
+and the initial ramp of more sophisticated systems within Data Center.
+
+Operating expenses were up 44% from a year ago and up 7% sequentially. The year-on-year increase was primarily driven by higher compensation and benefits
+expenses due to employee growth and compensation increases, and compute, infrastructure and engineering development costs for new product introductions.
+The sequential increase was primarily driven by higher compensation and benefits due to compensation increases and employee growth.
+
+Financial Information by Business Segment and Geographic Data
+
+Refer to Note 13 of the Notes to the Condensed Consolidated Financial Statements for disclosure regarding segment information.
+
+Critical Accounting Policies and Estimates
+
+Refer to Part II, Item 7, "Critical Accounting Policies and Estimates" of our Annual Report on Form 10-K for the fiscal year ended January 26, 2025. There have
+been no material changes to our Critical Accounting Policies and Estimates.
+
+24
+
+=== nvidia_10q.pdf, Page 27 ===
+Visual content from: document_images/nvidia_10q_page_027.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Operating Expenses
+ 
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+$
+Change
+%
+Change
+ 
+($ in millions)
+Research and development expenses $
+3,989 
+$
+2,720 
+$
+1,269 
+47 %
+Sales, general and administrative
+expenses
+1,041 
+777 
+264 
+34 %
+Total operating expenses
+$
+5,030 
+$
+3,497 
+$
+1,533 
+44 %
+The increase in research and development expenses for the first quarter of fiscal year 2026 was driven by a 34% increase in compensation and benefits,
+including stock-based compensation, reflecting employee growth and compensation increases, a 70% increase in compute and infrastructure, and a 182%
+increase in engineering development costs for new product introductions.
+The increase in sales, general and administrative expenses for the first quarter of fiscal year 2026 were primarily driven by compensation and benefits, including
+stock-based compensation, reflecting employee growth and compensation increases.
+Total Other Income (Expense), Net
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+$
+Change
+ 
+($ in millions)
+Interest income
+$
+515 
+$
+359 
+$
+156 
+Interest expense
+(63)
+(64)
+1 
+Other income (expense), net
+(180)
+75 
+(255)
+Total other income (expense), net
+$
+272 
+$
+370 
+$
+(98)
+The increase in interest income for the first quarter of fiscal year 2026 was primarily due to growth in cash, cash equivalents, and debt securities.
+Interest expense is comprised of coupon interest and debt discount amortization related to our notes.
+Other income (expense), net consists of realized or unrealized gains and losses from investments in non-marketable equity securities, publicly-held equity
+securities, and the impact of changes in foreign currency rates. The change in Other income (expense), net, compared to the first quarter of fiscal year 2025,
+was primarily driven by unrealized losses in our publicly-held equity securities due to fair value volatility in our investments, particularly CoreWeave and Arm, Inc.
+Refer to Notes 5 and 6 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q for additional
+information regarding our investments in non-marketable equity securities and publicly-held equity securities.
+Income Taxes
+Income tax expense was $3.1 billion and $2.4 billion for the first quarter of fiscal years 2026 and 2025, respectively. Income tax as a percentage of income
+before income tax was an expense of 14.3% and 13.9% for the first quarter of fiscal years 2026 and 2025, respectively.
+The effective tax rate increased primarily due to a lower tax benefit from stock-based compensation, partially offset by an increase in tax benefit from the foreign-
+derived intangible income deduction.
+Given our current and possible future earnings, we believe that we may release the valuation allowance associated with certain state deferred tax assets in the
+near term, which would decrease our income tax expense for the period the release is recorded. The timing and amount of the valuation allowance release could
+vary based on our assessment of all available information.
+Refer to Note 4 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q for additional information.
+27
+
+Table Data:
+Research and development expenses | $ | 3,989 |  | $ | 2,720 |  | $ | 1,269 |  | 47 | %
+Sales, general and administrative
+expenses | 1,041 |  |  | 777 |  |  | 264 |  |  | 34 | %
+Total operating expenses | $ | 5,030 |  | $ | 3,497 |  | $ | 1,533 |  | 44 | %
+Interest income | $ | 515 |  | $ | 359 |  | $ | 156
+Interest expense | (63) |  |  | (64) |  |  | 1 | 
+Other income (expense), net | (180) |  |  | 75 |  |  | (255) | 
+Total other income (expense), net | $ | 272 |  | $ | 370 |  | $ | (98)
+
+Structured Layout:
+Operating Expenses
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+
+$
+Change
+
+%
+Change
+
+($ in millions)
+Research and development expenses $
+3,989 
+$
+2,720 
+$
+1,269 
+47 %
+Sales, general and administrative
+expenses
+1,041 
+777 
+264 
+34 %
+Total operating expenses
+$
+5,030 
+$
+3,497 
+$
+1,533 
+44 %
+
+The increase in research and development expenses for the first quarter of fiscal year 2026 was driven by a 34% increase in compensation and benefits,
+including stock-based compensation, reflecting employee growth and compensation increases, a 70% increase in compute and infrastructure, and a 182%
+increase in engineering development costs for new product introductions.
+
+The increase in sales, general and administrative expenses for the first quarter of fiscal year 2026 were primarily driven by compensation and benefits, including
+stock-based compensation, reflecting employee growth and compensation increases.
+
+Total Other Income (Expense), Net
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+
+$
+Change
+
+($ in millions)
+Interest income
+$
+515 
+$
+359 
+$
+156 
+Interest expense
+(63)
+(64)
+1 
+Other income (expense), net
+(180)
+75 
+(255)
+Total other income (expense), net
+$
+272 
+$
+370 
+$
+(98)
+
+The increase in interest income for the first quarter of fiscal year 2026 was primarily due to growth in cash, cash equivalents, and debt securities.
+
+Interest expense is comprised of coupon interest and debt discount amortization related to our notes.
+
+Other income (expense), net consists of realized or unrealized gains and losses from investments in non-marketable equity securities, publicly-held equity
+securities, and the impact of changes in foreign currency rates. The change in Other income (expense), net, compared to the first quarter of fiscal year 2025,
+was primarily driven by unrealized losses in our publicly-held equity securities due to fair value volatility in our investments, particularly CoreWeave and Arm, Inc.
+Refer to Notes 5 and 6 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q for additional
+information regarding our investments in non-marketable equity securities and publicly-held equity securities.
+
+Income Taxes
+
+Income tax expense was $3.1 billion and $2.4 billion for the first quarter of fiscal years 2026 and 2025, respectively. Income tax as a percentage of income
+before income tax was an expense of 14.3% and 13.9% for the first quarter of fiscal years 2026 and 2025, respectively.
+
+The effective tax rate increased primarily due to a lower tax benefit from stock-based compensation, partially offset by an increase in tax benefit from the foreign-
+derived intangible income deduction.
+
+Given our current and possible future earnings, we believe that we may release the valuation allowance associated with certain state deferred tax assets in the
+near term, which would decrease our income tax expense for the period the release is recorded. The timing and amount of the valuation allowance release could
+vary based on our assessment of all available information.
+
+Refer to Note 4 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q for additional information.
+
+27

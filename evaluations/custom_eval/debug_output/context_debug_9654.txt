@@ -1,0 +1,532 @@
+=== CONTEXT DEBUG FOR QUESTION ===
+Question: After deploying Palantir Eval-Driven Automation in AIP as showcased in the DevCon 2 overview, by how much did Wendy's QSCC shorten its supply chain problem resolution cycle and how much did Heineken accelerate its solution build time?
+
+Context:
+=== palantir_q1_investor_presentation.pdf, Page 9 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_009.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+© 2025 Palantr Technologies Inc.
+Business Update
+Q1
+At AIPCon 6, our partners showed how they drive outcomes with Palantir AIP in real time.
+Palantr sofware has redeﬁned 
+Wendy’s supply chain agility while 
+ensuring product superiority.
+“We’ve now taken a 
+problem that would 
+go on for weeks and 
+days and ﬁxed it in 
+ﬁve minutes, making 
+our people incredibly 
+eﬃcient.”
+PETE SUERKEN,
+PRESIDENT AND CEO OF WENDY’S QSCC
+With Palantr, Heineken is 
+transforming its supply chain 
+using AI agents to optmize 
+delivery and shipping.
+“In three months, 
+the team built 
+what took us three 
+years before.”
+LAURENS VAN DE ROTTE,
+COO AT HEINEKEN
+
+Structured Layout:
+© 2025 Palantr Technologies Inc.
+
+Business Update
+Q1
+
+At AIPCon 6, our partners showed how they drive outcomes with Palantir AIP in real time.
+
+Palantr sofware has redeﬁned 
+Wendy’s supply chain agility while 
+ensuring product superiority.
+
+“We’ve now taken a 
+problem that would 
+go on for weeks and 
+days and ﬁxed it in 
+ﬁve minutes, making 
+our people incredibly 
+eﬃcient.”
+
+PETE SUERKEN,
+PRESIDENT AND CEO OF WENDY’S QSCC
+
+With Palantr, Heineken is 
+transforming its supply chain 
+using AI agents to optmize 
+delivery and shipping.
+
+“In three months, 
+the team built 
+what took us three 
+years before.”
+
+LAURENS VAN DE ROTTE,
+COO AT HEINEKEN
+
+=== palantir_q1_investor_presentation.pdf, Page 8 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_008.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+© 2025 Palantr Technologies Inc.
+Business Update
+Q1
+At DevCon 2, we unveiled 
+our latest products 
+geared towards 
+enterprise automation.
+With Eval-Driven Automaton in AIP, 
+users can leverage evaluaton feedback 
+loops within the Ontology to improve 
+logic functons for more intelligent 
+automated communicaton.
+→
+Watch the demo
+
+Structured Layout:
+© 2025 Palantr Technologies Inc.
+
+Business Update
+Q1
+
+At DevCon 2, we unveiled 
+our latest products 
+geared towards 
+enterprise automation.
+
+With Eval-Driven Automaton in AIP, 
+users can leverage evaluaton feedback 
+loops within the Ontology to improve 
+logic functons for more intelligent 
+automated communicaton.
+
+→
+
+Watch the demo
+
+=== nvidia_10q.pdf, Page 23 ===
+Visual content from: document_images/nvidia_10q_page_023.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+We believe the China AI market to be a significant opportunity and the existing and new export controls will greatly hinder our ability to address this opportunity
+and will continue to impact our revenue and operational results.
+We continue to execute Data Center compute product introductions, bringing new advanced architectures on a one-year product cadence. We expect to begin
+shipping samples and production units of our new Blackwell Ultra platforms in the second quarter of fiscal year 2026. Our product transitions and sophisticated
+system configurations may create challenges in managing supply and demand. This could result in revenue volatility, quality or production issues, increased
+inventory provisions, warranty costs, or product delays. Customers may postpone purchasing existing products due to frequent new releases or may adopt new
+technologies more gradually than anticipated, affecting our revenue timing and supply chain expenses.
+The recent rise of high-quality open-source foundation models is making advanced AI capabilities broadly accessible. Open-source AI is becoming increasingly
+important across the ecosystem and it is dependent on developer adoption. If the most widely adopted open-source models are developed or deployed on our
+competitors’ platforms, it could significantly weaken the influence of our platform, reduce developer engagement, and limit demand for our products and services.
+Future demand for our platform will depend on our ability to support, scale, and optimize the next generation of AI models—including open-source large
+language models—across our full stack of software and hardware offerings.
+The availability of data centers, energy, and capital to support the buildout of NVIDIA AI infrastructure by our customers is crucial, and any shortage of these
+resources could impact our future revenue and financial performance.
+In January 2025, the USG published the “AI Diffusion” IFR in the Federal Register. After a 120-day delayed compliance period, the IFR would have imposed a
+worldwide licensing requirement on all products classified under Export Control Classification Numbers, or ECCNs, 3A090.a, 4A090.a, or corresponding .z
+ECCNs, including all related software and technology. The licensing requirement would have applied to our most popular data center products, such as our H200
+and GB200. In May 2025, the USG announced that it would rescind the AI Diffusion IFR and implement a replacement rule. The scope, timing, and requirements
+of the forthcoming rule remain uncertain. The replacement rule may impose new restrictions on our products or operations and/or add license requirements that
+could have a material impact on our business, operating results, and financial condition.
+Changes in global trade policies, including the new export controls and tariffs, have increased the complexity and cost of our supply chain and may continue to
+do so. Ongoing uncertainty regarding the scope and application of such measures may adversely affect investment decisions by us and our partners, disrupt
+supply chain operations, and impact the timing and volume of customer purchases due to challenges in forecasting future costs and demand.
+We plan to increase our U.S.-based manufacturing and invest in specialized equipment and processes to support domestic production. This move is expected to
+strengthen our supply chain, boost resiliency and redundancy, and meet the growing demand for AI infrastructure. Our ability to increase manufacturing
+capabilities will depend on the domestic manufacturing ecosystem's capacity to ramp production supply to the required volume and on a timely basis.
+Macroeconomic factors, including tariffs, inflation, interest rate changes, capital market volatility, global supply chain constraints, and global economic and
+geopolitical developments, have direct and indirect impacts on our results of operations, particularly demand for our products. While difficult to isolate and
+quantify, these macroeconomic factors impact our supply chain and manufacturing costs, employee wages, costs for capital equipment and value of our
+investments. Our product and solution pricing generally does not fluctuate with short-term changes in our costs. Within our supply chain, we continuously
+manage product availability and costs with our vendors.
+Refer to “Item 1A. Risk Factors” for a discussion of these factors and other risks.
+First Quarter of Fiscal Year 2026 Summary
+Three Months Ended
+Quarter-over-Quarter
+Change
+Year-over-Year
+Change
+ 
+Apr 27, 2025
+Jan 26, 2025
+Apr 28, 2024
+($ in millions, except per share data)
+Revenue
+$
+44,062 
+$
+39,331 
+$
+26,044 
+12  %
+69  %
+Gross margin
+60.5 %
+73.0 %
+78.4 %
+(12.5) pts
+(17.9) pts
+Operating expenses
+$
+5,030 
+$
+4,689 
+$
+3,497 
+7  %
+44  %
+Operating income
+$
+21,638 
+$
+24,034 
+$
+16,909 
+(10) %
+28  %
+Net income
+$
+18,775 
+$
+22,091 
+$
+14,881 
+(15) %
+26  %
+Net income per diluted share
+$
+0.76 
+$
+0.89 
+$
+0.60 
+(15) %
+27  %
+23
+
+Table Data:
+Revenue | $ | 44,062 |  |  | $ | 39,331 |  |  | $ | 26,044 |  |  | 12 | % |  | 69 | %
+Gross margin | 60.5 |  | % |  | 73.0 |  | % |  | 78.4 |  | % |  | (12.5) | pts |  | (17.9) | pts
+Operating expenses | $ | 5,030 |  |  | $ | 4,689 |  |  | $ | 3,497 |  |  | 7 | % |  | 44 | %
+Operating income | $ | 21,638 |  |  | $ | 24,034 |  |  | $ | 16,909 |  |  | (10) | % |  | 28 | %
+Net income | $ | 18,775 |  |  | $ | 22,091 |  |  | $ | 14,881 |  |  | (15) | % |  | 26 | %
+Net income per diluted share | $ | 0.76 |  |  | $ | 0.89 |  |  | $ | 0.60 |  |  | (15) | % |  | 27 | %
+
+Structured Layout:
+We believe the China AI market to be a significant opportunity and the existing and new export controls will greatly hinder our ability to address this opportunity
+and will continue to impact our revenue and operational results.
+
+We continue to execute Data Center compute product introductions, bringing new advanced architectures on a one-year product cadence. We expect to begin
+shipping samples and production units of our new Blackwell Ultra platforms in the second quarter of fiscal year 2026. Our product transitions and sophisticated
+system configurations may create challenges in managing supply and demand. This could result in revenue volatility, quality or production issues, increased
+inventory provisions, warranty costs, or product delays. Customers may postpone purchasing existing products due to frequent new releases or may adopt new
+technologies more gradually than anticipated, affecting our revenue timing and supply chain expenses.
+
+The recent rise of high-quality open-source foundation models is making advanced AI capabilities broadly accessible. Open-source AI is becoming increasingly
+important across the ecosystem and it is dependent on developer adoption. If the most widely adopted open-source models are developed or deployed on our
+competitors’ platforms, it could significantly weaken the influence of our platform, reduce developer engagement, and limit demand for our products and services.
+Future demand for our platform will depend on our ability to support, scale, and optimize the next generation of AI models—including open-source large
+language models—across our full stack of software and hardware offerings.
+
+The availability of data centers, energy, and capital to support the buildout of NVIDIA AI infrastructure by our customers is crucial, and any shortage of these
+resources could impact our future revenue and financial performance.
+
+In January 2025, the USG published the “AI Diffusion” IFR in the Federal Register. After a 120-day delayed compliance period, the IFR would have imposed a
+worldwide licensing requirement on all products classified under Export Control Classification Numbers, or ECCNs, 3A090.a, 4A090.a, or corresponding .z
+ECCNs, including all related software and technology. The licensing requirement would have applied to our most popular data center products, such as our H200
+and GB200. In May 2025, the USG announced that it would rescind the AI Diffusion IFR and implement a replacement rule. The scope, timing, and requirements
+of the forthcoming rule remain uncertain. The replacement rule may impose new restrictions on our products or operations and/or add license requirements that
+could have a material impact on our business, operating results, and financial condition.
+
+Changes in global trade policies, including the new export controls and tariffs, have increased the complexity and cost of our supply chain and may continue to
+do so. Ongoing uncertainty regarding the scope and application of such measures may adversely affect investment decisions by us and our partners, disrupt
+supply chain operations, and impact the timing and volume of customer purchases due to challenges in forecasting future costs and demand.
+
+We plan to increase our U.S.-based manufacturing and invest in specialized equipment and processes to support domestic production. This move is expected to
+strengthen our supply chain, boost resiliency and redundancy, and meet the growing demand for AI infrastructure. Our ability to increase manufacturing
+capabilities will depend on the domestic manufacturing ecosystem's capacity to ramp production supply to the required volume and on a timely basis.
+
+Macroeconomic factors, including tariffs, inflation, interest rate changes, capital market volatility, global supply chain constraints, and global economic and
+geopolitical developments, have direct and indirect impacts on our results of operations, particularly demand for our products. While difficult to isolate and
+quantify, these macroeconomic factors impact our supply chain and manufacturing costs, employee wages, costs for capital equipment and value of our
+investments. Our product and solution pricing generally does not fluctuate with short-term changes in our costs. Within our supply chain, we continuously
+manage product availability and costs with our vendors.
+
+Refer to “Item 1A. Risk Factors” for a discussion of these factors and other risks.
+
+First Quarter of Fiscal Year 2026 Summary
+
+Three Months Ended
+Quarter-over-Quarter
+
+Change
+
+Year-over-Year
+
+Change
+ 
+Apr 27, 2025
+Jan 26, 2025
+Apr 28, 2024
+
+($ in millions, except per share data)
+Revenue
+$
+44,062 
+$
+39,331 
+$
+26,044 
+12  %
+69  %
+Gross margin
+60.5 %
+73.0 %
+78.4 %
+(12.5) pts
+(17.9) pts
+Operating expenses
+$
+5,030 
+$
+4,689 
+$
+3,497 
+7  %
+44  %
+Operating income
+$
+21,638 
+$
+24,034 
+$
+16,909 
+(10) %
+28  %
+Net income
+$
+18,775 
+$
+22,091 
+$
+14,881 
+(15) %
+26  %
+Net income per diluted share
+$
+0.76 
+$
+0.89 
+$
+0.60 
+(15) %
+27  %
+
+23
+
+=== palantir_q1_investor_presentation.pdf, Page 7 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_007.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+© 2025 Palantr Technologies Inc.
+Business Update
+Q1
+Warp Speed is powering 
+the re-industrialization 
+of America.
+Our customers are deploying Warp 
+Speed to accelerate on-shore 
+manufacturing capabilites, optmize 
+maintenance, and enable advanced 
+ﬂeet management.
+Read more
+
+Structured Layout:
+© 2025 Palantr Technologies Inc.
+
+Business Update
+Q1
+
+Warp Speed is powering 
+the re-industrialization 
+of America.
+
+Our customers are deploying Warp 
+Speed to accelerate on-shore 
+manufacturing capabilites, optmize 
+maintenance, and enable advanced 
+ﬂeet management.
+
+Read more
+
+=== palantir_q1_investor_presentation.pdf, Page 10 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_010.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+© 2025 Palantr Technologies Inc.
+Business Update
+Q1
+High-stakes problems. High-impact solutions.
+Across industries, more US companies are naming Palantr in their vision for what’s next.
+R1 RCM is partnering with Palantr 
+to launch an advanced AI lab 
+designed to transform healthcare 
+workﬂows and improve unit 
+economics by up to 50%.
+Cit’s latest earnings release 
+highlighted how a new partnership 
+with Palantr will improve client 
+experience and operatonal agility 
+in their Wealth division.
+AIG expects their adopton of an 
+AI-powered underwritng soluton 
+leveraging AIP to double its 5-year 
+revenue CAGR from 10% to 20%.
+SOURCE: AIG INVESTOR DAY (3/31/2025)
+SOURCE: CITIGROUP (4/15/2025)
+Watch the interview
+
+Structured Layout:
+© 2025 Palantr Technologies Inc.
+
+Business Update
+Q1
+
+High-stakes problems. High-impact solutions.
+
+Across industries, more US companies are naming Palantr in their vision for what’s next.
+
+R1 RCM is partnering with Palantr 
+to launch an advanced AI lab 
+designed to transform healthcare 
+workﬂows and improve unit 
+economics by up to 50%.
+
+Cit’s latest earnings release 
+highlighted how a new partnership 
+with Palantr will improve client 
+experience and operatonal agility 
+in their Wealth division.
+
+AIG expects their adopton of an 
+AI-powered underwritng soluton 
+leveraging AIP to double its 5-year 
+revenue CAGR from 10% to 20%.
+
+SOURCE: AIG INVESTOR DAY (3/31/2025)
+SOURCE: CITIGROUP (4/15/2025)
+Watch the interview
+
+=== nvidia_10q.pdf, Page 32 ===
+Visual content from: document_images/nvidia_10q_page_032.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+more complexity in managing multiple suppliers with variations in production planning, execution and logistics. Our expanding product portfolio and varying
+component compatibility and quality may lead to increased inventory levels. We have incurred and may in the future incur inventory provisions or impairments if
+our inventory or supply or capacity commitments exceed demand for our products or demand declines.
+We plan to increase our U.S.-based manufacturing and invest in specialized equipment and processes to support domestic production. Our ability to increase
+manufacturing capabilities will depend on the domestic manufacturing ecosystem's capacity to ramp production supply to the required volume timely. Delays or
+shortfalls could impact our ability to meet demand.
+Product transitions are complex and we often ship both new and prior architecture products simultaneously as our channel partners prepare to ship and support
+new products. We are generally in various stages of transitioning the architectures of our Data Center, Gaming, Professional Visualization, and Automotive
+products. The computing industry is experiencing a broader and faster launch cadence of accelerated computing platforms to meet a growing and diverse set of
+AI opportunities. We have introduced a new product and architecture cadence of our Data Center solutions where we seek to complete new computing solutions
+each year and provide a greater variety of Data Center offerings. The increased frequency of these transitions and the larger number of products and product
+configurations may magnify the challenges associated with managing our supply and demand which may further create volatility in our revenue. Qualification
+time for new products, customers anticipating product transitions, and channel partners reducing channel inventory of prior architectures ahead of new product
+introductions can reduce, or create volatility in, our revenue. We have experienced and may in the future experience reduced demand for current generation
+architectures when customers anticipate transitions, and we may be unable to sell multiple product architectures at the same time for current and future
+architecture transitions. Our financial results have been and may in the future be negatively impacted if we are unable to execute our architectural transitions as
+planned for any reason. The increased frequency and complexity of newly introduced products could result in unanticipated quality or production issues that
+could increase the magnitude of inventory provisions, warranty, or other costs or result in product delays. For example, our gross margins in the second quarter
+of fiscal year 2025 were negatively impacted by inventory provisions for low-yielding Blackwell material.
+We incur significant engineering development resources for new products, and changes to our product roadmap may impact our ability to develop other products
+or adequately manage our supply chain cost. Customers may delay purchasing existing products as we increase the frequency of new products or may not be
+able to adopt our new products as fast as forecasted, both impacting the timing of our revenue and supply chain cost. While we have managed prior product
+transitions and have sold multiple product architectures at the same time, these transitions are difficult, may impair our ability to predict demand and impact our
+supply mix, and may cause us to incur additional costs.
+Demand estimates for our products, applications, and services can be incorrect, which may create volatility in our revenue or supply levels. We may not be able
+to generate significant revenue from them. Because our products may be used in multiple use cases and applications, it is difficult to estimate with any
+reasonable degree of precision the impact of generative AI models on our reported revenue or forecasted demand.
+The use of our GPUs for new, mercurial, or trendy applications, has impacted and can impact in the future demand for our products, including by leading to
+inconsistent spikes and drops in demand. For example, several years ago, our Gaming GPUs began to be used for mining digital currencies, such as Ethereum.
+It is difficult for us to estimate with any reasonable degree of precision the past or current impact of cryptocurrency mining, or forecast the future impact of
+cryptocurrency mining, on demand for our products. Volatility in the cryptocurrency market, including new compute technologies, price changes in
+cryptocurrencies, government cryptocurrency policies and regulations, new cryptocurrency standards and changes in the method of verifying blockchain
+transactions, has impacted and can in the future impact cryptocurrency mining and demand for our products and can further impact our ability to estimate
+demand for our products. Changes to cryptocurrency standards and processes including, but not limited to, the Ethereum 2.0 merge in 2022, have reduced and
+may in the future decrease the usage of GPUs for Ethereum mining. This has created and may in the future create increased aftermarket sales of our GPUs,
+which could negatively impact retail prices for our GPUs and reduce demand for our new GPUs. In general, our new products or previously sold products may
+be resold online or on the unauthorized “gray market,” which also makes demand forecasting difficult. Gray market products and reseller marketplaces compete
+with our new products and distribution channels. Our inability to accurately predict our demand that arises from new use cases may create volatility in our
+revenue.
+We are subject to complex laws, rules, regulations, and political and other actions, including restrictions on the export of our products, which may
+adversely impact our business.
+We are subject to laws and regulations domestically and worldwide, affecting our operations in areas including, but not limited to, IP ownership and infringement;
+taxes; import and export requirements and tariffs; anti-corruption, including the Foreign Corrupt Practices Act; business acquisitions; foreign exchange controls
+and cash repatriation restrictions; foreign ownership and investment; data privacy requirements; competition and antitrust; advertising; employment; product
+regulations; cybersecurity; environmental, health, and safety requirements; the responsible use of AI; sustainability; cryptocurrency; and consumer laws.
+Compliance with such requirements can be onerous and expensive,
+32
+
+Structured Layout:
+more complexity in managing multiple suppliers with variations in production planning, execution and logistics. Our expanding product portfolio and varying
+component compatibility and quality may lead to increased inventory levels. We have incurred and may in the future incur inventory provisions or impairments if
+our inventory or supply or capacity commitments exceed demand for our products or demand declines.
+
+We plan to increase our U.S.-based manufacturing and invest in specialized equipment and processes to support domestic production. Our ability to increase
+manufacturing capabilities will depend on the domestic manufacturing ecosystem's capacity to ramp production supply to the required volume timely. Delays or
+shortfalls could impact our ability to meet demand.
+
+Product transitions are complex and we often ship both new and prior architecture products simultaneously as our channel partners prepare to ship and support
+new products. We are generally in various stages of transitioning the architectures of our Data Center, Gaming, Professional Visualization, and Automotive
+products. The computing industry is experiencing a broader and faster launch cadence of accelerated computing platforms to meet a growing and diverse set of
+AI opportunities. We have introduced a new product and architecture cadence of our Data Center solutions where we seek to complete new computing solutions
+each year and provide a greater variety of Data Center offerings. The increased frequency of these transitions and the larger number of products and product
+configurations may magnify the challenges associated with managing our supply and demand which may further create volatility in our revenue. Qualification
+time for new products, customers anticipating product transitions, and channel partners reducing channel inventory of prior architectures ahead of new product
+introductions can reduce, or create volatility in, our revenue. We have experienced and may in the future experience reduced demand for current generation
+architectures when customers anticipate transitions, and we may be unable to sell multiple product architectures at the same time for current and future
+architecture transitions. Our financial results have been and may in the future be negatively impacted if we are unable to execute our architectural transitions as
+planned for any reason. The increased frequency and complexity of newly introduced products could result in unanticipated quality or production issues that
+could increase the magnitude of inventory provisions, warranty, or other costs or result in product delays. For example, our gross margins in the second quarter
+of fiscal year 2025 were negatively impacted by inventory provisions for low-yielding Blackwell material.
+
+We incur significant engineering development resources for new products, and changes to our product roadmap may impact our ability to develop other products
+or adequately manage our supply chain cost. Customers may delay purchasing existing products as we increase the frequency of new products or may not be
+able to adopt our new products as fast as forecasted, both impacting the timing of our revenue and supply chain cost. While we have managed prior product
+transitions and have sold multiple product architectures at the same time, these transitions are difficult, may impair our ability to predict demand and impact our
+supply mix, and may cause us to incur additional costs.
+
+Demand estimates for our products, applications, and services can be incorrect, which may create volatility in our revenue or supply levels. We may not be able
+to generate significant revenue from them. Because our products may be used in multiple use cases and applications, it is difficult to estimate with any
+reasonable degree of precision the impact of generative AI models on our reported revenue or forecasted demand.
+
+The use of our GPUs for new, mercurial, or trendy applications, has impacted and can impact in the future demand for our products, including by leading to
+inconsistent spikes and drops in demand. For example, several years ago, our Gaming GPUs began to be used for mining digital currencies, such as Ethereum.
+It is difficult for us to estimate with any reasonable degree of precision the past or current impact of cryptocurrency mining, or forecast the future impact of
+cryptocurrency mining, on demand for our products. Volatility in the cryptocurrency market, including new compute technologies, price changes in
+cryptocurrencies, government cryptocurrency policies and regulations, new cryptocurrency standards and changes in the method of verifying blockchain
+transactions, has impacted and can in the future impact cryptocurrency mining and demand for our products and can further impact our ability to estimate
+demand for our products. Changes to cryptocurrency standards and processes including, but not limited to, the Ethereum 2.0 merge in 2022, have reduced and
+may in the future decrease the usage of GPUs for Ethereum mining. This has created and may in the future create increased aftermarket sales of our GPUs,
+which could negatively impact retail prices for our GPUs and reduce demand for our new GPUs. In general, our new products or previously sold products may
+be resold online or on the unauthorized “gray market,” which also makes demand forecasting difficult. Gray market products and reseller marketplaces compete
+with our new products and distribution channels. Our inability to accurately predict our demand that arises from new use cases may create volatility in our
+revenue.
+
+We are subject to complex laws, rules, regulations, and political and other actions, including restrictions on the export of our products, which may
+adversely impact our business.
+
+We are subject to laws and regulations domestically and worldwide, affecting our operations in areas including, but not limited to, IP ownership and infringement;
+taxes; import and export requirements and tariffs; anti-corruption, including the Foreign Corrupt Practices Act; business acquisitions; foreign exchange controls
+and cash repatriation restrictions; foreign ownership and investment; data privacy requirements; competition and antitrust; advertising; employment; product
+regulations; cybersecurity; environmental, health, and safety requirements; the responsible use of AI; sustainability; cryptocurrency; and consumer laws.
+Compliance with such requirements can be onerous and expensive,
+
+32

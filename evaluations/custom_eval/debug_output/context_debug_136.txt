@@ -1,0 +1,452 @@
+=== CONTEXT DEBUG FOR QUESTION ===
+Question: After the one-time SAR-related expense hit in Q4 2024, by how many dollars did the acceleration in Palantir’s GAAP operating income—defined as the Q4 2024 to Q1 2025 sequential change minus the Q3 2024 to Q4 2024 sequential change—exceed the analogous acceleration in GAAP net income?
+
+Context:
+=== palantir_q1_investor_presentation.pdf, Page 15 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_015.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Our Q1 2025 GAAP earnings per 
+share was $0.08.
+Financials
+Q1
+$50.0M
+$100.0M
+$150.0M
+$200.0M
+$250.0M
+$—M
+Q1 2025
+GAAP Net Income
+Net income when excluding one-tme SAR-related expenses excludes the one-tme accelerated stock-based 
+compensaton expense, employer payroll taxes, and income tax eﬀects and adjustments related to our Market-Vestng 
+SARs. The term “Market-Vestng SARs” is as deﬁned in our Annual Report on Form 10-K ﬁled on February 18, 2025.
+© 2025 Palantr Technologies Inc.
+$105.5M
+$134.1M
+$79.0M
+$143.5M
+Net  income when
+excluding one-time
+SAR-related expenses
+$164.7M
+$214.0M
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+
+Structured Layout:
+Our Q1 2025 GAAP earnings per 
+share was $0.08.
+
+Financials
+Q1
+
+$50.0M
+
+$100.0M
+
+$150.0M
+
+$200.0M
+
+$250.0M
+
+$—M
+
+Q1 2025
+
+GAAP Net Income
+
+Net income when excluding one-tme SAR-related expenses excludes the one-tme accelerated stock-based 
+compensaton expense, employer payroll taxes, and income tax eﬀects and adjustments related to our Market-Vestng 
+SARs. The term “Market-Vestng SARs” is as deﬁned in our Annual Report on Form 10-K ﬁled on February 18, 2025.
+© 2025 Palantr Technologies Inc.
+
+$105.5M
+
+$134.1M
+
+$79.0M
+
+$143.5M
+
+Net  income when
+excluding one-time
+SAR-related expenses
+
+$164.7M
+
+$214.0M
+
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+
+=== palantir_q1_investor_presentation.pdf, Page 16 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_016.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Our Q1 2025 GAAP operatng 
+margin was 20%.
+Financials
+Q1
+$—M
+GAAP Operatng Income
+$50.0M
+$100.0M
+$150.0M
+$200.0M
+$250.0M
+Operatng income when excluding one-tme SAR-related expenses excludes the one-tme accelerated 
+stock-based compensaton expense and employer payroll taxes related to our Market-Vestng SARs.
+© 2025 Palantr Technologies Inc.
+$80.9M
+$105.3M
+$11.0M
+$113.1M
+$142.3M
+$176.0M
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+Operating income when
+excluding one-time
+SAR-related expenses
+Q1 2025
+
+Structured Layout:
+Our Q1 2025 GAAP operatng 
+margin was 20%.
+
+Financials
+Q1
+
+$—M
+
+GAAP Operatng Income
+
+$50.0M
+
+$100.0M
+
+$150.0M
+
+$200.0M
+
+$250.0M
+
+Operatng income when excluding one-tme SAR-related expenses excludes the one-tme accelerated 
+stock-based compensaton expense and employer payroll taxes related to our Market-Vestng SARs.
+© 2025 Palantr Technologies Inc.
+
+$80.9M
+
+$105.3M
+
+$11.0M
+
+$113.1M
+
+$142.3M
+
+$176.0M
+
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+
+Operating income when
+excluding one-time
+SAR-related expenses
+
+Q1 2025
+
+=== palantir_q1_investor_presentation.pdf, Page 28 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_028.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Q2 2025
+Adjusted income from operatons of between
+$401 million — $405 million.
+GAAP operatng income and net income in each 
+quarter of this year.
+Revenue of between
+$934 million — $938 million.
+For second quarter 2025, we expect: 
+For full year 2025, we expect: 
+FY 2025
+Adjusted income from operatons of between
+$1.711 billion — $1.723 billion.
+Adjusted free cash ﬂow of between
+$1.6 billion — $1.8 billion. 
+Revenue of between
+$3.890 billion — $3.902 billion.
+US commercial revenue in excess of
+$1.178 billion, representng a growth 
+rate of at least 68%.
+Financials
+Q1
+© 2025 Palantr Technologies Inc.
+
+Structured Layout:
+Q2 2025
+
+Adjusted income from operatons of between
+$401 million — $405 million.
+
+GAAP operatng income and net income in each 
+quarter of this year.
+
+Revenue of between
+$934 million — $938 million.
+
+For second quarter 2025, we expect: 
+For full year 2025, we expect:
+
+FY 2025
+
+Adjusted income from operatons of between
+$1.711 billion — $1.723 billion.
+
+Adjusted free cash ﬂow of between
+$1.6 billion — $1.8 billion.
+
+Revenue of between
+$3.890 billion — $3.902 billion.
+
+US commercial revenue in excess of
+$1.178 billion, representng a growth 
+rate of at least 68%.
+
+Financials
+Q1
+
+© 2025 Palantr Technologies Inc.
+
+=== palantir_q1_investor_presentation.pdf, Page 23 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_023.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+We contnue to invest aggressively 
+in AIP and the US while driving 
+operatng leverage at scale.
+Q1 2025 adjusted operatng income was 
+$391M, representng a margin of 44%.
+ADJUSTED OPERATING MARGIN
+$300M
+$450M
+$400M
+$350M
+$250M
+$200M
+$100M
+$150M
+$50M
+Q1 2025
+$391M
+44%
+$—M
+Financials
+Q1
+© 2025 Palantr Technologies Inc.
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+$254M
+37%
+$276M
+$373M
+38%
+45%
+$226M
+36%
+
+Structured Layout:
+We contnue to invest aggressively 
+in AIP and the US while driving 
+operatng leverage at scale.
+
+Q1 2025 adjusted operatng income was 
+$391M, representng a margin of 44%.
+
+ADJUSTED OPERATING MARGIN
+
+$300M
+
+$450M
+
+$400M
+
+$350M
+
+$250M
+
+$200M
+
+$100M
+
+$150M
+
+$50M
+
+Q1 2025
+
+$391M
+
+44%
+
+$—M
+
+Financials
+Q1
+
+© 2025 Palantr Technologies Inc.
+
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+
+$254M
+
+37%
+
+$276M
+
+$373M
+
+38%
+
+45%
+
+$226M
+
+36%
+
+=== palantir_q1_investor_presentation.pdf, Page 37 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_037.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Appendix
+Reconciliation of GAAP Net Income to Net Income When Excluding One-Time SAR-Related Expenses
+(AMOUNTS IN THOUSANDS)
+Net Income Attributable to Common Stockholders
+Accelerated Stock-Based Compensation Expense Related to Market-Vesting SARs
+Net Income When Excluding One-Time SAR-Related Expenses
+Employer Payroll Taxes Related to Market-Vesting SARs  
+Income Tax Effects and Adjustments Related to Market-Vesting SARs [1]
+Q4 2024
+$
+79,009
+115,776
+$
+164,714
+15,528
+(45,599)
+Add / (Less):
+[1] 
+Income tax eﬀect is based on an estmated long-term annual eﬀectve tax rate of 23.0% for the period ended 2024. The Company’s estmated long-term annual eﬀectve tax rate excludes certain noncash items, such   
+                 as stock-based compensaton, and is used in order to provide consistency across periods by eliminatng the eﬀects of certain items, such as changes in the tax valuaton allowance.
+© 2025 Palantr Technologies Inc.
+
+Structured Layout:
+Appendix
+
+Reconciliation of GAAP Net Income to Net Income When Excluding One-Time SAR-Related Expenses
+
+(AMOUNTS IN THOUSANDS)
+
+Net Income Attributable to Common Stockholders
+
+Accelerated Stock-Based Compensation Expense Related to Market-Vesting SARs
+
+Net Income When Excluding One-Time SAR-Related Expenses
+
+Employer Payroll Taxes Related to Market-Vesting SARs
+
+Income Tax Effects and Adjustments Related to Market-Vesting SARs [1]
+
+Q4 2024
+
+$
+79,009
+
+115,776
+
+$
+164,714
+
+15,528
+
+(45,599)
+
+Add / (Less):
+
+[1] 
+Income tax eﬀect is based on an estmated long-term annual eﬀectve tax rate of 23.0% for the period ended 2024. The Company’s estmated long-term annual eﬀectve tax rate excludes certain noncash items, such   
+                 as stock-based compensaton, and is used in order to provide consistency across periods by eliminatng the eﬀects of certain items, such as changes in the tax valuaton allowance.
+© 2025 Palantr Technologies Inc.
+
+=== palantir_q1_investor_presentation.pdf, Page 10 ===
+Visual content from: document_images/palantir_q1_investor_presentation_page_010.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+© 2025 Palantr Technologies Inc.
+Business Update
+Q1
+High-stakes problems. High-impact solutions.
+Across industries, more US companies are naming Palantr in their vision for what’s next.
+R1 RCM is partnering with Palantr 
+to launch an advanced AI lab 
+designed to transform healthcare 
+workﬂows and improve unit 
+economics by up to 50%.
+Cit’s latest earnings release 
+highlighted how a new partnership 
+with Palantr will improve client 
+experience and operatonal agility 
+in their Wealth division.
+AIG expects their adopton of an 
+AI-powered underwritng soluton 
+leveraging AIP to double its 5-year 
+revenue CAGR from 10% to 20%.
+SOURCE: AIG INVESTOR DAY (3/31/2025)
+SOURCE: CITIGROUP (4/15/2025)
+Watch the interview
+
+Structured Layout:
+© 2025 Palantr Technologies Inc.
+
+Business Update
+Q1
+
+High-stakes problems. High-impact solutions.
+
+Across industries, more US companies are naming Palantr in their vision for what’s next.
+
+R1 RCM is partnering with Palantr 
+to launch an advanced AI lab 
+designed to transform healthcare 
+workﬂows and improve unit 
+economics by up to 50%.
+
+Cit’s latest earnings release 
+highlighted how a new partnership 
+with Palantr will improve client 
+experience and operatonal agility 
+in their Wealth division.
+
+AIG expects their adopton of an 
+AI-powered underwritng soluton 
+leveraging AIP to double its 5-year 
+revenue CAGR from 10% to 20%.
+
+SOURCE: AIG INVESTOR DAY (3/31/2025)
+SOURCE: CITIGROUP (4/15/2025)
+Watch the interview

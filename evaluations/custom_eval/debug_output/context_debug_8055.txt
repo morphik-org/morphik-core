@@ -1,0 +1,1069 @@
+=== CONTEXT DEBUG FOR QUESTION ===
+Question: By how many dollars did the fair value of NVIDIA’s CoreWeave investment at April 27, 2025 exceed the carrying value reclassification adjustment recorded against non-marketable equity securities in long-term other assets in Q1 FY26?
+
+Context:
+=== nvidia_10q.pdf, Page 12 ===
+Visual content from: document_images/nvidia_10q_page_012.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Note 6 - Fair Value of Financial Assets and Non-marketable Equity Securities
+The fair values of our financial assets are determined using quoted market prices of identical assets or market prices of similar assets from active markets. We
+review fair value classification on a quarterly basis.
+Pricing Category
+Fair Value at
+Apr 27, 2025
+Jan 26, 2025
+(In millions)
+Assets
+Cash equivalents and marketable securities:
+Money market funds
+Level 1
+$
+6,522 
+$
+3,760 
+Publicly-held equity securities
+Level 1
+$
+1,251 
+$
+381 
+Debt securities issued by the U.S. Treasury
+Level 2
+$
+23,251 
+$
+16,769 
+Corporate debt securities
+Level 2
+$
+20,051 
+$
+18,526 
+Debt securities issued by U.S. government agencies
+Level 2
+$
+2,145 
+$
+2,777 
+Certificates of deposit
+Level 2
+$
+126 
+$
+97 
+Foreign government bonds
+Level 2
+$
+41 
+$
+177 
+Non-marketable Equity Securities
+Our non-marketable equity securities are recorded in long-term other assets on our Condensed Consolidated Balance Sheets and valued under the
+measurement alternative. Gains and losses on these investments, realized and unrealized, are recognized in Other income (expense), net on our Condensed
+Consolidated Statements of Income.
+Adjustments to the carrying value of our non-marketable equity securities during the first quarter of fiscal years 2026 and 2025 were as follows:
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+(In millions)
+Balance at beginning of period
+$
+3,387 
+$
+1,321 
+Adjustments related to non-marketable equity securities:
+Net additions
+649 
+127 
+Unrealized gains
+63 
+15 
+Reclassification (1)
+(843)
+— 
+Impairments and unrealized losses
+(16)
+— 
+Balance at end of period
+$
+3,240 
+$
+1,463 
+(1)    In the first quarter of fiscal year 2026, our investment in CoreWeave was reclassified from non-marketable equity securities to marketable securities following public market trading.
+Non-marketable equity securities had cumulative gross unrealized gains of $396 million and $285 million, and cumulative gross unrealized losses and
+impairments of $110 million and $45 million on securities held as of April 27, 2025 and April 28, 2024, respectively.
+12
+
+Table Data:
+Assets |  |  |  |  |  |  | 
+Cash equivalents and marketable securities: |  |  |  |  |  |  | 
+Money market funds | Level 1 |  | $ | 6,522 |  | $ | 3,760
+Publicly-held equity securities | Level 1 |  | $ | 1,251 |  | $ | 381
+Debt securities issued by the U.S. Treasury | Level 2 |  | $ | 23,251 |  | $ | 16,769
+Corporate debt securities | Level 2 |  | $ | 20,051 |  | $ | 18,526
+Debt securities issued by U.S. government agencies | Level 2 |  | $ | 2,145 |  | $ | 2,777
+Certificates of deposit | Level 2 |  | $ | 126 |  | $ | 97
+Foreign government bonds | Level 2 |  | $ | 41 |  | $ | 177
+Balance at beginning of period | $ | 3,387 |  | $ 1,321
+Adjustments related to non-marketable equity securities: |  |  |  | 
+Net additions | 649 |  |  | 127
+Unrealized gains | 63 |  |  | 15
+Reclassification (1) | (843) |  |  | —
+Impairments and unrealized losses | (16) |  |  | —
+Balance at end of period | $ | 3,240 |  | $ 1,463
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Note 6 - Fair Value of Financial Assets and Non-marketable Equity Securities
+
+The fair values of our financial assets are determined using quoted market prices of identical assets or market prices of similar assets from active markets. We
+review fair value classification on a quarterly basis.
+
+Pricing Category
+
+Fair Value at
+
+Apr 27, 2025
+Jan 26, 2025
+
+(In millions)
+Assets
+Cash equivalents and marketable securities:
+
+Money market funds
+Level 1
+$
+6,522 
+$
+3,760 
+Publicly-held equity securities
+Level 1
+$
+1,251 
+$
+381 
+Debt securities issued by the U.S. Treasury
+Level 2
+$
+23,251 
+$
+16,769 
+Corporate debt securities
+Level 2
+$
+20,051 
+$
+18,526 
+Debt securities issued by U.S. government agencies
+Level 2
+$
+2,145 
+$
+2,777 
+Certificates of deposit
+Level 2
+$
+126 
+$
+97 
+Foreign government bonds
+Level 2
+$
+41 
+$
+177
+
+Non-marketable Equity Securities
+
+Our non-marketable equity securities are recorded in long-term other assets on our Condensed Consolidated Balance Sheets and valued under the
+measurement alternative. Gains and losses on these investments, realized and unrealized, are recognized in Other income (expense), net on our Condensed
+Consolidated Statements of Income.
+
+Adjustments to the carrying value of our non-marketable equity securities during the first quarter of fiscal years 2026 and 2025 were as follows:
+
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+
+(In millions)
+Balance at beginning of period
+$
+3,387 
+$
+1,321 
+Adjustments related to non-marketable equity securities:
+
+Net additions
+649 
+127 
+Unrealized gains
+63 
+15 
+Reclassification (1)
+(843)
+— 
+Impairments and unrealized losses
+(16)
+— 
+Balance at end of period
+$
+3,240 
+$
+1,463
+
+(1)    In the first quarter of fiscal year 2026, our investment in CoreWeave was reclassified from non-marketable equity securities to marketable securities following public market trading.
+
+Non-marketable equity securities had cumulative gross unrealized gains of $396 million and $285 million, and cumulative gross unrealized losses and
+impairments of $110 million and $45 million on securities held as of April 27, 2025 and April 28, 2024, respectively.
+
+12
+
+=== nvidia_10q.pdf, Page 16 ===
+Visual content from: document_images/nvidia_10q_page_016.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Note 10 - Debt
+Long-Term Debt
+Expected
+Remaining Term
+(years)
+Effective
+Interest Rate
+Carrying Value at
+Apr 27, 2025
+Jan 26, 2025
+(In millions)
+3.20% Notes Due 2026
+1.4
+3.31%
+$
+1,000 
+$
+1,000 
+1.55% Notes Due 2028
+3.1
+1.64%
+1,250 
+1,250 
+2.85% Notes Due 2030
+4.9
+2.93%
+1,500 
+1,500 
+2.00% Notes Due 2031
+6.1
+2.09%
+1,250 
+1,250 
+3.50% Notes Due 2040
+14.9
+3.54%
+1,000 
+1,000 
+3.50% Notes Due 2050
+24.9
+3.54%
+2,000 
+2,000 
+3.70% Notes Due 2060
+35.0
+3.73%
+500 
+500 
+Unamortized debt discount and issuance costs
+(36)
+(37)
+Net long-term carrying amount
+$
+8,464 
+$
+8,463 
+As of April 27, 2025 and January 26, 2025, the estimated fair value of debt was $7.3 billion and $7.2 billion, respectively. The estimated fair values are based on
+Level 2 inputs.
+Our notes are unsecured senior obligations. Existing and future liabilities of our subsidiaries will be effectively senior to the notes. Our notes pay interest semi-
+annually. We may redeem each of our notes prior to maturity, subject to a make-whole premium. The maturity of the notes is calendar year.
+As of April 27, 2025, we complied with the required covenants, which are non-financial in nature, under the outstanding notes.
+Commercial Paper
+We have a $575 million commercial paper program to support general corporate purposes. As of April 27, 2025, we had no commercial paper outstanding.
+Note 11 - Commitments and Contingencies
+Purchase Obligations
+Our purchase obligations reflect our commitment to purchase components used to manufacture our products, including long-term supply and capacity
+agreements, certain software and technology licenses, other goods and services and long-lived assets.
+As of April 27, 2025, we had outstanding inventory purchase and long-term supply and capacity obligations totaling $29.8 billion, an increase from the prior year
+led by commitments, capacity and components for our Blackwell architecture. We enter into agreements with contract manufacturers that allow them to procure
+inventory based upon our defined criteria, and in certain instances, these agreements are cancellable, able to be rescheduled, or adjustable for our business
+needs prior to placing firm orders. Though, changes to these agreements may result in additional costs. Other non-inventory purchase obligations were
+$13.7  billion, including $10.6  billion of multi-year cloud service agreements. We expect our cloud service agreements to primarily be used to support our
+research and development efforts, as well as our DGX Cloud offerings.
+16
+
+Table Data:
+3.20% Notes Due 2026 |  | 1.4 |  | 3.31% |  | $ | 1,000 |  | $ | 1,000
+1.55% Notes Due 2028 |  | 3.1 |  | 1.64% |  | 1,250 |  |  | 1,250 | 
+2.85% Notes Due 2030 |  | 4.9 |  | 2.93% |  | 1,500 |  |  | 1,500 | 
+2.00% Notes Due 2031 |  | 6.1 |  | 2.09% |  | 1,250 |  |  | 1,250 | 
+3.50% Notes Due 2040 |  | 14.9 |  | 3.54% |  | 1,000 |  |  | 1,000 | 
+3.50% Notes Due 2050 |  | 24.9 |  | 3.54% |  | 2,000 |  |  | 2,000 | 
+3.70% Notes Due 2060 |  | 35.0 |  | 3.73% |  | 500 |  |  | 500 | 
+Unamortized debt discount and issuance costs |  |  |  |  |  | (36) |  |  | (37) | 
+Net long-term carrying amount |  |  |  |  |  | $ | 8,464 |  | $ | 8,463
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Note 10 - Debt
+
+Long-Term Debt
+
+Expected
+Remaining Term
+
+(years)
+
+Effective
+Interest Rate
+
+Carrying Value at
+
+Apr 27, 2025
+Jan 26, 2025
+
+(In millions)
+3.20% Notes Due 2026
+1.4
+3.31%
+$
+1,000 
+$
+1,000 
+1.55% Notes Due 2028
+3.1
+1.64%
+1,250 
+1,250 
+2.85% Notes Due 2030
+4.9
+2.93%
+1,500 
+1,500 
+2.00% Notes Due 2031
+6.1
+2.09%
+1,250 
+1,250 
+3.50% Notes Due 2040
+14.9
+3.54%
+1,000 
+1,000 
+3.50% Notes Due 2050
+24.9
+3.54%
+2,000 
+2,000 
+3.70% Notes Due 2060
+35.0
+3.73%
+500 
+500 
+Unamortized debt discount and issuance costs
+(36)
+(37)
+
+Net long-term carrying amount
+$
+8,464 
+$
+8,463
+
+As of April 27, 2025 and January 26, 2025, the estimated fair value of debt was $7.3 billion and $7.2 billion, respectively. The estimated fair values are based on
+Level 2 inputs.
+
+Our notes are unsecured senior obligations. Existing and future liabilities of our subsidiaries will be effectively senior to the notes. Our notes pay interest semi-
+annually. We may redeem each of our notes prior to maturity, subject to a make-whole premium. The maturity of the notes is calendar year.
+
+As of April 27, 2025, we complied with the required covenants, which are non-financial in nature, under the outstanding notes.
+
+Commercial Paper
+
+We have a $575 million commercial paper program to support general corporate purposes. As of April 27, 2025, we had no commercial paper outstanding.
+
+Note 11 - Commitments and Contingencies
+
+Purchase Obligations
+
+Our purchase obligations reflect our commitment to purchase components used to manufacture our products, including long-term supply and capacity
+agreements, certain software and technology licenses, other goods and services and long-lived assets.
+
+As of April 27, 2025, we had outstanding inventory purchase and long-term supply and capacity obligations totaling $29.8 billion, an increase from the prior year
+led by commitments, capacity and components for our Blackwell architecture. We enter into agreements with contract manufacturers that allow them to procure
+inventory based upon our defined criteria, and in certain instances, these agreements are cancellable, able to be rescheduled, or adjustable for our business
+needs prior to placing firm orders. Though, changes to these agreements may result in additional costs. Other non-inventory purchase obligations were
+$13.7  billion, including $10.6  billion of multi-year cloud service agreements. We expect our cloud service agreements to primarily be used to support our
+research and development efforts, as well as our DGX Cloud offerings.
+
+16
+
+=== nvidia_10q.pdf, Page 8 ===
+Visual content from: document_images/nvidia_10q_page_008.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA Corporation and Subsidiaries
+Notes to Condensed Consolidated Financial Statements
+(Unaudited)
+Note 1 - Summary of Significant Accounting Policies
+Basis of Presentation
+The accompanying unaudited condensed consolidated financial statements were prepared in accordance with accounting principles generally accepted in the
+United States of America, or U.S. GAAP, for interim financial information and with the instructions to Form 10-Q and Article 10 of Securities and Exchange
+Commission, or SEC, Regulation S-X. The January  26, 2025 consolidated balance sheet was derived from our audited consolidated financial statements
+included in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025, as filed with the SEC, but does not include all disclosures required by
+U.S. GAAP. In the opinion of management, all adjustments, consisting only of normal recurring adjustments considered necessary for a fair presentation of
+results of operations and financial position, have been included. The results for the interim periods presented are not necessarily indicative of the results
+expected for any future period. The following information should be read in conjunction with the audited consolidated financial statements and notes thereto
+included in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025.
+Certain balances from the prior fiscal year have been reclassified to conform to the current period presentation.
+In June 2024, we executed a ten-for-one stock split of our common stock. All share, equity award and per share amounts presented herein have been
+retrospectively adjusted to reflect the stock split.
+Significant Accounting Policies
+There have been no material changes to our significant accounting policies disclosed in Note 1 - Organization and Summary of Significant Accounting Policies,
+of the Notes to the Consolidated Financial Statements included in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025.
+Fiscal Year
+Fiscal years 2026 and 2025 are both 52-week years ending on the last Sunday in January. The first quarters of fiscal years 2026 and 2025 were both 13-week
+quarters.
+Principles of Consolidation
+Our condensed consolidated financial statements include the accounts of NVIDIA Corporation and our wholly-owned subsidiaries. All intercompany balances
+and transactions have been eliminated in consolidation.
+Use of Estimates
+The preparation of financial statements in conformity with U.S. GAAP requires management to make estimates and assumptions that affect the reported
+amounts of assets and liabilities and disclosures of contingent assets and liabilities at the date of the financial statements and the reported amounts of revenue
+and expenses during the reporting period. Actual results could differ materially from our estimates. On an on-going basis, we evaluate our estimates, including
+those related to accounts receivable, cash equivalents and marketable securities, goodwill, income taxes, inventories and product purchase commitments,
+investigation and settlement costs, litigation, non-marketable equity securities, other contingencies, property, plant, and equipment, restructuring and other
+charges, revenue recognition, and stock-based compensation. These estimates are based on historical facts and various other assumptions that we believe are
+reasonable.
+Recently Issued Accounting Pronouncements
+Recent Accounting Pronouncements Not Yet Adopted
+In December 2023, the FASB issued a new accounting standard which includes new and updated income tax disclosures, including disaggregation of
+information in the rate reconciliation and income taxes paid. We will adopt this standard in our fiscal year 2026 annual report. We are currently assessing the
+effect of the adoption of this standard on our disclosures that will be included in our Form 10-K for the year ending January 25, 2026.
+In November 2024, the FASB issued a new accounting standard requiring disclosures of certain additional expense information on an annual and interim basis,
+including, among other items, the amounts of purchases of inventory, employee compensation, depreciation and intangible asset amortization included within
+each income statement expense caption, as applicable. We will adopt this standard in our fiscal year 2028 annual report. We do not expect the adoption of this
+standard to have a material impact on our Consolidated Financial Statements other than additional disclosures.
+8
+
+Structured Layout:
+NVIDIA Corporation and Subsidiaries
+Notes to Condensed Consolidated Financial Statements
+
+(Unaudited)
+
+Note 1 - Summary of Significant Accounting Policies
+
+Basis of Presentation
+
+The accompanying unaudited condensed consolidated financial statements were prepared in accordance with accounting principles generally accepted in the
+United States of America, or U.S. GAAP, for interim financial information and with the instructions to Form 10-Q and Article 10 of Securities and Exchange
+Commission, or SEC, Regulation S-X. The January  26, 2025 consolidated balance sheet was derived from our audited consolidated financial statements
+included in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025, as filed with the SEC, but does not include all disclosures required by
+U.S. GAAP. In the opinion of management, all adjustments, consisting only of normal recurring adjustments considered necessary for a fair presentation of
+results of operations and financial position, have been included. The results for the interim periods presented are not necessarily indicative of the results
+expected for any future period. The following information should be read in conjunction with the audited consolidated financial statements and notes thereto
+included in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025.
+
+Certain balances from the prior fiscal year have been reclassified to conform to the current period presentation.
+
+In June 2024, we executed a ten-for-one stock split of our common stock. All share, equity award and per share amounts presented herein have been
+retrospectively adjusted to reflect the stock split.
+
+Significant Accounting Policies
+There have been no material changes to our significant accounting policies disclosed in Note 1 - Organization and Summary of Significant Accounting Policies,
+of the Notes to the Consolidated Financial Statements included in our Annual Report on Form 10-K for the fiscal year ended January 26, 2025.
+
+Fiscal Year
+
+Fiscal years 2026 and 2025 are both 52-week years ending on the last Sunday in January. The first quarters of fiscal years 2026 and 2025 were both 13-week
+quarters.
+
+Principles of Consolidation
+
+Our condensed consolidated financial statements include the accounts of NVIDIA Corporation and our wholly-owned subsidiaries. All intercompany balances
+and transactions have been eliminated in consolidation.
+
+Use of Estimates
+
+The preparation of financial statements in conformity with U.S. GAAP requires management to make estimates and assumptions that affect the reported
+amounts of assets and liabilities and disclosures of contingent assets and liabilities at the date of the financial statements and the reported amounts of revenue
+and expenses during the reporting period. Actual results could differ materially from our estimates. On an on-going basis, we evaluate our estimates, including
+those related to accounts receivable, cash equivalents and marketable securities, goodwill, income taxes, inventories and product purchase commitments,
+investigation and settlement costs, litigation, non-marketable equity securities, other contingencies, property, plant, and equipment, restructuring and other
+charges, revenue recognition, and stock-based compensation. These estimates are based on historical facts and various other assumptions that we believe are
+reasonable.
+
+Recently Issued Accounting Pronouncements
+
+Recent Accounting Pronouncements Not Yet Adopted
+
+In December 2023, the FASB issued a new accounting standard which includes new and updated income tax disclosures, including disaggregation of
+information in the rate reconciliation and income taxes paid. We will adopt this standard in our fiscal year 2026 annual report. We are currently assessing the
+effect of the adoption of this standard on our disclosures that will be included in our Form 10-K for the year ending January 25, 2026.
+
+In November 2024, the FASB issued a new accounting standard requiring disclosures of certain additional expense information on an annual and interim basis,
+including, among other items, the amounts of purchases of inventory, employee compensation, depreciation and intangible asset amortization included within
+each income statement expense caption, as applicable. We will adopt this standard in our fiscal year 2028 annual report. We do not expect the adoption of this
+standard to have a material impact on our Consolidated Financial Statements other than additional disclosures.
+
+8
+
+=== nvidia_10q.pdf, Page 7 ===
+Visual content from: document_images/nvidia_10q_page_007.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA Corporation and Subsidiaries
+Condensed Consolidated Statements of Cash Flows
+(In millions)
+(Unaudited)
+ 
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+Cash flows from operating activities:
+Net income
+$
+18,775 
+$
+14,881 
+Adjustments to reconcile net income to net cash provided by operating activities:
+Stock-based compensation expense
+1,474 
+1,011 
+Depreciation and amortization
+611 
+410 
+(Gains) losses on non-marketable equity securities and publicly-held equity securities, net
+175 
+(69)
+Deferred income taxes
+(2,177)
+(1,577)
+Other
+(98)
+(145)
+Changes in operating assets and liabilities, net of acquisitions:
+Accounts receivable
+933 
+(2,366)
+Inventories
+(1,258)
+(577)
+Prepaid expenses and other assets
+560 
+(726)
+Accounts payable
+941 
+(22)
+Accrued and other current liabilities
+7,128 
+4,202 
+Other long-term liabilities
+350 
+323 
+Net cash provided by operating activities
+27,414 
+15,345 
+Cash flows from investing activities:
+Proceeds from maturities of marketable securities
+3,122 
+4,004 
+Proceeds from sales of marketable securities
+467 
+149 
+Proceeds from sales of non-marketable equity securities
+— 
+55 
+Purchases of marketable securities
+(6,546)
+(9,303)
+Purchases related to property and equipment and intangible assets
+(1,227)
+(369)
+Purchases of non-marketable equity securities
+(649)
+(190)
+Acquisitions, net of cash acquired
+(383)
+(39)
+Net cash used in investing activities
+(5,216)
+(5,693)
+Cash flows from financing activities:
+Proceeds related to employee stock plans
+370 
+285 
+Payments related to repurchases of common stock
+(14,095)
+(7,740)
+Payments related to employee stock plan taxes
+(1,532)
+(1,752)
+Dividends paid
+(244)
+(98)
+Principal payments on property and equipment and intangible assets
+(52)
+(40)
+Net cash used in financing activities
+(15,553)
+(9,345)
+Change in cash and cash equivalents
+6,645 
+307 
+Cash and cash equivalents at beginning of period
+8,589 
+7,280 
+Cash and cash equivalents at end of period
+$
+15,234 
+$
+7,587 
+See accompanying Notes to Condensed Consolidated Financial Statements.
+7
+
+Table Data:
+Cash flows from operating activities: |  |  |  |  | 
+Net income | $ | 18,775 |  | $ | 14,881
+Adjustments to reconcile net income to net cash provided by operating activities: |  |  |  |  | 
+Stock-based compensation expense | 1,474 |  |  | 1,011 | 
+Depreciation and amortization | 611 |  |  | 410 | 
+(Gains) losses on non-marketable equity securities and publicly-held equity securities, net | 175 |  |  | (69) | 
+Deferred income taxes | (2,177) |  |  | (1,577) | 
+Other | (98) |  |  | (145) | 
+Changes in operating assets and liabilities, net of acquisitions: |  |  |  |  | 
+Accounts receivable | 933 |  |  | (2,366) | 
+Inventories | (1,258) |  |  | (577) | 
+Prepaid expenses and other assets | 560 |  |  | (726) | 
+Accounts payable | 941 |  |  | (22) | 
+Accrued and other current liabilities | 7,128 |  |  | 4,202 | 
+Other long-term liabilities | 350 |  |  | 323 | 
+Net cash provided by operating activities | 27,414 |  |  | 15,345 | 
+Cash flows from investing activities: |  |  |  |  | 
+Proceeds from maturities of marketable securities | 3,122 |  |  | 4,004 | 
+Proceeds from sales of marketable securities | 467 |  |  | 149 | 
+Proceeds from sales of non-marketable equity securities | — |  |  | 55 | 
+Purchases of marketable securities | (6,546) |  |  | (9,303) | 
+Purchases related to property and equipment and intangible assets | (1,227) |  |  | (369) | 
+Purchases of non-marketable equity securities | (649) |  |  | (190) | 
+Acquisitions, net of cash acquired | (383) |  |  | (39) | 
+Net cash used in investing activities | (5,216) |  |  | (5,693) | 
+Cash flows from financing activities: |  |  |  |  | 
+Proceeds related to employee stock plans | 370 |  |  | 285 | 
+Payments related to repurchases of common stock | (14,095) |  |  | (7,740) | 
+Payments related to employee stock plan taxes | (1,532) |  |  | (1,752) | 
+Dividends paid | (244) |  |  | (98) | 
+Principal payments on property and equipment and intangible assets | (52) |  |  | (40) | 
+Net cash used in financing activities | (15,553) |  |  | (9,345) | 
+Change in cash and cash equivalents | 6,645 |  |  | 307 | 
+Cash and cash equivalents at beginning of period | 8,589 |  |  | 7,280 | 
+Cash and cash equivalents at end of period | $ | 15,234 |  | $ | 7,587
+
+Structured Layout:
+NVIDIA Corporation and Subsidiaries
+Condensed Consolidated Statements of Cash Flows
+
+(In millions)
+(Unaudited)
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+Cash flows from operating activities:
+Net income
+$
+18,775 
+$
+14,881 
+Adjustments to reconcile net income to net cash provided by operating activities:
+
+Stock-based compensation expense
+1,474 
+1,011 
+Depreciation and amortization
+611 
+410 
+(Gains) losses on non-marketable equity securities and publicly-held equity securities, net
+175 
+(69)
+Deferred income taxes
+(2,177)
+(1,577)
+Other
+(98)
+(145)
+Changes in operating assets and liabilities, net of acquisitions:
+
+Accounts receivable
+933 
+(2,366)
+Inventories
+(1,258)
+(577)
+Prepaid expenses and other assets
+560 
+(726)
+Accounts payable
+941 
+(22)
+Accrued and other current liabilities
+7,128 
+4,202 
+Other long-term liabilities
+350 
+323
+
+Net cash provided by operating activities
+27,414 
+15,345 
+Cash flows from investing activities:
+
+Proceeds from maturities of marketable securities
+3,122 
+4,004 
+Proceeds from sales of marketable securities
+467 
+149 
+Proceeds from sales of non-marketable equity securities
+— 
+55 
+Purchases of marketable securities
+(6,546)
+(9,303)
+Purchases related to property and equipment and intangible assets
+(1,227)
+(369)
+Purchases of non-marketable equity securities
+(649)
+(190)
+Acquisitions, net of cash acquired
+(383)
+(39)
+Net cash used in investing activities
+(5,216)
+(5,693)
+Cash flows from financing activities:
+
+Proceeds related to employee stock plans
+370 
+285 
+Payments related to repurchases of common stock
+(14,095)
+(7,740)
+Payments related to employee stock plan taxes
+(1,532)
+(1,752)
+Dividends paid
+(244)
+(98)
+Principal payments on property and equipment and intangible assets
+(52)
+(40)
+
+Net cash used in financing activities
+(15,553)
+(9,345)
+Change in cash and cash equivalents
+6,645 
+307 
+Cash and cash equivalents at beginning of period
+8,589 
+7,280 
+Cash and cash equivalents at end of period
+$
+15,234 
+$
+7,587
+
+See accompanying Notes to Condensed Consolidated Financial Statements.
+
+7
+
+=== nvidia_10q.pdf, Page 22 ===
+Visual content from: document_images/nvidia_10q_page_022.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+Forward-Looking Statements 
+This Quarterly Report on Form 10-Q contains forward-looking statements within the meaning of Section 27A of the Securities Act of 1933, as amended, and
+Section 21E of the Securities Exchange Act of 1934, as amended, which are subject to the “safe harbor” created by those sections based on management’s
+beliefs and assumptions and on information currently available to management. In some cases, you can identify forward-looking statements by terms such as
+“may,” “will,” “should,” “could,” “goal,” “would,” “expect,” “plan,” “anticipate,” “believe,” “estimate,” “project,” “predict,” “potential” and similar expressions intended
+to identify forward-looking statements. These statements involve known and unknown risks, uncertainties and other factors, which may cause our actual results,
+performance, time frames or achievements to be materially different from any future results, performance, time frames or achievements expressed or implied by
+the forward-looking statements. We discuss many of these risks, uncertainties and other factors in this Quarterly Report on Form 10-Q and our Annual Report on
+Form 10-K for the fiscal year ended January 26, 2025 in greater detail under the heading “Risk Factors” of such reports. Given these risks, uncertainties, and
+other factors, you should not place undue reliance on these forward-looking statements. Also, these forward-looking statements represent our estimates and
+assumptions only as of the date of this filing. You should read this Quarterly Report on Form 10-Q completely and understand that our actual future results may
+be materially different from what we expect. We hereby qualify our forward-looking statements by these cautionary statements. Except as required by law, we
+assume no obligation to update these forward-looking statements publicly, or to update the reasons actual results could differ materially from those anticipated in
+these forward-looking statements, even if new information becomes available in the future.
+All references to “NVIDIA,” “we,” “us,” “our” or the “Company” mean NVIDIA Corporation and its subsidiaries.
+© 2025 NVIDIA Corporation. All rights reserved.
+The following discussion and analysis of our financial condition and results of operations should be read in conjunction with the risk factors set forth in Item 1A.
+“Risk Factors” of our Annual Report on Form 10-K for the fiscal year ended January 26, 2025 and Part II, Item 1A. “Risk Factors” of this Quarterly Report on
+Form 10-Q and our Condensed Consolidated Financial Statements and related Notes thereto, as well as other cautionary statements and risks described
+elsewhere in this Quarterly Report on Form 10-Q and our other filings with the SEC, before deciding to purchase, hold, or sell shares of our common stock.
+Overview
+Our Company and Our Businesses
+NVIDIA pioneered accelerated computing to help solve the most challenging computational problems. Since our original focus on PC graphics, we have
+expanded to several other large and important computationally intensive fields. Fueled by the sustained demand for exceptional 3D graphics and the scale of the
+gaming market, NVIDIA has leveraged its GPU architecture to create platforms for scientific computing, AI, data science, AV, robotics, and digital twin
+applications.
+Our two operating segments are "Compute & Networking" and "Graphics," as described in Note 13 of the Notes to Condensed Consolidated Financial
+Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q.
+Headquartered in Santa Clara, California, NVIDIA was incorporated in California in April 1993 and reincorporated in Delaware in April 1998.
+Recent Developments, Future Objectives and Challenges
+Revenue growth in the first quarter of fiscal year 2026 was driven by data center compute and networking platforms for accelerated computing and AI solutions.
+Our Blackwell GPU revenue ramp continued during the quarter, extending beyond large cloud service providers to include consumer internet companies and
+regional cloud service providers.
+On April 9, 2025, the U.S. government, or USG, informed us that it requires a license for export to China (including Hong Kong and Macau) and D:5 countries, or
+to companies headquartered or with an ultimate parent therein, of our H20 integrated circuits and any other circuits achieving the H20’s memory bandwidth,
+interconnect bandwidth, or combination thereof. As a result of these new requirements, we incurred a $4.5 billion charge in the first quarter of fiscal year 2026
+associated with H20 excess inventory and purchase obligations as the demand for H20 products diminished. The $4.5 billion charge was less than what we
+initially anticipated as we were able to re-use certain materials. Sales of our H20 products were $4.6 billion for the first quarter of fiscal year 2026 prior to the
+new export licensing requirements. The H20 export licensing requirements have impacted our current revenue and will also negatively affect our future revenue.
+We are still evaluating our limited options to supply Data Center compute products compliant with the USG’s export control rules. The export controls applicable
+to China are complex and address a variety of parameters, including the total processing performance of a chip, the “performance density” of a chip, the
+interconnect bandwidth of a chip, and the memory bandwidth of a chip. We may be unable to create a competitive product for China’s data center market that
+receives approval from the USG. In that event, we would effectively be foreclosed from competing in China's data center computing/compute market, with a
+material and adverse impact on our business, operating results, and financial condition.
+22
+
+Structured Layout:
+Item 2. Management's Discussion and Analysis of Financial Condition and Results of Operations
+
+Forward-Looking Statements 
+This Quarterly Report on Form 10-Q contains forward-looking statements within the meaning of Section 27A of the Securities Act of 1933, as amended, and
+Section 21E of the Securities Exchange Act of 1934, as amended, which are subject to the “safe harbor” created by those sections based on management’s
+beliefs and assumptions and on information currently available to management. In some cases, you can identify forward-looking statements by terms such as
+“may,” “will,” “should,” “could,” “goal,” “would,” “expect,” “plan,” “anticipate,” “believe,” “estimate,” “project,” “predict,” “potential” and similar expressions intended
+to identify forward-looking statements. These statements involve known and unknown risks, uncertainties and other factors, which may cause our actual results,
+performance, time frames or achievements to be materially different from any future results, performance, time frames or achievements expressed or implied by
+the forward-looking statements. We discuss many of these risks, uncertainties and other factors in this Quarterly Report on Form 10-Q and our Annual Report on
+Form 10-K for the fiscal year ended January 26, 2025 in greater detail under the heading “Risk Factors” of such reports. Given these risks, uncertainties, and
+other factors, you should not place undue reliance on these forward-looking statements. Also, these forward-looking statements represent our estimates and
+assumptions only as of the date of this filing. You should read this Quarterly Report on Form 10-Q completely and understand that our actual future results may
+be materially different from what we expect. We hereby qualify our forward-looking statements by these cautionary statements. Except as required by law, we
+assume no obligation to update these forward-looking statements publicly, or to update the reasons actual results could differ materially from those anticipated in
+these forward-looking statements, even if new information becomes available in the future.
+
+All references to “NVIDIA,” “we,” “us,” “our” or the “Company” mean NVIDIA Corporation and its subsidiaries.
+
+© 2025 NVIDIA Corporation. All rights reserved.
+
+The following discussion and analysis of our financial condition and results of operations should be read in conjunction with the risk factors set forth in Item 1A.
+“Risk Factors” of our Annual Report on Form 10-K for the fiscal year ended January 26, 2025 and Part II, Item 1A. “Risk Factors” of this Quarterly Report on
+Form 10-Q and our Condensed Consolidated Financial Statements and related Notes thereto, as well as other cautionary statements and risks described
+elsewhere in this Quarterly Report on Form 10-Q and our other filings with the SEC, before deciding to purchase, hold, or sell shares of our common stock.
+
+Overview
+
+Our Company and Our Businesses
+
+NVIDIA pioneered accelerated computing to help solve the most challenging computational problems. Since our original focus on PC graphics, we have
+expanded to several other large and important computationally intensive fields. Fueled by the sustained demand for exceptional 3D graphics and the scale of the
+gaming market, NVIDIA has leveraged its GPU architecture to create platforms for scientific computing, AI, data science, AV, robotics, and digital twin
+applications.
+
+Our two operating segments are "Compute & Networking" and "Graphics," as described in Note 13 of the Notes to Condensed Consolidated Financial
+Statements in Part I, Item 1 of this Quarterly Report on Form 10-Q.
+
+Headquartered in Santa Clara, California, NVIDIA was incorporated in California in April 1993 and reincorporated in Delaware in April 1998.
+
+Recent Developments, Future Objectives and Challenges
+
+Revenue growth in the first quarter of fiscal year 2026 was driven by data center compute and networking platforms for accelerated computing and AI solutions.
+Our Blackwell GPU revenue ramp continued during the quarter, extending beyond large cloud service providers to include consumer internet companies and
+regional cloud service providers.
+
+On April 9, 2025, the U.S. government, or USG, informed us that it requires a license for export to China (including Hong Kong and Macau) and D:5 countries, or
+to companies headquartered or with an ultimate parent therein, of our H20 integrated circuits and any other circuits achieving the H20’s memory bandwidth,
+interconnect bandwidth, or combination thereof. As a result of these new requirements, we incurred a $4.5 billion charge in the first quarter of fiscal year 2026
+associated with H20 excess inventory and purchase obligations as the demand for H20 products diminished. The $4.5 billion charge was less than what we
+initially anticipated as we were able to re-use certain materials. Sales of our H20 products were $4.6 billion for the first quarter of fiscal year 2026 prior to the
+new export licensing requirements. The H20 export licensing requirements have impacted our current revenue and will also negatively affect our future revenue.
+We are still evaluating our limited options to supply Data Center compute products compliant with the USG’s export control rules. The export controls applicable
+to China are complex and address a variety of parameters, including the total processing performance of a chip, the “performance density” of a chip, the
+interconnect bandwidth of a chip, and the memory bandwidth of a chip. We may be unable to create a competitive product for China’s data center market that
+receives approval from the USG. In that event, we would effectively be foreclosed from competing in China's data center computing/compute market, with a
+material and adverse impact on our business, operating results, and financial condition.
+
+22
+
+=== nvidia_10q.pdf, Page 15 ===
+Visual content from: document_images/nvidia_10q_page_015.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+(Unaudited)
+Deferred Revenue
+The following table shows the changes in short- and long-term deferred revenue during the first quarter of fiscal years 2026 and 2025:
+Three Months Ended
+ 
+Apr 27, 2025
+Apr 28, 2024
+(In millions)
+Balance at beginning of period
+$
+1,813 
+$
+1,337 
+Deferred revenue additions (1)
+6,493 
+553 
+Revenue recognized (2)
+(6,228)
+(341)
+Balance at end of period
+$
+2,078 
+$
+1,549 
+(1)    Deferred revenue additions includes $6.2 billion and $157 million of customer advances for the first quarter of fiscal years 2026 and 2025, respectively.
+(2)    Revenue recognized includes $6.0 billion and $123 million related to customer advances for the first quarter of fiscal years 2026 and 2025, respectively.
+We recognized revenue of $265 million and $188 million in the first quarter of fiscal years 2026 and 2025, respectively, that were included in the prior year end
+deferred revenue balance.
+As of April  27, 2025, revenue related to remaining performance obligations from contracts greater than one year in length was $1.8  billion, which includes
+$1.6 billion from deferred revenue and $160 million which has not yet been billed nor recognized as revenue. Approximately 39% of revenue from contracts
+greater than one year in length will be recognized over the next twelve months.
+Note 9 - Derivative Financial Instruments
+We utilize foreign currency forward contracts to mitigate the impact of foreign currency exchange rate movements on our operating expenses. The foreign
+currency forward contracts for operating expenses are designated as accounting hedges. Gains or losses on the contracts are recorded in accumulated other
+comprehensive income or loss and reclassified to operating expense when the related operating expenses are recognized in earnings. During the first quarter of
+fiscal years 2026 and 2025, the impact of foreign currency forward contracts designated as accounting hedges on other comprehensive income or loss was not
+significant and all such instruments were determined to be highly effective.
+We also entered into foreign currency forward contracts mitigating the impact of foreign currency movements on monetary assets and liabilities. For our foreign
+currency contracts for assets and liabilities, the change in fair value of these non-designated contracts was recorded in other income or expense and offsets the
+change in fair value of the hedged foreign currency denominated monetary assets and liabilities, which was also recorded in other income or expense.
+The table below presents the notional value of our foreign currency contracts outstanding:
+ 
+Apr 27, 2025
+Jan 26, 2025
+(In millions)
+Designated as accounting hedges
+$
+1,477 
+$
+1,424 
+Not designated as accounting hedges
+$
+988 
+$
+1,297 
+The unrealized gains and losses or fair value of our foreign currency contracts were not significant as of April 27, 2025 and January 26, 2025.
+As of April 27, 2025, all foreign currency contracts mature within eighteen months. The expected realized gains and losses deferred into accumulated other
+comprehensive income or loss related to foreign currency forward contracts within the next twelve months were not significant.
+15
+
+Table Data:
+Balance at beginning of period | $ | 1,813 |  | $ | 1,337
+Deferred revenue additions (1) | 6,493 |  |  | 553 | 
+Revenue recognized (2) | (6,228) |  |  | (341) | 
+Balance at end of period | $ | 2,078 |  | $ | 1,549
+Designated as accounting hedges | $ | 1,477 |  | $ | 1,424
+Not designated as accounting hedges | $ | 988 |  | $ | 1,297
+
+Structured Layout:
+NVIDIA CORPORATION AND SUBSIDIARIES
+NOTES TO CONDENSED CONSOLIDATED FINANCIAL STATEMENTS (Continued)
+
+(Unaudited)
+
+Deferred Revenue
+
+The following table shows the changes in short- and long-term deferred revenue during the first quarter of fiscal years 2026 and 2025:
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+
+(In millions)
+Balance at beginning of period
+$
+1,813 
+$
+1,337 
+Deferred revenue additions (1)
+6,493 
+553 
+Revenue recognized (2)
+(6,228)
+(341)
+Balance at end of period
+$
+2,078 
+$
+1,549
+
+(1)    Deferred revenue additions includes $6.2 billion and $157 million of customer advances for the first quarter of fiscal years 2026 and 2025, respectively.
+
+(2)    Revenue recognized includes $6.0 billion and $123 million related to customer advances for the first quarter of fiscal years 2026 and 2025, respectively.
+
+We recognized revenue of $265 million and $188 million in the first quarter of fiscal years 2026 and 2025, respectively, that were included in the prior year end
+deferred revenue balance.
+
+As of April  27, 2025, revenue related to remaining performance obligations from contracts greater than one year in length was $1.8  billion, which includes
+$1.6 billion from deferred revenue and $160 million which has not yet been billed nor recognized as revenue. Approximately 39% of revenue from contracts
+greater than one year in length will be recognized over the next twelve months.
+
+Note 9 - Derivative Financial Instruments
+
+We utilize foreign currency forward contracts to mitigate the impact of foreign currency exchange rate movements on our operating expenses. The foreign
+currency forward contracts for operating expenses are designated as accounting hedges. Gains or losses on the contracts are recorded in accumulated other
+comprehensive income or loss and reclassified to operating expense when the related operating expenses are recognized in earnings. During the first quarter of
+fiscal years 2026 and 2025, the impact of foreign currency forward contracts designated as accounting hedges on other comprehensive income or loss was not
+significant and all such instruments were determined to be highly effective.
+
+We also entered into foreign currency forward contracts mitigating the impact of foreign currency movements on monetary assets and liabilities. For our foreign
+currency contracts for assets and liabilities, the change in fair value of these non-designated contracts was recorded in other income or expense and offsets the
+change in fair value of the hedged foreign currency denominated monetary assets and liabilities, which was also recorded in other income or expense.
+
+The table below presents the notional value of our foreign currency contracts outstanding:
+
+Apr 27, 2025
+Jan 26, 2025
+
+(In millions)
+Designated as accounting hedges
+$
+1,477 
+$
+1,424 
+Not designated as accounting hedges
+$
+988 
+$
+1,297
+
+The unrealized gains and losses or fair value of our foreign currency contracts were not significant as of April 27, 2025 and January 26, 2025.
+
+As of April 27, 2025, all foreign currency contracts mature within eighteen months. The expected realized gains and losses deferred into accumulated other
+comprehensive income or loss related to foreign currency forward contracts within the next twelve months were not significant.
+
+15

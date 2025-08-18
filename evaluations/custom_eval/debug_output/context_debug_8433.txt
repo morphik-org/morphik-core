@@ -1,0 +1,972 @@
+=== CONTEXT DEBUG FOR QUESTION ===
+Question: What percentage of historical infrastructure total returns is driven by income, what tax rates were assumed for long-term and short-term capital gains in J.P. Morgan’s after-tax hedge fund performance analysis, and by what factor has client utilization of equity-linked structured notes increased this year compared to 2024?
+
+Context:
+=== jpm_midyear.pdf, Page 17 ===
+Visual content from: document_images/jpm_midyear_page_017.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+17 
+2025 MID-YEAR OUTLOOK
+IS YOUR PORTFOLIO RESILIENT TO GROWING RISKS? 
+  
+  
+  
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+We believe equity-linked structured notes can work well 
+in the current environment, for investors who qualify. 
+Our clients seem to agree: Twice as many are utilizing 
+structured notes this year relative to 2024. 
+Many equity-linked structured notes pay a coupon, 
+periodically or at maturity. This coupon is a function 
+of implied equity market volatility and interest rates. 
+We believe both will remain elevated relative to 
+recent history, potentially providing greater downside 
+protection, higher potential coupons, or both. 
+Equity-linked structured notes create another lever that 
+qualified investors can pull to generate income that is 
+not correlated to fixed income markets. Indeed, these 
+equity-linked structured notes can generate higher 
+return potential with a narrower range of possible 
+outcomes than assets with similar volatility, such as 
+preferred equities and high-yield bonds. Individual 
+circumstances will differ, but investors who qualify can 
+consider exploring structured notes as part of their 
+portfolios, potentially starting with a modest allocation. 
+Alternative assets to help strengthen portfolio resilience 
+Hedge funds are another asset that can potentially 
+strengthen portfolio resilience for suitable investors. 
+From December 2019 to August 2024, almost 80% 
+of randomly generated hedge fund composites 
+outperformed a simple stock/bond mix on a risk-
+adjusted basis.4 Going forward, we expect diversified 
+hedge fund strategies to deliver returns and volatility 
+that are slightly higher than core fixed income (as 
+proxied here by the Bloomberg U.S. Aggregate Index), 
+with very little correlation to it.5 
+Equity and credit valuations remain elevated at a 
+time of uncertainty about policy, growth and inflation 
+trajectories. This will likely support sustainably higher 
+levels of volatility and dispersion across and within asset 
+classes. Against this backdrop, we particularly favor 
+less correlated hedge funds (such as relative value 
+and macro), which are designed to capitalize on the 
+dislocations created during periods of market turbulence. 
+Finally, hedge fund returns hold up well on an after-
+tax basis for U.S. investors. Market participants often 
+assume that hedge funds generate short-term gains 
+that erode after-tax returns. But we have found that on 
+a three-, five- and 10-year rolling basis, portfolios that 
+include hedge funds have outperformed those 
+that do not, even on an after-tax basis.6 
+We have also focused on infrastructure investments 
+to provide portfolio resilience. Here, investors benefit 
+from long-term contracts that often embed inflation 
+protection. Further, over 40% of the historical returns 
+of infrastructure investments are driven by income. 
+Generating income through infrastructure may be 
+especially attractive (for suitable investors) in a world 
+of elevated bond market volatility. Since the second 
+quarter of 2008, infrastructure has generated total 
+returns in the low double digits on an annual basis.7 
+Finally, we note that a secular shift toward 
+greater demand for power generation and digital 
+infrastructure may create new opportunities in 
+the infrastructure sector. Further, more frequent 
+and severe climate and weather shocks reinforce the 
+growing demand for resilient infrastructure. 
+4 For a full analysis and methodology, please see Michael Cembalest’s “It’s Mostly a Paper Moon” Eye on the Market. 
+5 J.P. Morgan Asset Management (September 2024). 2025 Long-Term Capital Market Assumptions. 
+6Performance calculated using various indices (Equities: MSCI World, Fixed Income: Bloomberg 1–17 Year Muni, Hedge Funds: Pivotal Path). Given that indices do not distribute gains, 
+ETFs were used to calculate gains distributions across Equities and Fixed Income (Equities: URTH, Fixed Income: MUB). Tax assumptions for Hedge Funds are based on realized 
+distributions from J.P. Morgan Private Bank’s Hedge Fund Multi-Strategy. For this analysis, the tax rates were assumed to be 23.8% for Long-Term Capital Gains and 43.4% for Short-
+Term Capital Gains. 
+7 J.P. Morgan Asset Management (February 2025). Guide to Alternatives.
+
+Structured Layout:
+17 
+2025 MID-YEAR OUTLOOK
+
+IS YOUR PORTFOLIO RESILIENT TO GROWING RISKS?
+
+We believe equity-linked structured notes can work well 
+in the current environment, for investors who qualify. 
+Our clients seem to agree: Twice as many are utilizing 
+structured notes this year relative to 2024.
+
+Many equity-linked structured notes pay a coupon, 
+periodically or at maturity. This coupon is a function 
+of implied equity market volatility and interest rates. 
+We believe both will remain elevated relative to 
+recent history, potentially providing greater downside 
+protection, higher potential coupons, or both.
+
+Equity-linked structured notes create another lever that 
+qualified investors can pull to generate income that is 
+not correlated to fixed income markets. Indeed, these 
+equity-linked structured notes can generate higher 
+return potential with a narrower range of possible 
+outcomes than assets with similar volatility, such as 
+preferred equities and high-yield bonds. Individual 
+circumstances will differ, but investors who qualify can 
+consider exploring structured notes as part of their 
+portfolios, potentially starting with a modest allocation.
+
+Alternative assets to help strengthen portfolio resilience
+
+Hedge funds are another asset that can potentially 
+strengthen portfolio resilience for suitable investors. 
+From December 2019 to August 2024, almost 80% 
+of randomly generated hedge fund composites 
+outperformed a simple stock/bond mix on a risk-
+adjusted basis.4 Going forward, we expect diversified 
+hedge fund strategies to deliver returns and volatility 
+that are slightly higher than core fixed income (as 
+proxied here by the Bloomberg U.S. Aggregate Index), 
+with very little correlation to it.5
+
+Equity and credit valuations remain elevated at a 
+time of uncertainty about policy, growth and inflation 
+trajectories. This will likely support sustainably higher 
+levels of volatility and dispersion across and within asset 
+classes. Against this backdrop, we particularly favor 
+less correlated hedge funds (such as relative value 
+and macro), which are designed to capitalize on the 
+dislocations created during periods of market turbulence.
+
+Finally, hedge fund returns hold up well on an after-
+tax basis for U.S. investors. Market participants often 
+assume that hedge funds generate short-term gains
+
+that erode after-tax returns. But we have found that on 
+a three-, five- and 10-year rolling basis, portfolios that 
+include hedge funds have outperformed those 
+that do not, even on an after-tax basis.6
+
+We have also focused on infrastructure investments 
+to provide portfolio resilience. Here, investors benefit 
+from long-term contracts that often embed inflation 
+protection. Further, over 40% of the historical returns 
+of infrastructure investments are driven by income. 
+Generating income through infrastructure may be 
+especially attractive (for suitable investors) in a world 
+of elevated bond market volatility. Since the second 
+quarter of 2008, infrastructure has generated total 
+returns in the low double digits on an annual basis.7
+
+Finally, we note that a secular shift toward 
+greater demand for power generation and digital 
+infrastructure may create new opportunities in 
+the infrastructure sector. Further, more frequent 
+and severe climate and weather shocks reinforce the 
+growing demand for resilient infrastructure.
+
+4 For a full analysis and methodology, please see Michael Cembalest’s “It’s Mostly a Paper Moon” Eye on the Market.
+
+5 J.P. Morgan Asset Management (September 2024). 2025 Long-Term Capital Market Assumptions.
+
+6Performance calculated using various indices (Equities: MSCI World, Fixed Income: Bloomberg 1–17 Year Muni, Hedge Funds: Pivotal Path). Given that indices do not distribute gains,
+
+ETFs were used to calculate gains distributions across Equities and Fixed Income (Equities: URTH, Fixed Income: MUB). Tax assumptions for Hedge Funds are based on realized 
+distributions from J.P. Morgan Private Bank’s Hedge Fund Multi-Strategy. For this analysis, the tax rates were assumed to be 23.8% for Long-Term Capital Gains and 43.4% for Short-
+Term Capital Gains.
+
+7 J.P. Morgan Asset Management (February 2025). Guide to Alternatives.
+
+=== jpm_midyear.pdf, Page 16 ===
+Visual content from: document_images/jpm_midyear_page_016.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+16 
+2025 MID-YEAR OUTLOOK
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+Investors are weighing dissonant risks to growth and inflation. Higher barriers to trade could raise prices, 
+slow growth and hurt equity valuations. On the other hand, stimulative fiscal policy from the United States, 
+China and Europe could place upward pressure on bond yields. It is difficult to predict the net impact of all 
+these factors. But our analysis suggests that if the final Congressional legislation matches Senate instructions 
+and dollar weakness continues, inflation could move higher over the next year.  
+A WEAKENING DOLLAR AND GROWING FISCAL DEFICIT COULD PUSH U.S. INFLATION HIGHER 
+Estimated impact on core PCE inflation from different drivers, % annualized 
+2% 
+1.43% 
+1.32% 
+1% 
+0% 
+-1% 
+1.12% 
+-2% 
+-1.63% 
+Unemployment rise driven 
+Fiscal deﬁcit 
+10% year-over-year
+Total impact 
+by tariﬀ-induced slowdown 
+expansion 
+USD depreciation 
+Sources: J.P. Morgan Wealth Management Solutions, Federal Reserve Bank. Data as of April 22, 2025. 
+Note: This chart utilizes the Fed’s FRB/U.S. macro econometric model to assess the inflationary impact from several key vectors, including forward-looking assumptions. 
+1) We assume the fiscal reconciliation package passed this year meets the maximum cumulative deficit impact ($5.8 trillion) as outlined by the Senate’s budget resolution 
+instructions. 2) We assume a 2% hit to real GDP from the tariffs announced year-to-date, which results in the unemployment rate rising just under 1%. 3) We assume a 
+-10% depreciation in the broad real effective U.S. dollar exchange rate. 
+Whether inflation, growth or markets move up, down or 
+sideways, portfolio resilience – a key theme of our 2025 
+outlook – can help clients reach their wealth goals. 
+Before we get into the specifics of portfolio resilience, 
+let’s step back and consider a longer-term perspective. 
+In the post–Global Financial Crisis (GFC) era (roughly 
+2009–2020), portfolios gravitated to assets, primarily 
+U.S. equities, which worked well in an environment 
+of low inflation, low interest rates and modest 
+volatility. Today, investors face two-way risks to 
+growth and inflation, and what looks to be persistent 
+policy uncertainty. It’s a regime shift, with important 
+implications for building resilient portfolios. 
+How do we think about portfolio resilience in the 
+current environment? In our view, a resilient portfolio 
+includes assets with low or negative correlations to each 
+other, each with an intrinsic ability to outperform cash. 
+Collectively, the assets offer the potential to mitigate the 
+severity of portfolio-level drawdowns. Of course, core 
+fixed income remains the primary source of portfolio 
+resilience in a growth downturn. Opportunistic credit 
+strategies could capitalize in periods of economic stress. 
+Here, we discuss four attractive asset choices that 
+could help make portfolios more resilient against the 
+countervailing risks: equity-linked structured notes, 
+hedge funds, infrastructure and gold. 
+IS YOUR PORTFOLIO RESILIENT TO GROWING RISKS?
+
+Table Data:
+| 1.43%
+1.32%
+1.12%
+ | -1.63%
+
+Structured Layout:
+16 
+2025 MID-YEAR OUTLOOK
+
+Investors are weighing dissonant risks to growth and inflation. Higher barriers to trade could raise prices, 
+slow growth and hurt equity valuations. On the other hand, stimulative fiscal policy from the United States, 
+China and Europe could place upward pressure on bond yields. It is difficult to predict the net impact of all 
+these factors. But our analysis suggests that if the final Congressional legislation matches Senate instructions 
+and dollar weakness continues, inflation could move higher over the next year.
+
+A WEAKENING DOLLAR AND GROWING FISCAL DEFICIT COULD PUSH U.S. INFLATION HIGHER
+
+Estimated impact on core PCE inflation from different drivers, % annualized
+
+2%
+
+1.43% 
+1.32%
+
+1%
+
+0%
+
+-1%
+
+1.12%
+
+-2% 
+-1.63%
+
+Unemployment rise driven 
+Fiscal deﬁcit 
+10% year-over-year
+Total impact 
+by tariﬀ-induced slowdown 
+expansion 
+USD depreciation
+
+Sources: J.P. Morgan Wealth Management Solutions, Federal Reserve Bank. Data as of April 22, 2025. 
+Note: This chart utilizes the Fed’s FRB/U.S. macro econometric model to assess the inflationary impact from several key vectors, including forward-looking assumptions. 
+1) We assume the fiscal reconciliation package passed this year meets the maximum cumulative deficit impact ($5.8 trillion) as outlined by the Senate’s budget resolution 
+instructions. 2) We assume a 2% hit to real GDP from the tariffs announced year-to-date, which results in the unemployment rate rising just under 1%. 3) We assume a 
+-10% depreciation in the broad real effective U.S. dollar exchange rate.
+
+Whether inflation, growth or markets move up, down or 
+sideways, portfolio resilience – a key theme of our 2025 
+outlook – can help clients reach their wealth goals.
+
+Before we get into the specifics of portfolio resilience, 
+let’s step back and consider a longer-term perspective. 
+In the post–Global Financial Crisis (GFC) era (roughly 
+2009–2020), portfolios gravitated to assets, primarily 
+U.S. equities, which worked well in an environment 
+of low inflation, low interest rates and modest 
+volatility. Today, investors face two-way risks to 
+growth and inflation, and what looks to be persistent 
+policy uncertainty. It’s a regime shift, with important 
+implications for building resilient portfolios.
+
+How do we think about portfolio resilience in the 
+current environment? In our view, a resilient portfolio 
+includes assets with low or negative correlations to each 
+other, each with an intrinsic ability to outperform cash. 
+Collectively, the assets offer the potential to mitigate the 
+severity of portfolio-level drawdowns. Of course, core 
+fixed income remains the primary source of portfolio 
+resilience in a growth downturn. Opportunistic credit 
+strategies could capitalize in periods of economic stress.
+
+Here, we discuss four attractive asset choices that 
+could help make portfolios more resilient against the 
+countervailing risks: equity-linked structured notes, 
+hedge funds, infrastructure and gold.
+
+IS YOUR PORTFOLIO RESILIENT TO GROWING RISKS?
+
+=== jpm_midyear.pdf, Page 21 ===
+Visual content from: document_images/jpm_midyear_page_021.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+21 
+2025 MID-YEAR OUTLOOK
+IS THIS THE DOWNFALL OF THE U.S. DOLLAR?
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  
+ 
+ 
+  
+The primacy of the dollar seems durable, but at the 
+margin, investors may be shifting their perceptions of 
+the dollar’s value. Nearly 70% of investors surveyed 
+think the dollar is “overvalued,” and a net 61%, the 
+highest share since 2006, expect it to continue to 
+depreciate.11 Our base case is that the dollar loses a few 
+more percentage points by the end of the year against 
+major currencies, with risks tilted to the downside. 
+The historical precedents of sustained dollar weakness 
+(1970–1980, 1985–1992 and 2002–2008) resulted in 
+~40% depreciation over a 5- to 10-year period. Academic 
+estimates suggest that ex-U.S. investors own ~30% of 
+U.S.-issued fixed income and equity (public and private) 
+securities.12 Even marginal repatriation could result 
+in a significant change in relative valuations between 
+U.S. and rest-of-world assets. 
+Diversifying currency exposure can mitigate potential 
+losses associated with dollar depreciation. We are 
+focused on the euro, Japanese yen and gold due to 
+their size, liquidity and historical roles as alternative 
+reserve assets. Central banks, with nearly $13 trillion in 
+reserves, have already increased allocations to these 
+currencies, reflecting their deep, liquid markets and 
+potential for preserving purchasing power. The euro 
+and yen also have a lower correlation to global growth, 
+which reduces cyclical exposure within a portfolio. 
+Currency diversification probably comes more naturally 
+to investors outside of the United States than to those 
+inside the United States. The path of least resistance 
+for U.S.-based investors could be exposure to equities 
+denominated in the euro and yen. In fact, J.P. Morgan 
+Asset Management’s 2025 Long-Term Capital Market 
+Assumptions suggest that U.S. dollar depreciation will 
+add 1%–2% annually to total returns for European and 
+Japanese equity investments in U.S. dollar terms for the 
+next 10–15 years. 
+Importantly, those equity markets are also expected 
+to outperform the United States on an absolute basis. 
+Investing in private equity investments could also be a 
+way to diversify geographic and currency exposure. U.S. 
+equities make up between 70% and 75% of public equity 
+benchmarks, but they account for only half of global 
+buyout volumes.13 
+Investors may also consider foreign currency 
+denominated bonds, but they should understand the 
+risks involved. A dollar-based investor in an unhedged 
+ex-U.S. aggregate bond portfolio experienced almost 
+2x the volatility of a U.S. dollar domestic bond portfolio 
+over the last 20 years. 
+THE U.S. DOLLAR STILL ACCOUNTS FOR THE LION’S SHARE OF CENTRAL BANK FX RESERVES 
+Composition of global central bank foreign exchange reserves, share of total, % 
+100% 
+80% 
+60% 
+40% 
+20% 
+0% 
+USD 
+EUR 
+Gold 
+JPY 
+GBP 
+Other (incl. CAD,
+AUD and RMB) 
+’00 
+’04 
+’08 
+’12 
+’16 
+’20 
+’24 
+Sources: IMF, J.P. Morgan. Data as of December 31, 2024. Data across 123 central banks that report data to the IMF. 
+11 Bank of America Merrill Lynch (2024). BAML Fund Manager Survey. 
+12Du, W., & Huber, A. W. (2023). Dollar Asset Holding and Hedging Around the Globe. Wharton School of the University of Pennsylvania. 
+13 Bain & Company (2025). Global Private Equity Report 2025.
+
+Structured Layout:
+21 
+2025 MID-YEAR OUTLOOK
+
+IS THIS THE DOWNFALL OF THE U.S. DOLLAR?
+
+The primacy of the dollar seems durable, but at the 
+margin, investors may be shifting their perceptions of 
+the dollar’s value. Nearly 70% of investors surveyed 
+think the dollar is “overvalued,” and a net 61%, the 
+highest share since 2006, expect it to continue to 
+depreciate.11 Our base case is that the dollar loses a few 
+more percentage points by the end of the year against 
+major currencies, with risks tilted to the downside.
+
+The historical precedents of sustained dollar weakness 
+(1970–1980, 1985–1992 and 2002–2008) resulted in 
+~40% depreciation over a 5- to 10-year period. Academic 
+estimates suggest that ex-U.S. investors own ~30% of 
+U.S.-issued fixed income and equity (public and private) 
+securities.12 Even marginal repatriation could result 
+in a significant change in relative valuations between 
+U.S. and rest-of-world assets.
+
+Diversifying currency exposure can mitigate potential 
+losses associated with dollar depreciation. We are 
+focused on the euro, Japanese yen and gold due to 
+their size, liquidity and historical roles as alternative 
+reserve assets. Central banks, with nearly $13 trillion in 
+reserves, have already increased allocations to these 
+currencies, reflecting their deep, liquid markets and 
+potential for preserving purchasing power. The euro
+
+and yen also have a lower correlation to global growth, 
+which reduces cyclical exposure within a portfolio.
+
+Currency diversification probably comes more naturally 
+to investors outside of the United States than to those 
+inside the United States. The path of least resistance 
+for U.S.-based investors could be exposure to equities 
+denominated in the euro and yen. In fact, J.P. Morgan 
+Asset Management’s 2025 Long-Term Capital Market 
+Assumptions suggest that U.S. dollar depreciation will 
+add 1%–2% annually to total returns for European and 
+Japanese equity investments in U.S. dollar terms for the 
+next 10–15 years.
+
+Importantly, those equity markets are also expected 
+to outperform the United States on an absolute basis. 
+Investing in private equity investments could also be a 
+way to diversify geographic and currency exposure. U.S. 
+equities make up between 70% and 75% of public equity 
+benchmarks, but they account for only half of global 
+buyout volumes.13
+
+Investors may also consider foreign currency 
+denominated bonds, but they should understand the 
+risks involved. A dollar-based investor in an unhedged 
+ex-U.S. aggregate bond portfolio experienced almost 
+2x the volatility of a U.S. dollar domestic bond portfolio 
+over the last 20 years.
+
+THE U.S. DOLLAR STILL ACCOUNTS FOR THE LION’S SHARE OF CENTRAL BANK FX RESERVES
+
+Composition of global central bank foreign exchange reserves, share of total, %
+
+100%
+
+80%
+
+60%
+
+40%
+
+20%
+
+0%
+
+USD
+
+EUR
+
+Gold
+
+JPY 
+GBP
+
+Other (incl. CAD,
+AUD and RMB)
+
+’00 
+’04 
+’08 
+’12 
+’16 
+’20 
+’24
+
+Sources: IMF, J.P. Morgan. Data as of December 31, 2024. Data across 123 central banks that report data to the IMF.
+
+11 Bank of America Merrill Lynch (2024). BAML Fund Manager Survey.
+
+12Du, W., & Huber, A. W. (2023). Dollar Asset Holding and Hedging Around the Globe. Wharton School of the University of Pennsylvania.
+
+13 Bain & Company (2025). Global Private Equity Report 2025.
+
+=== jpm_midyear.pdf, Page 30 ===
+Visual content from: document_images/jpm_midyear_page_030.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+30 
+2025 MID-YEAR OUTLOOK
+WHAT’S THE DEAL WITH DEALMAKING?
+ 
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+  
+ 
+ 
+ 
+ 
+ 
+ 
+  
+  
+  
+A slower pace of traditional dealmaking activity (IPO, 
+strategic M&A), along with aging assets in existing 
+private equity portfolios, could create a compelling 
+opportunity set for secondary managers that 
+buy existing stakes from other sponsors. Historically, 
+secondaries have been attractive for several reasons. 
+First, they mitigate the “J-Curve” effect inherent in 
+drawdown funds (early negative returns as capital 
+is called, followed by positive returns as capital is 
+distributed). In addition, secondary funds give investors 
+visibility into a strategy’s underlying assets (mitigating 
+blind pool risk), and provide meaningful diversification 
+across vintage year and manager. The potential 
+liquidity needs of college endowments is another 
+potential catalyst that could lead to opportunity for 
+secondary funds. 
+Evergreen fund structures will likely alter the private 
+market landscape. Just this year, over 4,500 clients 
+have invested in evergreen structures for the first time. 
+Currently, evergreen funds are ~5% of the overall private 
+markets, and some estimate that share could grow to 
+20% in the next decade.20 As private markets mature, 
+we expect asset owners will find more opportunities 
+for liquidity beyond the traditional avenues of IPOs and 
+strategic M&A. 
+Investors who only participate in public markets should 
+realize that companies are staying private longer. Today, 
+the median company that goes public is almost 14 years 
+old. Ten years ago, the median age of an IPO was less 
+than 11 years old.21 Of all the companies that exceed 
+$100 million in annual revenue in the United States, 87% 
+are private.22 
+A key takeaway for suitable investors: Exposure to 
+private markets could be critical to ensure proper 
+exposure to the total economy. 
+As the private equity ecosystem comes into better 
+balance, the sports investment landscape is a notable 
+bright spot. In the athletic arena, sports deals have 
+continued to grow in terms of both number and 
+volume. The sale of the Boston Celtics set a record for 
+transaction valuation, and Peyton Manning’s sports-
+focused Omaha Productions was recently valued at over 
+$800 million.23 We believe the sports ecosystem could 
+offer the opportunity for less correlated return streams 
+across debt and equity investments. 
+The private market landscape continues to evolve, 
+driven by aging assets and growing evergreen funds. 
+Investors should consider maintaining a balance 
+between drawdown and evergreen structures as they 
+build out their private equity portfolios, while also 
+exploring investments in secondaries and sports. 
+20Hamilton Lane (2025). 
+21 Ritter, J. R. (2025). Initial Public Offerings: Median Age of IPOs Through 2024. Warrington College of Business, University of Florida. 
+22 Sløk, T. (April 20, 2024). Many More Private Firms in the US
+. 
+23 Fischer, S. (March 27, 2025). Peyton Manning’s Omaha Productions raises series B from Patrick Whitesell and Silver Lake.
+
+Structured Layout:
+30 
+2025 MID-YEAR OUTLOOK
+
+WHAT’S THE DEAL WITH DEALMAKING?
+
+A slower pace of traditional dealmaking activity (IPO, 
+strategic M&A), along with aging assets in existing 
+private equity portfolios, could create a compelling 
+opportunity set for secondary managers that 
+buy existing stakes from other sponsors. Historically, 
+secondaries have been attractive for several reasons.
+
+First, they mitigate the “J-Curve” effect inherent in 
+drawdown funds (early negative returns as capital 
+is called, followed by positive returns as capital is 
+distributed). In addition, secondary funds give investors 
+visibility into a strategy’s underlying assets (mitigating 
+blind pool risk), and provide meaningful diversification 
+across vintage year and manager. The potential 
+liquidity needs of college endowments is another 
+potential catalyst that could lead to opportunity for 
+secondary funds.
+
+Evergreen fund structures will likely alter the private 
+market landscape. Just this year, over 4,500 clients 
+have invested in evergreen structures for the first time. 
+Currently, evergreen funds are ~5% of the overall private 
+markets, and some estimate that share could grow to 
+20% in the next decade.20 As private markets mature, 
+we expect asset owners will find more opportunities 
+for liquidity beyond the traditional avenues of IPOs and 
+strategic M&A.
+
+Investors who only participate in public markets should 
+realize that companies are staying private longer. Today, 
+the median company that goes public is almost 14 years 
+old. Ten years ago, the median age of an IPO was less 
+than 11 years old.21 Of all the companies that exceed 
+$100 million in annual revenue in the United States, 87% 
+are private.22
+
+A key takeaway for suitable investors: Exposure to 
+private markets could be critical to ensure proper 
+exposure to the total economy.
+
+As the private equity ecosystem comes into better 
+balance, the sports investment landscape is a notable 
+bright spot. In the athletic arena, sports deals have 
+continued to grow in terms of both number and 
+volume. The sale of the Boston Celtics set a record for 
+transaction valuation, and Peyton Manning’s sports-
+focused Omaha Productions was recently valued at over 
+$800 million.23 We believe the sports ecosystem could 
+offer the opportunity for less correlated return streams 
+across debt and equity investments.
+
+The private market landscape continues to evolve, 
+driven by aging assets and growing evergreen funds. 
+Investors should consider maintaining a balance 
+between drawdown and evergreen structures as they 
+build out their private equity portfolios, while also 
+exploring investments in secondaries and sports.
+
+20Hamilton Lane (2025).
+
+21 Ritter, J. R. (2025). Initial Public Offerings: Median Age of IPOs Through 2024. Warrington College of Business, University of Florida.
+
+22 Sløk, T. (April 20, 2024). Many More Private Firms in the US
+.
+
+23 Fischer, S. (March 27, 2025). Peyton Manning’s Omaha Productions raises series B from Patrick Whitesell and Silver Lake.
+
+=== nvidia_10q.pdf, Page 28 ===
+Visual content from: document_images/nvidia_10q_page_028.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+Liquidity and Capital Resources
+ 
+Apr 27, 2025
+Jan 26, 2025
+ 
+(In millions)
+Cash and cash equivalents
+$
+15,234 
+$
+8,589 
+Marketable securities
+38,457 
+34,621 
+Cash, cash equivalents and marketable securities
+$
+53,691 
+$
+43,210 
+ 
+Three Months Ended
+Apr 27, 2025
+Apr 28, 2024
+ 
+(In millions)
+Net cash provided by operating activities
+$
+27,414 
+$
+15,345 
+Net cash used in investing activities
+$
+(5,216)
+$
+(5,693)
+Net cash used in financing activities
+$
+(15,553)
+$
+(9,345)
+Our investment policy requires the purchase of highly-rated fixed income securities, the diversification of investment types and credit exposures, and certain
+maturity limits on our portfolio.
+Cash provided by operating activities increased in the first quarter of fiscal year 2026 compared to the first quarter of fiscal year 2025, due to higher revenue and
+timing of cash collections.
+Cash used in investing activities decreased in the first quarter of fiscal year 2026 compared to the first quarter of fiscal year 2025, primarily driven by lower net
+purchases of marketable securities, partially offset by higher purchases of property and equipment.
+Cash used in financing activities increased in the first quarter of fiscal year 2026 compared to the first quarter of fiscal year 2025, mainly due to higher share
+repurchases.
+Liquidity
+Our primary sources of liquidity include cash, cash equivalents, marketable securities, and cash generated by our operations. As of April 27, 2025, we had $53.7
+billion in cash, cash equivalents, and marketable securities. We believe that we have sufficient liquidity to meet our operating requirements for at least the next
+twelve months and thereafter for the foreseeable future, including our future supply obligations and share purchases. We continuously evaluate our liquidity and
+capital resources, including our access to external capital, to ensure we can finance future capital requirements.
+Our marketable securities consist of publicly-held equity securities, debt securities issued by the U.S. government and its agencies, highly-rated corporations
+and financial institutions, and foreign government entities, as well as certificates of deposit issued by highly-rated financial institutions. These marketable
+securities are primarily denominated in U.S. dollars. Refer to Note 5 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this
+Quarterly Report on Form 10-Q for additional information.
+Except for approximately $1.7 billion of cash, cash equivalents, and marketable securities held outside the U.S. for which we have not accrued any related
+foreign or state taxes if we repatriate these amounts to the U.S., substantially all of our cash, cash equivalents and marketable securities held outside the U.S. at
+the end of the first quarter of fiscal year 2026 are available for use in the U.S. without incurring additional U.S. federal income taxes. We plan to make two
+estimated federal and state tax payments in the second quarter of fiscal year 2026, a substantial increase as compared with no estimated tax payments in the
+first quarter of fiscal year 2026.
+Capital Return to Shareholders
+We repurchased 126 million shares of our common stock for $14.5 billion during the first quarter of fiscal years 2026. As of April 27, 2025, we were authorized,
+subject to certain specifications, to repurchase up to $24.3 billion of our common stock.
+From April 28, 2025 through May 23, 2025, we repurchased 19 million shares for $2.3 billion pursuant to a pre-established trading plan. Our share repurchase
+program aims to offset dilution from shares issued to employees while maintaining adequate liquidity to meet our operating requirements. We may pursue
+additional share repurchases as we weigh market factors and other investment opportunities.
+We paid cash dividends to our shareholders of $244 million and $98 million during the first quarter of fiscal years 2026 and 2025, respectively. The payment of
+future cash dividends is subject to our Board of Directors' continuing determination that the declaration of dividends is in the best interests of our shareholders.
+28
+
+Table Data:
+Cash and cash equivalents | $ | 15,234 |  | $ | 8,589
+Marketable securities | 38,457 |  |  | 34,621 | 
+Cash, cash equivalents and marketable securities | $ | 53,691 |  | $ | 43,210
+Net cash provided by operating activities | $ | 27,414 |  | $ | 15,345
+Net cash used in investing activities | $ | (5,216) |  | $ | (5,693)
+Net cash used in financing activities | $ | (15,553) |  | $ | (9,345)
+
+Structured Layout:
+Liquidity and Capital Resources
+
+Apr 27, 2025
+Jan 26, 2025
+
+(In millions)
+Cash and cash equivalents
+$
+15,234 
+$
+8,589 
+Marketable securities
+38,457 
+34,621
+
+Cash, cash equivalents and marketable securities
+$
+53,691 
+$
+43,210
+
+Three Months Ended
+
+Apr 27, 2025
+Apr 28, 2024
+
+(In millions)
+Net cash provided by operating activities
+$
+27,414 
+$
+15,345 
+Net cash used in investing activities
+$
+(5,216)
+$
+(5,693)
+Net cash used in financing activities
+$
+(15,553)
+$
+(9,345)
+
+Our investment policy requires the purchase of highly-rated fixed income securities, the diversification of investment types and credit exposures, and certain
+maturity limits on our portfolio.
+
+Cash provided by operating activities increased in the first quarter of fiscal year 2026 compared to the first quarter of fiscal year 2025, due to higher revenue and
+timing of cash collections.
+
+Cash used in investing activities decreased in the first quarter of fiscal year 2026 compared to the first quarter of fiscal year 2025, primarily driven by lower net
+purchases of marketable securities, partially offset by higher purchases of property and equipment.
+
+Cash used in financing activities increased in the first quarter of fiscal year 2026 compared to the first quarter of fiscal year 2025, mainly due to higher share
+repurchases.
+
+Liquidity
+
+Our primary sources of liquidity include cash, cash equivalents, marketable securities, and cash generated by our operations. As of April 27, 2025, we had $53.7
+billion in cash, cash equivalents, and marketable securities. We believe that we have sufficient liquidity to meet our operating requirements for at least the next
+twelve months and thereafter for the foreseeable future, including our future supply obligations and share purchases. We continuously evaluate our liquidity and
+capital resources, including our access to external capital, to ensure we can finance future capital requirements.
+
+Our marketable securities consist of publicly-held equity securities, debt securities issued by the U.S. government and its agencies, highly-rated corporations
+and financial institutions, and foreign government entities, as well as certificates of deposit issued by highly-rated financial institutions. These marketable
+securities are primarily denominated in U.S. dollars. Refer to Note 5 of the Notes to Condensed Consolidated Financial Statements in Part I, Item 1 of this
+Quarterly Report on Form 10-Q for additional information.
+
+Except for approximately $1.7 billion of cash, cash equivalents, and marketable securities held outside the U.S. for which we have not accrued any related
+foreign or state taxes if we repatriate these amounts to the U.S., substantially all of our cash, cash equivalents and marketable securities held outside the U.S. at
+the end of the first quarter of fiscal year 2026 are available for use in the U.S. without incurring additional U.S. federal income taxes. We plan to make two
+estimated federal and state tax payments in the second quarter of fiscal year 2026, a substantial increase as compared with no estimated tax payments in the
+first quarter of fiscal year 2026.
+
+Capital Return to Shareholders
+
+We repurchased 126 million shares of our common stock for $14.5 billion during the first quarter of fiscal years 2026. As of April 27, 2025, we were authorized,
+subject to certain specifications, to repurchase up to $24.3 billion of our common stock.
+
+From April 28, 2025 through May 23, 2025, we repurchased 19 million shares for $2.3 billion pursuant to a pre-established trading plan. Our share repurchase
+program aims to offset dilution from shares issued to employees while maintaining adequate liquidity to meet our operating requirements. We may pursue
+additional share repurchases as we weigh market factors and other investment opportunities.
+
+We paid cash dividends to our shareholders of $244 million and $98 million during the first quarter of fiscal years 2026 and 2025, respectively. The payment of
+future cash dividends is subject to our Board of Directors' continuing determination that the declaration of dividends is in the best interests of our shareholders.
+
+28
+
+=== jpm_midyear.pdf, Page 38 ===
+Visual content from: document_images/jpm_midyear_page_038.png
+Multi-vector embeddings: 1031 patches with 128-dim features
+Text Content:
+38 
+DEFINITIONS AND DISCLAIMERS
+ 
+ 
+ 
+ 
+ 
+processes as well as the risk and compliance philosophy of the 
+firm, it is important to note that J.P. Morgan receives more overall 
+fees when internally managed strategies are included. We offer the 
+option of choosing to exclude J.P. Morgan managed strategies (other 
+than cash and liquidity products) in certain portfolios. 
+The Six Circles Funds are U.S.-registered mutual funds managed 
+by J.P. Morgan and sub-advised by third parties. Although 
+considered internally managed strategies, JPMC does not retain a 
+fee for fund management or other fund services. 
+Legal Entity, Brand & Regulatory Information 
+J.P. Morgan Wealth Management is a business of JPMorgan Chase 
+& Co., which offers investment products and services through 
+J.P. Morgan Securities LLC (JPMS), a registered broker-dealer and 
+investment adviser, member FINRA and SIPC. Insurance products 
+are made available through Chase Insurance Agency, Inc. (CIA), 
+a licensed insurance agency, doing business as Chase Insurance 
+Agency Services, Inc. in Florida. Certain custody and other services 
+are provided by JPMorgan Chase Bank, N.A. (JPMCB). JPMS, CIA 
+and JPMCB are affiliated companies under the common control of 
+JPMorgan Chase & Co. Products not available in all states. 
+J.P. Morgan may hold a position for itself or our other clients 
+which may not be consistent with the information, opinions, 
+estimates, investment strategies or views expressed in this 
+document. JPMorgan Chase & Co. or its affiliates may hold a 
+position or act as market maker in the financial instruments of any 
+issuer discussed herein or act as an underwriter, placement agent, 
+advisor or lender to such issuer. 
+Bank deposit accounts and related services, such as checking, 
+savings and bank lending, are offered by JPMorgan Chase Bank, 
+N.A. Member FDIC. 
+© 2025 JPMorgan Chase & Co. All rights reserved. 
+2025 MID-YEAR OUTLOOK
+
+Structured Layout:
+38
+
+DEFINITIONS AND DISCLAIMERS
+
+processes as well as the risk and compliance philosophy of the 
+firm, it is important to note that J.P. Morgan receives more overall 
+fees when internally managed strategies are included. We offer the 
+option of choosing to exclude J.P. Morgan managed strategies (other 
+than cash and liquidity products) in certain portfolios.
+
+The Six Circles Funds are U.S.-registered mutual funds managed 
+by J.P. Morgan and sub-advised by third parties. Although 
+considered internally managed strategies, JPMC does not retain a 
+fee for fund management or other fund services.
+
+Legal Entity, Brand & Regulatory Information
+
+J.P. Morgan Wealth Management is a business of JPMorgan Chase 
+& Co., which offers investment products and services through 
+J.P. Morgan Securities LLC (JPMS), a registered broker-dealer and 
+investment adviser, member FINRA and SIPC. Insurance products 
+are made available through Chase Insurance Agency, Inc. (CIA), 
+a licensed insurance agency, doing business as Chase Insurance 
+Agency Services, Inc. in Florida. Certain custody and other services 
+are provided by JPMorgan Chase Bank, N.A. (JPMCB). JPMS, CIA 
+and JPMCB are affiliated companies under the common control of 
+JPMorgan Chase & Co. Products not available in all states.
+
+J.P. Morgan may hold a position for itself or our other clients 
+which may not be consistent with the information, opinions, 
+estimates, investment strategies or views expressed in this 
+document. JPMorgan Chase & Co. or its affiliates may hold a 
+position or act as market maker in the financial instruments of any 
+issuer discussed herein or act as an underwriter, placement agent, 
+advisor or lender to such issuer.
+
+Bank deposit accounts and related services, such as checking, 
+savings and bank lending, are offered by JPMorgan Chase Bank, 
+N.A. Member FDIC.
+
+© 2025 JPMorgan Chase & Co. All rights reserved.
+
+2025 MID-YEAR OUTLOOK

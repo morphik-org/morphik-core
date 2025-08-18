@@ -1,0 +1,2980 @@
+=== TEXT EXTRACTION DEBUG FOR palantir_q1_investor_presentation.pdf ===
+
+=== PAGE 1 ===
+Raw Text:
+Business Update
+Q1
+2025
+©2025 Palantr Technologies Inc.
+
+Structured Blocks:
+Business Update
+
+Q1
+
+2025
+
+©2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 2 ===
+Raw Text:
+Safe Harbor
+Disclaimer
+This presentaton contains “forward-looking” statements within the meaning of the federal securites laws, and these statements involve substantal risks and uncertaintes. All statements other 
+than statements of historical fact could be deemed forward-looking, including, but not limited to, statements regarding our ﬁnancial outlook, product development, distributon, and pricing, 
+expected beneﬁts of and applicatons for our sofware platforms, business strategy and plans (including strategy and plans relatng to our Artﬁcial Intelligence Platform (“AIP”), sales and 
+marketng eﬀorts, sales force, partnerships, and customers), investments in our business, market trends and market size, expectatons regarding any current or potental customers, partnerships, 
+or other business relatonships or initatves, opportunites (including growth opportunites), our expectatons regarding our existng and potental investments in, and commercial contracts with, 
+various enttes, our expectatons regarding macroeconomic events, our expectatons regarding our share repurchase program, and positoning, as well as assumptons relatng to the foregoing. 
+Forward-looking statements are inherently subject to risks and uncertaintes, some of which cannot be predicted or quantﬁed. In some cases, you can identfy forward-looking statements by 
+terminology such as “guidance,” “expect,” “antcipate,” “should,” “believe,” “hope,” “target,” “project,” “plan,” “goals,” “estmate,” “potental,” “predict,” “may,” “will,” “might,” “could,” “intend,” “shall,” 
+and variatons of these terms or the negatve of these terms and similar expressions. You should not put undue reliance on any forward-looking statements.
+Forward-looking statements should not be read as a guarantee of future performance or results and will not necessarily be accurate indicatons of the tmes at, or by, which such performance or 
+results will be achieved, if at all. Forward-looking statements are subject to a number of risks and uncertaintes, many of which involve factors or circumstances that are beyond our control. Our 
+actual results could diﬀer materially from those stated or implied in forward-looking statements due to a number of factors, including but not limited to risks detailed in our ﬁlings with the 
+Securites and Exchange Commission (the “SEC”). You can locate these reports on our investor relatons website (investors.palantr.com) or on the SEC website (www.sec.gov). If the risks or 
+uncertaintes ever materialize or the assumptons prove incorrect, our results may diﬀer materially from those expressed or implied by such forward-looking statements. Except as required by law, 
+we assume no obligaton and do not intend to update these forward-looking statements or to conform these statements to actual results or to changes in our expectatons.
+We use the non-GAAP ﬁnancial measures adjusted free cash ﬂow and adjusted free cash ﬂow margin; adjusted gross proﬁt and adjusted gross margin; billings; adjusted operatng income and 
+adjusted operatng margin; operatng income when excluding one-tme SAR-related expenses; net income when excluding one-tme SAR-related expenses; adjusted earnings per share (“EPS”), 
+diluted; and adjusted expenses to help us evaluate our business, identfy trends aﬀectng our business, formulate business plans and ﬁnancial projectons, and make strategic decisions. Our 
+deﬁnitons may diﬀer from the deﬁnitons used by other companies and therefore comparability may be limited. In additon, other companies may not publish these or similar metrics. Further, 
+these metrics have certain limitatons in that they do not include the impact of certain expenses that are reﬂected in our consolidated statements of operatons. Thus, these non-GAAP ﬁnancial 
+measures should be considered in additon to, not as a substtute for, or in isolaton from, measures prepared in accordance with GAAP. We compensate for these limitatons by providing 
+reconciliatons of these non-GAAP ﬁnancial measures to the most comparable GAAP measures. We encourage investors and others to review our business, results of operatons, and ﬁnancial 
+informaton in its entrety, not to rely on any single ﬁnancial measure, and to view these non-GAAP ﬁnancial measures in conjuncton with the most directly comparable GAAP ﬁnancial measures.
+This presentaton may contain statstcal data, estmates, and forecasts that are based on independent industry publicatons or other publicly available informaton, as well as other informaton 
+based on our internal sources. This informaton involves many assumptons and limitatons, and you are cautoned not to give undue weight to these estmates. We have not independently veriﬁed 
+the accuracy or completeness of the data contained in these industry publicatons and other publicly available informaton. Accordingly, we make no representatons as to the accuracy or 
+completeness of that data nor do we undertake to update such data afer the date of this presentaton.
+This presentaton may also contain links or references to publicly-available or third-party websites, data, or other informaton. We have not independently veriﬁed the accuracy or completeness of 
+such websites, data, or informaton and accordingly we make no representatons as to their accuracy or completeness nor do we undertake to update such data or informaton afer the date of 
+this presentaton. The inclusion of, or reference to, links or third-party data or informaton does not consttute endorsement or veriﬁcaton by Palantr of such websites, data, or informaton.
+This presentaton may refer to various growth rates when discussing our business. These rates reﬂect year-over-year comparisons unless otherwise stated.
+Any non-Palantr logos or trademarks included herein are the property of the owners thereof and are used for reference purposes only. Such use should not be construed as an endorsement of 
+the platform and products of Palantr. The appearance of any US Department of Defense (DoD) visual informaton does not imply or consttute DoD endorsements.
+By atending or receiving this presentaton you acknowledge that you will be solely responsible for your own assessment of the market and our market positon and that you will conduct your own 
+analysis and be solely responsible for forming your own view of such informaton, including the potental future performance of our business.
+Copyright © 2025 Palantr Technologies Inc. ("Palantr").
+
+Structured Blocks:
+Safe Harbor
+Disclaimer
+This presentaton contains “forward-looking” statements within the meaning of the federal securites laws, and these statements involve substantal risks and uncertaintes. All statements other 
+than statements of historical fact could be deemed forward-looking, including, but not limited to, statements regarding our ﬁnancial outlook, product development, distributon, and pricing, 
+expected beneﬁts of and applicatons for our sofware platforms, business strategy and plans (including strategy and plans relatng to our Artﬁcial Intelligence Platform (“AIP”), sales and 
+marketng eﬀorts, sales force, partnerships, and customers), investments in our business, market trends and market size, expectatons regarding any current or potental customers, partnerships, 
+or other business relatonships or initatves, opportunites (including growth opportunites), our expectatons regarding our existng and potental investments in, and commercial contracts with, 
+various enttes, our expectatons regarding macroeconomic events, our expectatons regarding our share repurchase program, and positoning, as well as assumptons relatng to the foregoing. 
+Forward-looking statements are inherently subject to risks and uncertaintes, some of which cannot be predicted or quantﬁed. In some cases, you can identfy forward-looking statements by 
+terminology such as “guidance,” “expect,” “antcipate,” “should,” “believe,” “hope,” “target,” “project,” “plan,” “goals,” “estmate,” “potental,” “predict,” “may,” “will,” “might,” “could,” “intend,” “shall,” 
+and variatons of these terms or the negatve of these terms and similar expressions. You should not put undue reliance on any forward-looking statements.
+
+Forward-looking statements should not be read as a guarantee of future performance or results and will not necessarily be accurate indicatons of the tmes at, or by, which such performance or 
+results will be achieved, if at all. Forward-looking statements are subject to a number of risks and uncertaintes, many of which involve factors or circumstances that are beyond our control. Our 
+actual results could diﬀer materially from those stated or implied in forward-looking statements due to a number of factors, including but not limited to risks detailed in our ﬁlings with the 
+Securites and Exchange Commission (the “SEC”). You can locate these reports on our investor relatons website (investors.palantr.com) or on the SEC website (www.sec.gov). If the risks or 
+uncertaintes ever materialize or the assumptons prove incorrect, our results may diﬀer materially from those expressed or implied by such forward-looking statements. Except as required by law, 
+we assume no obligaton and do not intend to update these forward-looking statements or to conform these statements to actual results or to changes in our expectatons.
+
+We use the non-GAAP ﬁnancial measures adjusted free cash ﬂow and adjusted free cash ﬂow margin; adjusted gross proﬁt and adjusted gross margin; billings; adjusted operatng income and 
+adjusted operatng margin; operatng income when excluding one-tme SAR-related expenses; net income when excluding one-tme SAR-related expenses; adjusted earnings per share (“EPS”), 
+diluted; and adjusted expenses to help us evaluate our business, identfy trends aﬀectng our business, formulate business plans and ﬁnancial projectons, and make strategic decisions. Our 
+deﬁnitons may diﬀer from the deﬁnitons used by other companies and therefore comparability may be limited. In additon, other companies may not publish these or similar metrics. Further, 
+these metrics have certain limitatons in that they do not include the impact of certain expenses that are reﬂected in our consolidated statements of operatons. Thus, these non-GAAP ﬁnancial 
+measures should be considered in additon to, not as a substtute for, or in isolaton from, measures prepared in accordance with GAAP. We compensate for these limitatons by providing 
+reconciliatons of these non-GAAP ﬁnancial measures to the most comparable GAAP measures. We encourage investors and others to review our business, results of operatons, and ﬁnancial 
+informaton in its entrety, not to rely on any single ﬁnancial measure, and to view these non-GAAP ﬁnancial measures in conjuncton with the most directly comparable GAAP ﬁnancial measures.
+
+This presentaton may contain statstcal data, estmates, and forecasts that are based on independent industry publicatons or other publicly available informaton, as well as other informaton 
+based on our internal sources. This informaton involves many assumptons and limitatons, and you are cautoned not to give undue weight to these estmates. We have not independently veriﬁed 
+the accuracy or completeness of the data contained in these industry publicatons and other publicly available informaton. Accordingly, we make no representatons as to the accuracy or 
+completeness of that data nor do we undertake to update such data afer the date of this presentaton.
+
+This presentaton may also contain links or references to publicly-available or third-party websites, data, or other informaton. We have not independently veriﬁed the accuracy or completeness of 
+such websites, data, or informaton and accordingly we make no representatons as to their accuracy or completeness nor do we undertake to update such data or informaton afer the date of 
+this presentaton. The inclusion of, or reference to, links or third-party data or informaton does not consttute endorsement or veriﬁcaton by Palantr of such websites, data, or informaton.
+
+This presentaton may refer to various growth rates when discussing our business. These rates reﬂect year-over-year comparisons unless otherwise stated.
+
+Any non-Palantr logos or trademarks included herein are the property of the owners thereof and are used for reference purposes only. Such use should not be construed as an endorsement of 
+the platform and products of Palantr. The appearance of any US Department of Defense (DoD) visual informaton does not imply or consttute DoD endorsements.
+
+By atending or receiving this presentaton you acknowledge that you will be solely responsible for your own assessment of the market and our market positon and that you will conduct your own 
+analysis and be solely responsible for forming your own view of such informaton, including the potental future performance of our business.
+
+Copyright © 2025 Palantr Technologies Inc. ("Palantr").
+
+--------------------------------------------------------------------------------
+
+=== PAGE 3 ===
+Raw Text:
+Adjusted free cash ﬂow of $370 million; 42% margin
+Business Update
+Q1
+© 2025 Palantr Technologies Inc.
+Q1 2025 Highlights
+The term “Strategic Commercial Contracts” is as deﬁned in our Annual Report on Form 10-K ﬁled on February 18, 2025. Rule of 40 refers to the sum of our revenue growth rate year-over-year and our adjusted operatng margin. The value of deals closed reﬂects the total contract value of contracts that have been entered 
+into with, or awarded by, our government and commercial customers and includes existng contractual obligatons and unexercised contract optons available to those customers. Adjusted free cash ﬂow and adjusted free cash ﬂow margin exclude employer payroll taxes related to stock-based compensaton and 
+purchases of property and equipment. Adjusted operatng income and adjusted operatng margin excludes stock-based compensaton expense and related employer payroll taxes. Total contract value (“TCV”) is the total potental lifetme value of contracts entered into with, or awarded by, our customers at the tme of 
+contract executon and remaining deal value (“RDV”) is the total remaining value of contracts as of the end of the reportng period. Except as noted below, TCV and RDV each presume the exercise of all contract optons available to our customers and no terminaton of contracts. However, the majority of our contracts are 
+subject to terminaton provisions, including for convenience, and there can be no guarantee that contracts are not terminated or that contract optons will be exercised. Further, RDV may exclude all or some porton of the value of certain commercial contracts as a result of our ongoing assessments of customers’ ﬁnancial 
+conditon, including the consideraton of such customers’ ability and intenton to pay, and whether such contracts contnue to meet the criteria for revenue recogniton, among other factors. Adjusted EPS excludes stock-based compensaton expense, related employer payroll taxes, and income tax eﬀects and adjustments. 
+Please see the appendix for reconciliatons of these and other non-GAAP ﬁnancial measures to the most directly comparable GAAP measures.
+US commercial revenue grew +71% Y/Y and +19% Q/Q to $255 million
+US revenue grew +55% Y/Y and +13% Q/Q to $628 million
+US commercial remaining deal value (“RDV”) grew +127% Y/Y and +30% Q/Q to $2.3 billion
+Adjusted operatng income of $391 million; 44% margin
+US government revenue grew +45% Y/Y and +9% Q/Q to $373 million
+Closed 139 deals of at least $1 million, 51 deals of at least $5 million, and 31 deals of at least $10 million
+Revenue grew +39% Y/Y and +7% Q/Q to $884 million; +44% Y/Y and +7% Q/Q excluding Strategic Commercial Contracts
+Highest ever quarter of US commercial total contract value (“TCV”) of $810 million; +183% Y/Y
+Adjusted EPS of $0.13
+Rule of 40 score of 83%
+
+Structured Blocks:
+Adjusted free cash ﬂow of $370 million; 42% margin
+
+Business Update
+Q1
+
+© 2025 Palantr Technologies Inc.
+
+Q1 2025 Highlights
+
+The term “Strategic Commercial Contracts” is as deﬁned in our Annual Report on Form 10-K ﬁled on February 18, 2025. Rule of 40 refers to the sum of our revenue growth rate year-over-year and our adjusted operatng margin. The value of deals closed reﬂects the total contract value of contracts that have been entered 
+into with, or awarded by, our government and commercial customers and includes existng contractual obligatons and unexercised contract optons available to those customers. Adjusted free cash ﬂow and adjusted free cash ﬂow margin exclude employer payroll taxes related to stock-based compensaton and 
+purchases of property and equipment. Adjusted operatng income and adjusted operatng margin excludes stock-based compensaton expense and related employer payroll taxes. Total contract value (“TCV”) is the total potental lifetme value of contracts entered into with, or awarded by, our customers at the tme of 
+contract executon and remaining deal value (“RDV”) is the total remaining value of contracts as of the end of the reportng period. Except as noted below, TCV and RDV each presume the exercise of all contract optons available to our customers and no terminaton of contracts. However, the majority of our contracts are 
+subject to terminaton provisions, including for convenience, and there can be no guarantee that contracts are not terminated or that contract optons will be exercised. Further, RDV may exclude all or some porton of the value of certain commercial contracts as a result of our ongoing assessments of customers’ ﬁnancial 
+conditon, including the consideraton of such customers’ ability and intenton to pay, and whether such contracts contnue to meet the criteria for revenue recogniton, among other factors. Adjusted EPS excludes stock-based compensaton expense, related employer payroll taxes, and income tax eﬀects and adjustments. 
+Please see the appendix for reconciliatons of these and other non-GAAP ﬁnancial measures to the most directly comparable GAAP measures.
+
+US commercial revenue grew +71% Y/Y and +19% Q/Q to $255 million
+
+US revenue grew +55% Y/Y and +13% Q/Q to $628 million
+
+US commercial remaining deal value (“RDV”) grew +127% Y/Y and +30% Q/Q to $2.3 billion
+
+Adjusted operatng income of $391 million; 44% margin
+
+US government revenue grew +45% Y/Y and +9% Q/Q to $373 million
+
+Closed 139 deals of at least $1 million, 51 deals of at least $5 million, and 31 deals of at least $10 million
+
+Revenue grew +39% Y/Y and +7% Q/Q to $884 million; +44% Y/Y and +7% Q/Q excluding Strategic Commercial Contracts
+
+Highest ever quarter of US commercial total contract value (“TCV”) of $810 million; +183% Y/Y
+
+Adjusted EPS of $0.13
+
+Rule of 40 score of 83%
+
+--------------------------------------------------------------------------------
+
+=== PAGE 4 ===
+Raw Text:
+Business Update
+Q1
+© 2025 Palantr Technologies Inc.
+Palantr launched a Fall fellowship for the best and brightest graduatng high school students.
+Based on merit and academic excellence, select applicants will have the opportunity to intern 
+at Palantr. Upon completon, successful interns will be oﬀered a full-tme role. 
+Skip the Debt.
+Skip the Indoctrination.
+↘
+Get the Palantir Degree.
+
+Structured Blocks:
+Business Update
+Q1
+
+© 2025 Palantr Technologies Inc.
+
+Palantr launched a Fall fellowship for the best and brightest graduatng high school students.
+Based on merit and academic excellence, select applicants will have the opportunity to intern 
+at Palantr. Upon completon, successful interns will be oﬀered a full-tme role.
+
+Skip the Debt.
+Skip the Indoctrination.
+↘
+Get the Palantir Degree.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 5 ===
+Raw Text:
+Business Update
+Q1
+The U.S. Army Agrees.
+© 2025 Palantr Technologies Inc.
+Afer delivering our ﬁrst AI-deﬁned 
+vehicles in Q1, TITAN was ranked as 
+one of the top-performing programs 
+by the U.S. Army’s leaders.
+Watch the trailer
+TITAN
+dominates.
+
+Structured Blocks:
+Business Update
+Q1
+
+The U.S. Army Agrees.
+
+© 2025 Palantr Technologies Inc.
+
+Afer delivering our ﬁrst AI-deﬁned 
+vehicles in Q1, TITAN was ranked as 
+one of the top-performing programs 
+by the U.S. Army’s leaders.
+
+Watch the trailer
+
+TITAN
+dominates.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 6 ===
+Raw Text:
+Business Update
+Q1
+Maven Smart System will 
+equip NATO warfighters 
+with cutting-edge AI 
+technology.
+© 2025 Palantr Technologies Inc.
+“Maven Smart System NATO enables 
+the Alliance to leverage complex data, 
+accelerate decision-making, and by 
+doing so, adds a true operatonal value.”
+GENERAL MARKUS LAUBENTHAL, CHIEF OF STAFF OF NATO 
+SUPREME HEADQUARTERS ALLIED POWERS EUROPE
+
+Structured Blocks:
+Business Update
+Q1
+
+Maven Smart System will 
+equip NATO warfighters 
+with cutting-edge AI 
+technology.
+
+© 2025 Palantr Technologies Inc.
+
+“Maven Smart System NATO enables 
+the Alliance to leverage complex data, 
+accelerate decision-making, and by 
+doing so, adds a true operatonal value.”
+
+GENERAL MARKUS LAUBENTHAL, CHIEF OF STAFF OF NATO 
+SUPREME HEADQUARTERS ALLIED POWERS EUROPE
+
+--------------------------------------------------------------------------------
+
+=== PAGE 7 ===
+Raw Text:
+© 2025 Palantr Technologies Inc.
+Business Update
+Q1
+Warp Speed is powering 
+the re-industrialization 
+of America.
+Our customers are deploying Warp 
+Speed to accelerate on-shore 
+manufacturing capabilites, optmize 
+maintenance, and enable advanced 
+ﬂeet management.
+Read more
+
+Structured Blocks:
+© 2025 Palantr Technologies Inc.
+
+Business Update
+Q1
+
+Warp Speed is powering 
+the re-industrialization 
+of America.
+
+Our customers are deploying Warp 
+Speed to accelerate on-shore 
+manufacturing capabilites, optmize 
+maintenance, and enable advanced 
+ﬂeet management.
+
+Read more
+
+--------------------------------------------------------------------------------
+
+=== PAGE 8 ===
+Raw Text:
+© 2025 Palantr Technologies Inc.
+Business Update
+Q1
+At DevCon 2, we unveiled 
+our latest products 
+geared towards 
+enterprise automation.
+With Eval-Driven Automaton in AIP, 
+users can leverage evaluaton feedback 
+loops within the Ontology to improve 
+logic functons for more intelligent 
+automated communicaton.
+→
+Watch the demo
+
+Structured Blocks:
+© 2025 Palantr Technologies Inc.
+
+Business Update
+Q1
+
+At DevCon 2, we unveiled 
+our latest products 
+geared towards 
+enterprise automation.
+
+With Eval-Driven Automaton in AIP, 
+users can leverage evaluaton feedback 
+loops within the Ontology to improve 
+logic functons for more intelligent 
+automated communicaton.
+
+→
+
+Watch the demo
+
+--------------------------------------------------------------------------------
+
+=== PAGE 9 ===
+Raw Text:
+© 2025 Palantr Technologies Inc.
+Business Update
+Q1
+At AIPCon 6, our partners showed how they drive outcomes with Palantir AIP in real time.
+Palantr sofware has redeﬁned 
+Wendy’s supply chain agility while 
+ensuring product superiority.
+“We’ve now taken a 
+problem that would 
+go on for weeks and 
+days and ﬁxed it in 
+ﬁve minutes, making 
+our people incredibly 
+eﬃcient.”
+PETE SUERKEN,
+PRESIDENT AND CEO OF WENDY’S QSCC
+With Palantr, Heineken is 
+transforming its supply chain 
+using AI agents to optmize 
+delivery and shipping.
+“In three months, 
+the team built 
+what took us three 
+years before.”
+LAURENS VAN DE ROTTE,
+COO AT HEINEKEN
+
+Structured Blocks:
+© 2025 Palantr Technologies Inc.
+
+Business Update
+Q1
+
+At AIPCon 6, our partners showed how they drive outcomes with Palantir AIP in real time.
+
+Palantr sofware has redeﬁned 
+Wendy’s supply chain agility while 
+ensuring product superiority.
+
+“We’ve now taken a 
+problem that would 
+go on for weeks and 
+days and ﬁxed it in 
+ﬁve minutes, making 
+our people incredibly 
+eﬃcient.”
+
+PETE SUERKEN,
+PRESIDENT AND CEO OF WENDY’S QSCC
+
+With Palantr, Heineken is 
+transforming its supply chain 
+using AI agents to optmize 
+delivery and shipping.
+
+“In three months, 
+the team built 
+what took us three 
+years before.”
+
+LAURENS VAN DE ROTTE,
+COO AT HEINEKEN
+
+--------------------------------------------------------------------------------
+
+=== PAGE 10 ===
+Raw Text:
+© 2025 Palantr Technologies Inc.
+Business Update
+Q1
+High-stakes problems. High-impact solutions.
+Across industries, more US companies are naming Palantr in their vision for what’s next.
+R1 RCM is partnering with Palantr 
+to launch an advanced AI lab 
+designed to transform healthcare 
+workﬂows and improve unit 
+economics by up to 50%.
+Cit’s latest earnings release 
+highlighted how a new partnership 
+with Palantr will improve client 
+experience and operatonal agility 
+in their Wealth division.
+AIG expects their adopton of an 
+AI-powered underwritng soluton 
+leveraging AIP to double its 5-year 
+revenue CAGR from 10% to 20%.
+SOURCE: AIG INVESTOR DAY (3/31/2025)
+SOURCE: CITIGROUP (4/15/2025)
+Watch the interview
+
+Structured Blocks:
+© 2025 Palantr Technologies Inc.
+
+Business Update
+Q1
+
+High-stakes problems. High-impact solutions.
+
+Across industries, more US companies are naming Palantr in their vision for what’s next.
+
+R1 RCM is partnering with Palantr 
+to launch an advanced AI lab 
+designed to transform healthcare 
+workﬂows and improve unit 
+economics by up to 50%.
+
+Cit’s latest earnings release 
+highlighted how a new partnership 
+with Palantr will improve client 
+experience and operatonal agility 
+in their Wealth division.
+
+AIG expects their adopton of an 
+AI-powered underwritng soluton 
+leveraging AIP to double its 5-year 
+revenue CAGR from 10% to 20%.
+
+SOURCE: AIG INVESTOR DAY (3/31/2025)
+SOURCE: CITIGROUP (4/15/2025)
+Watch the interview
+
+--------------------------------------------------------------------------------
+
+=== PAGE 11 ===
+Raw Text:
+© 2025 Palantr Technologies Inc.
+Business Update
+Q1
+Palantir and Archer 
+Aviation partner on
+AI development in 
+next-gen aviation.
+“We’ve been able to build an ontology 
+that takes the bill of materials of an 
+aircraf and lets us view it in a 
+hierarchical way that we really haven’t 
+been able to visualize before.”
+ADAM WORMOTH, SENIOR DIRECTOR OF PRODUCT, ARCHER AVIATION 
+IMAGE SOURCE: ARCHER AVIATION
+Read more
+
+Structured Blocks:
+© 2025 Palantr Technologies Inc.
+
+Business Update
+Q1
+
+Palantir and Archer 
+Aviation partner on
+AI development in 
+next-gen aviation.
+
+“We’ve been able to build an ontology 
+that takes the bill of materials of an 
+aircraf and lets us view it in a 
+hierarchical way that we really haven’t 
+been able to visualize before.”
+
+ADAM WORMOTH, SENIOR DIRECTOR OF PRODUCT, ARCHER AVIATION
+
+IMAGE SOURCE: ARCHER AVIATION
+
+Read more
+
+--------------------------------------------------------------------------------
+
+=== PAGE 12 ===
+Raw Text:
+© 2025 Palantr Technologies Inc.
+Business Update
+Q1
+Palantir named a
+winner in the following 
+categories ↘
+/01
+/02
+/03
+/04
+/05
+/06
+/07
+/08
+/09
+Al, Data Science, and ML
+Cloud BI
+Collectve Insights
+Data Engineering
+Self-Service BI
+Model Ops
+Analytcal Platforms
+Embedded Bl
+Supply Chain Planning
+and Analysis
+2024
+Winner
+2024 DRESNER ADVISORY SERVICES
+●○
+Tech Innovaton Award
+➀
+2024 DRESNER ADVISORY SERVICES
+○●
+App Innovaton Award
+➁
+
+Structured Blocks:
+© 2025 Palantr Technologies Inc.
+
+Business Update
+Q1
+
+Palantir named a
+winner in the following 
+categories ↘
+
+/01
+
+/02
+
+/03
+
+/04
+
+/05
+
+/06
+
+/07
+
+/08
+
+/09
+
+Al, Data Science, and ML
+Cloud BI
+Collectve Insights
+Data Engineering
+Self-Service BI
+Model Ops
+Analytcal Platforms
+Embedded Bl
+Supply Chain Planning
+and Analysis
+
+2024
+Winner
+
+2024 DRESNER ADVISORY SERVICES
+
+●○
+Tech Innovaton Award
+
+➀
+
+2024 DRESNER ADVISORY SERVICES
+
+○●
+App Innovaton Award
+
+➁
+
+--------------------------------------------------------------------------------
+
+=== PAGE 13 ===
+Raw Text:
+Financials
+Q1
+2025
+©2025 Palantr Technologies Inc.
+
+Structured Blocks:
+Financials
+
+Q1
+
+2025
+
+©2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 14 ===
+Raw Text:
+US commercial contnues to accelerate in Q1 2025 alongside AIP revoluton
+Financials
+Q1
+2x Y/Y
+US Commercial Deals Closed of $1M or Greater
+US Commercial Total Contract Value
+$810M
+US Commercial Total Contract Value
++183% Y/Y
++71% Y/Y
+US Commercial Revenue
++19% Q/Q
+US Commercial Revenue
++65% Y/Y
+US Commercial Customer Count
++13% Q/Q
+US Commercial Customer Count
++127% Y/Y
+US Commercial Remaining Deal Value
++30% Q/Q
+US Commercial Remaining Deal Value
+© 2025 Palantr Technologies Inc.
+We deﬁne a customer as an organizaton from which we have recognized revenue during the trailing twelve months period.
+
+Structured Blocks:
+US commercial contnues to accelerate in Q1 2025 alongside AIP revoluton
+
+Financials
+Q1
+
+2x Y/Y
+
+US Commercial Deals Closed of $1M or Greater
+
+US Commercial Total Contract Value
+
+$810M
+
+US Commercial Total Contract Value
++183% Y/Y
+
++71% Y/Y
+
+US Commercial Revenue
++19% Q/Q
+
+US Commercial Revenue
+
++65% Y/Y
+
+US Commercial Customer Count
++13% Q/Q
+
+US Commercial Customer Count
+
++127% Y/Y
+
+US Commercial Remaining Deal Value
++30% Q/Q
+
+US Commercial Remaining Deal Value
+
+© 2025 Palantr Technologies Inc.
+We deﬁne a customer as an organizaton from which we have recognized revenue during the trailing twelve months period.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 15 ===
+Raw Text:
+Our Q1 2025 GAAP earnings per 
+share was $0.08.
+Financials
+Q1
+$50.0M
+$100.0M
+$150.0M
+$200.0M
+$250.0M
+$—M
+Q1 2025
+GAAP Net Income
+Net income when excluding one-tme SAR-related expenses excludes the one-tme accelerated stock-based 
+compensaton expense, employer payroll taxes, and income tax eﬀects and adjustments related to our Market-Vestng 
+SARs. The term “Market-Vestng SARs” is as deﬁned in our Annual Report on Form 10-K ﬁled on February 18, 2025.
+© 2025 Palantr Technologies Inc.
+$105.5M
+$134.1M
+$79.0M
+$143.5M
+Net  income when
+excluding one-time
+SAR-related expenses
+$164.7M
+$214.0M
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+
+Structured Blocks:
+Our Q1 2025 GAAP earnings per 
+share was $0.08.
+
+Financials
+Q1
+
+$50.0M
+
+$100.0M
+
+$150.0M
+
+$200.0M
+
+$250.0M
+
+$—M
+
+Q1 2025
+
+GAAP Net Income
+
+Net income when excluding one-tme SAR-related expenses excludes the one-tme accelerated stock-based 
+compensaton expense, employer payroll taxes, and income tax eﬀects and adjustments related to our Market-Vestng 
+SARs. The term “Market-Vestng SARs” is as deﬁned in our Annual Report on Form 10-K ﬁled on February 18, 2025.
+© 2025 Palantr Technologies Inc.
+
+$105.5M
+
+$134.1M
+
+$79.0M
+
+$143.5M
+
+Net  income when
+excluding one-time
+SAR-related expenses
+
+$164.7M
+
+$214.0M
+
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+
+--------------------------------------------------------------------------------
+
+=== PAGE 16 ===
+Raw Text:
+Our Q1 2025 GAAP operatng 
+margin was 20%.
+Financials
+Q1
+$—M
+GAAP Operatng Income
+$50.0M
+$100.0M
+$150.0M
+$200.0M
+$250.0M
+Operatng income when excluding one-tme SAR-related expenses excludes the one-tme accelerated 
+stock-based compensaton expense and employer payroll taxes related to our Market-Vestng SARs.
+© 2025 Palantr Technologies Inc.
+$80.9M
+$105.3M
+$11.0M
+$113.1M
+$142.3M
+$176.0M
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+Operating income when
+excluding one-time
+SAR-related expenses
+Q1 2025
+
+Structured Blocks:
+Our Q1 2025 GAAP operatng 
+margin was 20%.
+
+Financials
+Q1
+
+$—M
+
+GAAP Operatng Income
+
+$50.0M
+
+$100.0M
+
+$150.0M
+
+$200.0M
+
+$250.0M
+
+Operatng income when excluding one-tme SAR-related expenses excludes the one-tme accelerated 
+stock-based compensaton expense and employer payroll taxes related to our Market-Vestng SARs.
+© 2025 Palantr Technologies Inc.
+
+$80.9M
+
+$105.3M
+
+$11.0M
+
+$113.1M
+
+$142.3M
+
+$176.0M
+
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+
+Operating income when
+excluding one-time
+SAR-related expenses
+
+Q1 2025
+
+--------------------------------------------------------------------------------
+
+=== PAGE 17 ===
+Raw Text:
+Financials
+Q1
+Rule of 40
+50%
+40%
+30%
+Q1 2025
+60%
+70%
+90%
+80%
+//
+© 2025 Palantr Technologies Inc.
+Q2 2023
+Q3 2023
+Q4 2023
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+38%
+46%
+54%
+57%
+64%
+68%
+81%
+83%
+
+Structured Blocks:
+Financials
+Q1
+
+Rule of 40
+
+50%
+
+40%
+
+30%
+
+Q1 2025
+
+60%
+
+70%
+
+90%
+
+80%
+
+//
+
+© 2025 Palantr Technologies Inc.
+
+Q2 2023
+Q3 2023
+Q4 2023
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+
+38%
+
+46%
+
+54%
+57%
+
+64%
+
+68%
+
+81%
+
+83%
+
+--------------------------------------------------------------------------------
+
+=== PAGE 18 ===
+Raw Text:
+Financials
+Q1
+Q1 2024
+Q1 2025
+US Revenue Growth
+$300M
+$200M
+$100M
+$628M
+$406M
++55%
+$400M
+$500M
+$700M
+$600M
+US revenue grew 55% Y/Y and 13% 
+Q/Q, driven by acceleraton in US 
+commercial and US government.
+© 2025 Palantr Technologies Inc.
+$—M
+
+Structured Blocks:
+Financials
+Q1
+
+Q1 2024
+Q1 2025
+
+US Revenue Growth
+
+$300M
+
+$200M
+
+$100M
+
+$628M
+
+$406M
+
++55%
+
+$400M
+
+$500M
+
+$700M
+
+$600M
+
+US revenue grew 55% Y/Y and 13% 
+Q/Q, driven by acceleraton in US 
+commercial and US government.
+
+© 2025 Palantr Technologies Inc.
+
+$—M
+
+--------------------------------------------------------------------------------
+
+=== PAGE 19 ===
+Raw Text:
+US Government Revenue Growth
+$373M
+$257M
++45%
+Q1 2024
+Q1 2025
+$125M
+$175M
+$200M
+$275M
+$250M
+$225M
+$150M
+$100M
+$75M
+US Commercial Revenue Growth
+Q1 2024
+Q1 2025
+$255M
+$150M
++71%
+Financials
+Q1
+//
+//
+© 2025 Palantr Technologies Inc.
+$300M
+$250M
+$450M
+$400M
+$350M
+$200M
+$150M
+$100M
+$50M
+
+Structured Blocks:
+US Government Revenue Growth
+
+$373M
+
+$257M
+
++45%
+
+Q1 2024
+Q1 2025
+
+$125M
+
+$175M
+
+$200M
+
+$275M
+
+$250M
+
+$225M
+
+$150M
+
+$100M
+
+$75M
+
+US Commercial Revenue Growth
+
+Q1 2024
+Q1 2025
+
+$255M
+
+$150M
+
++71%
+
+Financials
+Q1
+
+//
+//
+
+© 2025 Palantr Technologies Inc.
+
+$300M
+
+$250M
+
+$450M
+
+$400M
+
+$350M
+
+$200M
+
+$150M
+
+$100M
+
+$50M
+
+--------------------------------------------------------------------------------
+
+=== PAGE 20 ===
+Raw Text:
+Commercial Revenue Growth
+Q1 2024
+Q1 2025
+$397M
+$299M
++33%
+//
+Financials
+Q1
+$500M
+$450M
+$400M
+$350M
+$300M
+$250M
+Government Revenue Growth
+$487M
+$335M
++45%
+Q1 2024
+Q1 2025
+$300M
+$250M
+$350M
+$400M
+$200M
+//
+$200M
+© 2025 Palantr Technologies Inc.
+
+Structured Blocks:
+Commercial Revenue Growth
+
+Q1 2024
+Q1 2025
+
+$397M
+
+$299M
+
++33%
+
+//
+
+Financials
+Q1
+
+$500M
+
+$450M
+
+$400M
+
+$350M
+
+$300M
+
+$250M
+
+Government Revenue Growth
+
+$487M
+
+$335M
+
++45%
+
+Q1 2024
+Q1 2025
+
+$300M
+
+$250M
+
+$350M
+
+$400M
+
+$200M
+
+//
+
+$200M
+
+© 2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 21 ===
+Raw Text:
+Financials
+Q1
+Q1 2024
+Q1 2025
+Total Revenue Growth
+$600M
+$500M
+$884M
+$634M
++39%
+$800M
+$700M
+$900M
+Total revenue grew 39% Y/Y and 
+7% Q/Q, driven by the contnued 
+acceleraton of our US business.
+//
+© 2025 Palantr Technologies Inc.
+
+Structured Blocks:
+Financials
+Q1
+
+Q1 2024
+Q1 2025
+
+Total Revenue Growth
+
+$600M
+
+$500M
+
+$884M
+
+$634M
+
++39%
+
+$800M
+
+$700M
+
+$900M
+Total revenue grew 39% Y/Y and 
+7% Q/Q, driven by the contnued 
+acceleraton of our US business.
+
+//
+
+© 2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 22 ===
+Raw Text:
+Financials
+Q1
+Total revenue excluding 
+strategic commercial contracts 
+grew 44% Y/Y and 7% Q/Q.
+Q1 2024
+Q1 2025
+Total Revenue Growth excl. Strategic
+Commercial Contracts
+$600M
+$400M
+$879M
+$610M
++44%
+$800M
+$1000M
+//
+© 2025 Palantr Technologies Inc.
+
+Structured Blocks:
+Financials
+Q1
+
+Total revenue excluding 
+strategic commercial contracts 
+grew 44% Y/Y and 7% Q/Q.
+
+Q1 2024
+Q1 2025
+
+Total Revenue Growth excl. Strategic
+Commercial Contracts
+
+$600M
+
+$400M
+
+$879M
+
+$610M
+
++44%
+
+$800M
+
+$1000M
+
+//
+
+© 2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 23 ===
+Raw Text:
+We contnue to invest aggressively 
+in AIP and the US while driving 
+operatng leverage at scale.
+Q1 2025 adjusted operatng income was 
+$391M, representng a margin of 44%.
+ADJUSTED OPERATING MARGIN
+$300M
+$450M
+$400M
+$350M
+$250M
+$200M
+$100M
+$150M
+$50M
+Q1 2025
+$391M
+44%
+$—M
+Financials
+Q1
+© 2025 Palantr Technologies Inc.
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+$254M
+37%
+$276M
+$373M
+38%
+45%
+$226M
+36%
+
+Structured Blocks:
+We contnue to invest aggressively 
+in AIP and the US while driving 
+operatng leverage at scale.
+
+Q1 2025 adjusted operatng income was 
+$391M, representng a margin of 44%.
+
+ADJUSTED OPERATING MARGIN
+
+$300M
+
+$450M
+
+$400M
+
+$350M
+
+$250M
+
+$200M
+
+$100M
+
+$150M
+
+$50M
+
+Q1 2025
+
+$391M
+
+44%
+
+$—M
+
+Financials
+Q1
+
+© 2025 Palantr Technologies Inc.
+
+Q1 2024
+Q2 2024
+Q3 2024
+Q4 2024
+
+$254M
+
+37%
+
+$276M
+
+$373M
+
+38%
+
+45%
+
+$226M
+
+36%
+
+--------------------------------------------------------------------------------
+
+=== PAGE 24 ===
+Raw Text:
+Financials
+Q1
+US Commercial Customer Count
+150
+250
+300
+500
+450
+350
+400
+200
+100
+50
+432
+TTM ENDED
+MAR 31, 2025
+© 2025 Palantr Technologies Inc.
+TTM ENDED
+JUN 30, 2024
+TTM ENDED
+MAR 31, 2024
+262
+295
+321
+382
++13%
++9%
++19%
+TTM ENDED
+SEP 30, 2024
+TTM ENDED
+DEC 31, 2024
++65% Y/Y
++13%
+
+Structured Blocks:
+Financials
+Q1
+
+US Commercial Customer Count
+
+150
+
+250
+
+300
+
+500
+
+450
+
+350
+
+400
+
+200
+
+100
+
+50
+
+432
+
+TTM ENDED
+MAR 31, 2025
+
+© 2025 Palantr Technologies Inc.
+
+TTM ENDED
+JUN 30, 2024
+TTM ENDED
+MAR 31, 2024
+
+262
+
+295
+
+321
+
+382
+
++13%
+
++9%
+
++19%
+
+TTM ENDED
+SEP 30, 2024
+TTM ENDED
+DEC 31, 2024
+
++65% Y/Y
+
++13%
+
+--------------------------------------------------------------------------------
+
+=== PAGE 25 ===
+Raw Text:
+Financials
+Q1
+Customer Count
+769
+TTM ENDED
+MAR 31, 2025
+500
+300
+400
+600
+900
+800
+700
+200
+100
+Commercial Customer Count
+622
+700
+600
+500
+200
+300
+400
+100
+TTM ENDED
+MAR 31, 2025
+© 2025 Palantr Technologies Inc.
+593
+629
+711
+TTM ENDED
+JUN 30, 2024
+TTM ENDED
+SEP 30, 2024
+TTM ENDED
+DEC 31, 2024
+TTM ENDED
+MAR 31, 2024
++7%
++6%
++13%
+554
++8%
++39% Y/Y
+467
+498
+571
++9%
++7%
++15%
++9%
+427
++46% Y/Y
+TTM ENDED
+JUN 30, 2024
+TTM ENDED
+SEP 30, 2024
+TTM ENDED
+DEC 31, 2024
+TTM ENDED
+MAR 31, 2024
+
+Structured Blocks:
+Financials
+Q1
+
+Customer Count
+
+769
+
+TTM ENDED
+MAR 31, 2025
+
+500
+
+300
+
+400
+
+600
+
+900
+
+800
+
+700
+
+200
+
+100
+
+Commercial Customer Count
+
+622
+
+700
+
+600
+
+500
+
+200
+
+300
+
+400
+
+100
+
+TTM ENDED
+MAR 31, 2025
+
+© 2025 Palantr Technologies Inc.
+
+593
+
+629
+
+711
+
+TTM ENDED
+JUN 30, 2024
+TTM ENDED
+SEP 30, 2024
+TTM ENDED
+DEC 31, 2024
+TTM ENDED
+MAR 31, 2024
+
++7%
+
++6%
+
++13%
+554
+
++8%
+
++39% Y/Y
+
+467
+498
+
+571
+
++9%
+
++7%
+
++15%
+
++9%
+
+427
+
++46% Y/Y
+
+TTM ENDED
+JUN 30, 2024
+TTM ENDED
+SEP 30, 2024
+TTM ENDED
+DEC 31, 2024
+TTM ENDED
+MAR 31, 2024
+
+--------------------------------------------------------------------------------
+
+=== PAGE 26 ===
+Raw Text:
+During Q1 2025, we closed 
+of at least $1 million.
+139 deals 
+51
+of which were at least $5 million.
+31
+of which were at least $10 million.
+Financials
+Q1
+© 2025 Palantr Technologies Inc.
+
+Structured Blocks:
+During Q1 2025, we closed
+
+of at least $1 million.
+139 deals
+
+51
+of which were at least $5 million.
+31
+of which were at least $10 million.
+
+Financials
+Q1
+
+© 2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 27 ===
+Raw Text:
+We ended Q1 2025 with    
+in cash, cash equivalents, 
+and US Treasury securites 
+and no debt.
+$100M
+$200M
+$300M
+$400M
+Cash from Operatons and 
+Adjusted Free Cash Flow
+Financials
+Q1
+$5.4B
+CASH FROM OPERATIONS
+ADJUSTED FREE CASH FLOW
+$310M
+$130M
+35% MARGIN
+20% MARGIN
+23% MARGIN
+42% MARGIN
+$370M
+$149M
+Q1 2024
+Q1 2024
+Q1 2025
+Q1 2025
+$—M
+© 2025 Palantr Technologies Inc.
+
+Structured Blocks:
+We ended Q1 2025 with
+
+in cash, cash equivalents, 
+and US Treasury securites 
+and no debt.
+
+$100M
+
+$200M
+
+$300M
+
+$400M
+
+Cash from Operatons and 
+Adjusted Free Cash Flow
+
+Financials
+Q1
+
+$5.4B
+
+CASH FROM OPERATIONS
+ADJUSTED FREE CASH FLOW
+
+$310M
+
+$130M
+
+35% MARGIN
+
+20% MARGIN
+
+23% MARGIN
+
+42% MARGIN
+
+$370M
+
+$149M
+
+Q1 2024
+Q1 2024
+Q1 2025
+Q1 2025
+
+$—M
+
+© 2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 28 ===
+Raw Text:
+Q2 2025
+Adjusted income from operatons of between
+$401 million — $405 million.
+GAAP operatng income and net income in each 
+quarter of this year.
+Revenue of between
+$934 million — $938 million.
+For second quarter 2025, we expect: 
+For full year 2025, we expect: 
+FY 2025
+Adjusted income from operatons of between
+$1.711 billion — $1.723 billion.
+Adjusted free cash ﬂow of between
+$1.6 billion — $1.8 billion. 
+Revenue of between
+$3.890 billion — $3.902 billion.
+US commercial revenue in excess of
+$1.178 billion, representng a growth 
+rate of at least 68%.
+Financials
+Q1
+© 2025 Palantr Technologies Inc.
+
+Structured Blocks:
+Q2 2025
+
+Adjusted income from operatons of between
+$401 million — $405 million.
+
+GAAP operatng income and net income in each 
+quarter of this year.
+
+Revenue of between
+$934 million — $938 million.
+
+For second quarter 2025, we expect: 
+For full year 2025, we expect:
+
+FY 2025
+
+Adjusted income from operatons of between
+$1.711 billion — $1.723 billion.
+
+Adjusted free cash ﬂow of between
+$1.6 billion — $1.8 billion.
+
+Revenue of between
+$3.890 billion — $3.902 billion.
+
+US commercial revenue in excess of
+$1.178 billion, representng a growth 
+rate of at least 68%.
+
+Financials
+Q1
+
+© 2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 29 ===
+Raw Text:
+Appendix 
+Q1
+2025
+©2025 Palantr Technologies Inc.
+
+Structured Blocks:
+Appendix
+
+Q1
+
+2025
+
+©2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 30 ===
+Raw Text:
+Additional Metrics and Notes
+($ MILLIONS)
+($ BILLIONS)
+Long-Term RPO
+Total RPO
+Net dollar retention was 124% in Q1 2025.
+Billings
+Short-Term RPO
+$
+$
+$
+$
+Appendix
+Net dollar retenton is calculated as (a) revenue for the trailing twelve months as of each period atributable to the customers as counted for the prior trailing twelve months divided by (b) revenue for the prior trailing twelve months recognized from those same customers.
+Remaining performance obligatons (“RPO”) reﬂects the values of contracts that have been entered into with, or awarded by, our government and commercial customers and represents non-cancelable contracted revenue that has not yet been recognized, which includes deferred revenue and, in certain instances, 
+amounts that will be invoiced. We have elected the practcal expedient, as permited under Accountng Standards Codiﬁcaton 606—Revenue from Contracts with Customers, to not disclose remaining performance obligatons for contracts with original terms of twelve months or less.  
+Q1 2025
+1.00
+1.90
+905
+0.90
+© 2025 Palantr Technologies Inc.
+$
+$
+$
+$
+$
+$
+$
+$
+$
+$
+$
+$
+$
+$
+$
+$
+Q2 2024
+0.68
+       1.37
+718
+0.69
+Q3 2024
+0.84
+       1.57
+823
+0.73
+Q4 2024
+0.90
+1.73
+779
+0.83
+Q1 2024
+0.61
+         1.30
+625
+0.69
+
+Structured Blocks:
+Additional Metrics and Notes
+
+($ MILLIONS)
+
+($ BILLIONS)
+
+Long-Term RPO
+
+Total RPO
+
+Net dollar retention was 124% in Q1 2025.
+
+Billings
+
+Short-Term RPO
+
+$
+
+$
+
+$
+
+$
+
+Appendix
+
+Net dollar retenton is calculated as (a) revenue for the trailing twelve months as of each period atributable to the customers as counted for the prior trailing twelve months divided by (b) revenue for the prior trailing twelve months recognized from those same customers.
+Remaining performance obligatons (“RPO”) reﬂects the values of contracts that have been entered into with, or awarded by, our government and commercial customers and represents non-cancelable contracted revenue that has not yet been recognized, which includes deferred revenue and, in certain instances, 
+amounts that will be invoiced. We have elected the practcal expedient, as permited under Accountng Standards Codiﬁcaton 606—Revenue from Contracts with Customers, to not disclose remaining performance obligatons for contracts with original terms of twelve months or less.
+
+Q1 2025
+
+1.00
+
+1.90
+
+905
+
+0.90
+
+© 2025 Palantr Technologies Inc.
+
+$
+
+$
+
+$
+
+$
+
+$
+
+$
+
+$
+
+$
+
+$
+
+$
+
+$
+
+$
+
+$
+
+$
+
+$
+
+$
+
+Q2 2024
+
+0.68
+
+1.37
+
+718
+
+0.69
+
+Q3 2024
+
+0.84
+
+1.57
+
+823
+
+0.73
+
+Q4 2024
+
+0.90
+
+1.73
+
+779
+
+0.83
+
+Q1 2024
+
+0.61
+
+1.30
+
+625
+
+0.69
+
+--------------------------------------------------------------------------------
+
+=== PAGE 31 ===
+Raw Text:
+© 2025 Palantr Technologies Inc.
+Revenue Excluding Strategic Commercial Contracts
+($ THOUSANDS)
+Revenue 
+Revenue Excluding Strategic Commercial Contracts
+Q4 2024
+$
+827,519
+9,584
+$
+817,935
+Q1 2025
+$
+883,855
+5,147
+$
+878,708
+Q1 2024
+$
+634,338
+23,898
+$
+610,440
+Revenue from Strategic Commercial Contracts
+Less:
+Appendix
+© 2025 Palantr Technologies Inc.
+
+Structured Blocks:
+© 2025 Palantr Technologies Inc.
+
+Revenue Excluding Strategic Commercial Contracts
+
+($ THOUSANDS)
+
+Revenue
+
+Revenue Excluding Strategic Commercial Contracts
+
+Q4 2024
+
+$
+827,519
+
+9,584
+
+$
+817,935
+
+Q1 2025
+
+$
+883,855
+
+5,147
+
+$
+878,708
+
+Q1 2024
+
+$
+634,338
+
+23,898
+
+$
+610,440
+
+Revenue from Strategic Commercial Contracts
+
+Less:
+
+Appendix
+
+© 2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 32 ===
+Raw Text:
+Reconciliation of Rule of 40
+Year-Over-Year Revenue Growth
+Adjusted Operating Margin
+Rule of 40
+Q1 2024
+21%
+36%
+57%
+Q2 2024
+27%
+37%
+64%
+Q3 2024
+30%
+38%
+68%
+Q4 2024
+36%
+45%
+81%
+Q1 2025
+39%
+44%
+83%
+Q4 2023
+20%
+34%
+54%
+Q3 2023
+17%
+29%
+46%
+Q2 2023
+13%
+25%
+38%
+Appendix
+© 2025 Palantr Technologies Inc.
+
+Structured Blocks:
+Reconciliation of Rule of 40
+
+Year-Over-Year Revenue Growth
+
+Adjusted Operating Margin
+
+Rule of 40
+
+Q1 2024
+
+21%
+
+36%
+
+57%
+
+Q2 2024
+
+27%
+
+37%
+
+64%
+
+Q3 2024
+
+30%
+
+38%
+
+68%
+
+Q4 2024
+
+36%
+
+45%
+
+81%
+
+Q1 2025
+
+39%
+
+44%
+
+83%
+
+Q4 2023
+
+20%
+
+34%
+
+54%
+
+Q3 2023
+
+17%
+
+29%
+
+46%
+
+Q2 2023
+
+13%
+
+25%
+
+38%
+
+Appendix
+
+© 2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 33 ===
+Raw Text:
+Reconciliation of Cash Flow from Operating Activities to Adjusted Free Cash Flow and Adjusted Free Cash Flow Margin
+Adjusted free cash flow margin is calculated as adjusted free cash flow divided by revenue
+Cash Flow from Operating Activities
+Cash Paid for Employer Payroll Taxes Related to Stock-Based Compensation
+Add:
+Adjusted Free Cash Flow
+Adjusted Free Cash Flow Margin
+Cash Used to Purchase Property and Equipment
+Less:
+($ THOUSANDS)
+Appendix
+$
+129,579
+21,719
+(2,664)
+23%
+$
+148,634
+Q1 2024
+$
+310,263
+66,298
+(6,184)
+42%
+$
+370,377
+Q1 2025
+© 2025 Palantr Technologies Inc.
+
+Structured Blocks:
+Reconciliation of Cash Flow from Operating Activities to Adjusted Free Cash Flow and Adjusted Free Cash Flow Margin
+
+Adjusted free cash flow margin is calculated as adjusted free cash flow divided by revenue
+
+Cash Flow from Operating Activities
+
+Cash Paid for Employer Payroll Taxes Related to Stock-Based Compensation
+
+Add:
+
+Adjusted Free Cash Flow
+
+Adjusted Free Cash Flow Margin
+
+Cash Used to Purchase Property and Equipment
+
+Less:
+
+($ THOUSANDS)
+
+Appendix
+
+$
+129,579
+
+21,719
+
+(2,664)
+
+23%
+
+$
+148,634
+
+Q1 2024
+
+$
+310,263
+
+66,298
+
+(6,184)
+
+42%
+
+$
+370,377
+
+Q1 2025
+
+© 2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 34 ===
+Raw Text:
+Reconciliation of Gross Profit to Adjusted Gross Profit & Adjusted Gross Margin
+Excluding Stock-Based Compensation
+Adjusted gross margin is calculated as adjusted gross profit divided by revenue
+Gross Profit
+Stock-Based Compensation
+Add:
+Adjusted Gross Profit
+Adjusted Gross Margin
+Q1 2025
+$
+710,885
+15,016
+82%
+$
+725,901
+($ THOUSANDS)
+Appendix
+© 2025 Palantr Technologies Inc.
+
+Structured Blocks:
+Reconciliation of Gross Profit to Adjusted Gross Profit & Adjusted Gross Margin
+
+Excluding Stock-Based Compensation
+
+Adjusted gross margin is calculated as adjusted gross profit divided by revenue
+
+Gross Profit
+
+Stock-Based Compensation
+
+Add:
+
+Adjusted Gross Profit
+
+Adjusted Gross Margin
+
+Q1 2025
+
+$
+710,885
+
+15,016
+
+82%
+
+$
+725,901
+
+($ THOUSANDS)
+
+Appendix
+
+© 2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 35 ===
+Raw Text:
+Reconciliation of Income from Operations to Adjusted Operating Income and Adjusted Operating Margin
+Excluding Stock-Based Compensation and Related Employer Payroll Taxes
+($ THOUSANDS)
+Income  From Operations
+Stock-Based Compensation 
+Add:
+Adjusted Operating Income
+Adjusted Operating Margin
+Employer Payroll Taxes Related to Stock-Based Compensation 
+Appendix
+Q1 2025
+$
+176,048
+155,339
+44%
+$
+390,710
+59,323
+© 2025 Palantr Technologies Inc.
+Q2 2024
+$
+105,339
+141,764
+37%
+$
+253,567
+6,464
+Q3 2024
+$
+113,140
+142,425
+38%
+$
+275,515
+19,950
+Q4 2024
+$
+11,043
+281,798
+45%
+$
+372,522
+79,681
+Q1 2024
+$
+80,881
+125,651
+36%
+$
+226,458
+19,926
+
+Structured Blocks:
+Reconciliation of Income from Operations to Adjusted Operating Income and Adjusted Operating Margin
+
+Excluding Stock-Based Compensation and Related Employer Payroll Taxes
+
+($ THOUSANDS)
+
+Income  From Operations
+
+Stock-Based Compensation
+
+Add:
+
+Adjusted Operating Income
+
+Adjusted Operating Margin
+
+Employer Payroll Taxes Related to Stock-Based Compensation
+
+Appendix
+
+Q1 2025
+
+$
+176,048
+
+155,339
+
+44%
+
+$
+390,710
+
+59,323
+
+© 2025 Palantr Technologies Inc.
+
+Q2 2024
+
+$
+105,339
+
+141,764
+
+37%
+
+$
+253,567
+
+6,464
+
+Q3 2024
+
+$
+113,140
+
+142,425
+
+38%
+
+$
+275,515
+
+19,950
+
+Q4 2024
+
+$
+11,043
+
+281,798
+
+45%
+
+$
+372,522
+
+79,681
+
+Q1 2024
+
+$
+80,881
+
+125,651
+
+36%
+
+$
+226,458
+
+19,926
+
+--------------------------------------------------------------------------------
+
+=== PAGE 36 ===
+Raw Text:
+Appendix
+Reconciliation of Income from Operations to Operating Income When Excluding One-Time SAR-Related Expenses
+($ THOUSANDS)
+Income  From Operations
+Accelerated Stock-Based Compensation Expense Related to Market-Vesting SARs
+Add:
+Operating Income When Excluding One-Time SAR-Related Expenses
+Employer Payroll Taxes Related to Market-Vesting SARs
+Q4 2024
+$
+11,043
+115,776
+$
+142,347
+15,528
+© 2025 Palantr Technologies Inc.
+
+Structured Blocks:
+Appendix
+
+Reconciliation of Income from Operations to Operating Income When Excluding One-Time SAR-Related Expenses
+
+($ THOUSANDS)
+
+Income  From Operations
+
+Accelerated Stock-Based Compensation Expense Related to Market-Vesting SARs
+
+Add:
+
+Operating Income When Excluding One-Time SAR-Related Expenses
+
+Employer Payroll Taxes Related to Market-Vesting SARs
+
+Q4 2024
+
+$
+11,043
+
+115,776
+
+$
+142,347
+
+15,528
+
+© 2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 37 ===
+Raw Text:
+Appendix
+Reconciliation of GAAP Net Income to Net Income When Excluding One-Time SAR-Related Expenses
+(AMOUNTS IN THOUSANDS)
+Net Income Attributable to Common Stockholders
+Accelerated Stock-Based Compensation Expense Related to Market-Vesting SARs
+Net Income When Excluding One-Time SAR-Related Expenses
+Employer Payroll Taxes Related to Market-Vesting SARs  
+Income Tax Effects and Adjustments Related to Market-Vesting SARs [1]
+Q4 2024
+$
+79,009
+115,776
+$
+164,714
+15,528
+(45,599)
+Add / (Less):
+[1] 
+Income tax eﬀect is based on an estmated long-term annual eﬀectve tax rate of 23.0% for the period ended 2024. The Company’s estmated long-term annual eﬀectve tax rate excludes certain noncash items, such   
+                 as stock-based compensaton, and is used in order to provide consistency across periods by eliminatng the eﬀects of certain items, such as changes in the tax valuaton allowance.
+© 2025 Palantr Technologies Inc.
+
+Structured Blocks:
+Appendix
+
+Reconciliation of GAAP Net Income to Net Income When Excluding One-Time SAR-Related Expenses
+
+(AMOUNTS IN THOUSANDS)
+
+Net Income Attributable to Common Stockholders
+
+Accelerated Stock-Based Compensation Expense Related to Market-Vesting SARs
+
+Net Income When Excluding One-Time SAR-Related Expenses
+
+Employer Payroll Taxes Related to Market-Vesting SARs
+
+Income Tax Effects and Adjustments Related to Market-Vesting SARs [1]
+
+Q4 2024
+
+$
+79,009
+
+115,776
+
+$
+164,714
+
+15,528
+
+(45,599)
+
+Add / (Less):
+
+[1] 
+Income tax eﬀect is based on an estmated long-term annual eﬀectve tax rate of 23.0% for the period ended 2024. The Company’s estmated long-term annual eﬀectve tax rate excludes certain noncash items, such   
+                 as stock-based compensaton, and is used in order to provide consistency across periods by eliminatng the eﬀects of certain items, such as changes in the tax valuaton allowance.
+© 2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 38 ===
+Raw Text:
+Reconciliation of GAAP Earnings Per Share, Diluted to Adjusted Earnings Per Share, Diluted
+(AMOUNTS IN THOUSANDS, EXCEPT PER SHARE AMOUNTS)
+Net Income  Attributable to Common Stockholders
+Stock-Based Compensation
+Add / (Less):
+Employer Payroll Taxes Related to Stock-Based Compensation
+Income Tax Effects and Adjustments [1]
+Adjusted Net Income Attributable to Common Stockholders, Diluted
+Weighted-Average Shares Used in Computing Adjusted Earnings Per Share, Diluted
+Adjusted Earnings Per Share, Diluted
+Q1 2024
+$
+105,530
+125,651
+19,926
+(54,170)
+$
+196,937
+2,400,107
+$
+0.08
+Q1 2025
+$
+214,031
+155,339
+59,323
+(94,288)
+$
+334,405
+2,552,818
+$
+0.13
+Appendix
+[1] 
+Income tax eﬀect is based on an estmated long-term annual eﬀectve tax rate of 23.0% for each of the periods presented. The Company’s estmated long-term annual eﬀectve tax rate excludes certain
+ 
+noncash items, such as stock-based compensaton, and is used in order to provide consistency across periods by eliminatng the eﬀects of certain items, such as changes in the tax valuaton allowance.
+© 2025 Palantr Technologies Inc.
+
+Structured Blocks:
+Reconciliation of GAAP Earnings Per Share, Diluted to Adjusted Earnings Per Share, Diluted
+
+(AMOUNTS IN THOUSANDS, EXCEPT PER SHARE AMOUNTS)
+
+Net Income  Attributable to Common Stockholders
+
+Stock-Based Compensation
+
+Add / (Less):
+
+Employer Payroll Taxes Related to Stock-Based Compensation
+
+Income Tax Effects and Adjustments [1]
+
+Adjusted Net Income Attributable to Common Stockholders, Diluted
+
+Weighted-Average Shares Used in Computing Adjusted Earnings Per Share, Diluted
+
+Adjusted Earnings Per Share, Diluted
+
+Q1 2024
+
+$
+105,530
+
+125,651
+
+19,926
+
+(54,170)
+
+$
+196,937
+
+2,400,107
+
+$
+0.08
+
+Q1 2025
+
+$
+214,031
+
+155,339
+
+59,323
+
+(94,288)
+
+$
+334,405
+
+2,552,818
+
+$
+0.13
+
+Appendix
+
+[1] 
+Income tax eﬀect is based on an estmated long-term annual eﬀectve tax rate of 23.0% for each of the periods presented. The Company’s estmated long-term annual eﬀectve tax rate excludes certain
+ 
+noncash items, such as stock-based compensaton, and is used in order to provide consistency across periods by eliminatng the eﬀects of certain items, such as changes in the tax valuaton allowance.
+© 2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
+=== PAGE 39 ===
+Raw Text:
+Reconciliation of Revenue to Billings
+($ THOUSANDS)
+Revenue
+Change in Contract Liabilities
+Billings
+Appendix
+Q1 2025
+$
+883,855
+21,044
+$
+904,899
+© 2025 Palantr Technologies Inc.
+Q1 2024
+$
+634,338
+(9,051)
+$
+625,287
+Q2 2024
+$
+678,134
+39,934
+$
+718,068
+Q4 2024
+$
+827,519
+(48,636)
+$
+778,883
+Q3 2024
+$
+725,516
+97,924
+$
+823,440
+
+Structured Blocks:
+Reconciliation of Revenue to Billings
+
+($ THOUSANDS)
+
+Revenue
+
+Change in Contract Liabilities
+
+Billings
+
+Appendix
+
+Q1 2025
+
+$
+883,855
+
+21,044
+
+$
+904,899
+
+© 2025 Palantr Technologies Inc.
+
+Q1 2024
+
+$
+634,338
+
+(9,051)
+
+$
+625,287
+
+Q2 2024
+
+$
+678,134
+
+39,934
+
+$
+718,068
+
+Q4 2024
+
+$
+827,519
+
+(48,636)
+
+$
+778,883
+
+Q3 2024
+
+$
+725,516
+
+97,924
+
+$
+823,440
+
+--------------------------------------------------------------------------------
+
+=== PAGE 40 ===
+Raw Text:
+Reconciliation of Cost of Revenue and Total Operating Expenses to Adjusted Expenses
+($ THOUSANDS)
+Total Expenses
+Adjusted Expenses
+Q1 2024
+$
+553,457
+125,651
+$
+407,880
+19,926
+Q4 2024
+$
+816,476
+281,798
+$
+454,997
+79,681
+Q1 2025
+$
+707,807
+155,339
+$
+493,145
+59,323
+Stock-Based Compensation
+Less:
+Employer Payroll Taxes Related to Stock-Based Compensation
+Appendix
+© 2025 Palantr Technologies Inc.
+
+Structured Blocks:
+Reconciliation of Cost of Revenue and Total Operating Expenses to Adjusted Expenses
+
+($ THOUSANDS)
+
+Total Expenses
+
+Adjusted Expenses
+
+Q1 2024
+
+$
+553,457
+
+125,651
+
+$
+407,880
+
+19,926
+
+Q4 2024
+
+$
+816,476
+
+281,798
+
+$
+454,997
+
+79,681
+
+Q1 2025
+
+$
+707,807
+
+155,339
+
+$
+493,145
+
+59,323
+
+Stock-Based Compensation
+
+Less:
+
+Employer Payroll Taxes Related to Stock-Based Compensation
+
+Appendix
+
+© 2025 Palantr Technologies Inc.
+
+--------------------------------------------------------------------------------
+
