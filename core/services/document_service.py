@@ -3293,3 +3293,44 @@ class DocumentService:
             auth=auth,
             system_filters=system_filters,
         )
+
+    async def search_documents_by_name(
+        self,
+        query: str,
+        auth: AuthContext,
+        limit: int = 10,
+        filters: Optional[Dict[str, Any]] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        end_user_id: Optional[str] = None,
+    ) -> List[Document]:
+        """Search documents by filename using full-text search.
+
+        Args:
+            query: Search query for document names/filenames
+            auth: Authentication context
+            limit: Maximum number of documents to return (1-100)
+            filters: Optional metadata filters
+            folder_name: Optional folder to scope search
+            end_user_id: Optional end-user ID to scope search
+
+        Returns:
+            List of documents matching the search query, ordered by relevance
+        """
+        # Build system filters
+        system_filters = {}
+        if folder_name:
+            system_filters["folder_name"] = folder_name
+        if end_user_id:
+            system_filters["end_user_id"] = end_user_id
+
+        # Clamp limit to reasonable range
+        limit = max(1, min(100, limit))
+
+        # Delegate to database layer
+        return await self.db.search_documents_by_name(
+            query=query,
+            auth=auth,
+            limit=limit,
+            filters=filters,
+            system_filters=system_filters,
+        )

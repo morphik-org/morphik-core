@@ -3,7 +3,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Column, DateTime, Index, String, and_, func, or_, select, text
+from sqlalchemy import Column, DateTime, Index, String, and_, desc, func, or_, select, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -2752,3 +2752,101 @@ class PostgresDatabase(BaseDatabase):
         except Exception as exc:
             logger.error("Error deleting workflow run: %s", exc)
             return False
+
+    async def search_documents_by_name(
+        self,
+        query: str,
+        auth: AuthContext,
+        limit: int = 10,
+        filters: Optional[Dict[str, Any]] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
+    ) -> List[Document]:
+        """Search documents by filename using PostgreSQL full-text search."""
+        try:
+            async with self.async_session() as session:
+                # Build base query using existing patterns
+                access_filter = self._build_access_filter_optimized(auth)
+                metadata_filter = self._build_metadata_filter(filters)
+                system_metadata_filter = self._build_system_metadata_filter_optimized(system_filters)
+                filter_params = self._build_filter_params(auth, system_filters)
+
+                # Build WHERE clauses
+                where_clauses = [f"({access_filter})"]
+
+                if metadata_filter:
+                    where_clauses.append(f"({metadata_filter})")
+
+                if system_metadata_filter:
+                    where_clauses.append(f"({system_metadata_filter})")
+
+                # Add search condition - try multiple approaches based on the article
+                clean_query = query.strip()
+                if clean_query:
+                    filter_params["search_query"] = clean_query
+                    filter_params["ilike_query"] = f"%{clean_query}%"
+
+                    # Try multiple search strategies for better results with individual tracking
+                    search_conditions = [
+                        # Simple ILIKE for exact substring matches
+                        "filename ILIKE :ilike_query",
+                        # FTS with filename normalization - replace separators with spaces and remove extensions
+                        """to_tsvector('english',
+                            regexp_replace(
+                                regexp_replace(COALESCE(filename, ''), '\\.[^.]*$', '', 'g'),
+                                '[_-]+', ' ', 'g'
+                            )
+                        ) @@ plainto_tsquery('english', :search_query)""",
+                        # FTS simple with same normalization
+                        """to_tsvector('simple',
+                            regexp_replace(
+                                regexp_replace(COALESCE(filename, ''), '\\.[^.]*$', '', 'g'),
+                                '[_-]+', ' ', 'g'
+                            )
+                        ) @@ plainto_tsquery('simple', :search_query)""",
+                    ]
+
+                    # Combine with OR - if any method matches, include the result
+                    where_clauses.append(f"({' OR '.join(search_conditions)})")
+
+                final_where_clause = " AND ".join(where_clauses)
+
+                # Build the query properly using SQLAlchemy ORM
+                base_query = select(DocumentModel).where(text(final_where_clause))
+
+                # Add ordering based on whether we have a search query
+                if clean_query:
+                    # Order by FTS rank score with filename normalization
+                    rank_expr = text(
+                        """ts_rank(
+                        to_tsvector('english',
+                            regexp_replace(
+                                regexp_replace(COALESCE(filename, ''), '\\.[^.]*$', '', 'g'),
+                                '[_-]+', ' ', 'g'
+                            )
+                        ),
+                        plainto_tsquery('english', :search_query)
+                    )"""
+                    )
+                    query = base_query.order_by(
+                        desc(rank_expr), text("(system_metadata->>'updated_at')::timestamp DESC NULLS LAST")
+                    )
+                else:
+                    # No search query - order by recency only
+                    query = base_query.order_by(text("(system_metadata->>'updated_at')::timestamp DESC NULLS LAST"))
+
+                # Apply limit and bind parameters
+                query = query.limit(limit)
+
+                # Execute with parameter binding
+                result = await session.execute(query, filter_params)
+                doc_models = result.scalars().all()
+
+                # Convert to Document objects using existing method
+                documents = [Document(**self._document_model_to_dict(doc)) for doc in doc_models]
+
+                logger.debug(f"Document name search for '{clean_query}' returned {len(documents)} results")
+                return documents
+
+        except Exception as e:
+            logger.error(f"Error searching documents by name: {str(e)}")
+            return []

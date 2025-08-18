@@ -14,6 +14,19 @@ class ListDocumentsRequest(BaseModel):
     limit: int = Field(default=10000, gt=0)
 
 
+class SearchDocumentsRequest(BaseModel):
+    """Request model for searching documents by name"""
+
+    query: str = Field(..., min_length=1, description="Search query for document names/filenames")
+    limit: int = Field(default=10, ge=1, le=100, description="Number of documents to return")
+    filters: Optional[Dict[str, Any]] = Field(None, description="Optional metadata filters for documents")
+    folder_name: Optional[Union[str, List[str]]] = Field(
+        None,
+        description="Optional folder scope for the search. Accepts a single folder name or a list of folder names.",
+    )
+    end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the search")
+
+
 class RetrieveRequest(BaseModel):
     """Base retrieve request model"""
 
