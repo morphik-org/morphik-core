@@ -407,7 +407,7 @@ class ColPaliKevinEvaluator(BaseRAGEvaluator):
 
             reranked_pages = self._rerank_pages(client, question, retrieved_pages)
             
-            context = self._build_multivector_context(reranked_pages)
+            context = self._build_multivector_context(reranked_pages) # If performance is bad: add [:7] back
             
             if DEBUG_MODE:
                 debug_context_file = self.debug_dir / f"context_debug_{hash(question) % 10000}.txt"
@@ -595,9 +595,8 @@ Final Answer:'''
 def main():
     """Main entry point for Kevin's ColPali multi-vector evaluation."""
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    parser = ColPaliKevinEvaluator.create_cli_parser("kevin_colpali")
+    parser = ColPaliKevinEvaluator.create_cli_parser("kevin")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode.")
-    parser.add_argument("--test-question", type=str, help="Test a single question for debugging.")
     args = parser.parse_args()
 
     global DEBUG_MODE
@@ -614,7 +613,7 @@ def main():
         print("✓ Using CPU")
 
     evaluator = ColPaliKevinEvaluator(
-        system_name="kevin_colpali",
+        system_name="kevin",
         docs_dir=args.docs_dir,
         questions_file=args.questions,
         output_file=args.output,
