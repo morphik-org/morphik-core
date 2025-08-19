@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Kevin's ColPali-Enhanced Evaluator (v3 - Prompt & Model Tuning)
-
-Refactored for improved performance, readability, and accuracy by leveraging
-in-database vector search, a more powerful model, and refined prompting.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -18,8 +12,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import cv2  # opencv-python - already in your dependencies
-import fitz  # PyMuPDF - already in your dependencies
+import fitz 
 import numpy as np
 import psycopg2
 import torch
@@ -44,14 +37,14 @@ sys.path.pop(0)
 
 # Load environment variables
 load_dotenv('../../.env.example', override=True)
-os.environ['TRANSFORMERS_VERBOSITY'] = 'error'  # Only show errors, not warnings
+os.environ['TRANSFORMERS_VERBOSITY'] = 'error'
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 def completion(**kwargs):
     """Wrapper for OpenAI completion API with proper parameter names"""
     kwargs.pop('api_key', None)
-    # Fix for older OpenAI API versions if needed, though modern SDK uses max_tokens
+    
     if 'max_tokens' in kwargs:
         kwargs['max_completion_tokens'] = kwargs.pop('max_tokens')
     return client.chat.completions.create(**kwargs)
@@ -68,12 +61,11 @@ class ColPaliDocumentPage:
         self.page_number = page_number
         self.image_path = image_path
         self.content = content
-        self.page_id = page_id  # Database ID
-        self.embeddings = embeddings # Optional: for context building
+        self.page_id = page_id
+        self.embeddings = embeddings
         self.chunk_number = f"{document_id}_page_{page_number}"
 
-class ColPaliKevinEvaluator(BaseRAGEvaluator):
-    """Kevin's improved RAG evaluator enhanced with ColPali for visual document understanding."""
+class KevinEvaluator(BaseRAGEvaluator):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -101,35 +93,17 @@ class ColPaliKevinEvaluator(BaseRAGEvaluator):
         self.embedding_cache_dir.mkdir(exist_ok=True)
         self.debug_dir = Path("./debug_output")
         self.debug_dir.mkdir(exist_ok=True)
-
-    def _pre_flight_checks(self):
-        """Run pre-flight checks to catch errors early."""
-        print("Running pre-flight checks...")
-        if not os.getenv("POSTGRES_URI"):
-            raise ValueError("POSTGRES_URI environment variable not set.")
-        print("✓ POSTGRES_URI is set.")
-        
-        try:
-            from psycopg2 import extras
-            print("✓ psycopg2.extras is available.")
-        except ImportError:
-            raise ImportError("psycopg2.extras could not be imported. Please check your installation.")
-        
-        print("✓ Pre-flight checks passed.")
         
     def setup_client(self, **kwargs) -> dict:
-        """Initialize the ColPali-enhanced RAG system client with memory optimizations."""
-        self._pre_flight_checks()
+        """Initialize the RAG system client with memory optimizations."""
         print("Setting up ColPali multi-vector client...")
         
         postgres_uri = os.getenv("POSTGRES_URI")
         if not postgres_uri:
             raise ValueError("POSTGRES_URI environment variable not set.")
         
-        clean_uri = postgres_uri.replace("postgresql+asyncpg://", "postgresql://")
-        
         try:
-            conn = psycopg2.connect(clean_uri)
+            conn = psycopg2.connect(postgres_uri)
             register_vector(conn)
             print("✓ Connected to PostgreSQL successfully")
             
@@ -151,7 +125,6 @@ class ColPaliKevinEvaluator(BaseRAGEvaluator):
             self.processor = ColPaliProcessor.from_pretrained(model_name)
             print("    ✓ Processor loaded")
             
-            # Simplified model loading
             self.model = ColPali.from_pretrained(
                 model_name,
                 torch_dtype=self.model_dtype,
@@ -407,7 +380,9 @@ class ColPaliKevinEvaluator(BaseRAGEvaluator):
 
             reranked_pages = self._rerank_pages(client, question, retrieved_pages)
             
-            context = self._build_multivector_context(reranked_pages) # If performance is bad: add [:7] back
+            # Fine-tuning: previously I limited this to only the top 7 reranked pages, but realized giving it all 20 pages
+            # Led to better performance.
+            context = self._build_multivector_context(reranked_pages)
             
             if DEBUG_MODE:
                 debug_context_file = self.debug_dir / f"context_debug_{hash(question) % 10000}.txt"
@@ -452,7 +427,7 @@ class ColPaliKevinEvaluator(BaseRAGEvaluator):
                 """, (token_embed, token_embed))
                 
                 for page_id, similarity in cur.fetchall():
-                    # ColBERT-style MaxSim: store the max similarity for this query token
+                    # Store the max similarity for this query token
                     page_scores[page_id]['max_sims'][i] = max(page_scores[page_id]['max_sims'][i], similarity)
 
         if not page_scores:
@@ -508,10 +483,9 @@ class ColPaliKevinEvaluator(BaseRAGEvaluator):
 
 CRITICAL INSTRUCTIONS:
 1. Answer ONLY based on the provided context.
-2. Be direct and concise. Provide the final answer immediately, without any preamble or explanation of your plan.
-3. If the answer requires calculation, provide the final numerical answer first, then briefly show the calculation used to arrive at it.
-4. Cite page numbers, like `(Page X)`, for every piece of data you use.
-5. If the context does not contain the information to answer the question, state only: "The provided context does not contain enough information to answer the question."
+2. If the answer requires calculation, provide the final numerical answer first, then briefly show the calculation used to arrive at it. Be precise with numbers and calculations
+3. Cite page numbers, like `(Page X)`, for every piece of data you use.
+4. If the context does not contain the information to answer the question, state only: "The provided context does not contain enough information to answer the question."
 
 Context from Document Pages:
 {context}
@@ -560,42 +534,9 @@ Final Answer:'''
             contexts.append("\n".join(context_parts))
         return "\n\n".join(contexts)
 
-    def test_single_question(self, question: str):
-        """Test pipeline with a single question for debugging."""
-        global DEBUG_MODE
-        original_debug = DEBUG_MODE
-        DEBUG_MODE = True
-        
-        try:
-            print(f"\n🔍 TESTING SINGLE QUESTION: {question}")
-            print("=" * 80)
-            
-            client = self.setup_client()
-            
-            with client["db_conn"].cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM document_pages")
-                if cur.fetchone()[0] == 0:
-                    print(f"\n📥 No documents found, ingesting from {self.docs_dir}")
-                    self.ingest(client, self.docs_dir)
-            
-            answer = self.query(client, question)
-            
-            print(f"\n📄 FINAL ANSWER:\n{answer}")
-            print("=" * 80)
-            
-        except Exception as e:
-            print(f"\n❌ Test failed: {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            DEBUG_MODE = original_debug
-            if 'client' in locals() and client["db_conn"]:
-                client["db_conn"].close()
-
 def main():
-    """Main entry point for Kevin's ColPali multi-vector evaluation."""
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    parser = ColPaliKevinEvaluator.create_cli_parser("kevin")
+    parser = KevinEvaluator.create_cli_parser("kevin")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode.")
     args = parser.parse_args()
 
@@ -612,16 +553,12 @@ def main():
     else:
         print("✓ Using CPU")
 
-    evaluator = ColPaliKevinEvaluator(
+    evaluator = KevinEvaluator(
         system_name="kevin",
         docs_dir=args.docs_dir,
         questions_file=args.questions,
         output_file=args.output,
     )
-    
-    if args.test_question:
-        evaluator.test_single_question(args.test_question)
-        return 0
     
     try:
         output_file = evaluator.run_evaluation(skip_ingestion=args.skip_ingestion)
