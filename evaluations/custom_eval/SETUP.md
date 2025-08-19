@@ -42,33 +42,16 @@ The project uses `uv` for package management. From the project root, create a vi
 
 ```bash
 # Create and activate a virtual environment
-python3 -m venv .venv
+uv venv
 source .venv/bin/activate
 
 # Install dependencies using uv
-uv pip install -e .
+uv sync
 ```
 
 ### 3. Configure Environment Variables
 
-The script loads credentials from a `.env` file in the project root (`my-morphik/.env`).
-
-The `.env.example` file already contains the correct `POSTGRES_URI` for the database you just created. You can copy it to create your `.env` file.
-
-1.  **Copy the example file (from the project root):**
-    ```bash
-    cp .env.example .env
-    ```
-2.  **Edit `.env`:** Open the new `.env` file and add your `OPENAI_API_KEY`.
-
-    ```env
-    # This URI matches the database setup from Step 1
-    POSTGRES_URI="postgresql+asyncpg://kevin_rag:secure_password123@localhost:5432/kevin_rag_db"
-
-    # Add your OpenAI API Key
-    OPENAI_API_KEY="sk-..."
-    ```
-
+The `.env.example` file already contains the correct `POSTGRES_URI` for the database you just created. Remember to add the `OPENAI_API_KEY` before running the program.
 ---
 
 ## Running the Script
