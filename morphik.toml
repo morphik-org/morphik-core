@@ -1,3 +1,9 @@
+# Purpose: Default configuration file for Docker deployments
+# This file is copied into the Docker image as morphik.toml.default
+# End users receive this file when running install_docker.sh
+# Users can modify this file to change ports, models, and other settings
+# Note: Changes to host/port are automatically detected by start-morphik.sh
+
 [api]
 host = "0.0.0.0"
 port = 8000
@@ -5,7 +11,7 @@ reload = true
 
 [auth]
 jwt_algorithm = "HS256"
-dev_mode = true  # Enabled by default for easier local development
+dev_mode = false  # Enabled by default for easier local development
 dev_entity_id = "dev_user"  # Default dev user ID
 dev_entity_type = "developer"  # Default dev entity type
 dev_permissions = ["read", "write", "admin"]  # Default dev permissions
@@ -33,20 +39,15 @@ gemini_flash = { model_name = "gemini/gemini-2.5-flash-preview-05-20" } # gemini
 # - Local Ollama: "http://localhost:11434" (default)
 # - Morphik in Docker, Ollama local: "http://host.docker.internal:11434"
 # - Both in Docker: "http://ollama:11434"
-
-# ollama_qwen_vision = { model_name = "gpt-4.1" } # {model_name = "groq/meta-llama/llama-4-scout-17b-16e-instruct"} #{ model_name = "ollama_chat/qwen2.5vl:latest", api_base = "http://localhost:11434", vision = true }
 ollama_qwen_vision = { model_name = "ollama_chat/qwen2.5vl:latest", api_base = "http://localhost:11434", vision = true }
-
 ollama_llama_vision = { model_name = "ollama_chat/llama3.2-vision", api_base = "http://localhost:11434", vision = true }
-ollama_qwen_1_5b = { model_name = "ollama_chat/qwen2:1.5b", api_base = "http://ollama:11434" }
-
 ollama_embedding = { model_name = "ollama/nomic-embed-text", api_base = "http://localhost:11434" }
 
 # Lemonade models (for AMD GPU and NPU support)
 # - Local: "http://localhost:8020/api/v1"
 # - Morphik in Docker: "http://host.docker.internal:8020/api/v1"
-lemonade_qwen = { model_name = "openai/Qwen2.5-VL-7B-Instruct-GGUF", api_base = "http://localhost:8020/api/v1", vision = true }
-lemonade_embedding = { model_name = "openai/nomic-embed-text-v1-GGUF", api_base = "http://localhost:8020/api/v1" }
+lemonade_qwen = { model_name = "openai/Qwen2.5-VL-7B-Instruct-GGUF", api_base = "http://host.docker.internal:8020/api/v1", vision = true }
+lemonade_embedding = { model_name = "openai/nomic-embed-text-v1-GGUF", api_base = "http://host.docker.internal:8020/api/v1" }
 
 openai_embedding = { model_name = "text-embedding-3-small" }
 openai_embedding_large = { model_name = "text-embedding-3-large" }
@@ -56,10 +57,10 @@ azure_embedding = { model_name = "text-embedding-ada-002", api_base = "YOUR_AZUR
 #### Component configurations ####
 
 [agent]
-model = "ollama_qwen_vision" # Model for the agent logic
+model = "openai_gpt4-1-mini" # Model for the agent logic
 
 [completion]
-model = "ollama_qwen_vision" #"openai_gpt4-1-mini"  # Reference to a key in registered_models
+model = "openai_gpt4-1-mini" #"openai_gpt4-1-mini"  # Reference to a key in registered_models
 default_max_tokens = "1000"
 default_temperature = 0.3
 
@@ -75,8 +76,8 @@ max_retries = 3          # Number of retries for database operations
 retry_delay = 1.0        # Initial delay between retries in seconds
 
 [embedding]
-model = "ollama_embedding"  # Reference to registered model
-dimensions = 768
+model = "openai_embedding"  # Reference to registered model
+dimensions = 1536
 similarity_metric = "cosine"
 
 [parser]
@@ -84,7 +85,7 @@ chunk_size = 6000
 chunk_overlap = 300
 use_unstructured_api = false
 use_contextual_chunking = false
-contextual_chunking_model = "ollama_qwen_vision"  # Reference to a key in registered_models
+contextual_chunking_model = "openai_gpt4-1-mini"  # Reference to a key in registered_models
 
 [parser.xml]
 max_tokens = 350
@@ -92,10 +93,10 @@ preferred_unit_tags = ["SECTION", "Section", "Article", "clause"]
 ignore_tags = ["TOC", "INDEX"]
 
 [document_analysis]
-model = "ollama_qwen_vision"  # Reference to a key in registered_models
+model = "openai_gpt4-1-mini"  # Reference to a key in registered_models
 
 [parser.vision]
-model = "ollama_qwen_vision"  # Reference to a key in registered_models
+model = "openai_gpt4-1-mini"  # Reference to a key in registered_models
 frame_sample_rate = -1  # Set to -1 to disable frame captioning
 
 [reranker]
@@ -115,16 +116,12 @@ storage_path = "./storage"
 # provider = "aws-s3"
 # region = "us-east-2"
 # bucket_name = "morphik-s3-storage"
-# storage_path = "morphik-storage"
 
 [vector_store]
 provider = "pgvector"
 
-[multivector_store]
-provider = "postgres"  # "morphik" # "postgres"  # "morphik" # "postgres"  # "postgres" or "morphik" for fast implementation
-
 [rules]
-model = "ollama_qwen_vision"
+model = "openai_gpt4-1-mini"
 batch_size = 4096
 
 [morphik]
@@ -135,14 +132,8 @@ api_domain = "api.morphik.ai"  # API domain for cloud URIs
 morphik_embedding_api_domain = "http://localhost:6000"  # endpoint for multivector embedding service
 colpali_mode = "local" # "off", "local", or "api"
 
-[pdf_viewer]
-frontend_url = "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf" # "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf"
-
-[workflows]
-model = "gemini_flash"  # Model for workflow extraction tasks
-
 [graph]
-model = "ollama_qwen_vision"
+model = "openai_gpt4-1-mini"
 enable_entity_resolution = true
 
 # [graph]

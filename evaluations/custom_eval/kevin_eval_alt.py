@@ -132,12 +132,16 @@ class ColPaliKevinEvaluator(BaseRAGEvaluator):
             conn = psycopg2.connect(clean_uri)
             register_vector(conn)
             print("✓ Connected to PostgreSQL successfully")
-            self._ensure_schema_compatibility(conn)
+            
+            # Setup database first, THEN ensure schema compatibility
             self._setup_database(conn)
+            self._ensure_schema_compatibility(conn)
+            
             print("✓ Multi-vector tables created successfully")
 
         except Exception as e:
             raise ConnectionError(f"Error connecting to PostgreSQL: {e}")
+
 
         # Initialize ColPali model with proper MPS dtype handling
         try:
@@ -282,11 +286,24 @@ class ColPaliKevinEvaluator(BaseRAGEvaluator):
     def _ensure_schema_compatibility(self, conn: psycopg2.extensions.connection):
         """Ensure the database schema has all required columns."""
         with conn.cursor() as cur:
-            # Add missing columns if they don't exist
-            cur.execute("ALTER TABLE document_pages ADD COLUMN IF NOT EXISTS tables_data TEXT DEFAULT '';")
-            cur.execute("ALTER TABLE document_pages ADD COLUMN IF NOT EXISTS text_blocks TEXT DEFAULT '';")
-            conn.commit()
-            print("✅ Schema compatibility ensured")
+            # Check if table exists first
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name = 'document_pages'
+                );
+            """)
+            table_exists = cur.fetchone()[0]
+            
+            if table_exists:
+                # Add missing columns if they don't exist
+                cur.execute("ALTER TABLE document_pages ADD COLUMN IF NOT EXISTS tables_data TEXT DEFAULT '';")
+                cur.execute("ALTER TABLE document_pages ADD COLUMN IF NOT EXISTS text_blocks TEXT DEFAULT '';")
+                conn.commit()
+                print("✅ Schema compatibility ensured")
+            else:
+                print("✅ Table doesn't exist yet - schema will be created in setup_database")
         
     def _setup_database(self, conn: psycopg2.extensions.connection):
         """Setup database tables for multi-vector storage."""
@@ -527,7 +544,7 @@ class ColPaliKevinEvaluator(BaseRAGEvaluator):
                 all_page_embeddings = []
                 image_paths = []
 
-                if cache_file.exists() and not DEBUG_MODE:  # Skip cache in debug mode for fresh runs
+                if cache_file.exists():  # Skip cache in debug mode for fresh runs //temporarily letting cache
                     print(f"    ✓ Loading embeddings from cache: {cache_file.name}")
                     with np.load(cache_file, allow_pickle=True) as data:
                         all_page_embeddings = data['embeddings']
@@ -658,7 +675,7 @@ class ColPaliKevinEvaluator(BaseRAGEvaluator):
                 extracted_texts, tables_data, text_blocks = self._extract_enhanced_text_data(doc_file)
                 
                 # Get actual embedding dimension for schema update
-                if all_page_embeddings:
+                if all_page_embeddings.size > 0:
                     actual_dim = all_page_embeddings[0].shape[1] if len(all_page_embeddings[0].shape) > 1 else len(all_page_embeddings[0])
                     print(f"    Detected embedding dimension: {actual_dim}")
                     
@@ -821,65 +838,96 @@ class ColPaliKevinEvaluator(BaseRAGEvaluator):
                 
                 # Calculate ColPali-style scores using processor.score_multi_vector
                 page_scores = []
-                document_pages = []
                 
                 for row in page_rows:
                     page_id, doc_id, page_num, image_path, text, tables, blocks, db_embeddings = row
                     
-                    # Convert database embeddings back to numpy
-                    page_embeddings = np.array(db_embeddings)  # [num_patches, embedding_dim]
-                    
-                    # Calculate multi-vector similarity score
-                    # This is a simplified version - ideally use processor.score_multi_vector
-                    # but we'll implement MaxSim (max similarity) approach here
+                    # --- FIX: Correctly stack embeddings to avoid object arrays ---
+                    if not db_embeddings or not any(v is not None for v in db_embeddings):
+                        continue
+                    try:
+                        page_embeddings = np.vstack([np.array(v, dtype=np.float32) for v in db_embeddings])
+                    except ValueError as e:
+                        if DEBUG_MODE:
+                            print(f"    [DEBUG] Skipping page {page_num} of {doc_id} due to inconsistent embedding shapes: {e}")
+                        continue
+
+                    # Calculate multi-vector similarity score (MaxSim)
                     max_scores = []
                     for query_token in query_embeddings_np:
-                        # Calculate cosine similarity between query token and all page patches
-                        similarities = np.dot(page_embeddings, query_token) / (
-                            np.linalg.norm(page_embeddings, axis=1) * np.linalg.norm(query_token)
-                        )
-                        max_scores.append(np.max(similarities))
+                        # --- FIX: Guard for division by zero ---
+                        page_norms = np.linalg.norm(page_embeddings, axis=1, keepdims=True)
+                        page_norms[page_norms == 0] = 1e-9 # Avoid division by zero
+                        
+                        query_norm = np.linalg.norm(query_token)
+                        if query_norm == 0:
+                            query_norm = 1e-9
+
+                        similarities = np.dot(page_embeddings, query_token) / (page_norms.flatten() * query_norm)
+                        
+                        if similarities.size > 0:
+                            max_scores.append(np.max(similarities))
                     
-                    # Final score is sum of max similarities (ColBERT-style)
-                    final_score = np.sum(max_scores)
+                    if not max_scores:
+                        final_score = 0.0
+                    else:
+                        # Final score is sum of max similarities (ColBERT-style)
+                        final_score = np.sum(max_scores)
                     
                     page_scores.append((final_score, row))
-                
+
                 # Sort by score and get top pages
                 page_scores.sort(key=lambda x: x[0], reverse=True)
-                top_pages = page_scores[:10]  # Get top 10 pages
-                
-                if DEBUG_MODE:
-                    print(f"[DEBUG] Top page scores:")
-                    for i, (score, row) in enumerate(top_pages[:5]):
-                        page_id, doc_id, page_num, image_path, text, tables, blocks, embeddings = row
-                        print(f"  {i+1}. {doc_id} page {page_num}: score={score:.4f}")
-                        print(f"     Text preview: {text[:150]}..." if text else "     No text")
+                top_pages = page_scores[:20]  # Retrieve top 20 pages for reranking
 
-                # Create document pages objects
-                document_pages = []
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Top 20 pre-reranked page scores:")
+                    for i, (score, row) in enumerate(top_pages[:5]):
+                        _, doc_id, page_num, _, _, _, _, _ = row
+                        print(f"  {i+1}. {doc_id} page {page_num}: score={score:.4f}")
+
+                # Create document pages for reranking
+                pages_for_reranking = []
                 for score, row in top_pages:
                     page_id, doc_id, page_num, image_path, text, tables, blocks, db_embeddings = row
-                    page_embeddings = np.array(db_embeddings)
+                    # We need to re-stack here as well
+                    if not db_embeddings or not any(v is not None for v in db_embeddings):
+                        continue
+                    try:
+                        page_embeddings = np.vstack([np.array(v, dtype=np.float32) for v in db_embeddings])
+                    except ValueError:
+                        continue # Skip if shapes are inconsistent
                     
-                    # Combine all text sources
                     combined_content = self._combine_text_sources(text, tables, blocks)
                     
-                    doc_page = ColPaliDocumentPage(
-                        document_id=doc_id,
-                        page_number=page_num,
-                        image_path=image_path,
-                        embeddings=page_embeddings,
-                        content=combined_content,
-                        page_id=page_id
+                    pages_for_reranking.append(
+                        ColPaliDocumentPage(
+                            document_id=doc_id,
+                            page_number=page_num,
+                            image_path=image_path,
+                            embeddings=page_embeddings,
+                            content=combined_content,
+                            page_id=page_id
+                        )
                     )
-                    document_pages.append(doc_page)
+
+                # Rerank if reranker is available
+                if reranker and loop:
+                    print("    Reranking retrieved pages...")
+                    document_pages = loop.run_until_complete(reranker.rerank(question, pages_for_reranking))
+                    
+                    if DEBUG_MODE:
+                        print(f"[DEBUG] Top 5 reranked pages:")
+                        for i, page in enumerate(document_pages[:5]):
+                            print(f"  {i+1}. {page.document_id} page {page.page_number}: score={getattr(page, 'score', 'N/A'):.4f}")
+                else:
+                    document_pages = pages_for_reranking
 
                 if not document_pages:
                     return "Could not find relevant visual content for this question."
 
-                # Build context from top pages
-                context = self._build_multivector_context(document_pages[:6], question)
+                # Build context from top 7 reranked pages
+                context = self._build_multivector_context(document_pages[:7], question)
                 
                 if DEBUG_MODE:
                     debug_context_file = self.debug_dir / f"context_debug_{hash(question) % 10000}.txt"
@@ -893,15 +941,16 @@ class ColPaliKevinEvaluator(BaseRAGEvaluator):
             prompt = f'''You are an expert document analyst specializing in interpreting charts, graphs, tables, and complex documents.
 
 CRITICAL INSTRUCTIONS:
-1. Answer based ONLY on the provided context from document pages
-2. Pay careful attention to numerical data, percentages, metrics, and trends shown in visual elements
-3. If calculations are needed, perform them step-by-step and show your work
-4. Include specific numbers, dates, and time periods when relevant
-5. For visual elements (charts, tables, graphs), describe what you observe and extract relevant data
-6. If comparing different time periods or companies, clearly identify the sources and time frames
-7. If information is not available in the context, state this clearly
-8. Always cite page numbers when referencing specific data points
-9. Look for data in both text content and visual elements (charts, tables, graphs)
+1. Answer based ONLY on the provided context from document pages.
+2. Pay careful attention to numerical data, percentages, metrics, and trends shown in visual elements.
+3. If calculations are needed, perform them step-by-step and show your work.
+4. **Special Calculation Rule**: If the question asks for "volatility" of a time series, calculate it as `standard_deviation(series) / sqrt(number_of_data_points)`. Show your work for this calculation. For other statistical measures, use standard definitions.
+5. Include specific numbers, dates, and time periods when relevant.
+6. For visual elements (charts, tables, graphs), describe what you observe and extract relevant data.
+7. If comparing different time periods or companies, clearly identify the sources and time frames.
+8. If information is not available in the context, state this clearly.
+9. Always cite page numbers when referencing specific data points.
+10. Look for data in both text content and visual elements (charts, tables, graphs).
 
 Context from Document Pages:
 {context}
@@ -911,10 +960,9 @@ Question: {question}
 Answer (be specific, show calculations if needed, and cite page numbers):'''
 
             response = completion(
-                model="gpt-4o-mini",  # Use a working model
+                model="o4-mini",  # Use a working model
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0,
-                max_completion_tokens=1000
+                max_completion_tokens=2048
             )
 
             final_answer = response.choices[0].message.content
