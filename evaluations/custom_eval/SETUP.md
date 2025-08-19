@@ -49,11 +49,6 @@ source .venv/bin/activate
 uv sync
 ```
 
-### 3. Configure Environment Variables
-
-The `.env.example` file already contains the correct `POSTGRES_URI` for the database you just created. Remember to add the `OPENAI_API_KEY` before running the program.
----
-
 ## Running the Script
 
 Navigate to the script's directory (`evaluations/custom_eval`) to run the evaluation.
