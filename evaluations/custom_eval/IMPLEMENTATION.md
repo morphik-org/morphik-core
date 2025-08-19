@@ -5,6 +5,7 @@
 *   **Maximum Similarity query mechanism**: For initial retrieval, a "MaxSim" (Maximum Similarity) query mechanism is employed. This method efficiently identifies the most relevant document pages by finding the maximum similarity between query embeddings and the stored document patch embeddings.
 *   **Reranking**: The initial retrieval results are further refined using a powerful reranking model. I used the`BAAI/bge-reranker-large` model instead of the default from the `core/reranker/flag_reranker.py` as the latter required more memory than my local machine had.
 
+We consistently get >80% accuracy (either 37 or 38 out of 45 questions)
 ---
 
 ## Core Pipeline Stages
