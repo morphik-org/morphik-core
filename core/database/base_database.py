@@ -349,3 +349,25 @@ class BaseDatabase(ABC):
     @abstractmethod
     async def delete_workflow_run(self, run_id: str, auth: AuthContext) -> bool:
         """Delete a workflow run."""
+
+    @abstractmethod
+    async def search_documents_by_name(
+        self,
+        query: str,
+        auth: AuthContext,
+        limit: int = 10,
+        filters: Optional[Dict[str, Any]] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
+    ) -> List[Document]:
+        """Search documents by filename using full-text search.
+
+        Args:
+            query: Search query for document names/filenames
+            auth: Authentication context
+            limit: Maximum number of documents to return
+            filters: Optional metadata filters
+            system_filters: Optional system metadata filters (e.g. folder_name, end_user_id)
+
+        Returns:
+            List of documents matching the search query, ordered by relevance
+        """

@@ -1,18 +1,13 @@
 "use client";
 
 import React, { createContext, useContext, useState } from "react";
+import { Breadcrumb } from "@/components/types";
 
 interface HeaderContextType {
   customBreadcrumbs: Breadcrumb[] | null;
   rightContent: React.ReactNode | null;
   setCustomBreadcrumbs: (breadcrumbs: Breadcrumb[] | null) => void;
   setRightContent: (content: React.ReactNode | null) => void;
-}
-
-interface Breadcrumb {
-  label: string;
-  href?: string;
-  onClick?: (e: React.MouseEvent) => void;
 }
 
 const HeaderContext = createContext<HeaderContextType | undefined>(undefined);

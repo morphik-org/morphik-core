@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, forwardRef, useImperativeHandle, useEffect } from "react";
+import React, { useState, forwardRef, useImperativeHandle } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useLogs } from "@/hooks/useLogs";
-import { useHeader } from "@/contexts/header-context";
+// import { useHeader } // Removed - MorphikUI handles breadcrumbs from "@/contexts/header-context";
 
 interface LogsSectionProps {
   apiBaseUrl: string;
@@ -18,7 +18,7 @@ export interface LogsSectionRef {
 const LogsSection = forwardRef<LogsSectionRef, LogsSectionProps>(({ apiBaseUrl, authToken }, ref) => {
   const { logs, loading, error, refresh } = useLogs({ apiBaseUrl, authToken });
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const { setCustomBreadcrumbs } = useHeader();
+  // const { setCustomBreadcrumbs } = useHeader();
 
   const toggle = (idx: number) => {
     setExpanded(prev => {
@@ -38,10 +38,11 @@ const LogsSection = forwardRef<LogsSectionRef, LogsSectionProps>(({ apiBaseUrl, 
     handleRefresh,
   }));
 
-  useEffect(() => {
-    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Logs" }]);
-    return () => setCustomBreadcrumbs(null);
-  }, [setCustomBreadcrumbs]);
+  // Removed - MorphikUI handles breadcrumbs centrally
+  // useEffect(() => {
+  //   setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Logs" }]);
+  //   return () => setCustomBreadcrumbs(null);
+  // }, [setCustomBreadcrumbs]);
 
   if (loading) return <p className="p-4 text-sm">Loading logs…</p>;
   if (error) return <p className="p-4 text-sm text-red-600">{error.message}</p>;

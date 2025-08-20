@@ -8,8 +8,8 @@ from core.auth_utils import verify_token
 from core.config import get_settings
 from core.models.auth import AuthContext
 from core.models.documents import Document
-from core.models.request import IngestTextRequest, ListDocumentsRequest
-from core.models.responses import DocumentDeleteResponse, DocumentDownloadUrlResponse
+from core.models.request import DocumentPagesRequest, IngestTextRequest, ListDocumentsRequest
+from core.models.responses import DocumentDeleteResponse, DocumentDownloadUrlResponse, DocumentPagesResponse
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
 
@@ -454,3 +454,57 @@ async def update_document_metadata(
         return doc
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
+
+# TODO: add @telemetry.track(operation_type="extract_document_pages", metadata_resolver=telemetry.document_pages_metadata)
+@router.post("/pages", response_model=DocumentPagesResponse)
+async def extract_document_pages(
+    request: DocumentPagesRequest,
+    auth: AuthContext = Depends(verify_token),
+):
+    """
+    Extract specific pages from a PDF document as base64-encoded images.
+
+    Args:
+        request: Request containing document_id, start_page, and end_page
+        auth: Authentication context
+
+    Returns:
+        DocumentPagesResponse: Base64-encoded images of the requested pages
+    """
+    try:
+        # Get the document
+        doc = await document_service.db.get_document(request.document_id, auth)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Check if document has storage info
+        if not doc.storage_info or not doc.storage_info.get("bucket") or not doc.storage_info.get("key"):
+            raise HTTPException(status_code=404, detail="Document file not found in storage")
+
+        # Check if document is a PDF by filename extension
+        if not doc.filename or not doc.filename.lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="Document is not a PDF")
+
+        # Validate page range
+        if request.start_page > request.end_page:
+            raise HTTPException(status_code=400, detail="start_page must be less than or equal to end_page")
+
+        # Extract pages using document service
+        pages_data = await document_service.extract_pdf_pages(
+            doc.storage_info["bucket"], doc.storage_info["key"], request.start_page, request.end_page
+        )
+
+        return DocumentPagesResponse(
+            document_id=request.document_id,
+            pages=pages_data["pages"],
+            start_page=request.start_page,
+            end_page=request.end_page,
+            total_pages=pages_data["total_pages"],
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error extracting pages from document {request.document_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error extracting pages: {str(e)}")

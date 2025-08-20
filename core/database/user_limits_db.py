@@ -17,7 +17,8 @@ class UserLimitsModel(Base):
 
     __tablename__ = "user_limits"
 
-    user_id = Column(String, primary_key=True)
+    org_id = Column(String, primary_key=True)  # Primary key is org_id in actual database
+    user_id = Column(String, nullable=False)  # User who owns this org
     tier = Column(String, nullable=False)  # free, developer, startup, custom
     custom_limits = Column(JSONB, nullable=True)
     usage = Column(JSONB, default=dict)  # Holds all usage counters
@@ -87,24 +88,31 @@ class UserLimitsDatabase:
             logger.error(f"Failed to initialize user limits database: {e}")
             return False
 
-    async def get_user_limits(self, user_id: str) -> Optional[Dict[str, Any]]:
+    async def get_user_limits(self, limit_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get user limits for a user.
+        Get user limits for a limit_id (can be org_id or user_id for backward compat).
 
         Args:
-            user_id: The user ID to get limits for
+            limit_id: The org_id or user_id to get limits for
 
         Returns:
             Dict with user limits if found, None otherwise
         """
         async with self.async_session() as session:
-            result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.user_id == user_id))
+            # Try to find by org_id first (primary key)
+            result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.org_id == limit_id))
             user_limits = result.scalars().first()
+
+            # Fallback to user_id for backward compatibility
+            if not user_limits:
+                result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.user_id == limit_id))
+                user_limits = result.scalars().first()
 
             if not user_limits:
                 return None
 
             return {
+                "org_id": user_limits.org_id,
                 "user_id": user_limits.user_id,
                 "tier": user_limits.tier,
                 "custom_limits": user_limits.custom_limits,
@@ -118,13 +126,14 @@ class UserLimitsDatabase:
                 "updated_at": user_limits.updated_at,
             }
 
-    async def create_user_limits(self, user_id: str, tier: str = "free") -> bool:
+    async def create_user_limits(self, limit_id: str, tier: str = "free", user_id: str = None) -> bool:
         """
         Create user limits record.
 
         Args:
-            user_id: The user ID
+            limit_id: The org_id (or user_id for backward compat)
             tier: Initial tier (defaults to "free")
+            user_id: The actual user_id (optional, defaults to limit_id for backward compat)
 
         Returns:
             True if successful, False otherwise
@@ -132,9 +141,13 @@ class UserLimitsDatabase:
         try:
             now = datetime.now(UTC).isoformat()
 
+            # For backward compatibility, if user_id not provided, use limit_id
+            if user_id is None:
+                user_id = limit_id
+
             async with self.async_session() as session:
-                # Check if already exists
-                result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.user_id == user_id))
+                # Check if already exists by org_id
+                result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.org_id == limit_id))
                 if result.scalars().first():
                     return True  # Already exists
 
@@ -161,6 +174,7 @@ class UserLimitsDatabase:
 
                 # Create the model with the JSON parsed
                 user_limits = UserLimitsModel(
+                    org_id=limit_id,  # org_id is the primary key
                     user_id=user_id,
                     tier=tier,
                     usage=json.loads(usage_json),
@@ -180,12 +194,12 @@ class UserLimitsDatabase:
             logger.error(f"Failed to create user limits: {e}")
             return False
 
-    async def update_user_tier(self, user_id: str, tier: str, custom_limits: Optional[Dict[str, Any]] = None) -> bool:
+    async def update_user_tier(self, limit_id: str, tier: str, custom_limits: Optional[Dict[str, Any]] = None) -> bool:
         """
         Update user tier and custom limits.
 
         Args:
-            user_id: The user ID
+            limit_id: The org_id or user_id
             tier: New tier
             custom_limits: Optional custom limits for CUSTOM tier
 
@@ -196,8 +210,13 @@ class UserLimitsDatabase:
             now = datetime.now(UTC).isoformat()
 
             async with self.async_session() as session:
-                result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.user_id == user_id))
+                # Try org_id first, then user_id
+                result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.org_id == limit_id))
                 user_limits = result.scalars().first()
+
+                if not user_limits:
+                    result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.user_id == limit_id))
+                    user_limits = result.scalars().first()
 
                 if not user_limits:
                     return False
@@ -212,12 +231,12 @@ class UserLimitsDatabase:
             logger.error(f"Failed to update user tier: {e}")
             return False
 
-    async def update_subscription_info(self, user_id: str, subscription_data: Dict[str, Any]) -> bool:
+    async def update_subscription_info(self, limit_id: str, subscription_data: Dict[str, Any]) -> bool:
         """
         Update user subscription information.
 
         Args:
-            user_id: The user ID
+            limit_id: The org_id or user_id
             subscription_data: Dictionary containing subscription information with keys:
                 - stripeCustomerId
                 - stripeSubscriptionId
@@ -231,8 +250,13 @@ class UserLimitsDatabase:
             now = datetime.now(UTC).isoformat()
 
             async with self.async_session() as session:
-                result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.user_id == user_id))
+                # Try org_id first, then user_id
+                result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.org_id == limit_id))
                 user_limits = result.scalars().first()
+
+                if not user_limits:
+                    result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.user_id == limit_id))
+                    user_limits = result.scalars().first()
 
                 if not user_limits:
                     return False
@@ -249,12 +273,12 @@ class UserLimitsDatabase:
             logger.error(f"Failed to update subscription info: {e}")
             return False
 
-    async def register_app(self, user_id: str, app_id: str) -> bool:
+    async def register_app(self, limit_id: str, app_id: str) -> bool:
         """
-        Register an app for a user.
+        Register an app for a limit_id.
 
         Args:
-            user_id: The user ID
+            limit_id: The org_id or user_id
             app_id: The app ID to register
 
         Returns:
@@ -264,13 +288,20 @@ class UserLimitsDatabase:
             now = datetime.now(UTC).isoformat()
 
             async with self.async_session() as session:
-                # First check if user exists
-                result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.user_id == user_id))
+                # Try org_id first, then user_id
+                result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.org_id == limit_id))
                 user_limits = result.scalars().first()
 
                 if not user_limits:
-                    logger.error(f"User {user_id} not found in register_app")
+                    result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.user_id == limit_id))
+                    user_limits = result.scalars().first()
+
+                if not user_limits:
+                    logger.error(f"Limit ID {limit_id} not found in register_app")
                     return False
+
+                # Get the actual primary key value (org_id)
+                primary_key = user_limits.org_id
 
                 # Use raw SQL with jsonb_array_append to update the app_ids array
                 # This is the most reliable way to append to a JSONB array in PostgreSQL
@@ -284,7 +315,7 @@ class UserLimitsDatabase:
                             ELSE app_ids                  -- Keep it unchanged if already present
                         END,
                         updated_at = :now
-                    WHERE user_id = :user_id
+                    WHERE org_id = :org_id
                     RETURNING app_ids;
                     """
                 )
@@ -296,13 +327,13 @@ class UserLimitsDatabase:
                         "app_id": app_id,  # For the check
                         "app_id_json": f'["{app_id}"]',  # JSON array format for appending
                         "now": now,
-                        "user_id": user_id,
+                        "org_id": primary_key,
                     },
                 )
 
                 # Log the result for debugging
                 updated_app_ids = result.scalar()
-                logger.info(f"Updated app_ids for user {user_id}: {updated_app_ids}")
+                logger.info(f"Updated app_ids for limit_id {limit_id} (org_id: {primary_key}): {updated_app_ids}")
 
                 await session.commit()
                 return True
@@ -311,8 +342,8 @@ class UserLimitsDatabase:
             logger.error(f"Failed to register app: {e}")
             return False
 
-    async def unregister_app(self, user_id: str, app_id: str) -> bool:
-        """Remove *app_id* from the user's *app_ids* list.
+    async def unregister_app(self, limit_id: str, app_id: str) -> bool:
+        """Remove *app_id* from the limit_id's *app_ids* list.
 
         Returns ``True`` on success (or if the app was already absent).
         """
@@ -320,6 +351,19 @@ class UserLimitsDatabase:
             now = datetime.now(UTC).isoformat()
 
             async with self.async_session() as session:
+                # First find the record to get the org_id
+                result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.org_id == limit_id))
+                user_limits = result.scalars().first()
+
+                if not user_limits:
+                    result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.user_id == limit_id))
+                    user_limits = result.scalars().first()
+
+                if not user_limits:
+                    logger.warning(f"Limit ID {limit_id} not found in unregister_app")
+                    return True  # Consider it success if doesn't exist
+
+                primary_key = user_limits.org_id
                 # Use the jsonb "-" operator which natively removes the first
                 # occurrence of a matching string element from a JSONB array.
                 # This avoids complex casts and the "polymorphic type unknown"
@@ -329,20 +373,19 @@ class UserLimitsDatabase:
                     UPDATE user_limits
                     SET app_ids = app_ids - :app_id,
                         updated_at = :now
-                    WHERE user_id = :user_id
+                    WHERE org_id = :org_id
                     RETURNING app_ids;
                     """
                 )
 
-                result = await session.execute(
-                    query, {"app_id": app_id, "now": now, "user_id": user_id}
-                )
+                result = await session.execute(query, {"app_id": app_id, "now": now, "org_id": primary_key})
 
                 updated_app_ids = result.scalar()
                 logger.info(
-                    "Unregistered app_id %s for user %s. Remaining apps: %s",
+                    "Unregistered app_id %s for limit_id %s (org_id: %s). Remaining apps: %s",
                     app_id,
-                    user_id,
+                    limit_id,
+                    primary_key,
                     updated_app_ids,
                 )
 
@@ -353,12 +396,12 @@ class UserLimitsDatabase:
             logger.error(f"Failed to unregister app: {e}")
             return False
 
-    async def update_usage(self, user_id: str, usage_type: str, increment: int = 1) -> bool:
+    async def update_usage(self, limit_id: str, usage_type: str, increment: int = 1) -> bool:
         """
-        Update usage counter for a user.
+        Update usage counter for a limit_id.
 
         Args:
-            user_id: The user ID
+            limit_id: The org_id or user_id
             usage_type: Type of usage to update
             increment: Value to increment by
 
@@ -370,8 +413,13 @@ class UserLimitsDatabase:
             now_iso = now.isoformat()
 
             async with self.async_session() as session:
-                result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.user_id == user_id))
+                # Try org_id first, then user_id
+                result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.org_id == limit_id))
                 user_limits = result.scalars().first()
+
+                if not user_limits:
+                    result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.user_id == limit_id))
+                    user_limits = result.scalars().first()
 
                 if not user_limits:
                     return False
@@ -459,9 +507,9 @@ class UserLimitsDatabase:
                 session.add(user_limits)
 
                 # Log the updated usage for debugging
-                logger.info(f"Updated usage for user {user_id}, type: {usage_type}, value: {increment}")
+                logger.info(f"Updated usage for limit_id {limit_id}, type: {usage_type}, value: {increment}")
                 logger.info(f"New usage values: {usage}")
-                logger.info(f"About to commit: user_id={user_id}, usage={user_limits.usage}")
+                logger.info(f"About to commit: limit_id={limit_id}, usage={user_limits.usage}")
 
                 # Commit and flush to ensure changes are written
                 await session.commit()

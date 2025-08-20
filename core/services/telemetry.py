@@ -670,6 +670,15 @@ class TelemetryService:
 
         self.retrieve_chunks_metadata = MetadataExtractor(retrieval_fields)
         self.retrieve_docs_metadata = MetadataExtractor(retrieval_fields)
+        self.search_documents_metadata = MetadataExtractor(
+            [
+                MetadataField("query", "request"),
+                MetadataField("limit", "request"),
+                MetadataField("filters", "request"),
+                MetadataField("folder_name", "request"),
+                MetadataField("end_user_id", "request"),
+            ]
+        )
 
         self.batch_documents_metadata = MetadataExtractor(
             [

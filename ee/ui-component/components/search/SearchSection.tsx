@@ -9,7 +9,7 @@ import { showAlert } from "@/components/ui/alert-system";
 import SearchOptionsDialog from "./SearchOptionsDialog";
 import SearchResultCard from "./SearchResultCard";
 import SearchResultCardCarousel from "./SearchResultCardCarousel";
-import { useHeader } from "@/contexts/header-context";
+// import { useHeader } from "@/contexts/header-context"; // Removed - MorphikUI handles breadcrumbs
 
 import { SearchResult, SearchOptions, FolderSummary, GroupedSearchResponse } from "@/components/types";
 
@@ -37,7 +37,8 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
   const [showSearchAdvanced, setShowSearchAdvanced] = useState(false);
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [searchOptions, setSearchOptions] = useState<SearchOptions>(defaultSearchOptions);
-  const { setCustomBreadcrumbs } = useHeader();
+  // Removed - MorphikUI handles breadcrumbs centrally
+  // const { setCustomBreadcrumbs } = useHeader();
 
   // Update search options
   const updateSearchOption = <K extends keyof SearchOptions>(key: K, value: SearchOptions[K]) => {
@@ -76,10 +77,11 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
     }
   }, [authToken, apiBaseUrl]);
 
-  useEffect(() => {
-    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Search" }]);
-    return () => setCustomBreadcrumbs(null);
-  }, [setCustomBreadcrumbs]);
+  // Removed - MorphikUI handles breadcrumbs centrally
+  // useEffect(() => {
+  //   setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Search" }]);
+  //   return () => setCustomBreadcrumbs(null);
+  // }, [setCustomBreadcrumbs]);
 
   // Handle search
   const handleSearch = async () => {

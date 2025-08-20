@@ -21,7 +21,7 @@ import { PreviewMessage } from "./ChatMessages";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { AgentPreviewMessage, AgentUIMessage, DisplayObject, SourceObject, ToolCall } from "./AgentChatMessages";
-import { useHeader } from "@/contexts/header-context";
+// import { useHeader } from "@/contexts/header-context"; // Removed - MorphikUI handles breadcrumbs
 import { useChatContext } from "@/components/chat/chat-context";
 import { useTheme } from "next-themes";
 import { showAlert } from "@/components/ui/alert-system";
@@ -603,11 +603,12 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     }
   };
 
-  const { setCustomBreadcrumbs } = useHeader();
-  useEffect(() => {
-    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Chat" }]);
-    return () => setCustomBreadcrumbs(null);
-  }, [setCustomBreadcrumbs]);
+  // Removed - MorphikUI handles breadcrumbs centrally
+  // const { setCustomBreadcrumbs } = useHeader();
+  // useEffect(() => {
+  //   setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Chat" }]);
+  //   return () => setCustomBreadcrumbs(null);
+  // }, [setCustomBreadcrumbs]);
 
   // Close model selector when clicking outside
   useEffect(() => {

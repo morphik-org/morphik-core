@@ -7,12 +7,7 @@ import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useHeader } from "@/contexts/header-context";
 import { ThemeToggle } from "@/components/theme-toggle";
-
-interface Breadcrumb {
-  label: string;
-  href?: string;
-  onClick?: (e: React.MouseEvent) => void;
-}
+import { Breadcrumb } from "@/components/types";
 
 export interface DynamicSiteHeaderProps {
   customBreadcrumbs?: Breadcrumb[];
@@ -44,27 +39,32 @@ export function DynamicSiteHeader({
 
         {/* Breadcrumbs */}
         <nav className="flex items-center space-x-1 text-sm">
-          {breadcrumbs.map((crumb, index) => (
-            <div key={index} className="flex items-center">
-              {index > 0 && <ChevronRight className="mx-1 h-4 w-4 text-muted-foreground" />}
-              {crumb.href || crumb.onClick ? (
-                crumb.onClick ? (
-                  <button
-                    onClick={crumb.onClick}
-                    className="text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    {crumb.label}
-                  </button>
+          {breadcrumbs.map((crumb, index) => {
+            const isLast = index === breadcrumbs.length - 1;
+            const isCurrent = crumb.current || isLast;
+
+            return (
+              <div key={index} className="flex items-center">
+                {index > 0 && <ChevronRight className="mx-1 h-4 w-4 text-muted-foreground" />}
+                {!isCurrent && (crumb.href || crumb.onClick) ? (
+                  crumb.onClick ? (
+                    <button
+                      onClick={crumb.onClick}
+                      className="text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {crumb.label}
+                    </button>
+                  ) : (
+                    <Link href={crumb.href!} className="text-muted-foreground transition-colors hover:text-foreground">
+                      {crumb.label}
+                    </Link>
+                  )
                 ) : (
-                  <Link href={crumb.href!} className="text-muted-foreground transition-colors hover:text-foreground">
-                    {crumb.label}
-                  </Link>
-                )
-              ) : (
-                <span className="font-medium text-foreground">{crumb.label}</span>
-              )}
-            </div>
-          ))}
+                  <span className="font-medium text-foreground">{crumb.label}</span>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         {/* Right side content */}

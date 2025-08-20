@@ -3119,6 +3119,70 @@ class DocumentService:
         logger.info(f"Successfully deleted document {document_id} and all associated data")
         return True
 
+    async def extract_pdf_pages(
+        self,
+        bucket: str,
+        key: str,
+        start_page: int,
+        end_page: int,
+    ) -> Dict[str, Any]:
+        """
+        Extract specific pages from a PDF document as base64-encoded images.
+
+        Args:
+            bucket: Storage bucket containing the PDF
+            key: Storage key for the PDF file
+            start_page: Starting page number (1-indexed)
+            end_page: Ending page number (1-indexed)
+
+        Returns:
+            Dict containing:
+                - pages: List of base64-encoded images
+                - total_pages: Total number of pages in the PDF
+        """
+        try:
+            # Download the PDF file from storage
+            file_content = await self.storage.download_file(bucket, key)
+
+            # Open PDF directly from bytes using BytesIO
+            pdf_stream = BytesIO(file_content)
+            pdf_document = fitz.open(stream=pdf_stream, filetype="pdf")
+
+            total_pages = len(pdf_document)
+
+            # Always clamp the page numbers to the total number of pages
+            start_page = max(1, start_page)
+            end_page = min(end_page, total_pages)
+
+            # # Validate page numbers
+            # if start_page < 1 or end_page > total_pages:
+            #     raise ValueError(f"Page range {start_page}-{end_page} is invalid for PDF with {total_pages} pages")
+
+            # Extract pages as images
+            pages_base64 = []
+            for page_num in range(start_page - 1, end_page):  # Convert to 0-indexed
+                page = pdf_document[page_num]
+
+                # Render page as image with high DPI for quality
+                matrix = fitz.Matrix(2.0, 2.0)  # 2x scaling for better quality
+                pix = page.get_pixmap(matrix=matrix)
+
+                # Convert to PIL Image and save as JPEG for smaller size
+                img_data = pix.tobytes("jpeg", jpg_quality=85)  # Use JPEG with good quality
+                img = PILImage.open(BytesIO(img_data))
+
+                # Convert to base64
+                base64_str = self.img_to_base64_str(img)
+                pages_base64.append(base64_str)
+
+            pdf_document.close()
+
+            return {"pages": pages_base64, "total_pages": total_pages}
+
+        except Exception as e:
+            logger.error(f"Error extracting PDF pages from {bucket}/{key}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to extract PDF pages: {str(e)}")
+
     def close(self):
         """Close all resources."""
         # Close any active caches
@@ -3227,5 +3291,46 @@ class DocumentService:
         return await self.graph_service.get_graph_visualization_data(
             graph_name=name,
             auth=auth,
+            system_filters=system_filters,
+        )
+
+    async def search_documents_by_name(
+        self,
+        query: str,
+        auth: AuthContext,
+        limit: int = 10,
+        filters: Optional[Dict[str, Any]] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        end_user_id: Optional[str] = None,
+    ) -> List[Document]:
+        """Search documents by filename using full-text search.
+
+        Args:
+            query: Search query for document names/filenames
+            auth: Authentication context
+            limit: Maximum number of documents to return (1-100)
+            filters: Optional metadata filters
+            folder_name: Optional folder to scope search
+            end_user_id: Optional end-user ID to scope search
+
+        Returns:
+            List of documents matching the search query, ordered by relevance
+        """
+        # Build system filters
+        system_filters = {}
+        if folder_name:
+            system_filters["folder_name"] = folder_name
+        if end_user_id:
+            system_filters["end_user_id"] = end_user_id
+
+        # Clamp limit to reasonable range
+        limit = max(1, min(100, limit))
+
+        # Delegate to database layer
+        return await self.db.search_documents_by_name(
+            query=query,
+            auth=auth,
+            limit=limit,
+            filters=filters,
             system_filters=system_filters,
         )

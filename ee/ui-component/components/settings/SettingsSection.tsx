@@ -9,7 +9,7 @@ import { Eye, EyeOff, Save, Trash2, ExternalLink } from "lucide-react";
 import { showAlert } from "@/components/ui/alert-system";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ModelManager } from "./ModelManager";
-import { useHeader } from "@/contexts/header-context";
+// import { useHeader } // Removed - MorphikUI handles breadcrumbs from "@/contexts/header-context";
 import { useChatContext } from "@/components/chat/chat-context";
 import { useTheme } from "next-themes";
 
@@ -79,7 +79,7 @@ export function SettingsSection({ authToken }: SettingsSectionProps) {
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [isClient, setIsClient] = useState(false);
-  const { setCustomBreadcrumbs } = useHeader();
+  // const { setCustomBreadcrumbs } = useHeader();
   const { theme } = useTheme();
 
   // Ensure client-side rendering is complete before showing dynamic content
@@ -150,10 +150,11 @@ export function SettingsSection({ authToken }: SettingsSectionProps) {
     loadConfig();
   }, [authToken, isClient]);
 
-  useEffect(() => {
-    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Settings" }]);
-    return () => setCustomBreadcrumbs(null);
-  }, [setCustomBreadcrumbs]);
+  // Removed - MorphikUI handles breadcrumbs centrally
+  // useEffect(() => {
+  //   setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Settings" }]);
+  //   return () => setCustomBreadcrumbs(null);
+  // }, [setCustomBreadcrumbs]);
 
   const handleSave = async () => {
     setSaving(true);

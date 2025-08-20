@@ -80,7 +80,8 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
 
   // Update header when folder changes
   useEffect(() => {
-    // Set breadcrumbs
+    // Set breadcrumbs - Removed - MorphikUI handles breadcrumbs centrally
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const breadcrumbs = selectedFolder
       ? [
           {
@@ -95,7 +96,8 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
         ]
       : [{ label: "Documents" }];
 
-    setCustomBreadcrumbs(breadcrumbs);
+    // Disabled - MorphikUI handles breadcrumbs with organization context
+    // setCustomBreadcrumbs(breadcrumbs);
 
     // Set right content based on current view
     const rightContent = selectedFolder ? (
@@ -182,7 +184,8 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
 
     // Cleanup on unmount
     return () => {
-      setCustomBreadcrumbs(null);
+      // Disabled - MorphikUI handles breadcrumbs with organization context
+      // setCustomBreadcrumbs(null);
       setRightContent(null);
     };
   }, [

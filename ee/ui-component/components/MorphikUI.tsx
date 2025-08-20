@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
-import { MorphikUIProps } from "./types";
+import { MorphikUIProps, Breadcrumb } from "./types";
 import DocumentsWithHeader from "@/components/documents/DocumentsWithHeader";
 import SearchSection from "@/components/search/SearchSection";
 import ChatSection from "@/components/chat/ChatSection";
@@ -53,6 +53,7 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
     onUpgradeClick,
     logoLight = "/morphikblack.png",
     logoDark = "/morphikwhite.png",
+    breadcrumbItems,
   } = props;
 
   const [currentSection, setCurrentSection] = useState(initialSection);
@@ -90,30 +91,57 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
   const userId = authToken ? "authenticated" : "anonymous";
 
   // Local breadcrumbs managed here when section is not documents
-  const [localBreadcrumbs, setLocalBreadcrumbs] = useState<
-    { label: string; href?: string; onClick?: (e: React.MouseEvent) => void }[] | undefined
-  >();
+  const [localBreadcrumbs, setLocalBreadcrumbs] = useState<Breadcrumb[] | undefined>();
 
   // update breadcrumbs whenever section changes (initial and subsequent)
   useEffect(() => {
-    if (currentSection === "documents") {
-      setLocalBreadcrumbs(undefined);
-      return;
+    // If custom breadcrumbs are provided, use them as the base
+    if (breadcrumbItems && breadcrumbItems.length > 0) {
+      // Create new breadcrumbs based on custom items
+      const baseBreadcrumbs = [...breadcrumbItems];
+
+      // Remove any 'current' flag from base items
+      baseBreadcrumbs.forEach(item => delete item.current);
+
+      // Add the current section as the last breadcrumb
+      const sectionLabel =
+        currentSection === "graphs"
+          ? "Knowledge Graphs"
+          : currentSection === "documents"
+            ? "Documents"
+            : currentSection.charAt(0).toUpperCase() + currentSection.slice(1);
+
+      // Only add section breadcrumb if it's different from the last breadcrumb
+      const lastBreadcrumb = baseBreadcrumbs[baseBreadcrumbs.length - 1];
+      if (!lastBreadcrumb || lastBreadcrumb.label !== sectionLabel) {
+        baseBreadcrumbs.push({ label: sectionLabel, current: true });
+      } else {
+        // Mark the last item as current
+        baseBreadcrumbs[baseBreadcrumbs.length - 1].current = true;
+      }
+
+      setLocalBreadcrumbs(baseBreadcrumbs);
+    } else {
+      // Fallback to original behavior when no custom breadcrumbs
+      if (currentSection === "documents") {
+        setLocalBreadcrumbs(undefined);
+        return;
+      }
+
+      const prettyLabel =
+        currentSection === "graphs"
+          ? "Knowledge Graphs"
+          : currentSection.charAt(0).toUpperCase() + currentSection.slice(1);
+
+      setLocalBreadcrumbs([
+        {
+          label: "Home",
+          onClick: () => setCurrentSection("documents" as typeof initialSection),
+        },
+        { label: prettyLabel, current: true },
+      ]);
     }
-
-    const prettyLabel =
-      currentSection === "graphs"
-        ? "Knowledge Graphs"
-        : currentSection.charAt(0).toUpperCase() + currentSection.slice(1);
-
-    setLocalBreadcrumbs([
-      {
-        label: "Home",
-        onClick: () => setCurrentSection("documents" as typeof initialSection),
-      },
-      { label: prettyLabel },
-    ]);
-  }, [currentSection]);
+  }, [currentSection, breadcrumbItems]);
 
   // sync prop changes from layout routing
   useEffect(() => {

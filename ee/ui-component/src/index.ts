@@ -20,6 +20,7 @@ export {
 // Export types
 export type {
   MorphikUIProps,
+  Breadcrumb,
   Document,
   SearchResult,
   ChatMessage,

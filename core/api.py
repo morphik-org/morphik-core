@@ -29,7 +29,13 @@ from core.models.chat import ChatMessage
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentResult, GroupedChunkResponse
 from core.models.prompts import validate_prompt_overrides_with_http_exception
-from core.models.request import AgentQueryRequest, CompletionQueryRequest, GenerateUriRequest, RetrieveRequest
+from core.models.request import (
+    AgentQueryRequest,
+    CompletionQueryRequest,
+    GenerateUriRequest,
+    RetrieveRequest,
+    SearchDocumentsRequest,
+)
 from core.models.responses import ChatTitleResponse, ModelsResponse
 from core.routes.cache import router as cache_router
 from core.routes.documents import router as documents_router
@@ -466,6 +472,50 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
         return results
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.post("/search/documents", response_model=List[Document])
+@telemetry.track(operation_type="search_documents", metadata_resolver=telemetry.search_documents_metadata)
+async def search_documents_by_name(
+    request: SearchDocumentsRequest,
+    auth: AuthContext = Depends(verify_token),
+):
+    """
+    Search documents by filename using full-text search.
+
+    Args:
+        request: SearchDocumentsRequest containing:
+            - query: Search query for document names/filenames
+            - limit: Number of documents to return (1-100)
+            - filters: Optional metadata filters for documents
+            - folder_name: Optional folder to scope search
+            - end_user_id: Optional end-user ID to scope search
+        auth: Authentication context
+
+    Returns:
+        List[Document]: List of matching documents ordered by relevance
+    """
+    try:
+        # Normalize folder_name if needed
+        normalized_folder_name = normalize_folder_name(request.folder_name) if request.folder_name else None
+
+        results = await document_service.search_documents_by_name(
+            query=request.query,
+            auth=auth,
+            limit=request.limit,
+            filters=request.filters,
+            folder_name=normalized_folder_name,
+            end_user_id=request.end_user_id,
+        )
+
+        logger.info(f"Document name search for '{request.query}' returned {len(results)} results")
+        return results
+
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error searching documents by name: {e}")
+        raise HTTPException(status_code=500, detail="Failed to search documents")
 
 
 @app.post("/batch/documents", response_model=List[Document])
