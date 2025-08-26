@@ -475,6 +475,57 @@ async def get_graph_status(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/{name}/sync-status", response_model=Dict[str, Any])
+@telemetry.track(operation_type="sync_graph_status")
+async def sync_graph_status(
+    name: str,
+    auth: AuthContext = Depends(verify_token),
+    folder_name: Optional[Union[str, List[str]]] = Query(None),
+    end_user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Manually sync graph status with remote service.
+
+    This endpoint can be used to fix graphs that are stuck in 'processing' state
+    when they are actually completed on the remote service.
+
+    Args:
+        name: Name of the graph to sync
+        auth: Authentication context
+        folder_name: Optional folder to scope the operation to
+        end_user_id: Optional end-user ID to scope the operation to
+
+    Returns:
+        Dict containing sync result
+    """
+    try:
+        # Create system filters for folder and user scoping
+        system_filters = {}
+        if folder_name is not None:
+            normalized_folder_name = normalize_folder_name(folder_name)
+            system_filters["folder_name"] = normalized_folder_name
+        if end_user_id:
+            system_filters["end_user_id"] = end_user_id
+
+        # Get the graph service
+        graph_service = document_service.graph_service
+
+        # Check if it's the MorphikGraphService
+        from core.services.morphik_graph_service import MorphikGraphService
+
+        if isinstance(graph_service, MorphikGraphService):
+            success = await graph_service.sync_graph_status(name, auth, system_filters)
+            if success:
+                return {"status": "success", "message": f"Graph '{name}' status synchronized successfully"}
+            else:
+                return {"status": "failed", "message": f"Failed to synchronize graph '{name}' status"}
+        else:
+            return {"status": "skipped", "message": "Status sync only available for API-backed graphs"}
+
+    except Exception as e:
+        logger.error(f"Error syncing graph status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/workflow/{workflow_id}/status", response_model=Dict[str, Any])
 @telemetry.track(operation_type="check_workflow_status", metadata_resolver=telemetry.workflow_status_metadata)
 async def check_workflow_status(

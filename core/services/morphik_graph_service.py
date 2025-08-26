@@ -203,14 +203,15 @@ class MorphikGraphService:
             if not local_graph:
                 return None
 
-            # Check workflow status if the graph is processing
+            # Check graph status if the graph is processing
             if local_graph.system_metadata.get("status") == "processing":
-                workflow_id = local_graph.system_metadata.get("workflow_id")
-                run_id = local_graph.system_metadata.get("run_id")
-
-                if workflow_id:
-                    # Use existing check_workflow_status method
-                    status_response = await self.check_workflow_status(workflow_id, run_id, auth)
+                try:
+                    # Use new graph-ID-based status checking instead of workflow-based
+                    status_response = await self._make_api_request(
+                        method="GET",
+                        endpoint=f"/graph/{local_graph.id}/status",
+                        auth=auth,
+                    )
 
                     if status_response:
                         # Update local graph metadata based on remote status
@@ -220,34 +221,29 @@ class MorphikGraphService:
                         if "error" in status_response:
                             local_graph.system_metadata["error"] = status_response["error"]
 
+                        if "message" in status_response:
+                            local_graph.system_metadata["message"] = status_response["message"]
+
                         if "pipeline_stage" in status_response:
                             local_graph.system_metadata["pipeline_stage"] = status_response["pipeline_stage"]
 
+                        # If completed, get node and edge counts from the status response
                         if remote_status == "completed":
-                            # Get graph statistics and only mark completed if non-empty
-                            try:
-                                graph_data = await self._make_api_request(
-                                    method="POST",
-                                    endpoint="/graph",
-                                    auth=auth,
-                                    json_data={"graph_id": local_graph.id},
-                                    params={"nodes_num": 2000},
-                                )
+                            if "node_count" in status_response:
+                                local_graph.system_metadata["node_count"] = status_response["node_count"]
+                            if "edge_count" in status_response:
+                                local_graph.system_metadata["edge_count"] = status_response["edge_count"]
 
-                                nodes = (graph_data or {}).get("nodes", [])
-                                links = (graph_data or {}).get("links", [])
-                                local_graph.system_metadata["node_count"] = len(nodes)
-                                local_graph.system_metadata["edge_count"] = len(links)
+                            # Clear workflow tracking data since it's no longer needed
+                            local_graph.system_metadata.pop("workflow_id", None)
+                            local_graph.system_metadata.pop("run_id", None)
 
-                                if len(nodes) == 0 and len(links) == 0:
-                                    # Treat as still processing/finishing to avoid empty UI
-                                    local_graph.system_metadata["status"] = "processing"
-                                    local_graph.system_metadata["pipeline_stage"] = "Finalizing"
-                                else:
-                                    local_graph.system_metadata["status"] = "completed"
-                            except Exception as e:
-                                logger.warning(f"Failed to get graph statistics: {e}")
-                                # Keep existing status; don't mark completed blindly
+                        # Update the graph in the database with new status
+                        await self.db.update_graph(local_graph)
+
+                except Exception as e:
+                    logger.warning(f"Failed to check graph status for {local_graph.id}: {e}")
+                    # Keep existing status; don't update on API failure
 
             return local_graph
 
@@ -929,6 +925,81 @@ class MorphikGraphService:
             logger.error(f"Failed to check workflow status for {workflow_id}: {e}")
             # Return failed status instead of raising
             return {"status": "failed", "error": str(e)}
+
+    async def sync_graph_status(
+        self,
+        graph_name: str,
+        auth: AuthContext,
+        system_filters: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Manually sync graph status with remote service.
+
+        This method can be used to fix graphs that are stuck in 'processing' state
+        when they are actually completed on the remote service.
+
+        Args:
+            graph_name: Name of the graph to sync
+            auth: Authentication context
+            system_filters: Optional system metadata filters
+
+        Returns:
+            bool: True if sync was successful, False otherwise
+        """
+        try:
+            # Get the local graph
+            local_graph = await self.db.get_graph(graph_name, auth, system_filters)
+            if not local_graph:
+                logger.error(f"Graph '{graph_name}' not found for status sync")
+                return False
+
+            # Force status check regardless of current status
+            try:
+                status_response = await self._make_api_request(
+                    method="GET",
+                    endpoint=f"/graph/{local_graph.id}/status",
+                    auth=auth,
+                )
+
+                if status_response:
+                    # Update local graph metadata based on remote status
+                    remote_status = status_response.get("status", "processing")
+                    old_status = local_graph.system_metadata.get("status", "unknown")
+
+                    local_graph.system_metadata["status"] = remote_status
+
+                    if "error" in status_response:
+                        local_graph.system_metadata["error"] = status_response["error"]
+
+                    if "message" in status_response:
+                        local_graph.system_metadata["message"] = status_response["message"]
+
+                    if "pipeline_stage" in status_response:
+                        local_graph.system_metadata["pipeline_stage"] = status_response["pipeline_stage"]
+
+                    # If completed, get node and edge counts from the status response
+                    if remote_status == "completed":
+                        if "node_count" in status_response:
+                            local_graph.system_metadata["node_count"] = status_response["node_count"]
+                        if "edge_count" in status_response:
+                            local_graph.system_metadata["edge_count"] = status_response["edge_count"]
+
+                        # Clear workflow tracking data since it's no longer needed
+                        local_graph.system_metadata.pop("workflow_id", None)
+                        local_graph.system_metadata.pop("run_id", None)
+
+                    # Update the graph in the database with new status
+                    await self.db.update_graph(local_graph)
+
+                    logger.info(f"Graph '{graph_name}' status synced: {old_status} → {remote_status}")
+                    return True
+
+            except Exception as e:
+                logger.error(f"Failed to sync graph status for {graph_name}: {e}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error in sync_graph_status for {graph_name}: {e}")
+            return False
 
     async def delete_graph(
         self,
