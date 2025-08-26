@@ -80,24 +80,21 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
 
   // Update header when folder changes
   useEffect(() => {
-    // Set breadcrumbs - Removed - MorphikUI handles breadcrumbs centrally
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    // Set breadcrumbs based on current folder
     const breadcrumbs = selectedFolder
       ? [
           {
             label: "Documents",
-            onClick: (e: React.MouseEvent) => {
-              e.preventDefault();
+            onClick: () => {
               setSelectedFolder(null);
               handleFolderClick(null);
             },
           },
-          { label: selectedFolder === "all" ? "All Documents" : selectedFolder },
+          { label: selectedFolder === "all" ? "All Documents" : selectedFolder, current: true },
         ]
-      : [{ label: "Documents" }];
+      : [{ label: "Documents", current: true }];
 
-    // Disabled - MorphikUI handles breadcrumbs with organization context
-    // setCustomBreadcrumbs(breadcrumbs);
+    setCustomBreadcrumbs(breadcrumbs);
 
     // Set right content based on current view
     const rightContent = selectedFolder ? (
@@ -184,8 +181,7 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
 
     // Cleanup on unmount
     return () => {
-      // Disabled - MorphikUI handles breadcrumbs with organization context
-      // setCustomBreadcrumbs(null);
+      setCustomBreadcrumbs(null);
       setRightContent(null);
     };
   }, [

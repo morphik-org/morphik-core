@@ -14,6 +14,38 @@ interface ConnectionInputProps {
   showProtocolSelector?: boolean;
 }
 
+function parseConnection(value: string): { host: string; ssl: boolean } {
+  if (!value) return { host: "", ssl: false };
+
+  let host = "";
+  let ssl = false;
+
+  if (value.startsWith("morphik://")) {
+    let baseUri = value;
+    if (value.includes("@https:")) {
+      ssl = true;
+      baseUri = value.replace("@https:", "@");
+    } else if (value.includes("@http:")) {
+      ssl = false;
+      baseUri = value.replace("@http:", "@");
+    } else {
+      ssl = false;
+    }
+    host = baseUri;
+  } else if (value.startsWith("https://")) {
+    ssl = true;
+    host = value.replace("https://", "");
+  } else if (value.startsWith("http://")) {
+    ssl = false;
+    host = value.replace("http://", "");
+  } else {
+    host = value;
+    ssl = false;
+  }
+
+  return { host, ssl };
+}
+
 export function ConnectionInput({
   value = "",
   onChange,
@@ -21,42 +53,16 @@ export function ConnectionInput({
   placeholder = "localhost:8000 or morphik://...",
   showProtocolSelector = true,
 }: ConnectionInputProps) {
-  const [useSSL, setUseSSL] = useState(false);
-  const [hostInput, setHostInput] = useState("");
+  const { host: initialHost, ssl: initialSSL } = parseConnection(value);
+  const [hostInput, setHostInput] = useState(initialHost);
+  const [useSSL, setUseSSL] = useState(initialSSL);
   const [isEditing, setIsEditing] = useState(false);
 
-  // Parse the current value to determine SSL and host
   useEffect(() => {
     if (value && !isEditing) {
-      // Check if it's a morphik:// URI
-      if (value.startsWith("morphik://")) {
-        // For morphik:// URIs, extract the base URI without protocol modifier
-        let baseUri = value;
-
-        // Check if it has explicit protocol and strip it for display
-        if (value.includes("@https:")) {
-          setUseSSL(true);
-          baseUri = value.replace("@https:", "@");
-        } else if (value.includes("@http:")) {
-          setUseSSL(false);
-          baseUri = value.replace("@http:", "@");
-        } else {
-          // No protocol specified - default to HTTP (not HTTPS)
-          setUseSSL(false);
-        }
-
-        setHostInput(baseUri);
-      } else if (value.startsWith("https://")) {
-        setUseSSL(true);
-        setHostInput(value.replace("https://", ""));
-      } else if (value.startsWith("http://")) {
-        setUseSSL(false);
-        setHostInput(value.replace("http://", ""));
-      } else {
-        // Plain host
-        setHostInput(value);
-        setUseSSL(false);
-      }
+      const { host, ssl } = parseConnection(value);
+      setHostInput(host);
+      setUseSSL(ssl);
     }
   }, [value, isEditing]);
 

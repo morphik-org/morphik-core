@@ -43,6 +43,7 @@ export interface MorphikUIProps {
   initialFolder?: string | null; // Initial folder to show
   initialSection?:
     | "documents"
+    | "documents-v2"
     | "search"
     | "chat"
     | "graphs"

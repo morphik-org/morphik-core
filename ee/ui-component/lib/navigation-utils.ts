@@ -44,6 +44,10 @@ export const baseMainNavItems: Omit<BaseNavItem, "type">[] = [
     icon: IconFiles,
   },
   {
+    title: "Documents V2",
+    icon: IconFiles,
+  },
+  {
     title: "PDF Viewer",
     icon: IconFileText,
   },
@@ -104,16 +108,18 @@ export const createUrlNavigation = (onChatClick: () => void, onSettingsClick?: (
       index === 0
         ? "/documents"
         : index === 1
-          ? "/pdf"
+          ? "/documents-v2"
           : index === 2
-            ? "/search"
+            ? "/pdf"
             : index === 3
-              ? "/chat"
+              ? "/search"
               : index === 4
-                ? "/graphs"
+                ? "/chat"
                 : index === 5
-                  ? "/workflows"
-                  : "/connections",
+                  ? "/graphs"
+                  : index === 6
+                    ? "/workflows"
+                    : "/connections",
   })),
   secondaryItems: baseSecondaryNavItems.map((item, index) => ({
     ...item,
@@ -156,16 +162,18 @@ export const createSectionNavigation = (
       index === 0
         ? "documents"
         : index === 1
-          ? "pdf"
+          ? "documents-v2"
           : index === 2
-            ? "search"
+            ? "pdf"
             : index === 3
-              ? "chat"
+              ? "search"
               : index === 4
-                ? "graphs"
+                ? "chat"
                 : index === 5
-                  ? "workflows"
-                  : "connections",
+                  ? "graphs"
+                  : index === 6
+                    ? "workflows"
+                    : "connections",
   })),
   secondaryItems: baseSecondaryNavItems.map((item, index) => ({
     ...item,

@@ -101,20 +101,9 @@ export function MorphikProvider({
   onProfileNavigate?: (section: "account" | "billing" | "notifications") => void;
   onUpgradeClick?: () => void;
 }) {
-  const [connectionUri, setConnectionUri] = useState<string | null>(() => {
-    const storedUri = getStoredConnectionUri();
-
-    // Clear stored URI if it's a local connection (on app restart)
-    if (storedUri && isLocalUri(storedUri)) {
-      console.log("Clearing stored local connection URI on app restart:", storedUri);
-      setStoredConnectionUri(null);
-      // Use initial value or external prop for local connections
-      return externalConnectionUri || initialConnectionUri;
-    }
-
-    // Priority: external prop > stored value > initial value
-    return externalConnectionUri || storedUri || initialConnectionUri;
-  });
+  const [connectionUri, setConnectionUri] = useState<string | null>(
+    externalConnectionUri || initialConnectionUri || null
+  );
 
   const connectionInfo = React.useMemo(() => {
     if (!connectionUri) return null;
@@ -168,6 +157,20 @@ export function MorphikProvider({
       setStoredConnectionUri(null);
     }
   }, [connectionUri, connectionInfo]);
+
+  useEffect(() => {
+    const storedUri = getStoredConnectionUri();
+    if (storedUri) {
+      if (isLocalUri(storedUri)) {
+        console.log("Clearing stored local connection URI on app restart:", storedUri);
+        setStoredConnectionUri(null);
+      } else {
+        if (!externalConnectionUri) {
+          setConnectionUri(storedUri);
+        }
+      }
+    }
+  }, [externalConnectionUri]);
 
   const updateConnectionUri = (uri: string) => {
     if (!isReadOnlyUri) {

@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
-import { MorphikUIProps, Breadcrumb } from "./types";
+import { MorphikUIProps } from "./types";
 import DocumentsWithHeader from "@/components/documents/DocumentsWithHeader";
+import DocumentsPageV2 from "@/components/documents-v2/DocumentsPageV2";
 import SearchSection from "@/components/search/SearchSection";
 import ChatSection from "@/components/chat/ChatSection";
 import GraphSection from "@/components/GraphSection";
@@ -11,6 +12,7 @@ import LogsSection from "@/components/logs/LogsSection";
 import { ConnectorList } from "@/components/connectors/ConnectorList";
 import { PDFViewer } from "@/components/pdf/PDFViewer";
 import { SettingsSection } from "@/components/settings/SettingsSection";
+import { Toaster } from "@/components/ui/sonner";
 import { extractTokenFromUri, getApiBaseUrlFromUri } from "@/lib/utils";
 import { PDFAPIService } from "@/components/pdf/PDFAPIService";
 import { MorphikSidebarRemote } from "@/components/sidebar-stateful";
@@ -90,59 +92,6 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
   const sessionId = `ui-session-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
   const userId = authToken ? "authenticated" : "anonymous";
 
-  // Local breadcrumbs managed here when section is not documents
-  const [localBreadcrumbs, setLocalBreadcrumbs] = useState<Breadcrumb[] | undefined>();
-
-  // update breadcrumbs whenever section changes (initial and subsequent)
-  useEffect(() => {
-    // If custom breadcrumbs are provided, use them as the base
-    if (breadcrumbItems && breadcrumbItems.length > 0) {
-      // Create new breadcrumbs based on custom items
-      const baseBreadcrumbs = [...breadcrumbItems];
-
-      // Remove any 'current' flag from base items
-      baseBreadcrumbs.forEach(item => delete item.current);
-
-      // Add the current section as the last breadcrumb
-      const sectionLabel =
-        currentSection === "graphs"
-          ? "Knowledge Graphs"
-          : currentSection === "documents"
-            ? "Documents"
-            : currentSection.charAt(0).toUpperCase() + currentSection.slice(1);
-
-      // Only add section breadcrumb if it's different from the last breadcrumb
-      const lastBreadcrumb = baseBreadcrumbs[baseBreadcrumbs.length - 1];
-      if (!lastBreadcrumb || lastBreadcrumb.label !== sectionLabel) {
-        baseBreadcrumbs.push({ label: sectionLabel, current: true });
-      } else {
-        // Mark the last item as current
-        baseBreadcrumbs[baseBreadcrumbs.length - 1].current = true;
-      }
-
-      setLocalBreadcrumbs(baseBreadcrumbs);
-    } else {
-      // Fallback to original behavior when no custom breadcrumbs
-      if (currentSection === "documents") {
-        setLocalBreadcrumbs(undefined);
-        return;
-      }
-
-      const prettyLabel =
-        currentSection === "graphs"
-          ? "Knowledge Graphs"
-          : currentSection.charAt(0).toUpperCase() + currentSection.slice(1);
-
-      setLocalBreadcrumbs([
-        {
-          label: "Home",
-          onClick: () => setCurrentSection("documents" as typeof initialSection),
-        },
-        { label: prettyLabel, current: true },
-      ]);
-    }
-  }, [currentSection, breadcrumbItems]);
-
   // sync prop changes from layout routing
   useEffect(() => {
     setCurrentSection(initialSection);
@@ -193,6 +142,23 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
             onDocumentClick={onDocumentClick}
             onFolderCreate={onFolderCreate}
             onFolderClick={handleFolderChange}
+          />
+        );
+      case "documents-v2":
+        return (
+          <DocumentsPageV2
+            apiBaseUrl={effectiveApiBaseUrl}
+            authToken={authToken}
+            initialFolder={currentFolder}
+            onDocumentUpload={onDocumentUpload}
+            onDocumentDelete={onDocumentDelete}
+            onDocumentClick={onDocumentClick}
+            onFolderCreate={onFolderCreate}
+            onFolderClick={handleFolderChange}
+            onViewInPDFViewer={documentId => {
+              // For now, just log - we'll implement this later
+              console.log("Open PDF viewer for document:", documentId);
+            }}
           />
         );
       case "search":
@@ -287,6 +253,7 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
   const contentInner = (
     <PDFAPIService sessionId={sessionId} userId={userId}>
       <div className="min-h-screen bg-sidebar">
+        <Toaster position="top-right" richColors />
         <MorphikProvider
           connectionUri={connectionUri}
           onBackClick={onBackClick}
@@ -320,7 +287,7 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
                   onSettingsViewChange={setShowSettingsView}
                 />
                 <SidebarInset>
-                  <DynamicSiteHeader userProfile={userProfile} customBreadcrumbs={localBreadcrumbs} />
+                  <DynamicSiteHeader userProfile={userProfile} customBreadcrumbs={breadcrumbItems} />
                   <div className="flex flex-1 flex-col p-4 md:p-6">{renderSection()}</div>
                 </SidebarInset>
               </SidebarProvider>
