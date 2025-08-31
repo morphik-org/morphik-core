@@ -304,7 +304,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             }
 
             return CompletionResponse(
-                completion=parsed_response,
+                completion=parsed_response.model_dump(),  # Convert Pydantic model to dict
                 usage=usage,
                 finish_reason=response.get("done_reason", "stop"),
             )
@@ -372,7 +372,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             prompt_tokens = model_kwargs.get("prompt_tokens", 0)
 
             return CompletionResponse(
-                completion=response,
+                completion=response.model_dump(),  # Convert Pydantic model to dict
                 usage={
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
