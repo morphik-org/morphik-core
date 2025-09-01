@@ -628,7 +628,7 @@ class PostgresDatabase(BaseDatabase):
                 doc_dict["owner_id"] = "system"
                 doc_dict["owner_type"] = "system"
 
-            # Initialize ACL lists as empty (can be updated later)
+            # ACL arrays are deprecated but still need to be set to empty for compatibility
             doc_dict["readers"] = []
             doc_dict["writers"] = []
             doc_dict["admins"] = []
@@ -995,14 +995,8 @@ class PostgresDatabase(BaseDatabase):
                 if doc_model.owner_type == auth.entity_type.value and doc_model.owner_id == auth.entity_id:
                     return True
 
-                # Check permission-specific access using flattened arrays
-                permission_map = {"read": doc_model.readers, "write": doc_model.writers, "admin": doc_model.admins}
-                permission_array = permission_map.get(required_permission, [])
-
-                if permission_array is None:
-                    return False
-
-                return auth.entity_id in permission_array
+                # ACL arrays are deprecated - only owner has access
+                return False
 
         except Exception as e:
             logger.error(f"Error checking document access: {str(e)}")
@@ -1017,12 +1011,9 @@ class PostgresDatabase(BaseDatabase):
         Note: This returns a SQL string with :entity_id and :app_id as named parameters.
         The caller must provide these parameters when executing the query.
         """
-        # Base clauses using flattened columns with named parameters
+        # Only check owner_id (ACL arrays are deprecated and always empty/redundant)
         base_clauses = [
             "owner_id = :entity_id",
-            ":entity_id = ANY(readers)",
-            ":entity_id = ANY(writers)",
-            ":entity_id = ANY(admins)",
         ]
 
         # Developer token with app_id → require BOTH app_id match AND standard access
@@ -1296,7 +1287,7 @@ class PostgresDatabase(BaseDatabase):
                 graph_dict["owner_id"] = "system"
                 graph_dict["owner_type"] = "system"
 
-            # Initialize ACL lists as empty (can be updated later)
+            # ACL arrays are deprecated but still need to be set to empty for compatibility
             graph_dict["readers"] = []
             graph_dict["writers"] = []
             graph_dict["admins"] = []
@@ -1568,10 +1559,8 @@ class PostgresDatabase(BaseDatabase):
                     else False
                 )
 
-                is_admin = auth.entity_id in (graph_model.admins or []) if auth.entity_id else False
-                is_writer = auth.entity_id in (graph_model.writers or []) if auth.entity_id else False
-
-                if not (is_owner or is_admin or is_writer):
+                # ACL arrays are deprecated - only check owner
+                if not is_owner:
                     logger.error(f"User lacks write access to delete graph '{name}'")
                     return False
 
@@ -1634,9 +1623,9 @@ class PostgresDatabase(BaseDatabase):
                     owner_type=owner_type,
                     document_ids=folder_dict.get("document_ids", []),
                     system_metadata=folder_dict.get("system_metadata", {}),
-                    readers=[],  # Initialize as empty, can be updated later
-                    writers=[],  # Initialize as empty, can be updated later
-                    admins=[],  # Initialize as empty, can be updated later
+                    readers=[],  # Deprecated - keeping for backward compatibility
+                    writers=[],  # Deprecated - keeping for backward compatibility
+                    admins=[],  # Deprecated - keeping for backward compatibility
                     app_id=app_id_val,
                     end_user_id=folder_dict.get("end_user_id"),
                     rules=folder_dict.get("rules", []),
@@ -1730,9 +1719,6 @@ class PostgresDatabase(BaseDatabase):
                     WHERE name = :name
                     AND (
                         (owner_id = :entity_id AND owner_type = :entity_type)
-                        OR :entity_qualifier = ANY(readers)
-                        OR :entity_qualifier = ANY(writers)
-                        OR :entity_qualifier = ANY(admins)
                     )
                     """
                 ).bindparams(
@@ -1794,14 +1780,8 @@ class PostgresDatabase(BaseDatabase):
                 # Combine owner sub-conditions with AND
                 core_access_conditions.append(text(f"({' AND '.join(owner_sub_conditions_text)})"))
 
-            # Condition 2b & 2c: User is in the folder's 'readers' or 'admins' access control list
-            # Note: Folders use "entity_type:entity_id" format in arrays
-            if auth.entity_type and auth.entity_id:
-                entity_qualifier_for_acl = f"{auth.entity_type.value}:{auth.entity_id}"
-                current_params["acl_qualifier"] = entity_qualifier_for_acl  # Used for both readers and admins
-
-                core_access_conditions.append(text(":acl_qualifier = ANY(readers)"))
-                core_access_conditions.append(text(":acl_qualifier = ANY(admins)"))  # Added folder admins ACL check
+            # ACL arrays are deprecated - removed readers/admins checks
+            # Only owner access remains
 
             # Combine core access conditions with OR, and add this group to the main AND filters
             if core_access_conditions:
@@ -2271,22 +2251,8 @@ class PostgresDatabase(BaseDatabase):
         ):
             return True
 
-        # Check access control lists using flattened columns
-        # ACLs for folders store entries as "entity_type_value:entity_id"
-        entity_qualifier = f"{auth.entity_type.value}:{auth.entity_id}"
-
-        if permission == "read":
-            if entity_qualifier in (folder_model.readers or []):
-                return True
-
-        if permission == "write":
-            if entity_qualifier in (folder_model.writers or []):
-                return True
-
-        # For admin permission, check admins list
-        if permission == "admin":  # This check is for folder-level admin, not global admin
-            if entity_qualifier in (folder_model.admins or []):
-                return True
+        # ACL arrays are deprecated - only owner has permissions
+        # (readers/writers/admins arrays are no longer checked)
 
         return False
 
