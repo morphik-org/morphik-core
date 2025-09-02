@@ -256,7 +256,7 @@ class PostgresDatabase(BaseDatabase):
                 if not folder_model:
                     logger.error(f"Folder {folder_id} not found")
                     return False
-                if not self._check_folder_model_access(folder_model, auth, "admin"):
+                if not self._check_folder_model_access(folder_model, auth):
                     logger.error(f"User does not have admin access to folder {folder_id}")
                     return False
                 await session.delete(folder_model)
@@ -1101,10 +1101,11 @@ class PostgresDatabase(BaseDatabase):
         """
         params = {}
 
-        # Add auth parameters
-        params["entity_id"] = auth.entity_id
+        # Add auth parameters based on what's actually needed
         if auth.app_id:
             params["app_id"] = auth.app_id
+        elif auth.entity_id:
+            params["entity_id"] = auth.entity_id
 
         # Add system metadata filter parameters
         if system_filters:
@@ -1647,7 +1648,7 @@ class PostgresDatabase(BaseDatabase):
                 }
 
                 # Check if the user has access to the folder using the model
-                if not self._check_folder_model_access(folder_model, auth, "read"):
+                if not self._check_folder_model_access(folder_model, auth):
                     return None
 
                 folder = Folder(**folder_dict)
@@ -1763,7 +1764,7 @@ class PostgresDatabase(BaseDatabase):
                     return False
 
                 # Check if user has write access to the folder
-                if not self._check_folder_model_access(folder_model, auth, "write"):
+                if not self._check_folder_model_access(folder_model, auth):
                     logger.error(f"User does not have write access to folder {folder_id}")
                     return False
 
@@ -1847,7 +1848,7 @@ class PostgresDatabase(BaseDatabase):
                     return False
 
                 # Check if user has write access to the folder
-                if not self._check_folder_model_access(folder_model, auth, "write"):
+                if not self._check_folder_model_access(folder_model, auth):
                     logger.error(f"User does not have write access to folder {folder_id}")
                     return False
 
@@ -1903,7 +1904,7 @@ class PostgresDatabase(BaseDatabase):
                     return False
 
                 # Check if user has write access to the folder
-                if not self._check_folder_model_access(folder_model, auth, "write"):
+                if not self._check_folder_model_access(folder_model, auth):
                     logger.error(f"User does not have write access to folder {folder_id}")
                     return False
 
@@ -1938,7 +1939,7 @@ class PostgresDatabase(BaseDatabase):
                     return False
 
                 # Check if user has write access to the folder
-                if not self._check_folder_model_access(folder_model, auth, "write"):
+                if not self._check_folder_model_access(folder_model, auth):
                     logger.error(f"User does not have write access to folder {folder_id}")
                     return False
 
@@ -2157,10 +2158,8 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error updating chat title: {e}")
             return False
 
-    def _check_folder_model_access(
-        self, folder_model: FolderModel, auth: AuthContext, permission: str = "read"
-    ) -> bool:
-        """Check if the user has the required permission for the folder."""
+    def _check_folder_model_access(self, folder_model: FolderModel, auth: AuthContext) -> bool:
+        """Check if the user has access to the folder."""
         # Simplified access check - consistent with documents/graphs
         if auth.app_id:
             # Check app_id match when present (cloud mode)
@@ -2168,11 +2167,6 @@ class PostgresDatabase(BaseDatabase):
 
         # Otherwise check owner_id match (dev/self-hosted mode)
         return folder_model.owner_id == auth.entity_id
-
-        # ACL arrays are deprecated - only owner has permissions
-        # (readers/writers/admins arrays are no longer checked)
-
-        return False
 
     # ------------------------------------------------------------------
     # PERFORMANCE: lightweight folder summaries (id, name, description)
