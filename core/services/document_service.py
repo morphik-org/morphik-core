@@ -1592,8 +1592,7 @@ class DocumentService:
         # open the bytes with Pillow; if that succeeds, treat it as an image.
         if file_type is None:
             try:
-                from PIL import Image as PILImage
-
+                # PILImage is already imported at the top of the file
                 PILImage.open(BytesIO(file_content)).verify()
                 logger.info("Heuristic image detection succeeded (Pillow). Treating as image.")
                 if file_content_base64 is None:

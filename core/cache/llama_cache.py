@@ -3,7 +3,11 @@ import logging
 import pickle
 from typing import Any, Dict, List
 
-from llama_cpp import Llama
+try:
+    # Optional dependency: allow server to start without llama-cpp installed
+    from llama_cpp import Llama as _LlamaClass
+except Exception:  # ImportError or any load-time error
+    _LlamaClass = None
 
 from core.cache.base_cache import BaseCache
 from core.models.completion import CompletionResponse
@@ -74,7 +78,12 @@ class LlamaCache(BaseCache):
             # Set a reasonable default context size (32K tokens)
             default_ctx_size = 32768
 
-            self.llama = Llama.from_pretrained(
+            if _LlamaClass is None:
+                raise ValueError(
+                    "llama-cpp-python is not installed. Install it to enable LlamaCache, or disable llama cache features."
+                )
+
+            self.llama = _LlamaClass.from_pretrained(
                 repo_id=model,
                 filename=gguf_file,
                 n_gpu_layers=self.n_gpu_layers,

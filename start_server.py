@@ -100,8 +100,9 @@ def start_arq_worker():
         # Open log files
         worker_log = open(worker_log_path, "a")
 
-        # Add timestamp to log
-        timestamp = subprocess.check_output(["date"]).decode().strip()
+        # Add timestamp to log (use Python for cross-platform compatibility)
+        from datetime import datetime
+        timestamp = datetime.now().isoformat(timespec="seconds")
         worker_log.write(f"\n\n--- Worker started at {timestamp} ---\n\n")
         worker_log.flush()
 
@@ -133,8 +134,9 @@ def cleanup_processes():
             log_dir = os.path.join(os.getcwd(), "logs")
             worker_log_path = os.path.join(log_dir, "worker.log")
 
+            from datetime import datetime
             with open(worker_log_path, "a") as worker_log:
-                timestamp = subprocess.check_output(["date"]).decode().strip()
+                timestamp = datetime.now().isoformat(timespec="seconds")
                 worker_log.write(f"\n\n--- Worker stopping at {timestamp} ---\n\n")
         except Exception as e:
             logging.warning(f"Could not write worker stop message to log: {e}")
