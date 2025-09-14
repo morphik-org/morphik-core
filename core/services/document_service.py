@@ -1582,8 +1582,13 @@ class DocumentService:
         file_content: bytes,
         chunks: List[Chunk],
     ):
-        # Handle the case where file_type is None
-        mime_type = file_type.mime if file_type is not None else "text/plain"
+        # Derive a safe MIME type string regardless of input shape
+        if isinstance(file_type, str):
+            mime_type = file_type
+        elif file_type is not None and hasattr(file_type, "mime"):
+            mime_type = file_type.mime
+        else:
+            mime_type = "text/plain"
         logger.info(f"Creating chunks for multivector embedding for file type {mime_type}")
 
         # If file_type is None, attempt a light-weight heuristic to detect images
@@ -2184,7 +2189,7 @@ class DocumentService:
             # case file_type if file_type in DOCUMENT:
             #     pass
             case _:
-                logger.warning(f"Colpali is not supported for file type {file_type.mime} - skipping")
+                logger.warning(f"Colpali is not supported for file type {mime_type} - skipping")
                 return [
                     Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks
                 ]
@@ -2924,7 +2929,11 @@ class DocumentService:
             return chunk_objects_multivector
 
         # For file updates, we need special handling for images and PDFs
-        if file and file_type and (file_type.mime in IMAGE or file_type.mime == "application/pdf"):
+        # Safely resolve MIME regardless of whether file_type is a Kind object or str
+        file_type_mime = (
+            file_type if isinstance(file_type, str) else (file_type.mime if file_type is not None else None)
+        )
+        if file and file_type_mime and (file_type_mime in IMAGE or file_type_mime == "application/pdf"):
             # Rewind the file and read it again if needed
             if hasattr(file, "seek") and callable(file.seek) and not file_content:
                 await file.seek(0)

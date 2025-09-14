@@ -221,10 +221,14 @@ class MorphikParser(BaseParser):
         """Check if the file is a video file."""
         try:
             kind = filetype.guess(file)
-            return kind is not None and kind.mime.startswith("video/")
+            if kind and hasattr(kind, "mime"):
+                return kind.mime.startswith("video/")
+            # Fallback to filename extension check
+            return filename.lower().endswith(".mp4")
         except Exception as e:
             logging.error(f"Error detecting file type: {str(e)}")
-            return False
+            # Fallback to filename extension check on error
+            return filename.lower().endswith(".mp4")
 
     def _is_xml_file(self, filename: str, content_type: Optional[str] = None) -> bool:
         """Check if the file is an XML file."""
