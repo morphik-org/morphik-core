@@ -54,6 +54,7 @@ export function ModelSelector({
         if (mergedConfig.google?.apiKey) providers.add("google");
         if (mergedConfig.groq?.apiKey) providers.add("groq");
         if (mergedConfig.deepseek?.apiKey) providers.add("deepseek");
+        if (mergedConfig.lemonade?.port) providers.add("lemonade");
 
         // Load custom models from new endpoint
         try {
@@ -119,6 +120,7 @@ export function ModelSelector({
             if (config.google?.apiKey) providers.add("google");
             if (config.groq?.apiKey) providers.add("groq");
             if (config.deepseek?.apiKey) providers.add("deepseek");
+            if (config.lemonade?.port) providers.add("lemonade");
           } catch (parseErr) {
             console.error("Failed to parse API keys:", parseErr);
           }

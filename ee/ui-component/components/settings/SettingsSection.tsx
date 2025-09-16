@@ -68,6 +68,19 @@ const PROVIDERS = [
     fields: [{ key: "apiKey", label: "API Key", type: "password", required: true }],
     docsUrl: "https://console.groq.com/keys",
   },
+  {
+    id: "lemonade",
+    name: "Lemonade",
+    icon: "🍋",
+    description: "Local AI models via Lemonade server",
+    fields: [
+      { key: "port", label: "Port", type: "text", placeholder: "8020", required: true },
+      { key: "host", label: "Host (Optional)", type: "text", placeholder: "localhost" },
+    ],
+    docsUrl: "https://lemonade-server.ai/",
+    requiresApiKey: false,
+    setupInstructions: "If not installed, download Lemonade from https://lemonade-server.ai/ and run it locally. After installation, paste the port it is running on (default: 8020).",
+  },
 ];
 
 import { useMorphik } from "@/contexts/morphik-context";
@@ -292,11 +305,16 @@ export function SettingsSection({ authToken }: SettingsSectionProps) {
                         </div>
                         <Button variant="outline" size="sm" onClick={() => window.open(provider.docsUrl, "_blank")}>
                           <ExternalLink className="mr-1 h-3 w-3" />
-                          Get API Key
+                          {provider.id === "lemonade" ? "Download Lemonade" : "Get API Key"}
                         </Button>
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                      {"setupInstructions" in provider && provider.setupInstructions && (
+                        <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
+                          {provider.setupInstructions}
+                        </div>
+                      )}
                       {provider.fields.map(field => {
                         const fieldKey = `${provider.id}-${field.key}`;
                         return (

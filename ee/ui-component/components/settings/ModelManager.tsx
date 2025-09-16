@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Edit2, X, Copy, ExternalLink } from "lucide-react";
+import { Plus, Trash2, Edit2, X, Copy, ExternalLink, RefreshCw } from "lucide-react";
 import { showAlert } from "@/components/ui/alert-system";
 import {
   Dialog,
@@ -117,10 +117,10 @@ const PROVIDER_INFO = {
     icon: "🍋",
     exampleConfig: {
       model: "openai/Qwen2.5-VL-7B-Instruct-GGUF",
-      api_base: "http://host.docker.internal:8020/api/v1",
+      api_base: "http://localhost:8020/api/v1",
       vision: true,
     },
-    docsUrl: "#",
+    docsUrl: "https://lemonade-server.ai/",
     requiresApiKey: false,
   },
 };
@@ -134,6 +134,7 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
     provider: "",
     config: "",
   });
+  const [discoveringModels, setDiscoveringModels] = useState(false);
   const { theme } = useTheme();
 
   const { apiBaseUrl } = useMorphik();
@@ -371,11 +372,131 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
   const availableProviders = Object.keys(PROVIDER_INFO).filter(provider => {
     const providerInfo = PROVIDER_INFO[provider as keyof typeof PROVIDER_INFO];
     // Include providers that don't require API keys or have API keys configured
+    if (provider === "lemonade") {
+      // For Lemonade, check if port is configured
+      return apiKeys[provider]?.port;
+    }
     return (
       (providerInfo && "requiresApiKey" in providerInfo && providerInfo.requiresApiKey === false) ||
       apiKeys[provider]?.apiKey
     );
   });
+
+  // Function to discover models from Lemonade server
+  const discoverLemonadeModels = async () => {
+    if (!apiKeys.lemonade?.port) {
+      showAlert("Please configure Lemonade port first", { type: "error" });
+      return;
+    }
+
+    setDiscoveringModels(true);
+    try {
+      const host = (apiKeys.lemonade.host as string) || "localhost";
+      const port = apiKeys.lemonade.port;
+      const healthUrl = `http://${host}:${port}/health`;
+      const lemonadeUrl = `http://${host}:${port}/api/v1`;
+
+      // First check if Lemonade server is running via health endpoint
+      try {
+        const healthResponse = await fetch(healthUrl, {
+          method: 'GET',
+          signal: AbortSignal.timeout(3000) // 3 second timeout
+        });
+        
+        if (!healthResponse.ok) {
+          throw new Error("Health check failed");
+        }
+      } catch (healthError) {
+        // Server is not running, provide guidance
+        setDiscoveringModels(false);
+        
+        const downloadMessage = `Lemonade server is not running on port ${port}.\n\n` +
+          `Please:\n` +
+          `1. Download Lemonade from https://lemonade-server.ai/\n` +
+          `2. Install and start the server\n` +
+          `3. Make sure it's running on port ${port}\n` +
+          `4. Try discovering models again`;
+        
+        showAlert(downloadMessage, { 
+          type: "warning",
+          duration: 8000 
+        });
+        return;
+      }
+
+      // Server is running, now get models
+      const response = await fetch(`${lemonadeUrl}/models`);
+      if (!response.ok) {
+        throw new Error("Failed to get models from Lemonade server");
+      }
+
+      const data = await response.json();
+      const lemonadeModels = data.data || [];
+
+      // Add discovered models
+      for (const model of lemonadeModels) {
+        const modelName = model.id || model.name;
+        const existingModel = models.find(
+          m => m.provider === "lemonade" && (m.config.model === modelName || m.name === modelName)
+        );
+
+        if (!existingModel) {
+          const newLemonadeModel: CustomModel = {
+            id: `custom_lemonade_${Date.now()}_${modelName}`,
+            name: `Lemonade: ${modelName}`,
+            provider: "lemonade",
+            model_name: modelName,
+            config: {
+              model: `openai/${modelName}`,
+              api_base: lemonadeUrl,
+              vision: modelName.toLowerCase().includes("vision") || modelName.toLowerCase().includes("vl"),
+            },
+          };
+
+          // Save to backend if available
+          if (authToken) {
+            try {
+              const response = await fetch(`${apiBaseUrl}/models`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${authToken}`,
+                },
+                body: JSON.stringify({
+                  name: newLemonadeModel.name,
+                  provider: newLemonadeModel.provider,
+                  config: newLemonadeModel.config,
+                }),
+              });
+
+              if (response.ok) {
+                const createdModel = await response.json();
+                newLemonadeModel.id = createdModel.id;
+              }
+            } catch (err) {
+              console.error("Failed to save model to backend:", err);
+            }
+          }
+
+          models.push(newLemonadeModel);
+        }
+      }
+
+      if (lemonadeModels.length > 0) {
+        saveModels(models);
+        showAlert(`Discovered ${lemonadeModels.length} models from Lemonade server`, { type: "success" });
+      } else {
+        showAlert("No models found on Lemonade server", { type: "warning" });
+      }
+    } catch (err) {
+      console.error("Failed to discover Lemonade models:", err);
+      showAlert("Failed to connect to Lemonade server. Please check if it's running and accessible.", {
+        type: "error",
+      });
+    } finally {
+      setDiscoveringModels(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -386,10 +507,18 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
             Add custom LiteLLM-compatible models with your own configurations
           </p>
         </div>
-        <Button onClick={() => setShowAddDialog(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Model
-        </Button>
+        <div className="flex gap-2">
+          {apiKeys.lemonade?.port && (
+            <Button onClick={discoverLemonadeModels} variant="outline" disabled={discoveringModels}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${discoveringModels ? "animate-spin" : ""}`} />
+              {discoveringModels ? "Discovering..." : "Discover Lemonade Models"}
+            </Button>
+          )}
+          <Button onClick={() => setShowAddDialog(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Model
+          </Button>
+        </div>
       </div>
 
       {models.length === 0 ? (
