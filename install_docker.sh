@@ -12,6 +12,9 @@ REPO_URL="https://raw.githubusercontent.com/morphik-org/morphik-core/main"
 COMPOSE_FILE="docker-compose.run.yml"
 DIRECT_INSTALL_URL="https://www.morphik.ai/docs/getting-started#self-host-direct-installation-advanced"
 
+EMBEDDING_PROVIDER=""
+EMBEDDING_PROVIDER_LABEL=""
+
 # --- Helper Functions ---
 print_info() {
     echo -e "\033[34m[INFO]\033[0m $1"
@@ -83,6 +86,31 @@ print_info "Morphik supports 100s of models including OpenAI, Anthropic (Claude)
 read -p "Please enter your OpenAI API Key (or press Enter to skip and configure later): " openai_api_key < /dev/tty
 if [[ -z "$openai_api_key" ]]; then
     print_warning "No OpenAI API key provided. You can add it later to .env or configure other providers in morphik.toml"
+    print_info "Embeddings power ingestion, search, and querying in Morphik. Please choose an alternative provider to continue."
+    while true; do
+        echo ""
+        echo "Select an embeddings provider:"
+        echo "  1) Lemonade embeddings (requires Lemonade SDK running locally)"
+        echo "  2) Ollama embeddings (default - requires Ollama with nomic-embed-text installed)"
+        read -p "Enter 1 or 2 [2]: " embedding_choice < /dev/tty
+        embedding_choice=${embedding_choice:-2}
+        case "$embedding_choice" in
+            1)
+                EMBEDDING_PROVIDER="lemonade_embedding"
+                EMBEDDING_PROVIDER_LABEL="Lemonade embeddings"
+                break
+                ;;
+            2)
+                EMBEDDING_PROVIDER="ollama_embedding"
+                EMBEDDING_PROVIDER_LABEL="Ollama embeddings"
+                break
+                ;;
+            *)
+                print_warning "Please enter 1 or 2."
+                ;;
+        esac
+    done
+    print_info "Embeddings will be configured to use $EMBEDDING_PROVIDER_LABEL with 768 dimensions."
 else
     # Use sed to safely replace the key in the .env file.
     sed -i.bak "s|OPENAI_API_KEY=|OPENAI_API_KEY=$openai_api_key|" .env
@@ -177,6 +205,24 @@ else
             fi
         fi
     fi
+fi
+
+# 5.0 Configure embeddings when OpenAI key is not provided
+if [[ -n "$EMBEDDING_PROVIDER" ]]; then
+    if [ -f morphik.toml ]; then
+        print_info "Configuring morphik.toml to use $EMBEDDING_PROVIDER_LABEL (768 dimensions)..."
+        sed -i.bak \
+            -e "/^\\[embedding\\]/,/^\\[/ s/^[[:space:]]*model[[:space:]]*=.*/model = \"$EMBEDDING_PROVIDER\"  # Reference to registered model/" \
+            -e "/^\\[embedding\\]/,/^\\[/ s/^[[:space:]]*dimensions[[:space:]]*=.*/dimensions = 768/" \
+            morphik.toml
+        rm -f morphik.toml.bak
+    else
+        print_warning "morphik.toml not found. Skipping embedding configuration update."
+    fi
+fi
+
+if [[ -n "$EMBEDDING_PROVIDER" && "$EMBEDDING_PROVIDER" == "lemonade_embedding" ]]; then
+    print_warning "Ensure the Lemonade SDK is installed and running (see Lemonade installation prompt later in this script)."
 fi
 
 # 5.0.5 Now that morphik.toml exists, handle LOCAL_URI_TOKEN configuration

@@ -15,6 +15,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+$script:EmbeddingSelection = $null
+
 function Write-Info($msg)  { Write-Host "[INFO]  $msg" -ForegroundColor Cyan }
 function Write-Step($msg)  { Write-Host "[STEP]  $msg" -ForegroundColor Yellow }
 function Write-Ok($msg)    { Write-Host "[OK]    $msg" -ForegroundColor Green }
@@ -89,7 +91,64 @@ function Ensure-EnvFile {
     Write-Ok "Configured OPENAI_API_KEY in .env"
   } else {
     Write-Info "No OpenAI API key provided. You can configure providers in morphik.toml later."
+    Write-Info "Embeddings power ingestion, search, and querying in Morphik. Choose an alternative provider to continue."
+    while ($true) {
+      Write-Host ""
+      Write-Host "  1) Lemonade embeddings (requires Lemonade SDK running locally)"
+      Write-Host "  2) Ollama embeddings (default - requires Ollama with nomic-embed-text installed)"
+      $choice = Read-Host "Enter 1 or 2 [2]"
+      if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '2' }
+      switch ($choice) {
+        '1' {
+          $script:EmbeddingSelection = [pscustomobject]@{ Model = 'lemonade_embedding'; Label = 'Lemonade embeddings' }
+          break
+        }
+        '2' {
+          $script:EmbeddingSelection = [pscustomobject]@{ Model = 'ollama_embedding'; Label = 'Ollama embeddings' }
+          break
+        }
+        default {
+          Write-Step "Please enter 1 or 2."
+        }
+      }
+    }
+    Write-Info ("Embeddings will be configured to use {0} with 768 dimensions." -f $script:EmbeddingSelection.Label)
+    if ($script:EmbeddingSelection.Model -eq 'lemonade_embedding') {
+      Write-Step "Ensure the Lemonade SDK is installed and running (you'll see an installer prompt later in this script)."
+    }
   }
+}
+
+function Update-EmbeddingConfig {
+  param(
+    [Parameter(Mandatory)] [string] $Model,
+    [Parameter(Mandatory)] [string] $Label
+  )
+
+  if (-not (Test-Path 'morphik.toml')) {
+    Write-Step "morphik.toml not found. Skipping embedding configuration update."
+    return
+  }
+
+  Write-Step ("Configuring morphik.toml to use {0} (768 dimensions)..." -f $Label)
+  $lines = Get-Content 'morphik.toml'
+  $inEmbedding = $false
+  for ($i = 0; $i -lt $lines.Length; $i++) {
+    $line = $lines[$i]
+    if ($line -match '^\s*\[embedding\]\s*$') { $inEmbedding = $true; continue }
+    if ($inEmbedding -and $line -match '^\s*\[') { $inEmbedding = $false }
+    if (-not $inEmbedding) { continue }
+
+    if ($line -match '^\s*model\s*=\s*"([^"]*)"(.*)') {
+      $comment = $Matches[2]
+      $lines[$i] = "model = \"$Model\"$comment"
+    } elseif ($line -match '^\s*dimensions\s*=\s*\d+(.*)') {
+      $suffix = $Matches[1]
+      $lines[$i] = "dimensions = 768$suffix"
+    }
+  }
+
+  Set-Content -Path 'morphik.toml' -Value $lines
 }
 
 function Try-Extract-Config {
@@ -329,6 +388,9 @@ if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
 Ensure-ComposeFile
 Ensure-EnvFile
 Try-Extract-Config
+if ($script:EmbeddingSelection) {
+  Update-EmbeddingConfig -Model $script:EmbeddingSelection.Model -Label $script:EmbeddingSelection.Label
+}
 Update-DevMode-Or-Auth
 Update-GPU-Options
 Enable-Config-Mount
