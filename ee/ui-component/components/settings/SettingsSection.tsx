@@ -335,6 +335,7 @@ export function SettingsSection({ authToken }: SettingsSectionProps) {
 
     setLemonadeStatus({ type: "success", message });
     showAlert(message, { type: "success", duration: 4000 });
+
     setTestingLemonade(false);
   };
 
