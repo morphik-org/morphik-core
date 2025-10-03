@@ -92,20 +92,19 @@ function Ensure-EnvFile {
   } else {
     Write-Info "No OpenAI API key provided. You can configure providers in morphik.toml later."
     Write-Info "Embeddings power ingestion, search, and querying in Morphik. Choose an alternative provider to continue."
-    while ($true) {
+    while (-not $script:EmbeddingSelection) {
       Write-Host ""
-      Write-Host "  1) Lemonade embeddings (requires Lemonade SDK running locally)"
-      Write-Host "  2) Ollama embeddings (default - requires Ollama with nomic-embed-text installed)"
-      $choice = Read-Host "Enter 1 or 2 [2]"
+      Write-Host "Choose an embedding provider:"
+      Write-Host "  1) Lemonade (download at https://lemonade-server.ai/)"
+      Write-Host "  2) Ollama (download at https://ollama.com/)"
+      $choice = Read-Host "Enter 1 or 2"
       if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '2' }
       switch ($choice) {
         '1' {
           $script:EmbeddingSelection = [pscustomobject]@{ Model = 'lemonade_embedding'; Label = 'Lemonade embeddings' }
-          break
         }
         '2' {
           $script:EmbeddingSelection = [pscustomobject]@{ Model = 'ollama_embedding'; Label = 'Ollama embeddings' }
-          break
         }
         default {
           Write-Step "Please enter 1 or 2."

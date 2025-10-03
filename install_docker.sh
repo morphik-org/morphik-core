@@ -90,8 +90,8 @@ if [[ -z "$openai_api_key" ]]; then
     while true; do
         echo ""
         echo "Select an embeddings provider:"
-        echo "  1) Lemonade embeddings (requires Lemonade SDK running locally)"
-        echo "  2) Ollama embeddings (default - requires Ollama with nomic-embed-text installed)"
+        echo "  1) Lemonade (download at https://lemonade-server.ai/)"
+        echo "  2) Ollama (download at https://ollama.com/)"
         read -p "Enter 1 or 2 [2]: " embedding_choice < /dev/tty
         embedding_choice=${embedding_choice:-2}
         case "$embedding_choice" in
