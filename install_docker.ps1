@@ -141,7 +141,7 @@ function Update-EmbeddingConfig {
 
     if ($line -match '^\s*model\s*=\s*"([^"]*)"(.*)') {
       $comment = $Matches[2]
-      $lines[$i] = "model = \"$Model\"$comment"
+      $lines[$i] = 'model = "{0}"{1}' -f $Model, $comment
     } elseif ($line -match '^\s*dimensions\s*=\s*\d+(.*)') {
       $suffix = $Matches[1]
       $lines[$i] = "dimensions = 768$suffix"
@@ -228,10 +228,12 @@ function Update-DevMode-Or-Auth {
     Write-Info "No token provided - enabling development mode (dev_mode=true)."
     $content = Get-Content morphik.toml -Raw
     $content = $content -replace '(?m)^dev_mode\s*=\s*false', 'dev_mode = true'
-    Set-Content morphik.toml -Value $content   } else {
+    Set-Content morphik.toml -Value $content
+  } else {
     Write-Ok "LOCAL_URI_TOKEN set - keeping production mode (dev_mode=false)."
     (Get-Content .env -Raw) -replace 'LOCAL_URI_TOKEN=', "LOCAL_URI_TOKEN=$token" |
-      Set-Content .env   }
+      Set-Content .env
+  }
 }
 
 function Update-GPU-Options {
