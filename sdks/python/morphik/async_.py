@@ -1226,6 +1226,19 @@ class AsyncMorphik:
         # Return a usable AsyncFolder object with the ID from the response
         return AsyncFolder(self, name, folder_id=folder_info.id)
 
+    async def delete_folder(self, folder_name: str) -> Dict[str, Any]:
+        """
+        Delete a folder and all associated documents.
+
+        Args:
+            folder_name: The name of the folder to delete
+
+        Returns:
+            Dict containing status and message
+        """
+        response = await self._request("DELETE", f"folders/{folder_name}")
+        return response
+
     def get_folder_by_name(self, name: str) -> AsyncFolder:
         """
         Get a folder by name to scope operations.

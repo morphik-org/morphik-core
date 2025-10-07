@@ -78,6 +78,16 @@ class DocumentService:
                     last_folder = await self._ensure_folder_exists(fname, document_id, auth)
                 return last_folder
 
+            # Validate folder name - no slashes allowed (nested folders not supported)
+            if "/" in folder_name:
+                error_msg = (
+                    f"Invalid folder name '{folder_name}'. Folder names cannot contain '/'. "
+                    f"Nested folders are not supported. Use '_' instead to denote subfolders "
+                    f"(e.g., 'folder_subfolder_subsubfolder')."
+                )
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
             # First check if the folder already exists
             folder = await self.db.get_folder_by_name(folder_name, auth)
             if folder:
@@ -1597,8 +1607,7 @@ class DocumentService:
         # open the bytes with Pillow; if that succeeds, treat it as an image.
         if file_type is None:
             try:
-                from PIL import Image as PILImage
-
+                # PILImage is already imported at the top of the file
                 PILImage.open(BytesIO(file_content)).verify()
                 logger.info("Heuristic image detection succeeded (Pillow). Treating as image.")
                 if file_content_base64 is None:

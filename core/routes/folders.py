@@ -52,6 +52,17 @@ async def create_folder(
         Folder: Created folder
     """
     try:
+        # Validate folder name - no slashes allowed (nested folders not supported)
+        if "/" in folder_create.name:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid folder name '{folder_create.name}'. Folder names cannot contain '/'. "
+                    f"Nested folders are not supported. Use '_' instead to denote subfolders "
+                    f"(e.g., 'folder_subfolder_subsubfolder')."
+                ),
+            )
+
         # Create a folder object with explicit ID
         folder_id = str(uuid.uuid4())
         logger.info(f"Creating folder with ID: {folder_id}, auth.user_id: {auth.user_id}")
@@ -68,6 +79,8 @@ async def create_folder(
             raise HTTPException(status_code=500, detail="Failed to create folder")
 
         return folder
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating folder: {e}")
         raise HTTPException(status_code=500, detail=str(e))

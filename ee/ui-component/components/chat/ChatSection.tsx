@@ -47,6 +47,49 @@ interface ChatHistoryAPIItem {
   };
 }
 
+const LEMONADE_DEFAULT_HOSTS = {
+  direct: "localhost",
+  docker: "host.docker.internal",
+} as const;
+
+type LemonadeHostOption = keyof typeof LEMONADE_DEFAULT_HOSTS;
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+};
+
+const asString = (value: unknown): string | undefined => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  return undefined;
+};
+
+const asPortString = (value: unknown): string | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return asString(value);
+};
+
+const fromRecord = (record: Record<string, unknown> | null, key: string): unknown => {
+  if (!record) return undefined;
+  return Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
+};
+
+type AvailableModel = {
+  id: string;
+  name: string;
+  provider: string;
+  description?: string;
+  enabled?: boolean;
+  config?: Record<string, unknown>;
+};
+
 /**
  * ChatSection component using Vercel-style UI
  */
@@ -172,15 +215,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   >([]);
 
   const [showModelSelector, setShowModelSelector] = useState(false);
-  const [availableModels, setAvailableModels] = useState<
-    Array<{
-      id: string;
-      name: string;
-      provider: string;
-      description?: string;
-      enabled?: boolean;
-    }>
-  >([]);
+  const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
 
   // Provider configuration is derived on demand; no need to store separately
 
@@ -533,73 +568,135 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   const handleModelChange = (modelId: string) => {
     setSelectedModel(modelId);
 
-    // Handle default model - clear llm_config to use server default
     if (modelId === "default") {
       safeUpdateOption("llm_config", undefined);
       return;
     }
 
-    // Check if this is a custom model
+    const apiKeysRaw = typeof window !== "undefined" ? localStorage.getItem("morphik_api_keys") : null;
+    let parsedApiKeys: Record<string, unknown> | null = null;
+    if (apiKeysRaw) {
+      try {
+        parsedApiKeys = JSON.parse(apiKeysRaw) as Record<string, unknown>;
+      } catch (err) {
+        console.error("Failed to parse API key configuration:", err);
+      }
+    }
+
+    const lemonadeSettings = asRecord(fromRecord(parsedApiKeys, "lemonade"));
+
+    const applyLemonadeOverrides = (configRecord: Record<string, unknown>) => {
+      const metadata = asRecord(fromRecord(configRecord, "lemonade_metadata"));
+      const apiBases = asRecord(metadata ? fromRecord(metadata, "api_bases") : undefined);
+
+      const hostModeValue =
+        asString(fromRecord(lemonadeSettings, "hostMode")) ||
+        asString(fromRecord(lemonadeSettings, "host_mode")) ||
+        asString(fromRecord(metadata, "host_mode"));
+
+      const hostMode: LemonadeHostOption = hostModeValue === "docker" ? "docker" : "direct";
+
+      const resolvedPort =
+        asPortString(fromRecord(lemonadeSettings, "port")) ||
+        asPortString(fromRecord(lemonadeSettings, "lemonade_port")) ||
+        asPortString(fromRecord(metadata, "port")) ||
+        asPortString(fromRecord(metadata, "lemonade_port"));
+
+      let resolvedHost =
+        asString(fromRecord(lemonadeSettings, "host")) || asString(fromRecord(metadata, "backend_host"));
+
+      if (!resolvedHost) {
+        resolvedHost = LEMONADE_DEFAULT_HOSTS[hostMode];
+      }
+
+      let resolvedApiBase =
+        (hostMode === "docker" ? asString(fromRecord(apiBases, "docker")) : asString(fromRecord(apiBases, "direct"))) ||
+        asString(fromRecord(apiBases, "selected"));
+
+      if (resolvedHost && resolvedPort) {
+        resolvedApiBase = `http://${resolvedHost}:${resolvedPort}/api/v1`;
+      }
+
+      if (resolvedApiBase) {
+        configRecord["api_base"] = resolvedApiBase;
+      }
+
+      delete configRecord["lemonade_metadata"];
+    };
+
     if (modelId.startsWith("custom_")) {
-      const savedModels = localStorage.getItem("morphik_custom_models");
+      const savedModels = typeof window !== "undefined" ? localStorage.getItem("morphik_custom_models") : null;
       if (savedModels) {
         try {
           const customModels = JSON.parse(savedModels);
           const customModel = customModels.find((m: { id: string }) => `custom_${m.id}` === modelId);
 
           if (customModel) {
-            // Use the custom model's config directly
-            safeUpdateOption("llm_config", customModel.config);
+            const llmConfig: Record<string, unknown> = {
+              ...(customModel.config as Record<string, unknown>),
+            };
+
+            if (customModel.provider === "lemonade") {
+              applyLemonadeOverrides(llmConfig);
+            }
+
+            safeUpdateOption("llm_config", llmConfig);
             return;
           }
         } catch (err) {
           console.error("Failed to parse custom models:", err);
         }
       }
+
+      const fallbackModel = availableModels.find(model => model.id === modelId);
+      if (fallbackModel?.config) {
+        const fallbackConfig = { ...(fallbackModel.config as Record<string, unknown>) };
+        if (fallbackModel.provider === "lemonade") {
+          applyLemonadeOverrides(fallbackConfig);
+        }
+        safeUpdateOption("llm_config", fallbackConfig);
+        return;
+      }
     }
 
-    // Get API keys from localStorage
-    const savedConfig = localStorage.getItem("morphik_api_keys");
-    if (savedConfig) {
-      try {
-        const config = JSON.parse(savedConfig);
+    if (parsedApiKeys) {
+      const providerConfig = parsedApiKeys as Record<string, { apiKey?: string; baseUrl?: string }>;
+      const modelConfig: Record<string, unknown> = { model: modelId };
 
-        // Build model_config based on selected model and saved API keys
-        const modelConfig: Record<string, unknown> = { model: modelId };
-
-        // Determine provider from model ID
-        if (modelId.startsWith("gpt")) {
-          if (config.openai?.apiKey) {
-            modelConfig.api_key = config.openai.apiKey;
-            if (config.openai.baseUrl) {
-              modelConfig.base_url = config.openai.baseUrl;
-            }
-          }
-        } else if (modelId.startsWith("claude")) {
-          if (config.anthropic?.apiKey) {
-            modelConfig.api_key = config.anthropic.apiKey;
-            if (config.anthropic.baseUrl) {
-              modelConfig.base_url = config.anthropic.baseUrl;
-            }
-          }
-        } else if (modelId.startsWith("gemini/")) {
-          if (config.google?.apiKey) {
-            modelConfig.api_key = config.google.apiKey;
-          }
-        } else if (modelId.startsWith("groq/")) {
-          if (config.groq?.apiKey) {
-            modelConfig.api_key = config.groq.apiKey;
-          }
-        } else if (modelId.startsWith("deepseek/")) {
-          if (config.deepseek?.apiKey) {
-            modelConfig.api_key = config.deepseek.apiKey;
+      if (modelId.startsWith("gpt")) {
+        const openai = providerConfig.openai;
+        if (openai?.apiKey) {
+          modelConfig.api_key = openai.apiKey;
+          if (openai.baseUrl) {
+            modelConfig.base_url = openai.baseUrl;
           }
         }
-
-        safeUpdateOption("llm_config", modelConfig);
-      } catch (err) {
-        console.error("Failed to parse API keys:", err);
+      } else if (modelId.startsWith("claude")) {
+        const anthropic = providerConfig.anthropic;
+        if (anthropic?.apiKey) {
+          modelConfig.api_key = anthropic.apiKey;
+          if (anthropic.baseUrl) {
+            modelConfig.base_url = anthropic.baseUrl;
+          }
+        }
+      } else if (modelId.startsWith("gemini/")) {
+        const google = providerConfig.google;
+        if (google?.apiKey) {
+          modelConfig.api_key = google.apiKey;
+        }
+      } else if (modelId.startsWith("groq/")) {
+        const groq = providerConfig.groq;
+        if (groq?.apiKey) {
+          modelConfig.api_key = groq.apiKey;
+        }
+      } else if (modelId.startsWith("deepseek/")) {
+        const deepseek = providerConfig.deepseek;
+        if (deepseek?.apiKey) {
+          modelConfig.api_key = deepseek.apiKey;
+        }
       }
+
+      safeUpdateOption("llm_config", modelConfig);
     }
   };
 
@@ -626,12 +723,13 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   // Load custom models, fetch configured providers, and combine with server models
   useEffect(() => {
     const loadModelsAndConfig = async () => {
-      const allModels: Array<{
-        id: string;
-        name: string;
-        provider: string;
-        description?: string;
-      }> = [...serverModels];
+      const allModels: AvailableModel[] = serverModels.map(model => ({
+        id: model.id,
+        name: model.name,
+        provider: model.provider,
+        description: model.description,
+        config: (model as AvailableModel).config,
+      }));
 
       try {
         // Load custom models from backend if authenticated
@@ -641,12 +739,15 @@ const ChatSection: React.FC<ChatSectionProps> = ({
           });
           if (resp.ok) {
             const customModelsList = await resp.json();
-            const customTransformed = customModelsList.map((m: { id: string; name: string; provider: string }) => ({
-              id: `custom_${m.id}`,
-              name: m.name,
-              provider: m.provider,
-              description: `Custom ${m.provider} model`,
-            }));
+            const customTransformed = customModelsList.map(
+              (m: { id: string; name: string; provider: string; config?: Record<string, unknown> }) => ({
+                id: `custom_${m.id}`,
+                name: m.name,
+                provider: m.provider,
+                description: `Custom ${m.provider} model`,
+                config: m.config,
+              })
+            );
             allModels.push(...customTransformed);
           }
         } else {
@@ -655,12 +756,15 @@ const ChatSection: React.FC<ChatSectionProps> = ({
           if (savedModels) {
             try {
               const parsed = JSON.parse(savedModels);
-              const customTransformed = parsed.map((m: { id: string; name: string; provider: string }) => ({
-                id: `custom_${m.id}`,
-                name: m.name,
-                provider: m.provider,
-                description: `Custom ${m.provider} model`,
-              }));
+              const customTransformed = parsed.map(
+                (m: { id: string; name: string; provider: string; config?: Record<string, unknown> }) => ({
+                  id: `custom_${m.id}`,
+                  name: m.name,
+                  provider: m.provider,
+                  description: `Custom ${m.provider} model`,
+                  config: m.config,
+                })
+              );
               allModels.push(...customTransformed);
             } catch (err) {
               console.error("Failed to parse custom models:", err);

@@ -28,7 +28,11 @@ export function ModelSelector({
   onModelChange,
   onRequestApiKey,
 }: ModelSelectorProps) {
-  const { models: serverModels, loading: loadingServerModels } = useModels(apiBaseUrl, authToken);
+  const {
+    models: serverModels,
+    loading: loadingServerModels,
+    refresh: refreshServerModels,
+  } = useModels(apiBaseUrl, authToken);
   const [currentModel, setCurrentModel] = useState<string>(selectedModel || "");
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -54,6 +58,7 @@ export function ModelSelector({
         if (mergedConfig.google?.apiKey) providers.add("google");
         if (mergedConfig.groq?.apiKey) providers.add("groq");
         if (mergedConfig.deepseek?.apiKey) providers.add("deepseek");
+        if (mergedConfig.lemonade?.port) providers.add("lemonade");
 
         // Load custom models from new endpoint
         try {
@@ -119,6 +124,7 @@ export function ModelSelector({
             if (config.google?.apiKey) providers.add("google");
             if (config.groq?.apiKey) providers.add("groq");
             if (config.deepseek?.apiKey) providers.add("deepseek");
+            if (config.lemonade?.port) providers.add("lemonade");
           } catch (parseErr) {
             console.error("Failed to parse API keys:", parseErr);
           }
@@ -168,13 +174,21 @@ export function ModelSelector({
 
       console.log("Final available providers:", Array.from(providers));
       setAvailableProviders(providers);
+
+      if (providers.has("lemonade")) {
+        try {
+          await refreshServerModels();
+        } catch (err) {
+          console.error("Failed to refresh server models after Lemonade detected:", err);
+        }
+      }
       setLoadingCustomModels(false);
     };
 
     if (isOpen) {
       loadAvailableProviders();
     }
-  }, [isOpen, authToken]); // Re-check when dropdown opens
+  }, [isOpen, authToken, apiBaseUrl, refreshServerModels]); // Re-check when dropdown opens
 
   // Combine server models with custom models
   const models = useMemo(() => {
