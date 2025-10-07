@@ -432,9 +432,12 @@ class QueryPromptOverride(BaseModel):
     prompt_template: Optional[str] = Field(
         None,
         description="Custom prompt template for generating responses to queries. "
-        "The exact placeholders available depend on the query context, but "
-        "typically include {question}, {context}, and other system-specific variables. "
+        "REQUIRED PLACEHOLDERS: {question} and {context} must be included in the template. "
         "Use this to control response style, format, and tone.",
+    )
+    system_prompt: Optional[str] = Field(
+        None,
+        description="Custom system prompt that replaces Morphik's default query agent instructions.",
     )
 
 

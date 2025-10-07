@@ -1159,8 +1159,12 @@ class DocumentService:
             completion_start = time.time()
 
         custom_prompt_template = None
+        custom_system_prompt = None
         if prompt_overrides and prompt_overrides.query:
-            custom_prompt_template = prompt_overrides.query.prompt_template
+            if hasattr(prompt_overrides.query, "prompt_template"):
+                custom_prompt_template = prompt_overrides.query.prompt_template
+            if hasattr(prompt_overrides.query, "system_prompt"):
+                custom_system_prompt = prompt_overrides.query.system_prompt
 
         request = CompletionRequest(
             query=query,
@@ -1168,6 +1172,7 @@ class DocumentService:
             max_tokens=max_tokens,
             temperature=temperature,
             prompt_template=custom_prompt_template,
+            system_prompt=custom_system_prompt,
             schema=schema,
             chat_history=chat_history,
             stream_response=stream_response,
