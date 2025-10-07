@@ -855,8 +855,12 @@ class MorphikGraphService:
 
         # Generate completion
         custom_prompt_template = None
-        if prompt_overrides and prompt_overrides.query and hasattr(prompt_overrides.query, "prompt_template"):
-            custom_prompt_template = prompt_overrides.query.prompt_template
+        custom_system_prompt = None
+        if prompt_overrides and prompt_overrides.query:
+            if hasattr(prompt_overrides.query, "prompt_template"):
+                custom_prompt_template = prompt_overrides.query.prompt_template
+            if hasattr(prompt_overrides.query, "system_prompt"):
+                custom_system_prompt = prompt_overrides.query.system_prompt
 
         completion_req = CompletionRequest(
             query=query,
@@ -864,6 +868,7 @@ class MorphikGraphService:
             max_tokens=max_tokens,
             temperature=temperature,
             prompt_template=custom_prompt_template,
+            system_prompt=custom_system_prompt,
             folder_name=folder_name,
             end_user_id=end_user_id,
             stream_response=stream_response,

@@ -45,7 +45,7 @@ ollama_embedding = { model_name = "ollama/nomic-embed-text", api_base = "http://
 # Lemonade models (for AMD GPU and NPU support)
 # - Local: "http://localhost:8020/api/v1"
 # - Morphik in Docker: "http://host.docker.internal:8020/api/v1"
-lemonade_qwen = { model_name = "openai/Qwen2.5-VL-7B-Instruct-GGUF", api_base = "http://localhost:8020/api/v1", vision = true }
+# lemonade_qwen = { model_name = "openai/Qwen2.5-VL-7B-Instruct-GGUF", api_base = "http://localhost:8020/api/v1", vision = true }
 lemonade_embedding = { model_name = "openai/nomic-embed-text-v1-GGUF", api_base = "http://localhost:8020/api/v1" }
 
 openai_embedding = { model_name = "text-embedding-3-small" }
