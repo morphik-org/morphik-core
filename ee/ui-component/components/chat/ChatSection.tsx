@@ -104,7 +104,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   const { activeChatId, setActiveChatId } = useChatContext();
 
   // Load server models using the same hook as ModelSelector
-  const { models: serverModels } = useModels(apiBaseUrl, authToken);
+  const { models: serverModels, refresh: refreshServerModels } = useModels(apiBaseUrl, authToken);
   const { theme } = useTheme();
 
   // Generate a stable chatId when no active chat is selected
@@ -720,8 +720,32 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Force-refresh server models when opening the selector so newly-added options (e.g. Lemonade) appear
+  useEffect(() => {
+    if (!showModelSelector) {
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        await refreshServerModels();
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Failed to refresh models before opening selector:", err);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showModelSelector, refreshServerModels]);
+
   // Load custom models, fetch configured providers, and combine with server models
   useEffect(() => {
+    let cancelled = false;
+
     const loadModelsAndConfig = async () => {
       const allModels: AvailableModel[] = serverModels.map(model => ({
         id: model.id,
@@ -817,12 +841,17 @@ const ChatSection: React.FC<ChatSectionProps> = ({
         enabled: !doesProviderRequireKey(m.provider) || configured[m.provider] === true,
       }));
 
-      setAvailableModels(withEnabled);
+      if (!cancelled) {
+        setAvailableModels(withEnabled);
+      }
     };
 
     if (showModelSelector) {
       loadModelsAndConfig();
     }
+    return () => {
+      cancelled = true;
+    };
   }, [showModelSelector, serverModels, authToken, apiBaseUrl]);
 
   // Provider logos and icons
