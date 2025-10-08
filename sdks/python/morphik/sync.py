@@ -1318,17 +1318,17 @@ class Morphik:
         # Return a usable Folder object with the ID from the response
         return Folder(self, name, folder_id=folder_info.id)
 
-    def delete_folder(self, folder_name: str) -> Dict[str, Any]:
+    def delete_folder(self, folder_id_or_name: str) -> Dict[str, Any]:
         """
         Delete a folder and all associated documents.
 
         Args:
-            folder_name: The name of the folder to delete
+            folder_id_or_name: Name or ID of the folder to delete
 
         Returns:
             Dict containing status and message
         """
-        response = self._request("DELETE", f"folders/{folder_name}")
+        response = self._request("DELETE", f"folders/{folder_id_or_name}")
         return response
 
     def get_folder_by_name(self, name: str) -> Folder:
@@ -1343,17 +1343,18 @@ class Morphik:
         """
         return Folder(self, name)
 
-    def get_folder(self, folder_id: str) -> Folder:
+    def get_folder(self, folder_id_or_name: str) -> Folder:
         """
-        Get a folder by ID.
+        Get a folder by ID or name.
 
         Args:
-            folder_id: ID of the folder
+            folder_id_or_name: ID or name of the folder
 
         Returns:
             Folder: A folder object for scoped operations
         """
-        response = self._request("GET", f"folders/{folder_id}")
+        response = self._request("GET", f"folders/{folder_id_or_name}")
+        folder_id = response.get("id", folder_id_or_name)
         return Folder(self, response["name"], folder_id)
 
     def list_folders(self) -> List[Folder]:
@@ -1366,32 +1367,32 @@ class Morphik:
         folder_infos = self._request("GET", "folders")
         return [Folder(self, info["name"], info["id"]) for info in folder_infos]
 
-    def add_document_to_folder(self, folder_id: str, document_id: str) -> Dict[str, str]:
+    def add_document_to_folder(self, folder_id_or_name: str, document_id: str) -> Dict[str, str]:
         """
         Add a document to a folder.
 
         Args:
-            folder_id: ID of the folder
+            folder_id_or_name: ID or name of the folder
             document_id: ID of the document
 
         Returns:
             Dict[str, str]: Success status
         """
-        response = self._request("POST", f"folders/{folder_id}/documents/{document_id}")
+        response = self._request("POST", f"folders/{folder_id_or_name}/documents/{document_id}")
         return response
 
-    def remove_document_from_folder(self, folder_id: str, document_id: str) -> Dict[str, str]:
+    def remove_document_from_folder(self, folder_id_or_name: str, document_id: str) -> Dict[str, str]:
         """
         Remove a document from a folder.
 
         Args:
-            folder_id: ID of the folder
+            folder_id_or_name: ID or name of the folder
             document_id: ID of the document
 
         Returns:
             Dict[str, str]: Success status
         """
-        response = self._request("DELETE", f"folders/{folder_id}/documents/{document_id}")
+        response = self._request("DELETE", f"folders/{folder_id_or_name}/documents/{document_id}")
         return response
 
     def signin(self, end_user_id: str) -> UserScope:
