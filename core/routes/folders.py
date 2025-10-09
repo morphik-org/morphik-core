@@ -204,11 +204,19 @@ async def delete_folder(
             raise HTTPException(status_code=500, detail=msg)
 
         # folder is empty now
-        delete_tasks = [document_service.db.delete_document(document_id, auth) for document_id in document_ids]
-        stati = await asyncio.gather(*delete_tasks)
-        if not all(stati):
-            failed = [doc for doc, stat in zip(document_ids, stati) if not stat]
-            msg = "Failed to delete the following documents: " + ", ".join(failed)
+        delete_tasks = [document_service.delete_document(document_id, auth) for document_id in document_ids]
+        stati = await asyncio.gather(*delete_tasks, return_exceptions=True)
+
+        failed_docs = []
+        for doc_id, result in zip(document_ids, stati):
+            if isinstance(result, Exception):
+                logger.error("Error deleting document %s while deleting folder %s: %s", doc_id, folder_id, result)
+                failed_docs.append(doc_id)
+            elif not result:
+                failed_docs.append(doc_id)
+
+        if failed_docs:
+            msg = "Failed to delete the following documents: " + ", ".join(failed_docs)
             logger.error(msg)
             raise HTTPException(status_code=500, detail=msg)
 

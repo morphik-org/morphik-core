@@ -6,7 +6,7 @@ import tempfile
 import time
 from contextlib import contextmanager
 from io import BytesIO
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 import psycopg
@@ -32,7 +32,9 @@ DEFAULT_APP_ID = "default"  # Fallback for local usage when app_id is None
 
 if get_settings().MULTIVECTOR_STORE_PROVIDER == "morphik":
     import fixed_dimensional_encoding as fde
-    from turbopuffer import AsyncTurbopuffer
+    from turbopuffer import AsyncTurbopuffer, NotFoundError
+else:
+    NotFoundError = Exception  # type: ignore[assignment]
 
 
 # external storage always enabled, no two ways about it
@@ -217,7 +219,34 @@ class FastMultiVectorStore(BaseVectorStore):
         ]
 
     async def delete_chunks_by_document_id(self, document_id: str, app_id: Optional[str] = None) -> bool:
-        return await self.ns(app_id).write(delete_by_filter=("document_id", "Eq", document_id))
+        namespace = self.ns(app_id)
+        storage_targets: Set[Tuple[str, str]] = set()
+
+        if self.storage:
+            storage_targets = await self._collect_storage_targets(namespace, document_id, app_id)
+
+        try:
+            await namespace.write(delete_by_filter=("document_id", "Eq", document_id))
+        except NotFoundError:
+            logger.info(
+                "TurboPuffer namespace %s not found while deleting document %s",
+                app_id or self.namespace,
+                document_id,
+            )
+            storage_targets = set()
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "Failed to delete TurboPuffer rows for document %s in namespace %s: %s",
+                document_id,
+                app_id or self.namespace,
+                exc,
+            )
+            return False
+
+        if storage_targets:
+            await self._delete_storage_targets(storage_targets, document_id)
+
+        return True
 
     async def save_multivector_to_storage(self, chunk: DocumentChunk) -> Tuple[str, str]:
         as_np = np.array(chunk.embedding)
@@ -385,6 +414,108 @@ class FastMultiVectorStore(BaseVectorStore):
         return (
             len(content) < 500 and "/" in content and not content.startswith("data:") and not content.startswith("http")
         )
+
+    @staticmethod
+    def _normalize_storage_key(key: str) -> str:
+        if key.startswith(f"{MULTIVECTOR_CHUNKS_BUCKET}/"):
+            return key[len(MULTIVECTOR_CHUNKS_BUCKET) + 1 :]
+        return key
+
+    @staticmethod
+    def _row_get(row: Union[Dict[str, Any], object], field: str) -> Optional[Any]:
+        """Helper to safely extract fields from TurboPuffer rows."""
+        try:
+            if isinstance(row, dict):
+                return row.get(field)
+            if hasattr(row, "__getitem__"):
+                return row[field]  # type: ignore[index]
+        except (KeyError, TypeError):
+            pass
+        return getattr(row, field, None)
+
+    async def _collect_storage_targets(
+        self, namespace, document_id: str, app_id: Optional[str]
+    ) -> Set[Tuple[str, str]]:
+        """Collect storage objects associated with a document before deletion."""
+        targets: Set[Tuple[str, str]] = set()
+        last_id: Optional[str] = None
+        page_size = 500
+        namespace_name = app_id or self.namespace
+
+        while True:
+            filters = (
+                ("document_id", "Eq", document_id)
+                if last_id is None
+                else ("And", [("document_id", "Eq", document_id), ("id", "Gt", last_id)])
+            )
+            try:
+                result = await namespace.query(
+                    filters=filters,
+                    include_attributes=["content", "multivector"],
+                    rank_by=("id", "asc"),
+                    top_k=page_size,
+                )
+            except NotFoundError:
+                logger.info(
+                    "TurboPuffer namespace %s not found while collecting storage targets for document %s",
+                    namespace_name,
+                    document_id,
+                )
+                return set()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Failed to collect storage targets for document %s in namespace %s: %s",
+                    document_id,
+                    namespace_name,
+                    exc,
+                )
+                break
+
+            rows = result.rows or []
+            last_seen_id: Optional[str] = None
+
+            for row in rows:
+                content = self._row_get(row, "content")
+                if isinstance(content, str) and self._is_storage_key(content):
+                    targets.add((MULTIVECTOR_CHUNKS_BUCKET, self._normalize_storage_key(content)))
+
+                multivector = self._row_get(row, "multivector")
+                if isinstance(multivector, (list, tuple)) and len(multivector) == 2:
+                    bucket, key = multivector
+                    if isinstance(bucket, str) and isinstance(key, str):
+                        targets.add((bucket or MULTIVECTOR_CHUNKS_BUCKET, self._normalize_storage_key(key)))
+
+                row_id = self._row_get(row, "id")
+                if isinstance(row_id, str):
+                    last_seen_id = row_id
+
+            if len(rows) < page_size or last_seen_id is None:
+                break
+
+            last_id = last_seen_id
+
+        return targets
+
+    async def _delete_storage_targets(self, targets: Set[Tuple[str, str]], document_id: str) -> None:
+        """Delete external storage objects recorded for a document."""
+        if not self.storage:
+            return
+
+        target_list = [(bucket, key) for bucket, key in targets if key]
+        if not target_list:
+            return
+
+        tasks = [self.storage.delete_file(bucket, key) for bucket, key in target_list]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for (bucket, key), result in zip(target_list, results):
+            if isinstance(result, Exception):
+                logger.warning(
+                    "Failed to delete external storage object %s/%s for document %s: %s",
+                    bucket,
+                    key,
+                    document_id,
+                    result,
+                )
 
     async def _retrieve_content_from_storage(self, storage_key: str, chunk_metadata: Optional[str]) -> str:
         """Retrieve content from external storage and convert to expected format."""

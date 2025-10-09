@@ -4,7 +4,7 @@ import json
 import logging
 import time
 from contextlib import contextmanager
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 import psycopg
@@ -394,6 +394,60 @@ class MultiVectorStore(BaseVectorStore):
             len(content) < 500 and "/" in content and not content.startswith("data:") and not content.startswith("http")
         )
 
+    @staticmethod
+    def _normalize_storage_key(key: str) -> str:
+        """Strip bucket prefix if it is embedded in the key."""
+        if key.startswith(f"{MULTIVECTOR_CHUNKS_BUCKET}/"):
+            return key[len(MULTIVECTOR_CHUNKS_BUCKET) + 1 :]
+        return key
+
+    def _collect_storage_keys(self, document_id: str) -> Set[str]:
+        """Gather storage keys for a document before deletion."""
+        keys: Set[str] = set()
+        rows: List[Tuple[str]] = []
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT content
+                        FROM multi_vector_embeddings
+                        WHERE document_id = %s
+                        """,
+                        (document_id,),
+                    )
+                    rows = cur.fetchall()
+            for (content,) in rows:
+                if isinstance(content, str) and self._is_storage_key(content):
+                    keys.add(self._normalize_storage_key(content))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Failed to collect external storage keys for document %s: %s",
+                document_id,
+                exc,
+            )
+        return keys
+
+    async def _delete_external_storage_objects(self, keys: Set[str], document_id: str) -> None:
+        """Remove external storage objects associated with a document."""
+        if not self.storage:
+            return
+
+        key_list = [key for key in keys if key]
+        delete_tasks = [self.storage.delete_file(MULTIVECTOR_CHUNKS_BUCKET, key) for key in key_list]
+        if not delete_tasks:
+            return
+
+        results = await asyncio.gather(*delete_tasks, return_exceptions=True)
+        for key, result in zip(key_list, results):
+            if isinstance(result, Exception):
+                logger.warning(
+                    "Failed to delete external storage key %s for document %s: %s",
+                    key,
+                    document_id,
+                    result,
+                )
+
     async def _retrieve_content_from_storage(self, storage_key: str, chunk_metadata: Optional[str]) -> str:
         """Retrieve content from external storage and convert to expected format."""
         logger.debug(f"Attempting to retrieve content from storage key: {storage_key}")
@@ -690,6 +744,10 @@ class MultiVectorStore(BaseVectorStore):
         Returns:
             bool: True if the operation was successful, False otherwise
         """
+        storage_keys: Set[str] = set()
+        if self.enable_external_storage and self.storage:
+            storage_keys = self._collect_storage_keys(document_id)
+
         try:
             # Delete all chunks for the specified document with retry logic
             query = f"DELETE FROM multi_vector_embeddings WHERE document_id = '{document_id}'"
@@ -697,6 +755,10 @@ class MultiVectorStore(BaseVectorStore):
                 conn.execute(query)
 
             logger.info(f"Deleted all chunks for document {document_id} from multi-vector store")
+
+            if storage_keys:
+                await self._delete_external_storage_objects(storage_keys, document_id)
+
             return True
 
         except Exception as e:
