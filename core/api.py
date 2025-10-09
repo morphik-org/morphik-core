@@ -14,6 +14,9 @@ from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware  # Import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+# Optional SimpleAPI middleware integration
+from simpleapi import SimpleAPIMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from core.agent import MorphikAgent
@@ -47,9 +50,37 @@ from core.routes.logs import router as logs_router  # noqa: E402 – import afte
 from core.routes.model_config import router as model_config_router
 from core.routes.models import router as models_router
 from core.routes.pdf_viewer import router as pdf_viewer_router
+from core.routes.simple_api_demo import router as simple_api_demo_router
 from core.routes.workflow import router as workflow_router
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
+
+SIMPLE_API_GUARD = {
+    "/simple-api/hello": {
+        "endpoint": "simple-api-hello",
+        "methods": ["GET"],
+        "units": 1,
+        "costs": {"queries": 1},
+    },
+    "/simple-api/ingest-demo": {
+        "endpoint": "demo-ingest",
+        "methods": ["POST"],
+        "units": 1,
+        "costs": {"queries": 1},
+    },
+    "/simple-api/usage-demo": {
+        "endpoint": "demo-usage",
+        "methods": ["POST"],
+        "units": 1,
+        "costs": {"queries": 1},
+    },
+    "/simple-api/cache-provision": {
+        "endpoint": "demo-cache-provision",
+        "methods": ["POST"],
+        "units": 1,
+        "costs": {"queries": 1},
+    },
+}
 
 # Set up logging configuration for Docker environment
 setup_logging()
@@ -156,6 +187,8 @@ app = FastAPI(lifespan=lifespan)
 # --------------------------------------------------------
 # Optional per-request profiler (ENABLE_PROFILING=1)
 # --------------------------------------------------------
+
+app.add_middleware(SimpleAPIMiddleware, guard=SIMPLE_API_GUARD)
 
 app.add_middleware(ProfilingMiddleware)
 
@@ -273,6 +306,7 @@ logger.info("Document service initialized and stored on app.state")
 
 # Register health router
 app.include_router(health_router)
+app.include_router(simple_api_demo_router)
 
 # Register ingest router
 app.include_router(ingest_router)

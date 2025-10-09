@@ -1,0 +1,323 @@
+project:
+  id: morphik
+  name: Morphik API
+  environment: dev
+
+resources:
+  - id: queries
+    name: API Queries
+    unit: requests
+    reset:
+      strategy: rolling
+      period: hour
+    description: Standard read/query requests across Morphik endpoints.
+  - id: pages_ingested
+    name: Pages Ingested
+    unit: pages
+    reset:
+      strategy: manual
+    settlement: post
+    description: Pages processed during ingestion flows. Handlers settle actual counts.
+  - id: storage_files
+    name: Stored Files
+    unit: files
+    reset:
+      strategy: manual
+    description: Total files persisted for an account.
+  - id: storage_gb
+    name: Storage Size
+    unit: gigabytes
+    reset:
+      strategy: manual
+    description: Aggregate object storage consumed by documents.
+  - id: graphs_created
+    name: Graphs Created
+    unit: graphs
+    reset:
+      strategy: manual
+    description: Number of knowledge graphs provisioned by an account.
+  - id: graph_queries
+    name: Graph Queries
+    unit: requests
+    reset:
+      strategy: rolling
+      period: hour
+    description: Requests querying graph data structures.
+  - id: cache_entries
+    name: Cache Entries
+    unit: caches
+    reset:
+      strategy: manual
+    description: Cache instances provisioned per account.
+  - id: cache_queries
+    name: Cache Queries
+    unit: requests
+    reset:
+      strategy: rolling
+      period: hour
+    description: Live cache query invocations.
+  - id: agent_calls
+    name: Agent Calls
+    unit: requests
+    reset:
+      strategy: rolling
+      period: hour
+    description: Agent workflow executions triggered via API.
+  - id: apps
+    name: Applications
+    unit: apps
+    reset:
+      strategy: manual
+    description: First-party applications registered under an organization.
+
+endpointProfiles:
+  default-query:
+    description: Standard read/query endpoints that consume a single request unit.
+    resources:
+      - resource: queries
+        cost: 1
+  ingest:
+    description: Document ingestion endpoints that settle real page counts after processing.
+    resources:
+      - resource: queries
+        cost: 1
+      - resource: pages_ingested
+        cost: 0
+        settlement: post
+        description: Estimate reserved up front; handler settles actual pages.
+  graph-query:
+    description: Graph traversal and inspection endpoints.
+    resources:
+      - resource: graph_queries
+        cost: 1
+  graph-manage:
+    description: Graph creation and mutation endpoints.
+    resources:
+      - resource: graphs_created
+        cost: 1
+  cache-manage:
+    description: Cache provisioning endpoints.
+    resources:
+      - resource: cache_entries
+        cost: 1
+  cache-query:
+    description: Cache read endpoints.
+    resources:
+      - resource: cache_queries
+        cost: 1
+  agent:
+    description: Agent workflow invocation endpoints.
+    resources:
+      - resource: agent_calls
+        cost: 1
+  cache-provision-demo:
+    description: Cache provisioning demo that settles usage from handler overrides.
+    resources:
+      - resource: queries
+        cost: 1
+
+endpoints:
+  - id: simple-api-hello
+    profile: default-query
+    match:
+      path: /simple-api/hello
+      methods: [GET]
+  - id: demo-ingest
+    profile: ingest
+    match:
+      path: /simple-api/ingest-demo
+      methods: [POST]
+  - id: demo-usage
+    profile: default-query
+    match:
+      path: /simple-api/usage-demo
+      methods: [POST]
+  - id: demo-cache-provision
+    profile: cache-provision-demo
+    match:
+      path: /simple-api/cache-provision
+      methods: [POST]
+  - id: query
+    profile: default-query
+    match:
+      path: /query
+      methods: [POST]
+  - id: retrieve-chunks
+    profile: default-query
+    match:
+      path: /retrieve/chunks
+      methods: [POST]
+  - id: retrieve-docs
+    profile: default-query
+    match:
+      path: /retrieve/docs
+      methods: [POST]
+  - id: ingest-text
+    profile: ingest
+    match:
+      path: /ingest/text
+      methods: [POST]
+  - id: ingest-file
+    profile: ingest
+    match:
+      path: /ingest/file
+      methods: [POST]
+  - id: graph-create
+    profile: graph-manage
+    match:
+      path: /graph/create
+      methods: [POST]
+  - id: graph-get
+    profile: graph-query
+    match:
+      path: /graph/{name}
+      methods: [GET]
+
+plans:
+  - id: definitelyFree
+    name: Free Plan
+    description: Free tier defaults aligned with legacy Morphik limits.
+    rateLimit:
+      windowSeconds: 60
+      maxRequests: 5
+    quota:
+      period: monthly
+      units: 5000
+    resources:
+      apps:
+        quotas:
+          - limit: 1
+            strategy: manual
+            description: One application per organization.
+      storage_files:
+        quotas:
+          - limit: 30
+            strategy: manual
+      storage_gb:
+        quotas:
+          - limit: 0.25
+            strategy: manual
+      pages_ingested:
+        quotas:
+          - limit: 200
+            strategy: manual
+      queries:
+        quotas:
+          - limit: 30
+            strategy: rolling
+            period: hour
+            description: Hourly guardrail mirrored from legacy tier.
+          - limit: 50
+            strategy: calendar
+            period: month
+            description: Monthly query allotment.
+      graph_queries:
+        quotas:
+          - limit: 1
+            strategy: rolling
+            period: hour
+          - limit: 1
+            strategy: calendar
+            period: month
+      graphs_created:
+        quotas:
+          - limit: 1
+            strategy: manual
+      cache_entries:
+        quotas:
+          - limit: 0
+            strategy: manual
+      cache_queries:
+        quotas:
+          - limit: 0
+            strategy: rolling
+            period: hour
+          - limit: 0
+            strategy: calendar
+            period: month
+      agent_calls:
+        quotas:
+          - limit: 3
+            strategy: rolling
+            period: hour
+          - limit: 3
+            strategy: calendar
+            period: month
+    entitlements:
+      graphs_enabled: false
+      cache_enabled: false
+
+  - id: pro
+    name: Pro Plan
+    description: Pro tier with higher quotas and premium features.
+    rateLimit:
+      windowSeconds: 60
+      maxRequests: 10
+    quota:
+      period: monthly
+      units: 20000
+    resources:
+      apps:
+        quotas:
+          - limit: 5
+            strategy: manual
+      storage_files:
+        quotas:
+          - limit: 1000
+            strategy: manual
+      storage_gb:
+        quotas:
+          - limit: 2
+            strategy: manual
+      pages_ingested:
+        quotas:
+          - limit: 1500
+            strategy: manual
+      queries:
+        quotas:
+          - limit: 100
+            strategy: rolling
+            period: hour
+          - limit: 10000
+            strategy: calendar
+            period: month
+      graph_queries:
+        quotas:
+          - limit: 50
+            strategy: rolling
+            period: hour
+          - limit: 1000
+            strategy: calendar
+            period: month
+      graphs_created:
+        quotas:
+          - limit: 10
+            strategy: manual
+      cache_entries:
+        quotas:
+          - limit: 5
+            strategy: manual
+      cache_queries:
+        quotas:
+          - limit: 200
+            strategy: rolling
+            period: hour
+          - limit: 5000
+            strategy: calendar
+            period: month
+      agent_calls:
+        quotas:
+          - limit: 30
+            strategy: rolling
+            period: hour
+          - limit: 30
+            strategy: calendar
+            period: month
+    entitlements:
+      graphs_enabled: true
+      cache_enabled: true
+
+keyPolicy:
+  prefix: key_dev
+  defaultPlanId: definitelyFree
+  rotateAfterDays: 90
