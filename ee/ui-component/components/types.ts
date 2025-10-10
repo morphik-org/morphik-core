@@ -96,11 +96,20 @@ export interface Document {
   filename?: string;
   content_type: string;
   metadata: Record<string, unknown>;
-  system_metadata: Record<string, unknown>;
+  system_metadata: SystemMetadata;
   additional_metadata: Record<string, unknown>;
   folder_name?: string;
   app_id?: string;
   end_user_id?: string;
+}
+
+export interface SystemMetadata {
+  status?: string;
+  progress?: ProcessingProgress;
+  created_at?: string;
+  updated_at?: string;
+  error?: string;
+  [key: string]: unknown;
 }
 
 export interface FolderSummary {

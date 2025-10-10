@@ -21,6 +21,8 @@ from .base_database import BaseDatabase
 logger = logging.getLogger(__name__)
 Base = declarative_base()
 
+SYSTEM_METADATA_SCOPE_KEYS = {"folder_name", "end_user_id", "app_id"}
+
 
 class DocumentModel(Base):
     """SQLAlchemy model for document metadata."""
@@ -839,6 +841,14 @@ class PostgresDatabase(BaseDatabase):
                 # Replace with merged result
                 updates["system_metadata"] = merged_system_metadata
                 logger.debug("Merged system_metadata during document update, preserving existing fields")
+
+            # Remove scope fields that are now stored as dedicated columns
+            if isinstance(updates.get("system_metadata"), dict):
+                updates["system_metadata"] = {
+                    key: value
+                    for key, value in updates["system_metadata"].items()
+                    if key not in SYSTEM_METADATA_SCOPE_KEYS
+                }
 
             # Always update the updated_at timestamp
             updates["system_metadata"]["updated_at"] = datetime.now(UTC)

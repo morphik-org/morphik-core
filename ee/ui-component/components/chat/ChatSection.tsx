@@ -338,9 +338,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
             return {
               id,
               filename: (docObj.filename as string) || (docObj.name as string) || `Document ${id}`,
-              folder_name:
-                (docObj.folder_name as string) ||
-                ((docObj.system_metadata as Record<string, unknown>)?.folder_name as string),
+              folder_name: docObj.folder_name as string | undefined,
               content_type: docObj.content_type as string,
               metadata: docObj.metadata as Record<string, unknown>,
               system_metadata: docObj.system_metadata,

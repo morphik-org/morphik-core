@@ -5,6 +5,17 @@ from typing import Any, BinaryIO, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
 
+class StorageFileInfo(BaseModel):
+    """Information about a file stored in storage."""
+
+    bucket: str
+    key: str
+    version: int = Field(default=1, description="Incremented on each file replacement")
+    filename: Optional[str] = None
+    content_type: Optional[str] = None
+    timestamp: Optional[datetime] = None
+
+
 class Document(BaseModel):
     """Document metadata model"""
 
@@ -13,9 +24,16 @@ class Document(BaseModel):
     filename: Optional[str] = Field(None, description="Original filename if available")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="User-defined metadata")
     storage_info: Dict[str, str] = Field(default_factory=dict, description="Storage-related information")
-    system_metadata: Dict[str, Any] = Field(default_factory=dict, description="System-managed metadata")
-    access_control: Dict[str, Any] = Field(default_factory=dict, description="Access control information")
+    system_metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="System-managed metadata (status, progress, timestamps)",
+    )
+    additional_metadata: Dict[str, Any] = Field(default_factory=dict, description="Ingestion-generated metadata")
+    storage_files: List[StorageFileInfo] = Field(default_factory=list, description="Files associated with the document")
     chunk_ids: List[str] = Field(default_factory=list, description="IDs of document chunks")
+    folder_name: Optional[str] = Field(None, description="Folder scope for the document")
+    end_user_id: Optional[str] = Field(None, description="End-user scope for the document")
+    app_id: Optional[str] = Field(None, description="App identifier for the document")
 
     # Client reference for update methods
     _client = None

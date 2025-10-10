@@ -939,7 +939,6 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
               folder_name?: string;
               system_metadata?: {
                 created_at?: string;
-                folder_name?: string;
                 status?: string;
               };
             }) => ({
@@ -947,7 +946,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
               filename: doc.filename || `Document ${doc.external_id}`,
               download_url: "", // We'll generate this when needed
               created_at: doc.system_metadata?.created_at,
-              folder_name: doc.folder_name ?? doc.system_metadata?.folder_name,
+              folder_name: doc.folder_name,
               status: doc.system_metadata?.status || "unknown",
             })
           );
