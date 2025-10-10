@@ -1262,10 +1262,6 @@ class DocumentService:
             app_id=auth.app_id,
         )
 
-        # Check if the folder exists, if not create it (only when folder_name is provided)
-        if folder_name:
-            await self._ensure_folder_exists(folder_name, doc.external_id, auth)
-
         logger.debug(f"Created text document record with ID {doc.external_id}")
 
         if settings.MODE == "cloud" and auth.user_id:
@@ -1367,6 +1363,18 @@ class DocumentService:
             auth=auth,
         )
         logger.debug(f"Successfully stored text document {doc.external_id}")
+
+        # Ensure folder membership now that the document is persisted.
+        if folder_name:
+            try:
+                await self._ensure_folder_exists(folder_name, doc.external_id, auth)
+            except Exception as folder_exc:  # noqa: BLE001
+                logger.warning(
+                    "Failed to ensure folder %s contains text document %s: %s",
+                    folder_name,
+                    doc.external_id,
+                    folder_exc,
+                )
 
         # Update the document status to completed after successful storage
         # This matches the behavior in ingestion_worker.py
