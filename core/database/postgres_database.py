@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import Column, DateTime, Index, String, desc, func, select, text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -41,10 +41,6 @@ class DocumentModel(Base):
 
     # Flattened auth columns for performance
     owner_id = Column(String)
-    owner_type = Column(String)
-    readers = Column(ARRAY(String), default=list)
-    writers = Column(ARRAY(String), default=list)
-    admins = Column(ARRAY(String), default=list)
     app_id = Column(String)
     folder_name = Column(String)
     end_user_id = Column(String)
@@ -79,10 +75,6 @@ class GraphModel(Base):
 
     # Flattened auth columns for performance
     owner_id = Column(String)
-    owner_type = Column(String)
-    readers = Column(ARRAY(String), default=list)
-    writers = Column(ARRAY(String), default=list)
-    admins = Column(ARRAY(String), default=list)
     app_id = Column(String)
     folder_name = Column(String)
     end_user_id = Column(String)
@@ -115,10 +107,6 @@ class FolderModel(Base):
 
     # Flattened auth columns for performance
     owner_id = Column(String)
-    owner_type = Column(String)
-    readers = Column(ARRAY(String), default=list)
-    writers = Column(ARRAY(String), default=list)
-    admins = Column(ARRAY(String), default=list)
     app_id = Column(String)
     end_user_id = Column(String)
 
@@ -564,17 +552,6 @@ class PostgresDatabase(BaseDatabase):
                     await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table}_owner_id ON {table}(owner_id);"))
                     await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table}_app_id ON {table}(app_id);"))
 
-                    # Create GIN indexes for array columns
-                    await conn.execute(
-                        text(f"CREATE INDEX IF NOT EXISTS idx_{table}_readers ON {table} USING gin(readers);")
-                    )
-                    await conn.execute(
-                        text(f"CREATE INDEX IF NOT EXISTS idx_{table}_writers ON {table} USING gin(writers);")
-                    )
-                    await conn.execute(
-                        text(f"CREATE INDEX IF NOT EXISTS idx_{table}_admins ON {table} USING gin(admins);")
-                    )
-
                     # Create composite indexes for common query patterns
                     await conn.execute(
                         text(f"CREATE INDEX IF NOT EXISTS idx_{table}_owner_app ON {table}(owner_id, app_id);")
@@ -623,13 +600,7 @@ class PostgresDatabase(BaseDatabase):
 
             # Simplified access control - only what's actually needed
             doc_dict["owner_id"] = auth.entity_id or "system"
-            doc_dict["owner_type"] = "developer"  # Always developer, no need to check
             doc_dict["app_id"] = auth.app_id  # Primary access control in cloud mode
-
-            # ACL arrays are required by the schema but never used
-            doc_dict["readers"] = []
-            doc_dict["writers"] = []
-            doc_dict["admins"] = []
 
             # The flattened fields are already in doc_dict from the Document model
 
@@ -869,7 +840,7 @@ class PostgresDatabase(BaseDatabase):
                         logger.info("Converting 'metadata' to 'doc_metadata' for database update")
                         updates["doc_metadata"] = updates.pop("metadata")
 
-                    # The flattened fields (owner_id, owner_type, readers, writers, admins)
+                    # The flattened fields (owner_id, app_id)
                     # should be in updates directly if they need to be updated
 
                     # Set all attributes
@@ -1281,13 +1252,7 @@ class PostgresDatabase(BaseDatabase):
 
             # Simplified access control - only what's actually needed
             graph_dict["owner_id"] = auth.entity_id or "system"
-            graph_dict["owner_type"] = "developer"  # Always developer, no need to check
             graph_dict["app_id"] = auth.app_id  # Primary access control in cloud mode
-
-            # ACL arrays are required by the schema but never used
-            graph_dict["readers"] = []
-            graph_dict["writers"] = []
-            graph_dict["admins"] = []
 
             # The flattened fields are already in graph_dict from the Graph model
 
@@ -1483,7 +1448,7 @@ class PostgresDatabase(BaseDatabase):
                 graph_dict["updated_at"] = updated_at
 
             # The flattened fields are already in graph_dict from the Graph model
-            # Note: owner_id, owner_type, and ACL fields should not be updated here
+            # Note: owner_id and app_id should not be updated here
             # They should remain as set during graph creation
 
             # Update the graph in PostgreSQL
@@ -1578,7 +1543,6 @@ class PostgresDatabase(BaseDatabase):
 
                 # Simplified owner info
                 owner_id = auth.entity_id or "system"
-                owner_type = "developer"  # Always developer
                 app_id_val = auth.app_id or folder_dict.get("app_id")
 
                 # Check for existing folder with same name
@@ -1611,12 +1575,8 @@ class PostgresDatabase(BaseDatabase):
                     name=folder.name,
                     description=folder.description,
                     owner_id=owner_id,
-                    owner_type=owner_type,
                     document_ids=folder_dict.get("document_ids", []),
                     system_metadata=folder_dict.get("system_metadata", {}),
-                    readers=[],  # Required by schema but never used
-                    writers=[],  # Required by schema but never used
-                    admins=[],  # Required by schema but never used
                     app_id=app_id_val,
                     end_user_id=folder_dict.get("end_user_id"),
                     rules=folder_dict.get("rules", []),
