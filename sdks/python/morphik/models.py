@@ -313,7 +313,6 @@ class Graph(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
     owner: Dict[str, str] = Field(default_factory=dict, description="Graph owner information")
-    access_control: Dict[str, List[str]] = Field(default_factory=dict, description="Access control information")
 
     _client: Any | None = PrivateAttr(default=None)
 
@@ -530,6 +529,3 @@ class FolderInfo(BaseModel):
     workflow_ids: List[str] = Field(default_factory=list, description="Workflow IDs associated with the folder")
     app_id: Optional[str] = Field(None, description="Application ID associated with the folder")
     end_user_id: Optional[str] = Field(None, description="End user ID associated with the folder")
-    access_control: Optional[Dict[str, List[str]]] = Field(
-        default_factory=dict, description="Access control information"
-    )
