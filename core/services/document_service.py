@@ -56,6 +56,19 @@ settings = get_settings()
 
 
 class DocumentService:
+    _SYSTEM_METADATA_SCOPE_KEYS = {"folder_name", "end_user_id", "app_id"}
+
+    @classmethod
+    def _clean_system_metadata(cls, metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Remove scope fields that are persisted in dedicated columns."""
+        if not metadata:
+            return {}
+
+        cleaned_metadata = dict(metadata)
+        for key in cls._SYSTEM_METADATA_SCOPE_KEYS:
+            cleaned_metadata.pop(key, None)
+        return cleaned_metadata
+
     async def _ensure_folder_exists(
         self, folder_name: Union[str, List[str]], document_id: str, auth: AuthContext
     ) -> Optional[Folder]:
@@ -1359,6 +1372,7 @@ class DocumentService:
         # This matches the behavior in ingestion_worker.py
         doc.system_metadata["status"] = "completed"
         doc.system_metadata["updated_at"] = datetime.now(UTC)
+        doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
         await self.db.update_document(
             document_id=doc.external_id, updates={"system_metadata": doc.system_metadata}, auth=auth
         )
@@ -1492,6 +1506,7 @@ class DocumentService:
             # Initialize storage_files list with the StorageFileInfo object (version remains int)
             doc.storage_files = [sfi]
 
+            doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
             await self.db.update_document(
                 document_id=doc.external_id,
                 updates={
@@ -1525,7 +1540,11 @@ class DocumentService:
             doc.system_metadata["status"] = "failed"
             doc.system_metadata["error"] = f"Storage upload/DB update failed: {str(e)}"
             try:
-                await self.db.update_document(doc.external_id, {"system_metadata": doc.system_metadata}, auth=auth)
+                await self.db.update_document(
+                    doc.external_id,
+                    {"system_metadata": self._clean_system_metadata(doc.system_metadata)},
+                    auth=auth,
+                )
             except Exception as db_update_err:
                 logger.error(f"Additionally failed to mark doc {doc.external_id} as failed in DB: {db_update_err}")
             raise HTTPException(status_code=500, detail=f"Failed to upload file to storage: {str(e)}")
@@ -1575,7 +1594,11 @@ class DocumentService:
             doc.system_metadata["status"] = "failed"
             doc.system_metadata["error"] = f"Failed to enqueue processing job: {str(e)}"
             try:
-                await self.db.update_document(doc.external_id, {"system_metadata": doc.system_metadata}, auth=auth)
+                await self.db.update_document(
+                    doc.external_id,
+                    {"system_metadata": self._clean_system_metadata(doc.system_metadata)},
+                    auth=auth,
+                )
             except Exception as db_update_err:
                 logger.error(f"Additionally failed to mark doc {doc.external_id} as failed in DB: {db_update_err}")
             raise HTTPException(status_code=500, detail=f"Failed to enqueue document processing job: {str(e)}")
@@ -2287,6 +2310,8 @@ class DocumentService:
 
             while attempt < max_retries and not success:
                 try:
+                    doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
+
                     if is_update and auth:
                         # For updates, use update_document, serialize StorageFileInfo into plain dicts
                         updates = {
@@ -2590,7 +2615,14 @@ class DocumentService:
             return None
 
         # Get current content and determine update type
-        current_content = doc.system_metadata.get("content", "")
+        raw_current_content = doc.system_metadata.get("content", "")
+        current_content = self._normalize_document_content(raw_current_content)
+        if current_content != raw_current_content:
+            logger.warning(
+                "Normalized non-textual stored content for document %s before applying update strategy",
+                doc.external_id,
+            )
+            doc.system_metadata["content"] = current_content
         metadata_only_update = content is None and file is None and metadata is not None
 
         # Process content based on update type
@@ -2600,10 +2632,12 @@ class DocumentService:
         file_content_base64 = None
         if content is not None:
             update_content = await self._process_text_update(content, doc, filename, metadata, rules)
+            update_content = self._normalize_document_content(update_content)
         elif file is not None:
             update_content, file_content, file_type, file_content_base64 = await self._process_file_update(
                 file, doc, metadata, rules
             )
+            update_content = self._normalize_document_content(update_content)
             await self._update_storage_info(doc, file, file_content_base64)
 
             # ------------------------------------------------------------------
@@ -2850,6 +2884,31 @@ class DocumentService:
         doc.storage_info = {k: str(v) if v is not None else "" for k, v in new_sfi.model_dump().items()}
         logger.info(f"Stored file in bucket `{storage_info_tuple[0]}` with key `{storage_info_tuple[1]}`")
 
+    @staticmethod
+    def _normalize_document_content(content: Any) -> str:
+        """Ensure stored document content is always handled as text."""
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, bytes):
+            try:
+                return content.decode("utf-8")
+            except UnicodeDecodeError:
+                logger.warning("Failed to decode bytes document content using UTF-8; returning base64 encoded fallback")
+                return base64.b64encode(content).decode("utf-8")
+        if isinstance(content, (dict, list)):
+            try:
+                return json.dumps(content, ensure_ascii=False)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Failed to serialize %s content to JSON; falling back to string conversion",
+                    type(content).__name__,
+                )
+                return str(content)
+        logger.warning("Coercing unexpected content type %s to string", type(content).__name__)
+        return str(content)
+
     def _apply_update_strategy(self, current_content: str, update_content: str, update_strategy: str) -> str:
         """Apply the update strategy to combine current and new content."""
         if update_strategy == "add":
@@ -2862,6 +2921,8 @@ class DocumentService:
 
     async def _update_document_metadata_only(self, doc: Document, auth: AuthContext) -> Optional[Document]:
         """Update document metadata without reprocessing chunks."""
+        doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
+
         updates = {
             "metadata": doc.metadata,
             "system_metadata": doc.system_metadata,

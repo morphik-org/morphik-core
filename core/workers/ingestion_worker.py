@@ -567,10 +567,12 @@ async def process_ingestion_job(
             else:
                 document_content = text
 
+            sanitized_system_metadata = DocumentService._clean_system_metadata(doc.system_metadata)
+
             updates = {
                 "metadata": merged_metadata,
                 "additional_metadata": additional_metadata,
-                "system_metadata": {**doc.system_metadata, "content": document_content},
+                "system_metadata": {**sanitized_system_metadata, "content": document_content},
             }
 
             # Add folder_name and end_user_id to updates if provided
@@ -840,6 +842,7 @@ async def process_ingestion_job(
             if using_colpali:
                 # We already stored ColPali chunks in batches; just persist doc.chunk_ids via DB update
                 doc.chunk_ids = colpali_chunk_ids
+                doc.system_metadata = DocumentService._clean_system_metadata(doc.system_metadata)
                 await document_service.db.update_document(
                     document_id=doc.external_id,
                     updates={
@@ -911,6 +914,7 @@ async def process_ingestion_job(
             doc.system_metadata.pop("progress", None)
 
             # Final update to mark as completed
+            doc.system_metadata = DocumentService._clean_system_metadata(doc.system_metadata)
             await document_service.db.update_document(
                 document_id=document_id, updates={"system_metadata": doc.system_metadata}, auth=auth
             )
