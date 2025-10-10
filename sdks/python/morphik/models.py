@@ -312,7 +312,6 @@ class Graph(BaseModel):
     filters: Optional[Dict[str, Any]] = Field(None, description="Document filters used to create the graph")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
-    owner: Dict[str, str] = Field(default_factory=dict, description="Graph owner information")
 
     _client: Any | None = PrivateAttr(default=None)
 
@@ -522,7 +521,6 @@ class FolderInfo(BaseModel):
     id: str = Field(..., description="Unique folder identifier")
     name: str = Field(..., description="Folder name")
     description: Optional[str] = Field(None, description="Folder description")
-    owner: Optional[Dict[str, str]] = Field(default_factory=dict, description="Owner information")
     document_ids: Optional[List[str]] = Field(default_factory=list, description="IDs of documents in the folder")
     system_metadata: Dict[str, Any] = Field(default_factory=dict, description="System-managed metadata")
     rules: List[Dict[str, Any]] = Field(default_factory=list, description="Rules associated with the folder")

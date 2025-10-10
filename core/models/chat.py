@@ -19,6 +19,7 @@ class ChatConversation(BaseModel):
     conversation_id: str
     user_id: Optional[str] = None
     app_id: Optional[str] = None
+    title: Optional[str] = None
     history: List[ChatMessage] = Field(default_factory=list)
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
