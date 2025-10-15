@@ -1127,6 +1127,8 @@ class PostgresDatabase(BaseDatabase):
             "system_metadata": graph_model.system_metadata or {},
             "document_ids": graph_model.document_ids,
             "filters": graph_model.filters,
+            "created_at": graph_model.created_at,
+            "updated_at": graph_model.updated_at,
             # Include flattened fields
             "folder_name": graph_model.folder_name,
             "app_id": graph_model.app_id,
@@ -1615,6 +1617,8 @@ class PostgresDatabase(BaseDatabase):
                     "system_metadata": folder_model.system_metadata,
                     "rules": folder_model.rules,
                     "workflow_ids": getattr(folder_model, "workflow_ids", []),
+                    "app_id": folder_model.app_id,
+                    "end_user_id": folder_model.end_user_id,
                 }
 
                 # Check if the user has access to the folder using the model
@@ -1670,6 +1674,8 @@ class PostgresDatabase(BaseDatabase):
                         "system_metadata": folder_row.system_metadata,
                         "rules": folder_row.rules,
                         "workflow_ids": getattr(folder_row, "workflow_ids", []),
+                        "app_id": folder_row.app_id,
+                        "end_user_id": folder_row.end_user_id,
                     }
                     return Folder(**folder_dict)
 
@@ -1713,6 +1719,8 @@ class PostgresDatabase(BaseDatabase):
                         "system_metadata": folder_model.system_metadata,
                         "rules": folder_model.rules,
                         "workflow_ids": getattr(folder_model, "workflow_ids", []),
+                        "app_id": folder_model.app_id,
+                        "end_user_id": folder_model.end_user_id,
                     }
                     folders.append(Folder(**folder_dict))
                 return folders

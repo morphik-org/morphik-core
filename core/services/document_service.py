@@ -291,14 +291,16 @@ class DocumentService:
     ) -> List[ChunkResult]:
         """Retrieve relevant chunks."""
 
+        phase_times: Dict[str, float] = {}
+
         # Use provided performance tracker or create a local one
         if perf_tracker:
             local_perf = False
+            retrieve_start_time = None
         else:
             # For standalone calls, create local performance tracking
             local_perf = True
             retrieve_start_time = time.time()
-            phase_times = {}
 
         # 4 configurations:
         # 1. No reranking, no colpali -> just return regular chunks
@@ -325,10 +327,41 @@ class DocumentService:
             system_filters["end_user_id"] = end_user_id
         # Note: Don't add auth.app_id here - it's already handled in _build_access_filter_optimized
 
+        async def measure_phase(coro, phase_key: Optional[str], perf_parent: Optional[str] = None):
+            """
+            Measure coroutine execution time and accumulate into phase_times.
+            """
+            if not phase_key:
+                return await coro
+            start = time.time()
+            try:
+                return await coro
+            finally:
+                duration = time.time() - start
+                phase_times[phase_key] = phase_times.get(phase_key, 0.0) + duration
+                if perf_tracker:
+                    perf_tracker.add_suboperation(phase_key, duration, perf_parent)
+
         # Launch embedding queries concurrently
-        embedding_tasks = [self.embedding_model.embed_for_query(query)]
+        embedding_tasks = [
+            measure_phase(
+                self.embedding_model.embed_for_query(query),
+                "query_embedding",
+                "retrieve_embeddings_and_auth",
+            )
+        ]
         if using_colpali and self.colpali_embedding_model:
-            embedding_tasks.append(self.colpali_embedding_model.embed_for_query(query))
+            embedding_tasks.append(
+                measure_phase(
+                    self.colpali_embedding_model.embed_for_query(query),
+                    "multivector_query_embedding",
+                    "retrieve_embeddings_and_auth",
+                )
+            )
+            multivector_pipeline_start = time.time()
+        else:
+            multivector_pipeline_start = None
+            phase_times["multivector_query_embedding"] = 0.0
 
         if not perf_tracker:
             phase_times["setup"] = time.time() - setup_start
@@ -395,17 +428,30 @@ class DocumentService:
         # Search chunks with vector similarity in parallel
         # When using standard reranker, we get more chunks initially to improve reranking quality
         search_tasks = [
-            self.vector_store.query_similar(
-                query_embedding_regular, k=10 * k if use_standard_reranker else k, doc_ids=doc_ids, app_id=auth.app_id
+            measure_phase(
+                self.vector_store.query_similar(
+                    query_embedding_regular,
+                    k=10 * k if use_standard_reranker else k,
+                    doc_ids=doc_ids,
+                    app_id=auth.app_id,
+                ),
+                "vector_search_regular",
+                "retrieve_vector_search",
             )
         ]
 
         if search_multi:
             search_tasks.append(
-                self.colpali_vector_store.query_similar(
-                    query_embedding_multivector, k=k, doc_ids=doc_ids, app_id=auth.app_id
+                measure_phase(
+                    self.colpali_vector_store.query_similar(
+                        query_embedding_multivector, k=k, doc_ids=doc_ids, app_id=auth.app_id
+                    ),
+                    "multivector_vector_search",
+                    "retrieve_vector_search",
                 )
             )
+        else:
+            phase_times["multivector_vector_search"] = 0.0
 
         if not perf_tracker:
             phase_times["search_setup"] = time.time() - search_setup_start
@@ -447,27 +493,42 @@ class DocumentService:
         # Combine multiple chunk sources if needed
         if perf_tracker:
             perf_tracker.start_phase("retrieve_chunk_combination")
-        else:
-            combination_start = time.time()
 
+        combination_start = time.time()
         chunks = await self._combine_multi_and_regular_chunks(
             query, chunks, chunks_multivector, should_rerank=should_rerank
         )
 
+        combination_duration = time.time() - combination_start
         if not perf_tracker:
-            phase_times["chunk_combination"] = time.time() - combination_start
+            phase_times["chunk_combination"] = combination_duration
+        if using_colpali and chunks_multivector:
+            phase_times["multivector_chunk_combination"] = combination_duration
+            if perf_tracker:
+                perf_tracker.add_suboperation(
+                    "multivector_chunk_combination",
+                    combination_duration,
+                    "retrieve_chunk_combination",
+                )
+        else:
+            phase_times["multivector_chunk_combination"] = phase_times.get("multivector_chunk_combination", 0.0)
 
         # Apply padding if requested and using colpali
         if padding > 0 and using_colpali:
             if perf_tracker:
                 perf_tracker.start_phase("retrieve_padding")
-            else:
-                padding_start = time.time()
 
+            padding_start = time.time()
             chunks = await self._apply_padding_to_chunks(chunks, padding, auth)
+            padding_duration = time.time() - padding_start
 
             if not perf_tracker:
-                phase_times["padding"] = time.time() - padding_start
+                phase_times["padding"] = padding_duration
+            phase_times["multivector_padding"] = padding_duration
+            if perf_tracker:
+                perf_tracker.add_suboperation("multivector_padding", padding_duration, "retrieve_padding")
+        else:
+            phase_times["multivector_padding"] = phase_times.get("multivector_padding", 0.0)
 
         # Create and return chunk results
         if perf_tracker:
@@ -479,6 +540,17 @@ class DocumentService:
 
         if not perf_tracker:
             phase_times["result_creation"] = time.time() - result_creation_start
+
+        if using_colpali and multivector_pipeline_start is not None:
+            phase_times["multivector_pipeline_total"] = time.time() - multivector_pipeline_start
+            if perf_tracker:
+                perf_tracker.add_suboperation(
+                    "multivector_pipeline_total",
+                    phase_times["multivector_pipeline_total"],
+                    "retrieve_embeddings_and_auth",
+                )
+        else:
+            phase_times["multivector_pipeline_total"] = phase_times.get("multivector_pipeline_total", 0.0)
 
         # Log performance summary only for standalone calls
         if local_perf:
@@ -659,7 +731,13 @@ class DocumentService:
         # Use colpali vector store for retrieval since padding is only for colpali path
         if self.colpali_vector_store:
             try:
+                retrieval_start = time.time()
                 padded_chunks = await self.colpali_vector_store.get_chunks_by_id(chunk_identifiers, auth.app_id)
+                logger.debug(
+                    "Multivector padding retrieval took %.2fs for %d chunks",
+                    time.time() - retrieval_start,
+                    len(padded_chunks),
+                )
                 logger.debug(f"Retrieved {len(padded_chunks)} chunks from colpali vector store")
             except Exception as e:
                 logger.error(f"Error retrieving padded chunks from colpali vector store: {e}")
