@@ -2,7 +2,8 @@ import base64
 import io
 import logging
 import time
-from typing import List, Tuple, Union
+from contextvars import ContextVar
+from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
 import torch
@@ -15,6 +16,9 @@ from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
+
+
+_INGEST_METRICS: ContextVar[Dict[str, Any]] = ContextVar("_colpali_ingest_metrics", default={})
 
 
 class ColpaliEmbeddingModel(BaseEmbeddingModel):
@@ -50,6 +54,7 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         logger.info(
             f"Processing {len(chunks)} chunks for Colpali embedding in {self.mode} mode (batch size: {self.batch_size})"
         )
+        _INGEST_METRICS.set({})
 
         image_items: List[Tuple[int, Image]] = []
         text_items: List[Tuple[int, str]] = []
@@ -84,6 +89,7 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
             img_start = time.time()
             indices_to_process = [item[0] for item in image_items]
             images_to_process = [item[1] for item in image_items]
+            image_process = image_model = image_convert = image_total = 0.0
             for i in range(0, len(images_to_process), self.batch_size):
                 batch_indices = indices_to_process[i : i + self.batch_size]
                 batch_images = images_to_process[i : i + self.batch_size]
@@ -92,7 +98,11 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                     f"{(len(images_to_process)-1)//self.batch_size + 1} with {len(batch_images)} images"
                 )
                 batch_start = time.time()
-                batch_embeddings = await self.generate_embeddings_batch_images(batch_images)
+                batch_embeddings, batch_metrics = await self.generate_embeddings_batch_images(batch_images)
+                image_process += batch_metrics["process"]
+                image_model += batch_metrics["model"]
+                image_convert += batch_metrics["convert"]
+                image_total += batch_metrics["total"]
                 # Place embeddings in the correct position in results
                 for original_index, embedding in zip(batch_indices, batch_embeddings):
                     results[original_index] = embedding
@@ -103,12 +113,16 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                 )
             img_time = time.time() - img_start
             logger.info(f"All image embedding took {img_time:.2f}s ({img_time/len(images_to_process):.2f}s per image)")
+        else:
+            image_process = image_model = image_convert = image_total = 0.0
+            img_time = 0.0
 
         # Process text batches
         if text_items:
             text_start = time.time()
             indices_to_process = [item[0] for item in text_items]
             texts_to_process = [item[1] for item in text_items]
+            text_process = text_model = text_convert = text_total = 0.0
             for i in range(0, len(texts_to_process), self.batch_size):
                 batch_indices = indices_to_process[i : i + self.batch_size]
                 batch_texts = texts_to_process[i : i + self.batch_size]
@@ -117,7 +131,11 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                     f"{(len(texts_to_process)-1)//self.batch_size + 1} with {len(batch_texts)} texts"
                 )
                 batch_start = time.time()
-                batch_embeddings = await self.generate_embeddings_batch_texts(batch_texts)
+                batch_embeddings, batch_metrics = await self.generate_embeddings_batch_texts(batch_texts)
+                text_process += batch_metrics["process"]
+                text_model += batch_metrics["model"]
+                text_convert += batch_metrics["convert"]
+                text_total += batch_metrics["total"]
                 # Place embeddings in the correct position in results
                 for original_index, embedding in zip(batch_indices, batch_embeddings):
                     results[original_index] = embedding
@@ -128,6 +146,9 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                 )
             text_time = time.time() - text_start
             logger.info(f"All text embedding took {text_time:.2f}s ({text_time/len(texts_to_process):.2f}s per text)")
+        else:
+            text_process = text_model = text_convert = text_total = 0.0
+            text_time = 0.0
 
         # Ensure all chunks were processed (handle potential None entries if errors occurred,
         # though unlikely with fallback)
@@ -150,8 +171,32 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
             f"Total Colpali embed_for_ingestion took {total_time:.2f}s for {len(chunks)} chunks "
             f"({total_time/len(chunks) if chunks else 0:.2f}s per chunk)"
         )
+        metrics = {
+            "sorting": sorting_time,
+            "image_process": image_process,
+            "image_model": image_model,
+            "image_convert": image_convert,
+            "image_total": image_total,
+            "text_process": text_process,
+            "text_model": text_model,
+            "text_convert": text_convert,
+            "text_total": text_total,
+            "process": image_process + text_process,
+            "model": image_model + text_model,
+            "convert": image_convert + text_convert,
+            "image_count": len(image_items),
+            "text_count": len(text_items),
+            "total": total_time,
+            "chunk_count": len(chunks),
+        }
+        _INGEST_METRICS.set(metrics)
         # Cast is safe because we filter out Nones, though Nones shouldn't occur with the fallback logic
         return final_results  # type: ignore
+
+    def latest_ingest_metrics(self) -> Dict[str, Any]:
+        """Return timing metrics from the most recent embed_for_ingestion call in this context."""
+        metrics = _INGEST_METRICS.get()
+        return dict(metrics) if metrics else {}
 
     async def embed_for_query(self, text: str) -> torch.Tensor:
         start_time = time.time()
@@ -193,7 +238,7 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
 
     # ---- Batch processing methods (only used in 'cloud' mode) ----
 
-    async def generate_embeddings_batch_images(self, images: List[Image]) -> List[np.ndarray]:
+    async def generate_embeddings_batch_images(self, images: List[Image]) -> Tuple[List[np.ndarray], Dict[str, float]]:
         batch_start_time = time.time()
         process_start = time.time()
         processed_images = self.processor.process_images(images).to(self.model.device)
@@ -214,9 +259,14 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
             f"Batch images ({len(images)}): process={process_time:.2f}s, model={model_time:.2f}s, "
             f"convert={convert_time:.2f}s, total={total_batch_time:.2f}s ({total_batch_time/len(images):.3f}s/image)"
         )
-        return result
+        return result, {
+            "process": process_time,
+            "model": model_time,
+            "convert": convert_time,
+            "total": total_batch_time,
+        }
 
-    async def generate_embeddings_batch_texts(self, texts: List[str]) -> List[np.ndarray]:
+    async def generate_embeddings_batch_texts(self, texts: List[str]) -> Tuple[List[np.ndarray], Dict[str, float]]:
         batch_start_time = time.time()
         process_start = time.time()
         processed_texts = self.processor.process_queries(texts).to(self.model.device)
@@ -237,4 +287,9 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
             f"Batch texts ({len(texts)}): process={process_time:.2f}s, model={model_time:.2f}s, "
             f"convert={convert_time:.2f}s, total={total_batch_time:.2f}s ({total_batch_time/len(texts):.3f}s/text)"
         )
-        return result
+        return result, {
+            "process": process_time,
+            "model": model_time,
+            "convert": convert_time,
+            "total": total_batch_time,
+        }
