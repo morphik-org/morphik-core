@@ -1,6 +1,8 @@
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from core.models.folders import Folder
 
 
 class HealthCheckResponse(BaseModel):
@@ -119,3 +121,50 @@ class ChatTitleResponse(BaseModel):
     status: str
     message: str
     title: str
+
+
+class FolderCount(BaseModel):
+    """Count of documents grouped by folder name."""
+
+    folder: Optional[str]
+    count: int
+
+
+class ListDocsResponse(BaseModel):
+    """Flexible response for listing documents with aggregates."""
+
+    documents: List[Any] = Field(default_factory=list)
+    skip: int
+    limit: int
+    returned_count: int
+    total_count: Optional[int] = None
+    has_more: bool = False
+    next_skip: Optional[int] = None
+    status_counts: Optional[Dict[str, int]] = None
+    folder_counts: Optional[List[FolderCount]] = None
+
+
+class FolderDocumentInfo(BaseModel):
+    """Document summary for a folder."""
+
+    documents: List[Any] = Field(default_factory=list)
+    document_count: Optional[int] = None
+    status_counts: Optional[Dict[str, int]] = None
+    skip: int = 0
+    limit: int = 0
+    returned_count: int = 0
+    has_more: bool = False
+    next_skip: Optional[int] = None
+
+
+class FolderDetails(BaseModel):
+    """Folder details with optional document summary."""
+
+    folder: Folder
+    document_info: Optional[FolderDocumentInfo] = None
+
+
+class FolderDetailsResponse(BaseModel):
+    """Response wrapping folder detail entries."""
+
+    folders: List[FolderDetails]

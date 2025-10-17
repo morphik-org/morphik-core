@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import uuid
-from typing import Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
@@ -10,11 +10,14 @@ from sqlalchemy import text
 from core.auth_utils import verify_token
 from core.models.auth import AuthContext
 from core.models.folders import Folder, FolderCreate, FolderSummary
-from core.models.request import SetFolderRuleRequest
+from core.models.request import FolderDetailsRequest, SetFolderRuleRequest
 from core.models.responses import (
     DocumentAddToFolderResponse,
     DocumentDeleteResponse,
     FolderDeleteResponse,
+    FolderDetails,
+    FolderDetailsResponse,
+    FolderDocumentInfo,
     FolderRuleResponse,
 )
 from core.models.workflows import Workflow
@@ -128,6 +131,103 @@ async def list_folders(
     except Exception as e:
         logger.error(f"Error listing folders: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/details", response_model=FolderDetailsResponse)
+async def folder_details(
+    request: FolderDetailsRequest,
+    auth: AuthContext = Depends(verify_token),
+) -> FolderDetailsResponse:
+    """
+    Retrieve folder metadata with optional document statistics and projections.
+    """
+
+    try:
+        if request.identifiers:
+            resolved: Dict[str, Folder] = {}
+            for identifier in request.identifiers:
+                folder = await _resolve_folder(identifier, auth)
+                key = folder.id or folder.name or identifier
+                resolved[key] = folder
+            target_folders = list(resolved.values())
+        else:
+            target_folders = await document_service.db.list_folders(auth)
+
+        folder_entries: List[FolderDetails] = []
+
+        for folder in target_folders:
+            document_info: Optional[FolderDocumentInfo] = None
+
+            if request.include_documents or request.include_document_count or request.include_status_counts:
+                if not folder.name:
+                    doc_result = {
+                        "documents": [],
+                        "returned_count": 0,
+                        "total_count": 0 if request.include_document_count else None,
+                        "status_counts": {},
+                        "has_more": False,
+                        "next_skip": None,
+                    }
+                else:
+                    doc_result = await document_service.db.list_documents_flexible(
+                        auth=auth,
+                        skip=request.document_skip if request.include_documents else 0,
+                        limit=request.document_limit if request.include_documents else 0,
+                        filters=request.document_filters,
+                        system_filters={"folder_name": folder.name},
+                        include_total_count=request.include_document_count,
+                        include_status_counts=request.include_status_counts,
+                        include_folder_counts=False,
+                        return_documents=request.include_documents,
+                        sort_by=request.sort_by,
+                        sort_direction=request.sort_direction,
+                    )
+
+                documents_payload: List[Any] = []
+                if request.include_documents:
+                    for document in doc_result.get("documents", []):
+                        if hasattr(document, "model_dump"):
+                            doc_dict = document.model_dump(mode="json")
+                        elif hasattr(document, "dict"):
+                            doc_dict = document.dict()
+                        else:
+                            doc_dict = dict(document)
+                        documents_payload.append(_project_document_fields(doc_dict, request.document_fields))
+
+                returned_count = doc_result.get("returned_count", len(documents_payload))
+                has_more = doc_result.get("has_more", False)
+                next_skip = doc_result.get("next_skip")
+                if request.include_documents and next_skip is None and has_more:
+                    next_skip = request.document_skip + returned_count
+
+                document_count = None
+                if request.include_document_count:
+                    document_count = doc_result.get("total_count")
+                if document_count is None and request.include_documents:
+                    document_count = returned_count
+
+                status_counts = doc_result.get("status_counts") if request.include_status_counts else None
+
+                document_info = FolderDocumentInfo(
+                    documents=documents_payload,
+                    document_count=document_count,
+                    status_counts=status_counts,
+                    skip=request.document_skip if request.include_documents else 0,
+                    limit=request.document_limit if request.include_documents else 0,
+                    returned_count=returned_count,
+                    has_more=has_more,
+                    next_skip=next_skip,
+                )
+
+            folder_entries.append(FolderDetails(folder=folder, document_info=document_info))
+
+        return FolderDetailsResponse(folders=folder_entries)
+
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error retrieving folder details: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/summary", response_model=List[FolderSummary])
