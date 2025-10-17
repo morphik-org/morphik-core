@@ -789,6 +789,162 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error listing documents: {str(e)}")
             return []
 
+    async def list_documents_flexible(
+        self,
+        auth: AuthContext,
+        skip: int = 0,
+        limit: int = 100,
+        filters: Optional[Dict[str, Any]] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
+        include_total_count: bool = False,
+        include_status_counts: bool = False,
+        include_folder_counts: bool = False,
+        return_documents: bool = True,
+        sort_by: Optional[str] = None,
+        sort_direction: str = "desc",
+    ) -> Dict[str, Any]:
+        """List documents with optional aggregate metadata."""
+        limit = max(limit, 0) if limit is not None else None
+        skip = max(skip, 0)
+
+        try:
+            async with self.async_session() as session:
+                access_filter = self._build_access_filter_optimized(auth)
+                metadata_filter = self._build_metadata_filter(filters)
+                system_metadata_filter = self._build_system_metadata_filter_optimized(system_filters)
+                filter_params = self._build_filter_params(auth, system_filters)
+
+                where_clauses = [f"({access_filter})"]
+                if metadata_filter:
+                    where_clauses.append(f"({metadata_filter})")
+                if system_metadata_filter:
+                    where_clauses.append(f"({system_metadata_filter})")
+
+                final_where_clause = " AND ".join(where_clauses) if where_clauses else "TRUE"
+
+                documents: List[Document] = []
+                returned_count = 0
+                has_more = False
+
+                fetch_documents = return_documents and (limit is None or limit > 0)
+
+                if fetch_documents:
+                    base_query = select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
+                    order_clause = self._resolve_document_sort_clause(sort_by, sort_direction)
+                    if order_clause is not None:
+                        base_query = base_query.order_by(order_clause, DocumentModel.external_id.asc())
+                    else:
+                        base_query = base_query.order_by(DocumentModel.external_id.asc())
+
+                    fetch_limit = limit + 1 if limit is not None else None
+                    base_query = base_query.offset(skip)
+                    if fetch_limit is not None:
+                        base_query = base_query.limit(fetch_limit)
+
+                    result = await session.execute(base_query)
+                    doc_models = result.scalars().all()
+
+                    if fetch_limit is not None and len(doc_models) > limit:
+                        has_more = True
+                        doc_models = doc_models[:limit]
+
+                    documents = [Document(**self._document_model_to_dict(doc_model)) for doc_model in doc_models]
+                    returned_count = len(documents)
+
+                total_count: Optional[int] = None
+                if include_total_count:
+                    count_query = text(f"SELECT COUNT(*) FROM documents WHERE {final_where_clause}")
+                    count_result = await session.execute(count_query, filter_params)
+                    total_count = count_result.scalar_one() if count_result is not None else 0
+                    has_more = skip + returned_count < total_count if fetch_documents else skip < total_count
+
+                status_counts: Optional[Dict[str, int]] = None
+                if include_status_counts:
+                    status_query = text(
+                        f"""
+                        SELECT COALESCE(NULLIF(system_metadata->>'status', ''), 'unknown') AS status,
+                               COUNT(*) AS count
+                        FROM documents
+                        WHERE {final_where_clause}
+                        GROUP BY status
+                        """
+                    )
+                    status_result = await session.execute(status_query, filter_params)
+                    status_counts = {}
+                    for row in status_result.mappings():
+                        status_value = row.get("status") or "unknown"
+                        status_counts[status_value] = row.get("count", 0)
+
+                folder_counts: Optional[List[Dict[str, Any]]] = None
+                if include_folder_counts:
+                    folder_query = text(
+                        f"""
+                        SELECT folder_name, COUNT(*) AS count
+                        FROM documents
+                        WHERE {final_where_clause}
+                        GROUP BY folder_name
+                        ORDER BY folder_name NULLS FIRST
+                        """
+                    )
+                    folder_result = await session.execute(folder_query, filter_params)
+                    folder_counts = [
+                        {"folder": row.get("folder_name"), "count": row.get("count", 0)}
+                        for row in folder_result.mappings()
+                    ]
+
+                if include_total_count and total_count is not None:
+                    next_skip = (
+                        skip + returned_count if fetch_documents and (skip + returned_count) < total_count else None
+                    )
+                elif has_more and fetch_documents:
+                    next_skip = skip + returned_count
+                else:
+                    next_skip = None
+
+                return {
+                    "documents": documents if fetch_documents else [],
+                    "returned_count": returned_count if fetch_documents else 0,
+                    "total_count": total_count,
+                    "status_counts": status_counts,
+                    "folder_counts": folder_counts,
+                    "has_more": has_more,
+                    "next_skip": next_skip,
+                }
+
+        except Exception as e:
+            logger.error(f"Error listing documents with aggregates: {str(e)}")
+            return {
+                "documents": [],
+                "returned_count": 0,
+                "total_count": None,
+                "status_counts": None,
+                "folder_counts": None,
+                "has_more": False,
+                "next_skip": None,
+            }
+
+    def _resolve_document_sort_clause(self, sort_by: Optional[str], sort_direction: str):
+        """Resolve ORDER BY clause for flexible document listings."""
+        direction = "ASC" if (sort_direction or "").lower() == "asc" else "DESC"
+        normalized_sort = (sort_by or "updated_at").lower()
+
+        if normalized_sort == "filename":
+            return text(f"filename {direction} NULLS LAST")
+        if normalized_sort == "external_id":
+            return text(f"external_id {direction}")
+        if normalized_sort == "created_at":
+            return text(
+                "COALESCE((system_metadata->>'created_at')::timestamptz, "
+                "(system_metadata->>'updated_at')::timestamptz) "
+                f"{direction} NULLS LAST"
+            )
+
+        return text(
+            "COALESCE((system_metadata->>'updated_at')::timestamptz, "
+            "(system_metadata->>'created_at')::timestamptz) "
+            f"{direction} NULLS LAST"
+        )
+
     async def update_document(self, document_id: str, updates: Dict[str, Any], auth: AuthContext) -> bool:
         """Update document metadata if user has write access."""
         try:

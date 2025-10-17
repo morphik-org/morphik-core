@@ -14,6 +14,70 @@ class ListDocumentsRequest(BaseModel):
     limit: int = Field(default=10000, gt=0)
 
 
+class ListDocsRequest(BaseModel):
+    """Flexible request model for listing documents with projection and aggregates."""
+
+    document_filters: Optional[Dict[str, Any]] = Field(None, description="Metadata filters for documents")
+    skip: int = Field(default=0, ge=0, description="Number of documents to skip")
+    limit: int = Field(default=100, ge=0, description="Maximum number of documents to return")
+    return_documents: bool = Field(default=True, description="When false, only aggregates are returned")
+    include_total_count: bool = Field(default=False, description="Include total number of matching documents when true")
+    include_status_counts: bool = Field(
+        default=False, description="Include document counts grouped by processing status when true"
+    )
+    include_folder_counts: bool = Field(
+        default=False, description="Include document counts grouped by folder when true"
+    )
+    sort_by: Optional[Literal["created_at", "updated_at", "filename", "external_id"]] = Field(
+        default="updated_at", description="Field to sort the results by"
+    )
+    sort_direction: Literal["asc", "desc"] = Field(default="desc", description="Sort direction for the results")
+    fields: Optional[List[str]] = Field(
+        default=None,
+        description="Optional list of fields to project for each document (dot notation supported)",
+    )
+
+
+class FolderDetailsRequest(BaseModel):
+    """Request model for retrieving folder details with document statistics."""
+
+    identifiers: Optional[List[str]] = Field(
+        default=None,
+        description="List of folder IDs or names. If omitted, returns details for all accessible folders.",
+    )
+    include_document_count: bool = Field(default=True, description="Include total document count when true")
+    include_status_counts: bool = Field(
+        default=False, description="Include document counts grouped by status when true"
+    )
+    include_documents: bool = Field(
+        default=False, description="Include a paginated list of documents for each folder when true"
+    )
+    document_filters: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional metadata filters applied when computing folder document statistics",
+    )
+    document_skip: int = Field(
+        default=0,
+        ge=0,
+        description="Number of documents to skip within each folder when include_documents is true",
+    )
+    document_limit: int = Field(
+        default=25,
+        ge=0,
+        description="Maximum number of documents to return per folder when include_documents is true",
+    )
+    document_fields: Optional[List[str]] = Field(
+        default=None,
+        description="Optional list of fields to project for folder documents (dot notation supported)",
+    )
+    sort_by: Optional[Literal["created_at", "updated_at", "filename", "external_id"]] = Field(
+        default="updated_at", description="Field to sort folder documents by when include_documents is true"
+    )
+    sort_direction: Literal["asc", "desc"] = Field(
+        default="desc", description="Sort direction for folder documents when include_documents is true"
+    )
+
+
 class SearchDocumentsRequest(BaseModel):
     """Request model for searching documents by name"""
 

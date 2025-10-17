@@ -95,6 +95,29 @@ class BaseDatabase(ABC):
         pass
 
     @abstractmethod
+    async def list_documents_flexible(
+        self,
+        auth: AuthContext,
+        skip: int = 0,
+        limit: int = 100,
+        filters: Optional[Dict[str, Any]] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
+        include_total_count: bool = False,
+        include_status_counts: bool = False,
+        include_folder_counts: bool = False,
+        return_documents: bool = True,
+        sort_by: Optional[str] = None,
+        sort_direction: str = "desc",
+    ) -> Dict[str, Any]:
+        """
+        List documents with optional aggregates and flexible pagination metadata.
+
+        Returns:
+            Dictionary containing documents and requested aggregate information.
+        """
+        pass
+
+    @abstractmethod
     async def update_document(self, document_id: str, updates: Dict[str, Any], auth: AuthContext) -> bool:
         """
         Update document metadata if user has access.
