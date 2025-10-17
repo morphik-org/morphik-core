@@ -3,15 +3,15 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Column, DateTime, Index, String, and_, desc, func, or_, select, text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy import Column, DateTime, Index, String, desc, func, select, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from core.config import get_settings
 from core.models.workflows import Workflow, WorkflowRun
 
-from ..models.auth import AuthContext, EntityType
+from ..models.auth import AuthContext
 from ..models.documents import Document, StorageFileInfo
 from ..models.folders import Folder
 from ..models.graph import Graph
@@ -20,6 +20,8 @@ from .base_database import BaseDatabase
 
 logger = logging.getLogger(__name__)
 Base = declarative_base()
+
+SYSTEM_METADATA_SCOPE_KEYS = {"folder_name", "end_user_id", "app_id"}
 
 
 class DocumentModel(Base):
@@ -39,10 +41,6 @@ class DocumentModel(Base):
 
     # Flattened auth columns for performance
     owner_id = Column(String)
-    owner_type = Column(String)
-    readers = Column(ARRAY(String), default=list)
-    writers = Column(ARRAY(String), default=list)
-    admins = Column(ARRAY(String), default=list)
     app_id = Column(String)
     folder_name = Column(String)
     end_user_id = Column(String)
@@ -77,10 +75,6 @@ class GraphModel(Base):
 
     # Flattened auth columns for performance
     owner_id = Column(String)
-    owner_type = Column(String)
-    readers = Column(ARRAY(String), default=list)
-    writers = Column(ARRAY(String), default=list)
-    admins = Column(ARRAY(String), default=list)
     app_id = Column(String)
     folder_name = Column(String)
     end_user_id = Column(String)
@@ -113,10 +107,6 @@ class FolderModel(Base):
 
     # Flattened auth columns for performance
     owner_id = Column(String)
-    owner_type = Column(String)
-    readers = Column(ARRAY(String), default=list)
-    writers = Column(ARRAY(String), default=list)
-    admins = Column(ARRAY(String), default=list)
     app_id = Column(String)
     end_user_id = Column(String)
 
@@ -256,7 +246,7 @@ class PostgresDatabase(BaseDatabase):
                 if not folder_model:
                     logger.error(f"Folder {folder_id} not found")
                     return False
-                if not self._check_folder_model_access(folder_model, auth, "admin"):
+                if not self._check_folder_model_access(folder_model, auth):
                     logger.error(f"User does not have admin access to folder {folder_id}")
                     return False
                 await session.delete(folder_model)
@@ -583,17 +573,6 @@ class PostgresDatabase(BaseDatabase):
                     await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table}_owner_id ON {table}(owner_id);"))
                     await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table}_app_id ON {table}(app_id);"))
 
-                    # Create GIN indexes for array columns
-                    await conn.execute(
-                        text(f"CREATE INDEX IF NOT EXISTS idx_{table}_readers ON {table} USING gin(readers);")
-                    )
-                    await conn.execute(
-                        text(f"CREATE INDEX IF NOT EXISTS idx_{table}_writers ON {table} USING gin(writers);")
-                    )
-                    await conn.execute(
-                        text(f"CREATE INDEX IF NOT EXISTS idx_{table}_admins ON {table} USING gin(admins);")
-                    )
-
                     # Create composite indexes for common query patterns
                     await conn.execute(
                         text(f"CREATE INDEX IF NOT EXISTS idx_{table}_owner_app ON {table}(owner_id, app_id);")
@@ -640,23 +619,9 @@ class PostgresDatabase(BaseDatabase):
             # Serialize datetime objects to ISO format strings
             doc_dict = _serialize_datetime(doc_dict)
 
-            # Set owner information from auth context
-            if auth.entity_type and auth.entity_id:
-                doc_dict["owner_id"] = auth.entity_id
-                doc_dict["owner_type"] = auth.entity_type.value
-            else:
-                # Default to a system owner if no entity context
-                doc_dict["owner_id"] = "system"
-                doc_dict["owner_type"] = "system"
-
-            # Initialize ACL lists as empty (can be updated later)
-            doc_dict["readers"] = []
-            doc_dict["writers"] = []
-            doc_dict["admins"] = []
-
-            # Set app_id from auth context if present (required for cloud mode)
-            if auth.app_id:
-                doc_dict["app_id"] = auth.app_id
+            # Simplified access control - only what's actually needed
+            doc_dict["owner_id"] = auth.entity_id or "system"
+            doc_dict["app_id"] = auth.app_id  # Primary access control in cloud mode
 
             # The flattened fields are already in doc_dict from the Document model
 
@@ -845,6 +810,162 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error listing documents: {str(e)}")
             return []
 
+    async def list_documents_flexible(
+        self,
+        auth: AuthContext,
+        skip: int = 0,
+        limit: int = 100,
+        filters: Optional[Dict[str, Any]] = None,
+        system_filters: Optional[Dict[str, Any]] = None,
+        include_total_count: bool = False,
+        include_status_counts: bool = False,
+        include_folder_counts: bool = False,
+        return_documents: bool = True,
+        sort_by: Optional[str] = None,
+        sort_direction: str = "desc",
+    ) -> Dict[str, Any]:
+        """List documents with optional aggregate metadata."""
+        limit = max(limit, 0) if limit is not None else None
+        skip = max(skip, 0)
+
+        try:
+            async with self.async_session() as session:
+                access_filter = self._build_access_filter_optimized(auth)
+                metadata_filter = self._build_metadata_filter(filters)
+                system_metadata_filter = self._build_system_metadata_filter_optimized(system_filters)
+                filter_params = self._build_filter_params(auth, system_filters)
+
+                where_clauses = [f"({access_filter})"]
+                if metadata_filter:
+                    where_clauses.append(f"({metadata_filter})")
+                if system_metadata_filter:
+                    where_clauses.append(f"({system_metadata_filter})")
+
+                final_where_clause = " AND ".join(where_clauses) if where_clauses else "TRUE"
+
+                documents: List[Document] = []
+                returned_count = 0
+                has_more = False
+
+                fetch_documents = return_documents and (limit is None or limit > 0)
+
+                if fetch_documents:
+                    base_query = select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
+                    order_clause = self._resolve_document_sort_clause(sort_by, sort_direction)
+                    if order_clause is not None:
+                        base_query = base_query.order_by(order_clause, DocumentModel.external_id.asc())
+                    else:
+                        base_query = base_query.order_by(DocumentModel.external_id.asc())
+
+                    fetch_limit = limit + 1 if limit is not None else None
+                    base_query = base_query.offset(skip)
+                    if fetch_limit is not None:
+                        base_query = base_query.limit(fetch_limit)
+
+                    result = await session.execute(base_query)
+                    doc_models = result.scalars().all()
+
+                    if fetch_limit is not None and len(doc_models) > limit:
+                        has_more = True
+                        doc_models = doc_models[:limit]
+
+                    documents = [Document(**self._document_model_to_dict(doc_model)) for doc_model in doc_models]
+                    returned_count = len(documents)
+
+                total_count: Optional[int] = None
+                if include_total_count:
+                    count_query = text(f"SELECT COUNT(*) FROM documents WHERE {final_where_clause}")
+                    count_result = await session.execute(count_query, filter_params)
+                    total_count = count_result.scalar_one() if count_result is not None else 0
+                    has_more = skip + returned_count < total_count if fetch_documents else skip < total_count
+
+                status_counts: Optional[Dict[str, int]] = None
+                if include_status_counts:
+                    status_query = text(
+                        f"""
+                        SELECT COALESCE(NULLIF(system_metadata->>'status', ''), 'unknown') AS status,
+                               COUNT(*) AS count
+                        FROM documents
+                        WHERE {final_where_clause}
+                        GROUP BY status
+                        """
+                    )
+                    status_result = await session.execute(status_query, filter_params)
+                    status_counts = {}
+                    for row in status_result.mappings():
+                        status_value = row.get("status") or "unknown"
+                        status_counts[status_value] = row.get("count", 0)
+
+                folder_counts: Optional[List[Dict[str, Any]]] = None
+                if include_folder_counts:
+                    folder_query = text(
+                        f"""
+                        SELECT folder_name, COUNT(*) AS count
+                        FROM documents
+                        WHERE {final_where_clause}
+                        GROUP BY folder_name
+                        ORDER BY folder_name NULLS FIRST
+                        """
+                    )
+                    folder_result = await session.execute(folder_query, filter_params)
+                    folder_counts = [
+                        {"folder": row.get("folder_name"), "count": row.get("count", 0)}
+                        for row in folder_result.mappings()
+                    ]
+
+                if include_total_count and total_count is not None:
+                    next_skip = (
+                        skip + returned_count if fetch_documents and (skip + returned_count) < total_count else None
+                    )
+                elif has_more and fetch_documents:
+                    next_skip = skip + returned_count
+                else:
+                    next_skip = None
+
+                return {
+                    "documents": documents if fetch_documents else [],
+                    "returned_count": returned_count if fetch_documents else 0,
+                    "total_count": total_count,
+                    "status_counts": status_counts,
+                    "folder_counts": folder_counts,
+                    "has_more": has_more,
+                    "next_skip": next_skip,
+                }
+
+        except Exception as e:
+            logger.error(f"Error listing documents with aggregates: {str(e)}")
+            return {
+                "documents": [],
+                "returned_count": 0,
+                "total_count": None,
+                "status_counts": None,
+                "folder_counts": None,
+                "has_more": False,
+                "next_skip": None,
+            }
+
+    def _resolve_document_sort_clause(self, sort_by: Optional[str], sort_direction: str):
+        """Resolve ORDER BY clause for flexible document listings."""
+        direction = "ASC" if (sort_direction or "").lower() == "asc" else "DESC"
+        normalized_sort = (sort_by or "updated_at").lower()
+
+        if normalized_sort == "filename":
+            return text(f"filename {direction} NULLS LAST")
+        if normalized_sort == "external_id":
+            return text(f"external_id {direction}")
+        if normalized_sort == "created_at":
+            return text(
+                "COALESCE((system_metadata->>'created_at')::timestamptz, "
+                "(system_metadata->>'updated_at')::timestamptz) "
+                f"{direction} NULLS LAST"
+            )
+
+        return text(
+            "COALESCE((system_metadata->>'updated_at')::timestamptz, "
+            "(system_metadata->>'created_at')::timestamptz) "
+            f"{direction} NULLS LAST"
+        )
+
     async def update_document(self, document_id: str, updates: Dict[str, Any], auth: AuthContext) -> bool:
         """Update document metadata if user has write access."""
         try:
@@ -869,6 +990,14 @@ class PostgresDatabase(BaseDatabase):
                 updates["system_metadata"] = merged_system_metadata
                 logger.debug("Merged system_metadata during document update, preserving existing fields")
 
+            # Remove scope fields that are now stored as dedicated columns
+            if isinstance(updates.get("system_metadata"), dict):
+                updates["system_metadata"] = {
+                    key: value
+                    for key, value in updates["system_metadata"].items()
+                    if key not in SYSTEM_METADATA_SCOPE_KEYS
+                }
+
             # Always update the updated_at timestamp
             updates["system_metadata"]["updated_at"] = datetime.now(UTC)
 
@@ -888,7 +1017,7 @@ class PostgresDatabase(BaseDatabase):
                         logger.info("Converting 'metadata' to 'doc_metadata' for database update")
                         updates["doc_metadata"] = updates.pop("metadata")
 
-                    # The flattened fields (owner_id, owner_type, readers, writers, admins)
+                    # The flattened fields (owner_id, app_id)
                     # should be in updates directly if they need to be updated
 
                     # Set all attributes
@@ -1012,18 +1141,13 @@ class PostgresDatabase(BaseDatabase):
                 if not doc_model:
                     return False
 
-                # Check owner access using flattened columns
-                if doc_model.owner_type == auth.entity_type.value and doc_model.owner_id == auth.entity_id:
-                    return True
+                # Simplified access check:
+                # If app_id is present, check app_id match
+                if auth.app_id:
+                    return doc_model.app_id == auth.app_id
 
-                # Check permission-specific access using flattened arrays
-                permission_map = {"read": doc_model.readers, "write": doc_model.writers, "admin": doc_model.admins}
-                permission_array = permission_map.get(required_permission, [])
-
-                if permission_array is None:
-                    return False
-
-                return auth.entity_id in permission_array
+                # Otherwise check owner_id match
+                return doc_model.owner_id == auth.entity_id
 
         except Exception as e:
             logger.error(f"Error checking document access: {str(e)}")
@@ -1032,28 +1156,22 @@ class PostgresDatabase(BaseDatabase):
     def _build_access_filter_optimized(self, auth: AuthContext) -> str:
         """Build PostgreSQL filter for access control using flattened columns.
 
-        This optimized version uses direct column access instead of JSONB operations
-        for better performance.
+        Simplified strategy:
+        - If app_id exists (cloud mode): Filter by app_id only
+        - If no app_id (dev/self-hosted): Filter by owner_id
 
-        Note: This returns a SQL string with :entity_id and :app_id as named parameters.
+        Note: This returns a SQL string with named parameters.
         The caller must provide these parameters when executing the query.
         """
-        # Base clauses using flattened columns with named parameters
-        base_clauses = [
-            "owner_id = :entity_id",
-            ":entity_id = ANY(readers)",
-            ":entity_id = ANY(writers)",
-            ":entity_id = ANY(admins)",
-        ]
+        # Primary access control: app_id based (for cloud mode with proper tokens)
+        if auth.app_id:
+            # When app_id is present, that's the primary access control
+            # This is the case for all cloud mode operations with proper tokens
+            return "app_id = :app_id"
 
-        # Developer token with app_id → require BOTH app_id match AND standard access
-        if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
-            # Must match app_id AND have at least one of the standard access permissions
-            return f"app_id = :app_id AND ({' OR '.join(base_clauses)})"
-        else:
-            # For non-developer tokens or developer tokens without app_id,
-            # use standard access control
-            return " OR ".join(base_clauses)
+        # Fallback for dev mode or self-hosted without app_id
+        # Filter by owner_id to maintain backwards compatibility
+        return "owner_id = :entity_id"
 
     def _build_metadata_filter(self, filters: Dict[str, Any]) -> str:
         """Build PostgreSQL filter for metadata."""
@@ -1141,10 +1259,11 @@ class PostgresDatabase(BaseDatabase):
         """
         params = {}
 
-        # Add auth parameters
-        params["entity_id"] = auth.entity_id
+        # Add auth parameters based on what's actually needed
         if auth.app_id:
             params["app_id"] = auth.app_id
+        elif auth.entity_id:
+            params["entity_id"] = auth.entity_id
 
         # Add system metadata filter parameters
         if system_filters:
@@ -1185,6 +1304,8 @@ class PostgresDatabase(BaseDatabase):
             "system_metadata": graph_model.system_metadata or {},
             "document_ids": graph_model.document_ids,
             "filters": graph_model.filters,
+            "created_at": graph_model.created_at,
+            "updated_at": graph_model.updated_at,
             # Include flattened fields
             "folder_name": graph_model.folder_name,
             "app_id": graph_model.app_id,
@@ -1308,23 +1429,9 @@ class PostgresDatabase(BaseDatabase):
             if updated_at:
                 graph_dict["updated_at"] = updated_at
 
-            # Set owner information from auth context
-            if auth.entity_type and auth.entity_id:
-                graph_dict["owner_id"] = auth.entity_id
-                graph_dict["owner_type"] = auth.entity_type.value
-            else:
-                # Default to a system owner if no entity context
-                graph_dict["owner_id"] = "system"
-                graph_dict["owner_type"] = "system"
-
-            # Initialize ACL lists as empty (can be updated later)
-            graph_dict["readers"] = []
-            graph_dict["writers"] = []
-            graph_dict["admins"] = []
-
-            # Set app_id from auth context if present (required for cloud mode)
-            if auth.app_id:
-                graph_dict["app_id"] = auth.app_id
+            # Simplified access control - only what's actually needed
+            graph_dict["owner_id"] = auth.entity_id or "system"
+            graph_dict["app_id"] = auth.app_id  # Primary access control in cloud mode
 
             # The flattened fields are already in graph_dict from the Graph model
 
@@ -1520,7 +1627,7 @@ class PostgresDatabase(BaseDatabase):
                 graph_dict["updated_at"] = updated_at
 
             # The flattened fields are already in graph_dict from the Graph model
-            # Note: owner_id, owner_type, and ACL fields should not be updated here
+            # Note: owner_id and app_id should not be updated here
             # They should remain as set during graph creation
 
             # Update the graph in PostgreSQL
@@ -1581,20 +1688,17 @@ class PostgresDatabase(BaseDatabase):
                     logger.error(f"Graph '{name}' not found")
                     return False
 
-                # Check if user has write access (owner or admin)
-                # Similar to document access check - user needs to be owner or in admins/writers list
-                is_owner = (
-                    (graph_model.owner_id == auth.entity_id and graph_model.owner_type == auth.entity_type.value)
-                    if auth.entity_type and auth.entity_id
-                    else False
-                )
-
-                is_admin = auth.entity_id in (graph_model.admins or []) if auth.entity_id else False
-                is_writer = auth.entity_id in (graph_model.writers or []) if auth.entity_id else False
-
-                if not (is_owner or is_admin or is_writer):
-                    logger.error(f"User lacks write access to delete graph '{name}'")
-                    return False
+                # Simplified access check for deletion
+                # If app_id is present, check app_id match
+                if auth.app_id:
+                    if graph_model.app_id != auth.app_id:
+                        logger.error(f"User lacks write access to delete graph '{name}'")
+                        return False
+                else:
+                    # Otherwise check owner_id match
+                    if graph_model.owner_id != auth.entity_id:
+                        logger.error(f"User lacks write access to delete graph '{name}'")
+                        return False
 
                 # Delete the graph
                 await session.delete(graph_model)
@@ -1616,21 +1720,19 @@ class PostgresDatabase(BaseDatabase):
                 # Convert datetime objects to strings for JSON serialization
                 folder_dict = _serialize_datetime(folder_dict)
 
-                # Get owner info from auth context
-                owner_id = auth.entity_id if auth.entity_type and auth.entity_id else "system"
-                owner_type = auth.entity_type.value if auth.entity_type else "system"
+                # Simplified owner info
+                owner_id = auth.entity_id or "system"
                 app_id_val = auth.app_id or folder_dict.get("app_id")
-                params = {"name": folder.name, "owner_id": owner_id, "owner_type": owner_type}
+
+                # Check for existing folder with same name
+                params = {"name": folder.name, "owner_id": owner_id}
                 sql = """
                     SELECT id FROM folders
                     WHERE name = :name
                     AND owner_id = :owner_id
-                    AND owner_type = :owner_type
                     """
-                if app_id_val is not None:
-                    sql += """
-                    AND app_id = :app_id
-                    """
+                if app_id_val:
+                    sql += " AND app_id = :app_id"
                     params["app_id"] = app_id_val
                 stmt = text(sql).bindparams(**params)
 
@@ -1646,18 +1748,14 @@ class PostgresDatabase(BaseDatabase):
                     folder.id = existing_folder
                     return True
 
-                # Create a new folder model with owner info from auth context
+                # Create a new folder model
                 folder_model = FolderModel(
                     id=folder.id,
                     name=folder.name,
                     description=folder.description,
                     owner_id=owner_id,
-                    owner_type=owner_type,
                     document_ids=folder_dict.get("document_ids", []),
                     system_metadata=folder_dict.get("system_metadata", {}),
-                    readers=[],  # Initialize as empty, can be updated later
-                    writers=[],  # Initialize as empty, can be updated later
-                    admins=[],  # Initialize as empty, can be updated later
                     app_id=app_id_val,
                     end_user_id=folder_dict.get("end_user_id"),
                     rules=folder_dict.get("rules", []),
@@ -1696,10 +1794,12 @@ class PostgresDatabase(BaseDatabase):
                     "system_metadata": folder_model.system_metadata,
                     "rules": folder_model.rules,
                     "workflow_ids": getattr(folder_model, "workflow_ids", []),
+                    "app_id": folder_model.app_id,
+                    "end_user_id": folder_model.end_user_id,
                 }
 
                 # Check if the user has access to the folder using the model
-                if not self._check_folder_model_access(folder_model, auth, "read"):
+                if not self._check_folder_model_access(folder_model, auth):
                     return None
 
                 folder = Folder(**folder_dict)
@@ -1713,57 +1813,32 @@ class PostgresDatabase(BaseDatabase):
         """Get a folder by name."""
         try:
             async with self.async_session() as session:
-                # First try to get a folder owned by this entity
-                if auth.entity_type and auth.entity_id:
+                # Build query based on auth context
+                params = {"name": name}
+
+                if auth.app_id:
+                    # Filter by app_id in cloud mode
                     stmt = text(
                         """
                         SELECT * FROM folders
-                        WHERE name = :name
-                        AND owner_id = :entity_id
-                        AND owner_type = :entity_type
-                        """
-                    ).bindparams(name=name, entity_id=auth.entity_id, entity_type=auth.entity_type.value)
-
-                    result = await session.execute(stmt)
-                    folder_row = result.fetchone()
-
-                    if folder_row:
-                        # Convert to Folder object
-                        folder_dict = {
-                            "id": folder_row.id,
-                            "name": folder_row.name,
-                            "description": folder_row.description,
-                            "document_ids": folder_row.document_ids,
-                            "system_metadata": folder_row.system_metadata,
-                            "rules": folder_row.rules,
-                            "workflow_ids": getattr(folder_row, "workflow_ids", []),
-                        }
-
-                        folder = Folder(**folder_dict)
-                        return folder
-
-                # If not found, try to find any accessible folder with that name
-                # Note: For folders, the access control arrays store "entity_type:entity_id" format
-                entity_qualifier = f"{auth.entity_type.value}:{auth.entity_id}"
-                stmt = text(
+                        WHERE name = :name AND app_id = :app_id
                     """
-                    SELECT * FROM folders
-                    WHERE name = :name
-                    AND (
-                        (owner_id = :entity_id AND owner_type = :entity_type)
-                        OR :entity_qualifier = ANY(readers)
-                        OR :entity_qualifier = ANY(writers)
-                        OR :entity_qualifier = ANY(admins)
                     )
+                    params["app_id"] = auth.app_id
+                elif auth.entity_id:
+                    # Filter by owner_id in dev/self-hosted mode
+                    stmt = text(
+                        """
+                        SELECT * FROM folders
+                        WHERE name = :name AND owner_id = :owner_id
                     """
-                ).bindparams(
-                    name=name,
-                    entity_id=auth.entity_id,
-                    entity_type=auth.entity_type.value,
-                    entity_qualifier=entity_qualifier,
-                )
+                    )
+                    params["owner_id"] = auth.entity_id
+                else:
+                    # No access without auth
+                    return None
 
-                result = await session.execute(stmt)
+                result = await session.execute(stmt.bindparams(**params))
                 folder_row = result.fetchone()
 
                 if folder_row:
@@ -1776,10 +1851,10 @@ class PostgresDatabase(BaseDatabase):
                         "system_metadata": folder_row.system_metadata,
                         "rules": folder_row.rules,
                         "workflow_ids": getattr(folder_row, "workflow_ids", []),
+                        "app_id": folder_row.app_id,
+                        "end_user_id": folder_row.end_user_id,
                     }
-
-                    folder = Folder(**folder_dict)
-                    return folder
+                    return Folder(**folder_dict)
 
                 return None
 
@@ -1790,58 +1865,24 @@ class PostgresDatabase(BaseDatabase):
     async def list_folders(self, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> List[Folder]:
         """List all folders the user has access to using flattened columns."""
         try:
-            where_filters = []  # For top-level AND conditions (e.g., app_id)
-            core_access_conditions = []  # For OR conditions (owner, reader_acl, admin_acl)
             current_params = {}
 
-            # 1. Developer App ID Scoping (always applied as an AND condition if auth context specifies it)
-            if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
-                where_filters.append(text("app_id = :app_id_val"))
+            # Simplified access control - same as documents/graphs
+            if auth.app_id:
+                # Filter by app_id when present (cloud mode)
+                where_clause = text("app_id = :app_id_val")
                 current_params["app_id_val"] = auth.app_id
-
-            # 2. Build Core Access Conditions (Owner, Reader ACL, Admin ACL)
-            # These are OR'd together. The user must satisfy one of these, AND the app_id scope if applicable.
-
-            # Condition 2a: User is the owner of the folder (using flattened columns)
-            if auth.entity_type and auth.entity_id:
-                owner_sub_conditions_text = []
-
-                owner_sub_conditions_text.append("owner_type = :owner_type_val")
-                current_params["owner_type_val"] = auth.entity_type.value
-
-                owner_sub_conditions_text.append("owner_id = :owner_id_val")
+            elif auth.entity_id:
+                # Filter by owner_id as fallback (dev/self-hosted mode)
+                where_clause = text("owner_id = :owner_id_val")
                 current_params["owner_id_val"] = auth.entity_id
-
-                # Combine owner sub-conditions with AND
-                core_access_conditions.append(text(f"({' AND '.join(owner_sub_conditions_text)})"))
-
-            # Condition 2b & 2c: User is in the folder's 'readers' or 'admins' access control list
-            # Note: Folders use "entity_type:entity_id" format in arrays
-            if auth.entity_type and auth.entity_id:
-                entity_qualifier_for_acl = f"{auth.entity_type.value}:{auth.entity_id}"
-                current_params["acl_qualifier"] = entity_qualifier_for_acl  # Used for both readers and admins
-
-                core_access_conditions.append(text(":acl_qualifier = ANY(readers)"))
-                core_access_conditions.append(text(":acl_qualifier = ANY(admins)"))  # Added folder admins ACL check
-
-            # Combine core access conditions with OR, and add this group to the main AND filters
-            if core_access_conditions:
-                where_filters.append(or_(*core_access_conditions))
             else:
-                # If there are no core ways to grant access (e.g., anonymous user without entity_id/type),
-                # this effectively means this part of the condition is false.
-                where_filters.append(text("1=0"))  # Effectively False if no ownership or ACL grant possible
+                # No access if no auth context
+                where_clause = text("1=0")
 
             # Build and execute query
-            async with self.async_session() as session:  # Ensure session is correctly established
-                query = select(FolderModel)
-                if where_filters:
-                    # If any filters were constructed
-                    query = query.where(and_(*where_filters))
-                else:
-                    # To be absolutely safe: if no filters ended up in where_filters, deny all access.
-                    query = query.where(text("1=0"))  # Default to no access if no filters constructed
-
+            async with self.async_session() as session:
+                query = select(FolderModel).where(where_clause)
                 result = await session.execute(query, current_params)
                 folder_models = result.scalars().all()
 
@@ -1855,6 +1896,8 @@ class PostgresDatabase(BaseDatabase):
                         "system_metadata": folder_model.system_metadata,
                         "rules": folder_model.rules,
                         "workflow_ids": getattr(folder_model, "workflow_ids", []),
+                        "app_id": folder_model.app_id,
+                        "end_user_id": folder_model.end_user_id,
                     }
                     folders.append(Folder(**folder_dict))
                 return folders
@@ -1876,7 +1919,7 @@ class PostgresDatabase(BaseDatabase):
                     return False
 
                 # Check if user has write access to the folder
-                if not self._check_folder_model_access(folder_model, auth, "write"):
+                if not self._check_folder_model_access(folder_model, auth):
                     logger.error(f"User does not have write access to folder {folder_id}")
                     return False
 
@@ -1960,7 +2003,7 @@ class PostgresDatabase(BaseDatabase):
                     return False
 
                 # Check if user has write access to the folder
-                if not self._check_folder_model_access(folder_model, auth, "write"):
+                if not self._check_folder_model_access(folder_model, auth):
                     logger.error(f"User does not have write access to folder {folder_id}")
                     return False
 
@@ -2016,7 +2059,7 @@ class PostgresDatabase(BaseDatabase):
                     return False
 
                 # Check if user has write access to the folder
-                if not self._check_folder_model_access(folder_model, auth, "write"):
+                if not self._check_folder_model_access(folder_model, auth):
                     logger.error(f"User does not have write access to folder {folder_id}")
                     return False
 
@@ -2051,7 +2094,7 @@ class PostgresDatabase(BaseDatabase):
                     return False
 
                 # Check if user has write access to the folder
-                if not self._check_folder_model_access(folder_model, auth, "write"):
+                if not self._check_folder_model_access(folder_model, auth):
                     logger.error(f"User does not have write access to folder {folder_id}")
                     return False
 
@@ -2270,46 +2313,15 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error updating chat title: {e}")
             return False
 
-    def _check_folder_model_access(
-        self, folder_model: FolderModel, auth: AuthContext, permission: str = "read"
-    ) -> bool:
-        """Check if the user has the required permission for the folder."""
-        # Developer-scoped tokens: restrict by app_id on folders
-        if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
-            if folder_model.app_id != auth.app_id:
-                return False
+    def _check_folder_model_access(self, folder_model: FolderModel, auth: AuthContext) -> bool:
+        """Check if the user has access to the folder."""
+        # Simplified access check - consistent with documents/graphs
+        if auth.app_id:
+            # Check app_id match when present (cloud mode)
+            return folder_model.app_id == auth.app_id
 
-        # Admin always has access
-        if "admin" in auth.permissions:
-            return True
-
-        # Check if folder is owned by the user
-        if (
-            auth.entity_type
-            and auth.entity_id
-            and folder_model.owner_type == auth.entity_type.value
-            and folder_model.owner_id == auth.entity_id
-        ):
-            return True
-
-        # Check access control lists using flattened columns
-        # ACLs for folders store entries as "entity_type_value:entity_id"
-        entity_qualifier = f"{auth.entity_type.value}:{auth.entity_id}"
-
-        if permission == "read":
-            if entity_qualifier in (folder_model.readers or []):
-                return True
-
-        if permission == "write":
-            if entity_qualifier in (folder_model.writers or []):
-                return True
-
-        # For admin permission, check admins list
-        if permission == "admin":  # This check is for folder-level admin, not global admin
-            if entity_qualifier in (folder_model.admins or []):
-                return True
-
-        return False
+        # Otherwise check owner_id match (dev/self-hosted mode)
+        return folder_model.owner_id == auth.entity_id
 
     # ------------------------------------------------------------------
     # PERFORMANCE: lightweight folder summaries (id, name, description)
@@ -2520,13 +2532,13 @@ class PostgresDatabase(BaseDatabase):
                 # Build query with auth filtering
                 query = select(WorkflowModel)
 
-                # Filter by owner_id
-                if auth.entity_id:
-                    query = query.where(WorkflowModel.owner_id == auth.entity_id)
-
-                # For developer tokens with app_id, further restrict by app_id
-                if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
+                # Simplified access control - consistent with other resources
+                if auth.app_id:
+                    # Filter by app_id in cloud mode
                     query = query.where(WorkflowModel.app_id == auth.app_id)
+                elif auth.entity_id:
+                    # Filter by owner_id in dev/self-hosted mode
+                    query = query.where(WorkflowModel.owner_id == auth.entity_id)
 
                 # In cloud mode, also filter by user_id if present
                 if auth.user_id and get_settings().MODE == "cloud":
@@ -2546,15 +2558,18 @@ class PostgresDatabase(BaseDatabase):
                 if not wf_model:
                     return None
 
-                # Check permissions
-                # Check if user owns the workflow
-                if auth.entity_id and wf_model.owner_id != auth.entity_id:
-                    return None
-
-                # For developer tokens with app_id, check app_id matches
-                if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
+                # Simplified access check - consistent with other resources
+                if auth.app_id:
+                    # Check app_id in cloud mode
                     if wf_model.app_id != auth.app_id:
                         return None
+                elif auth.entity_id:
+                    # Check owner_id in dev/self-hosted mode
+                    if wf_model.owner_id != auth.entity_id:
+                        return None
+                else:
+                    # No access without auth
+                    return None
 
                 # In cloud mode, check user_id matches if present
                 if auth.user_id and get_settings().MODE == "cloud":
@@ -2585,15 +2600,21 @@ class PostgresDatabase(BaseDatabase):
                     return False
 
                 # Check permissions - same logic as get_workflow
-                if auth.entity_id and wf_model.owner_id != auth.entity_id:
-                    logger.warning(
-                        f"User {auth.entity_id} attempted to delete workflow {workflow_id} owned by {wf_model.owner_id}"
-                    )
-                    return False
-
-                if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
+                # Simplified access check
+                if auth.app_id:
                     if wf_model.app_id != auth.app_id:
+                        logger.warning(
+                            f"App {auth.app_id} attempted to delete workflow {workflow_id} from different app"
+                        )
                         return False
+                elif auth.entity_id:
+                    if wf_model.owner_id != auth.entity_id:
+                        logger.warning(
+                            f"User {auth.entity_id} attempted to delete workflow {workflow_id} owned by {wf_model.owner_id}"
+                        )
+                        return False
+                else:
+                    return False
 
                 if auth.user_id and get_settings().MODE == "cloud":
                     if wf_model.user_id != auth.user_id:
@@ -2663,13 +2684,15 @@ class PostgresDatabase(BaseDatabase):
 
                 # Check permissions - same logic as get_workflow
                 # Check if user owns the workflow run
-                if auth.entity_id and run_model.owner_id != auth.entity_id:
-                    return None
-
-                # For developer tokens with app_id, check app_id matches
-                if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
+                # Simplified access check
+                if auth.app_id:
                     if run_model.app_id != auth.app_id:
                         return None
+                elif auth.entity_id:
+                    if run_model.owner_id != auth.entity_id:
+                        return None
+                else:
+                    return None
 
                 # In cloud mode, check user_id matches if present
                 if auth.user_id and get_settings().MODE == "cloud":
@@ -2689,13 +2712,15 @@ class PostgresDatabase(BaseDatabase):
                 if not workflow:
                     return []
 
-                # Check workflow permissions
-                if auth.entity_id and workflow.owner_id != auth.entity_id:
-                    return []
-
-                if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
+                # Check workflow permissions - simplified
+                if auth.app_id:
                     if workflow.app_id != auth.app_id:
                         return []
+                elif auth.entity_id:
+                    if workflow.owner_id != auth.entity_id:
+                        return []
+                else:
+                    return []
 
                 if auth.user_id and get_settings().MODE == "cloud":
                     if workflow.user_id != auth.user_id:
@@ -2704,13 +2729,11 @@ class PostgresDatabase(BaseDatabase):
                 # Now get workflow runs with auth filtering
                 query = select(WorkflowRunModel).where(WorkflowRunModel.workflow_id == workflow_id)
 
-                # Filter by owner_id
-                if auth.entity_id:
-                    query = query.where(WorkflowRunModel.owner_id == auth.entity_id)
-
-                # For developer tokens with app_id, further restrict by app_id
-                if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
+                # Simplified access control
+                if auth.app_id:
                     query = query.where(WorkflowRunModel.app_id == auth.app_id)
+                elif auth.entity_id:
+                    query = query.where(WorkflowRunModel.owner_id == auth.entity_id)
 
                 # In cloud mode, also filter by user_id if present
                 if auth.user_id and get_settings().MODE == "cloud":
@@ -2731,15 +2754,21 @@ class PostgresDatabase(BaseDatabase):
                     return False
 
                 # Check permissions - same logic as get_workflow_run
-                if auth.entity_id and run_model.owner_id != auth.entity_id:
-                    logger.warning(
-                        f"User {auth.entity_id} attempted to delete workflow run {run_id} owned by {run_model.owner_id}"
-                    )
-                    return False
-
-                if auth.entity_type == EntityType.DEVELOPER and auth.app_id:
+                # Simplified access check
+                if auth.app_id:
                     if run_model.app_id != auth.app_id:
+                        logger.warning(
+                            f"App {auth.app_id} attempted to delete workflow run {run_id} from different app"
+                        )
                         return False
+                elif auth.entity_id:
+                    if run_model.owner_id != auth.entity_id:
+                        logger.warning(
+                            f"User {auth.entity_id} attempted to delete workflow run {run_id} owned by {run_model.owner_id}"
+                        )
+                        return False
+                else:
+                    return False
 
                 if auth.user_id and get_settings().MODE == "cloud":
                     if run_model.user_id != auth.user_id:

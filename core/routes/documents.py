@@ -8,8 +8,14 @@ from core.auth_utils import verify_token
 from core.config import get_settings
 from core.models.auth import AuthContext
 from core.models.documents import Document
-from core.models.request import DocumentPagesRequest, IngestTextRequest, ListDocumentsRequest
-from core.models.responses import DocumentDeleteResponse, DocumentDownloadUrlResponse, DocumentPagesResponse
+from core.models.request import DocumentPagesRequest, IngestTextRequest, ListDocsRequest, ListDocumentsRequest
+from core.models.responses import (
+    DocumentDeleteResponse,
+    DocumentDownloadUrlResponse,
+    DocumentPagesResponse,
+    FolderCount,
+    ListDocsResponse,
+)
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
 
@@ -72,6 +78,76 @@ async def list_documents(
 
     return await document_service.db.get_documents(
         auth, request.skip, request.limit, filters=request.document_filters, system_filters=system_filters
+    )
+
+
+@router.post("/list_docs", response_model=ListDocsResponse)
+async def list_docs(
+    request: ListDocsRequest,
+    auth: AuthContext = Depends(verify_token),
+    folder_name: Optional[Union[str, List[str]]] = Query(None),
+    end_user_id: Optional[str] = Query(None),
+) -> ListDocsResponse:
+    """
+    Flexible document listing endpoint with support for aggregates, projections, and advanced pagination.
+    """
+    system_filters: Dict[str, Any] = {}
+    if folder_name is not None:
+        system_filters["folder_name"] = normalize_folder_name(folder_name)
+    if end_user_id:
+        system_filters["end_user_id"] = end_user_id
+
+    db_result = await document_service.db.list_documents_flexible(
+        auth=auth,
+        skip=request.skip,
+        limit=request.limit,
+        filters=request.document_filters,
+        system_filters=system_filters,
+        include_total_count=request.include_total_count,
+        include_status_counts=request.include_status_counts,
+        include_folder_counts=request.include_folder_counts,
+        return_documents=request.return_documents,
+        sort_by=request.sort_by,
+        sort_direction=request.sort_direction,
+    )
+
+    documents_payload: List[Any] = []
+    if request.return_documents:
+        raw_documents = db_result.get("documents", [])
+        for document in raw_documents:
+            if hasattr(document, "model_dump"):
+                doc_dict = document.model_dump(mode="json")
+            elif hasattr(document, "dict"):
+                doc_dict = document.dict()
+            else:
+                doc_dict = dict(document)
+            documents_payload.append(_project_document_fields(doc_dict, request.fields))
+
+    total_count = db_result.get("total_count")
+    returned_count = db_result.get("returned_count", len(documents_payload))
+    has_more = db_result.get("has_more", False)
+    next_skip = db_result.get("next_skip")
+
+    if next_skip is None and has_more:
+        next_skip = request.skip + returned_count
+
+    folder_counts_raw = db_result.get("folder_counts")
+    folder_counts: Optional[List[FolderCount]] = None
+    if folder_counts_raw:
+        folder_counts = [
+            FolderCount(folder=item.get("folder"), count=item.get("count", 0)) for item in folder_counts_raw
+        ]
+
+    return ListDocsResponse(
+        documents=documents_payload,
+        skip=request.skip,
+        limit=request.limit,
+        returned_count=returned_count,
+        total_count=total_count,
+        has_more=has_more,
+        next_skip=next_skip,
+        status_counts=db_result.get("status_counts") if request.include_status_counts else None,
+        folder_counts=folder_counts,
     )
 
 

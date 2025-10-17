@@ -26,6 +26,14 @@ export interface QueryOptions extends SearchOptions {
 
 // Common types used across multiple components
 
+// Breadcrumb type for custom navigation
+export interface Breadcrumb {
+  label: string;
+  href?: string;
+  onClick?: (e: React.MouseEvent) => void;
+  current?: boolean;
+}
+
 export interface MorphikUIProps {
   connectionUri?: string | null; // Allow null/undefined initially
   apiBaseUrl?: string;
@@ -43,6 +51,9 @@ export interface MorphikUIProps {
     | "pdf"
     | "settings"
     | "logs"; // Initial section to show
+
+  // Custom breadcrumbs for organization context
+  breadcrumbItems?: Breadcrumb[];
 
   // Callbacks for Documents Section tracking
   onDocumentUpload?: (fileName: string, fileSize: number) => void;
@@ -85,11 +96,20 @@ export interface Document {
   filename?: string;
   content_type: string;
   metadata: Record<string, unknown>;
-  system_metadata: Record<string, unknown>;
+  system_metadata: SystemMetadata;
   additional_metadata: Record<string, unknown>;
   folder_name?: string;
   app_id?: string;
   end_user_id?: string;
+}
+
+export interface SystemMetadata {
+  status?: string;
+  progress?: ProcessingProgress;
+  created_at?: string;
+  updated_at?: string;
+  error?: string;
+  [key: string]: unknown;
 }
 
 export interface FolderSummary {

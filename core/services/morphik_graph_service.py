@@ -203,47 +203,67 @@ class MorphikGraphService:
             if not local_graph:
                 return None
 
-            # Check graph status if the graph is processing
+            # Check graph status using the more reliable graph status endpoint
             if local_graph.system_metadata.get("status") == "processing":
+                # Check processing timeout first
+                processing_started = local_graph.system_metadata.get("processing_started")
+                if processing_started:
+                    from datetime import datetime
+
+                    try:
+                        if isinstance(processing_started, str):
+                            processing_started = datetime.fromisoformat(processing_started.replace("Z", "+00:00"))
+                        elapsed = datetime.now(processing_started.tzinfo) - processing_started
+                        if elapsed.total_seconds() > 3600:  # 1 hour timeout
+                            local_graph.system_metadata["status"] = "failed"
+                            local_graph.system_metadata["error"] = "Processing timeout exceeded"
+                            await self.db.update_graph(local_graph, auth)
+                            return local_graph
+                    except Exception as e:
+                        logger.warning(f"Failed to check processing timeout: {e}")
+
+                # Use the superior graph status endpoint instead of workflow status
                 try:
-                    # Use new graph-ID-based status checking instead of workflow-based
-                    status_response = await self._make_api_request(
-                        method="GET",
-                        endpoint=f"/graph/{local_graph.id}/status",
-                        auth=auth,
+                    graph_status_response = await self._make_api_request(
+                        method="GET", endpoint=f"/graph/{local_graph.id}/status", auth=auth
                     )
 
-                    if status_response:
-                        # Update local graph metadata based on remote status
-                        remote_status = status_response.get("status", "processing")
+                    if graph_status_response:
+                        remote_status = graph_status_response.get("status", "processing")
                         local_graph.system_metadata["status"] = remote_status
 
-                        if "error" in status_response:
-                            local_graph.system_metadata["error"] = status_response["error"]
+                        # Copy additional fields from graph status response
+                        if "pipeline_stage" in graph_status_response:
+                            local_graph.system_metadata["pipeline_stage"] = graph_status_response["pipeline_stage"]
+                        if "node_count" in graph_status_response:
+                            local_graph.system_metadata["node_count"] = graph_status_response["node_count"]
+                        if "edge_count" in graph_status_response:
+                            local_graph.system_metadata["edge_count"] = graph_status_response["edge_count"]
+                        if "error" in graph_status_response:
+                            local_graph.system_metadata["error"] = graph_status_response["error"]
+                        if "message" in graph_status_response:
+                            local_graph.system_metadata["message"] = graph_status_response["message"]
 
-                        if "message" in status_response:
-                            local_graph.system_metadata["message"] = status_response["message"]
-
-                        if "pipeline_stage" in status_response:
-                            local_graph.system_metadata["pipeline_stage"] = status_response["pipeline_stage"]
-
-                        # If completed, get node and edge counts from the status response
-                        if remote_status == "completed":
-                            if "node_count" in status_response:
-                                local_graph.system_metadata["node_count"] = status_response["node_count"]
-                            if "edge_count" in status_response:
-                                local_graph.system_metadata["edge_count"] = status_response["edge_count"]
-
-                            # Clear workflow tracking data since it's no longer needed
-                            local_graph.system_metadata.pop("workflow_id", None)
-                            local_graph.system_metadata.pop("run_id", None)
-
-                        # Update the graph in the database with new status
-                        await self.db.update_graph(local_graph)
+                        # Update the database with new status
+                        if remote_status in ["completed", "failed"]:
+                            await self.db.update_graph(local_graph, auth)
 
                 except Exception as e:
-                    logger.warning(f"Failed to check graph status for {local_graph.id}: {e}")
-                    # Keep existing status; don't update on API failure
+                    logger.warning(f"Failed to check graph status via graph endpoint: {e}")
+                    # Fallback to workflow status check if graph endpoint fails
+                    workflow_id = local_graph.system_metadata.get("workflow_id")
+                    run_id = local_graph.system_metadata.get("run_id")
+
+                    if workflow_id:
+                        status_response = await self.check_workflow_status(workflow_id, run_id, auth)
+                        if status_response:
+                            remote_status = status_response.get("status", "processing")
+                            local_graph.system_metadata["status"] = remote_status
+
+                            if "error" in status_response:
+                                local_graph.system_metadata["error"] = status_response["error"]
+                            if "pipeline_stage" in status_response:
+                                local_graph.system_metadata["pipeline_stage"] = status_response["pipeline_stage"]
 
             return local_graph
 
@@ -420,9 +440,12 @@ class MorphikGraphService:
                     logger.info(
                         f"Graph build is async. workflow_id: {api_response['workflow_id']}, run_id: {api_response['run_id']}"
                     )
+                    from datetime import datetime, timezone
+
                     graph.system_metadata["status"] = "processing"
                     graph.system_metadata["workflow_id"] = api_response["workflow_id"]
                     graph.system_metadata["run_id"] = api_response["run_id"]
+                    graph.system_metadata["processing_started"] = datetime.now(timezone.utc).isoformat()
                 else:
                     # Legacy synchronous response - mark as completed
                     graph.system_metadata["status"] = "completed"
@@ -513,7 +536,11 @@ class MorphikGraphService:
                 )
 
                 # Keep as processing; polling in get_graph will mark completed when nodes/links exist
+                from datetime import datetime, timezone
+
                 graph.system_metadata["status"] = "processing"
+                # Update processing timestamp for timeout tracking
+                graph.system_metadata["processing_started"] = datetime.now(timezone.utc).isoformat()
 
                 # Update local graph object with new document IDs
                 current_doc_ids = set(graph.document_ids)
@@ -828,8 +855,12 @@ class MorphikGraphService:
 
         # Generate completion
         custom_prompt_template = None
-        if prompt_overrides and prompt_overrides.query and hasattr(prompt_overrides.query, "prompt_template"):
-            custom_prompt_template = prompt_overrides.query.prompt_template
+        custom_system_prompt = None
+        if prompt_overrides and prompt_overrides.query:
+            if hasattr(prompt_overrides.query, "prompt_template"):
+                custom_prompt_template = prompt_overrides.query.prompt_template
+            if hasattr(prompt_overrides.query, "system_prompt"):
+                custom_system_prompt = prompt_overrides.query.system_prompt
 
         completion_req = CompletionRequest(
             query=query,
@@ -837,6 +868,7 @@ class MorphikGraphService:
             max_tokens=max_tokens,
             temperature=temperature,
             prompt_template=custom_prompt_template,
+            system_prompt=custom_system_prompt,
             folder_name=folder_name,
             end_user_id=end_user_id,
             stream_response=stream_response,

@@ -152,6 +152,11 @@ class QueryPromptOverride(BaseModel):
         "{context} will be replaced with the retrieved content. "
         "Use this to control response style, format, and tone.",
     )
+    system_prompt: Optional[str] = Field(
+        None,
+        description="Custom system prompt that replaces Morphik's default query agent instructions. "
+        "Use this to fully control the assistant's behavior when generating responses.",
+    )
 
 
 class PromptOverrides(BaseModel):

@@ -567,10 +567,12 @@ async def process_ingestion_job(
             else:
                 document_content = text
 
+            sanitized_system_metadata = DocumentService._clean_system_metadata(doc.system_metadata)
+
             updates = {
                 "metadata": merged_metadata,
                 "additional_metadata": additional_metadata,
-                "system_metadata": {**doc.system_metadata, "content": document_content},
+                "system_metadata": {**sanitized_system_metadata, "content": document_content},
             }
 
             # Add folder_name and end_user_id to updates if provided
@@ -643,9 +645,12 @@ async def process_ingestion_job(
                     f"Created {len(chunks_multivector)} multivector/image chunks " f"(using_colpali={using_colpali})"
                 )
             colpali_create_chunks_time = time.time() - colpali_processing_start
-            phase_times["colpali_create_chunks"] = colpali_create_chunks_time
-            if using_colpali:
-                logger.info(f"Colpali chunk creation took {colpali_create_chunks_time:.2f}s")
+            if should_create_image_chunks:
+                phase_times["multivector_create_chunks"] = colpali_create_chunks_time
+                if using_colpali:
+                    logger.info(f"Multivector chunk creation took {colpali_create_chunks_time:.2f}s")
+            else:
+                phase_times["multivector_create_chunks"] = 0
 
             # If we still have no chunks at all (neither text nor image) abort early
             if not parsed_chunks and not chunks_multivector:
@@ -774,7 +779,6 @@ async def process_ingestion_job(
                 phase_times["create_chunk_objects"] = 0
 
             # 12. Handle ColPali embeddings
-            colpali_embed_start = time.time()
             chunk_objects_multivector = []
             colpali_chunk_ids: List[str] = []
             if using_colpali:
@@ -786,43 +790,111 @@ async def process_ingestion_job(
 
                 total = len(processed_chunks_multivector)
                 logger.info(
-                    f"ColPali streaming mode: processing {total} chunks with store batch size {store_batch_size}"
+                    f"Multivector streaming mode: processing {total} chunks with store batch size {store_batch_size}"
                 )
+                colpali_embedding_time = 0.0
+                colpali_chunk_object_time = 0.0
+                colpali_store_time = 0.0
+                colpali_sort_time = 0.0
+                colpali_preprocess_time = 0.0
+                colpali_model_time = 0.0
+                colpali_convert_time = 0.0
+                colpali_image_model_time = 0.0
+                colpali_text_model_time = 0.0
+                colpali_image_process_time = 0.0
+                colpali_text_process_time = 0.0
+                colpali_image_convert_time = 0.0
+                colpali_text_convert_time = 0.0
 
                 for start_idx in range(0, total, store_batch_size):
                     end_idx = min(start_idx + store_batch_size, total)
                     batch_chunks = processed_chunks_multivector[start_idx:end_idx]
 
                     # Embed this batch
+                    batch_embed_start = time.time()
                     batch_embeddings = await document_service.colpali_embedding_model.embed_for_ingestion(batch_chunks)
+                    colpali_embedding_time += time.time() - batch_embed_start
+                    metrics_getter = getattr(document_service.colpali_embedding_model, "latest_ingest_metrics", None)
+                    metrics = metrics_getter() if callable(metrics_getter) else {}
+                    colpali_sort_time += metrics.get("sorting", 0.0)
+                    colpali_preprocess_time += metrics.get("process", 0.0)
+                    colpali_model_time += metrics.get("model", 0.0)
+                    colpali_convert_time += metrics.get("convert", 0.0)
+                    colpali_image_model_time += metrics.get("image_model", 0.0)
+                    colpali_text_model_time += metrics.get("text_model", 0.0)
+                    colpali_image_process_time += metrics.get("image_process", 0.0)
+                    colpali_text_process_time += metrics.get("text_process", 0.0)
+                    colpali_image_convert_time += metrics.get("image_convert", 0.0)
+                    colpali_text_convert_time += metrics.get("text_convert", 0.0)
                     logger.debug(
-                        f"ColPali batch embedded [{start_idx}:{end_idx}] -> {len(batch_embeddings)} embeddings"
+                        f"Multivector batch embedded [{start_idx}:{end_idx}] -> {len(batch_embeddings)} embeddings"
                     )
 
                     # Create chunk objects for this batch with correct global indices
+                    batch_chunk_objects_start = time.time()
                     batch_chunk_objects = document_service._create_chunk_objects(
                         doc.external_id, batch_chunks, batch_embeddings, start_index=start_idx
                     )
+                    colpali_chunk_object_time += time.time() - batch_chunk_objects_start
 
                     # Store this batch immediately to release memory pressure
+                    batch_store_start = time.time()
                     success, stored_ids = await document_service.colpali_vector_store.store_embeddings(
                         batch_chunk_objects, auth.app_id if auth else None
                     )
+                    colpali_store_time += time.time() - batch_store_start
                     if not success:
                         raise RuntimeError("Failed to store ColPali batch embeddings")
                     colpali_chunk_ids.extend(stored_ids)
 
                 # For compatibility with later summary logging
                 chunk_objects_multivector = []
-
-            colpali_embed_time = time.time() - colpali_embed_start
-            phase_times["colpali_generate_embeddings"] = colpali_embed_time
-            if using_colpali:
-                eps = (len(colpali_chunk_ids) / colpali_embed_time) if colpali_embed_time > 0 else 0
+                colpali_pipeline_time = colpali_embedding_time + colpali_chunk_object_time + colpali_store_time
+                phase_times["multivector_embedding_creation"] = colpali_embedding_time
+                phase_times["multivector_embedding_sorting"] = colpali_sort_time
+                phase_times["multivector_embedding_preprocess"] = colpali_preprocess_time
+                phase_times["multivector_embedding_model"] = colpali_model_time
+                phase_times["multivector_embedding_convert"] = colpali_convert_time
+                phase_times["multivector_embedding_image_model"] = colpali_image_model_time
+                phase_times["multivector_embedding_text_model"] = colpali_text_model_time
+                phase_times["multivector_embedding_image_preprocess"] = colpali_image_process_time
+                phase_times["multivector_embedding_text_preprocess"] = colpali_text_process_time
+                phase_times["multivector_embedding_image_convert"] = colpali_image_convert_time
+                phase_times["multivector_embedding_text_convert"] = colpali_text_convert_time
+                phase_times["multivector_chunk_object_creation"] = colpali_chunk_object_time
+                phase_times["multivector_store_embeddings"] = colpali_store_time
+                phase_times["multivector_pipeline_total"] = colpali_pipeline_time
+                eps = (len(colpali_chunk_ids) / colpali_pipeline_time) if colpali_pipeline_time > 0 else 0
                 logger.info(
-                    f"ColPali embed+store streaming took {colpali_embed_time:.2f}s for "
-                    f"{len(colpali_chunk_ids)} chunks ({eps:.2f} chunks/s)"
+                    "Multivector embedding: total=%.2fs (sort=%.2fs, preprocess=%.2fs, model=%.2fs, convert=%.2fs | image model=%.2fs, text model=%.2fs) "
+                    "storage: chunk objects=%.2fs, vector store=%.2fs for %d chunks (%.2f chunks/s)",
+                    colpali_embedding_time,
+                    colpali_sort_time,
+                    colpali_preprocess_time,
+                    colpali_model_time,
+                    colpali_convert_time,
+                    colpali_image_model_time,
+                    colpali_text_model_time,
+                    colpali_chunk_object_time,
+                    colpali_store_time,
+                    len(colpali_chunk_ids),
+                    eps,
                 )
+            else:
+                phase_times["multivector_embedding_creation"] = 0
+                phase_times["multivector_embedding_sorting"] = 0
+                phase_times["multivector_embedding_preprocess"] = 0
+                phase_times["multivector_embedding_model"] = 0
+                phase_times["multivector_embedding_convert"] = 0
+                phase_times["multivector_embedding_image_model"] = 0
+                phase_times["multivector_embedding_text_model"] = 0
+                phase_times["multivector_embedding_image_preprocess"] = 0
+                phase_times["multivector_embedding_text_preprocess"] = 0
+                phase_times["multivector_embedding_image_convert"] = 0
+                phase_times["multivector_embedding_text_convert"] = 0
+                phase_times["multivector_chunk_object_creation"] = 0
+                phase_times["multivector_store_embeddings"] = 0
+                phase_times["multivector_pipeline_total"] = 0
 
             # === Merge aggregated chunk metadata into document metadata ===
             if aggregated_chunk_metadata:
@@ -840,6 +912,7 @@ async def process_ingestion_job(
             if using_colpali:
                 # We already stored ColPali chunks in batches; just persist doc.chunk_ids via DB update
                 doc.chunk_ids = colpali_chunk_ids
+                doc.system_metadata = DocumentService._clean_system_metadata(doc.system_metadata)
                 await document_service.db.update_document(
                     document_id=doc.external_id,
                     updates={
@@ -911,6 +984,7 @@ async def process_ingestion_job(
             doc.system_metadata.pop("progress", None)
 
             # Final update to mark as completed
+            doc.system_metadata = DocumentService._clean_system_metadata(doc.system_metadata)
             await document_service.db.update_document(
                 document_id=document_id, updates={"system_metadata": doc.system_metadata}, auth=auth
             )

@@ -62,6 +62,19 @@ and utilize the information in their documents effectively."""
     }
 
 
+def build_system_message(system_prompt: Optional[str], inline_citations: bool = False) -> Dict[str, str]:
+    """
+    Return a system message dictionary using a custom prompt when provided.
+
+    Args:
+        system_prompt: Custom system prompt content, if any
+        inline_citations: Whether inline citation mode is enabled (used for default prompt)
+    """
+    if system_prompt:
+        return {"role": "system", "content": system_prompt}
+    return get_system_message(inline_citations)
+
+
 def process_context_chunks(context_chunks: List[str], is_ollama: bool) -> Tuple[List[str], List[str], List[str]]:
     """
     Process context chunks and separate text from images.
@@ -304,7 +317,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             }
 
             return CompletionResponse(
-                completion=parsed_response,
+                completion=parsed_response.model_dump(),  # Convert Pydantic model to dict
                 usage=usage,
                 finish_reason=response.get("done_reason", "stop"),
             )
@@ -372,7 +385,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             prompt_tokens = model_kwargs.get("prompt_tokens", 0)
 
             return CompletionResponse(
-                completion=response,
+                completion=response.model_dump(),  # Convert Pydantic model to dict
                 usage={
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
@@ -399,7 +412,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         client = ollama.AsyncClient(host=self.ollama_api_base)
 
         # Construct Ollama messages
-        system_message = {"role": "system", "content": get_system_message(request.inline_citations)["content"]}
+        system_message = build_system_message(request.system_prompt, request.inline_citations)
         user_message_data = {"role": "user", "content": user_content}
 
         # Add images directly to the user message if available
@@ -464,7 +477,8 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         # LiteLLM uses list content format
         user_message = {"role": "user", "content": content_list}
         # Use the system prompt defined earlier
-        litellm_messages = [get_system_message(request.inline_citations)] + history_messages + [user_message]
+        system_message = build_system_message(request.system_prompt, request.inline_citations)
+        litellm_messages = [system_message] + history_messages + [user_message]
 
         # Prepare LiteLLM parameters
         model_params = {
@@ -519,7 +533,8 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         # LiteLLM uses list content format
         user_message = {"role": "user", "content": content_list}
         # Use the system prompt defined earlier
-        litellm_messages = [get_system_message(request.inline_citations)] + history_messages + [user_message]
+        system_message = build_system_message(request.system_prompt, request.inline_citations)
+        litellm_messages = [system_message] + history_messages + [user_message]
 
         # Prepare LiteLLM parameters
         model_params = {
@@ -556,7 +571,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         client = ollama.AsyncClient(host=self.ollama_api_base)
 
         # Construct Ollama messages
-        system_message = {"role": "system", "content": get_system_message(request.inline_citations)["content"]}
+        system_message = build_system_message(request.system_prompt, request.inline_citations)
         user_message_data = {"role": "user", "content": user_content}
 
         # Add images directly to the user message if available
@@ -652,9 +667,10 @@ class LiteLLMCompletionModel(BaseCompletionModel):
                 logger.info(f"Using structured output with model: {dynamic_model.__name__}")
 
                 # Create system and user messages with enhanced instructions for structured output
+                base_system_prompt = request.system_prompt or get_system_message(request.inline_citations)["content"]
                 system_message = {
                     "role": "system",
-                    "content": get_system_message(request.inline_citations)["content"]
+                    "content": base_system_prompt
                     + "\n\nYou MUST format your response according to the required schema.",
                 }
 

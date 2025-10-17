@@ -593,27 +593,27 @@ class TelemetryService:
         )
         self.get_folder_metadata = MetadataExtractor(
             [
-                MetadataField("folder_id", "kwargs"),
+                MetadataField("folder_id", "kwargs", attr_name="folder_id_or_name"),
                 MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "entity_id", None)),
             ]
         )
         self.add_document_to_folder_metadata = MetadataExtractor(
             [
-                MetadataField("folder_id", "kwargs"),
+                MetadataField("folder_id", "kwargs", attr_name="folder_id_or_name"),
                 MetadataField("document_id", "kwargs"),
                 MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "entity_id", None)),
             ]
         )
         self.remove_document_from_folder_metadata = MetadataExtractor(
             [
-                MetadataField("folder_id", "kwargs"),
+                MetadataField("folder_id", "kwargs", attr_name="folder_id_or_name"),
                 MetadataField("document_id", "kwargs"),
                 MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "entity_id", None)),
             ]
         )
         self.delete_folder_metadata = MetadataExtractor(
             [
-                MetadataField("folder_id", "kwargs"),
+                MetadataField("folder_id", "kwargs", attr_name="folder_id_or_name"),
                 MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "entity_id", None)),
             ]
         )
@@ -889,7 +889,7 @@ class TelemetryService:
 
         self.set_folder_rule_metadata = MetadataExtractor(
             [
-                MetadataField("folder_id", "kwargs"),
+                MetadataField("folder_id", "kwargs", attr_name="folder_id_or_name"),
                 MetadataField("apply_to_existing", "kwargs", default=True),
                 MetadataField(
                     "rule_count",

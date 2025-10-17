@@ -23,7 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { showAlert } from "@/components/ui/alert-system";
 import { MultiSelect } from "@/components/ui/multi-select";
 import DeleteConfirmationModal from "@/components/documents/DeleteConfirmationModal";
-import { useHeader } from "@/contexts/header-context";
+// import { useHeader } from "@/contexts/header-context"; // Removed - MorphikUI handles breadcrumbs
 
 // Dynamically import ForceGraphComponent to avoid SSR issues
 const ForceGraphComponent = dynamic(() => import("@/components/ForceGraphComponent"), {
@@ -200,25 +200,26 @@ const GraphSection: React.FC<GraphSectionProps> = ({
   const graphContainerRef = useRef<HTMLDivElement>(null);
   // Removed graphInstance ref as it's not needed with the dynamic component
 
+  // Removed - MorphikUI handles breadcrumbs centrally
   // Header controls
-  const { setCustomBreadcrumbs, setRightContent } = useHeader();
+  // const { setCustomBreadcrumbs, setRightContent } = useHeader();
 
-  // set breadcrumbs & button when component mounts
-  useEffect(() => {
-    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Knowledge Graphs" }]);
+  // // set breadcrumbs & button when component mounts
+  // useEffect(() => {
+  //   setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Knowledge Graphs" }]);
 
-    const right = (
-      <Button variant="default" size="sm" onClick={() => setShowCreateDialog(true)}>
-        <Plus className="mr-2 h-4 w-4" /> New Graph
-      </Button>
-    );
-    setRightContent(right);
+  //   const right = (
+  //     <Button variant="default" size="sm" onClick={() => setShowCreateDialog(true)}>
+  //       <Plus className="mr-2 h-4 w-4" /> New Graph
+  //     </Button>
+  //   );
+  //   setRightContent(right);
 
-    return () => {
-      setCustomBreadcrumbs(null);
-      setRightContent(null);
-    };
-  }, [setCustomBreadcrumbs, setRightContent, setShowCreateDialog]);
+  //   return () => {
+  //     setCustomBreadcrumbs(null);
+  //     setRightContent(null);
+  //   };
+  // }, [setCustomBreadcrumbs, setRightContent, setShowCreateDialog]);
 
   // Fallback function for local graph data (when API fails or for local graphs)
   const prepareLocalGraphData = useCallback((graph: Graph | null) => {

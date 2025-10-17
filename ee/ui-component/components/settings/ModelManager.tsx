@@ -117,10 +117,10 @@ const PROVIDER_INFO = {
     icon: "🍋",
     exampleConfig: {
       model: "openai/Qwen2.5-VL-7B-Instruct-GGUF",
-      api_base: "http://host.docker.internal:8020/api/v1",
+      api_base: "http://localhost:8020/api/v1",
       vision: true,
     },
-    docsUrl: "#",
+    docsUrl: "https://lemonade-server.ai/",
     requiresApiKey: false,
   },
 };
@@ -371,6 +371,10 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
   const availableProviders = Object.keys(PROVIDER_INFO).filter(provider => {
     const providerInfo = PROVIDER_INFO[provider as keyof typeof PROVIDER_INFO];
     // Include providers that don't require API keys or have API keys configured
+    if (provider === "lemonade") {
+      // For Lemonade, check if port is configured
+      return Boolean(apiKeys[provider]?.port);
+    }
     return (
       (providerInfo && "requiresApiKey" in providerInfo && providerInfo.requiresApiKey === false) ||
       apiKeys[provider]?.apiKey
@@ -386,10 +390,12 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
             Add custom LiteLLM-compatible models with your own configurations
           </p>
         </div>
-        <Button onClick={() => setShowAddDialog(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Model
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setShowAddDialog(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Model
+          </Button>
+        </div>
       </div>
 
       {models.length === 0 ? (

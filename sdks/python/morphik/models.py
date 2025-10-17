@@ -5,6 +5,17 @@ from typing import Any, BinaryIO, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
 
+class StorageFileInfo(BaseModel):
+    """Information about a file stored in storage."""
+
+    bucket: str
+    key: str
+    version: int = Field(default=1, description="Incremented on each file replacement")
+    filename: Optional[str] = None
+    content_type: Optional[str] = None
+    timestamp: Optional[datetime] = None
+
+
 class Document(BaseModel):
     """Document metadata model"""
 
@@ -13,9 +24,16 @@ class Document(BaseModel):
     filename: Optional[str] = Field(None, description="Original filename if available")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="User-defined metadata")
     storage_info: Dict[str, str] = Field(default_factory=dict, description="Storage-related information")
-    system_metadata: Dict[str, Any] = Field(default_factory=dict, description="System-managed metadata")
-    access_control: Dict[str, Any] = Field(default_factory=dict, description="Access control information")
+    system_metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="System-managed metadata (status, progress, timestamps)",
+    )
+    additional_metadata: Dict[str, Any] = Field(default_factory=dict, description="Ingestion-generated metadata")
+    storage_files: List[StorageFileInfo] = Field(default_factory=list, description="Files associated with the document")
     chunk_ids: List[str] = Field(default_factory=list, description="IDs of document chunks")
+    folder_name: Optional[str] = Field(None, description="Folder scope for the document")
+    end_user_id: Optional[str] = Field(None, description="End-user scope for the document")
+    app_id: Optional[str] = Field(None, description="App identifier for the document")
 
     # Client reference for update methods
     _client = None
@@ -294,8 +312,6 @@ class Graph(BaseModel):
     filters: Optional[Dict[str, Any]] = Field(None, description="Document filters used to create the graph")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
-    owner: Dict[str, str] = Field(default_factory=dict, description="Graph owner information")
-    access_control: Dict[str, List[str]] = Field(default_factory=dict, description="Access control information")
 
     _client: Any | None = PrivateAttr(default=None)
 
@@ -432,9 +448,12 @@ class QueryPromptOverride(BaseModel):
     prompt_template: Optional[str] = Field(
         None,
         description="Custom prompt template for generating responses to queries. "
-        "The exact placeholders available depend on the query context, but "
-        "typically include {question}, {context}, and other system-specific variables. "
+        "REQUIRED PLACEHOLDERS: {question} and {context} must be included in the template. "
         "Use this to control response style, format, and tone.",
+    )
+    system_prompt: Optional[str] = Field(
+        None,
+        description="Custom system prompt that replaces Morphik's default query agent instructions.",
     )
 
 
@@ -502,13 +521,9 @@ class FolderInfo(BaseModel):
     id: str = Field(..., description="Unique folder identifier")
     name: str = Field(..., description="Folder name")
     description: Optional[str] = Field(None, description="Folder description")
-    owner: Optional[Dict[str, str]] = Field(default_factory=dict, description="Owner information")
     document_ids: Optional[List[str]] = Field(default_factory=list, description="IDs of documents in the folder")
     system_metadata: Dict[str, Any] = Field(default_factory=dict, description="System-managed metadata")
     rules: List[Dict[str, Any]] = Field(default_factory=list, description="Rules associated with the folder")
     workflow_ids: List[str] = Field(default_factory=list, description="Workflow IDs associated with the folder")
     app_id: Optional[str] = Field(None, description="Application ID associated with the folder")
     end_user_id: Optional[str] = Field(None, description="End user ID associated with the folder")
-    access_control: Optional[Dict[str, List[str]]] = Field(
-        default_factory=dict, description="Access control information"
-    )

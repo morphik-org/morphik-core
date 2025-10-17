@@ -49,3 +49,4 @@ class CompletionRequest(BaseModel):
     llm_config: Optional[Dict[str, Any]] = None
     inline_citations: Optional[bool] = False
     chunk_metadata: Optional[List[Dict[str, Any]]] = None  # Metadata for each chunk including filename and page
+    system_prompt: Optional[str] = None

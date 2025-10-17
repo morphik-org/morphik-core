@@ -5,6 +5,9 @@ interface Model {
   name: string;
   provider: string;
   description?: string;
+  config?: Record<string, unknown>;
+  model?: string;
+  modelKey?: string;
 }
 
 interface ModelAPIResponse {
@@ -64,7 +67,12 @@ export function useModels(apiBaseUrl: string, authToken: string | null) {
         // Handle different response formats
         if (data.models) {
           // Direct models format
-          transformedModels = data.models;
+          transformedModels = data.models.map(model => ({
+            ...model,
+            config: model.config,
+            model: model.model,
+            modelKey: model.modelKey,
+          }));
         } else if (data.chat_models) {
           // Transform chat_models format
           transformedModels = data.chat_models.map(model => ({
@@ -72,6 +80,9 @@ export function useModels(apiBaseUrl: string, authToken: string | null) {
             name: model.id.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase()),
             provider: model.provider,
             description: `Model: ${model.model}`,
+            config: model.config,
+            model: model.model,
+            modelKey: model.id,
           }));
         }
 

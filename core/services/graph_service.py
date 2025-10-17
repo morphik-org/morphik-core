@@ -1390,8 +1390,12 @@ class GraphService:
 
         # Generate completion with prompt override if provided
         custom_prompt_template = None
+        custom_system_prompt = None
         if prompt_overrides and prompt_overrides.query:
-            custom_prompt_template = prompt_overrides.query.prompt_template
+            if hasattr(prompt_overrides.query, "prompt_template"):
+                custom_prompt_template = prompt_overrides.query.prompt_template
+            if hasattr(prompt_overrides.query, "system_prompt"):
+                custom_system_prompt = prompt_overrides.query.system_prompt
 
         request = CompletionRequest(
             query=query,
@@ -1399,6 +1403,7 @@ class GraphService:
             max_tokens=max_tokens,
             temperature=temperature,
             prompt_template=custom_prompt_template,
+            system_prompt=custom_system_prompt,
             folder_name=folder_name,
             end_user_id=end_user_id,
         )

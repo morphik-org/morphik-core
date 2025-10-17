@@ -1,6 +1,6 @@
 import io
 import logging
-from typing import List, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
 from httpx import AsyncClient, Timeout  # replacing httpx.AsyncClient for clarity
@@ -101,3 +101,7 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
                 embeddings.append(embedding_array.tolist())
 
             return embeddings
+
+    def latest_ingest_metrics(self) -> Dict[str, Any]:
+        """API-backed implementation does not expose detailed metrics."""
+        return {}

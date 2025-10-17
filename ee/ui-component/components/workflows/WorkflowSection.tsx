@@ -40,7 +40,7 @@ import { WorkflowCreateDialog } from "./WorkflowCreateDialog";
 import { WorkflowEditDialog } from "./WorkflowEditDialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useHeader } from "@/contexts/header-context";
+import { useHeader } from "@/contexts/header-context"; // Still needed for setRightContent
 
 interface WorkflowSectionProps {
   apiBaseUrl: string;
@@ -237,7 +237,9 @@ const AVAILABLE_ACTIONS: ActionDefinition[] = [
 ];
 
 const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken }) => {
-  const { setCustomBreadcrumbs, setRightContent } = useHeader();
+  // Removed - MorphikUI handles breadcrumbs centrally
+  // const { setCustomBreadcrumbs, setRightContent } = useHeader();
+  const { setRightContent } = useHeader();
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [docs, setDocs] = useState<DocumentMeta[]>([]);
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
@@ -438,7 +440,8 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
 
   // Header breadcrumbs & controls
   useEffect(() => {
-    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Workflows" }]);
+    // Removed - MorphikUI handles breadcrumbs centrally
+    // setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Workflows" }]);
 
     const right = (
       <div className="flex items-center gap-2">
@@ -462,10 +465,11 @@ const WorkflowSection: React.FC<WorkflowSectionProps> = ({ apiBaseUrl, authToken
     setRightContent(right);
 
     return () => {
-      setCustomBreadcrumbs(null);
+      // Removed - MorphikUI handles breadcrumbs centrally
+      // setCustomBreadcrumbs(null);
       setRightContent(null);
     };
-  }, [setCustomBreadcrumbs, setRightContent, fetchWorkflows]);
+  }, [setRightContent, fetchWorkflows]);
 
   useEffect(() => {
     if (selectedWorkflow) {

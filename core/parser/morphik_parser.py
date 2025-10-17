@@ -221,10 +221,14 @@ class MorphikParser(BaseParser):
         """Check if the file is a video file."""
         try:
             kind = filetype.guess(file)
-            return kind is not None and kind.mime.startswith("video/")
+            if kind and hasattr(kind, "mime"):
+                return kind.mime.startswith("video/")
+            # Fallback to filename extension check
+            return filename.lower().endswith(".mp4")
         except Exception as e:
             logging.error(f"Error detecting file type: {str(e)}")
-            return False
+            # Fallback to filename extension check on error
+            return filename.lower().endswith(".mp4")
 
     def _is_xml_file(self, filename: str, content_type: Optional[str] = None) -> bool:
         """Check if the file is an XML file."""
@@ -310,6 +314,7 @@ class MorphikParser(BaseParser):
         strategy = "hi_res"
         file_content_type: Optional[str] = None  # Default to None for auto-detection
         if filename.lower().endswith((".pdf", ".doc", ".docx")):
+            # Try fast strategy first for PDFs
             strategy = "fast"
         elif filename.lower().endswith(".txt"):
             strategy = "fast"
@@ -327,6 +332,19 @@ class MorphikParser(BaseParser):
         )
 
         text = "\n\n".join(str(element) for element in elements if str(element).strip())
+
+        # If fast strategy returns no text for PDFs, try hi_res strategy with OCR
+        if not text.strip() and filename.lower().endswith(".pdf") and strategy == "fast":
+            self.logger.warning(f"Fast strategy returned no text for PDF {filename}, trying hi_res strategy with OCR")
+            elements = partition(
+                file=io.BytesIO(file),
+                content_type=file_content_type,
+                metadata_filename=filename,
+                strategy="hi_res",
+                api_key=self._unstructured_api_key if self.use_unstructured_api else None,
+            )
+            text = "\n\n".join(str(element) for element in elements if str(element).strip())
+
         return {}, text
 
     async def parse_file_to_text(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:

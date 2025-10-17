@@ -12,6 +12,9 @@ REPO_URL="https://raw.githubusercontent.com/morphik-org/morphik-core/main"
 COMPOSE_FILE="docker-compose.run.yml"
 DIRECT_INSTALL_URL="https://www.morphik.ai/docs/getting-started#self-host-direct-installation-advanced"
 
+EMBEDDING_PROVIDER=""
+EMBEDDING_PROVIDER_LABEL=""
+
 # --- Helper Functions ---
 print_info() {
     echo -e "\033[34m[INFO]\033[0m $1"
@@ -83,6 +86,31 @@ print_info "Morphik supports 100s of models including OpenAI, Anthropic (Claude)
 read -p "Please enter your OpenAI API Key (or press Enter to skip and configure later): " openai_api_key < /dev/tty
 if [[ -z "$openai_api_key" ]]; then
     print_warning "No OpenAI API key provided. You can add it later to .env or configure other providers in morphik.toml"
+    print_info "Embeddings power ingestion, search, and querying in Morphik. Please choose an alternative provider to continue."
+    while true; do
+        echo ""
+        echo "Select an embeddings provider:"
+        echo "  1) Lemonade (download at https://lemonade-server.ai/)"
+        echo "  2) Ollama (download at https://ollama.com/)"
+        read -p "Enter 1 or 2 [2]: " embedding_choice < /dev/tty
+        embedding_choice=${embedding_choice:-2}
+        case "$embedding_choice" in
+            1)
+                EMBEDDING_PROVIDER="lemonade_embedding"
+                EMBEDDING_PROVIDER_LABEL="Lemonade embeddings"
+                break
+                ;;
+            2)
+                EMBEDDING_PROVIDER="ollama_embedding"
+                EMBEDDING_PROVIDER_LABEL="Ollama embeddings"
+                break
+                ;;
+            *)
+                print_warning "Please enter 1 or 2."
+                ;;
+        esac
+    done
+    print_info "Embeddings will be configured to use $EMBEDDING_PROVIDER_LABEL with 768 dimensions."
 else
     # Use sed to safely replace the key in the .env file.
     sed -i.bak "s|OPENAI_API_KEY=|OPENAI_API_KEY=$openai_api_key|" .env
@@ -90,6 +118,114 @@ else
     print_success "'.env' file has been configured with your API key."
 fi
 
+# 5. Download and setup configuration FIRST (before trying to modify it)
+print_info "Setting up configuration file..."
+
+# Pull the Docker image first if needed
+print_info "Pulling Docker image if not already available..."
+if ! docker pull ghcr.io/morphik-org/morphik-core:latest; then
+    print_error "Failed to pull Docker image 'ghcr.io/morphik-org/morphik-core:latest'"
+    print_info "Possible reasons:"
+    print_info "  - The image hasn't been published to GitHub Container Registry yet"
+    print_info "  - Network/firewall is blocking access to ghcr.io"
+    print_info "  - Docker daemon is not running properly"
+    print_info ""
+    print_info "Attempting to download configuration from repository instead..."
+
+    # Try to download morphik.docker.toml (Docker-specific config) first
+    if curl -fsSL -o morphik.toml "$REPO_URL/morphik.docker.toml" 2>/dev/null; then
+        print_success "Downloaded Docker-specific configuration from repository."
+    elif curl -fsSL -o morphik.toml "$REPO_URL/morphik.toml" 2>/dev/null; then
+        print_warning "Downloaded standard morphik.toml (may need adjustments for Docker)."
+    else
+        print_error "Could not download configuration file. Installation cannot continue."
+        exit 1
+    fi
+else
+    print_success "Docker image is available."
+    print_info "Extracting default 'morphik.toml' for you to customize..."
+
+    # Method 1: Try using docker run with output capture (more reliable on Windows)
+    CONFIG_CONTENT=$(docker run --rm ghcr.io/morphik-org/morphik-core:latest cat /app/morphik.toml.default 2>/dev/null)
+    if [ -n "$CONFIG_CONTENT" ]; then
+        echo "$CONFIG_CONTENT" > morphik.toml
+        if [ -f morphik.toml ] && [ -s morphik.toml ]; then
+            print_success "Extracted configuration from Docker image."
+        else
+            print_warning "Failed to write configuration file."
+            CONFIG_EXTRACTED=false
+        fi
+    else
+        CONFIG_EXTRACTED=false
+    fi
+
+    # Method 2: If Method 1 failed, try docker cp approach
+    if [ "$CONFIG_EXTRACTED" = "false" ] 2>/dev/null || [ ! -f morphik.toml ]; then
+        print_info "Trying alternative extraction method..."
+        TEMP_CONTAINER=$(docker create ghcr.io/morphik-org/morphik-core:latest)
+        if docker cp "$TEMP_CONTAINER:/app/morphik.toml.default" morphik.toml 2>/dev/null; then
+            docker rm "$TEMP_CONTAINER" >/dev/null 2>&1
+            print_success "Extracted configuration using docker cp."
+        else
+            docker rm "$TEMP_CONTAINER" >/dev/null 2>&1
+            print_warning "Could not extract morphik.toml from Docker image."
+        fi
+    fi
+
+    # Method 3: If still no file, download from repository
+    if [ ! -f morphik.toml ] || [ ! -s morphik.toml ]; then
+        print_info "Downloading from repository instead..."
+
+        # Try with curl first
+        print_info "Attempting to download: $REPO_URL/morphik.docker.toml"
+        if curl -fsSL "$REPO_URL/morphik.docker.toml" -o morphik.toml; then
+            if [ -f morphik.toml ] && [ -s morphik.toml ]; then
+                print_success "Downloaded Docker-specific configuration from repository."
+            else
+                rm -f morphik.toml
+                print_warning "Downloaded file was empty."
+            fi
+        fi
+
+        # If still no file, try the standard morphik.toml
+        if [ ! -f morphik.toml ] || [ ! -s morphik.toml ]; then
+            print_info "Attempting to download: $REPO_URL/morphik.toml"
+            if curl -fsSL "$REPO_URL/morphik.toml" -o morphik.toml; then
+                if [ -f morphik.toml ] && [ -s morphik.toml ]; then
+                    print_warning "Downloaded standard morphik.toml (may need Docker adjustments)."
+                else
+                    rm -f morphik.toml
+                    print_error "Could not obtain a valid configuration file."
+                    exit 1
+                fi
+            else
+                print_error "Could not download configuration file from repository."
+                print_info "Please check your internet connection and that the repository is accessible."
+                exit 1
+            fi
+        fi
+    fi
+fi
+
+# 5.0 Configure embeddings when OpenAI key is not provided
+if [[ -n "$EMBEDDING_PROVIDER" ]]; then
+    if [ -f morphik.toml ]; then
+        print_info "Configuring morphik.toml to use $EMBEDDING_PROVIDER_LABEL (768 dimensions)..."
+        sed -i.bak \
+            -e "/^\\[embedding\\]/,/^\\[/ s/^[[:space:]]*model[[:space:]]*=.*/model = \"$EMBEDDING_PROVIDER\"  # Reference to registered model/" \
+            -e "/^\\[embedding\\]/,/^\\[/ s/^[[:space:]]*dimensions[[:space:]]*=.*/dimensions = 768/" \
+            morphik.toml
+        rm -f morphik.toml.bak
+    else
+        print_warning "morphik.toml not found. Skipping embedding configuration update."
+    fi
+fi
+
+if [[ -n "$EMBEDDING_PROVIDER" && "$EMBEDDING_PROVIDER" == "lemonade_embedding" ]]; then
+    print_warning "Ensure the Lemonade SDK is installed and running (see Lemonade installation prompt later in this script)."
+fi
+
+# 5.0.5 Now that morphik.toml exists, handle LOCAL_URI_TOKEN configuration
 echo ""
 print_info "🔐 Setting up authentication for your Morphik deployment:"
 print_info "   • If you plan to access Morphik from outside this server, setting a LOCAL_URI_TOKEN will secure your deployment"
@@ -100,9 +236,13 @@ read -p "Please enter a secure LOCAL_URI_TOKEN (or press Enter to skip for local
 if [[ -z "$local_uri_token" ]]; then
     print_info "No LOCAL_URI_TOKEN provided - enabling development mode (dev_mode=true) for local access"
     print_info "This is suitable for local development and testing"
-    # Enable dev_mode in morphik.toml
-    sed -i.bak 's/dev_mode = false/dev_mode = true/' morphik.toml
-    rm -f morphik.toml.bak
+    # Enable dev_mode in morphik.toml (now that the file exists!)
+    if [ -f morphik.toml ]; then
+        sed -i.bak 's/dev_mode = false/dev_mode = true/' morphik.toml
+        rm -f morphik.toml.bak
+    else
+        print_warning "morphik.toml not found, cannot set dev_mode"
+    fi
 else
     print_success "LOCAL_URI_TOKEN set - keeping production mode (dev_mode=false) with authentication enabled"
     print_info "Use the /generate_local_uri endpoint with this token to create authorized connection URIs"
@@ -116,13 +256,36 @@ if [[ -n "$local_uri_token" ]]; then
     print_success "'.env' file has been configured with your LOCAL_URI_TOKEN."
 fi
 
-# 5. Download and setup configuration
-print_info "Setting up configuration file..."
-print_info "Extracting default 'morphik.toml' for you to customize..."
-docker run --rm ghcr.io/morphik-org/morphik-core:latest \
-       cat /app/morphik.toml.default > morphik.toml
+# 5.1 Ask about local inference with Lemonade (Windows only)
+if grep -qEi "(Microsoft|WSL)" /proc/version &> /dev/null || [ -f /proc/sys/fs/binfmt_misc/WSLInterop ]; then
+    echo ""
+    print_info "🍋 Detected WSL environment. Morphik supports local inference with Lemonade SDK (Windows only)."
+    print_info "   Lemonade provides high-performance local LLM inference with AMD GPU/NPU optimization."
+    print_info "   This allows you to run both embeddings and completions completely locally."
+    echo ""
+    read -p "Would you like to install Lemonade SDK for local inference? (y/N): " install_lemonade < /dev/tty
 
-# 5.1 Ask about GPU availability for multimodal embeddings
+    if [[ "$install_lemonade" == "y" || "$install_lemonade" == "Y" ]]; then
+        print_info "Downloading Lemonade installer..."
+
+        # Download and run the Lemonade installer
+        if curl -fsSL -o lemonade-installer.sh "$REPO_URL/lemonade-installer.sh"; then
+            chmod +x lemonade-installer.sh
+            if ./lemonade-installer.sh; then
+                LEMONADE_INSTALLED=true
+                print_success "Lemonade installation completed!"
+            else
+                print_warning "Lemonade installation failed. You can retry later by running: ./lemonade-installer.sh"
+            fi
+        else
+            print_warning "Failed to download Lemonade installer"
+            print_info "You can manually install Lemonade later with:"
+            print_info "  curl -sSL https://raw.githubusercontent.com/morphik-org/morphik-core/main/lemonade-installer.sh | bash"
+        fi
+    fi
+fi
+
+# 5.2 Ask about GPU availability for multimodal embeddings
 echo ""
 print_info "🚀 Morphik achieves ultra-accurate document understanding through advanced multimodal embeddings."
 print_info "   These embeddings excel at processing images, PDFs, and complex layouts."
@@ -266,6 +429,15 @@ if [ -n "$UI_PROFILE" ]; then
 fi
 EOF
 chmod +x start-morphik.sh
+
+# Remind about Lemonade if installed
+if [ "$LEMONADE_INSTALLED" = true ]; then
+    echo ""
+    print_info "🍋 Lemonade SDK has been installed! To use local inference:"
+    print_info "   1. Start Lemonade Server by double-clicking start_lemonade.bat on your Desktop"
+    print_info "   2. Select Lemonade models in the Morphik UI settings"
+    print_info "   3. Enjoy fully local embeddings and completions!"
+fi
 
 echo ""
 print_success "🎉 Enjoy using Morphik!"

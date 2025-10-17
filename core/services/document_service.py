@@ -57,6 +57,19 @@ settings = get_settings()
 
 
 class DocumentService:
+    _SYSTEM_METADATA_SCOPE_KEYS = {"folder_name", "end_user_id", "app_id"}
+
+    @classmethod
+    def _clean_system_metadata(cls, metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Remove scope fields that are persisted in dedicated columns."""
+        if not metadata:
+            return {}
+
+        cleaned_metadata = dict(metadata)
+        for key in cls._SYSTEM_METADATA_SCOPE_KEYS:
+            cleaned_metadata.pop(key, None)
+        return cleaned_metadata
+
     async def _ensure_folder_exists(
         self, folder_name: Union[str, List[str]], document_id: str, auth: AuthContext
     ) -> Optional[Folder]:
@@ -78,6 +91,16 @@ class DocumentService:
                 for fname in folder_name:
                     last_folder = await self._ensure_folder_exists(fname, document_id, auth)
                 return last_folder
+
+            # Validate folder name - no slashes allowed (nested folders not supported)
+            if "/" in folder_name:
+                error_msg = (
+                    f"Invalid folder name '{folder_name}'. Folder names cannot contain '/'. "
+                    f"Nested folders are not supported. Use '_' instead to denote subfolders "
+                    f"(e.g., 'folder_subfolder_subsubfolder')."
+                )
+                logger.error(error_msg)
+                raise ValueError(error_msg)
 
             # First check if the folder already exists
             folder = await self.db.get_folder_by_name(folder_name, auth)
@@ -269,14 +292,16 @@ class DocumentService:
     ) -> List[ChunkResult]:
         """Retrieve relevant chunks."""
 
+        phase_times: Dict[str, float] = {}
+
         # Use provided performance tracker or create a local one
         if perf_tracker:
             local_perf = False
+            retrieve_start_time = None
         else:
             # For standalone calls, create local performance tracking
             local_perf = True
             retrieve_start_time = time.time()
-            phase_times = {}
 
         # 4 configurations:
         # 1. No reranking, no colpali -> just return regular chunks
@@ -303,10 +328,41 @@ class DocumentService:
             system_filters["end_user_id"] = end_user_id
         # Note: Don't add auth.app_id here - it's already handled in _build_access_filter_optimized
 
+        async def measure_phase(coro, phase_key: Optional[str], perf_parent: Optional[str] = None):
+            """
+            Measure coroutine execution time and accumulate into phase_times.
+            """
+            if not phase_key:
+                return await coro
+            start = time.time()
+            try:
+                return await coro
+            finally:
+                duration = time.time() - start
+                phase_times[phase_key] = phase_times.get(phase_key, 0.0) + duration
+                if perf_tracker:
+                    perf_tracker.add_suboperation(phase_key, duration, perf_parent)
+
         # Launch embedding queries concurrently
-        embedding_tasks = [self.embedding_model.embed_for_query(query)]
+        embedding_tasks = [
+            measure_phase(
+                self.embedding_model.embed_for_query(query),
+                "query_embedding",
+                "retrieve_embeddings_and_auth",
+            )
+        ]
         if using_colpali and self.colpali_embedding_model:
-            embedding_tasks.append(self.colpali_embedding_model.embed_for_query(query))
+            embedding_tasks.append(
+                measure_phase(
+                    self.colpali_embedding_model.embed_for_query(query),
+                    "multivector_query_embedding",
+                    "retrieve_embeddings_and_auth",
+                )
+            )
+            multivector_pipeline_start = time.time()
+        else:
+            multivector_pipeline_start = None
+            phase_times["multivector_query_embedding"] = 0.0
 
         if not perf_tracker:
             phase_times["setup"] = time.time() - setup_start
@@ -373,17 +429,30 @@ class DocumentService:
         # Search chunks with vector similarity in parallel
         # When using standard reranker, we get more chunks initially to improve reranking quality
         search_tasks = [
-            self.vector_store.query_similar(
-                query_embedding_regular, k=10 * k if use_standard_reranker else k, doc_ids=doc_ids, app_id=auth.app_id
+            measure_phase(
+                self.vector_store.query_similar(
+                    query_embedding_regular,
+                    k=10 * k if use_standard_reranker else k,
+                    doc_ids=doc_ids,
+                    app_id=auth.app_id,
+                ),
+                "vector_search_regular",
+                "retrieve_vector_search",
             )
         ]
 
         if search_multi:
             search_tasks.append(
-                self.colpali_vector_store.query_similar(
-                    query_embedding_multivector, k=k, doc_ids=doc_ids, app_id=auth.app_id
+                measure_phase(
+                    self.colpali_vector_store.query_similar(
+                        query_embedding_multivector, k=k, doc_ids=doc_ids, app_id=auth.app_id
+                    ),
+                    "multivector_vector_search",
+                    "retrieve_vector_search",
                 )
             )
+        else:
+            phase_times["multivector_vector_search"] = 0.0
 
         if not perf_tracker:
             phase_times["search_setup"] = time.time() - search_setup_start
@@ -425,27 +494,42 @@ class DocumentService:
         # Combine multiple chunk sources if needed
         if perf_tracker:
             perf_tracker.start_phase("retrieve_chunk_combination")
-        else:
-            combination_start = time.time()
 
+        combination_start = time.time()
         chunks = await self._combine_multi_and_regular_chunks(
             query, chunks, chunks_multivector, should_rerank=should_rerank
         )
 
+        combination_duration = time.time() - combination_start
         if not perf_tracker:
-            phase_times["chunk_combination"] = time.time() - combination_start
+            phase_times["chunk_combination"] = combination_duration
+        if using_colpali and chunks_multivector:
+            phase_times["multivector_chunk_combination"] = combination_duration
+            if perf_tracker:
+                perf_tracker.add_suboperation(
+                    "multivector_chunk_combination",
+                    combination_duration,
+                    "retrieve_chunk_combination",
+                )
+        else:
+            phase_times["multivector_chunk_combination"] = phase_times.get("multivector_chunk_combination", 0.0)
 
         # Apply padding if requested and using colpali
         if padding > 0 and using_colpali:
             if perf_tracker:
                 perf_tracker.start_phase("retrieve_padding")
-            else:
-                padding_start = time.time()
 
+            padding_start = time.time()
             chunks = await self._apply_padding_to_chunks(chunks, padding, auth)
+            padding_duration = time.time() - padding_start
 
             if not perf_tracker:
-                phase_times["padding"] = time.time() - padding_start
+                phase_times["padding"] = padding_duration
+            phase_times["multivector_padding"] = padding_duration
+            if perf_tracker:
+                perf_tracker.add_suboperation("multivector_padding", padding_duration, "retrieve_padding")
+        else:
+            phase_times["multivector_padding"] = phase_times.get("multivector_padding", 0.0)
 
         # Create and return chunk results
         if perf_tracker:
@@ -457,6 +541,17 @@ class DocumentService:
 
         if not perf_tracker:
             phase_times["result_creation"] = time.time() - result_creation_start
+
+        if using_colpali and multivector_pipeline_start is not None:
+            phase_times["multivector_pipeline_total"] = time.time() - multivector_pipeline_start
+            if perf_tracker:
+                perf_tracker.add_suboperation(
+                    "multivector_pipeline_total",
+                    phase_times["multivector_pipeline_total"],
+                    "retrieve_embeddings_and_auth",
+                )
+        else:
+            phase_times["multivector_pipeline_total"] = phase_times.get("multivector_pipeline_total", 0.0)
 
         # Log performance summary only for standalone calls
         if local_perf:
@@ -637,7 +732,13 @@ class DocumentService:
         # Use colpali vector store for retrieval since padding is only for colpali path
         if self.colpali_vector_store:
             try:
+                retrieval_start = time.time()
                 padded_chunks = await self.colpali_vector_store.get_chunks_by_id(chunk_identifiers, auth.app_id)
+                logger.debug(
+                    "Multivector padding retrieval took %.2fs for %d chunks",
+                    time.time() - retrieval_start,
+                    len(padded_chunks),
+                )
                 logger.debug(f"Retrieved {len(padded_chunks)} chunks from colpali vector store")
             except Exception as e:
                 logger.error(f"Error retrieving padded chunks from colpali vector store: {e}")
@@ -1150,8 +1251,12 @@ class DocumentService:
             completion_start = time.time()
 
         custom_prompt_template = None
+        custom_system_prompt = None
         if prompt_overrides and prompt_overrides.query:
-            custom_prompt_template = prompt_overrides.query.prompt_template
+            if hasattr(prompt_overrides.query, "prompt_template"):
+                custom_prompt_template = prompt_overrides.query.prompt_template
+            if hasattr(prompt_overrides.query, "system_prompt"):
+                custom_system_prompt = prompt_overrides.query.system_prompt
 
         request = CompletionRequest(
             query=query,
@@ -1159,6 +1264,7 @@ class DocumentService:
             max_tokens=max_tokens,
             temperature=temperature,
             prompt_template=custom_prompt_template,
+            system_prompt=custom_system_prompt,
             schema=schema,
             chat_history=chat_history,
             stream_response=stream_response,
@@ -1234,10 +1340,6 @@ class DocumentService:
             end_user_id=end_user_id,
             app_id=auth.app_id,
         )
-
-        # Check if the folder exists, if not create it (only when folder_name is provided)
-        if folder_name:
-            await self._ensure_folder_exists(folder_name, doc.external_id, auth)
 
         logger.debug(f"Created text document record with ID {doc.external_id}")
 
@@ -1341,10 +1443,23 @@ class DocumentService:
         )
         logger.debug(f"Successfully stored text document {doc.external_id}")
 
+        # Ensure folder membership now that the document is persisted.
+        if folder_name:
+            try:
+                await self._ensure_folder_exists(folder_name, doc.external_id, auth)
+            except Exception as folder_exc:  # noqa: BLE001
+                logger.warning(
+                    "Failed to ensure folder %s contains text document %s: %s",
+                    folder_name,
+                    doc.external_id,
+                    folder_exc,
+                )
+
         # Update the document status to completed after successful storage
         # This matches the behavior in ingestion_worker.py
         doc.system_metadata["status"] = "completed"
         doc.system_metadata["updated_at"] = datetime.now(UTC)
+        doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
         await self.db.update_document(
             document_id=doc.external_id, updates={"system_metadata": doc.system_metadata}, auth=auth
         )
@@ -1478,6 +1593,7 @@ class DocumentService:
             # Initialize storage_files list with the StorageFileInfo object (version remains int)
             doc.storage_files = [sfi]
 
+            doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
             await self.db.update_document(
                 document_id=doc.external_id,
                 updates={
@@ -1511,7 +1627,11 @@ class DocumentService:
             doc.system_metadata["status"] = "failed"
             doc.system_metadata["error"] = f"Storage upload/DB update failed: {str(e)}"
             try:
-                await self.db.update_document(doc.external_id, {"system_metadata": doc.system_metadata}, auth=auth)
+                await self.db.update_document(
+                    doc.external_id,
+                    {"system_metadata": self._clean_system_metadata(doc.system_metadata)},
+                    auth=auth,
+                )
             except Exception as db_update_err:
                 logger.error(f"Additionally failed to mark doc {doc.external_id} as failed in DB: {db_update_err}")
             raise HTTPException(status_code=500, detail=f"Failed to upload file to storage: {str(e)}")
@@ -1561,7 +1681,11 @@ class DocumentService:
             doc.system_metadata["status"] = "failed"
             doc.system_metadata["error"] = f"Failed to enqueue processing job: {str(e)}"
             try:
-                await self.db.update_document(doc.external_id, {"system_metadata": doc.system_metadata}, auth=auth)
+                await self.db.update_document(
+                    doc.external_id,
+                    {"system_metadata": self._clean_system_metadata(doc.system_metadata)},
+                    auth=auth,
+                )
             except Exception as db_update_err:
                 logger.error(f"Additionally failed to mark doc {doc.external_id} as failed in DB: {db_update_err}")
             raise HTTPException(status_code=500, detail=f"Failed to enqueue document processing job: {str(e)}")
@@ -1583,8 +1707,13 @@ class DocumentService:
         file_content: bytes,
         chunks: List[Chunk],
     ):
-        # Handle the case where file_type is None
-        mime_type = file_type.mime if file_type is not None else "text/plain"
+        # Derive a safe MIME type string regardless of input shape
+        if isinstance(file_type, str):
+            mime_type = file_type
+        elif file_type is not None and hasattr(file_type, "mime"):
+            mime_type = file_type.mime
+        else:
+            mime_type = "text/plain"
         logger.info(f"Creating chunks for multivector embedding for file type {mime_type}")
 
         # If file_type is None, attempt a light-weight heuristic to detect images
@@ -1593,6 +1722,7 @@ class DocumentService:
         # open the bytes with Pillow; if that succeeds, treat it as an image.
         if file_type is None:
             try:
+                # PILImage is already imported at the top of the file
                 PILImage.open(BytesIO(file_content)).verify()
                 logger.info("Heuristic image detection succeeded (Pillow). Treating as image.")
                 if file_content_base64 is None:
@@ -2185,7 +2315,7 @@ class DocumentService:
             # case file_type if file_type in DOCUMENT:
             #     pass
             case _:
-                logger.warning(f"Colpali is not supported for file type {file_type.mime} - skipping")
+                logger.warning(f"Colpali is not supported for file type {mime_type} - skipping")
                 return [
                     Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks
                 ]
@@ -2268,6 +2398,8 @@ class DocumentService:
 
             while attempt < max_retries and not success:
                 try:
+                    doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
+
                     if is_update and auth:
                         # For updates, use update_document, serialize StorageFileInfo into plain dicts
                         updates = {
@@ -2571,7 +2703,14 @@ class DocumentService:
             return None
 
         # Get current content and determine update type
-        current_content = doc.system_metadata.get("content", "")
+        raw_current_content = doc.system_metadata.get("content", "")
+        current_content = self._normalize_document_content(raw_current_content)
+        if current_content != raw_current_content:
+            logger.warning(
+                "Normalized non-textual stored content for document %s before applying update strategy",
+                doc.external_id,
+            )
+            doc.system_metadata["content"] = current_content
         metadata_only_update = content is None and file is None and metadata is not None
 
         # Process content based on update type
@@ -2581,10 +2720,12 @@ class DocumentService:
         file_content_base64 = None
         if content is not None:
             update_content = await self._process_text_update(content, doc, filename, metadata, rules)
+            update_content = self._normalize_document_content(update_content)
         elif file is not None:
             update_content, file_content, file_type, file_content_base64 = await self._process_file_update(
                 file, doc, metadata, rules
             )
+            update_content = self._normalize_document_content(update_content)
             await self._update_storage_info(doc, file, file_content_base64)
 
             # ------------------------------------------------------------------
@@ -2831,6 +2972,31 @@ class DocumentService:
         doc.storage_info = {k: str(v) if v is not None else "" for k, v in new_sfi.model_dump().items()}
         logger.info(f"Stored file in bucket `{storage_info_tuple[0]}` with key `{storage_info_tuple[1]}`")
 
+    @staticmethod
+    def _normalize_document_content(content: Any) -> str:
+        """Ensure stored document content is always handled as text."""
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, bytes):
+            try:
+                return content.decode("utf-8")
+            except UnicodeDecodeError:
+                logger.warning("Failed to decode bytes document content using UTF-8; returning base64 encoded fallback")
+                return base64.b64encode(content).decode("utf-8")
+        if isinstance(content, (dict, list)):
+            try:
+                return json.dumps(content, ensure_ascii=False)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Failed to serialize %s content to JSON; falling back to string conversion",
+                    type(content).__name__,
+                )
+                return str(content)
+        logger.warning("Coercing unexpected content type %s to string", type(content).__name__)
+        return str(content)
+
     def _apply_update_strategy(self, current_content: str, update_content: str, update_strategy: str) -> str:
         """Apply the update strategy to combine current and new content."""
         if update_strategy == "add":
@@ -2843,6 +3009,8 @@ class DocumentService:
 
     async def _update_document_metadata_only(self, doc: Document, auth: AuthContext) -> Optional[Document]:
         """Update document metadata without reprocessing chunks."""
+        doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
+
         updates = {
             "metadata": doc.metadata,
             "system_metadata": doc.system_metadata,
@@ -2925,7 +3093,11 @@ class DocumentService:
             return chunk_objects_multivector
 
         # For file updates, we need special handling for images and PDFs
-        if file and file_type and (file_type.mime in IMAGE or file_type.mime == "application/pdf"):
+        # Safely resolve MIME regardless of whether file_type is a Kind object or str
+        file_type_mime = (
+            file_type if isinstance(file_type, str) else (file_type.mime if file_type is not None else None)
+        )
+        if file and file_type_mime and (file_type_mime in IMAGE or file_type_mime == "application/pdf"):
             # Rewind the file and read it again if needed
             if hasattr(file, "seek") and callable(file.seek) and not file_content:
                 await file.seek(0)

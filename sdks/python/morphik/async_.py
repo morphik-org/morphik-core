@@ -1226,6 +1226,19 @@ class AsyncMorphik:
         # Return a usable AsyncFolder object with the ID from the response
         return AsyncFolder(self, name, folder_id=folder_info.id)
 
+    async def delete_folder(self, folder_id_or_name: str) -> Dict[str, Any]:
+        """
+        Delete a folder and all associated documents.
+
+        Args:
+            folder_id_or_name: Name or ID of the folder to delete
+
+        Returns:
+            Dict containing status and message
+        """
+        response = await self._request("DELETE", f"folders/{folder_id_or_name}")
+        return response
+
     def get_folder_by_name(self, name: str) -> AsyncFolder:
         """
         Get a folder by name to scope operations.
@@ -1238,17 +1251,18 @@ class AsyncMorphik:
         """
         return AsyncFolder(self, name)
 
-    async def get_folder(self, folder_id: str) -> AsyncFolder:
+    async def get_folder(self, folder_id_or_name: str) -> AsyncFolder:
         """
-        Get a folder by ID.
+        Get a folder by ID or name.
 
         Args:
-            folder_id: ID of the folder
+            folder_id_or_name: ID or name of the folder
 
         Returns:
             AsyncFolder: A folder object for scoped operations
         """
-        response = await self._request("GET", f"folders/{folder_id}")
+        response = await self._request("GET", f"folders/{folder_id_or_name}")
+        folder_id = response.get("id", folder_id_or_name)
         return AsyncFolder(self, response["name"], folder_id)
 
     async def list_folders(self) -> List[AsyncFolder]:
@@ -1261,32 +1275,32 @@ class AsyncMorphik:
         response = await self._request("GET", "folders")
         return [AsyncFolder(self, folder["name"], folder["id"]) for folder in response]
 
-    async def add_document_to_folder(self, folder_id: str, document_id: str) -> Dict[str, str]:
+    async def add_document_to_folder(self, folder_id_or_name: str, document_id: str) -> Dict[str, str]:
         """
         Add a document to a folder.
 
         Args:
-            folder_id: ID of the folder
+            folder_id_or_name: ID or name of the folder
             document_id: ID of the document
 
         Returns:
             Dict[str, str]: Success status
         """
-        response = await self._request("POST", f"folders/{folder_id}/documents/{document_id}")
+        response = await self._request("POST", f"folders/{folder_id_or_name}/documents/{document_id}")
         return response
 
-    async def remove_document_from_folder(self, folder_id: str, document_id: str) -> Dict[str, str]:
+    async def remove_document_from_folder(self, folder_id_or_name: str, document_id: str) -> Dict[str, str]:
         """
         Remove a document from a folder.
 
         Args:
-            folder_id: ID of the folder
+            folder_id_or_name: ID or name of the folder
             document_id: ID of the document
 
         Returns:
             Dict[str, str]: Success status
         """
-        response = await self._request("DELETE", f"folders/{folder_id}/documents/{document_id}")
+        response = await self._request("DELETE", f"folders/{folder_id_or_name}/documents/{document_id}")
         return response
 
     def signin(self, end_user_id: str) -> AsyncUserScope:

@@ -34,10 +34,13 @@ async def get_initialized_user_service() -> UserService:
             # If initialization fails, log the error.
             # Subsequent calls to check_limit/record_usage might fail or operate unexpectedly
             # if the database isn't correctly set up.
-            logger.error("Failed to initialize shared UserService instance in limits_utils. Limits checking may be impaired.")
+            logger.error(
+                "Failed to initialize shared UserService instance in limits_utils. Limits checking may be impaired."
+            )
             # We still return the instance; the UserService.initialize() itself logs errors from UserLimitsDatabase.
 
     return _user_service_instance
+
 
 # ---------------------------------------------------------------------------
 # Helper constants & functions shared by ingestion and quota enforcement
@@ -64,6 +67,28 @@ def estimate_pages_by_chars(char_len: int) -> int:
     return max(1, pages)
 
 
+async def get_org_from_app(app_id: str) -> Optional[str]:
+    """Get the organization ID that owns an app."""
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+    from core.models.apps import AppModel
+
+    settings = get_settings()
+    engine = create_async_engine(settings.POSTGRES_URI)
+
+    async with AsyncSession(engine) as session:
+        try:
+            result = await session.execute(select(AppModel.org_id).where(AppModel.app_id == app_id))
+            row = result.first()
+            return row[0] if row else None
+        except Exception as e:
+            logger.error(f"Error getting org_id for app {app_id}: {e}")
+            return None
+        finally:
+            await engine.dispose()
+
+
 async def check_and_increment_limits(
     auth: AuthContext,  # Explicitly type hint auth
     limit_type: str,
@@ -73,10 +98,10 @@ async def check_and_increment_limits(
     use_colpali: bool | None = None,
     colpali_chunks_count: int | None = None,
 ) -> None:
-    """Check or record usage against user limits.
+    """Check or record usage against organization limits.
 
     When *verify_only* is **True** the function **only** validates that the
-    operation **would** fit within the user-tier limits and raises an
+    operation **would** fit within the org-tier limits and raises an
     ``HTTPException`` (429) if it does not.  **No** usage is recorded in this
     mode which allows callers to perform a dry-run check before executing a
     potentially expensive operation.
@@ -97,34 +122,41 @@ async def check_and_increment_limits(
     Raises:
         HTTPException: 429 when the requested usage exceeds the tier limits
     """
-    # Moved imports inside function previously, now at module level
-    # from fastapi import HTTPException
-    # from core.config import get_settings
-    # from core.models.tiers import AccountTier
-    # from core.services.user_service import UserService
-
     settings = get_settings()
 
     # Skip limit checking in self-hosted mode
     if settings.MODE == "self_hosted":
         return
 
-    # Check if user_id is available
-    if not auth.user_id:
-        logger.warning("User ID not available in auth context, skipping limit check")
+    # Determine which ID to use for limits lookup
+    # If we have an app_id, get the org_id and use that
+    # Otherwise fall back to user_id for backward compatibility
+    limits_id = auth.user_id  # Default to user_id
+
+    if auth.app_id:
+        # Get org_id from app_id
+        org_id = await get_org_from_app(auth.app_id)
+        if org_id:
+            limits_id = org_id  # Use org_id as the "user_id" in user_limits table
+            logger.debug(f"Using org_id {org_id} for limits check (from app {auth.app_id})")
+        else:
+            logger.warning(f"No org found for app {auth.app_id}, using user_id {auth.user_id}")
+
+    if not limits_id:
+        logger.warning("No ID available for limits check, skipping")
         return
 
     # Get the shared, initialized UserService instance
     user_service = await get_initialized_user_service()
 
-    # Get user data to check tier
-    user_data = await user_service.get_user_limits(auth.user_id)
+    # Get limits data (the "user_id" field in user_limits table may actually contain org_id)
+    user_data = await user_service.get_user_limits(limits_id)
     if not user_data:
-        # Create user limits if they don't exist (defaults to free tier)
-        await user_service.create_user(auth.user_id)
-        user_data = await user_service.get_user_limits(auth.user_id)
+        # Create limits if they don't exist (defaults to free tier)
+        await user_service.create_user(limits_id)
+        user_data = await user_service.get_user_limits(limits_id)
         if not user_data:
-            logger.error(f"Failed to create user limits for user {auth.user_id}")
+            logger.error(f"Failed to create limits for {limits_id}")
             return
 
     tier = user_data.get("tier", AccountTier.FREE)
@@ -148,13 +180,13 @@ async def check_and_increment_limits(
         if not verify_only:
             try:
                 # Use value_to_use for recording
-                await user_service.record_usage(auth.user_id, limit_type, value_to_use, document_id)
+                await user_service.record_usage(limits_id, limit_type, value_to_use, document_id)
             except Exception as e:
                 logger.error("Failed to record usage: %s", e)
         return
 
-    # For free tier, check if user is within limits using value_to_use
-    within_limits = await user_service.check_limit(auth.user_id, limit_type, value_to_use)
+    # For free tier, check if within limits using value_to_use
+    within_limits = await user_service.check_limit(limits_id, limit_type, value_to_use)
 
     if not within_limits:
         # Map limit types to appropriate error messages
@@ -187,7 +219,7 @@ async def check_and_increment_limits(
     if not verify_only:
         try:
             # Use value_to_use for recording
-            await user_service.record_usage(auth.user_id, limit_type, value_to_use, document_id)
+            await user_service.record_usage(limits_id, limit_type, value_to_use, document_id)
         except Exception as e:
             # Just log if recording usage fails, don't fail the operation
             logger.error("Failed to record usage: %s", e)

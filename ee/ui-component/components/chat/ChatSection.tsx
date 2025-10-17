@@ -21,10 +21,11 @@ import { PreviewMessage } from "./ChatMessages";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { AgentPreviewMessage, AgentUIMessage, DisplayObject, SourceObject, ToolCall } from "./AgentChatMessages";
-import { useHeader } from "@/contexts/header-context";
+// import { useHeader } from "@/contexts/header-context"; // Removed - MorphikUI handles breadcrumbs
 import { useChatContext } from "@/components/chat/chat-context";
 import { useTheme } from "next-themes";
 import { showAlert } from "@/components/ui/alert-system";
+import { useChatModelSelector } from "./useChatModelSelector";
 
 interface ChatSectionProps {
   apiBaseUrl: string;
@@ -61,7 +62,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   const { activeChatId, setActiveChatId } = useChatContext();
 
   // Load server models using the same hook as ModelSelector
-  const { models: serverModels } = useModels(apiBaseUrl, authToken);
+  const { models: serverModels, refresh: refreshServerModels } = useModels(apiBaseUrl, authToken);
   const { theme } = useTheme();
 
   // Generate a stable chatId when no active chat is selected
@@ -171,21 +172,14 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     }[]
   >([]);
 
-  const [showModelSelector, setShowModelSelector] = useState(false);
-  const [availableModels, setAvailableModels] = useState<
-    Array<{
-      id: string;
-      name: string;
-      provider: string;
-      description?: string;
-      enabled?: boolean;
-    }>
-  >([]);
-
-  // Provider configuration is derived on demand; no need to store separately
-
-  // Model selection state
-  const [selectedModel, setSelectedModel] = useState<string>("");
+  const { selectedModel, showModelSelector, setShowModelSelector, availableModels, handleModelChange } =
+    useChatModelSelector({
+      apiBaseUrl,
+      authToken,
+      serverModels,
+      refreshServerModels,
+      safeUpdateOption,
+    });
 
   // Agent mode toggle and state
   const [isAgentMode, setIsAgentMode] = useState(false);
@@ -344,9 +338,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
             return {
               id,
               filename: (docObj.filename as string) || (docObj.name as string) || `Document ${id}`,
-              folder_name:
-                (docObj.folder_name as string) ||
-                ((docObj.system_metadata as Record<string, unknown>)?.folder_name as string),
+              folder_name: docObj.folder_name as string | undefined,
               content_type: docObj.content_type as string,
               metadata: docObj.metadata as Record<string, unknown>,
               system_metadata: docObj.system_metadata,
@@ -529,85 +521,38 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     return documents.filter(d => d !== "__none__");
   };
 
-  // Handle model selection change
-  const handleModelChange = (modelId: string) => {
-    setSelectedModel(modelId);
+  const renderColpaliControl = () => (
+    <div className="flex flex-shrink-0 items-center gap-2 rounded-full border border-border/40 bg-background/60 px-3 py-1.5">
+      <span className="text-xs font-medium text-foreground">Colpali</span>
+      <Switch
+        checked={Boolean(safeQueryOptions.use_colpali)}
+        onCheckedChange={checked => safeUpdateOption("use_colpali", checked)}
+        aria-label="Toggle Colpali retrieval"
+      />
+      {safeQueryOptions.use_colpali && (
+        <div className="flex items-center gap-2 pl-1">
+          <span className="text-xs text-muted-foreground">Pad</span>
+          <Slider
+            className="w-20"
+            min={0}
+            max={10}
+            step={1}
+            value={[safeQueryOptions.padding || 0]}
+            onValueChange={value => safeUpdateOption("padding", value[0])}
+            aria-label="Colpali padding"
+          />
+          <span className="text-xs tabular-nums text-muted-foreground">{safeQueryOptions.padding || 0}</span>
+        </div>
+      )}
+    </div>
+  );
 
-    // Handle default model - clear llm_config to use server default
-    if (modelId === "default") {
-      safeUpdateOption("llm_config", undefined);
-      return;
-    }
-
-    // Check if this is a custom model
-    if (modelId.startsWith("custom_")) {
-      const savedModels = localStorage.getItem("morphik_custom_models");
-      if (savedModels) {
-        try {
-          const customModels = JSON.parse(savedModels);
-          const customModel = customModels.find((m: { id: string }) => `custom_${m.id}` === modelId);
-
-          if (customModel) {
-            // Use the custom model's config directly
-            safeUpdateOption("llm_config", customModel.config);
-            return;
-          }
-        } catch (err) {
-          console.error("Failed to parse custom models:", err);
-        }
-      }
-    }
-
-    // Get API keys from localStorage
-    const savedConfig = localStorage.getItem("morphik_api_keys");
-    if (savedConfig) {
-      try {
-        const config = JSON.parse(savedConfig);
-
-        // Build model_config based on selected model and saved API keys
-        const modelConfig: Record<string, unknown> = { model: modelId };
-
-        // Determine provider from model ID
-        if (modelId.startsWith("gpt")) {
-          if (config.openai?.apiKey) {
-            modelConfig.api_key = config.openai.apiKey;
-            if (config.openai.baseUrl) {
-              modelConfig.base_url = config.openai.baseUrl;
-            }
-          }
-        } else if (modelId.startsWith("claude")) {
-          if (config.anthropic?.apiKey) {
-            modelConfig.api_key = config.anthropic.apiKey;
-            if (config.anthropic.baseUrl) {
-              modelConfig.base_url = config.anthropic.baseUrl;
-            }
-          }
-        } else if (modelId.startsWith("gemini/")) {
-          if (config.google?.apiKey) {
-            modelConfig.api_key = config.google.apiKey;
-          }
-        } else if (modelId.startsWith("groq/")) {
-          if (config.groq?.apiKey) {
-            modelConfig.api_key = config.groq.apiKey;
-          }
-        } else if (modelId.startsWith("deepseek/")) {
-          if (config.deepseek?.apiKey) {
-            modelConfig.api_key = config.deepseek.apiKey;
-          }
-        }
-
-        safeUpdateOption("llm_config", modelConfig);
-      } catch (err) {
-        console.error("Failed to parse API keys:", err);
-      }
-    }
-  };
-
-  const { setCustomBreadcrumbs } = useHeader();
-  useEffect(() => {
-    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Chat" }]);
-    return () => setCustomBreadcrumbs(null);
-  }, [setCustomBreadcrumbs]);
+  // Removed - MorphikUI handles breadcrumbs centrally
+  // const { setCustomBreadcrumbs } = useHeader();
+  // useEffect(() => {
+  //   setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "Chat" }]);
+  //   return () => setCustomBreadcrumbs(null);
+  // }, [setCustomBreadcrumbs]);
 
   // Close model selector when clicking outside
   useEffect(() => {
@@ -621,104 +566,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  // Load custom models, fetch configured providers, and combine with server models
-  useEffect(() => {
-    const loadModelsAndConfig = async () => {
-      const allModels: Array<{
-        id: string;
-        name: string;
-        provider: string;
-        description?: string;
-      }> = [...serverModels];
-
-      try {
-        // Load custom models from backend if authenticated
-        if (authToken) {
-          const resp = await fetch(`${apiBaseUrl}/models/custom`, {
-            headers: { Authorization: `Bearer ${authToken}` },
-          });
-          if (resp.ok) {
-            const customModelsList = await resp.json();
-            const customTransformed = customModelsList.map((m: { id: string; name: string; provider: string }) => ({
-              id: `custom_${m.id}`,
-              name: m.name,
-              provider: m.provider,
-              description: `Custom ${m.provider} model`,
-            }));
-            allModels.push(...customTransformed);
-          }
-        } else {
-          // Fallback to localStorage
-          const savedModels = localStorage.getItem("morphik_custom_models");
-          if (savedModels) {
-            try {
-              const parsed = JSON.parse(savedModels);
-              const customTransformed = parsed.map((m: { id: string; name: string; provider: string }) => ({
-                id: `custom_${m.id}`,
-                name: m.name,
-                provider: m.provider,
-                description: `Custom ${m.provider} model`,
-              }));
-              allModels.push(...customTransformed);
-            } catch (err) {
-              console.error("Failed to parse custom models:", err);
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load custom models:", err);
-      }
-
-      // Determine configured providers
-      const configured: Record<string, boolean> = {};
-      try {
-        if (authToken) {
-          const resp = await fetch(`${apiBaseUrl}/api-keys`, {
-            headers: { Authorization: `Bearer ${authToken}` },
-          });
-          if (resp.ok) {
-            const apiKeys = await resp.json();
-            for (const [prov, data] of Object.entries(apiKeys)) {
-              const d = data as { configured?: boolean };
-              configured[prov] = Boolean(d?.configured);
-            }
-          }
-        } else if (typeof window !== "undefined") {
-          const saved = localStorage.getItem("morphik_api_keys");
-          if (saved) {
-            try {
-              const localCfg = JSON.parse(saved) as Record<string, { apiKey?: string }>;
-              for (const [prov, val] of Object.entries(localCfg)) {
-                configured[prov] = Boolean(val?.apiKey);
-              }
-            } catch (e) {
-              console.error("Failed to parse local API keys:", e);
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Failed to load API key configuration:", e);
-      }
-
-      // Some providers might not require keys (local/hosted)
-      const doesProviderRequireKey = (prov: string) => {
-        const requires = ["openai", "anthropic", "google", "groq", "deepseek", "together", "azure"];
-        return requires.includes(prov);
-      };
-
-      const withEnabled = allModels.map(m => ({
-        ...m,
-        enabled: !doesProviderRequireKey(m.provider) || configured[m.provider] === true,
-      }));
-
-      setAvailableModels(withEnabled);
-    };
-
-    if (showModelSelector) {
-      loadModelsAndConfig();
-    }
-  }, [showModelSelector, serverModels, authToken, apiBaseUrl]);
 
   // Provider logos and icons
   const getProviderIcon = (provider: string) => {
@@ -902,7 +749,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                     <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between border-t border-border/50 p-3">
                       {/* Left side - Document and Folder Selection (only in chat mode) */}
                       {!isAgentMode && (
-                        <div className="mr-4 flex flex-1 items-center gap-2">
+                        <div className="mr-4 flex flex-1 flex-wrap items-center gap-2">
                           <div className="flex-1">
                             <DocumentSelector
                               documents={documents}
@@ -926,6 +773,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                               className="w-full"
                             />
                           </div>
+                          {renderColpaliControl()}
                           <Button
                             variant={isAgentMode ? "default" : "outline"}
                             size="sm"
@@ -963,7 +811,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
 
                       {/* Agent mode controls */}
                       {isAgentMode && (
-                        <div className="mr-4 flex flex-1 items-center gap-2">
+                        <div className="mr-4 flex flex-1 flex-wrap items-center gap-2">
                           <Button
                             variant={isAgentMode ? "default" : "outline"}
                             size="sm"
@@ -1035,36 +883,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                               onCheckedChange={checked => safeUpdateOption("use_reranking", checked)}
                             />
                           </div>
-                          <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
-                            <Label htmlFor="use_colpali" className="text-sm font-medium">
-                              Use Colpali
-                            </Label>
-                            <Switch
-                              id="use_colpali"
-                              checked={safeQueryOptions.use_colpali}
-                              onCheckedChange={checked => safeUpdateOption("use_colpali", checked)}
-                            />
-                          </div>
-                          {safeQueryOptions.use_colpali && (
-                            <div className="space-y-2 rounded-lg bg-background/50 p-3">
-                              <Label htmlFor="query-padding" className="flex justify-between text-sm font-medium">
-                                <span>Padding</span>
-                                <span className="text-muted-foreground">{safeQueryOptions.padding || 0}</span>
-                              </Label>
-                              <Slider
-                                id="query-padding"
-                                min={0}
-                                max={10}
-                                step={1}
-                                value={[safeQueryOptions.padding || 0]}
-                                onValueChange={value => safeUpdateOption("padding", value[0])}
-                                className="w-full"
-                              />
-                              <p className="text-xs text-muted-foreground">
-                                Additional pages to retrieve before and after matched pages
-                              </p>
-                            </div>
-                          )}
                           <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
                             <Label htmlFor="streaming_enabled" className="text-sm font-medium">
                               Streaming Response
@@ -1265,7 +1083,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                     <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between border-t border-border/50 p-3">
                       {/* Left side - Document and Folder Selection (only in chat mode) */}
                       {!isAgentMode && (
-                        <div className="mr-4 flex flex-1 items-center gap-2">
+                        <div className="mr-4 flex flex-1 flex-wrap items-center gap-2">
                           <div className="flex-1">
                             <DocumentSelector
                               documents={documents}
@@ -1289,6 +1107,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                               className="w-full"
                             />
                           </div>
+                          {renderColpaliControl()}
                           <Button
                             variant={isAgentMode ? "default" : "outline"}
                             size="sm"
@@ -1409,36 +1228,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                               onCheckedChange={checked => safeUpdateOption("use_reranking", checked)}
                             />
                           </div>
-                          <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
-                            <Label htmlFor="use_colpali" className="text-sm font-medium">
-                              Use Colpali
-                            </Label>
-                            <Switch
-                              id="use_colpali"
-                              checked={safeQueryOptions.use_colpali}
-                              onCheckedChange={checked => safeUpdateOption("use_colpali", checked)}
-                            />
-                          </div>
-                          {safeQueryOptions.use_colpali && (
-                            <div className="space-y-2 rounded-lg bg-background/50 p-3">
-                              <Label htmlFor="query-padding" className="flex justify-between text-sm font-medium">
-                                <span>Padding</span>
-                                <span className="text-muted-foreground">{safeQueryOptions.padding || 0}</span>
-                              </Label>
-                              <Slider
-                                id="query-padding"
-                                min={0}
-                                max={10}
-                                step={1}
-                                value={[safeQueryOptions.padding || 0]}
-                                onValueChange={value => safeUpdateOption("padding", value[0])}
-                                className="w-full"
-                              />
-                              <p className="text-xs text-muted-foreground">
-                                Additional pages to retrieve before and after matched pages
-                              </p>
-                            </div>
-                          )}
                           <div className="flex items-center justify-between rounded-lg bg-background/50 p-3">
                             <Label htmlFor="streaming_enabled" className="text-sm font-medium">
                               Streaming Response

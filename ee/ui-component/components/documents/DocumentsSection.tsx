@@ -410,7 +410,7 @@ const DocumentsSection = React.forwardRef<
               }
 
               // If status is missing and we have a newly uploaded document, it should be "processing"
-              if (!data.system_metadata.status && data.system_metadata.folder_name) {
+              if (!data.system_metadata.status && typeof data.folder_name === "string") {
                 data.system_metadata.status = "processing";
               }
 

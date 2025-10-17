@@ -33,7 +33,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Badge } from "@/components/ui/badge";
 import { usePDFChatSessions } from "@/hooks/useChatSessions";
 import { usePDFSession } from "@/components/pdf/PDFAPIService";
-import { useHeader } from "@/contexts/header-context";
+import { useHeader } from "@/contexts/header-context"; // Still needed for setRightContent
 
 // Configure PDF.js worker - use CDN for reliability
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -213,11 +213,14 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
     []
   );
 
-  const { setRightContent, setCustomBreadcrumbs } = useHeader();
+  const { setRightContent } = useHeader();
+  // Removed - MorphikUI handles breadcrumbs centrally
+  // const { setCustomBreadcrumbs } = useHeader();
 
   // header effect
   useEffect(() => {
-    setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "PDF Viewer" }]);
+    // Removed - MorphikUI handles breadcrumbs centrally
+    // setCustomBreadcrumbs([{ label: "Home", href: "/" }, { label: "PDF Viewer" }]);
 
     const btn = (
       <Button
@@ -232,10 +235,11 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
     setRightContent(btn);
 
     return () => {
-      setCustomBreadcrumbs(null);
+      // Removed - MorphikUI handles breadcrumbs centrally
+      // setCustomBreadcrumbs(null);
       setRightContent(null);
     };
-  }, [setCustomBreadcrumbs, setRightContent, isChatOpen, setIsChatOpen]);
+  }, [setRightContent, isChatOpen, setIsChatOpen]);
 
   // Handle chat resize functionality
   useEffect(() => {
@@ -935,7 +939,6 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
               folder_name?: string;
               system_metadata?: {
                 created_at?: string;
-                folder_name?: string;
                 status?: string;
               };
             }) => ({
@@ -943,7 +946,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
               filename: doc.filename || `Document ${doc.external_id}`,
               download_url: "", // We'll generate this when needed
               created_at: doc.system_metadata?.created_at,
-              folder_name: doc.folder_name ?? doc.system_metadata?.folder_name,
+              folder_name: doc.folder_name,
               status: doc.system_metadata?.status || "unknown",
             })
           );

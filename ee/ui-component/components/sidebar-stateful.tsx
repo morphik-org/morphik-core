@@ -83,7 +83,7 @@ export function MorphikSidebarRemote({
       const pathSegments = window.location.pathname.split("/").filter(Boolean);
       // If we're in an app context (e.g., /app_id/documents), go to dashboard
       if (pathSegments.length > 0 && !["login", "signup", "dashboard"].includes(pathSegments[0])) {
-        window.location.href = "/dashboard";
+        window.location.href = "/organization/applications";
         return;
       }
     }
