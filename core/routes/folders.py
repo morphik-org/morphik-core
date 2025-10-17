@@ -21,6 +21,7 @@ from core.models.responses import (
     FolderRuleResponse,
 )
 from core.models.workflows import Workflow
+from core.routes.utils import project_document_fields
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, workflow_service
 
@@ -192,7 +193,7 @@ async def folder_details(
                             doc_dict = document.dict()
                         else:
                             doc_dict = dict(document)
-                        documents_payload.append(_project_document_fields(doc_dict, request.document_fields))
+                        documents_payload.append(project_document_fields(doc_dict, request.document_fields))
 
                 returned_count = doc_result.get("returned_count", len(documents_payload))
                 has_more = doc_result.get("has_more", False)

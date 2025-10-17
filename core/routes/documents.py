@@ -16,6 +16,7 @@ from core.models.responses import (
     FolderCount,
     ListDocsResponse,
 )
+from core.routes.utils import project_document_fields
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
 
@@ -121,7 +122,7 @@ async def list_docs(
                 doc_dict = document.dict()
             else:
                 doc_dict = dict(document)
-            documents_payload.append(_project_document_fields(doc_dict, request.fields))
+            documents_payload.append(project_document_fields(doc_dict, request.fields))
 
     total_count = db_result.get("total_count")
     returned_count = db_result.get("returned_count", len(documents_payload))

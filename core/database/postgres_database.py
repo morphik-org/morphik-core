@@ -824,7 +824,7 @@ class PostgresDatabase(BaseDatabase):
         sort_by: Optional[str] = None,
         sort_direction: str = "desc",
     ) -> Dict[str, Any]:
-        """List documents with optional aggregate metadata."""
+        """List documents with optional aggregate metadata. Field projection is handled at application layer."""
         limit = max(limit, 0) if limit is not None else None
         skip = max(skip, 0)
 
@@ -850,6 +850,8 @@ class PostgresDatabase(BaseDatabase):
                 fetch_documents = return_documents and (limit is None or limit > 0)
 
                 if fetch_documents:
+                    # Note: We always select all columns from the database
+                    # Field projection is handled at the application layer for simplicity
                     base_query = select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
                     order_clause = self._resolve_document_sort_clause(sort_by, sort_direction)
                     if order_clause is not None:
