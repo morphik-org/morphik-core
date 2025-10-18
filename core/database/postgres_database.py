@@ -1337,7 +1337,30 @@ class PostgresDatabase(BaseDatabase):
             ) from exc
 
         escaped_payload = json_payload.replace("'", "''")
-        return f"(doc_metadata @> '{escaped_payload}'::jsonb)"
+        base_clause = f"(doc_metadata @> '{escaped_payload}'::jsonb)"
+
+        array_clause = self._build_array_membership_clause(field, value)
+        if array_clause:
+            return f"({base_clause} OR {array_clause})"
+        return base_clause
+
+    def _build_array_membership_clause(self, field: str, value: Any) -> str:
+        """Build clause that matches array membership for scalar comparisons."""
+        if not isinstance(value, (str, int, float, bool)) and value is not None:
+            return ""
+
+        try:
+            array_payload = json.dumps([value])
+        except (TypeError, ValueError):
+            return ""
+
+        escaped_array_payload = array_payload.replace("'", "''")
+        field_key = self._escape_single_quotes(field)
+
+        return (
+            f"((jsonb_typeof(doc_metadata -> '{field_key}') = 'array') "
+            f"AND ((doc_metadata -> '{field_key}') @> '{escaped_array_payload}'::jsonb))"
+        )
 
     @staticmethod
     def _escape_single_quotes(value: str) -> str:
