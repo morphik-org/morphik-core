@@ -1185,7 +1185,7 @@ class PostgresDatabase(BaseDatabase):
         return clause
 
     def _parse_metadata_filter(self, expression: Any, context: str) -> str:
-        """Recursively parse a Mongo-style metadata filter into SQL."""
+        """Recursively parse a document-operator metadata filter into SQL."""
         if isinstance(expression, dict):
             if not expression:
                 raise InvalidMetadataFilterError(f"{context.capitalize()} cannot be empty.")
