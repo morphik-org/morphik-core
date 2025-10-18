@@ -21,6 +21,11 @@ from .base_database import BaseDatabase
 logger = logging.getLogger(__name__)
 Base = declarative_base()
 
+
+class InvalidMetadataFilterError(ValueError):
+    """Raised when metadata filters are malformed or unsupported."""
+
+
 SYSTEM_METADATA_SCOPE_KEYS = {"folder_name", "end_user_id", "app_id"}
 
 
@@ -785,6 +790,9 @@ class PostgresDatabase(BaseDatabase):
 
                 return [Document(**self._document_model_to_dict(doc)) for doc in doc_models]
 
+        except InvalidMetadataFilterError as exc:
+            logger.warning("Invalid metadata filter while listing documents: %s", exc)
+            raise
         except Exception as e:
             logger.error(f"Error listing documents: {str(e)}")
             return []
@@ -913,6 +921,9 @@ class PostgresDatabase(BaseDatabase):
                     "next_skip": next_skip,
                 }
 
+        except InvalidMetadataFilterError as exc:
+            logger.warning("Invalid metadata filter while listing documents with aggregates: %s", exc)
+            raise
         except Exception as e:
             logger.error(f"Error listing documents with aggregates: {str(e)}")
             return {
@@ -1108,6 +1119,9 @@ class PostgresDatabase(BaseDatabase):
                 logger.debug(f"Found document IDs: {doc_ids}")
                 return doc_ids
 
+        except InvalidMetadataFilterError as exc:
+            logger.warning("Invalid metadata filter while finding documents: %s", exc)
+            raise
         except Exception as e:
             logger.error(f"Error finding authorized documents: {str(e)}")
             return []
@@ -1154,38 +1168,181 @@ class PostgresDatabase(BaseDatabase):
         # Filter by owner_id to maintain backwards compatibility
         return "owner_id = :entity_id"
 
-    def _build_metadata_filter(self, filters: Dict[str, Any]) -> str:
-        """Build PostgreSQL filter for metadata."""
+    def _build_metadata_filter(self, filters: Optional[Dict[str, Any]]) -> str:
+        """Build PostgreSQL filter for metadata supporting logical operators."""
+        if filters is None:
+            return ""
+
+        if not isinstance(filters, dict):
+            raise InvalidMetadataFilterError("Metadata filters must be provided as a JSON object.")
+
         if not filters:
             return ""
 
-        filter_conditions = []
-        for key, value in filters.items():
-            # Handle list of values (IN operator)
-            if isinstance(value, list):
-                if not value:  # Skip empty lists
-                    continue
+        clause = self._parse_metadata_filter(filters, context="metadata filter")
+        if not clause:
+            raise InvalidMetadataFilterError("Metadata filter produced no valid conditions.")
+        return clause
 
-                # New approach for lists: OR together multiple @> conditions
-                # This allows each item in the list to be checked for containment.
-                or_clauses_for_list = []
-                for item_in_list in value:
-                    json_filter_object = {key: item_in_list}
-                    json_string_for_sql = json.dumps(json_filter_object)
-                    sql_escaped_json_string = json_string_for_sql.replace("'", "''")
-                    or_clauses_for_list.append(f"doc_metadata @> '{sql_escaped_json_string}'::jsonb")
-                if or_clauses_for_list:
-                    filter_conditions.append(f"({' OR '.join(or_clauses_for_list)})")
+    def _parse_metadata_filter(self, expression: Any, context: str) -> str:
+        """Recursively parse a Mongo-style metadata filter into SQL."""
+        if isinstance(expression, dict):
+            if not expression:
+                raise InvalidMetadataFilterError(f"{context.capitalize()} cannot be empty.")
 
+            clauses: List[str] = []
+            for key, value in expression.items():
+                if key == "$and":
+                    if not isinstance(value, list):
+                        raise InvalidMetadataFilterError("$and operator expects a non-empty list of conditions.")
+                    clauses.append(
+                        self._combine_clauses(
+                            [self._parse_metadata_filter(item, context="$and condition") for item in value],
+                            "AND",
+                            'operator "$and"',
+                        )
+                    )
+                elif key == "$or":
+                    if not isinstance(value, list):
+                        raise InvalidMetadataFilterError("$or operator expects a non-empty list of conditions.")
+                    clauses.append(
+                        self._combine_clauses(
+                            [self._parse_metadata_filter(item, context="$or condition") for item in value],
+                            "OR",
+                            'operator "$or"',
+                        )
+                    )
+                elif key == "$nor":
+                    if not isinstance(value, list):
+                        raise InvalidMetadataFilterError("$nor operator expects a non-empty list of conditions.")
+                    inner = self._combine_clauses(
+                        [self._parse_metadata_filter(item, context="$nor condition") for item in value],
+                        "OR",
+                        'operator "$nor"',
+                    )
+                    clauses.append(f"(NOT {inner})")
+                elif key == "$not":
+                    sub_context = 'operator "$not"'
+                    clauses.append(f"(NOT {self._parse_metadata_filter(value, context=sub_context)})")
+                else:
+                    clauses.append(self._build_field_metadata_clause(key, value))
+
+            return self._combine_clauses(clauses, "AND", context)
+
+        if isinstance(expression, list):
+            if not expression:
+                raise InvalidMetadataFilterError(f"{context.capitalize()} cannot be an empty list.")
+            subclauses = [self._parse_metadata_filter(item, context="nested condition") for item in expression]
+            return self._combine_clauses(subclauses, "OR", context)
+
+        raise InvalidMetadataFilterError(f"{context.capitalize()} must be expressed as a JSON object.")
+
+    def _combine_clauses(self, clauses: List[str], operator: str, context: str) -> str:
+        """Combine multiple SQL clauses with a logical operator."""
+        cleaned = [clause for clause in clauses if clause]
+        if not cleaned:
+            raise InvalidMetadataFilterError(f"No valid conditions supplied for {context}.")
+        if len(cleaned) == 1:
+            return cleaned[0]
+        return "(" + f" {operator} ".join(cleaned) + ")"
+
+    def _build_field_metadata_clause(self, field: str, value: Any) -> str:
+        """Build SQL clause for a single metadata field."""
+        if isinstance(value, dict) and not any(key.startswith("$") for key in value):
+            # Treat as literal JSON sub-document match
+            return self._jsonb_contains_clause(field, value)
+
+        if isinstance(value, dict):
+            return self._build_operator_clause(field, value)
+
+        if isinstance(value, list):
+            return self._build_list_clause(field, value)
+
+        return self._build_single_value_clause(field, value)
+
+    def _build_operator_clause(self, field: str, operators: Dict[str, Any]) -> str:
+        """Build SQL clause for operator-based metadata filters."""
+        if not isinstance(operators, dict) or not operators:
+            raise InvalidMetadataFilterError(f"Operator block for field '{field}' must be a non-empty object.")
+
+        clauses: List[str] = []
+        for operator, operand in operators.items():
+            if operator == "$eq":
+                clauses.append(self._build_single_value_clause(field, operand))
+            elif operator == "$ne":
+                clauses.append(f"(NOT {self._build_single_value_clause(field, operand)})")
+            elif operator == "$in":
+                if not isinstance(operand, list):
+                    raise InvalidMetadataFilterError(f"$in operator for field '{field}' expects a list of values.")
+                clauses.append(self._build_list_clause(field, operand))
+            elif operator == "$nin":
+                if not isinstance(operand, list):
+                    raise InvalidMetadataFilterError(f"$nin operator for field '{field}' expects a list of values.")
+                clauses.append(f"(NOT {self._build_list_clause(field, operand)})")
+            elif operator == "$exists":
+                clauses.append(self._build_exists_clause(field, operand))
+            elif operator == "$not":
+                clauses.append(f"(NOT {self._build_field_metadata_clause(field, operand)})")
             else:
-                # Handle single value (equality)
-                # New approach for single value: Use JSONB containment operator @>
-                json_filter_object = {key: value}
-                json_string_for_sql = json.dumps(json_filter_object)
-                sql_escaped_json_string = json_string_for_sql.replace("'", "''")
-                filter_conditions.append(f"doc_metadata @> '{sql_escaped_json_string}'::jsonb")
+                raise InvalidMetadataFilterError(
+                    f"Unsupported metadata filter operator '{operator}' for field '{field}'."
+                )
 
-        return " AND ".join(filter_conditions)
+        return self._combine_clauses(clauses, "AND", f"field '{field}' operator block")
+
+    def _build_list_clause(self, field: str, values: List[Any]) -> str:
+        """Build clause matching any of the provided values."""
+        if not isinstance(values, list) or not values:
+            raise InvalidMetadataFilterError(f"Filter list for field '{field}' must contain at least one value.")
+
+        clauses = []
+        for item in values:
+            if isinstance(item, dict) and any(key.startswith("$") for key in item):
+                clauses.append(self._build_operator_clause(field, item))
+            else:
+                clauses.append(self._build_single_value_clause(field, item))
+
+        return self._combine_clauses(clauses, "OR", f"list of values for field '{field}'")
+
+    def _build_single_value_clause(self, field: str, value: Any) -> str:
+        """Build clause matching a single value."""
+        if isinstance(value, dict):
+            if any(key.startswith("$") for key in value):
+                return self._build_operator_clause(field, value)
+            return self._jsonb_contains_clause(field, value)
+
+        return self._jsonb_contains_clause(field, value)
+
+    def _build_exists_clause(self, field: str, operand: Any) -> str:
+        """Build clause handling $exists operator."""
+        expected = operand
+        if isinstance(expected, str):
+            expected = expected.lower() in {"1", "true", "yes"}
+        elif isinstance(expected, (int, float)):
+            expected = bool(expected)
+        elif not isinstance(expected, bool):
+            raise InvalidMetadataFilterError(f"$exists operator for field '{field}' expects a boolean value.")
+
+        field_key = self._escape_single_quotes(field)
+        clause = f"(doc_metadata ? '{field_key}')"
+        return clause if expected else f"(NOT {clause})"
+
+    def _jsonb_contains_clause(self, field: str, value: Any) -> str:
+        """Build JSONB containment clause for a field/value pairing."""
+        try:
+            json_payload = json.dumps({field: value})
+        except (TypeError, ValueError) as exc:  # noqa: BLE001
+            raise InvalidMetadataFilterError(
+                f"Metadata filter for field '{field}' contains a non-serializable value: {exc}"
+            ) from exc
+
+        escaped_payload = json_payload.replace("'", "''")
+        return f"(doc_metadata @> '{escaped_payload}'::jsonb)"
+
+    @staticmethod
+    def _escape_single_quotes(value: str) -> str:
+        """Escape single quotes for SQL literals."""
+        return value.replace("'", "''")
 
     def _build_system_metadata_filter_optimized(self, system_filters: Optional[Dict[str, Any]]) -> str:
         """Build PostgreSQL filter for system metadata using flattened columns.
@@ -2857,6 +3014,9 @@ class PostgresDatabase(BaseDatabase):
                 logger.debug(f"Document name search for '{clean_query}' returned {len(documents)} results")
                 return documents
 
+        except InvalidMetadataFilterError as exc:
+            logger.warning("Invalid metadata filter while searching documents: %s", exc)
+            raise
         except Exception as e:
             logger.error(f"Error searching documents by name: {str(e)}")
             return []

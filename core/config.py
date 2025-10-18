@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     ASSEMBLYAI_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
     TURBOPUFFER_API_KEY: Optional[str] = None
+    GEMINI_API_BASE_URL: str = "https://generativelanguage.googleapis.com"
+    GEMINI_METADATA_MODEL: str = "gemini-2.5-flash"
 
     # API configuration
     HOST: str
