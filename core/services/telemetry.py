@@ -635,10 +635,34 @@ class TelemetryService:
                     transform=lambda file: file.content_type if file else None,
                 ),
                 MetadataField("metadata", "kwargs", transform=lambda v: parse_json(v, {})),
+                MetadataField(
+                    "metadata",
+                    "kwargs",
+                    "ingestion_options",
+                    transform=lambda v: parse_json(v, {}).get("metadata", {}),
+                ),
                 MetadataField("rules", "kwargs", transform=lambda v: parse_json(v, [])),
                 MetadataField("use_colpali", "kwargs"),
+                MetadataField(
+                    "use_colpali",
+                    "kwargs",
+                    "ingestion_options",
+                    transform=lambda v: parse_json(v, {}).get("use_colpali"),
+                ),
                 MetadataField("folder_name", "kwargs"),
+                MetadataField(
+                    "folder_name",
+                    "kwargs",
+                    "ingestion_options",
+                    transform=lambda v: parse_json(v, {}).get("folder_name"),
+                ),
                 MetadataField("end_user_id", "kwargs"),
+                MetadataField(
+                    "end_user_id",
+                    "kwargs",
+                    "ingestion_options",
+                    transform=lambda v: parse_json(v, {}).get("end_user_id"),
+                ),
             ]
         )
 

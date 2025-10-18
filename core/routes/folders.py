@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 
 from core.auth_utils import verify_token
+from core.database.postgres_database import InvalidMetadataFilterError
 from core.models.auth import AuthContext
 from core.models.folders import Folder, FolderCreate, FolderSummary
 from core.models.request import FolderDetailsRequest, SetFolderRuleRequest
@@ -226,6 +227,8 @@ async def folder_details(
 
     except HTTPException:
         raise
+    except InvalidMetadataFilterError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         logger.error("Error retrieving folder details: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))

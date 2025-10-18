@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile
 
 from core.auth_utils import verify_token
 from core.config import get_settings
+from core.database.postgres_database import InvalidMetadataFilterError
 from core.models.auth import AuthContext
 from core.models.documents import Document
 from core.models.request import DocumentPagesRequest, IngestTextRequest, ListDocsRequest, ListDocumentsRequest
@@ -57,6 +58,19 @@ async def list_documents(
     """
     List accessible documents.
 
+    `request.document_filters` may include the following operators in addition to equality checks:
+    `$and`, `$or`, `$nor`, `$not`, `$in`, `$nin`, and `$exists`. Filters can be nested arbitrarily.
+    Example:
+
+    ```json
+    {
+      "$and": [
+        {"department": "sales"},
+        {"$or": [{"status": "approved"}, {"priority": {"$in": ["high", "urgent"]}}]}
+      ]
+    }
+    ```
+
     Args:
         request: Request body containing filters and pagination
         auth: Authentication context
@@ -77,9 +91,12 @@ async def list_documents(
         system_filters["end_user_id"] = end_user_id
     # Note: auth.app_id is already handled in _build_access_filter_optimized
 
-    return await document_service.db.get_documents(
-        auth, request.skip, request.limit, filters=request.document_filters, system_filters=system_filters
-    )
+    try:
+        return await document_service.db.get_documents(
+            auth, request.skip, request.limit, filters=request.document_filters, system_filters=system_filters
+        )
+    except InvalidMetadataFilterError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/list_docs", response_model=ListDocsResponse)
@@ -91,65 +108,83 @@ async def list_docs(
 ) -> ListDocsResponse:
     """
     Flexible document listing endpoint with support for aggregates, projections, and advanced pagination.
+
+    `request.document_filters` supports the equality operators plus `$and`, `$or`, `$nor`, `$not`, `$in`, `$nin`,
+    and `$exists`, with arbitrary nesting. Example:
+
+    ```json
+    {
+      "$and": [
+        {"category": "patent"},
+        {"$nor": [{"status": "archived"}, {"priority": {"$in": ["low", "medium"]}}]}
+      ]
+    }
+    ```
+
+    Use the `folder_name` and `end_user_id` query parameters to scope system metadata instead of embedding those
+    keys in the filter payload.
     """
-    system_filters: Dict[str, Any] = {}
-    if folder_name is not None:
-        system_filters["folder_name"] = normalize_folder_name(folder_name)
-    if end_user_id:
-        system_filters["end_user_id"] = end_user_id
+    try:
+        system_filters: Dict[str, Any] = {}
+        if folder_name is not None:
+            system_filters["folder_name"] = normalize_folder_name(folder_name)
+        if end_user_id:
+            system_filters["end_user_id"] = end_user_id
 
-    db_result = await document_service.db.list_documents_flexible(
-        auth=auth,
-        skip=request.skip,
-        limit=request.limit,
-        filters=request.document_filters,
-        system_filters=system_filters,
-        include_total_count=request.include_total_count,
-        include_status_counts=request.include_status_counts,
-        include_folder_counts=request.include_folder_counts,
-        return_documents=request.return_documents,
-        sort_by=request.sort_by,
-        sort_direction=request.sort_direction,
-    )
+        db_result = await document_service.db.list_documents_flexible(
+            auth=auth,
+            skip=request.skip,
+            limit=request.limit,
+            filters=request.document_filters,
+            system_filters=system_filters,
+            include_total_count=request.include_total_count,
+            include_status_counts=request.include_status_counts,
+            include_folder_counts=request.include_folder_counts,
+            return_documents=request.return_documents,
+            sort_by=request.sort_by,
+            sort_direction=request.sort_direction,
+        )
 
-    documents_payload: List[Any] = []
-    if request.return_documents:
-        raw_documents = db_result.get("documents", [])
-        for document in raw_documents:
-            if hasattr(document, "model_dump"):
-                doc_dict = document.model_dump(mode="json")
-            elif hasattr(document, "dict"):
-                doc_dict = document.dict()
-            else:
-                doc_dict = dict(document)
-            documents_payload.append(project_document_fields(doc_dict, request.fields))
+        documents_payload: List[Any] = []
+        if request.return_documents:
+            raw_documents = db_result.get("documents", [])
+            for document in raw_documents:
+                if hasattr(document, "model_dump"):
+                    doc_dict = document.model_dump(mode="json")
+                elif hasattr(document, "dict"):
+                    doc_dict = document.dict()
+                else:
+                    doc_dict = dict(document)
+                documents_payload.append(project_document_fields(doc_dict, request.fields))
 
-    total_count = db_result.get("total_count")
-    returned_count = db_result.get("returned_count", len(documents_payload))
-    has_more = db_result.get("has_more", False)
-    next_skip = db_result.get("next_skip")
+        total_count = db_result.get("total_count")
+        returned_count = db_result.get("returned_count", len(documents_payload))
+        has_more = db_result.get("has_more", False)
+        next_skip = db_result.get("next_skip")
 
-    if next_skip is None and has_more:
-        next_skip = request.skip + returned_count
+        if next_skip is None and has_more:
+            next_skip = request.skip + returned_count
 
-    folder_counts_raw = db_result.get("folder_counts")
-    folder_counts: Optional[List[FolderCount]] = None
-    if folder_counts_raw:
-        folder_counts = [
-            FolderCount(folder=item.get("folder"), count=item.get("count", 0)) for item in folder_counts_raw
-        ]
+        folder_counts_raw = db_result.get("folder_counts")
+        folder_counts: Optional[List[FolderCount]] = None
+        if folder_counts_raw:
+            folder_counts = [
+                FolderCount(folder=item.get("folder"), count=item.get("count", 0)) for item in folder_counts_raw
+            ]
 
-    return ListDocsResponse(
-        documents=documents_payload,
-        skip=request.skip,
-        limit=request.limit,
-        returned_count=returned_count,
-        total_count=total_count,
-        has_more=has_more,
-        next_skip=next_skip,
-        status_counts=db_result.get("status_counts") if request.include_status_counts else None,
-        folder_counts=folder_counts,
-    )
+        return ListDocsResponse(
+            documents=documents_payload,
+            skip=request.skip,
+            limit=request.limit,
+            returned_count=returned_count,
+            total_count=total_count,
+            has_more=has_more,
+            next_skip=next_skip,
+            status_counts=db_result.get("status_counts") if request.include_status_counts else None,
+            folder_counts=folder_counts,
+        )
+    except InvalidMetadataFilterError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/{document_id}", response_model=Document)
