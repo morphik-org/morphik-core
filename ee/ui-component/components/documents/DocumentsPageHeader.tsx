@@ -1,7 +1,7 @@
 "use client";
 
 // import React, { useEffect } from "react"; // Removed - not needed
-// import { useHeader } from "@/contexts/header-context"; // Removed - MorphikUI handles breadcrumbs
+// import { useHeader } from '../../contexts/header-context'; // Removed - MorphikUI handles breadcrumbs
 
 interface DocumentsPageHeaderProps {
   selectedFolder: string | null;

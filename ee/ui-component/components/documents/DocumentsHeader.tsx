@@ -3,7 +3,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
-import { DynamicSiteHeader } from "@/components/dynamic-site-header";
+import { DynamicSiteHeader } from "../dynamic-site-header";
 
 interface DocumentsHeaderProps {
   selectedFolder: string | null;

@@ -2,7 +2,7 @@
 
 import React from "react";
 import DocumentsSection from "./DocumentsSection";
-import { useDocumentsHeader } from "@/hooks/useDocumentsHeader";
+import { useDocumentsHeader } from "../../hooks/useDocumentsHeader";
 
 interface DocumentsSectionWithHeaderProps {
   apiBaseUrl: string;
