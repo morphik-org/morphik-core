@@ -1,5 +1,5 @@
 """
-Document extraction agent for workflows.
+Document extraction agent used for headless document processing.
 
 This agent handles document extraction without UI dependencies,
 working directly with document content and chunks.

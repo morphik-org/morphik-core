@@ -7,7 +7,7 @@ the `ingest` and `query` methods specific to their system.
 
 The base class handles:
 - Loading questions from CSV
-- Managing the evaluation workflow
+- Managing the evaluation process
 - Saving results to CSV
 - Progress tracking and error handling
 """
@@ -167,7 +167,7 @@ class BaseRAGEvaluator(abc.ABC):
         ingest_kwargs: Optional[Dict] = None,
         query_kwargs: Optional[Dict] = None,
     ) -> str:
-        """Run the complete evaluation workflow.
+        """Run the complete evaluation process.
 
         Args:
             skip_ingestion: Skip document ingestion step

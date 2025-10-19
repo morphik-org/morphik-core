@@ -524,6 +524,5 @@ class FolderInfo(BaseModel):
     document_ids: Optional[List[str]] = Field(default_factory=list, description="IDs of documents in the folder")
     system_metadata: Dict[str, Any] = Field(default_factory=dict, description="System-managed metadata")
     rules: List[Dict[str, Any]] = Field(default_factory=list, description="Rules associated with the folder")
-    workflow_ids: List[str] = Field(default_factory=list, description="Workflow IDs associated with the folder")
     app_id: Optional[str] = Field(None, description="Application ID associated with the folder")
     end_user_id: Optional[str] = Field(None, description="End user ID associated with the folder")

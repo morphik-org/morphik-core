@@ -18,9 +18,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { FolderSummary, Document } from "@/components/types";
 import Image from "next/image";
 import DeleteConfirmationModal from "@/components/documents/DeleteConfirmationModal";
-import WorkflowDialogs from "./shared/WorkflowDialogs";
 import { EmptyFolders } from "./shared/EmptyStates";
-import { useWorkflowManagement, useFolderNavigation, useDeleteConfirmation } from "./shared/CommonHooks";
+import { useFolderNavigation, useDeleteConfirmation } from "./shared/CommonHooks";
 
 interface FolderListProps {
   folders: FolderSummary[];
@@ -62,22 +61,6 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
 
   // Use shared hooks
   const { updateSelectedFolder } = useFolderNavigation(setSelectedFolder);
-  const {
-    folderWorkflows,
-    loadingWorkflows,
-    showWorkflowDialog,
-    setShowWorkflowDialog,
-    availableWorkflows,
-    showAddWorkflowDialog,
-    setShowAddWorkflowDialog,
-    selectedWorkflowToAdd,
-    setSelectedWorkflowToAdd,
-    fetchFolderWorkflows,
-    fetchAvailableWorkflows,
-    addWorkflow,
-    removeWorkflow,
-  } = useWorkflowManagement(apiBaseUrl, authToken, selectedFolder, folders);
-
   const {
     showDeleteModal,
     setShowDeleteModal,
@@ -183,31 +166,6 @@ const FolderList: React.FC<FolderListProps> = React.memo(function FolderList({
       setIsCreatingFolder(false);
     }
   };
-
-  // If we're viewing a specific folder, only show workflow dialogs
-  if (selectedFolder !== null) {
-    return (
-      <WorkflowDialogs
-        showWorkflowDialog={showWorkflowDialog}
-        setShowWorkflowDialog={setShowWorkflowDialog}
-        showAddWorkflowDialog={showAddWorkflowDialog}
-        setShowAddWorkflowDialog={setShowAddWorkflowDialog}
-        folderWorkflows={folderWorkflows}
-        loadingWorkflows={loadingWorkflows}
-        availableWorkflows={availableWorkflows}
-        selectedWorkflowToAdd={selectedWorkflowToAdd}
-        setSelectedWorkflowToAdd={setSelectedWorkflowToAdd}
-        selectedFolder={selectedFolder}
-        apiBaseUrl={apiBaseUrl}
-        authToken={authToken}
-        onFetchFolderWorkflows={fetchFolderWorkflows}
-        onFetchAvailableWorkflows={fetchAvailableWorkflows}
-        onAddWorkflow={addWorkflow}
-        onRemoveWorkflow={removeWorkflow}
-        folders={folders}
-      />
-    );
-  }
 
   return (
     <div className="mb-6">

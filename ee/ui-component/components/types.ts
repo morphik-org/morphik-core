@@ -41,16 +41,7 @@ export interface MorphikUIProps {
   onBackClick?: () => void; // Callback when back button is clicked
   appName?: string; // Name of the app to display in UI
   initialFolder?: string | null; // Initial folder to show
-  initialSection?:
-    | "documents"
-    | "search"
-    | "chat"
-    | "graphs"
-    | "workflows"
-    | "connections"
-    | "pdf"
-    | "settings"
-    | "logs"; // Initial section to show
+  initialSection?: "documents" | "search" | "chat" | "graphs" | "connections" | "pdf" | "settings" | "logs"; // Initial section to show
 
   // Custom breadcrumbs for organization context
   breadcrumbItems?: Breadcrumb[];

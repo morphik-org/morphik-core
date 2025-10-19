@@ -2,14 +2,11 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Layers, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 
 interface BreadcrumbNavigationProps {
   selectedFolder: string | null;
   onNavigateHome: () => void;
-  onOpenWorkflows?: () => void;
-  workflowCount?: number;
   selectedDocuments?: string[];
   onDeleteMultiple?: () => void;
   refreshAction?: () => void;
@@ -19,8 +16,6 @@ interface BreadcrumbNavigationProps {
 const BreadcrumbNavigation: React.FC<BreadcrumbNavigationProps> = ({
   selectedFolder,
   onNavigateHome,
-  onOpenWorkflows,
-  workflowCount = 0,
   selectedDocuments = [],
   onDeleteMultiple,
   refreshAction,
@@ -70,17 +65,6 @@ const BreadcrumbNavigation: React.FC<BreadcrumbNavigationProps> = ({
           <span className="font-medium text-foreground">
             {selectedFolder === "all" ? "All Documents" : selectedFolder}
           </span>
-          {onOpenWorkflows && selectedFolder !== "all" && (
-            <Button variant="outline" size="sm" onClick={onOpenWorkflows} className="ml-2 flex items-center gap-2">
-              <Layers className="h-4 w-4" />
-              <span>Workflows</span>
-              {workflowCount > 0 && (
-                <Badge variant="secondary" className="ml-1 px-1.5 py-0.5 text-xs">
-                  {workflowCount}
-                </Badge>
-              )}
-            </Button>
-          )}
         </div>
         <div className="flex items-center space-x-2">
           {selectedDocuments.length > 0 && onDeleteMultiple && (

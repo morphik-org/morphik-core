@@ -1,5 +1,5 @@
 """
-Document navigation tools for extraction workflows.
+Document navigation tools to support headless extraction tasks.
 
 These tools allow structured extraction actions to navigate through
 multi-page documents without UI-specific functionality.

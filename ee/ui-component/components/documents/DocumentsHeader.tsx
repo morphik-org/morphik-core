@@ -2,15 +2,12 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Layers, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { DynamicSiteHeader } from "@/components/dynamic-site-header";
 
 interface DocumentsHeaderProps {
   selectedFolder: string | null;
   onNavigateHome: () => void;
-  onOpenWorkflows?: () => void;
-  workflowCount?: number;
   selectedDocuments?: string[];
   onDeleteMultiple?: () => void;
   refreshAction?: () => void;
@@ -19,8 +16,6 @@ interface DocumentsHeaderProps {
 
 export function DocumentsHeader({
   selectedFolder,
-  onOpenWorkflows,
-  workflowCount = 0,
   selectedDocuments = [],
   onDeleteMultiple,
   refreshAction,
@@ -37,18 +32,6 @@ export function DocumentsHeader({
   // Right side content
   const rightContent = (
     <>
-      {selectedFolder && onOpenWorkflows && selectedFolder !== "all" && (
-        <Button variant="outline" size="sm" onClick={onOpenWorkflows} className="flex items-center gap-2">
-          <Layers className="h-4 w-4" />
-          <span>Workflows</span>
-          {workflowCount > 0 && (
-            <Badge variant="secondary" className="ml-1 px-1.5 py-0.5 text-xs">
-              {workflowCount}
-            </Badge>
-          )}
-        </Button>
-      )}
-
       {selectedDocuments.length > 0 && onDeleteMultiple && (
         <Button
           variant="outline"

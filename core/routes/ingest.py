@@ -3,7 +3,7 @@ import json
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import arq
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -14,7 +14,8 @@ from core.dependencies import get_redis_pool
 from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
 from core.models.auth import AuthContext
 from core.models.documents import Document
-from core.models.request import BatchIngestResponse, IngestTextRequest
+from core.models.request import BatchIngestResponse, DocumentQueryResponse, IngestTextRequest
+from core.services.gemini_structured_output import GeminiContentError, generate_gemini_content
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, storage
 
@@ -26,6 +27,17 @@ router = APIRouter(prefix="/ingest", tags=["Ingestion"])
 logger = logging.getLogger(__name__)
 settings = get_settings()
 telemetry = TelemetryService()
+
+GEMINI_MAX_DOCUMENT_BYTES = 20 * 1024 * 1024  # 20 MB limit for Gemini inline uploads
+
+
+def _parse_bool(value: Optional[Union[str, bool]]) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"true", "1", "yes", "y", "on"}
+
 
 # ---------------------------------------------------------------------------
 # /ingest/text
@@ -426,3 +438,157 @@ async def batch_ingest_files(
     except Exception as exc:  # noqa: BLE001
         logger.error("Error queueing batch ingestion: %s", exc)
         raise HTTPException(status_code=500, detail=f"Error queueing batch ingestion: {str(exc)}")
+
+
+# ---------------------------------------------------------------------------
+# /ingest/document/ephemeral
+# ---------------------------------------------------------------------------
+
+
+@router.post("/document/query", response_model=DocumentQueryResponse)
+@telemetry.track(operation_type="document_query", metadata_resolver=telemetry.ingest_file_metadata)
+async def query_document(
+    file: UploadFile = File(...),
+    prompt: str = Form(...),
+    schema: Optional[str] = Form(None),
+    ingestion_options: str = Form("{}"),
+    auth: AuthContext = Depends(verify_token),
+    redis: arq.ArqRedis = Depends(get_redis_pool),
+) -> DocumentQueryResponse:
+    """
+    Run an on-demand Gemini document query with optional structured output and ingestion.
+
+    Args:
+        file: Uploaded source document (PDF or another supported MIME type).
+        prompt: Natural-language instruction to execute against the document.
+        schema: Optional JSON schema enforcing structured Gemini output.
+        ingestion_options: JSON object controlling ingestion follow-up (keys: ingest, use_colpali, folder_name, end_user_id, metadata).
+
+    Returns:
+        DocumentQueryResponse containing Gemini outputs, original metadata, and ingestion status details.
+    """
+    try:
+        ingestion_options_dict = json.loads(ingestion_options or "{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"ingestion_options must be valid JSON: {exc}") from exc
+
+    if ingestion_options_dict is None:
+        ingestion_options_dict = {}
+    if not isinstance(ingestion_options_dict, dict):
+        raise HTTPException(status_code=400, detail="ingestion_options must be a JSON object")
+
+    metadata_dict = ingestion_options_dict.get("metadata", {})
+    if metadata_dict is None:
+        metadata_dict = {}
+    if not isinstance(metadata_dict, dict):
+        raise HTTPException(status_code=400, detail="ingestion_options.metadata must be a JSON object when provided")
+
+    ingest_after_bool = _parse_bool(ingestion_options_dict.get("ingest"))
+    use_colpali_bool = _parse_bool(ingestion_options_dict.get("use_colpali"))
+
+    folder_override = ingestion_options_dict.get("folder_name")
+    if folder_override in ("", None):
+        folder_override = None
+    elif isinstance(folder_override, list):
+        if not all(isinstance(item, str) for item in folder_override):
+            raise HTTPException(status_code=400, detail="folder_name list must contain only strings")
+    elif not isinstance(folder_override, str):
+        raise HTTPException(status_code=400, detail="folder_name must be a string or list of strings")
+
+    end_user_override = ingestion_options_dict.get("end_user_id")
+    if end_user_override in ("", None):
+        end_user_override = None
+    elif not isinstance(end_user_override, str):
+        raise HTTPException(status_code=400, detail="end_user_id must be a string")
+
+    normalized_ingestion_options: Dict[str, Any] = {
+        "ingest": ingest_after_bool,
+        "use_colpali": use_colpali_bool,
+    }
+    if folder_override is not None:
+        normalized_ingestion_options["folder_name"] = folder_override
+    if end_user_override is not None:
+        normalized_ingestion_options["end_user_id"] = end_user_override
+    normalized_ingestion_options["metadata"] = metadata_dict
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    if len(file_bytes) > GEMINI_MAX_DOCUMENT_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Uploaded file exceeds Gemini limit of {GEMINI_MAX_DOCUMENT_BYTES // (1024 * 1024)} MB",
+        )
+
+    schema_obj: Optional[Dict[str, Any]] = None
+    if schema:
+        try:
+            parsed_schema = json.loads(schema)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"schema must be valid JSON: {exc}") from exc
+
+        if not isinstance(parsed_schema, dict):
+            raise HTTPException(status_code=400, detail="schema must be a JSON object")
+        schema_obj = parsed_schema
+
+    try:
+        gemini_result = await generate_gemini_content(
+            prompt=prompt,
+            schema=schema_obj,
+            document_bytes=file_bytes,
+            mime_type=file.content_type,
+        )
+    except GeminiContentError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    structured_output = gemini_result.structured_output
+    input_metadata = dict(metadata_dict)
+    if structured_output is None:
+        combined_metadata = input_metadata
+        extracted_metadata = None
+    elif isinstance(structured_output, dict):
+        extracted_metadata = structured_output
+        combined_metadata = {**input_metadata, **structured_output}
+    else:
+        extracted_metadata = None
+        combined_metadata = {**input_metadata, "gemini_structured_output": structured_output}
+
+    ingestion_document: Optional[Document] = None
+    if ingest_after_bool:
+        if "write" not in auth.permissions:
+            raise HTTPException(status_code=403, detail="User does not have write permission to ingest documents")
+
+        filename = file.filename or "uploaded_document"
+
+        try:
+            ingestion_document = await document_service.ingest_file_content(
+                file_content_bytes=file_bytes,
+                filename=filename,
+                content_type=file.content_type,
+                metadata=combined_metadata,
+                auth=auth,
+                redis=redis,
+                folder_name=folder_override,
+                end_user_id=end_user_override,
+                rules=None,
+                use_colpali=use_colpali_bool,
+            )
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Failed to queue ingestion after metadata extraction for %s", filename)
+            raise HTTPException(status_code=500, detail=f"Failed to queue ingestion: {exc}") from exc
+
+    return DocumentQueryResponse(
+        structured_output=structured_output,
+        extracted_metadata=extracted_metadata,
+        text_output=gemini_result.text_output,
+        ingestion_enqueued=ingest_after_bool and ingestion_document is not None,
+        ingestion_document=ingestion_document,
+        input_metadata=input_metadata,
+        combined_metadata=combined_metadata,
+        ingestion_options=normalized_ingestion_options,
+    )

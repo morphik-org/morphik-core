@@ -2,12 +2,13 @@ import asyncio
 import json
 import logging
 import uuid
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 
 from core.auth_utils import verify_token
+from core.database.postgres_database import InvalidMetadataFilterError
 from core.models.auth import AuthContext
 from core.models.folders import Folder, FolderCreate, FolderSummary
 from core.models.request import FolderDetailsRequest, SetFolderRuleRequest
@@ -20,10 +21,9 @@ from core.models.responses import (
     FolderDocumentInfo,
     FolderRuleResponse,
 )
-from core.models.workflows import Workflow
 from core.routes.utils import project_document_fields
 from core.services.telemetry import TelemetryService
-from core.services_init import document_service, workflow_service
+from core.services_init import document_service
 
 # ---------------------------------------------------------------------------
 # Router initialization & shared singletons
@@ -226,6 +226,8 @@ async def folder_details(
 
     except HTTPException:
         raise
+    except InvalidMetadataFilterError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         logger.error("Error retrieving folder details: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
@@ -628,90 +630,3 @@ async def set_folder_rule(
     except Exception as e:
         logger.error(f"Error setting folder rules: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# ---------------------------------------------------------------------------
-# Folder-Workflow association endpoints
-# ---------------------------------------------------------------------------
-
-
-@router.post("/{folder_id_or_name}/workflows/{workflow_id}")
-@telemetry.track(operation_type="associate_workflow_to_folder")
-async def associate_workflow_to_folder(
-    folder_id_or_name: str,
-    workflow_id: str,
-    auth: AuthContext = Depends(verify_token),
-) -> Dict[str, Union[bool, str]]:
-    """Associate a workflow with a folder for automatic execution on document ingestion."""
-    try:
-        # Verify the workflow exists and is accessible
-        workflow = await workflow_service.get_workflow(workflow_id, auth)
-        if not workflow:
-            raise HTTPException(status_code=404, detail=f"Workflow {workflow_id} not found or not accessible")
-
-        folder = await _resolve_folder(folder_id_or_name, auth)
-
-        # Use the database method which handles access control properly
-        success = await document_service.db.associate_workflow_to_folder(folder.id, workflow_id, auth)
-
-        if not success:
-            # Check if folder exists by trying to get it
-            raise HTTPException(status_code=403, detail="You don't have write access to this folder")
-
-        return {
-            "success": True,
-            "message": f"Successfully associated workflow {workflow_id} with folder {folder.name} ({folder.id})",
-        }
-    except Exception as e:
-        logger.error(f"Error associating workflow to folder: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.delete("/{folder_id_or_name}/workflows/{workflow_id}")
-@telemetry.track(operation_type="disassociate_workflow_from_folder")
-async def disassociate_workflow_from_folder(
-    folder_id_or_name: str,
-    workflow_id: str,
-    auth: AuthContext = Depends(verify_token),
-) -> Dict[str, Union[bool, str]]:
-    """Remove a workflow association from a folder."""
-    try:
-        folder = await _resolve_folder(folder_id_or_name, auth)
-
-        # Use the database method which handles access control properly
-        success = await document_service.db.disassociate_workflow_from_folder(folder.id, workflow_id, auth)
-
-        if not success:
-            raise HTTPException(status_code=403, detail="You don't have write access to this folder")
-
-        return {
-            "success": True,
-            "message": f"Successfully removed workflow {workflow_id} from folder {folder.name} ({folder.id})",
-        }
-    except Exception as e:
-        logger.error(f"Error disassociating workflow from folder: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/{folder_id_or_name}/workflows", response_model=List[Workflow])
-@telemetry.track(operation_type="list_folder_workflows")
-async def list_folder_workflows(
-    folder_id_or_name: str,
-    auth: AuthContext = Depends(verify_token),
-) -> List[Workflow]:
-    """List all workflows associated with a folder."""
-    try:
-        # Get the folder
-        folder = await _resolve_folder(folder_id_or_name, auth)
-
-        # Get all workflows
-        workflows = []
-        for workflow_id in folder.workflow_ids or []:
-            workflow = await workflow_service.get_workflow(workflow_id, auth)
-            if workflow:
-                workflows.append(workflow)
-
-        return workflows
-
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))

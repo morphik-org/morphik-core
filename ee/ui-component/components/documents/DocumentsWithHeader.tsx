@@ -3,11 +3,8 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useHeader } from "@/contexts/header-context";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Layers, Trash2, Upload, RefreshCw, PlusCircle, ChevronsDown, ChevronsUp } from "lucide-react";
+import { Trash2, Upload, RefreshCw, PlusCircle, ChevronsDown, ChevronsUp } from "lucide-react";
 import DocumentsSection from "./DocumentsSection";
-import { useWorkflowManagement } from "./shared/CommonHooks";
-import WorkflowDialogs from "./shared/WorkflowDialogs";
 
 interface DocumentsWithHeaderProps {
   apiBaseUrl: string;
@@ -28,7 +25,6 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [allFoldersExpanded, setAllFoldersExpanded] = useState(false);
-  const [folders, setFolders] = useState<Array<{ id: string; name: string }>>([]);
 
   // Create a ref to access DocumentsSection methods
   const documentsSectionRef = useRef<{
@@ -36,23 +32,6 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
     handleDeleteMultipleDocuments: () => void;
     selectedDocuments: string[];
   } | null>(null);
-
-  // Use workflow management hook
-  const {
-    folderWorkflows,
-    loadingWorkflows,
-    showWorkflowDialog,
-    setShowWorkflowDialog,
-    availableWorkflows,
-    showAddWorkflowDialog,
-    setShowAddWorkflowDialog,
-    selectedWorkflowToAdd,
-    setSelectedWorkflowToAdd,
-    fetchFolderWorkflows,
-    fetchAvailableWorkflows,
-    addWorkflow,
-    removeWorkflow,
-  } = useWorkflowManagement(props.apiBaseUrl, props.authToken, selectedFolder, folders);
 
   // Handle folder changes from DocumentsSection
   const handleFolderClick = useCallback(
@@ -103,31 +82,6 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
     const rightContent = selectedFolder ? (
       // Folder view controls
       <>
-        {selectedFolder !== "all" && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setShowWorkflowDialog(true);
-              if (selectedFolder && folders.length > 0) {
-                const folder = folders.find(f => f.name === selectedFolder);
-                if (folder) {
-                  fetchFolderWorkflows(folder.id);
-                }
-              }
-            }}
-            className="flex items-center gap-2"
-          >
-            <Layers className="h-4 w-4" />
-            <span>Workflows</span>
-            {folderWorkflows.length > 0 && (
-              <Badge variant="secondary" className="ml-1 px-1.5 py-0.5 text-xs">
-                {folderWorkflows.length}
-              </Badge>
-            )}
-          </Button>
-        )}
-
         {documentsSectionRef.current && documentsSectionRef.current.selectedDocuments.length > 0 && (
           <Button
             variant="outline"
@@ -190,57 +144,24 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
     };
   }, [
     selectedFolder,
-    folderWorkflows.length,
-    folders,
     allFoldersExpanded,
     handleFolderClick,
     handleRefresh,
     handleDeleteMultiple,
     setCustomBreadcrumbs,
     setRightContent,
-    setShowWorkflowDialog,
-    fetchFolderWorkflows,
   ]);
 
-  // Callback to receive folders from DocumentsSection
-  const handleFoldersUpdate = useCallback((newFolders: Array<{ id: string; name: string }>) => {
-    setFolders(newFolders);
-  }, []);
-
   return (
-    <>
-      <DocumentsSection
-        {...props}
-        ref={documentsSectionRef}
-        onFolderClick={handleFolderClick}
-        showUploadDialog={showUploadDialog}
-        setShowUploadDialog={setShowUploadDialog}
-        showNewFolderDialog={showNewFolderDialog}
-        setShowNewFolderDialog={setShowNewFolderDialog}
-        onFoldersUpdate={handleFoldersUpdate}
-        allFoldersExpanded={allFoldersExpanded}
-      />
-
-      {/* Workflow dialogs */}
-      <WorkflowDialogs
-        showWorkflowDialog={showWorkflowDialog}
-        setShowWorkflowDialog={setShowWorkflowDialog}
-        showAddWorkflowDialog={showAddWorkflowDialog}
-        setShowAddWorkflowDialog={setShowAddWorkflowDialog}
-        folderWorkflows={folderWorkflows}
-        loadingWorkflows={loadingWorkflows}
-        availableWorkflows={availableWorkflows}
-        selectedWorkflowToAdd={selectedWorkflowToAdd}
-        setSelectedWorkflowToAdd={setSelectedWorkflowToAdd}
-        selectedFolder={selectedFolder}
-        apiBaseUrl={props.apiBaseUrl}
-        authToken={props.authToken}
-        onFetchFolderWorkflows={fetchFolderWorkflows}
-        onFetchAvailableWorkflows={fetchAvailableWorkflows}
-        onAddWorkflow={addWorkflow}
-        onRemoveWorkflow={removeWorkflow}
-        folders={folders}
-      />
-    </>
+    <DocumentsSection
+      {...props}
+      ref={documentsSectionRef}
+      onFolderClick={handleFolderClick}
+      showUploadDialog={showUploadDialog}
+      setShowUploadDialog={setShowUploadDialog}
+      showNewFolderDialog={showNewFolderDialog}
+      setShowNewFolderDialog={setShowNewFolderDialog}
+      allFoldersExpanded={allFoldersExpanded}
+    />
   );
 }

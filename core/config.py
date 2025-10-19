@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     ASSEMBLYAI_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
     TURBOPUFFER_API_KEY: Optional[str] = None
+    GEMINI_API_BASE_URL: str = "https://generativelanguage.googleapis.com"
+    GEMINI_METADATA_MODEL: str = "gemini-2.5-flash"
 
     # API configuration
     HOST: str
@@ -115,6 +117,12 @@ class Settings(BaseSettings):
     STORAGE_PATH: Optional[str] = None
     AWS_REGION: Optional[str] = None
     S3_BUCKET: Optional[str] = None
+    MULTIVECTOR_CHUNK_STORAGE_PROVIDER: Optional[Literal["local", "aws-s3"]] = None
+    MULTIVECTOR_CHUNK_STORAGE_PATH: Optional[str] = None
+    MULTIVECTOR_CHUNK_S3_BUCKET: Optional[str] = None
+    MULTIVECTOR_VECTOR_STORAGE_PROVIDER: Optional[Literal["local", "aws-s3"]] = None
+    MULTIVECTOR_VECTOR_STORAGE_PATH: Optional[str] = None
+    MULTIVECTOR_VECTOR_S3_BUCKET: Optional[str] = None
 
     # Vector store configuration
     VECTOR_STORE_PROVIDER: Literal["pgvector"]
@@ -155,9 +163,6 @@ class Settings(BaseSettings):
     OTLP_MAX_EXPORT_BATCH_SIZE: int = 512
     OTLP_SCHEDULE_DELAY_MILLIS: int = 5000
     OTLP_MAX_QUEUE_SIZE: int = 2048
-
-    # Workflows configuration
-    WORKFLOW_MODEL: Optional[str] = None
 
     # Local URI token for authentication
     LOCAL_URI_TOKEN: Optional[str] = None
@@ -318,6 +323,19 @@ def get_settings() -> Settings:
         case _:
             raise ValueError(f"Unknown storage provider selected: '{settings_dict['STORAGE_PROVIDER']}'")
 
+    # Optional overrides for chunk/vector storage
+    chunk_override = config["storage"].get("chunks", {})
+    if chunk_override:
+        settings_dict["MULTIVECTOR_CHUNK_STORAGE_PROVIDER"] = chunk_override.get("provider")
+        settings_dict["MULTIVECTOR_CHUNK_STORAGE_PATH"] = chunk_override.get("storage_path")
+        settings_dict["MULTIVECTOR_CHUNK_S3_BUCKET"] = chunk_override.get("bucket_name")
+
+    vector_override = config["storage"].get("vectors", {})
+    if vector_override:
+        settings_dict["MULTIVECTOR_VECTOR_STORAGE_PROVIDER"] = vector_override.get("provider")
+        settings_dict["MULTIVECTOR_VECTOR_STORAGE_PATH"] = vector_override.get("storage_path")
+        settings_dict["MULTIVECTOR_VECTOR_S3_BUCKET"] = vector_override.get("bucket_name")
+
     # Load vector store config
     settings_dict["VECTOR_STORE_PROVIDER"] = config["vector_store"]["provider"]
     if settings_dict["VECTOR_STORE_PROVIDER"] != "pgvector":
@@ -399,10 +417,6 @@ def get_settings() -> Settings:
                 "OTLP_MAX_QUEUE_SIZE": config["telemetry"].get("otlp_max_queue_size", 2048),
             }
         )
-
-    # Load workflows config
-    if "workflows" in config and "model" in config["workflows"]:
-        settings_dict["WORKFLOW_MODEL"] = config["workflows"]["model"]
 
     # Load LOCAL_URI_TOKEN from environment
     settings_dict["LOCAL_URI_TOKEN"] = os.environ.get("LOCAL_URI_TOKEN")

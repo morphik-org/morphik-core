@@ -19,10 +19,6 @@ class Folder(BaseModel):
         }
     )
     rules: List[Dict[str, Any]] = Field(default_factory=list)
-    workflow_ids: List[str] = Field(
-        default_factory=list, description="List of workflow IDs to run on document ingestion"
-    )
-
     # Flattened fields from system_metadata for performance
     app_id: Optional[str] = None
     end_user_id: Optional[str] = None
