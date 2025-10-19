@@ -8,7 +8,7 @@ import httpx
 
 """Lightweight async wrapper around the Neon REST API used for programmatic project
 and branch provisioning.  We intentionally keep the implementation minimal and only
-implement the endpoints that are required for Morphik's *app-per-project* workflow.
+implement the endpoints that are required for Morphik's *app-per-project* provisioning process.
 
 The implementation purposefully avoids pulling in a heavy OpenAPI-generated client
 and instead uses `httpx` which we already depend on.

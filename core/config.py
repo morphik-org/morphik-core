@@ -158,9 +158,6 @@ class Settings(BaseSettings):
     OTLP_SCHEDULE_DELAY_MILLIS: int = 5000
     OTLP_MAX_QUEUE_SIZE: int = 2048
 
-    # Workflows configuration
-    WORKFLOW_MODEL: Optional[str] = None
-
     # Local URI token for authentication
     LOCAL_URI_TOKEN: Optional[str] = None
 
@@ -401,10 +398,6 @@ def get_settings() -> Settings:
                 "OTLP_MAX_QUEUE_SIZE": config["telemetry"].get("otlp_max_queue_size", 2048),
             }
         )
-
-    # Load workflows config
-    if "workflows" in config and "model" in config["workflows"]:
-        settings_dict["WORKFLOW_MODEL"] = config["workflows"]["model"]
 
     # Load LOCAL_URI_TOKEN from environment
     settings_dict["LOCAL_URI_TOKEN"] = os.environ.get("LOCAL_URI_TOKEN")

@@ -7,7 +7,6 @@ import {
   IconFileText,
   IconSettings,
   IconFileAnalytics,
-  IconGitBranch,
   IconBook,
   IconMessageCircle,
 } from "@tabler/icons-react";
@@ -61,10 +60,6 @@ export const baseMainNavItems: Omit<BaseNavItem, "type">[] = [
     icon: IconShare,
   },
   {
-    title: "Workflows",
-    icon: IconGitBranch,
-  },
-  {
     title: "Connectors",
     icon: IconPlugConnected,
   },
@@ -97,24 +92,14 @@ export const externalNavItems = [
 
 export const createUrlNavigation = (onChatClick: () => void, onSettingsClick?: () => void): NavigationStrategy => ({
   type: "url",
-  mainItems: baseMainNavItems.map((item, index) => ({
-    ...item,
-    type: "url" as const,
-    url:
-      index === 0
-        ? "/documents"
-        : index === 1
-          ? "/pdf"
-          : index === 2
-            ? "/search"
-            : index === 3
-              ? "/chat"
-              : index === 4
-                ? "/graphs"
-                : index === 5
-                  ? "/workflows"
-                  : "/connections",
-  })),
+  mainItems: baseMainNavItems.map((item, index) => {
+    const urlMap = ["/documents", "/pdf", "/search", "/chat", "/graphs", "/connections"];
+    return {
+      ...item,
+      type: "url" as const,
+      url: urlMap[index] ?? "/documents",
+    };
+  }),
   secondaryItems: baseSecondaryNavItems.map((item, index) => ({
     ...item,
     type: "url" as const,
@@ -149,24 +134,14 @@ export const createSectionNavigation = (
   onSettingsClick?: () => void
 ): NavigationStrategy => ({
   type: "section",
-  mainItems: baseMainNavItems.map((item, index) => ({
-    ...item,
-    type: "section" as const,
-    section:
-      index === 0
-        ? "documents"
-        : index === 1
-          ? "pdf"
-          : index === 2
-            ? "search"
-            : index === 3
-              ? "chat"
-              : index === 4
-                ? "graphs"
-                : index === 5
-                  ? "workflows"
-                  : "connections",
-  })),
+  mainItems: baseMainNavItems.map((item, index) => {
+    const sectionMap = ["documents", "pdf", "search", "chat", "graphs", "connections"];
+    return {
+      ...item,
+      type: "section" as const,
+      section: sectionMap[index] ?? "documents",
+    };
+  }),
   secondaryItems: baseSecondaryNavItems.map((item, index) => ({
     ...item,
     type: "section" as const,

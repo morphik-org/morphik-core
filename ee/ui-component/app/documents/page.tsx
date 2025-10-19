@@ -8,8 +8,7 @@ import { useMorphik } from "@/contexts/morphik-context";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useHeader } from "@/contexts/header-context";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Layers, Trash2, Upload, RefreshCw, PlusCircle, ChevronsDown, ChevronsUp } from "lucide-react";
+import { Trash2, Upload, RefreshCw, PlusCircle, ChevronsDown, ChevronsUp } from "lucide-react";
 
 function DocumentsContent() {
   const { apiBaseUrl, authToken } = useMorphik();
@@ -20,7 +19,6 @@ function DocumentsContent() {
   const folderParam = searchParams?.get("folder") || null;
   const [currentFolder, setCurrentFolder] = useState<string | null>(folderParam);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
-  const [workflowCount, setWorkflowCount] = useState(0);
   const [allFoldersExpanded, setAllFoldersExpanded] = useState(false);
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
@@ -57,27 +55,6 @@ function DocumentsContent() {
     const rightContent = currentFolder ? (
       // Folder view controls
       <>
-        {currentFolder !== "all" && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              // Trigger workflow dialog in DocumentsSection
-              const event = new CustomEvent("openWorkflowDialog", { detail: { folder: currentFolder } });
-              window.dispatchEvent(event);
-            }}
-            className="flex items-center gap-2"
-          >
-            <Layers className="h-4 w-4" />
-            <span>Workflows</span>
-            {workflowCount > 0 && (
-              <Badge variant="secondary" className="ml-1 px-1.5 py-0.5 text-xs">
-                {workflowCount}
-              </Badge>
-            )}
-          </Button>
-        )}
-
         {selectedDocuments.length > 0 && (
           <Button
             variant="outline"
@@ -177,24 +154,12 @@ function DocumentsContent() {
       setCustomBreadcrumbs(null);
       setRightContent(null);
     };
-  }, [
-    currentFolder,
-    router,
-    selectedDocuments,
-    workflowCount,
-    allFoldersExpanded,
-    setCustomBreadcrumbs,
-    setRightContent,
-  ]);
+  }, [currentFolder, router, selectedDocuments, allFoldersExpanded, setCustomBreadcrumbs, setRightContent]);
 
   // Listen for events from DocumentsSection
   useEffect(() => {
     const handleSelectionChange = (event: CustomEvent<{ selectedDocuments?: string[] }>) => {
       setSelectedDocuments(event.detail?.selectedDocuments || []);
-    };
-
-    const handleWorkflowCountChange = (event: CustomEvent<{ count?: number }>) => {
-      setWorkflowCount(event.detail?.count || 0);
     };
 
     const handleOpenNewFolderDialog = () => {
@@ -210,14 +175,12 @@ function DocumentsContent() {
     };
 
     window.addEventListener("documentsSelectionChanged", handleSelectionChange as EventListener);
-    window.addEventListener("workflowCountChanged", handleWorkflowCountChange as EventListener);
     window.addEventListener("openNewFolderDialog", handleOpenNewFolderDialog);
     window.addEventListener("toggleExpandAllFolders", handleToggleExpandAllFolders);
     window.addEventListener("openUploadDialog", handleOpenUploadDialog);
 
     return () => {
       window.removeEventListener("documentsSelectionChanged", handleSelectionChange as EventListener);
-      window.removeEventListener("workflowCountChanged", handleWorkflowCountChange as EventListener);
       window.removeEventListener("openNewFolderDialog", handleOpenNewFolderDialog);
       window.removeEventListener("toggleExpandAllFolders", handleToggleExpandAllFolders);
       window.removeEventListener("openUploadDialog", handleOpenUploadDialog);

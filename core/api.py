@@ -48,7 +48,6 @@ from core.routes.logs import router as logs_router  # noqa: E402 – import afte
 from core.routes.model_config import router as model_config_router
 from core.routes.models import router as models_router
 from core.routes.pdf_viewer import router as pdf_viewer_router
-from core.routes.workflow import router as workflow_router
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
 
@@ -287,9 +286,6 @@ app.include_router(folders_router)
 # Register PDF viewer router
 app.include_router(pdf_viewer_router)
 
-# Register workflow router (step-2)
-app.include_router(workflow_router)
-
 # Register model config router
 app.include_router(model_config_router)
 
@@ -341,8 +337,11 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
     """
     Retrieve relevant chunks.
 
-    The optional `request.filters` payload accepts equality checks plus the operators `$and`, `$or`, `$nor`,
-    `$not`, `$in`, `$nin`, and `$exists`. Filters can be nested freely, for example:
+    The optional `request.filters` payload accepts equality checks (automatically matching scalars inside JSON
+    arrays) plus the operators `$and`, `$or`, `$nor`, `$not`, `$in`, `$nin`, `$exists`, `$regex`, and `$contains`.
+    Regex filters allow the optional `i` flag for case-insensitive matching, while `$contains` performs substring
+    checks (case-insensitive by default, configurable via `case_sensitive`). Filters can be nested freely, for
+    example:
 
     ```json
     {
@@ -404,8 +403,8 @@ async def retrieve_chunks_grouped(request: RetrieveRequest, auth: AuthContext = 
     """
     Retrieve relevant chunks with grouped response format.
 
-    Uses the same filter operators as `/retrieve/chunks` (`$and`, `$or`, `$nor`, `$not`, `$in`, `$nin`, `$exists`),
-    with arbitrary nesting supported inside `request.filters`.
+    Uses the same filter operators as `/retrieve/chunks` (equality, nested logic operators, `$regex`, `$contains`,
+    etc.), with arbitrary nesting supported inside `request.filters`.
 
     Returns both flat results (for backward compatibility) and grouped results (for UI).
     When padding > 0, groups chunks by main matches and their padding chunks.
@@ -453,8 +452,9 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
     """
     Retrieve relevant documents.
 
-    `request.filters` supports equality checks plus `$and`, `$or`, `$nor`, `$not`, `$in`, `$nin`, and `$exists`,
-    with arbitrary nesting. Use the same JSON structure as in `/retrieve/chunks` when expressing complex logic.
+    `request.filters` supports equality checks (including scalar-to-array matches) plus `$and`, `$or`, `$nor`,
+    `$not`, `$in`, `$nin`, `$exists`, `$regex`, and `$contains`, with arbitrary nesting. Use the same JSON structure
+    as in `/retrieve/chunks` when expressing complex logic.
 
     Args:
         request: RetrieveRequest containing:
@@ -516,6 +516,9 @@ async def search_documents_by_name(
             - folder_name: Optional folder to scope search
             - end_user_id: Optional end-user ID to scope search
         auth: Authentication context
+
+    `request.filters` accepts the same operator set as `/retrieve/chunks`, including `$regex` (with optional `i`
+    flag) and `$contains` for substring matches.
 
     Returns:
         List[Document]: List of matching documents ordered by relevance

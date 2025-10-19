@@ -58,8 +58,10 @@ async def list_documents(
     """
     List accessible documents.
 
-    `request.document_filters` may include the following operators in addition to equality checks:
-    `$and`, `$or`, `$nor`, `$not`, `$in`, `$nin`, and `$exists`. Filters can be nested arbitrarily.
+    `request.document_filters` may include the following operators in addition to equality checks (which also match
+    scalars inside JSON arrays): `$and`, `$or`, `$nor`, `$not`, `$in`, `$nin`, `$exists`, `$regex`, and `$contains`.
+    Filters can be nested arbitrarily. Regex filters accept the optional `i` flag; `$contains` performs substring
+    matches with optional `case_sensitive` overrides.
     Example:
 
     ```json
@@ -109,8 +111,9 @@ async def list_docs(
     """
     Flexible document listing endpoint with support for aggregates, projections, and advanced pagination.
 
-    `request.document_filters` supports the equality operators plus `$and`, `$or`, `$nor`, `$not`, `$in`, `$nin`,
-    and `$exists`, with arbitrary nesting. Example:
+    `request.document_filters` supports equality plus `$and`, `$or`, `$nor`, `$not`, `$in`, `$nin`, `$exists`,
+    `$regex`, and `$contains`, with arbitrary nesting. Scalar comparisons match array elements automatically.
+    Example:
 
     ```json
     {

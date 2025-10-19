@@ -101,7 +101,6 @@ function getSectionLabel(section: string): string {
     search: "Search",
     chat: "Chat",
     graphs: "Knowledge Graph",
-    workflows: "Workflows",
     connections: "Connections",
     settings: "Settings",
     logs: "Logs",
