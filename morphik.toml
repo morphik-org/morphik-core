@@ -117,6 +117,18 @@ storage_path = "./storage"
 # bucket_name = "morphik-s3-storage"
 # storage_path = "morphik-storage"
 
+[storage.chunks]
+# Configure chunk (document/text/image) payload storage; defaults to main storage settings when omitted.
+provider = "aws-s3"
+bucket_name = "morphik-s3-storage"
+storage_path = "morphik-storage"
+
+[storage.vectors]
+# Store numpy tensor payloads locally to minimize latency during search.
+provider = "local"
+storage_path = "./storage/multivectors"
+bucket_name = "multivector-chunks"
+
 [vector_store]
 provider = "pgvector"
 

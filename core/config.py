@@ -117,6 +117,12 @@ class Settings(BaseSettings):
     STORAGE_PATH: Optional[str] = None
     AWS_REGION: Optional[str] = None
     S3_BUCKET: Optional[str] = None
+    MULTIVECTOR_CHUNK_STORAGE_PROVIDER: Optional[Literal["local", "aws-s3"]] = None
+    MULTIVECTOR_CHUNK_STORAGE_PATH: Optional[str] = None
+    MULTIVECTOR_CHUNK_S3_BUCKET: Optional[str] = None
+    MULTIVECTOR_VECTOR_STORAGE_PROVIDER: Optional[Literal["local", "aws-s3"]] = None
+    MULTIVECTOR_VECTOR_STORAGE_PATH: Optional[str] = None
+    MULTIVECTOR_VECTOR_S3_BUCKET: Optional[str] = None
 
     # Vector store configuration
     VECTOR_STORE_PROVIDER: Literal["pgvector"]
@@ -316,6 +322,19 @@ def get_settings() -> Settings:
             raise ValueError(em.format(missing_value="AWS credentials", field="storage.provider", value="aws-s3"))
         case _:
             raise ValueError(f"Unknown storage provider selected: '{settings_dict['STORAGE_PROVIDER']}'")
+
+    # Optional overrides for chunk/vector storage
+    chunk_override = config["storage"].get("chunks", {})
+    if chunk_override:
+        settings_dict["MULTIVECTOR_CHUNK_STORAGE_PROVIDER"] = chunk_override.get("provider")
+        settings_dict["MULTIVECTOR_CHUNK_STORAGE_PATH"] = chunk_override.get("storage_path")
+        settings_dict["MULTIVECTOR_CHUNK_S3_BUCKET"] = chunk_override.get("bucket_name")
+
+    vector_override = config["storage"].get("vectors", {})
+    if vector_override:
+        settings_dict["MULTIVECTOR_VECTOR_STORAGE_PROVIDER"] = vector_override.get("provider")
+        settings_dict["MULTIVECTOR_VECTOR_STORAGE_PATH"] = vector_override.get("storage_path")
+        settings_dict["MULTIVECTOR_VECTOR_S3_BUCKET"] = vector_override.get("bucket_name")
 
     # Load vector store config
     settings_dict["VECTOR_STORE_PROVIDER"] = config["vector_store"]["provider"]
