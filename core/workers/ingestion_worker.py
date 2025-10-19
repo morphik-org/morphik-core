@@ -959,7 +959,7 @@ async def process_ingestion_job(
 
             logger.debug(f"Successfully completed processing for document {doc.external_id}")
 
-            # 12. Add document to folder (this will queue workflows but not execute them)
+            # 12. Add document to folder if requested
             if folder_name:
                 try:
                     logger.info(f"Adding document {doc.external_id} to folder '{folder_name}'")
@@ -968,15 +968,7 @@ async def process_ingestion_job(
                     logger.error(f"Failed to add document to folder: {folder_exc}")
                     # Don't fail the entire ingestion if folder processing fails
 
-            # 13. Execute any pending workflows now that document processing is complete
             await update_document_progress(document_service, document_id, auth, 6, total_steps, "Finalizing")
-            try:
-                logger.info(f"Executing pending workflows for document {doc.external_id}")
-                await document_service.execute_pending_workflows(doc.external_id, auth)
-            except Exception as workflow_exc:
-                logger.error(f"Failed to execute pending workflows: {workflow_exc}")
-                # Don't fail ingestion if workflow execution fails
-
             # Update document status to completed after all processing
             doc.system_metadata["status"] = "completed"
             doc.system_metadata["updated_at"] = datetime.now(UTC)

@@ -2733,6 +2733,7 @@ class AsyncMorphik:
 
     async def check_workflow_status(self, workflow_id: str, run_id: Optional[str] = None) -> Dict[str, Any]:
         """Poll the status of an async graph build/update workflow."""
+
         params = {"run_id": run_id} if run_id else None
         return await self._request("GET", f"graph/workflow/{workflow_id}/status", params=params)
 
@@ -2741,8 +2742,8 @@ class AsyncMorphik:
     ) -> Dict[str, Any]:
         """Get the current status of a graph with pipeline stage information.
 
-        This is a lightweight endpoint that checks local database status and
-        optionally syncs with external workflow status if the graph is processing.
+        This is a lightweight endpoint that checks the current status information
+        stored locally for the graph and enriches it with remote metadata when available.
 
         Args:
             graph_name: Name of the graph to check

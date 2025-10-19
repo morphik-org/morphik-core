@@ -26,7 +26,6 @@ from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.parser.morphik_parser import MorphikParser
 from core.reranker.flag_reranker import FlagReranker
 from core.services.document_service import DocumentService
-from core.services.workflow_service import WorkflowService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.vector_store.dual_multivector_store import DualMultiVectorStore
@@ -218,13 +217,6 @@ document_service = DocumentService(
 )
 logger.info("Document service initialised")
 
-# ---------------------------------------------------------------------------
-# Workflow service (Step-2)
-# ---------------------------------------------------------------------------
-
-workflow_service = WorkflowService(database=database, document_service_ref=document_service)
-logger.info("Workflow service initialised")
-
 __all__ = [
     "settings",
     "database",
@@ -233,5 +225,4 @@ __all__ = [
     "embedding_model",
     "completion_model",
     "document_service",
-    "workflow_service",
 ]

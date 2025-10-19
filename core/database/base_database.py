@@ -1,13 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ..models.auth import AuthContext
 from ..models.documents import Document
 from ..models.folders import Folder
 from ..models.graph import Graph
-
-if TYPE_CHECKING:
-    from core.models.workflows import Workflow, WorkflowRun
 
 
 class BaseDatabase(ABC):
@@ -328,50 +325,6 @@ class BaseDatabase(ABC):
             bool: Whether the operation was successful
         """
         pass
-
-    # ------------------------------------------------------------------
-    # Workflows API (Step-2)
-    # ------------------------------------------------------------------
-
-    @abstractmethod
-    async def store_workflow(self, workflow: "Workflow", auth: AuthContext) -> bool:  # noqa: D401 – forward reference
-        """Persist a Workflow definition."""
-
-    @abstractmethod
-    async def list_workflows(self, auth: AuthContext) -> List["Workflow"]:
-        """List workflows visible to *auth*."""
-
-    @abstractmethod
-    async def get_workflow(self, workflow_id: str, auth: AuthContext) -> Optional["Workflow"]:
-        """Fetch a single workflow if accessible."""
-
-    @abstractmethod
-    async def update_workflow(
-        self, workflow_id: str, updates: Dict[str, Any], auth: AuthContext
-    ) -> Optional["Workflow"]:
-        """Apply partial updates and return updated record."""
-
-    @abstractmethod
-    async def delete_workflow(self, workflow_id: str, auth: AuthContext) -> bool:
-        """Delete a workflow definition."""
-
-    # Workflow runs
-
-    @abstractmethod
-    async def store_workflow_run(self, run: "WorkflowRun") -> bool:  # noqa: D401
-        """Persist a WorkflowRun record."""
-
-    @abstractmethod
-    async def get_workflow_run(self, run_id: str, auth: AuthContext) -> Optional["WorkflowRun"]:
-        """Fetch a workflow run if visible."""
-
-    @abstractmethod
-    async def list_workflow_runs(self, workflow_id: str, auth: AuthContext) -> List["WorkflowRun"]:
-        """List all runs for a specific workflow."""
-
-    @abstractmethod
-    async def delete_workflow_run(self, run_id: str, auth: AuthContext) -> bool:
-        """Delete a workflow run."""
 
     @abstractmethod
     async def search_documents_by_name(

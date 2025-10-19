@@ -6,7 +6,6 @@ import DocumentsWithHeader from "@/components/documents/DocumentsWithHeader";
 import SearchSection from "@/components/search/SearchSection";
 import ChatSection from "@/components/chat/ChatSection";
 import GraphSection from "@/components/GraphSection";
-import WorkflowSection from "@/components/workflows/WorkflowSection";
 import LogsSection from "@/components/logs/LogsSection";
 import { ConnectorList } from "@/components/connectors/ConnectorList";
 import { PDFViewer } from "@/components/pdf/PDFViewer";
@@ -209,8 +208,6 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
             onGraphUpdate={onGraphUpdate}
           />
         );
-      case "workflows":
-        return <WorkflowSection apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} />;
       case "connections":
         return (
           <div className="h-full overflow-auto p-4 md:p-6">

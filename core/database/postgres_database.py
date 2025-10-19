@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from core.config import get_settings
-from core.models.workflows import Workflow, WorkflowRun
 
 from ..models.auth import AuthContext
 from ..models.documents import Document, StorageFileInfo
@@ -17,13 +16,10 @@ from ..models.folders import Folder
 from ..models.graph import Graph
 from ..models.model_config import ModelConfig
 from .base_database import BaseDatabase
+from .metadata_filters import InvalidMetadataFilterError, MetadataFilterBuilder
 
 logger = logging.getLogger(__name__)
 Base = declarative_base()
-
-
-class InvalidMetadataFilterError(ValueError):
-    """Raised when metadata filters are malformed or unsupported."""
 
 
 SYSTEM_METADATA_SCOPE_KEYS = {"folder_name", "end_user_id", "app_id"}
@@ -108,7 +104,6 @@ class FolderModel(Base):
     document_ids = Column(JSONB, default=list)
     system_metadata = Column(JSONB, default=dict)
     rules = Column(JSONB, default=list)
-    workflow_ids = Column(JSONB, default=list)
 
     # Flattened auth columns for performance
     owner_id = Column(String)
@@ -164,53 +159,6 @@ class ModelConfigModel(Base):
     )
 
 
-# ---------------------------------------------------------------------------
-# Workflow models (JSONB payload) – persistent storage for workflow definitions
-#   and execution runs. Placed here so later PostgresDatabase code can import
-#   them without forward-reference issues or linter complaints.
-# ---------------------------------------------------------------------------
-
-
-class WorkflowModel(Base):
-    """SQLAlchemy model for workflow definitions stored as JSONB."""
-
-    __tablename__ = "workflows"
-
-    id = Column(String, primary_key=True)
-    data = Column(JSONB, nullable=False)
-    owner_id = Column(String, index=True)
-    app_id = Column(String, index=True)
-    user_id = Column(String, index=True)
-    created_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
-    updated_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now())
-
-    __table_args__ = (
-        Index("idx_workflows_owner_app", "owner_id", "app_id"),
-        Index("idx_workflows_owner_user", "owner_id", "user_id"),
-    )
-
-
-class WorkflowRunModel(Base):
-    """SQLAlchemy model for individual workflow execution runs."""
-
-    __tablename__ = "workflow_runs"
-
-    id = Column(String, primary_key=True)
-    workflow_id = Column(String, index=True, nullable=False)
-    data = Column(JSONB, nullable=False)
-    owner_id = Column(String, index=True)
-    app_id = Column(String, index=True)
-    user_id = Column(String, index=True)
-    created_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
-    updated_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now())
-
-    __table_args__ = (
-        Index("idx_workflow_runs_wf", "workflow_id"),
-        Index("idx_workflow_runs_owner_app", "owner_id", "app_id"),
-        Index("idx_workflow_runs_owner_user", "owner_id", "user_id"),
-    )
-
-
 def _serialize_datetime(obj: Any) -> Any:
     """Helper function to serialize datetime objects to ISO format strings."""
     if isinstance(obj, datetime):
@@ -241,6 +189,8 @@ def _parse_datetime_field(value: Any) -> Any:
 
 class PostgresDatabase(BaseDatabase):
     """PostgreSQL implementation for document metadata storage."""
+
+    _metadata_filter_builder = MetadataFilterBuilder()
 
     async def delete_folder(self, folder_id: str, auth: AuthContext) -> bool:
         """Delete a folder row if user has admin access."""
@@ -390,28 +340,6 @@ class PostgresDatabase(BaseDatabase):
                     )
                     logger.info("Added rules column to folders table")
 
-                # Add workflow_ids column to folders table if it doesn't exist
-                result = await conn.execute(
-                    text(
-                        """
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_name = 'folders' AND column_name = 'workflow_ids'
-                    """
-                    )
-                )
-                if not result.first():
-                    # Add workflow_ids column to folders table
-                    await conn.execute(
-                        text(
-                            """
-                        ALTER TABLE folders
-                        ADD COLUMN IF NOT EXISTS workflow_ids JSONB DEFAULT '[]'::jsonb
-                        """
-                        )
-                    )
-                    logger.info("Added workflow_ids column to folders table")
-
                 # Create indexes for folders table
                 await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_name ON folders (name);"))
 
@@ -439,84 +367,6 @@ class PostgresDatabase(BaseDatabase):
 
                 # Note: Indexes for folder_name, end_user_id, and app_id are created as direct column indexes
                 # in the flattened columns section below, so we don't need JSONB path indexes
-
-                # ORM models already include workflows tables – ensure they are created
-                await conn.run_sync(lambda c: WorkflowModel.__table__.create(c, checkfirst=True))
-                await conn.run_sync(lambda c: WorkflowRunModel.__table__.create(c, checkfirst=True))
-
-                # Add scoping columns to workflows table if they don't exist
-                for column_name in ["owner_id", "app_id", "user_id"]:
-                    result = await conn.execute(
-                        text(
-                            f"""
-                            SELECT column_name
-                            FROM information_schema.columns
-                            WHERE table_name = 'workflows' AND column_name = '{column_name}'
-                            """
-                        )
-                    )
-                    if not result.first():
-                        await conn.execute(
-                            text(
-                                f"""
-                                ALTER TABLE workflows
-                                ADD COLUMN IF NOT EXISTS {column_name} VARCHAR
-                                """
-                            )
-                        )
-                        logger.info(f"Added {column_name} column to workflows table")
-
-                # Add scoping columns to workflow_runs table if they don't exist
-                for column_name in ["owner_id", "app_id", "user_id"]:
-                    result = await conn.execute(
-                        text(
-                            f"""
-                            SELECT column_name
-                            FROM information_schema.columns
-                            WHERE table_name = 'workflow_runs' AND column_name = '{column_name}'
-                            """
-                        )
-                    )
-                    if not result.first():
-                        await conn.execute(
-                            text(
-                                f"""
-                                ALTER TABLE workflow_runs
-                                ADD COLUMN IF NOT EXISTS {column_name} VARCHAR
-                                """
-                            )
-                        )
-                        logger.info(f"Added {column_name} column to workflow_runs table")
-
-                # Create indexes for workflows table
-                await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_workflows_owner_id ON workflows (owner_id);"))
-                await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_workflows_app_id ON workflows (app_id);"))
-                await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_workflows_user_id ON workflows (user_id);"))
-                await conn.execute(
-                    text("CREATE INDEX IF NOT EXISTS idx_workflows_owner_app ON workflows (owner_id, app_id);")
-                )
-                await conn.execute(
-                    text("CREATE INDEX IF NOT EXISTS idx_workflows_owner_user ON workflows (owner_id, user_id);")
-                )
-
-                # Create indexes for workflow_runs table
-                await conn.execute(
-                    text("CREATE INDEX IF NOT EXISTS idx_workflow_runs_owner_id ON workflow_runs (owner_id);")
-                )
-                await conn.execute(
-                    text("CREATE INDEX IF NOT EXISTS idx_workflow_runs_app_id ON workflow_runs (app_id);")
-                )
-                await conn.execute(
-                    text("CREATE INDEX IF NOT EXISTS idx_workflow_runs_user_id ON workflow_runs (user_id);")
-                )
-                await conn.execute(
-                    text("CREATE INDEX IF NOT EXISTS idx_workflow_runs_owner_app ON workflow_runs (owner_id, app_id);")
-                )
-                await conn.execute(
-                    text(
-                        "CREATE INDEX IF NOT EXISTS idx_workflow_runs_owner_user ON workflow_runs (owner_id, user_id);"
-                    )
-                )
 
                 # Check if title column exists in chat_conversations table
                 result = await conn.execute(
@@ -1169,180 +1019,8 @@ class PostgresDatabase(BaseDatabase):
         return "owner_id = :entity_id"
 
     def _build_metadata_filter(self, filters: Optional[Dict[str, Any]]) -> str:
-        """Build PostgreSQL filter for metadata supporting logical operators."""
-        if filters is None:
-            return ""
-
-        if not isinstance(filters, dict):
-            raise InvalidMetadataFilterError("Metadata filters must be provided as a JSON object.")
-
-        if not filters:
-            return ""
-
-        clause = self._parse_metadata_filter(filters, context="metadata filter")
-        if not clause:
-            raise InvalidMetadataFilterError("Metadata filter produced no valid conditions.")
-        return clause
-
-    def _parse_metadata_filter(self, expression: Any, context: str) -> str:
-        """Recursively parse a document-operator metadata filter into SQL."""
-        if isinstance(expression, dict):
-            if not expression:
-                raise InvalidMetadataFilterError(f"{context.capitalize()} cannot be empty.")
-
-            clauses: List[str] = []
-            for key, value in expression.items():
-                if key == "$and":
-                    if not isinstance(value, list):
-                        raise InvalidMetadataFilterError("$and operator expects a non-empty list of conditions.")
-                    clauses.append(
-                        self._combine_clauses(
-                            [self._parse_metadata_filter(item, context="$and condition") for item in value],
-                            "AND",
-                            'operator "$and"',
-                        )
-                    )
-                elif key == "$or":
-                    if not isinstance(value, list):
-                        raise InvalidMetadataFilterError("$or operator expects a non-empty list of conditions.")
-                    clauses.append(
-                        self._combine_clauses(
-                            [self._parse_metadata_filter(item, context="$or condition") for item in value],
-                            "OR",
-                            'operator "$or"',
-                        )
-                    )
-                elif key == "$nor":
-                    if not isinstance(value, list):
-                        raise InvalidMetadataFilterError("$nor operator expects a non-empty list of conditions.")
-                    inner = self._combine_clauses(
-                        [self._parse_metadata_filter(item, context="$nor condition") for item in value],
-                        "OR",
-                        'operator "$nor"',
-                    )
-                    clauses.append(f"(NOT {inner})")
-                elif key == "$not":
-                    sub_context = 'operator "$not"'
-                    clauses.append(f"(NOT {self._parse_metadata_filter(value, context=sub_context)})")
-                else:
-                    clauses.append(self._build_field_metadata_clause(key, value))
-
-            return self._combine_clauses(clauses, "AND", context)
-
-        if isinstance(expression, list):
-            if not expression:
-                raise InvalidMetadataFilterError(f"{context.capitalize()} cannot be an empty list.")
-            subclauses = [self._parse_metadata_filter(item, context="nested condition") for item in expression]
-            return self._combine_clauses(subclauses, "OR", context)
-
-        raise InvalidMetadataFilterError(f"{context.capitalize()} must be expressed as a JSON object.")
-
-    def _combine_clauses(self, clauses: List[str], operator: str, context: str) -> str:
-        """Combine multiple SQL clauses with a logical operator."""
-        cleaned = [clause for clause in clauses if clause]
-        if not cleaned:
-            raise InvalidMetadataFilterError(f"No valid conditions supplied for {context}.")
-        if len(cleaned) == 1:
-            return cleaned[0]
-        return "(" + f" {operator} ".join(cleaned) + ")"
-
-    def _build_field_metadata_clause(self, field: str, value: Any) -> str:
-        """Build SQL clause for a single metadata field."""
-        if isinstance(value, dict) and not any(key.startswith("$") for key in value):
-            # Treat as literal JSON sub-document match
-            return self._jsonb_contains_clause(field, value)
-
-        if isinstance(value, dict):
-            return self._build_operator_clause(field, value)
-
-        if isinstance(value, list):
-            return self._build_list_clause(field, value)
-
-        return self._build_single_value_clause(field, value)
-
-    def _build_operator_clause(self, field: str, operators: Dict[str, Any]) -> str:
-        """Build SQL clause for operator-based metadata filters."""
-        if not isinstance(operators, dict) or not operators:
-            raise InvalidMetadataFilterError(f"Operator block for field '{field}' must be a non-empty object.")
-
-        clauses: List[str] = []
-        for operator, operand in operators.items():
-            if operator == "$eq":
-                clauses.append(self._build_single_value_clause(field, operand))
-            elif operator == "$ne":
-                clauses.append(f"(NOT {self._build_single_value_clause(field, operand)})")
-            elif operator == "$in":
-                if not isinstance(operand, list):
-                    raise InvalidMetadataFilterError(f"$in operator for field '{field}' expects a list of values.")
-                clauses.append(self._build_list_clause(field, operand))
-            elif operator == "$nin":
-                if not isinstance(operand, list):
-                    raise InvalidMetadataFilterError(f"$nin operator for field '{field}' expects a list of values.")
-                clauses.append(f"(NOT {self._build_list_clause(field, operand)})")
-            elif operator == "$exists":
-                clauses.append(self._build_exists_clause(field, operand))
-            elif operator == "$not":
-                clauses.append(f"(NOT {self._build_field_metadata_clause(field, operand)})")
-            else:
-                raise InvalidMetadataFilterError(
-                    f"Unsupported metadata filter operator '{operator}' for field '{field}'."
-                )
-
-        return self._combine_clauses(clauses, "AND", f"field '{field}' operator block")
-
-    def _build_list_clause(self, field: str, values: List[Any]) -> str:
-        """Build clause matching any of the provided values."""
-        if not isinstance(values, list) or not values:
-            raise InvalidMetadataFilterError(f"Filter list for field '{field}' must contain at least one value.")
-
-        clauses = []
-        for item in values:
-            if isinstance(item, dict) and any(key.startswith("$") for key in item):
-                clauses.append(self._build_operator_clause(field, item))
-            else:
-                clauses.append(self._build_single_value_clause(field, item))
-
-        return self._combine_clauses(clauses, "OR", f"list of values for field '{field}'")
-
-    def _build_single_value_clause(self, field: str, value: Any) -> str:
-        """Build clause matching a single value."""
-        if isinstance(value, dict):
-            if any(key.startswith("$") for key in value):
-                return self._build_operator_clause(field, value)
-            return self._jsonb_contains_clause(field, value)
-
-        return self._jsonb_contains_clause(field, value)
-
-    def _build_exists_clause(self, field: str, operand: Any) -> str:
-        """Build clause handling $exists operator."""
-        expected = operand
-        if isinstance(expected, str):
-            expected = expected.lower() in {"1", "true", "yes"}
-        elif isinstance(expected, (int, float)):
-            expected = bool(expected)
-        elif not isinstance(expected, bool):
-            raise InvalidMetadataFilterError(f"$exists operator for field '{field}' expects a boolean value.")
-
-        field_key = self._escape_single_quotes(field)
-        clause = f"(doc_metadata ? '{field_key}')"
-        return clause if expected else f"(NOT {clause})"
-
-    def _jsonb_contains_clause(self, field: str, value: Any) -> str:
-        """Build JSONB containment clause for a field/value pairing."""
-        try:
-            json_payload = json.dumps({field: value})
-        except (TypeError, ValueError) as exc:  # noqa: BLE001
-            raise InvalidMetadataFilterError(
-                f"Metadata filter for field '{field}' contains a non-serializable value: {exc}"
-            ) from exc
-
-        escaped_payload = json_payload.replace("'", "''")
-        return f"(doc_metadata @> '{escaped_payload}'::jsonb)"
-
-    @staticmethod
-    def _escape_single_quotes(value: str) -> str:
-        """Escape single quotes for SQL literals."""
-        return value.replace("'", "''")
+        """Delegate metadata filtering to the shared builder (supports arrays, regex, substring operators)."""
+        return self._metadata_filter_builder.build(filters)
 
     def _build_system_metadata_filter_optimized(self, system_filters: Optional[Dict[str, Any]]) -> str:
         """Build PostgreSQL filter for system metadata using flattened columns.
@@ -1897,7 +1575,6 @@ class PostgresDatabase(BaseDatabase):
                     app_id=app_id_val,
                     end_user_id=folder_dict.get("end_user_id"),
                     rules=folder_dict.get("rules", []),
-                    workflow_ids=folder_dict.get("workflow_ids", []),
                 )
 
                 session.add(folder_model)
@@ -1931,7 +1608,6 @@ class PostgresDatabase(BaseDatabase):
                     "document_ids": folder_model.document_ids,
                     "system_metadata": folder_model.system_metadata,
                     "rules": folder_model.rules,
-                    "workflow_ids": getattr(folder_model, "workflow_ids", []),
                     "app_id": folder_model.app_id,
                     "end_user_id": folder_model.end_user_id,
                 }
@@ -1988,7 +1664,6 @@ class PostgresDatabase(BaseDatabase):
                         "document_ids": folder_row.document_ids,
                         "system_metadata": folder_row.system_metadata,
                         "rules": folder_row.rules,
-                        "workflow_ids": getattr(folder_row, "workflow_ids", []),
                         "app_id": folder_row.app_id,
                         "end_user_id": folder_row.end_user_id,
                     }
@@ -2033,7 +1708,6 @@ class PostgresDatabase(BaseDatabase):
                         "document_ids": folder_model.document_ids,
                         "system_metadata": folder_model.system_metadata,
                         "rules": folder_model.rules,
-                        "workflow_ids": getattr(folder_model, "workflow_ids", []),
                         "app_id": folder_model.app_id,
                         "end_user_id": folder_model.end_user_id,
                     }
@@ -2184,76 +1858,6 @@ class PostgresDatabase(BaseDatabase):
 
         except Exception as e:
             logger.error(f"Error removing document from folder: {e}")
-            return False
-
-    async def associate_workflow_to_folder(self, folder_id: str, workflow_id: str, auth: AuthContext) -> bool:
-        """Associate a workflow with a folder."""
-        try:
-            # First, get the folder model and check write access
-            async with self.async_session() as session:
-                folder_model = await session.get(FolderModel, folder_id)
-                if not folder_model:
-                    logger.error(f"Folder {folder_id} not found")
-                    return False
-
-                # Check if user has write access to the folder
-                if not self._check_folder_model_access(folder_model, auth):
-                    logger.error(f"User does not have write access to folder {folder_id}")
-                    return False
-
-                # Get current workflow_ids
-                workflow_ids = folder_model.workflow_ids or []
-
-                # Check if workflow is already associated
-                if workflow_id in workflow_ids:
-                    logger.info(f"Workflow {workflow_id} is already associated with folder {folder_id}")
-                    return True
-
-                # Add the workflow to the folder
-                workflow_ids.append(workflow_id)
-                folder_model.workflow_ids = workflow_ids
-
-                await session.commit()
-                logger.info(f"Associated workflow {workflow_id} with folder {folder_id}")
-                return True
-
-        except Exception as e:
-            logger.error(f"Error associating workflow with folder: {e}")
-            return False
-
-    async def disassociate_workflow_from_folder(self, folder_id: str, workflow_id: str, auth: AuthContext) -> bool:
-        """Remove a workflow from a folder."""
-        try:
-            # First, get the folder model and check write access
-            async with self.async_session() as session:
-                folder_model = await session.get(FolderModel, folder_id)
-                if not folder_model:
-                    logger.error(f"Folder {folder_id} not found")
-                    return False
-
-                # Check if user has write access to the folder
-                if not self._check_folder_model_access(folder_model, auth):
-                    logger.error(f"User does not have write access to folder {folder_id}")
-                    return False
-
-                # Get current workflow_ids
-                workflow_ids = folder_model.workflow_ids or []
-
-                # Check if workflow is associated
-                if workflow_id not in workflow_ids:
-                    logger.info(f"Workflow {workflow_id} is not associated with folder {folder_id}")
-                    return True
-
-                # Remove the workflow from the folder
-                workflow_ids.remove(workflow_id)
-                folder_model.workflow_ids = workflow_ids
-
-                await session.commit()
-                logger.info(f"Disassociated workflow {workflow_id} from folder {folder_id}")
-                return True
-
-        except Exception as e:
-            logger.error(f"Error disassociating workflow from folder: {e}")
             return False
 
     async def get_chat_history(
@@ -2635,289 +2239,6 @@ class PostgresDatabase(BaseDatabase):
 
         except Exception as e:
             logger.error(f"Error deleting model config: {str(e)}")
-            return False
-
-    async def store_workflow(self, workflow: Workflow, auth: AuthContext) -> bool:  # noqa: D401 – override
-        try:
-            wf_json = _serialize_datetime(workflow.model_dump())
-
-            # Extract scoping fields from auth context
-            owner_id = auth.entity_id if auth.entity_type else None
-            app_id = auth.app_id
-            user_id = auth.user_id
-
-            async with self.async_session() as session:
-                existing = await session.get(WorkflowModel, workflow.id)
-                if existing:
-                    existing.data = wf_json
-                    existing.owner_id = owner_id
-                    existing.app_id = app_id
-                    existing.user_id = user_id
-                    existing.updated_at = datetime.now(UTC)
-                else:
-                    session.add(
-                        WorkflowModel(id=workflow.id, data=wf_json, owner_id=owner_id, app_id=app_id, user_id=user_id)
-                    )
-                await session.commit()
-            return True
-        except Exception as exc:
-            logger.error("Error storing workflow: %s", exc)
-            return False
-
-    async def list_workflows(self, auth: AuthContext) -> List[Workflow]:
-        try:
-            async with self.async_session() as session:
-                # Build query with auth filtering
-                query = select(WorkflowModel)
-
-                # Simplified access control - consistent with other resources
-                if auth.app_id:
-                    # Filter by app_id in cloud mode
-                    query = query.where(WorkflowModel.app_id == auth.app_id)
-                elif auth.entity_id:
-                    # Filter by owner_id in dev/self-hosted mode
-                    query = query.where(WorkflowModel.owner_id == auth.entity_id)
-
-                # In cloud mode, also filter by user_id if present
-                if auth.user_id and get_settings().MODE == "cloud":
-                    query = query.where(WorkflowModel.user_id == auth.user_id)
-
-                res = await session.execute(query)
-                rows = res.scalars().all()
-                return [Workflow(**row.data) for row in rows]
-        except Exception as exc:
-            logger.error("Error listing workflows: %s", exc)
-            return []
-
-    async def get_workflow(self, workflow_id: str, auth: AuthContext) -> Optional[Workflow]:
-        try:
-            async with self.async_session() as session:
-                wf_model = await session.get(WorkflowModel, workflow_id)
-                if not wf_model:
-                    return None
-
-                # Simplified access check - consistent with other resources
-                if auth.app_id:
-                    # Check app_id in cloud mode
-                    if wf_model.app_id != auth.app_id:
-                        return None
-                elif auth.entity_id:
-                    # Check owner_id in dev/self-hosted mode
-                    if wf_model.owner_id != auth.entity_id:
-                        return None
-                else:
-                    # No access without auth
-                    return None
-
-                # In cloud mode, check user_id matches if present
-                if auth.user_id and get_settings().MODE == "cloud":
-                    if wf_model.user_id != auth.user_id:
-                        return None
-
-                return Workflow(**wf_model.data)
-        except Exception as exc:
-            logger.error("Error getting workflow: %s", exc)
-            return None
-
-    async def update_workflow(self, workflow_id: str, updates: Dict[str, Any], auth: AuthContext) -> Optional[Workflow]:
-        wf = await self.get_workflow(workflow_id, auth)
-        if not wf:
-            return None
-        wf_dict = wf.model_dump()
-        wf_dict.update(updates)
-        wf_updated = Workflow(**wf_dict)
-        await self.store_workflow(wf_updated, auth)
-        return wf_updated
-
-    async def delete_workflow(self, workflow_id: str, auth: AuthContext) -> bool:
-        try:
-            async with self.async_session() as session:
-                # Get the workflow to check permissions
-                wf_model = await session.get(WorkflowModel, workflow_id)
-                if not wf_model:
-                    return False
-
-                # Check permissions - same logic as get_workflow
-                # Simplified access check
-                if auth.app_id:
-                    if wf_model.app_id != auth.app_id:
-                        logger.warning(
-                            f"App {auth.app_id} attempted to delete workflow {workflow_id} from different app"
-                        )
-                        return False
-                elif auth.entity_id:
-                    if wf_model.owner_id != auth.entity_id:
-                        logger.warning(
-                            f"User {auth.entity_id} attempted to delete workflow {workflow_id} owned by {wf_model.owner_id}"
-                        )
-                        return False
-                else:
-                    return False
-
-                if auth.user_id and get_settings().MODE == "cloud":
-                    if wf_model.user_id != auth.user_id:
-                        return False
-
-                # First, remove workflow from all folders
-                folders_query = text(
-                    """
-                    UPDATE folders
-                    SET workflow_ids = workflow_ids - :workflow_id
-                    WHERE workflow_ids @> :workflow_id_json
-                """
-                )
-                await session.execute(
-                    folders_query, {"workflow_id": workflow_id, "workflow_id_json": json.dumps([workflow_id])}
-                )
-
-                # Delete the workflow
-                await session.delete(wf_model)
-                await session.commit()
-                logger.info(f"Deleted workflow {workflow_id} and removed from all folders")
-                return True
-        except Exception as exc:
-            logger.error("Error deleting workflow: %s", exc)
-            return False
-
-    async def store_workflow_run(self, run: WorkflowRun) -> bool:
-        try:
-            run_json = _serialize_datetime(run.model_dump())
-
-            async with self.async_session() as session:
-                # Get owner_id from the workflow
-                workflow = await session.get(WorkflowModel, run.workflow_id)
-                owner_id = workflow.owner_id if workflow else None
-
-                existing = await session.get(WorkflowRunModel, run.id)
-                if existing:
-                    existing.data = run_json
-                    existing.workflow_id = run.workflow_id
-                    existing.owner_id = owner_id
-                    existing.app_id = run.app_id
-                    existing.user_id = run.user_id
-                    existing.updated_at = datetime.now(UTC)
-                else:
-                    session.add(
-                        WorkflowRunModel(
-                            id=run.id,
-                            workflow_id=run.workflow_id,
-                            data=run_json,
-                            owner_id=owner_id,
-                            app_id=run.app_id,
-                            user_id=run.user_id,
-                        )
-                    )
-                await session.commit()
-            return True
-        except Exception as exc:
-            logger.error("Error storing workflow run: %s", exc)
-            return False
-
-    async def get_workflow_run(self, run_id: str, auth: AuthContext) -> Optional[WorkflowRun]:
-        try:
-            async with self.async_session() as session:
-                run_model = await session.get(WorkflowRunModel, run_id)
-                if not run_model:
-                    return None
-
-                # Check permissions - same logic as get_workflow
-                # Check if user owns the workflow run
-                # Simplified access check
-                if auth.app_id:
-                    if run_model.app_id != auth.app_id:
-                        return None
-                elif auth.entity_id:
-                    if run_model.owner_id != auth.entity_id:
-                        return None
-                else:
-                    return None
-
-                # In cloud mode, check user_id matches if present
-                if auth.user_id and get_settings().MODE == "cloud":
-                    if run_model.user_id != auth.user_id:
-                        return None
-
-                return WorkflowRun(**run_model.data)
-        except Exception as exc:
-            logger.error("Error getting workflow run: %s", exc)
-            return None
-
-    async def list_workflow_runs(self, workflow_id: str, auth: AuthContext) -> List[WorkflowRun]:
-        try:
-            async with self.async_session() as session:
-                # First check if the user has access to the workflow itself
-                workflow = await session.get(WorkflowModel, workflow_id)
-                if not workflow:
-                    return []
-
-                # Check workflow permissions - simplified
-                if auth.app_id:
-                    if workflow.app_id != auth.app_id:
-                        return []
-                elif auth.entity_id:
-                    if workflow.owner_id != auth.entity_id:
-                        return []
-                else:
-                    return []
-
-                if auth.user_id and get_settings().MODE == "cloud":
-                    if workflow.user_id != auth.user_id:
-                        return []
-
-                # Now get workflow runs with auth filtering
-                query = select(WorkflowRunModel).where(WorkflowRunModel.workflow_id == workflow_id)
-
-                # Simplified access control
-                if auth.app_id:
-                    query = query.where(WorkflowRunModel.app_id == auth.app_id)
-                elif auth.entity_id:
-                    query = query.where(WorkflowRunModel.owner_id == auth.entity_id)
-
-                # In cloud mode, also filter by user_id if present
-                if auth.user_id and get_settings().MODE == "cloud":
-                    query = query.where(WorkflowRunModel.user_id == auth.user_id)
-
-                res = await session.execute(query)
-                rows = res.scalars().all()
-                return [WorkflowRun(**r.data) for r in rows]
-        except Exception as exc:
-            logger.error("Error listing workflow runs: %s", exc)
-            return []
-
-    async def delete_workflow_run(self, run_id: str, auth: AuthContext) -> bool:
-        try:
-            async with self.async_session() as session:
-                run_model = await session.get(WorkflowRunModel, run_id)
-                if not run_model:
-                    return False
-
-                # Check permissions - same logic as get_workflow_run
-                # Simplified access check
-                if auth.app_id:
-                    if run_model.app_id != auth.app_id:
-                        logger.warning(
-                            f"App {auth.app_id} attempted to delete workflow run {run_id} from different app"
-                        )
-                        return False
-                elif auth.entity_id:
-                    if run_model.owner_id != auth.entity_id:
-                        logger.warning(
-                            f"User {auth.entity_id} attempted to delete workflow run {run_id} owned by {run_model.owner_id}"
-                        )
-                        return False
-                else:
-                    return False
-
-                if auth.user_id and get_settings().MODE == "cloud":
-                    if run_model.user_id != auth.user_id:
-                        return False
-
-                await session.delete(run_model)
-                await session.commit()
-                logger.info(f"Deleted workflow run {run_id}")
-                return True
-        except Exception as exc:
-            logger.error("Error deleting workflow run: %s", exc)
             return False
 
     async def search_documents_by_name(
