@@ -668,8 +668,6 @@ class FastMultiVectorStore(BaseVectorStore):
                     content=content, key=storage_key, bucket=self.chunk_bucket or ""
                 )
 
-            cache_bucket = self.chunk_bucket if self.chunk_bucket else ""
-            await self.cache.delete("chunks", cache_bucket, storage_key)
             logger.info(f"Stored chunk content externally with key: {storage_key}")
             return storage_key
 
@@ -843,7 +841,6 @@ class FastMultiVectorStore(BaseVectorStore):
                 task_meta.append(("vector", bucket, key))
 
         if not tasks:
-            await self.cache.delete_many("chunks", chunk_targets)
             await self.cache.delete_many("vectors", vector_targets)
             return
 
@@ -860,7 +857,6 @@ class FastMultiVectorStore(BaseVectorStore):
                     result,
                 )
 
-        await self.cache.delete_many("chunks", chunk_targets)
         await self.cache.delete_many("vectors", vector_targets)
 
     async def _retrieve_content_from_storage(self, storage_key: str, chunk_metadata: Optional[str]) -> str:
@@ -880,31 +876,6 @@ class FastMultiVectorStore(BaseVectorStore):
 
             logger.info(f"Downloading from bucket candidates: {bucket_options}, key: {storage_key}")
             for bucket_candidate in bucket_options:
-                cached_bytes = await self.cache.get("chunks", bucket_candidate, storage_key)
-                if cached_bytes is not None:
-                    try:
-                        logger.info(
-                            "Chunk cache hit for bucket %s, key %s (len=%d)",
-                            bucket_candidate,
-                            storage_key,
-                            len(cached_bytes),
-                        )
-                        result = self._decode_chunk_bytes(cached_bytes, storage_key, chunk_metadata)
-                        logger.info(
-                            "Returning cached chunk content for key %s (length=%d)",
-                            storage_key,
-                            len(result),
-                        )
-                        return result
-                    except Exception as cache_exc:  # noqa: BLE001
-                        logger.warning(
-                            "Cached chunk %s/%s is invalid, purging entry: %s",
-                            bucket_candidate,
-                            storage_key,
-                            cache_exc,
-                        )
-                        await self.cache.delete("chunks", bucket_candidate, storage_key)
-
                 content_bytes = await self._download_chunk_bytes(bucket_candidate, storage_key)
                 if content_bytes is None:
                     continue
@@ -915,7 +886,6 @@ class FastMultiVectorStore(BaseVectorStore):
                     storage_key,
                     len(content_bytes),
                 )
-                await self.cache.put("chunks", bucket_candidate, storage_key, content_bytes)
 
                 try:
                     result = self._decode_chunk_bytes(content_bytes, storage_key, chunk_metadata)
