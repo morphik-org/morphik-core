@@ -37,6 +37,7 @@ export interface Breadcrumb {
 export interface MorphikUIProps {
   connectionUri?: string | null; // Allow null/undefined initially
   apiBaseUrl?: string;
+  appId?: string; // App ID for tracking and limits
   isReadOnlyUri?: boolean; // Controls whether the URI can be edited
   onBackClick?: () => void; // Callback when back button is clicked
   appName?: string; // Name of the app to display in UI
@@ -109,6 +110,7 @@ export interface FolderSummary {
   description?: string;
   doc_count?: number;
   updated_at?: string;
+  document_ids?: string[];
 }
 
 export interface Folder extends FolderSummary {

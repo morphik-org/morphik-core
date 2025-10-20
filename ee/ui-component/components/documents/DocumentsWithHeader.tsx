@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { useHeader } from "@/contexts/header-context";
+import { useHeader } from "../../contexts/header-context";
 import { Button } from "@/components/ui/button";
 import { Trash2, Upload, RefreshCw, PlusCircle, ChevronsDown, ChevronsUp } from "lucide-react";
 import DocumentsSection from "./DocumentsSection";
@@ -20,7 +20,7 @@ interface DocumentsWithHeaderProps {
 }
 
 export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
-  const { setCustomBreadcrumbs, setRightContent } = useHeader();
+  const { setRightContent } = useHeader();
   const [selectedFolder, setSelectedFolder] = useState<string | null>(props.initialFolder || null);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
@@ -59,25 +59,6 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
 
   // Update header when folder changes
   useEffect(() => {
-    // Set breadcrumbs - Removed - MorphikUI handles breadcrumbs centrally
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const breadcrumbs = selectedFolder
-      ? [
-          {
-            label: "Documents",
-            onClick: (e: React.MouseEvent) => {
-              e.preventDefault();
-              setSelectedFolder(null);
-              handleFolderClick(null);
-            },
-          },
-          { label: selectedFolder === "all" ? "All Documents" : selectedFolder },
-        ]
-      : [{ label: "Documents" }];
-
-    // Disabled - MorphikUI handles breadcrumbs with organization context
-    // setCustomBreadcrumbs(breadcrumbs);
-
     // Set right content based on current view
     const rightContent = selectedFolder ? (
       // Folder view controls
@@ -138,19 +119,10 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
 
     // Cleanup on unmount
     return () => {
-      // Disabled - MorphikUI handles breadcrumbs with organization context
-      // setCustomBreadcrumbs(null);
+      // Breadcrumbs are handled centrally by MorphikUI
       setRightContent(null);
     };
-  }, [
-    selectedFolder,
-    allFoldersExpanded,
-    handleFolderClick,
-    handleRefresh,
-    handleDeleteMultiple,
-    setCustomBreadcrumbs,
-    setRightContent,
-  ]);
+  }, [selectedFolder, allFoldersExpanded, handleRefresh, handleDeleteMultiple, setRightContent]);
 
   return (
     <DocumentsSection

@@ -3,7 +3,6 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Filter } from "lucide-react";
-import Image from "next/image";
 
 interface EmptyDocumentsProps {
   onClearFilters?: () => void;
@@ -74,27 +73,3 @@ export const LoadingDocuments: React.FC<LoadingDocumentsProps> = ({ message = "L
     </div>
   </div>
 );
-
-interface EmptyFoldersProps {
-  loading: boolean;
-}
-
-export const EmptyFolders: React.FC<EmptyFoldersProps> = ({ loading }) => {
-  if (loading) {
-    return (
-      <div className="mt-4 flex items-center justify-center p-8">
-        <div className="flex items-center space-x-2">
-          <div className="h-5 w-5 animate-spin rounded-full border-b-2 border-primary"></div>
-          <p className="text-sm text-muted-foreground">Loading folders...</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="mt-4 flex flex-col items-center justify-center p-8">
-      <Image src="/icons/folder-icon.png" alt="Folder" width={80} height={80} className="mb-3 opacity-50" />
-      <p className="text-sm text-muted-foreground">No folders yet. Create one to organize your documents.</p>
-    </div>
-  );
-};

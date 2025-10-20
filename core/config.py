@@ -117,12 +117,9 @@ class Settings(BaseSettings):
     STORAGE_PATH: Optional[str] = None
     AWS_REGION: Optional[str] = None
     S3_BUCKET: Optional[str] = None
-    MULTIVECTOR_CHUNK_STORAGE_PROVIDER: Optional[Literal["local", "aws-s3"]] = None
-    MULTIVECTOR_CHUNK_STORAGE_PATH: Optional[str] = None
-    MULTIVECTOR_CHUNK_S3_BUCKET: Optional[str] = None
-    MULTIVECTOR_VECTOR_STORAGE_PROVIDER: Optional[Literal["local", "aws-s3"]] = None
-    MULTIVECTOR_VECTOR_STORAGE_PATH: Optional[str] = None
-    MULTIVECTOR_VECTOR_S3_BUCKET: Optional[str] = None
+    CACHE_ENABLED: bool = False
+    CACHE_MAX_BYTES: int = 10 * 1024 * 1024 * 1024
+    CACHE_PATH: str = "./storage/cache"
 
     # Vector store configuration
     VECTOR_STORE_PROVIDER: Literal["pgvector"]
@@ -323,18 +320,21 @@ def get_settings() -> Settings:
         case _:
             raise ValueError(f"Unknown storage provider selected: '{settings_dict['STORAGE_PROVIDER']}'")
 
-    # Optional overrides for chunk/vector storage
-    chunk_override = config["storage"].get("chunks", {})
-    if chunk_override:
-        settings_dict["MULTIVECTOR_CHUNK_STORAGE_PROVIDER"] = chunk_override.get("provider")
-        settings_dict["MULTIVECTOR_CHUNK_STORAGE_PATH"] = chunk_override.get("storage_path")
-        settings_dict["MULTIVECTOR_CHUNK_S3_BUCKET"] = chunk_override.get("bucket_name")
-
-    vector_override = config["storage"].get("vectors", {})
-    if vector_override:
-        settings_dict["MULTIVECTOR_VECTOR_STORAGE_PROVIDER"] = vector_override.get("provider")
-        settings_dict["MULTIVECTOR_VECTOR_STORAGE_PATH"] = vector_override.get("storage_path")
-        settings_dict["MULTIVECTOR_VECTOR_S3_BUCKET"] = vector_override.get("bucket_name")
+    cache_base = config["storage"].get("storage_path") or "./storage"
+    cache_enabled = config["storage"].get("cache_enabled", False)
+    settings_dict["CACHE_ENABLED"] = bool(cache_enabled)
+    cache_path_override = config["storage"].get("cache_path")
+    settings_dict["CACHE_PATH"] = cache_path_override or os.path.join(cache_base, "cache")
+    max_size_gb = (
+        config["storage"].get("cache_max_size_gb")
+        if "cache_max_size_gb" in config["storage"]
+        else config["storage"].get("max_size_gb", 10)
+    )
+    try:
+        cache_bytes = int(float(max_size_gb) * 1024 * 1024 * 1024)
+    except (TypeError, ValueError):
+        cache_bytes = 10 * 1024 * 1024 * 1024
+    settings_dict["CACHE_MAX_BYTES"] = max(cache_bytes, 0)
 
     # Load vector store config
     settings_dict["VECTOR_STORE_PROVIDER"] = config["vector_store"]["provider"]

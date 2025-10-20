@@ -25,7 +25,7 @@ import { showAlert } from "@/components/ui/alert-system";
 import Image from "next/image";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 
-import { Document, FolderSummary, ProcessingProgress } from "@/components/types";
+import { Document, FolderSummary, ProcessingProgress } from "../types";
 
 interface DocumentDetailProps {
   selectedDocument: Document | null;

@@ -1,14 +1,13 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
-// import { useDebounce } from "@/lib/hooks/useDebounce"; // Commented for future use
-import { Upload, Search } from "lucide-react";
+// import { useDebounce } from '../../lib/hooks/useDebounce'; // Commented for future use
+import { Upload, Search, ArrowLeft } from "lucide-react";
 import { showAlert, removeAlert } from "@/components/ui/alert-system";
 import DocumentList from "./DocumentList";
 import DocumentDetail from "./DocumentDetail";
-import FolderList from "./FolderList";
 import { UploadDialog, useUploadDialog } from "./UploadDialog";
-import { cn } from "@/lib/utils";
+import { cn } from "../../lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,11 +22,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
-import { useFolders, clearFoldersCache } from "@/hooks/useFolders";
-import { useDocuments, clearDocumentsCache } from "@/hooks/useDocuments";
-import { useUnorganizedDocuments, clearUnorganizedDocumentsCache } from "@/hooks/useUnorganizedDocuments";
+import { useFolders, clearFoldersCache } from "../../hooks/useFolders";
+import { useDocuments, clearDocumentsCache } from "../../hooks/useDocuments";
+import { useUnorganizedDocuments, clearUnorganizedDocumentsCache } from "../../hooks/useUnorganizedDocuments";
 
-import { Document, FolderSummary } from "@/components/types";
+import { Document, FolderSummary } from "../types";
 
 // Custom hook for drag and drop functionality
 function useDragAndDrop({ onDrop, disabled = false }: { onDrop: (files: File[]) => void; disabled?: boolean }) {
@@ -113,7 +112,7 @@ interface DocumentsSectionProps {
 }
 
 // Helper to generate temporary IDs for optimistic updates
-const generateTempId = () => `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+const generateTempId = () => `uploading-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
 const DocumentsSection = React.forwardRef<
   {
@@ -167,6 +166,11 @@ const DocumentsSection = React.forwardRef<
     // Search state for folder view (when selectedFolder !== null)
     const [folderSearchQuery, setFolderSearchQuery] = useState("");
 
+    // Reset folder search whenever the selected folder changes
+    useEffect(() => {
+      setFolderSearchQuery("");
+    }, [selectedFolder]);
+
     // Use cached hooks for folders and documents
     const {
       folders,
@@ -180,32 +184,89 @@ const DocumentsSection = React.forwardRef<
     const {
       documents,
       loading: documentsLoading,
+      loadingMore: documentsLoadingMore,
       refresh: refreshDocuments,
+      goToPage: goToDocumentsPage,
+      setPageSize: setDocumentsPageSize,
+      pageInfo: documentsPageInfo,
       addOptimisticDocument,
       updateOptimisticDocument,
-      removeOptimisticDocument,
     } = useDocuments({
       apiBaseUrl: effectiveApiUrl,
       authToken,
       selectedFolder,
       folders,
+      pageSize: 100,
+      fields: [
+        "external_id",
+        "filename",
+        "content_type",
+        "metadata",
+        "additional_metadata",
+        "system_metadata",
+        "folder_name",
+      ],
+      includeTotalCount: true,
     });
 
-    // Use hook for unorganized documents (only when at root level)
     const {
       unorganizedDocuments,
-      loading: unorganizedLoading,
+      loading: unorganizedDocumentsLoading,
       refresh: refreshUnorganizedDocuments,
     } = useUnorganizedDocuments({
       apiBaseUrl: effectiveApiUrl,
       authToken,
-      enabled: selectedFolder === null, // Only fetch when at root level
+      enabled: selectedFolder === null,
     });
 
-    const loading = documentsLoading || unorganizedLoading;
+    const loading = documentsLoading || documentsLoadingMore || unorganizedDocumentsLoading;
+    const unorganizedCacheKey = `${effectiveApiUrl}-${authToken ?? "anon"}-unorganized`;
+
+    const documentsPagination = useMemo(() => {
+      return {
+        skip: documentsPageInfo.skip,
+        limit: documentsPageInfo.limit,
+        returnedCount: documentsPageInfo.returnedCount,
+        totalCount: documentsPageInfo.totalCount,
+        hasMore: documentsPageInfo.hasMore,
+        nextSkip: documentsPageInfo.nextSkip,
+        onPageChange: (nextSkip: number) => goToDocumentsPage(nextSkip),
+        onPageSizeChange: (nextLimit: number) => setDocumentsPageSize(nextLimit),
+        pageSizeOptions: [25, 50, 100, 250],
+        loading: documentsLoadingMore,
+      };
+    }, [documentsLoadingMore, documentsPageInfo, goToDocumentsPage, setDocumentsPageSize]);
 
     // Search state for root level
     const [searchQuery, setSearchQuery] = useState("");
+
+    const resolveDocumentFolderName = useCallback((doc: Document) => {
+      const direct = typeof doc.folder_name === "string" ? doc.folder_name.trim() : "";
+      if (direct) {
+        return direct;
+      }
+
+      const systemMetadata = (doc.system_metadata ?? {}) as Record<string, unknown>;
+      const metaFolder =
+        typeof systemMetadata.folder_name === "string" ? (systemMetadata.folder_name as string).trim() : "";
+
+      return metaFolder;
+    }, []);
+
+    const optimisticUnorganizedDocuments = useMemo(() => {
+      if (selectedFolder !== null) {
+        return [];
+      }
+
+      const existingIds = new Set(unorganizedDocuments.map(doc => doc.external_id));
+
+      return documents.filter(doc => {
+        const folderName = resolveDocumentFolderName(doc);
+        const isUnorganized = folderName === "";
+        const alreadyPresent = existingIds.has(doc.external_id);
+        return isUnorganized && !alreadyPresent;
+      });
+    }, [selectedFolder, unorganizedDocuments, documents, resolveDocumentFolderName]);
 
     // Create combined list of documents and folders for root level display
     const combinedRootItems = useMemo(() => {
@@ -229,13 +290,28 @@ const DocumentsSection = React.forwardRef<
         });
       });
 
-      // Add unorganized documents last
-      unorganizedDocuments.forEach(doc => {
-        items.push({ ...doc, itemType: "document" });
-      });
+      if (selectedFolder === null) {
+        const seenDocumentIds = new Set<string>();
+
+        // Add unorganized documents from the API first
+        unorganizedDocuments.forEach(doc => {
+          if (!seenDocumentIds.has(doc.external_id)) {
+            items.push({ ...doc, itemType: "document" });
+            seenDocumentIds.add(doc.external_id);
+          }
+        });
+
+        // Append optimistic unorganized documents so they appear immediately
+        optimisticUnorganizedDocuments.forEach(doc => {
+          if (!seenDocumentIds.has(doc.external_id)) {
+            items.push({ ...doc, itemType: "document" });
+            seenDocumentIds.add(doc.external_id);
+          }
+        });
+      }
 
       return items;
-    }, [unorganizedDocuments, folders]);
+    }, [unorganizedDocuments, optimisticUnorganizedDocuments, folders, selectedFolder]);
 
     // Filter combined items based on search query
     const filteredRootItems = useMemo(() => {
@@ -248,6 +324,63 @@ const DocumentsSection = React.forwardRef<
         return (item.filename || item.external_id).toLowerCase().includes(query);
       });
     }, [combinedRootItems, searchQuery]);
+
+    const [rootSkip, setRootSkip] = useState(0);
+    const [rootPageSize, setRootPageSize] = useState(100);
+
+    useEffect(() => {
+      setRootSkip(0);
+    }, [searchQuery]);
+
+    useEffect(() => {
+      setRootSkip(prev => {
+        if (filteredRootItems.length === 0) {
+          return 0;
+        }
+
+        const maxValidStart = Math.max(filteredRootItems.length - rootPageSize, 0);
+        const clamped = Math.min(prev, maxValidStart);
+        const aligned = Math.floor(clamped / rootPageSize) * rootPageSize;
+
+        return aligned;
+      });
+    }, [filteredRootItems.length, rootPageSize]);
+
+    const pagedRootItems = useMemo(
+      () => filteredRootItems.slice(rootSkip, rootSkip + rootPageSize),
+      [filteredRootItems, rootSkip, rootPageSize]
+    );
+
+    const rootPagination = useMemo(() => {
+      const totalCount = filteredRootItems.length;
+      const returnedCount = pagedRootItems.length;
+      const hasMore = returnedCount > 0 && rootSkip + returnedCount < totalCount;
+      const nextSkip = hasMore ? rootSkip + returnedCount : null;
+
+      return {
+        skip: rootSkip,
+        limit: rootPageSize,
+        returnedCount,
+        totalCount,
+        hasMore,
+        nextSkip,
+        onPageChange: (next: number) => {
+          const clampedNext = Math.max(0, Math.min(next, Math.max(totalCount - 1, 0)));
+          const alignedNext = Math.floor(clampedNext / rootPageSize) * rootPageSize;
+          setRootSkip(alignedNext);
+        },
+        onPageSizeChange: (nextLimit: number) => {
+          if (!Number.isFinite(nextLimit) || nextLimit <= 0) {
+            return;
+          }
+          const normalized = Math.max(1, Math.floor(nextLimit));
+          setRootPageSize(normalized);
+          setRootSkip(0);
+        },
+        pageSizeOptions: [25, 50, 100, 250],
+        loading,
+      };
+    }, [filteredRootItems.length, pagedRootItems, rootPageSize, rootSkip, loading]);
 
     // State for delete confirmation modal
     const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -552,7 +685,7 @@ const DocumentsSection = React.forwardRef<
         // Clear caches and refresh data
         clearFoldersCache(effectiveApiUrl);
         clearDocumentsCache();
-        clearUnorganizedDocumentsCache();
+        clearUnorganizedDocumentsCache(unorganizedCacheKey);
         await refreshFolders();
         await refreshDocuments();
         await refreshUnorganizedDocuments();
@@ -659,10 +792,8 @@ const DocumentsSection = React.forwardRef<
         // Clear caches and refresh data
         clearFoldersCache(effectiveApiUrl);
         clearDocumentsCache();
-        clearUnorganizedDocumentsCache();
-        await refreshFolders();
-        await refreshDocuments();
-        await refreshUnorganizedDocuments();
+        clearUnorganizedDocumentsCache(unorganizedCacheKey);
+        await Promise.all([refreshFolders(), refreshDocuments(), refreshUnorganizedDocuments()]);
 
         // Remove progress alert
         removeAlert(alertId);
@@ -729,21 +860,6 @@ const DocumentsSection = React.forwardRef<
       });
     }, []);
 
-    // Helper function to get "indeterminate" state for select all checkbox
-    const getSelectAllState = useCallback(() => {
-      if (selectedDocuments.length === 0) return false;
-
-      // When in folder view, use documents directly
-      if (selectedFolder !== null) {
-        if (selectedDocuments.length === documents.length) return true;
-        return "indeterminate";
-      }
-
-      // When at root level, count all items
-      if (selectedDocuments.length === combinedRootItems.length) return true;
-      return "indeterminate";
-    }, [selectedDocuments.length, documents.length, selectedFolder, combinedRootItems]);
-
     // Handle file upload
     const handleFileUpload = async (
       file: File | null,
@@ -771,6 +887,7 @@ const DocumentsSection = React.forwardRef<
         filename: file.name,
         content_type: file.type || "application/octet-stream",
         metadata: {},
+        folder_name: selectedFolder && selectedFolder !== "all" ? selectedFolder : undefined,
         system_metadata: {
           status: "uploading",
           folder_name: selectedFolder && selectedFolder !== "all" ? selectedFolder : undefined,
@@ -833,8 +950,33 @@ const DocumentsSection = React.forwardRef<
             return response.json();
           })
           .then(newDocument => {
-            // Remove the temporary optimistic document
-            removeOptimisticDocument(tempId);
+            // Replace the optimistic placeholder with the real document metadata while it finishes processing
+            const normalizedDocument: Document = {
+              ...optimisticDoc,
+              ...newDocument,
+              external_id: newDocument.external_id ?? optimisticDoc.external_id,
+              folder_name: newDocument.folder_name ?? optimisticDoc.folder_name,
+              system_metadata: {
+                ...(optimisticDoc.system_metadata ?? {}),
+                ...(newDocument.system_metadata ?? {}),
+                status: newDocument.system_metadata?.status ?? optimisticDoc.system_metadata?.status ?? "processing",
+                folder_name:
+                  newDocument.system_metadata?.folder_name ??
+                  newDocument.folder_name ??
+                  optimisticDoc.system_metadata?.folder_name ??
+                  optimisticDoc.folder_name,
+              },
+              metadata: {
+                ...(optimisticDoc.metadata ?? {}),
+                ...(newDocument.metadata ?? {}),
+              },
+              additional_metadata: {
+                ...(optimisticDoc.additional_metadata ?? {}),
+                ...(newDocument.additional_metadata ?? {}),
+              },
+            };
+
+            updateOptimisticDocument(tempId, normalizedDocument);
 
             // Invoke callback on success
             console.log(
@@ -854,8 +996,8 @@ const DocumentsSection = React.forwardRef<
                 // Clear caches and refresh data
                 clearFoldersCache(effectiveApiUrl);
                 clearDocumentsCache();
-                await refreshFolders();
-                await refreshDocuments();
+                clearUnorganizedDocumentsCache(unorganizedCacheKey);
+                await Promise.all([refreshFolders(), refreshDocuments(), refreshUnorganizedDocuments()]);
               } catch (err) {
                 console.error("Error refreshing after file upload:", err);
               }
@@ -940,16 +1082,15 @@ const DocumentsSection = React.forwardRef<
       }
 
       // Add optimistic documents for each file
-      const tempIdMap = new Map<string, string>(); // Map temp ID to filename
+      const tempIdMap = new Map<string, Document>(); // Map temp ID to optimistic document
       files.forEach(file => {
         const tempId = generateTempId();
-        tempIdMap.set(tempId, file.name);
-
         const optimisticDoc: Document = {
           external_id: tempId,
           filename: file.name,
           content_type: file.type || "application/octet-stream",
           metadata: {},
+          folder_name: selectedFolder && selectedFolder !== "all" ? selectedFolder : undefined,
           system_metadata: {
             status: "uploading",
             folder_name: selectedFolder && selectedFolder !== "all" ? selectedFolder : undefined,
@@ -958,6 +1099,7 @@ const DocumentsSection = React.forwardRef<
         };
 
         addOptimisticDocument(optimisticDoc);
+        tempIdMap.set(tempId, optimisticDoc);
       });
 
       // Save form data locally - use passed parameters or fall back to hook values
@@ -1012,9 +1154,45 @@ const DocumentsSection = React.forwardRef<
             return response.json();
           })
           .then(result => {
-            // Remove all temporary optimistic documents
-            tempIdMap.forEach((filename, tempId) => {
-              removeOptimisticDocument(tempId);
+            const returnedDocuments: Document[] = Array.isArray(result?.documents) ? [...result.documents] : [];
+
+            // Update each optimistic document with the real metadata so progress stays visible
+            tempIdMap.forEach((optimisticDoc, tempId) => {
+              const backendDoc = returnedDocuments.shift();
+              if (!backendDoc) {
+                return;
+              }
+
+              const normalizedDocument: Document = {
+                ...optimisticDoc,
+                ...backendDoc,
+                external_id: backendDoc.external_id ?? optimisticDoc.external_id,
+                folder_name:
+                  backendDoc.folder_name ??
+                  optimisticDoc.folder_name ??
+                  (selectedFolder && selectedFolder !== "all" ? selectedFolder : undefined),
+                system_metadata: {
+                  ...(optimisticDoc.system_metadata ?? {}),
+                  ...(backendDoc.system_metadata ?? {}),
+                  status: backendDoc.system_metadata?.status ?? "processing",
+                  folder_name:
+                    backendDoc.system_metadata?.folder_name ??
+                    backendDoc.folder_name ??
+                    optimisticDoc.system_metadata?.folder_name ??
+                    optimisticDoc.folder_name ??
+                    (selectedFolder && selectedFolder !== "all" ? selectedFolder : undefined),
+                },
+                metadata: {
+                  ...(optimisticDoc.metadata ?? {}),
+                  ...(backendDoc.metadata ?? {}),
+                },
+                additional_metadata: {
+                  ...(optimisticDoc.additional_metadata ?? {}),
+                  ...(backendDoc.additional_metadata ?? {}),
+                },
+              };
+
+              updateOptimisticDocument(tempId, normalizedDocument);
             });
 
             // Invoke callback on success
@@ -1035,8 +1213,8 @@ const DocumentsSection = React.forwardRef<
                 // Clear caches and refresh data
                 clearFoldersCache(effectiveApiUrl);
                 clearDocumentsCache();
-                await refreshFolders();
-                await refreshDocuments();
+                clearUnorganizedDocumentsCache(unorganizedCacheKey);
+                await Promise.all([refreshFolders(), refreshDocuments(), refreshUnorganizedDocuments()]);
               } catch (err) {
                 console.error("Error refreshing after batch upload:", err);
               }
@@ -1069,12 +1247,15 @@ const DocumentsSection = React.forwardRef<
             const errorMsg = `Error uploading files: ${errorMessage}`;
 
             // Update all optimistic documents to show failed status
-            tempIdMap.forEach((filename, tempId) => {
+            tempIdMap.forEach((optimisticDoc, tempId) => {
               updateOptimisticDocument(tempId, {
                 system_metadata: {
                   status: "failed",
                   error: errorMessage,
-                  folder_name: selectedFolder && selectedFolder !== "all" ? selectedFolder : undefined,
+                  folder_name:
+                    selectedFolder && selectedFolder !== "all"
+                      ? selectedFolder
+                      : (optimisticDoc.folder_name ?? optimisticDoc.system_metadata?.folder_name),
                 },
               });
             });
@@ -1091,12 +1272,15 @@ const DocumentsSection = React.forwardRef<
         const errorMsg = `Error uploading files: ${errorMessage}`;
 
         // Update all optimistic documents to show failed status
-        tempIdMap.forEach((filename, tempId) => {
+        tempIdMap.forEach((optimisticDoc, tempId) => {
           updateOptimisticDocument(tempId, {
             system_metadata: {
               status: "failed",
               error: errorMessage,
-              folder_name: selectedFolder && selectedFolder !== "all" ? selectedFolder : undefined,
+              folder_name:
+                selectedFolder && selectedFolder !== "all"
+                  ? selectedFolder
+                  : (optimisticDoc.folder_name ?? optimisticDoc.system_metadata?.folder_name),
             },
           });
         });
@@ -1131,8 +1315,8 @@ const DocumentsSection = React.forwardRef<
 
       // Save content before resetting
       const textContentRef = text;
-      let metadataObj = {};
-      let folderToUse = null;
+      let metadataObj: Record<string, unknown> = {};
+      let folderToUse: string | null = null;
 
       try {
         metadataObj = JSON.parse(meta || "{}");
@@ -1147,6 +1331,28 @@ const DocumentsSection = React.forwardRef<
       } catch (e) {
         console.error("Error parsing metadata JSON:", e);
       }
+
+      const tempId = generateTempId();
+      const metadataTitle =
+        typeof metadataObj["title"] === "string" && metadataObj["title"].toString().trim().length > 0
+          ? metadataObj["title"].toString().trim()
+          : null;
+      const optimisticFilename = metadataTitle || `Text upload ${new Date().toISOString()}`;
+
+      const optimisticTextDoc: Document = {
+        external_id: tempId,
+        filename: optimisticFilename,
+        content_type: "text/plain",
+        metadata: metadataObj,
+        system_metadata: {
+          status: "uploading",
+          folder_name: folderToUse ?? undefined,
+        },
+        additional_metadata: {},
+        folder_name: folderToUse ?? undefined,
+      };
+
+      addOptimisticDocument(optimisticTextDoc);
 
       const rulesRef = rulesText;
       const useColpaliRef = useColpaliFlag;
@@ -1188,6 +1394,34 @@ const DocumentsSection = React.forwardRef<
               // No longer need to track processing documents for polling
             }
 
+            const normalizedDocument: Document = {
+              ...optimisticTextDoc,
+              ...newDocument,
+              external_id: newDocument.external_id ?? optimisticTextDoc.external_id,
+              folder_name: newDocument.folder_name ?? optimisticTextDoc.folder_name,
+              system_metadata: {
+                ...(optimisticTextDoc.system_metadata ?? {}),
+                ...(newDocument.system_metadata ?? {}),
+                status:
+                  newDocument.system_metadata?.status ?? optimisticTextDoc.system_metadata?.status ?? "processing",
+                folder_name:
+                  newDocument.system_metadata?.folder_name ??
+                  newDocument.folder_name ??
+                  optimisticTextDoc.system_metadata?.folder_name ??
+                  optimisticTextDoc.folder_name,
+              },
+              metadata: {
+                ...(optimisticTextDoc.metadata ?? {}),
+                ...(newDocument.metadata ?? {}),
+              },
+              additional_metadata: {
+                ...(optimisticTextDoc.additional_metadata ?? {}),
+                ...(newDocument.additional_metadata ?? {}),
+              },
+            };
+
+            updateOptimisticDocument(tempId, normalizedDocument);
+
             // Force a fresh refresh after upload
             const refreshAfterUpload = async () => {
               try {
@@ -1195,8 +1429,8 @@ const DocumentsSection = React.forwardRef<
                 // Clear caches and refresh data
                 clearFoldersCache(effectiveApiUrl);
                 clearDocumentsCache();
-                await refreshFolders();
-                await refreshDocuments();
+                clearUnorganizedDocumentsCache(unorganizedCacheKey);
+                await Promise.all([refreshFolders(), refreshDocuments(), refreshUnorganizedDocuments()]);
               } catch (err) {
                 console.error("Error refreshing after text upload:", err);
               }
@@ -1227,6 +1461,14 @@ const DocumentsSection = React.forwardRef<
               duration: 5000,
             });
 
+            updateOptimisticDocument(tempId, {
+              system_metadata: {
+                ...optimisticTextDoc.system_metadata,
+                status: "failed",
+                error: errorMessage,
+              },
+            });
+
             // Remove the upload alert
             removeAlert("text-upload-progress");
           });
@@ -1239,6 +1481,14 @@ const DocumentsSection = React.forwardRef<
           type: "error",
           title: "Upload Failed",
           duration: 5000,
+        });
+
+        updateOptimisticDocument(tempId, {
+          system_metadata: {
+            ...optimisticTextDoc.system_metadata,
+            status: "failed",
+            error: errorMessage,
+          },
         });
 
         // Remove the upload progress alert
@@ -1255,7 +1505,7 @@ const DocumentsSection = React.forwardRef<
         // Clear caches and refresh both folders and documents
         clearFoldersCache(effectiveApiUrl);
         clearDocumentsCache();
-        clearUnorganizedDocumentsCache();
+        clearUnorganizedDocumentsCache(unorganizedCacheKey);
 
         await Promise.all([refreshFolders(), refreshDocuments(), refreshUnorganizedDocuments()]);
 
@@ -1270,7 +1520,14 @@ const DocumentsSection = React.forwardRef<
           duration: 3000,
         });
       }
-    }, [onRefresh, effectiveApiUrl, refreshFolders, refreshDocuments, refreshUnorganizedDocuments]);
+    }, [
+      onRefresh,
+      effectiveApiUrl,
+      unorganizedCacheKey,
+      refreshFolders,
+      refreshDocuments,
+      refreshUnorganizedDocuments,
+    ]);
 
     // Debounced version of refresh for rapid refresh calls (kept for future use)
     // const handleDebouncedRefresh = useDebounce(handleRefresh, 500);
@@ -1287,7 +1544,7 @@ const DocumentsSection = React.forwardRef<
 
     // Custom click handler for root level items
     const handleRootItemClick = useCallback(
-      (item: Document & { itemType?: "document" | "folder" | "all" }) => {
+      (item: Document & { itemType?: "document" | "folder" }) => {
         if (item.itemType === "document") {
           // Handle document click
           handleDocumentClick(item);
@@ -1295,9 +1552,6 @@ const DocumentsSection = React.forwardRef<
           // Handle folder click
           const folderName = item.filename || "";
           handleFolderSelect(folderName);
-        } else if (item.itemType === "all") {
-          // Handle "All Documents" click
-          handleFolderSelect("all");
         }
       },
       [handleDocumentClick, handleFolderSelect]
@@ -1340,9 +1594,8 @@ const DocumentsSection = React.forwardRef<
         // Refresh folder list
         clearFoldersCache(effectiveApiUrl);
         clearDocumentsCache();
-        clearUnorganizedDocumentsCache();
-        await refreshFolders();
-        await refreshUnorganizedDocuments();
+        clearUnorganizedDocumentsCache(unorganizedCacheKey);
+        await Promise.all([refreshFolders(), refreshDocuments(), refreshUnorganizedDocuments()]);
 
         // Invoke callback
         console.log(`handleCreateFolder: Calling onFolderCreate with '${folderData.name}'`);
@@ -1382,50 +1635,6 @@ const DocumentsSection = React.forwardRef<
           </div>
         )}
         {/* Folder view controls - only show when not in a specific folder */}
-        {/* No longer needed - controls will be provided in FolderList */}
-
-        {/* Render the FolderList with header at all times when selectedFolder is not null */}
-        {selectedFolder !== null && (
-          <>
-            <FolderList
-              folders={folders}
-              selectedFolder={selectedFolder}
-              setSelectedFolder={handleFolderSelect}
-              apiBaseUrl={effectiveApiUrl}
-              authToken={authToken}
-              refreshFolders={refreshFolders}
-              loading={foldersLoading}
-              refreshAction={handleRefresh}
-              selectedDocuments={selectedDocuments}
-              handleDeleteMultipleDocuments={handleDeleteMultipleDocuments}
-              uploadDialogComponent={
-                <UploadDialog
-                  showUploadDialog={showUploadDialog}
-                  setShowUploadDialog={setShowUploadDialog}
-                  loading={loading}
-                  onFileUpload={handleFileUpload}
-                  onBatchFileUpload={handleBatchFileUpload}
-                  onTextUpload={handleTextUpload}
-                />
-              }
-              onFolderCreate={onFolderCreate}
-            />
-
-            {/* Separate Search Bar for Folder View */}
-            <div className="mb-4 bg-background">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search documents..."
-                  value={folderSearchQuery}
-                  onChange={e => setFolderSearchQuery(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-            </div>
-          </>
-        )}
-
         {/* Delete Confirmation Modal */}
         <DeleteConfirmationModal
           isOpen={showDeleteModal}
@@ -1441,6 +1650,34 @@ const DocumentsSection = React.forwardRef<
           itemCount={itemsToDeleteCount > 0 ? itemsToDeleteCount : undefined}
           loading={loading}
         />
+
+        {selectedFolder !== null && (
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleFolderSelect(null)}
+              className="flex items-center gap-2 px-0 text-sm font-medium"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to Documents
+            </Button>
+            <span className="text-sm font-semibold text-foreground">
+              {selectedFolder === "all" ? "All Documents" : selectedFolder}
+            </span>
+            <div className="min-w-[200px] flex-1 md:ml-auto md:max-w-md">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search documents in this folder..."
+                  value={folderSearchQuery}
+                  onChange={e => setFolderSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Root Level List View (selectedFolder is null) */}
         {selectedFolder === null ? (
@@ -1497,14 +1734,12 @@ const DocumentsSection = React.forwardRef<
                     )}
 
                     <DocumentList
-                      documents={filteredRootItems}
+                      documents={pagedRootItems}
                       selectedDocument={selectedDocument}
                       selectedDocuments={selectedDocuments}
                       handleDocumentClick={handleRootItemClick}
                       handleCheckboxChange={handleCheckboxChange}
-                      getSelectAllState={getSelectAllState}
                       setSelectedDocuments={setSelectedDocuments}
-                      setDocuments={() => {}} // Not needed for root level
                       loading={loading || foldersLoading}
                       apiBaseUrl={effectiveApiUrl}
                       authToken={authToken}
@@ -1519,6 +1754,7 @@ const DocumentsSection = React.forwardRef<
                       externalSearchQuery={searchQuery} // Pass the external search query
                       onSearchChange={setSearchQuery} // Handle search changes
                       allFoldersExpanded={allFoldersExpanded}
+                      pagination={rootPagination}
                     />
                   </div>
                 )}
@@ -1533,7 +1769,7 @@ const DocumentsSection = React.forwardRef<
                     folders={folders}
                     apiBaseUrl={effectiveApiUrl}
                     authToken={authToken}
-                    refreshDocuments={refreshUnorganizedDocuments}
+                    refreshDocuments={refreshDocuments}
                     refreshFolders={refreshFolders}
                     loading={loading}
                     onClose={() => setSelectedDocument(null)}
@@ -1592,9 +1828,7 @@ const DocumentsSection = React.forwardRef<
                     selectedDocuments={selectedDocuments}
                     handleDocumentClick={handleDocumentClick}
                     handleCheckboxChange={handleCheckboxChange}
-                    getSelectAllState={getSelectAllState}
                     setSelectedDocuments={setSelectedDocuments}
-                    setDocuments={() => {}}
                     loading={loading}
                     apiBaseUrl={effectiveApiUrl}
                     authToken={authToken}
@@ -1608,6 +1842,7 @@ const DocumentsSection = React.forwardRef<
                     hideSearchBar={true} // Hide the search bar inside DocumentList
                     externalSearchQuery={folderSearchQuery} // Pass the external search query
                     onSearchChange={setFolderSearchQuery} // Handle search changes
+                    pagination={documentsPagination}
                   />
                 </div>
               )}

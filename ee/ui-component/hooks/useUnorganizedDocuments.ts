@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Document } from "@/components/types";
+import { Document } from "../components/types";
 
 // Global cache for unorganized documents
 const unorganizedDocumentsCache = new Map<string, { documents: Document[]; timestamp: number }>();
@@ -43,7 +43,7 @@ export function useUnorganizedDocuments({
         return;
       }
 
-      const cacheKey = `${apiBaseUrl}-unorganized`;
+      const cacheKey = `${apiBaseUrl}-${authToken ?? "anon"}-unorganized`;
       const cached = unorganizedDocumentsCache.get(cacheKey);
 
       // Check if we have valid cached data
@@ -56,24 +56,76 @@ export function useUnorganizedDocuments({
         setLoading(true);
         setError(null);
 
-        // Fetch all documents first
-        const response = await fetch(`${apiBaseUrl}/documents`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-          },
-          body: JSON.stringify({}),
-        });
+        const PAGE_SIZE = 500;
+        const aggregated: Document[] = [];
+        const seenSkips = new Set<number>();
+        let skip = 0;
+        let hasMore = true;
 
-        if (!response.ok) {
-          throw new Error(`Failed to fetch documents: ${response.statusText}`);
+        while (hasMore) {
+          if (seenSkips.has(skip)) {
+            console.warn("Detected repeated skip value when fetching unorganized documents, stopping pagination.", {
+              skip,
+            });
+            break;
+          }
+
+          seenSkips.add(skip);
+
+          const response = await fetch(`${apiBaseUrl}/documents/list_docs?folder_name=null`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+            },
+            body: JSON.stringify({
+              skip,
+              limit: PAGE_SIZE,
+              return_documents: true,
+              include_total_count: false,
+              include_status_counts: false,
+              include_folder_counts: false,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`Failed to fetch documents: ${response.status} ${response.statusText}`);
+          }
+
+          const result = await response.json();
+          const rawDocuments: Document[] = Array.isArray(result?.documents) ? result.documents : [];
+          const normalizedDocuments = rawDocuments.map(doc => {
+            const normalized: Document = {
+              ...doc,
+              metadata: doc.metadata ?? {},
+              additional_metadata: doc.additional_metadata ?? {},
+              system_metadata: { ...(doc.system_metadata ?? {}) },
+            };
+            if (!normalized.system_metadata.status) {
+              normalized.system_metadata.status = "processing";
+            }
+            return normalized;
+          });
+
+          aggregated.push(...normalizedDocuments);
+
+          const returnedCount =
+            typeof result?.returned_count === "number" && result.returned_count >= 0
+              ? result.returned_count
+              : normalizedDocuments.length;
+          const nextSkip =
+            typeof result?.next_skip === "number" ? result.next_skip : result?.has_more ? skip + returnedCount : null;
+
+          hasMore = Boolean(result?.has_more) && returnedCount > 0 && nextSkip !== null && nextSkip !== skip;
+
+          if (!hasMore) {
+            break;
+          }
+
+          skip = nextSkip ?? skip + returnedCount;
         }
 
-        const allDocuments: Document[] = await response.json();
-
-        // Filter for unorganized documents (those without folder_name or with null/empty folder_name)
-        const unorganized = allDocuments.filter(doc => !doc.folder_name || doc.folder_name.trim() === "");
+        const unorganized = aggregated;
 
         // Update cache
         unorganizedDocumentsCache.set(cacheKey, {
