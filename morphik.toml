@@ -110,24 +110,18 @@ device = "mps" # use "cpu" if on docker and using a mac, "cuda" if cuda enabled 
 [storage]
 provider = "local"
 storage_path = "./storage"
+cache_enabled = false
+cache_max_size_gb = 10
+# cache_path = "./storage/cache"
 
 # [storage]
 # provider = "aws-s3"
 # region = "us-east-2"
 # bucket_name = "morphik-s3-storage"
 # storage_path = "morphik-storage"
-
-[storage.chunks]
-# Configure chunk (document/text/image) payload storage; defaults to main storage settings when omitted.
-provider = "aws-s3"
-bucket_name = "morphik-s3-storage"
-storage_path = "morphik-storage"
-
-[storage.vectors]
-# Store numpy tensor payloads locally to minimize latency during search.
-provider = "local"
-storage_path = "./storage/multivectors"
-bucket_name = "multivector-chunks"
+# cache_enabled = true
+# cache_max_size_gb = 10
+# cache_path = "./storage/cache"
 
 [vector_store]
 provider = "pgvector"
