@@ -2,11 +2,14 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import tempfile
 import time
 from contextlib import contextmanager
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
+from uuid import uuid4
 
 import numpy as np
 import psycopg
@@ -37,6 +40,158 @@ else:
     NotFoundError = Exception  # type: ignore[assignment]
 
 
+class FileCacheManager:
+    """Manage local on-disk cache for blobs with eviction."""
+
+    def __init__(self, enabled: bool, base_dir: Path, max_bytes: int):
+        self.enabled = enabled
+        self.base_dir = base_dir
+        self.max_bytes = max_bytes
+        self._lock = asyncio.Lock()
+        if self.enabled:
+            self.base_dir.mkdir(parents=True, exist_ok=True)
+
+    def _normalize_parts(self, raw: str) -> List[str]:
+        if not raw:
+            return []
+
+        original = Path(raw)
+        anchor = original.anchor
+        candidate = raw
+        if anchor and candidate.startswith(anchor):
+            candidate = candidate[len(anchor) :]
+
+        sanitized = Path(candidate)
+        parts: List[str] = []
+        for part in sanitized.parts:
+            if part in ("", ".", ".."):
+                continue
+            parts.append(part)
+        return parts
+
+    def _path_for(self, namespace: str, bucket: str, key: str) -> Path:
+        namespace_parts = self._normalize_parts(namespace or "_default")
+        bucket_parts = self._normalize_parts(bucket or "_default")
+        key_parts = self._normalize_parts(key)
+        return self.base_dir.joinpath(*namespace_parts, *bucket_parts, *key_parts)
+
+    async def get(self, namespace: str, bucket: str, key: str) -> Optional[bytes]:
+        if not self.enabled:
+            return None
+        path = self._path_for(namespace, bucket, key)
+        if not path.exists():
+            return None
+        try:
+            data = await asyncio.to_thread(path.read_bytes)
+            await asyncio.to_thread(self._touch_file, path)
+            return data
+        except FileNotFoundError:
+            return None
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Failed to read cache entry %s: %s", path, exc)
+            return None
+
+    async def put(self, namespace: str, bucket: str, key: str, data: bytes) -> None:
+        if not self.enabled:
+            return
+        path = self._path_for(namespace, bucket, key)
+        try:
+            await asyncio.to_thread(self._write_file, path, data)
+            await asyncio.to_thread(self._touch_file, path)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Failed to write cache entry %s: %s", path, exc)
+            return
+
+        try:
+            await self._enforce_budget()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Failed to enforce cache budget after writing %s: %s", path, exc)
+
+    async def delete(self, namespace: str, bucket: str, key: str) -> None:
+        if not self.enabled:
+            return
+        path = self._path_for(namespace, bucket, key)
+        try:
+            await asyncio.to_thread(self._remove_file, path)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Failed to delete cache entry %s: %s", path, exc)
+
+    async def delete_many(self, namespace: str, items: Iterable[Tuple[str, str]]) -> None:
+        if not self.enabled:
+            return
+        tasks = [self.delete(namespace, bucket, key) for bucket, key in items]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _write_file(self, path: Path, data: bytes) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_name = f".{path.name}.tmp-{uuid4().hex}"
+        tmp_path = path.parent / tmp_name
+        try:
+            if isinstance(data, memoryview):
+                payload = data.tobytes()
+            elif isinstance(data, bytearray):
+                payload = bytes(data)
+            else:
+                payload = data if isinstance(data, bytes) else bytes(data)
+            with open(tmp_path, "wb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, path)
+        finally:
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except FileNotFoundError:
+                    pass
+
+    def _touch_file(self, path: Path) -> None:
+        now = time.time()
+        try:
+            os.utime(path, (now, now))
+        except FileNotFoundError:
+            pass
+
+    def _remove_file(self, path: Path) -> None:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+    async def _enforce_budget(self) -> None:
+        if not self.enabled:
+            return
+        async with self._lock:
+            await asyncio.to_thread(self._enforce_budget_sync)
+
+    def _enforce_budget_sync(self) -> None:
+        total_size = 0
+        files: List[Tuple[float, int, Path]] = []
+        for file_path in self.base_dir.rglob("*"):
+            if not file_path.is_file():
+                continue
+            try:
+                stat = file_path.stat()
+            except FileNotFoundError:
+                continue
+            total_size += stat.st_size
+            files.append((stat.st_atime, stat.st_size, file_path))
+
+        if total_size <= self.max_bytes:
+            return
+
+        files.sort(key=lambda item: item[0])  # Oldest access time first
+        for _, file_size, file_path in files:
+            if total_size <= self.max_bytes:
+                break
+            try:
+                file_path.unlink()
+                total_size -= file_size
+            except FileNotFoundError:
+                continue
+
+
 # external storage always enabled, no two ways about it
 class FastMultiVectorStore(BaseVectorStore):
     def __init__(self, uri: str, tpuf_api_key: str, namespace: str = "public", region: str = "aws-us-west-2"):
@@ -48,7 +203,19 @@ class FastMultiVectorStore(BaseVectorStore):
         self.tpuf = AsyncTurbopuffer(api_key=tpuf_api_key, region=region, default_namespace="default2")
         # TODO: Cache namespaces, and send a warming request
         self.ns = lambda app_id: self.tpuf.namespace(app_id)
-        self.storage = self._init_storage()
+        self.chunk_storage, self.chunk_bucket = self._init_chunk_storage()
+        self.vector_storage, self.vector_bucket = self._init_vector_storage()
+        # Maintain legacy attribute for backwards compatibility with other components
+        self.storage = self.chunk_storage
+        cache_settings = get_settings()
+        cache_enabled = cache_settings.CACHE_ENABLED
+        cache_path = Path(cache_settings.CACHE_PATH or "./storage/cache")
+        cache_limit = cache_settings.CACHE_MAX_BYTES
+        self.cache = FileCacheManager(
+            enabled=cache_enabled,
+            base_dir=cache_path,
+            max_bytes=cache_limit,
+        )
         self.fde_config = fde.FixedDimensionalEncodingConfig(
             dimension=128,
             num_repetitions=20,
@@ -65,24 +232,64 @@ class FastMultiVectorStore(BaseVectorStore):
         )
         self.device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
 
-    def _init_storage(self) -> BaseStorage:
-        """Initialize appropriate storage backend based on settings."""
+    def _init_chunk_storage(self) -> Tuple[BaseStorage, Optional[str]]:
+        """Initialize storage backend for chunk payloads."""
         settings = get_settings()
-        match settings.STORAGE_PROVIDER:
+        provider = settings.STORAGE_PROVIDER
+        storage_path = settings.STORAGE_PATH or "./storage"
+        bucket = (settings.S3_BUCKET or MULTIVECTOR_CHUNKS_BUCKET) if provider == "aws-s3" else ""
+
+        logger.info("Initializing %s storage for chunk payloads", provider)
+        storage = self._create_storage(provider, storage_path=storage_path, default_bucket=bucket)
+
+        # Track meta for later reuse decisions
+        self.chunk_storage_provider = provider
+        self.chunk_storage_path = storage_path
+        resolved_bucket = bucket if provider == "aws-s3" else ""
+        return storage, resolved_bucket
+
+    def _init_vector_storage(self) -> Tuple[BaseStorage, Optional[str]]:
+        """Initialize storage backend for numpy multi-vector tensors."""
+        settings = get_settings()
+        provider = settings.STORAGE_PROVIDER
+        storage_path = settings.STORAGE_PATH or "./storage"
+        bucket = (settings.S3_BUCKET or MULTIVECTOR_CHUNKS_BUCKET) if provider == "aws-s3" else ""
+
+        # Reuse chunk storage instance when configuration matches
+        if provider == getattr(self, "chunk_storage_provider", None) and (
+            (provider == "local" and storage_path == getattr(self, "chunk_storage_path", None))
+            or (provider == "aws-s3" and bucket == getattr(self, "chunk_bucket", None))
+        ):
+            logger.info("Reusing chunk storage backend for vector tensors (matching configuration).")
+            if provider == "local":
+                return self.chunk_storage, ""
+            return self.chunk_storage, getattr(self, "chunk_bucket", None)
+
+        logger.info("Initializing %s storage for vector tensors", provider)
+        storage = self._create_storage(provider, storage_path=storage_path, default_bucket=bucket)
+        resolved_bucket = bucket if provider == "aws-s3" else ""
+        return storage, resolved_bucket
+
+    def _create_storage(
+        self, provider: str, *, storage_path: Optional[str], default_bucket: Optional[str]
+    ) -> BaseStorage:
+        """Factory helper to instantiate storage implementations."""
+        settings = get_settings()
+        match provider:
             case "aws-s3":
-                logger.info("Initializing S3 storage for multi-vector chunks")
+                if not settings.AWS_ACCESS_KEY or not settings.AWS_SECRET_ACCESS_KEY:
+                    raise ValueError("AWS credentials are required for S3 storage provider.")
                 return S3Storage(
                     aws_access_key=settings.AWS_ACCESS_KEY,
                     aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
                     region_name=settings.AWS_REGION,
-                    default_bucket=MULTIVECTOR_CHUNKS_BUCKET,
+                    default_bucket=default_bucket or MULTIVECTOR_CHUNKS_BUCKET,
                 )
             case "local":
-                logger.info("Initializing local storage for multi-vector chunks")
-                storage_path = getattr(settings, "LOCAL_STORAGE_PATH", "./storage")
-                return LocalStorage(storage_path=storage_path)
+                path = storage_path or "./storage"
+                return LocalStorage(storage_path=path)
             case _:
-                raise ValueError(f"Unsupported storage provider: {settings.STORAGE_PROVIDER}")
+                raise ValueError(f"Unsupported storage provider: {provider}")
 
     def initialize(self):
         return True
@@ -220,9 +427,10 @@ class FastMultiVectorStore(BaseVectorStore):
 
     async def delete_chunks_by_document_id(self, document_id: str, app_id: Optional[str] = None) -> bool:
         namespace = self.ns(app_id)
-        storage_targets: Set[Tuple[str, str]] = set()
+        storage_targets: Dict[str, Set[Tuple[str, str]]] = {"chunk": set(), "vector": set()}
 
-        if self.storage:
+        storage_available = self.chunk_storage or self.vector_storage
+        if storage_available:
             storage_targets = await self._collect_storage_targets(namespace, document_id, app_id)
 
         try:
@@ -233,7 +441,7 @@ class FastMultiVectorStore(BaseVectorStore):
                 app_id or self.namespace,
                 document_id,
             )
-            storage_targets = set()
+            storage_targets = {"chunk": set(), "vector": set()}
         except Exception as exc:  # noqa: BLE001
             logger.error(
                 "Failed to delete TurboPuffer rows for document %s in namespace %s: %s",
@@ -243,7 +451,7 @@ class FastMultiVectorStore(BaseVectorStore):
             )
             return False
 
-        if storage_targets:
+        if storage_targets["chunk"] or storage_targets["vector"]:
             await self._delete_storage_targets(storage_targets, document_id)
 
         return True
@@ -253,17 +461,81 @@ class FastMultiVectorStore(BaseVectorStore):
         save_path = f"multivector/{chunk.document_id}/{chunk.chunk_number}.npy"
         with tempfile.NamedTemporaryFile(suffix=".npy") as temp_file:
             np.save(temp_file, as_np)  # , allow_pickle=True)
-            if isinstance(self.storage, S3Storage):
-                self.storage.s3_client.upload_file(temp_file.name, MULTIVECTOR_CHUNKS_BUCKET, save_path)
-                bucket, key = MULTIVECTOR_CHUNKS_BUCKET, save_path
+            if isinstance(self.vector_storage, S3Storage):
+                target_bucket = self.vector_bucket or self.vector_storage.default_bucket
+                self.vector_storage._ensure_bucket(target_bucket)  # type: ignore[attr-defined]
+                self.vector_storage.s3_client.upload_file(temp_file.name, target_bucket, save_path)
+                bucket, key = target_bucket, save_path
             else:
-                bucket, key = await self.storage.upload_file(temp_file.name, save_path)
+                bucket_arg = "" if isinstance(self.vector_storage, LocalStorage) else (self.vector_bucket or "")
+                bucket, key = await self.vector_storage.upload_file(temp_file.name, save_path, bucket=bucket_arg)
+                if isinstance(self.vector_storage, LocalStorage):
+                    bucket = ""
             temp_file.close()
+        await self.cache.delete("vectors", bucket, key)
         return bucket, key
 
     async def load_multivector_from_storage(self, bucket: str, key: str) -> torch.Tensor:
-        content = await self.storage.download_file(bucket, key)
-        as_np = np.load(BytesIO(content))  # , allow_pickle=True)
+        primary_bucket = bucket
+        if isinstance(self.vector_storage, LocalStorage):
+            storage_root = getattr(self.vector_storage, "storage_path", None)
+            if storage_root is not None:
+                storage_root_path = Path(storage_root)
+                try:
+                    bucket_path = Path(bucket) if bucket else None
+                except Exception:
+                    bucket_path = None
+
+                if (
+                    not bucket_path
+                    or bucket_path == storage_root_path
+                    or bucket_path.resolve() == storage_root_path.resolve()
+                ):
+                    primary_bucket = ""
+
+        cache_bucket = primary_bucket or bucket
+        cached_bytes = await self.cache.get("vectors", cache_bucket, key)
+        if cached_bytes is not None:
+            try:
+                as_np = np.load(BytesIO(cached_bytes))
+                return torch.from_numpy(as_np).float()
+            except Exception as cache_exc:  # noqa: BLE001
+                logger.warning(
+                    "Vector cache entry for bucket %s key %s is invalid; purging and reloading: %s",
+                    cache_bucket,
+                    key,
+                    cache_exc,
+                )
+                await self.cache.delete("vectors", cache_bucket, key)
+                cached_bytes = None
+
+        if cached_bytes is None:
+            try:
+                content = await self.vector_storage.download_file(primary_bucket, key)
+            except Exception as primary_exc:  # noqa: BLE001
+                if self.vector_storage is self.chunk_storage or not bucket:
+                    raise
+                logger.warning(
+                    "Primary vector storage failed to load %s/%s, falling back to chunk storage: %s",
+                    bucket,
+                    key,
+                    primary_exc,
+                )
+                content = await self.chunk_storage.download_file(bucket, key)
+            await self.cache.put("vectors", cache_bucket, key, content)
+            cached_bytes = content
+
+        try:
+            as_np = np.load(BytesIO(cached_bytes))
+        except Exception as exc:  # noqa: BLE001
+            await self.cache.delete("vectors", cache_bucket, key)
+            logger.error(
+                "Failed to deserialize vector content for bucket %s key %s after refresh: %s",
+                cache_bucket,
+                key,
+                exc,
+            )
+            raise
         return torch.from_numpy(as_np).float()
 
     @contextmanager
@@ -364,7 +636,7 @@ class FastMultiVectorStore(BaseVectorStore):
         app_id: Optional[str] = None,
     ) -> Optional[str]:
         """Store chunk content in external storage and return storage key."""
-        if not self.storage:
+        if not self.chunk_storage:
             return None
 
         try:
@@ -387,15 +659,17 @@ class FastMultiVectorStore(BaseVectorStore):
                 # Convert content to base64 for storage interface compatibility
                 content_bytes = content.encode("utf-8")
                 content_b64 = base64.b64encode(content_bytes).decode("utf-8")
-                await self.storage.upload_from_base64(
-                    content=content_b64, key=storage_key, content_type="text/plain", bucket=MULTIVECTOR_CHUNKS_BUCKET
+                await self.chunk_storage.upload_from_base64(
+                    content=content_b64, key=storage_key, content_type="text/plain", bucket=self.chunk_bucket or ""
                 )
             else:
                 # For images, content should already be base64
-                await self.storage.upload_from_base64(
-                    content=content, key=storage_key, bucket=MULTIVECTOR_CHUNKS_BUCKET
+                await self.chunk_storage.upload_from_base64(
+                    content=content, key=storage_key, bucket=self.chunk_bucket or ""
                 )
 
+            cache_bucket = self.chunk_bucket if self.chunk_bucket else ""
+            await self.cache.delete("chunks", cache_bucket, storage_key)
             logger.info(f"Stored chunk content externally with key: {storage_key}")
             return storage_key
 
@@ -421,6 +695,58 @@ class FastMultiVectorStore(BaseVectorStore):
             return key[len(MULTIVECTOR_CHUNKS_BUCKET) + 1 :]
         return key
 
+    async def _download_chunk_bytes(self, bucket: str, storage_key: str) -> Optional[bytes]:
+        """Attempt to fetch chunk payload bytes from storage, considering variant keys."""
+        if bucket:
+            prefixed_base = storage_key if storage_key.startswith(f"{bucket}/") else f"{bucket}/{storage_key}"
+        else:
+            prefixed_base = storage_key
+
+        original_suffix = Path(storage_key).suffix
+        candidate_order: List[str] = []
+        if prefixed_base and prefixed_base not in candidate_order:
+            candidate_order.append(prefixed_base)
+        if storage_key not in candidate_order:
+            candidate_order.append(storage_key)
+        if original_suffix:
+            suffix_keys = [
+                f"{prefixed_base}{original_suffix}" if prefixed_base else f"{storage_key}{original_suffix}",
+                f"{storage_key}{original_suffix}",
+            ]
+            for key in suffix_keys:
+                if key not in candidate_order:
+                    candidate_order.append(key)
+
+        for candidate_key in candidate_order:
+            try:
+                return await self.chunk_storage.download_file(bucket=bucket, key=candidate_key)
+            except Exception:
+                continue
+        return None
+
+    def _decode_chunk_bytes(self, content_bytes: bytes, storage_key: str, chunk_metadata: Optional[str]) -> str:
+        """Convert raw chunk bytes into the format expected by callers."""
+        if storage_key.endswith(".txt"):
+            try:
+                return content_bytes.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ValueError(f"Failed to decode text chunk for key {storage_key}") from exc
+
+        metadata: Dict[str, Any] = {}
+        if chunk_metadata:
+            try:
+                metadata = json.loads(chunk_metadata)
+            except json.JSONDecodeError as exc:
+                logger.debug("Unable to parse chunk metadata for key %s: %s", storage_key, exc)
+
+        if metadata.get("is_image"):
+            return base64.b64encode(content_bytes).decode("utf-8")
+
+        try:
+            return content_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            return base64.b64encode(content_bytes).decode("utf-8")
+
     @staticmethod
     def _row_get(row: Union[Dict[str, Any], object], field: str) -> Optional[Any]:
         """Helper to safely extract fields from TurboPuffer rows."""
@@ -435,9 +761,9 @@ class FastMultiVectorStore(BaseVectorStore):
 
     async def _collect_storage_targets(
         self, namespace, document_id: str, app_id: Optional[str]
-    ) -> Set[Tuple[str, str]]:
+    ) -> Dict[str, Set[Tuple[str, str]]]:
         """Collect storage objects associated with a document before deletion."""
-        targets: Set[Tuple[str, str]] = set()
+        targets: Dict[str, Set[Tuple[str, str]]] = {"chunk": set(), "vector": set()}
         last_id: Optional[str] = None
         page_size = 500
         namespace_name = app_id or self.namespace
@@ -461,7 +787,7 @@ class FastMultiVectorStore(BaseVectorStore):
                     namespace_name,
                     document_id,
                 )
-                return set()
+                return {"chunk": set(), "vector": set()}
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Failed to collect storage targets for document %s in namespace %s: %s",
@@ -477,13 +803,15 @@ class FastMultiVectorStore(BaseVectorStore):
             for row in rows:
                 content = self._row_get(row, "content")
                 if isinstance(content, str) and self._is_storage_key(content):
-                    targets.add((MULTIVECTOR_CHUNKS_BUCKET, self._normalize_storage_key(content)))
+                    bucket_name = self.chunk_bucket if self.chunk_bucket else ""
+                    targets["chunk"].add((bucket_name, self._normalize_storage_key(content)))
 
                 multivector = self._row_get(row, "multivector")
                 if isinstance(multivector, (list, tuple)) and len(multivector) == 2:
                     bucket, key = multivector
                     if isinstance(bucket, str) and isinstance(key, str):
-                        targets.add((bucket or MULTIVECTOR_CHUNKS_BUCKET, self._normalize_storage_key(key)))
+                        normalized_bucket = bucket if bucket else ""
+                        targets["vector"].add((normalized_bucket, self._normalize_storage_key(key)))
 
                 row_id = self._row_get(row, "id")
                 if isinstance(row_id, str):
@@ -496,102 +824,118 @@ class FastMultiVectorStore(BaseVectorStore):
 
         return targets
 
-    async def _delete_storage_targets(self, targets: Set[Tuple[str, str]], document_id: str) -> None:
+    async def _delete_storage_targets(self, targets: Dict[str, Set[Tuple[str, str]]], document_id: str) -> None:
         """Delete external storage objects recorded for a document."""
-        if not self.storage:
+        chunk_targets = [(bucket, key) for bucket, key in targets.get("chunk", set()) if key]
+        vector_targets = [(bucket, key) for bucket, key in targets.get("vector", set()) if key]
+
+        tasks = []
+        task_meta: List[Tuple[str, str, str]] = []
+
+        if self.chunk_storage and chunk_targets:
+            for bucket, key in chunk_targets:
+                tasks.append(self.chunk_storage.delete_file(bucket, key))
+                task_meta.append(("chunk", bucket, key))
+
+        if self.vector_storage and vector_targets:
+            for bucket, key in vector_targets:
+                tasks.append(self.vector_storage.delete_file(bucket, key))
+                task_meta.append(("vector", bucket, key))
+
+        if not tasks:
+            await self.cache.delete_many("chunks", chunk_targets)
+            await self.cache.delete_many("vectors", vector_targets)
             return
 
-        target_list = [(bucket, key) for bucket, key in targets if key]
-        if not target_list:
-            return
-
-        tasks = [self.storage.delete_file(bucket, key) for bucket, key in target_list]
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        for (bucket, key), result in zip(target_list, results):
+        for meta, result in zip(task_meta, results):
+            storage_type, bucket, key = meta
             if isinstance(result, Exception):
                 logger.warning(
-                    "Failed to delete external storage object %s/%s for document %s: %s",
+                    "Failed to delete %s storage object %s/%s for document %s: %s",
+                    storage_type,
                     bucket,
                     key,
                     document_id,
                     result,
                 )
 
+        await self.cache.delete_many("chunks", chunk_targets)
+        await self.cache.delete_many("vectors", vector_targets)
+
     async def _retrieve_content_from_storage(self, storage_key: str, chunk_metadata: Optional[str]) -> str:
         """Retrieve content from external storage and convert to expected format."""
         logger.info(f"Attempting to retrieve content from storage key: {storage_key}")
 
-        if not self.storage:
+        if not self.chunk_storage:
             logger.warning(f"External storage not available for retrieving key: {storage_key}")
             return storage_key  # Return storage key as fallback
 
         try:
-            # Download content from storage
-            logger.info(f"Downloading from bucket: {MULTIVECTOR_CHUNKS_BUCKET}, key: {storage_key}")
-            key_possibilities = [
-                storage_key,
-                f"{storage_key}.txt",
-                f"multivector-chunks/{storage_key}",
-                f"multivector-chunks/{storage_key}.txt",
-            ]
-            download_tasks = [
-                self.storage.download_file(bucket=MULTIVECTOR_CHUNKS_BUCKET, key=key) for key in key_possibilities
-            ]
-            content_bytes_list = await asyncio.gather(*download_tasks, return_exceptions=True)
-            content_bytes = None
-            for potential_content_bytes in content_bytes_list:
-                if isinstance(potential_content_bytes, Exception):
+            bucket_options: List[str] = []
+            preferred_bucket = self.chunk_bucket if self.chunk_bucket else ""
+            bucket_options.append(preferred_bucket)
+            if preferred_bucket != MULTIVECTOR_CHUNKS_BUCKET:
+                bucket_options.append(MULTIVECTOR_CHUNKS_BUCKET)
+
+            logger.info(f"Downloading from bucket candidates: {bucket_options}, key: {storage_key}")
+            for bucket_candidate in bucket_options:
+                cached_bytes = await self.cache.get("chunks", bucket_candidate, storage_key)
+                if cached_bytes is not None:
+                    try:
+                        logger.info(
+                            "Chunk cache hit for bucket %s, key %s (len=%d)",
+                            bucket_candidate,
+                            storage_key,
+                            len(cached_bytes),
+                        )
+                        result = self._decode_chunk_bytes(cached_bytes, storage_key, chunk_metadata)
+                        logger.info(
+                            "Returning cached chunk content for key %s (length=%d)",
+                            storage_key,
+                            len(result),
+                        )
+                        return result
+                    except Exception as cache_exc:  # noqa: BLE001
+                        logger.warning(
+                            "Cached chunk %s/%s is invalid, purging entry: %s",
+                            bucket_candidate,
+                            storage_key,
+                            cache_exc,
+                        )
+                        await self.cache.delete("chunks", bucket_candidate, storage_key)
+
+                content_bytes = await self._download_chunk_bytes(bucket_candidate, storage_key)
+                if content_bytes is None:
                     continue
-                content_bytes = potential_content_bytes
-                logger.info(f"Successfully downloaded content from storage key: {storage_key}")
-                break
-            if not content_bytes:
-                logger.error(f"No content downloaded for storage key: {storage_key}")
-                return storage_key
 
-            logger.info(f"Downloaded {len(content_bytes)} bytes for key: {storage_key}")
+                logger.info(
+                    "Successfully downloaded content from bucket %s, key %s (len=%d)",
+                    bucket_candidate,
+                    storage_key,
+                    len(content_bytes),
+                )
+                await self.cache.put("chunks", bucket_candidate, storage_key, content_bytes)
 
-            # Check if storage key ends with .txt (indicates content was stored as text)
-            if storage_key.endswith(".txt"):
-                # Content is stored as text (could be base64 string for images)
-                result = content_bytes.decode("utf-8")
-                logger.info(f"Retrieved text content from .txt file, length: {len(result)}")
+                try:
+                    result = self._decode_chunk_bytes(content_bytes, storage_key, chunk_metadata)
+                except Exception as decode_exc:  # noqa: BLE001
+                    logger.error(
+                        "Downloaded chunk content for key %s could not be decoded: %s",
+                        storage_key,
+                        decode_exc,
+                    )
+                    raise
+
+                logger.info(
+                    "Returning downloaded chunk content for key %s (length=%d)",
+                    storage_key,
+                    len(result),
+                )
                 return result
 
-            # For non-.txt files, determine content type
-            try:
-                if chunk_metadata:
-                    metadata = json.loads(chunk_metadata)
-                    is_image = metadata.get("is_image", False)
-                    logger.info(f"Chunk metadata indicates is_image: {is_image}")
-
-                    if is_image:
-                        # For images, return as base64 string
-                        result = base64.b64encode(content_bytes).decode("utf-8")
-                        logger.info(f"Returning image as base64, length: {len(result)}")
-                        return result
-                    result = content_bytes.decode("utf-8")
-                    logger.info(f"Returning text content, length: {len(result)}")
-                    return result
-
-                logger.info("No metadata, auto-detecting content type")
-                try:
-                    result = content_bytes.decode("utf-8")
-                    logger.info(f"Auto-detected as text, length: {len(result)}")
-                    return result
-                except UnicodeDecodeError:
-                    # If not valid UTF-8, treat as binary (image) and return base64
-                    result = base64.b64encode(content_bytes).decode("utf-8")
-                    logger.info(f"Auto-detected as binary, returning base64, length: {len(result)}")
-                    return result
-
-            except (json.JSONDecodeError, Exception) as e:
-                logger.warning(f"Error determining content type for {storage_key}: {e}")
-                # Fallback: try text first, then base64
-                try:
-                    return content_bytes.decode("utf-8")
-                except UnicodeDecodeError:
-                    return base64.b64encode(content_bytes).decode("utf-8")
+            logger.error(f"No content downloaded for storage key: {storage_key}")
+            return storage_key
 
         except Exception as e:
             logger.error(f"Failed to retrieve content from storage key {storage_key}: {e}", exc_info=True)

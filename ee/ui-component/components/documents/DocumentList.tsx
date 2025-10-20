@@ -5,6 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Eye,
   Download,
@@ -19,13 +20,27 @@ import {
   FileText,
   ChevronRight,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 import { showAlert } from "@/components/ui/alert-system";
 
-import { Document, Folder, FolderSummary, ProcessingProgress } from "@/components/types";
+import { Document, Folder, FolderSummary, ProcessingProgress } from "../types";
 import { EmptyDocuments, NoMatchingDocuments, LoadingDocuments } from "./shared/EmptyStates";
 
 type ColumnType = "string" | "int" | "float" | "bool" | "Date" | "json";
+
+interface DocumentListPaginationConfig {
+  skip: number;
+  limit: number;
+  returnedCount: number;
+  totalCount: number | null;
+  hasMore: boolean;
+  nextSkip: number | null;
+  onPageChange: (nextSkip: number) => void;
+  onPageSizeChange?: (limit: number) => void;
+  pageSizeOptions?: number[];
+  loading?: boolean;
+}
 
 interface DocumentListProps {
   documents: Document[];
@@ -33,9 +48,7 @@ interface DocumentListProps {
   selectedDocuments: string[];
   handleDocumentClick: (document: Document) => void;
   handleCheckboxChange: (checked: boolean | "indeterminate", docId: string) => void;
-  getSelectAllState: () => boolean | "indeterminate";
   setSelectedDocuments: (docIds: string[]) => void;
-  setDocuments: (docs: Document[]) => void;
   loading: boolean;
   apiBaseUrl: string;
   authToken: string | null;
@@ -50,7 +63,17 @@ interface DocumentListProps {
   externalSearchQuery?: string; // External search query when search bar is hidden
   onSearchChange?: (query: string) => void; // Callback for search changes when search bar is hidden
   allFoldersExpanded?: boolean; // Control whether all folders should be expanded
+  pagination?: DocumentListPaginationConfig;
 }
+
+interface FolderDocumentsState {
+  documents: Document[];
+  hasMore: boolean;
+  nextSkip: number | null;
+  loading: boolean;
+}
+
+const FOLDER_PAGE_SIZE = 50;
 
 const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentList({
   documents,
@@ -58,7 +81,6 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
   selectedDocuments,
   handleDocumentClick,
   handleCheckboxChange,
-  getSelectAllState,
   setSelectedDocuments,
   loading,
   apiBaseUrl,
@@ -72,6 +94,7 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
   externalSearchQuery = "",
   onSearchChange,
   allFoldersExpanded = false,
+  pagination,
 }) {
   const [mounted, setMounted] = useState(false);
 
@@ -88,7 +111,106 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
 
   // State for expanded folders and their documents
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-  const [folderDocuments, setFolderDocuments] = useState<Record<string, Document[]>>({});
+  const [folderDocuments, setFolderDocuments] = useState<Record<string, FolderDocumentsState>>({});
+
+  const paginationConfig = pagination;
+
+  const paginationSummary = useMemo(() => {
+    if (!paginationConfig) {
+      return "";
+    }
+
+    const { skip, returnedCount, totalCount } = paginationConfig;
+    const hasResults = returnedCount > 0;
+    const start = hasResults ? skip + 1 : 0;
+    const end = hasResults ? skip + returnedCount : 0;
+    const boundedEnd = typeof totalCount === "number" ? Math.min(end, totalCount) : end;
+
+    if (!hasResults) {
+      if (totalCount === 0) {
+        return "No documents to display";
+      }
+      if (totalCount === null) {
+        return "No documents on this page";
+      }
+    }
+
+    if (typeof totalCount === "number") {
+      return `Showing ${start}-${boundedEnd} of ${totalCount}`;
+    }
+
+    return hasResults ? `Showing ${start}-${end}` : "No documents to display";
+  }, [paginationConfig]);
+
+  const hasNextPage = useMemo(() => {
+    if (!paginationConfig) {
+      return false;
+    }
+
+    if (paginationConfig.hasMore) {
+      return true;
+    }
+
+    if (typeof paginationConfig.totalCount === "number") {
+      return paginationConfig.skip + paginationConfig.returnedCount < paginationConfig.totalCount;
+    }
+
+    return false;
+  }, [paginationConfig]);
+
+  const disablePrev = !paginationConfig || paginationConfig.loading || paginationConfig.skip <= 0;
+  const disableNext = !paginationConfig || paginationConfig.loading || !hasNextPage;
+
+  const nextSkipRaw = paginationConfig
+    ? typeof paginationConfig.nextSkip === "number"
+      ? paginationConfig.nextSkip
+      : paginationConfig.skip + paginationConfig.limit
+    : 0;
+
+  const nextSkipClamped =
+    paginationConfig && typeof paginationConfig.totalCount === "number"
+      ? Math.min(nextSkipRaw, Math.max(0, paginationConfig.totalCount - paginationConfig.limit))
+      : nextSkipRaw;
+
+  const pageSizeOptions = useMemo(() => {
+    if (!paginationConfig) {
+      return [];
+    }
+
+    const baseOptions = paginationConfig.pageSizeOptions ?? [25, 50, 100];
+    const values = new Set<number>(baseOptions);
+    values.add(paginationConfig.limit);
+
+    return Array.from(values).sort((a, b) => a - b);
+  }, [paginationConfig]);
+
+  const handlePrevPage = () => {
+    if (!paginationConfig || disablePrev) {
+      return;
+    }
+
+    const prevSkip = Math.max(0, paginationConfig.skip - paginationConfig.limit);
+    paginationConfig.onPageChange(prevSkip);
+  };
+
+  const handleNextPage = () => {
+    if (!paginationConfig || disableNext) {
+      return;
+    }
+
+    paginationConfig.onPageChange(Math.max(0, nextSkipClamped));
+  };
+
+  const handlePageSizeChange = (value: string) => {
+    if (!paginationConfig || !paginationConfig.onPageSizeChange) {
+      return;
+    }
+
+    const parsed = Number(value);
+    if (!Number.isNaN(parsed) && parsed > 0) {
+      paginationConfig.onPageSizeChange(parsed);
+    }
+  };
 
   // Get unique metadata fields from all documents, excluding external_id
   const existingMetadataFields = useMemo(() => {
@@ -109,7 +231,7 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
   // Apply search and sort logic with memoization, including expanded folder documents
   const filteredDocuments = useMemo(() => {
     let result: (Document & {
-      itemType?: "document" | "folder" | "all";
+      itemType?: "document" | "folder" | "all" | "folder-load-more";
       folderData?: Folder;
       isChildDocument?: boolean;
       parentFolderName?: string;
@@ -123,7 +245,8 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
       if ((doc as Document & { itemType?: string }).itemType === "folder") {
         const folderName = doc.filename || "";
         if (expandedFolders.has(folderName) && folderDocuments[folderName]) {
-          folderDocuments[folderName].forEach(childDoc => {
+          const folderState = folderDocuments[folderName];
+          folderState.documents.forEach(childDoc => {
             result.push({
               ...childDoc,
               isChildDocument: true,
@@ -131,6 +254,18 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
               itemType: "document",
             });
           });
+          if (folderState.hasMore) {
+            result.push({
+              external_id: `folder-load-more-${folderName}`,
+              filename: "Load more…",
+              content_type: "application/vnd.morphik.load-more",
+              metadata: {},
+              additional_metadata: {},
+              system_metadata: {},
+              parentFolderName: folderName,
+              itemType: "folder-load-more" as const,
+            });
+          }
         }
       }
 
@@ -205,6 +340,44 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
     return result;
   }, [documents, effectiveSearchQuery, sortColumn, sortDirection, expandedFolders, folderDocuments]);
 
+  const selectableItems = useMemo(
+    () =>
+      filteredDocuments.filter(doc => {
+        const itemType = (doc as Document & { itemType?: string }).itemType;
+        const isChildDocument = (doc as Document & { isChildDocument?: boolean }).isChildDocument;
+        if (itemType === "folder-load-more") {
+          return false;
+        }
+        if (isChildDocument) {
+          return false;
+        }
+        return true;
+      }),
+    [filteredDocuments]
+  );
+
+  const visibleSelectableIds = useMemo(() => selectableItems.map(item => item.external_id), [selectableItems]);
+
+  const visibleSelectableIdSet = useMemo(() => new Set(visibleSelectableIds), [visibleSelectableIds]);
+
+  const selectedCountOnPage = useMemo(
+    () => visibleSelectableIds.reduce((count, id) => (selectedDocuments.includes(id) ? count + 1 : count), 0),
+    [selectedDocuments, visibleSelectableIds]
+  );
+
+  const selectAllState: boolean | "indeterminate" = useMemo(() => {
+    if (visibleSelectableIds.length === 0) {
+      return false;
+    }
+    if (selectedCountOnPage === 0) {
+      return false;
+    }
+    if (selectedCountOnPage === visibleSelectableIds.length) {
+      return true;
+    }
+    return "indeterminate";
+  }, [selectedCountOnPage, visibleSelectableIds]);
+
   // Copy document ID to clipboard
   const copyDocumentId = async (documentId: string) => {
     try {
@@ -217,71 +390,145 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
     }
   };
 
-  // Fetch documents for a specific folder
+  const normalizeFolderDocument = useCallback((doc: Partial<Document>): Document => {
+    const systemMetadata = {
+      ...(doc.system_metadata as Record<string, unknown> | undefined),
+    };
+
+    if (!("status" in systemMetadata) || !systemMetadata?.status) {
+      (systemMetadata as Record<string, unknown>).status = "processing";
+    }
+
+    return {
+      external_id: doc.external_id ?? "",
+      filename: doc.filename,
+      content_type: doc.content_type ?? "application/octet-stream",
+      metadata: doc.metadata ? (doc.metadata as Record<string, unknown>) : {},
+      additional_metadata: doc.additional_metadata ? (doc.additional_metadata as Record<string, unknown>) : {},
+      system_metadata: systemMetadata,
+      folder_name: doc.folder_name,
+      app_id: doc.app_id,
+      end_user_id: doc.end_user_id,
+    };
+  }, []);
+
   const fetchFolderDocuments = useCallback(
-    async (folderName: string) => {
-      if (folderDocuments[folderName]) {
-        return; // Already fetched
+    async (folderName: string, skip = 0, force = false) => {
+      if (!force && folderDocuments[folderName] && skip === 0) {
+        return;
       }
+
+      setFolderDocuments(prev => {
+        const existing = prev[folderName];
+        return {
+          ...prev,
+          [folderName]: {
+            documents: skip > 0 && existing ? existing.documents : (existing?.documents ?? []),
+            hasMore: existing?.hasMore ?? false,
+            nextSkip: existing?.nextSkip ?? null,
+            loading: true,
+          },
+        };
+      });
 
       try {
-        // First get folder details to get the folder ID
-        const foldersResponse = await fetch(`${apiBaseUrl}/folders/summary`, {
-          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        const requestBody = {
+          identifiers: [folderName],
+          include_document_count: false,
+          include_status_counts: false,
+          include_documents: true,
+          document_skip: skip,
+          document_limit: FOLDER_PAGE_SIZE,
+          document_fields: [
+            "external_id",
+            "filename",
+            "content_type",
+            "metadata",
+            "additional_metadata",
+            "system_metadata",
+            "folder_name",
+          ],
+          sort_by: "updated_at",
+          sort_direction: "desc",
+        };
+
+        const response = await fetch(`${apiBaseUrl}/folders/details`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
+          body: JSON.stringify(requestBody),
         });
 
-        if (!foldersResponse.ok) {
-          throw new Error(`Failed to fetch folders: ${foldersResponse.statusText}`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch folder documents: ${response.status} ${response.statusText}`);
         }
 
-        const foldersData = await foldersResponse.json();
-        const folder = foldersData.find((f: FolderSummary) => f.name === folderName);
+        const data = await response.json();
+        const entry = Array.isArray(data?.folders) ? data.folders[0] : null;
+        const documentInfo = entry?.document_info ?? {};
+        const docs = Array.isArray(documentInfo?.documents) ? documentInfo.documents : [];
 
-        if (!folder) {
-          console.warn(`Folder "${folderName}" not found`);
-          return;
-        }
+        const normalizedDocs = docs
+          .map((doc: unknown): Document | null => {
+            const partial = doc as Partial<Document> | null | undefined;
+            if (!partial) {
+              return null;
+            }
+            return normalizeFolderDocument(partial);
+          })
+          .filter((doc: Document | null): doc is Document => Boolean(doc?.external_id));
 
-        // Get document IDs for this folder
-        let documentIds: string[] = [];
-        if (Array.isArray(folder.document_ids)) {
-          documentIds = folder.document_ids;
-        } else {
-          // Fetch detailed folder info if document_ids not in summary
-          const folderDetailResponse = await fetch(`${apiBaseUrl}/folders/${folder.id}`, {
-            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
-          });
-          if (folderDetailResponse.ok) {
-            const folderDetail = await folderDetailResponse.json();
-            documentIds = Array.isArray(folderDetail.document_ids) ? folderDetail.document_ids : [];
-          }
-        }
+        setFolderDocuments(prev => {
+          const existing = prev[folderName];
+          const baseDocs = skip > 0 && existing ? existing.documents : [];
+          const mergedDocs =
+            skip > 0
+              ? [
+                  ...baseDocs,
+                  ...normalizedDocs.filter((newDoc: Document) => {
+                    return !baseDocs.some(existingDoc => existingDoc.external_id === newDoc.external_id);
+                  }),
+                ]
+              : normalizedDocs;
 
-        if (documentIds.length > 0) {
-          // Fetch document details
-          const docsResponse = await fetch(`${apiBaseUrl}/batch/documents`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          const hasMore = Boolean(documentInfo?.has_more);
+          const nextSkip =
+            typeof documentInfo?.next_skip === "number"
+              ? documentInfo.next_skip
+              : hasMore
+                ? skip + normalizedDocs.length
+                : null;
+
+          return {
+            ...prev,
+            [folderName]: {
+              documents: mergedDocs,
+              hasMore,
+              nextSkip,
+              loading: false,
             },
-            body: JSON.stringify({ document_ids: documentIds }),
-          });
-
-          if (docsResponse.ok) {
-            const docs = await docsResponse.json();
-            setFolderDocuments(prev => ({ ...prev, [folderName]: docs }));
-          }
-        } else {
-          // Empty folder
-          setFolderDocuments(prev => ({ ...prev, [folderName]: [] }));
-        }
+          };
+        });
       } catch (error) {
         console.error(`Error fetching documents for folder "${folderName}":`, error);
-        setFolderDocuments(prev => ({ ...prev, [folderName]: [] }));
+        setFolderDocuments(prev => ({
+          ...prev,
+          [folderName]: {
+            documents: prev[folderName]?.documents ?? [],
+            hasMore: prev[folderName]?.hasMore ?? false,
+            nextSkip: prev[folderName]?.nextSkip ?? null,
+            loading: false,
+          },
+        }));
+        showAlert(`Failed to load documents for folder "${folderName}"`, {
+          type: "error",
+          duration: 4000,
+        });
       }
     },
-    [apiBaseUrl, authToken, folderDocuments]
+    [apiBaseUrl, authToken, folderDocuments, normalizeFolderDocument]
   );
 
   // Effect to handle allFoldersExpanded prop changes
@@ -295,8 +542,8 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
 
       // Fetch documents for all folders that aren't already fetched
       allFolderNames.forEach(folderName => {
-        if (!folderDocuments[folderName]) {
-          fetchFolderDocuments(folderName);
+        if (!folderDocuments[folderName] || folderDocuments[folderName].documents.length === 0) {
+          fetchFolderDocuments(folderName, 0, true);
         }
       });
     } else {
@@ -364,16 +611,18 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
             <div className="flex items-center justify-center px-3 py-2">
               <Checkbox
                 id="select-all-documents"
-                checked={getSelectAllState()}
+                checked={selectAllState}
                 onCheckedChange={checked => {
-                  if (checked === true) {
-                    // Select all items (including folders)
-                    setSelectedDocuments(documents.map(doc => doc.external_id));
+                  if (checked === true || checked === "indeterminate") {
+                    const updated = new Set(selectedDocuments);
+                    visibleSelectableIds.forEach(id => updated.add(id));
+                    setSelectedDocuments(Array.from(updated));
                   } else {
-                    setSelectedDocuments([]);
+                    const remaining = selectedDocuments.filter(id => !visibleSelectableIdSet.has(id));
+                    setSelectedDocuments(remaining);
                   }
                 }}
-                aria-label="Select all documents"
+                aria-label="Select visible rows"
               />
             </div>
             <div
@@ -427,7 +676,9 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
   if (loading && !documents.length) {
     return (
       <div
-        className={`flex h-full w-full flex-col overflow-hidden ${showBorder ? "rounded-t-md border-l border-r border-t shadow-sm" : ""}`}
+        className={`flex h-full w-full flex-col overflow-hidden${
+          showBorder ? "rounded-t-md border-l border-r border-t shadow-sm" : ""
+        }`}
       >
         {/* Search Bar */}{" "}
         {!hideSearchBar && (
@@ -443,19 +694,25 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
             </div>
           </div>
         )}
-        <div className="flex-1 overflow-auto">
-          {DocumentListHeader()}
-          <LoadingDocuments />
-          {/* Spacer to ensure container fills available height */}
-          <div className="min-h-16 flex-1"></div>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-auto">
+            {DocumentListHeader()}
+            <LoadingDocuments />
+          </div>
         </div>
       </div>
     );
   }
 
+  const totalItemsCount = documents.length;
+  const itemsLabel = totalItemsCount === 1 ? "item" : "items";
+  const selectedCount = selectedDocuments.length;
+
   return (
     <div
-      className={`flex h-full w-full flex-col overflow-hidden ${showBorder ? "rounded-t-md border-l border-r border-t shadow-sm" : ""}`}
+      className={`flex h-full w-full flex-col overflow-hidden${
+        showBorder ? "rounded-t-md border-l border-r border-t shadow-sm" : ""
+      }`}
     >
       {/* Search Bar - Fixed at top */}
       {!hideSearchBar && (
@@ -473,244 +730,336 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
       )}
 
       {/* Bulk actions bar */}
-      {mounted && selectedDocuments.length > 0 && (
+      {mounted && (
         <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-2">
           <span className="text-sm text-muted-foreground">
-            {selectedDocuments.length} item{selectedDocuments.length > 1 ? "s" : ""} selected
+            {selectedCount} of {totalItemsCount} {itemsLabel} selected
           </span>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setSelectedDocuments([])}>
-              Clear selection
-            </Button>
-            {onDeleteMultipleDocuments && (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={onDeleteMultipleDocuments}
-                className="flex items-center gap-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete selected
-              </Button>
+            {selectedDocuments.length > 0 && (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => setSelectedDocuments([])}>
+                  Clear selection
+                </Button>
+                {onDeleteMultipleDocuments && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={onDeleteMultipleDocuments}
+                    className="flex items-center gap-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete selected
+                  </Button>
+                )}
+              </>
             )}
           </div>
         </div>
       )}
 
-      {/* Main content area with horizontal scroll */}
-      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
-        {/* Header */}
-        {DocumentListHeader()}
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* Main content area with horizontal scroll */}
+        <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
+          {/* Header */}
+          {DocumentListHeader()}
 
-        {/* Content rows */}
-        {filteredDocuments.map(doc => (
-          <div
-            key={`${doc.external_id}${(doc as Document & { isChildDocument?: boolean; parentFolderName?: string }).isChildDocument ? `-child-${(doc as Document & { isChildDocument?: boolean; parentFolderName?: string }).parentFolderName}` : ""}`}
-            onClick={() => {
-              // Handle different item types
-              if ((doc as Document & { itemType?: string }).itemType === "folder") {
-                // Navigate to folder when clicking on folder row (but not on chevron)
-                handleDocumentClick(doc);
-              } else {
-                // Handle document clicks for actual documents
-                handleDocumentClick(doc);
-              }
-            }}
-            className={`relative flex min-w-fit border-b border-border ${
-              (doc as Document & { itemType?: string }).itemType === "folder"
-                ? "cursor-pointer hover:bg-muted/50"
-                : doc.external_id === selectedDocument?.external_id
-                  ? "cursor-pointer bg-primary/10 hover:bg-primary/15"
-                  : "cursor-pointer hover:bg-muted/70"
-            } ${(doc as Document & { isChildDocument?: boolean }).isChildDocument ? "bg-gray-50 dark:bg-gray-900" : ""}`}
-            style={
-              {
-                // no-op for flex container
-              }
-            }
-          >
-            {/* Main scrollable content */}
-            <div className="grid flex-1 items-center" style={{ gridTemplateColumns }}>
-              <div className="flex items-center justify-center px-3 py-2">
-                {/* Show checkbox for all items except child documents */}
-                {!(doc as Document & { isChildDocument?: boolean }).isChildDocument ? (
-                  <Checkbox
-                    id={`doc-${doc.external_id}`}
-                    checked={selectedDocuments.includes(doc.external_id)}
-                    onCheckedChange={checked => handleCheckboxChange(checked, doc.external_id)}
-                    onClick={e => e.stopPropagation()}
-                    aria-label={`Select ${doc.filename || "document"}`}
-                  />
-                ) : (
-                  <div className="h-4 w-4" /> // Empty space for alignment
-                )}
-              </div>
-              <div
-                className={`flex flex-1 items-center gap-2 px-3 py-2 ${(doc as Document & { isChildDocument?: boolean }).isChildDocument ? "pl-8" : ""}`}
-              >
-                {/* Chevron for folders and "All Documents" or status dot for documents */}
-                {(doc as Document & { itemType?: string }).itemType === "folder" ? (
-                  <button
-                    onClick={e => toggleFolderExpansion(doc.filename || "", e)}
-                    className="group relative flex-shrink-0 rounded p-0.5 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    {expandedFolders.has(doc.filename || "") ? (
-                      <ChevronDown className="h-3 w-3 text-gray-600" />
-                    ) : (
-                      <ChevronRight className="h-3 w-3 text-gray-600" />
-                    )}
-                  </button>
-                ) : (doc as Document & { itemType?: string }).itemType === "document" ||
-                  !(doc as Document & { itemType?: string }).itemType ? (
-                  <div className="group relative flex-shrink-0">
-                    {doc.system_metadata?.status === "completed" ? (
-                      <div className="h-2 w-2 rounded-full bg-green-500" />
-                    ) : doc.system_metadata?.status === "failed" ? (
-                      <div className="h-2 w-2 rounded-full bg-red-500" />
-                    ) : doc.system_metadata?.status === "uploading" ? (
-                      <div className="h-2 w-2 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-                    ) : (
-                      <div className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
-                    )}
-                    <div className="absolute -top-8 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md border bg-popover px-2 py-1 text-xs text-foreground shadow-md group-hover:block">
-                      {doc.system_metadata?.status === "completed"
-                        ? "Completed"
-                        : doc.system_metadata?.status === "failed"
-                          ? "Failed"
-                          : doc.system_metadata?.status === "uploading"
-                            ? "Uploading"
-                            : doc.system_metadata?.status === "processing" && doc.system_metadata?.progress
-                              ? `${(doc.system_metadata.progress as ProcessingProgress).step_name} (${(doc.system_metadata.progress as ProcessingProgress).current_step}/${(doc.system_metadata.progress as ProcessingProgress).total_steps})`
-                              : "Processing"}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="h-2 w-2 flex-shrink-0" /> // Empty space to maintain alignment
-                )}
+          {/* Content rows */}
+          {filteredDocuments.map(doc => {
+            const itemType = (doc as Document & { itemType?: string }).itemType;
 
-                {/* Icon to show file/folder type */}
-                <div className="flex-shrink-0">
-                  {(doc as Document & { itemType?: string }).itemType === "folder" ? (
-                    <FolderIcon className="h-4 w-4 text-blue-600" />
-                  ) : (
-                    <FileText className="h-4 w-4 text-gray-600" />
-                  )}
-                </div>
+            if (itemType === "folder-load-more") {
+              const folderName = (doc as Document & { parentFolderName: string }).parentFolderName;
+              const folderState = folderDocuments[folderName];
+              const isLoading = folderState?.loading ?? false;
+              const nextSkip =
+                folderState?.nextSkip ??
+                (folderState && folderState.documents.length > 0 ? folderState.documents.length : FOLDER_PAGE_SIZE);
 
-                <span className="truncate font-medium">{doc.filename || "N/A"}</span>
-                {/* Progress bar for processing documents */}
-                {doc.system_metadata?.status === "processing" &&
-                  (doc.system_metadata?.progress as ProcessingProgress | undefined) && (
-                    <div className="mt-1 w-full">
-                      <div className="h-1 w-full overflow-hidden rounded-full bg-gray-200">
-                        <div
-                          className="h-full bg-blue-500 transition-all duration-300 ease-out"
-                          style={{ width: `${(doc.system_metadata.progress as ProcessingProgress).percentage || 0}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-              </div>
-              <div className="px-3 py-2">
-                <button
-                  onClick={e => {
-                    e.stopPropagation();
-                    copyDocumentId(doc.external_id);
-                  }}
-                  className="group flex items-center gap-2 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
-                  title="Click to copy Document ID"
+              return (
+                <div
+                  key={doc.external_id}
+                  className="flex items-center justify-center border-b border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
                 >
-                  <span className="max-w-[120px] truncate">{doc.external_id}</span>
-                  {copiedDocumentId === doc.external_id ? (
-                    <Check className="h-3 w-3 text-green-500" />
-                  ) : (
-                    <Copy className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
-                  )}
-                </button>
-              </div>
-              {/* Render metadata values for each column */}
-              {allColumns.map(column => (
-                <div key={column.name} className="truncate px-3 py-2" title={String(doc.metadata?.[column.name] ?? "")}>
-                  {String(doc.metadata?.[column.name] ?? "-")}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={e => {
+                      e.stopPropagation();
+                      fetchFolderDocuments(folderName, nextSkip ?? 0, true);
+                    }}
+                    disabled={isLoading}
+                    className="flex items-center gap-2"
+                  >
+                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronDown className="h-4 w-4" />}
+                    {isLoading ? "Loading…" : "Load more documents"}
+                  </Button>
                 </div>
-              ))}
-            </div>
-            {/* Sticky Actions column */}
-            <div
-              className={`sticky right-0 z-20 flex w-[120px] items-center justify-end gap-1 border-l border-border px-3 py-2 ${
-                doc.external_id === selectedDocument?.external_id ? "bg-accent" : "bg-background"
-              } ${(doc as Document & { isChildDocument?: boolean }).isChildDocument ? "bg-gray-50 dark:bg-gray-900" : ""}`}
-            >
-              {/* Only show actions for actual documents, not folders or special items */}
-              {((doc as Document & { itemType?: string }).itemType === "document" ||
-                !(doc as Document & { itemType?: string }).itemType) && (
-                <>
-                  {doc.content_type === "application/pdf" && onViewInPDFViewer && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
+              );
+            }
+
+            return (
+              <div
+                key={`${doc.external_id}${
+                  (doc as Document & { isChildDocument?: boolean; parentFolderName?: string }).isChildDocument
+                    ? `-child-${
+                        (doc as Document & { isChildDocument?: boolean; parentFolderName?: string }).parentFolderName
+                      }`
+                    : ""
+                }`}
+                onClick={() => {
+                  // Handle different item types
+                  if (itemType === "folder") {
+                    // Navigate to folder when clicking on folder row (but not on chevron)
+                    handleDocumentClick(doc);
+                  } else {
+                    // Handle document clicks for actual documents
+                    handleDocumentClick(doc);
+                  }
+                }}
+                className={`relative flex min-w-fit border-b border-border ${
+                  itemType === "folder"
+                    ? "cursor-pointer hover:bg-muted/50"
+                    : doc.external_id === selectedDocument?.external_id
+                      ? "cursor-pointer bg-primary/10 hover:bg-primary/15"
+                      : "cursor-pointer hover:bg-muted/70"
+                } ${
+                  (doc as Document & { isChildDocument?: boolean }).isChildDocument ? "bg-gray-50 dark:bg-gray-900" : ""
+                }`}
+                style={
+                  {
+                    // no-op for flex container
+                  }
+                }
+              >
+                {/* Main scrollable content */}
+                <div className="grid flex-1 items-center" style={{ gridTemplateColumns }}>
+                  <div className="flex items-center justify-center px-3 py-2">
+                    {/* Show checkbox for all items except child documents */}
+                    {!(doc as Document & { isChildDocument?: boolean }).isChildDocument ? (
+                      <Checkbox
+                        id={`doc-${doc.external_id}`}
+                        checked={selectedDocuments.includes(doc.external_id)}
+                        onCheckedChange={checked => handleCheckboxChange(checked, doc.external_id)}
+                        onClick={e => e.stopPropagation()}
+                        aria-label={`Select ${doc.filename || "document"}`}
+                      />
+                    ) : (
+                      <div className="h-4 w-4" /> // Empty space for alignment
+                    )}
+                  </div>
+                  <div
+                    className={`flex flex-1 items-center gap-2 px-3 py-2 ${
+                      (doc as Document & { isChildDocument?: boolean }).isChildDocument ? "pl-8" : ""
+                    }`}
+                  >
+                    {/* Chevron for folders and "All Documents" or status dot for documents */}
+                    {itemType === "folder" ? (
+                      <button
+                        onClick={e => toggleFolderExpansion(doc.filename || "", e)}
+                        className="group relative flex-shrink-0 rounded p-0.5 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+                      >
+                        {expandedFolders.has(doc.filename || "") ? (
+                          <ChevronDown className="h-3 w-3 text-gray-600" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3 text-gray-600" />
+                        )}
+                      </button>
+                    ) : itemType === "document" || !itemType ? (
+                      <div className="group relative flex-shrink-0">
+                        {doc.system_metadata?.status === "completed" ? (
+                          <div className="h-2 w-2 rounded-full bg-green-500" />
+                        ) : doc.system_metadata?.status === "failed" ? (
+                          <div className="h-2 w-2 rounded-full bg-red-500" />
+                        ) : doc.system_metadata?.status === "uploading" ? (
+                          <div className="h-2 w-2 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                        ) : (
+                          <div className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+                        )}
+                        <div className="absolute -top-8 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md border bg-popover px-2 py-1 text-xs text-foreground shadow-md group-hover:block">
+                          {doc.system_metadata?.status === "completed"
+                            ? "Completed"
+                            : doc.system_metadata?.status === "failed"
+                              ? "Failed"
+                              : doc.system_metadata?.status === "uploading"
+                                ? "Uploading"
+                                : doc.system_metadata?.status === "processing" && doc.system_metadata?.progress
+                                  ? `${(doc.system_metadata.progress as ProcessingProgress).step_name} (${(doc.system_metadata.progress as ProcessingProgress).current_step}/${(doc.system_metadata.progress as ProcessingProgress).total_steps})`
+                                  : "Processing"}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="h-2 w-2 flex-shrink-0" /> // Empty space to maintain alignment
+                    )}
+
+                    {/* Icon to show file/folder type */}
+                    <div className="flex-shrink-0">
+                      {itemType === "folder" ? (
+                        <FolderIcon className="h-4 w-4 text-blue-600" />
+                      ) : (
+                        <FileText className="h-4 w-4 text-gray-600" />
+                      )}
+                    </div>
+
+                    <span className="truncate font-medium">{doc.filename || "N/A"}</span>
+                    {/* Progress bar for processing documents */}
+                    {doc.system_metadata?.status === "processing" &&
+                      (doc.system_metadata?.progress as ProcessingProgress | undefined) && (
+                        <div className="mt-1 w-full">
+                          <div className="h-1 w-full overflow-hidden rounded-full bg-gray-200">
+                            <div
+                              className="h-full bg-blue-500 transition-all duration-300 ease-out"
+                              style={{
+                                width: `${(doc.system_metadata.progress as ProcessingProgress).percentage || 0}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                  </div>
+                  <div className="px-3 py-2">
+                    <button
                       onClick={e => {
                         e.stopPropagation();
-                        onViewInPDFViewer(doc.external_id);
+                        copyDocumentId(doc.external_id);
                       }}
-                      className="h-8 w-8 p-0"
-                      title="View in PDF Viewer"
+                      className="group flex items-center gap-2 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
+                      title="Click to copy Document ID"
                     >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  )}
-                  {onDownloadDocument && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={e => {
-                        e.stopPropagation();
-                        onDownloadDocument(doc.external_id);
-                      }}
-                      className="h-8 w-8 p-0"
-                      title="Download Document"
+                      <span className="max-w-[120px] truncate">{doc.external_id}</span>
+                      {copiedDocumentId === doc.external_id ? (
+                        <Check className="h-3 w-3 text-green-500" />
+                      ) : (
+                        <Copy className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
+                      )}
+                    </button>
+                  </div>
+                  {/* Render metadata values for each column */}
+                  {allColumns.map(column => (
+                    <div
+                      key={column.name}
+                      className="truncate px-3 py-2"
+                      title={String(doc.metadata?.[column.name] ?? "")}
                     >
-                      <Download className="h-4 w-4" />
-                    </Button>
+                      {String(doc.metadata?.[column.name] ?? "-")}
+                    </div>
+                  ))}
+                </div>
+                {/* Sticky Actions column */}
+                <div
+                  className={`sticky right-0 z-20 flex w-[120px] items-center justify-end gap-1 border-l border-border px-3 py-2 ${
+                    doc.external_id === selectedDocument?.external_id ? "bg-accent" : "bg-background"
+                  } ${
+                    (doc as Document & { isChildDocument?: boolean }).isChildDocument
+                      ? "bg-gray-50 dark:bg-gray-900"
+                      : ""
+                  }`}
+                >
+                  {/* Only show actions for actual documents, not folders or special items */}
+                  {(!itemType || itemType === "document") && (
+                    <>
+                      {doc.content_type === "application/pdf" && onViewInPDFViewer && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={e => {
+                            e.stopPropagation();
+                            onViewInPDFViewer(doc.external_id);
+                          }}
+                          className="h-8 w-8 p-0"
+                          title="View in PDF Viewer"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {onDownloadDocument && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={e => {
+                            e.stopPropagation();
+                            onDownloadDocument(doc.external_id);
+                          }}
+                          className="h-8 w-8 p-0"
+                          title="Download Document"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {onDeleteDocument && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={e => {
+                            e.stopPropagation();
+                            onDeleteDocument(doc.external_id);
+                          }}
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          title="Delete Document"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </>
                   )}
-                  {onDeleteDocument && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={e => {
-                        e.stopPropagation();
-                        onDeleteDocument(doc.external_id);
-                      }}
-                      className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                      title="Delete Document"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </>
+                </div>
+              </div>
+            );
+          })}
+
+          {filteredDocuments.length === 0 && documents.length > 0 && (
+            <NoMatchingDocuments
+              searchQuery={effectiveSearchQuery}
+              hasFilters={false}
+              onClearFilters={() => {
+                if (hideSearchBar && onSearchChange) {
+                  onSearchChange("");
+                } else {
+                  setSearchQuery("");
+                }
+              }}
+            />
+          )}
+
+          {documents.length === 0 && <EmptyDocuments />}
+        </div>
+
+        {paginationConfig && (
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-3">
+              {paginationConfig.onPageSizeChange && pageSizeOptions.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-foreground/80">Rows per page</span>
+                  <Select value={String(paginationConfig.limit)} onValueChange={handlePageSizeChange}>
+                    <SelectTrigger className="h-7 w-20 text-xs">
+                      <SelectValue placeholder={String(paginationConfig.limit)} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {pageSizeOptions.map(option => (
+                        <SelectItem key={option} value={String(option)}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               )}
+              <div className="flex items-center gap-2">
+                {paginationConfig.loading && <Loader2 className="h-3 w-3 animate-spin" />}
+                <span>{paginationSummary || "No documents to display"}</span>
+                <span className="text-muted-foreground">(Selections apply to visible rows)</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={handlePrevPage} disabled={disablePrev}>
+                Previous
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleNextPage} disabled={disableNext}>
+                Next
+              </Button>
             </div>
           </div>
-        ))}
-
-        {filteredDocuments.length === 0 && documents.length > 0 && (
-          <NoMatchingDocuments
-            searchQuery={effectiveSearchQuery}
-            hasFilters={false}
-            onClearFilters={() => {
-              if (hideSearchBar && onSearchChange) {
-                onSearchChange("");
-              } else {
-                setSearchQuery("");
-              }
-            }}
-          />
         )}
-
-        {documents.length === 0 && <EmptyDocuments />}
-
-        {/* Spacer to ensure container fills available height */}
-        <div className="min-h-16 flex-1"></div>
       </div>
     </div>
   );

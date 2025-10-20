@@ -117,6 +117,9 @@ class Settings(BaseSettings):
     STORAGE_PATH: Optional[str] = None
     AWS_REGION: Optional[str] = None
     S3_BUCKET: Optional[str] = None
+    CACHE_ENABLED: bool = False
+    CACHE_MAX_BYTES: int = 10 * 1024 * 1024 * 1024
+    CACHE_PATH: str = "./storage/cache"
 
     # Vector store configuration
     VECTOR_STORE_PROVIDER: Literal["pgvector"]
@@ -316,6 +319,22 @@ def get_settings() -> Settings:
             raise ValueError(em.format(missing_value="AWS credentials", field="storage.provider", value="aws-s3"))
         case _:
             raise ValueError(f"Unknown storage provider selected: '{settings_dict['STORAGE_PROVIDER']}'")
+
+    cache_base = config["storage"].get("storage_path") or "./storage"
+    cache_enabled = config["storage"].get("cache_enabled", False)
+    settings_dict["CACHE_ENABLED"] = bool(cache_enabled)
+    cache_path_override = config["storage"].get("cache_path")
+    settings_dict["CACHE_PATH"] = cache_path_override or os.path.join(cache_base, "cache")
+    max_size_gb = (
+        config["storage"].get("cache_max_size_gb")
+        if "cache_max_size_gb" in config["storage"]
+        else config["storage"].get("max_size_gb", 10)
+    )
+    try:
+        cache_bytes = int(float(max_size_gb) * 1024 * 1024 * 1024)
+    except (TypeError, ValueError):
+        cache_bytes = 10 * 1024 * 1024 * 1024
+    settings_dict["CACHE_MAX_BYTES"] = max(cache_bytes, 0)
 
     # Load vector store config
     settings_dict["VECTOR_STORE_PROVIDER"] = config["vector_store"]["provider"]
