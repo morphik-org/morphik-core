@@ -3272,6 +3272,138 @@ class DocumentService:
             logger.error(f"Error extracting PDF pages from {bucket}/{key}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to extract PDF pages: {str(e)}")
 
+    async def extract_presentation_pages(
+        self,
+        bucket: str,
+        key: str,
+        filename: str,
+        start_page: int,
+        end_page: int,
+    ) -> Dict[str, Any]:
+        """
+        Extract specific slides from a PowerPoint presentation as base64-encoded images.
+
+        Converts the presentation to PDF using LibreOffice (soffice) and then renders the
+        requested slide range to images via PyMuPDF.
+
+        Args:
+            bucket: Storage bucket containing the presentation
+            key: Storage key for the presentation file
+            filename: Original filename (used to determine extension)
+            start_page: Starting slide number (1-indexed)
+            end_page: Ending slide number (1-indexed)
+
+        Returns:
+            Dict containing:
+                - pages: List of base64-encoded images
+                - total_pages: Total number of slides
+        """
+        import shutil
+        import subprocess
+
+        try:
+            # Ensure LibreOffice is available for conversion
+            if not shutil.which("soffice"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="PowerPoint extraction requires LibreOffice (soffice) to be installed on the server",
+                )
+
+            # Download the presentation file
+            file_content = await self.storage.download_file(bucket, key)
+            if not file_content:
+                raise HTTPException(status_code=404, detail="Presentation file is empty or missing")
+
+            # Determine suffix from filename
+            _, ext = os.path.splitext((filename or "").lower())
+            suffix = ".ppt" if ext == ".ppt" else ".pptx"
+
+            temp_ppt_path = None
+            temp_pdf_path = None
+            expected_pdf_path = None
+
+            # Write the presentation to a temporary file
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_ppt:
+                temp_ppt.write(file_content)
+                temp_ppt_path = temp_ppt.name
+
+            # Create a temporary target path to locate the output directory
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf:
+                temp_pdf_path = temp_pdf.name
+
+            # Compute expected output PDF path
+            base_filename = os.path.splitext(os.path.basename(temp_ppt_path))[0]
+            output_dir = os.path.dirname(temp_pdf_path)
+            expected_pdf_path = os.path.join(output_dir, f"{base_filename}.pdf")
+
+            # Convert presentation to PDF
+            result = subprocess.run(
+                [
+                    "soffice",
+                    "--headless",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    output_dir,
+                    temp_ppt_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode != 0:
+                logger.error(f"LibreOffice conversion failed: {result.stderr}")
+                raise HTTPException(status_code=500, detail="Failed to convert presentation to PDF")
+
+            if not os.path.exists(expected_pdf_path) or os.path.getsize(expected_pdf_path) == 0:
+                logger.error(f"Converted PDF missing or empty at: {expected_pdf_path}")
+                raise HTTPException(status_code=500, detail="Converted PDF is missing or empty")
+
+            # Read the converted PDF
+            with open(expected_pdf_path, "rb") as pdf_file:
+                pdf_content = pdf_file.read()
+
+            # Open with PyMuPDF
+            pdf_document = fitz.open("pdf", pdf_content)
+            total_pages = len(pdf_document)
+
+            # Clamp requested range
+            start_page = max(1, start_page)
+            end_page = min(end_page, total_pages)
+
+            pages_base64: List[str] = []
+            for page_num in range(start_page - 1, end_page):
+                page = pdf_document[page_num]
+                matrix = fitz.Matrix(2.0, 2.0)
+                pix = page.get_pixmap(matrix=matrix)
+                img_data = pix.tobytes("jpeg", jpg_quality=85)
+                img = PILImage.open(BytesIO(img_data))
+                pages_base64.append(self.img_to_base64_str(img))
+
+            pdf_document.close()
+
+            return {"pages": pages_base64, "total_pages": total_pages}
+
+        except HTTPException:
+            raise
+        except subprocess.TimeoutExpired:
+            logger.error("LibreOffice conversion timed out for presentation")
+            raise HTTPException(status_code=500, detail="Presentation to PDF conversion timed out")
+        except Exception as e:
+            logger.error(f"Error extracting presentation pages from {bucket}/{key}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to extract presentation pages: {str(e)}")
+        finally:
+            try:
+                if 'temp_ppt_path' in locals() and temp_ppt_path and os.path.exists(temp_ppt_path):
+                    os.unlink(temp_ppt_path)
+                if 'temp_pdf_path' in locals() and temp_pdf_path and os.path.exists(temp_pdf_path):
+                    os.unlink(temp_pdf_path)
+                if 'expected_pdf_path' in locals() and expected_pdf_path and os.path.exists(expected_pdf_path):
+                    os.unlink(expected_pdf_path)
+            except Exception as cleanup_error:
+                logger.debug(f"Cleanup error: {cleanup_error}")
+
     def close(self):
         """Close all resources."""
         # Close any active caches
