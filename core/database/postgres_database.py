@@ -1046,11 +1046,12 @@ class PostgresDatabase(BaseDatabase):
     def _build_system_metadata_filter_optimized(self, system_filters: Optional[Dict[str, Any]]) -> str:
         """Build PostgreSQL filter for system metadata using flattened columns.
 
-        This optimized version uses direct column access instead of JSONB operations
-        for better performance.
+        - Uses direct column access (e.g. folder_name, end_user_id) for performance
+        - Backward-compatibility: treat empty string as NULL for folder_name/end_user_id
+          since some legacy rows may have "" instead of NULL in flattened columns.
 
-        Note: This returns a SQL string with named parameters like :app_id_0, :folder_name_0, etc.
-        The caller must provide these parameters when executing the query.
+        Returns a SQL string with named parameters like :app_id_0, :folder_name_0, etc.
+        The caller must also supply parameter values via ``_build_filter_params``.
         """
         if not system_filters:
             return ""
@@ -1073,7 +1074,12 @@ class PostgresDatabase(BaseDatabase):
             value_clauses = []
             for item in values:
                 if item is None:
-                    value_clauses.append(f"{column} IS NULL")
+                    # Backward-compat: for folder_name/end_user_id, also match empty string values which
+                    # historically represented "no folder/user" in some datasets.
+                    if column in ("folder_name", "end_user_id"):
+                        value_clauses.append(f"({column} IS NULL OR {column} = '')")
+                    else:
+                        value_clauses.append(f"{column} IS NULL")
                 else:
                     # Use named parameter instead of string interpolation
                     param_name = f"{key}_{self._filter_param_counter}"
