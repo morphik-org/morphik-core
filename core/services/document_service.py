@@ -303,7 +303,12 @@ class DocumentService:
 
         async def timed_auth():
             auth_start = time.time()
-            result = await self.db.find_authorized_and_filtered_documents(auth, filters, system_filters)
+            result = await self.db.find_authorized_and_filtered_documents(
+                auth,
+                filters,
+                system_filters,
+                status_filter=["completed"],
+            )
             auth_duration = time.time() - auth_start
             if perf_tracker:
                 perf_tracker.add_suboperation("retrieve_auth", auth_duration, "retrieve_embeddings_and_auth")
@@ -3395,11 +3400,11 @@ class DocumentService:
             raise HTTPException(status_code=500, detail=f"Failed to extract presentation pages: {str(e)}")
         finally:
             try:
-                if 'temp_ppt_path' in locals() and temp_ppt_path and os.path.exists(temp_ppt_path):
+                if "temp_ppt_path" in locals() and temp_ppt_path and os.path.exists(temp_ppt_path):
                     os.unlink(temp_ppt_path)
-                if 'temp_pdf_path' in locals() and temp_pdf_path and os.path.exists(temp_pdf_path):
+                if "temp_pdf_path" in locals() and temp_pdf_path and os.path.exists(temp_pdf_path):
                     os.unlink(temp_pdf_path)
-                if 'expected_pdf_path' in locals() and expected_pdf_path and os.path.exists(expected_pdf_path):
+                if "expected_pdf_path" in locals() and expected_pdf_path and os.path.exists(expected_pdf_path):
                     os.unlink(expected_pdf_path)
             except Exception as cleanup_error:
                 logger.debug(f"Cleanup error: {cleanup_error}")

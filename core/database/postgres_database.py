@@ -956,6 +956,7 @@ class PostgresDatabase(BaseDatabase):
         auth: AuthContext,
         filters: Optional[Dict[str, Any]] = None,
         system_filters: Optional[Dict[str, Any]] = None,
+        status_filter: Optional[List[str]] = None,
     ) -> List[str]:
         """Find document IDs matching filters and access permissions."""
         try:
@@ -979,6 +980,21 @@ class PostgresDatabase(BaseDatabase):
 
                 if system_metadata_filter:
                     where_clauses.append(f"({system_metadata_filter})")
+
+                if status_filter:
+                    status_clauses = []
+                    status_params: Dict[str, Any] = {}
+                    for idx, status in enumerate(status_filter):
+                        if status is None:
+                            status_clauses.append("(system_metadata->>'status') IS NULL")
+                        else:
+                            param_name = f"status_filter_{idx}"
+                            status_clauses.append(f"(system_metadata->>'status') = :{param_name}")
+                            status_params[param_name] = str(status)
+
+                    if status_clauses:
+                        where_clauses.append("(" + " OR ".join(status_clauses) + ")")
+                        filter_params.update(status_params)
 
                 final_where_clause = " AND ".join(where_clauses)
                 query = select(DocumentModel.external_id).where(text(final_where_clause).bindparams(**filter_params))
