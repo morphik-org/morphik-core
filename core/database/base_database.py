@@ -99,6 +99,7 @@ class BaseDatabase(ABC):
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
         system_filters: Optional[Dict[str, Any]] = None,
+        status_filter: Optional[List[str]] = None,
         include_total_count: bool = False,
         include_status_counts: bool = False,
         include_folder_counts: bool = False,
@@ -108,6 +109,9 @@ class BaseDatabase(ABC):
     ) -> Dict[str, Any]:
         """
         List documents with optional aggregates and flexible pagination metadata.
+
+        Args:
+            status_filter: Optional list of processing statuses to include (matches system metadata status field).
 
         Returns:
             Dictionary containing documents and requested aggregate information.

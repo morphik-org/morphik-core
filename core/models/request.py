@@ -28,6 +28,10 @@ class ListDocsRequest(BaseModel):
     include_folder_counts: bool = Field(
         default=False, description="Include document counts grouped by folder when true"
     )
+    completed_only: bool = Field(
+        default=False,
+        description="When true, only documents with completed processing status are returned and counted",
+    )
     sort_by: Optional[Literal["created_at", "updated_at", "filename", "external_id"]] = Field(
         default="updated_at", description="Field to sort the results by"
     )
