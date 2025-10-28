@@ -141,6 +141,7 @@ async def list_docs(
             limit=request.limit,
             filters=request.document_filters,
             system_filters=system_filters,
+            status_filter=["completed"] if request.completed_only else None,
             include_total_count=request.include_total_count,
             include_status_counts=request.include_status_counts,
             include_folder_counts=request.include_folder_counts,

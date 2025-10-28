@@ -675,6 +675,7 @@ class PostgresDatabase(BaseDatabase):
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
         system_filters: Optional[Dict[str, Any]] = None,
+        status_filter: Optional[List[str]] = None,
         include_total_count: bool = False,
         include_status_counts: bool = False,
         include_folder_counts: bool = False,
@@ -698,6 +699,21 @@ class PostgresDatabase(BaseDatabase):
                     where_clauses.append(f"({metadata_filter})")
                 if system_metadata_filter:
                     where_clauses.append(f"({system_metadata_filter})")
+                if status_filter:
+                    status_clauses: List[str] = []
+                    include_null_status = any(item is None for item in status_filter)
+                    normalized_statuses = [item for item in status_filter if item is not None]
+
+                    for idx, status_value in enumerate(normalized_statuses):
+                        param_name = f"status_filter_{idx}"
+                        filter_params[param_name] = str(status_value)
+                        status_clauses.append(f"(system_metadata->>'status') = :{param_name}")
+
+                    if include_null_status:
+                        status_clauses.append("(system_metadata->>'status') IS NULL")
+
+                    if status_clauses:
+                        where_clauses.append("(" + " OR ".join(status_clauses) + ")")
 
                 final_where_clause = " AND ".join(where_clauses) if where_clauses else "TRUE"
 
