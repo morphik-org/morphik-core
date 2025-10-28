@@ -136,6 +136,7 @@ class BaseDatabase(ABC):
         auth: AuthContext,
         filters: Optional[Dict[str, Any]] = None,
         system_filters: Optional[Dict[str, Any]] = None,
+        status_filter: Optional[List[str]] = None,
     ) -> List[str]:
         """Find document IDs matching filters that user has access to.
 
@@ -143,6 +144,7 @@ class BaseDatabase(ABC):
             auth: Authentication context
             filters: Optional metadata filters
             system_filters: Optional system metadata filters (e.g. folder_name, end_user_id)
+            status_filter: Optional list of document processing statuses to include
 
         Returns:
             List of document IDs matching the criteria
