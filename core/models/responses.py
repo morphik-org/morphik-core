@@ -168,3 +168,17 @@ class FolderDetailsResponse(BaseModel):
     """Response wrapping folder detail entries."""
 
     folders: List[FolderDetails]
+
+
+class RequeueIngestionResult(BaseModel):
+    """Result information for an individual requeued ingestion job."""
+
+    external_id: str = Field(..., description="Document external identifier")
+    status: str = Field(..., description="Outcome status for this job")
+    message: Optional[str] = Field(default=None, description="Optional human-readable message describing the outcome")
+
+
+class RequeueIngestionResponse(BaseModel):
+    """Response payload for requeueing ingestion jobs."""
+
+    results: List[RequeueIngestionResult] = Field(..., description="Per-document outcomes")

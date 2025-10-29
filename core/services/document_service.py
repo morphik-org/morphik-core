@@ -1584,6 +1584,7 @@ class DocumentService:
         try:
             job = await redis.enqueue_job(
                 "process_ingestion_job",
+                _job_id=f"ingest:{doc.external_id}",
                 document_id=doc.external_id,
                 file_key=full_storage_path,  # This is the key in storage
                 bucket=bucket_name,
@@ -1596,7 +1597,12 @@ class DocumentService:
                 folder_name=str(folder_name) if folder_name else None,  # Ensure folder_name is str or None
                 end_user_id=end_user_id,
             )
-            logger.info(f"Connector file ingestion job queued with ID: {job.job_id} for document: {doc.external_id}")
+            if job is None:
+                logger.info("Connector file ingestion job already queued (doc_id=%s)", doc.external_id)
+            else:
+                logger.info(
+                    "Connector file ingestion job queued with ID: %s for document: %s", job.job_id, doc.external_id
+                )
         except Exception as e:
             logger.error(f"Failed to enqueue ingestion job for doc {doc.external_id} ({filename}): {e}")
             # Update document status to failed if enqueuing fails
