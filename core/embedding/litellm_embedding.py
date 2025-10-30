@@ -34,6 +34,15 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
 
         self.model_config = settings.REGISTERED_MODELS[model_key]
         self.dimensions = min(settings.VECTOR_DIMENSIONS, 2000)
+        model_name_lower = str(self.model_config.get("model_name", "")).lower()
+        api_base_lower = str(self.model_config.get("api_base", "")).lower()
+        self._is_local_provider = (
+            any(
+                indicator in api_base_lower
+                for indicator in ("localhost", "127.0.0.1", "host.docker.internal", ":11434")
+            )
+            or "ollama" in model_name_lower
+        )
         logger.info(f"Initialized LiteLLM embedding model with model_key={model_key}, config={self.model_config}")
 
     async def embed_documents(self, texts: List[str]) -> List[List[float]]:
@@ -64,15 +73,7 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
 
             # Ensure providers that don't require real API keys (e.g., Ollama, local OpenAI-compatible backends)
             # still pass a dummy key to LiteLLM/OpenAI client to avoid AuthenticationError.
-            model_name_lower = str(self.model_config.get("model_name", "")).lower()
-            api_base = str(model_params.get("api_base", "")).lower()
-            looks_like_local_provider = (
-                "ollama" in model_name_lower
-                or "ollama" in api_base
-                or ":11434" in api_base
-                or "localhost" in api_base
-                or "host.docker.internal" in api_base
-            )
+            looks_like_local_provider = self._is_local_provider
             if looks_like_local_provider and "api_key" not in model_params:
                 # Use a harmless placeholder; some LiteLLM providers demand a key even if backend ignores it
                 model_params["api_key"] = os.environ.get("LITELLM_DUMMY_API_KEY", "ollama")
@@ -125,14 +126,20 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
 
         texts = [chunk.content for chunk in chunks]
         # Batch embedding to respect token limits
-        settings = get_settings()
-        batch_size = getattr(settings, "EMBEDDING_BATCH_SIZE", 100)
+        batch_size = self._determine_batch_size()
         embeddings: List[List[float]] = []
         for i in range(0, len(texts), batch_size):
             batch_texts = texts[i : i + batch_size]
             batch_embeddings = await self.embed_documents(batch_texts)
             embeddings.extend(batch_embeddings)
         return embeddings
+
+    def _determine_batch_size(self) -> int:
+        settings = get_settings()
+        configured_batch_size = getattr(settings, "EMBEDDING_BATCH_SIZE", None)
+        if isinstance(configured_batch_size, int) and configured_batch_size > 0:
+            return configured_batch_size
+        return 5 if self._is_local_provider else 100
 
     async def embed_for_query(self, text: str) -> List[float]:
         """
