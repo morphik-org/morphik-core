@@ -56,6 +56,10 @@ TOKENS_PER_PAGE = 630
 settings = get_settings()
 
 
+class PdfConversionError(Exception):
+    """Raised when the service cannot rasterize a PDF into images."""
+
+
 class DocumentService:
     _SYSTEM_METADATA_SCOPE_KEYS = {"folder_name", "end_user_id", "app_id"}
 
@@ -1628,6 +1632,24 @@ class DocumentService:
         img_str = "data:image/png;base64," + base64.b64encode(img_byte).decode()
         return img_str
 
+    def _render_pdf_with_pymupdf(self, file_content: bytes, dpi: int) -> List[str]:
+        """
+        Render a PDF into base64-encoded PNG images using PyMuPDF.
+        Raises the underlying PyMuPDF exception so callers can decide on fallbacks.
+        """
+        pdf_document = fitz.open("pdf", file_content)
+        try:
+            images_b64: List[str] = []
+            for page in pdf_document:
+                mat = fitz.Matrix(dpi / 72, dpi / 72)
+                pix = page.get_pixmap(matrix=mat)
+                img_data = pix.tobytes("png")
+                with PILImage.open(BytesIO(img_data)) as img:
+                    images_b64.append(self.img_to_base64_str(img))
+            return images_b64
+        finally:
+            pdf_document.close()
+
     def _create_chunks_multivector(
         self,
         file_type,
@@ -1695,41 +1717,33 @@ class DocumentService:
             case "application/pdf":
                 logger.info("Working with PDF file - using PyMuPDF for faster processing!")
 
+                if not file_content:
+                    logger.error("PDF file content is empty")
+                    raise PdfConversionError("PDF file content is empty")
+
                 try:
-                    # Load PDF document with PyMuPDF (much faster than pdf2image)
-                    pdf_document = fitz.open("pdf", file_content)
-                    images_b64 = []
+                    dpi = int(os.getenv("COLPALI_PDF_DPI", "150"))
+                except Exception:
+                    dpi = 150
 
-                    # Process each page individually for better memory management
-                    try:
-                        dpi = int(os.getenv("COLPALI_PDF_DPI", "150"))
-                    except Exception:
-                        dpi = 150
-
-                    for page_num in range(len(pdf_document)):
-                        page = pdf_document[page_num]
-                        mat = fitz.Matrix(dpi / 72, dpi / 72)
-                        pix = page.get_pixmap(matrix=mat)
-                        img_data = pix.tobytes("png")
-
-                        # Convert to PIL Image and then to base64
-                        img = PILImage.open(BytesIO(img_data))
-                        images_b64.append(self.img_to_base64_str(img))
-
-                    pdf_document.close()  # Clean up resources
-
+                try:
+                    images_b64 = self._render_pdf_with_pymupdf(file_content, dpi)
                     logger.info(f"PyMuPDF processed {len(images_b64)} pages")
                     return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
 
                 except Exception as e:
-                    # Fallback to pdf2image if PyMuPDF fails
                     logger.warning(f"PyMuPDF failed ({e}), falling back to pdf2image")
 
-                    images = pdf2image.convert_from_bytes(file_content)
-                    images_b64 = [self.img_to_base64_str(image) for image in images]
-
-                    logger.info(f"pdf2image fallback processed {len(images_b64)} pages")
-                    return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                    try:
+                        images = pdf2image.convert_from_bytes(file_content, dpi=dpi)
+                        images_b64 = [self.img_to_base64_str(image) for image in images]
+                        logger.info(f"pdf2image fallback processed {len(images_b64)} pages")
+                        return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                    except Exception as fallback_error:
+                        logger.error(f"pdf2image fallback failed: {fallback_error}")
+                        raise PdfConversionError(
+                            f"Unable to convert PDF to images: {fallback_error}"
+                        ) from fallback_error
             case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/msword":
                 logger.info("Working with Word document!")
 
