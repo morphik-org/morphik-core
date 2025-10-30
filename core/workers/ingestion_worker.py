@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
 from arq.connections import RedisSettings
+from opentelemetry.trace import Status, StatusCode, get_current_span
 from sqlalchemy import text
 
 from core.config import get_settings
@@ -21,7 +22,7 @@ from core.limits_utils import check_and_increment_limits, estimate_pages_by_char
 from core.models.auth import AuthContext, EntityType
 from core.models.rules import MetadataExtractionRule
 from core.parser.morphik_parser import MorphikParser
-from core.services.document_service import DocumentService
+from core.services.document_service import DocumentService, PdfConversionError
 from core.services.rules_processor import RulesProcessor
 from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
@@ -636,11 +637,48 @@ async def process_ingestion_job(
                 import filetype
 
                 file_type = filetype.guess(file_content)
-
-                # Use the parsed chunks for ColPali/image rules – this will create image chunks if appropriate
-                chunks_multivector = document_service._create_chunks_multivector(
-                    file_type, None, file_content, parsed_chunks
-                )
+                try:
+                    # Use the parsed chunks for ColPali/image rules – this will create image chunks if appropriate
+                    chunks_multivector = document_service._create_chunks_multivector(
+                        file_type, None, file_content, parsed_chunks
+                    )
+                except PdfConversionError as conversion_error:
+                    logger.error(
+                        "PDF conversion failed for document %s (%s): %s",
+                        document_id,
+                        original_filename,
+                        conversion_error,
+                    )
+                    system_metadata = dict(doc.system_metadata or {})
+                    error_code = "pdf_conversion_failed"
+                    error_message = str(conversion_error)
+                    current_span = get_current_span()
+                    current_span.set_status(Status(StatusCode.ERROR, error_message))
+                    current_span.set_attribute("ingest.error_code", error_code)
+                    current_span.set_attribute("ingest.error_message", error_message)
+                    system_metadata.update(
+                        {
+                            "status": "failed",
+                            "error": error_code,
+                            "error_message": error_message,
+                            "updated_at": datetime.now(UTC),
+                            "progress": None,
+                        }
+                    )
+                    cleaned_metadata = DocumentService._clean_system_metadata(system_metadata)
+                    await document_service.db.update_document(
+                        document_id=document_id,
+                        updates={"system_metadata": cleaned_metadata},
+                        auth=auth,
+                    )
+                    return {
+                        "document_id": document_id,
+                        "status": "failed",
+                        "filename": original_filename,
+                        "error": error_code,
+                        "error_message": error_message,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
                 logger.debug(
                     f"Created {len(chunks_multivector)} multivector/image chunks " f"(using_colpali={using_colpali})"
                 )
