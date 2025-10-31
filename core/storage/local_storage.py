@@ -68,21 +68,25 @@ class LocalStorage(BaseStorage):
         """Upload a file to local storage."""
         # Handle different input types
         if isinstance(file, str):
-            # If it's a string, treat it as a file path
             with open(file, "rb") as f:
                 file_content = f.read()
         elif isinstance(file, bytes):
-            # If it's bytes, use directly
             file_content = file
         else:
-            # If it's a file-like object, read from it
+            try:
+                file.seek(0)
+            except Exception:  # noqa: BLE001
+                pass
             file_content = file.read()
 
-        # Convert to base64
-        base64_content = base64.b64encode(file_content).decode("utf-8")
+        key = f"{bucket}/{key}" if (bucket and bucket != "storage") else key
+        file_path = self.storage_path / key
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.unlink(missing_ok=True)
+        with open(file_path, "wb") as destination:
+            destination.write(file_content)
 
-        # Call upload_from_base64
-        return await self.upload_from_base64(base64_content, key, content_type, bucket)
+        return str(self.storage_path), key
 
     async def delete_file(self, bucket: str, key: str) -> bool:
         """Delete a file from local storage."""

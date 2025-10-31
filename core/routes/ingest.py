@@ -1,9 +1,9 @@
-import base64
 import json
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Optional, Union
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Union
 
 import arq
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -20,6 +20,7 @@ from core.services.document_service import DocumentService
 from core.services.gemini_structured_output import GeminiContentError, generate_gemini_content
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, storage
+from core.storage.utils_file_extensions import detect_file_type
 
 # ---------------------------------------------------------------------------
 # Router initialisation & shared singletons
@@ -187,13 +188,18 @@ async def ingest_file(
             await check_and_increment_limits(auth, "storage_size", len(file_content), verify_only=True)
 
         # ------------------------------------------------------------------
-        # Upload file to object storage
+        # Upload file to object storage without re-encoding
         # ------------------------------------------------------------------
-        file_key = f"ingest_uploads/{uuid.uuid4()}/{file.filename}"
-        file_content_b64 = base64.b64encode(file_content).decode()
+        safe_filename = Path(file.filename or "").name or "uploaded_file"
+        file_key = f"ingest_uploads/{uuid.uuid4()}/{safe_filename}"
+        if not Path(file_key).suffix:
+            detected_ext = detect_file_type(file_content)
+            if detected_ext:
+                file_key = f"{file_key}{detected_ext}"
+
         bucket_override = await document_service._get_bucket_for_app(auth.app_id)
-        bucket, stored_key = await storage.upload_from_base64(
-            file_content_b64,
+        bucket, stored_key = await storage.upload_file(
+            file_content,
             file_key,
             file.content_type,
             bucket=bucket_override or "",
@@ -209,7 +215,7 @@ async def ingest_file(
                 bucket=bucket,
                 key=stored_key,
                 version=1,
-                filename=file.filename,
+                filename=safe_filename,
                 content_type=file.content_type,
                 timestamp=datetime.now(UTC),
             )
@@ -396,11 +402,16 @@ async def batch_ingest_files(
                 await check_and_increment_limits(auth, "storage_file", 1, verify_only=True)
                 await check_and_increment_limits(auth, "storage_size", len(file_content), verify_only=True)
 
-            file_key = f"ingest_uploads/{uuid.uuid4()}/{file.filename}"
-            file_content_b64 = base64.b64encode(file_content).decode()
+            safe_filename = Path(file.filename or "").name or "uploaded_file"
+            file_key = f"ingest_uploads/{uuid.uuid4()}/{safe_filename}"
+            if not Path(file_key).suffix:
+                detected_ext = detect_file_type(file_content)
+                if detected_ext:
+                    file_key = f"{file_key}{detected_ext}"
+
             bucket_override = await document_service._get_bucket_for_app(auth.app_id)
-            bucket, stored_key = await storage.upload_from_base64(
-                file_content_b64,
+            bucket, stored_key = await storage.upload_file(
+                file_content,
                 file_key,
                 file.content_type,
                 bucket=bucket_override or "",
@@ -471,72 +482,16 @@ async def requeue_ingest_jobs(
     auto_limit = request.limit if request.include_all and request.limit and request.limit > 0 else None
     auto_selected = 0
     colpali_overrides: Dict[str, Optional[bool]] = {job.external_id: job.use_colpali for job in request.jobs}
-    documents_to_process: Dict[str, Document] = {}
+    processed_ids: Set[str] = set()
     results: List[RequeueIngestionResult] = []
 
-    async def _load_docs_by_status(target_statuses: List[str]) -> None:
-        nonlocal auto_selected
-        skip = 0
-        limit = 200
-        while True:
-            if auto_limit is not None and auto_selected >= auto_limit:
-                break
-            batch = await document_service.db.list_documents_flexible(
-                auth=auth,
-                skip=skip,
-                limit=limit,
-                status_filter=target_statuses,
-                return_documents=True,
-            )
-            docs = batch.get("documents", [])
-            if not docs:
-                break
-            for doc in docs:
-                if auto_limit is not None and auto_selected >= auto_limit:
-                    break
-                if doc.external_id in documents_to_process:
-                    continue
-                documents_to_process[doc.external_id] = doc
-                auto_selected += 1
-            if len(docs) < limit:
-                break
-            skip += limit
-            if auto_limit is not None and auto_selected >= auto_limit:
-                break
+    async def _process_document(doc: Document, override_flag: Optional[bool]) -> None:
+        ext_id = doc.external_id
+        if ext_id in processed_ids:
+            return
 
-    if request.include_all:
-        await _load_docs_by_status(statuses)
+        processed_ids.add(ext_id)
 
-    for job in request.jobs:
-        ext_id = job.external_id
-        if ext_id in documents_to_process:
-            continue
-        try:
-            doc = await document_service.db.get_document(ext_id, auth)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Failed to fetch document %s during requeue: %s", ext_id, exc, exc_info=True)
-            results.append(
-                RequeueIngestionResult(
-                    external_id=ext_id,
-                    status="error",
-                    message=str(exc),
-                )
-            )
-            continue
-
-        if not doc:
-            results.append(
-                RequeueIngestionResult(
-                    external_id=ext_id,
-                    status="not_found",
-                    message="Document not found or access denied",
-                )
-            )
-            continue
-
-        documents_to_process[ext_id] = doc
-
-    for ext_id, doc in documents_to_process.items():
         try:
             auth_for_doc = AuthContext(
                 entity_type=auth.entity_type,
@@ -567,7 +522,7 @@ async def requeue_ingest_jobs(
                         message="Document is missing storage location metadata",
                     )
                 )
-                continue
+                return
 
             # TODO: Add storage file validation once storage.file_exists() is implemented
             # This would prevent enqueueing jobs for deleted files
@@ -586,7 +541,7 @@ async def requeue_ingest_jobs(
                         folder_exc,
                     )
 
-            use_colpali_flag = colpali_overrides.get(ext_id)
+            use_colpali_flag = override_flag
             if use_colpali_flag is None:
                 for source in (doc.system_metadata or {}, doc.metadata or {}):
                     if isinstance(source, dict) and "use_colpali" in source:
@@ -599,7 +554,6 @@ async def requeue_ingest_jobs(
             if use_colpali_flag is None:
                 use_colpali_flag = True
 
-            # Handle metadata type safety - could be dict or JSON string
             system_metadata = doc.system_metadata or {}
             if isinstance(system_metadata, str):
                 system_metadata = json.loads(system_metadata)
@@ -624,7 +578,6 @@ async def requeue_ingest_jobs(
                 "user_id": auth_for_doc.user_id,
             }
 
-            # Handle metadata type safety
             doc_metadata = doc.metadata or {}
             if isinstance(doc_metadata, str):
                 doc_metadata = json.loads(doc_metadata)
@@ -672,6 +625,68 @@ async def requeue_ingest_jobs(
                     message=str(exc),
                 )
             )
+
+    async def _load_docs_by_status(target_statuses: List[str]) -> None:
+        nonlocal auto_selected
+        skip = 0
+        limit = 200
+        while True:
+            if auto_limit is not None and auto_selected >= auto_limit:
+                break
+            batch = await document_service.db.list_documents_flexible(
+                auth=auth,
+                skip=skip,
+                limit=limit,
+                status_filter=target_statuses,
+                return_documents=True,
+            )
+            docs = batch.get("documents", [])
+            if not docs:
+                break
+            for doc in docs:
+                if auto_limit is not None and auto_selected >= auto_limit:
+                    break
+                if doc.external_id in processed_ids:
+                    continue
+                auto_selected += 1
+                await _process_document(doc, colpali_overrides.get(doc.external_id))
+            if len(docs) < limit:
+                break
+            skip += limit
+            if auto_limit is not None and auto_selected >= auto_limit:
+                break
+
+    if request.include_all:
+        await _load_docs_by_status(statuses)
+
+    for job in request.jobs:
+        ext_id = job.external_id
+        if ext_id in processed_ids:
+            continue
+        try:
+            doc = await document_service.db.get_document(ext_id, auth)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to fetch document %s during requeue: %s", ext_id, exc, exc_info=True)
+            results.append(
+                RequeueIngestionResult(
+                    external_id=ext_id,
+                    status="error",
+                    message=str(exc),
+                )
+            )
+            continue
+
+        if not doc:
+            results.append(
+                RequeueIngestionResult(
+                    external_id=ext_id,
+                    status="not_found",
+                    message="Document not found or access denied",
+                )
+            )
+            continue
+
+        await _process_document(doc, colpali_overrides.get(ext_id))
 
     return RequeueIngestionResponse(results=results)
 

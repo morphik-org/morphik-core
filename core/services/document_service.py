@@ -8,6 +8,7 @@ import time  # Add time import for profiling
 import uuid
 from datetime import UTC, datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional, Type, Union
 
 import arq
@@ -40,6 +41,7 @@ from core.services.graph_service import GraphService
 from core.services.morphik_graph_service import MorphikGraphService
 from core.services.rules_processor import RulesProcessor
 from core.storage.base_storage import BaseStorage
+from core.storage.utils_file_extensions import detect_file_type
 from core.vector_store.base_vector_store import BaseVectorStore
 
 from ..models.auth import AuthContext
@@ -1495,12 +1497,16 @@ class DocumentService:
         # 2. Save raw file to Storage
         # Using a unique key structure similar to /ingest/file to avoid collisions if worker needs it
         file_key_suffix = str(uuid.uuid4())
-        storage_key = f"ingest_uploads/{file_key_suffix}/{filename}"
-        content_base64 = base64.b64encode(file_content_bytes).decode("utf-8")
+        safe_filename = Path(filename or "").name or "uploaded_file"
+        storage_key = f"ingest_uploads/{file_key_suffix}/{safe_filename}"
+        if not Path(storage_key).suffix:
+            detected_ext = detect_file_type(file_content_bytes)
+            if detected_ext:
+                storage_key = f"{storage_key}{detected_ext}"
 
         try:
             bucket_name, full_storage_path = await self._upload_to_app_bucket(
-                auth=auth, content_base64=content_base64, key=storage_key, content_type=content_type
+                auth=auth, content_bytes=file_content_bytes, key=storage_key, content_type=content_type
             )
             # Create StorageFileInfo with version as INT
             sfi = StorageFileInfo(
@@ -1510,7 +1516,7 @@ class DocumentService:
                 size=len(file_content_bytes),
                 last_modified=datetime.now(UTC),
                 version=1,  # INT, as per StorageFileInfo model
-                filename=filename,
+                filename=safe_filename,
             )
             # Populate legacy doc.storage_info (Dict[str, str]) with stringified values
             doc.storage_info = {k: str(v) if v is not None else "" for k, v in sfi.model_dump().items()}
@@ -3499,12 +3505,17 @@ class DocumentService:
     async def _upload_to_app_bucket(
         self,
         auth: AuthContext,
-        content_base64: str,
+        content_bytes: bytes,
         key: str,
         content_type: Optional[str] = None,
     ) -> tuple[str, str]:
         bucket_override = await self._get_bucket_for_app(auth.app_id)
-        return await self.storage.upload_from_base64(content_base64, key, content_type, bucket=bucket_override or "")
+        return await self.storage.upload_file(
+            content_bytes,
+            key,
+            content_type,
+            bucket=bucket_override or "",
+        )
 
     async def get_graph_visualization_data(
         self,
