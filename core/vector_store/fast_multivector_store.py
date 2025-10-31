@@ -357,6 +357,14 @@ class FastMultiVectorStore(BaseVectorStore):
         logger.info(f"query_similar timing - ns.query: {(t2 - t1)*1000:.2f} ms")
 
         # 3) Download multi-vectors
+        if not result.rows:
+            logger.info(
+                "query_similar: namespace query returned no rows (doc_ids=%s, app_id=%s); returning empty result",
+                doc_ids,
+                app_id or self.namespace,
+            )
+            return []
+
         multivector_retrieval_tasks = [
             self.load_multivector_from_storage(r["multivector"][0], r["multivector"][1]) for r in result.rows
         ]

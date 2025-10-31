@@ -99,6 +99,7 @@ class BaseDatabase(ABC):
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
         system_filters: Optional[Dict[str, Any]] = None,
+        status_filter: Optional[List[str]] = None,
         include_total_count: bool = False,
         include_status_counts: bool = False,
         include_folder_counts: bool = False,
@@ -108,6 +109,9 @@ class BaseDatabase(ABC):
     ) -> Dict[str, Any]:
         """
         List documents with optional aggregates and flexible pagination metadata.
+
+        Args:
+            status_filter: Optional list of processing statuses to include (matches system metadata status field).
 
         Returns:
             Dictionary containing documents and requested aggregate information.
@@ -136,6 +140,7 @@ class BaseDatabase(ABC):
         auth: AuthContext,
         filters: Optional[Dict[str, Any]] = None,
         system_filters: Optional[Dict[str, Any]] = None,
+        status_filter: Optional[List[str]] = None,
     ) -> List[str]:
         """Find document IDs matching filters that user has access to.
 
@@ -143,6 +148,7 @@ class BaseDatabase(ABC):
             auth: Authentication context
             filters: Optional metadata filters
             system_filters: Optional system metadata filters (e.g. folder_name, end_user_id)
+            status_filter: Optional list of document processing statuses to include
 
         Returns:
             List of document IDs matching the criteria

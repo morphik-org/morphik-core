@@ -654,6 +654,7 @@ class PostgresDatabase(BaseDatabase):
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
         system_filters: Optional[Dict[str, Any]] = None,
+        status_filter: Optional[List[str]] = None,
         include_total_count: bool = False,
         include_status_counts: bool = False,
         include_folder_counts: bool = False,
@@ -677,6 +678,21 @@ class PostgresDatabase(BaseDatabase):
                     where_clauses.append(f"({metadata_filter})")
                 if system_metadata_filter:
                     where_clauses.append(f"({system_metadata_filter})")
+                if status_filter:
+                    status_clauses: List[str] = []
+                    include_null_status = any(item is None for item in status_filter)
+                    normalized_statuses = [item for item in status_filter if item is not None]
+
+                    for idx, status_value in enumerate(normalized_statuses):
+                        param_name = f"status_filter_{idx}"
+                        filter_params[param_name] = str(status_value)
+                        status_clauses.append(f"(system_metadata->>'status') = :{param_name}")
+
+                    if include_null_status:
+                        status_clauses.append("(system_metadata->>'status') IS NULL")
+
+                    if status_clauses:
+                        where_clauses.append("(" + " OR ".join(status_clauses) + ")")
 
                 final_where_clause = " AND ".join(where_clauses) if where_clauses else "TRUE"
 
@@ -935,6 +951,7 @@ class PostgresDatabase(BaseDatabase):
         auth: AuthContext,
         filters: Optional[Dict[str, Any]] = None,
         system_filters: Optional[Dict[str, Any]] = None,
+        status_filter: Optional[List[str]] = None,
     ) -> List[str]:
         """Find document IDs matching filters and access permissions."""
         try:
@@ -958,6 +975,21 @@ class PostgresDatabase(BaseDatabase):
 
                 if system_metadata_filter:
                     where_clauses.append(f"({system_metadata_filter})")
+
+                if status_filter:
+                    status_clauses = []
+                    status_params: Dict[str, Any] = {}
+                    for idx, status in enumerate(status_filter):
+                        if status is None:
+                            status_clauses.append("(system_metadata->>'status') IS NULL")
+                        else:
+                            param_name = f"status_filter_{idx}"
+                            status_clauses.append(f"(system_metadata->>'status') = :{param_name}")
+                            status_params[param_name] = str(status)
+
+                    if status_clauses:
+                        where_clauses.append("(" + " OR ".join(status_clauses) + ")")
+                        filter_params.update(status_params)
 
                 final_where_clause = " AND ".join(where_clauses)
                 query = select(DocumentModel.external_id).where(text(final_where_clause).bindparams(**filter_params))
@@ -1025,11 +1057,12 @@ class PostgresDatabase(BaseDatabase):
     def _build_system_metadata_filter_optimized(self, system_filters: Optional[Dict[str, Any]]) -> str:
         """Build PostgreSQL filter for system metadata using flattened columns.
 
-        This optimized version uses direct column access instead of JSONB operations
-        for better performance.
+        - Uses direct column access (e.g. folder_name, end_user_id) for performance
+        - Backward-compatibility: treat empty string as NULL for folder_name/end_user_id
+          since some legacy rows may have "" instead of NULL in flattened columns.
 
-        Note: This returns a SQL string with named parameters like :app_id_0, :folder_name_0, etc.
-        The caller must provide these parameters when executing the query.
+        Returns a SQL string with named parameters like :app_id_0, :folder_name_0, etc.
+        The caller must also supply parameter values via ``_build_filter_params``.
         """
         if not system_filters:
             return ""
@@ -1052,7 +1085,12 @@ class PostgresDatabase(BaseDatabase):
             value_clauses = []
             for item in values:
                 if item is None:
-                    value_clauses.append(f"{column} IS NULL")
+                    # Backward-compat: for folder_name/end_user_id, also match empty string values which
+                    # historically represented "no folder/user" in some datasets.
+                    if column in ("folder_name", "end_user_id"):
+                        value_clauses.append(f"({column} IS NULL OR {column} = '')")
+                    else:
+                        value_clauses.append(f"{column} IS NULL")
                 else:
                     # Use named parameter instead of string interpolation
                     param_name = f"{key}_{self._filter_param_counter}"

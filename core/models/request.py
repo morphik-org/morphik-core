@@ -28,6 +28,10 @@ class ListDocsRequest(BaseModel):
     include_folder_counts: bool = Field(
         default=False, description="Include document counts grouped by folder when true"
     )
+    completed_only: bool = Field(
+        default=False,
+        description="When true, only documents with completed processing status are returned and counted",
+    )
     sort_by: Optional[Literal["created_at", "updated_at", "filename", "external_id"]] = Field(
         default="updated_at", description="Field to sort the results by"
     )
@@ -294,3 +298,34 @@ class DocumentPagesRequest(BaseModel):
     document_id: str = Field(..., description="ID of the document to extract pages from")
     start_page: int = Field(..., ge=1, description="Starting page number (1-indexed)")
     end_page: int = Field(..., ge=1, description="Ending page number (1-indexed)")
+
+
+class RequeueIngestionJob(BaseModel):
+    """Job descriptor for requeuing an ingestion task."""
+
+    external_id: str = Field(..., description="External identifier of the document to requeue")
+    use_colpali: Optional[bool] = Field(
+        default=None,
+        description="Override ColPali processing flag. When omitted the server attempts to infer it.",
+    )
+
+
+class RequeueIngestionRequest(BaseModel):
+    """Request payload for requeueing ingestion jobs."""
+
+    jobs: List[RequeueIngestionJob] = Field(
+        default_factory=list, description="Collection of jobs to requeue, each with optional ColPali override."
+    )
+    include_all: bool = Field(
+        default=False,
+        description="When true, requeue every accessible document whose status matches `statuses` (defaults to processing/failed).",
+    )
+    statuses: Optional[List[str]] = Field(
+        default=None,
+        description="Processing statuses to include when `include_all` is true. Defaults to ['processing', 'failed'].",
+    )
+    limit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Maximum number of documents to auto-select from the provided statuses when include_all is true.",
+    )

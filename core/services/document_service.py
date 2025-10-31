@@ -8,6 +8,7 @@ import time  # Add time import for profiling
 import uuid
 from datetime import UTC, datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional, Type, Union
 
 import arq
@@ -40,6 +41,7 @@ from core.services.graph_service import GraphService
 from core.services.morphik_graph_service import MorphikGraphService
 from core.services.rules_processor import RulesProcessor
 from core.storage.base_storage import BaseStorage
+from core.storage.utils_file_extensions import detect_file_type
 from core.vector_store.base_vector_store import BaseVectorStore
 
 from ..models.auth import AuthContext
@@ -53,6 +55,10 @@ CHARS_PER_TOKEN = 4
 TOKENS_PER_PAGE = 630
 
 settings = get_settings()
+
+
+class PdfConversionError(Exception):
+    """Raised when the service cannot rasterize a PDF into images."""
 
 
 class DocumentService:
@@ -302,7 +308,12 @@ class DocumentService:
 
         async def timed_auth():
             auth_start = time.time()
-            result = await self.db.find_authorized_and_filtered_documents(auth, filters, system_filters)
+            result = await self.db.find_authorized_and_filtered_documents(
+                auth,
+                filters,
+                system_filters,
+                status_filter=["completed"],
+            )
             auth_duration = time.time() - auth_start
             if perf_tracker:
                 perf_tracker.add_suboperation("retrieve_auth", auth_duration, "retrieve_embeddings_and_auth")
@@ -1486,12 +1497,16 @@ class DocumentService:
         # 2. Save raw file to Storage
         # Using a unique key structure similar to /ingest/file to avoid collisions if worker needs it
         file_key_suffix = str(uuid.uuid4())
-        storage_key = f"ingest_uploads/{file_key_suffix}/{filename}"
-        content_base64 = base64.b64encode(file_content_bytes).decode("utf-8")
+        safe_filename = Path(filename or "").name or "uploaded_file"
+        storage_key = f"ingest_uploads/{file_key_suffix}/{safe_filename}"
+        if not Path(storage_key).suffix:
+            detected_ext = detect_file_type(file_content_bytes)
+            if detected_ext:
+                storage_key = f"{storage_key}{detected_ext}"
 
         try:
             bucket_name, full_storage_path = await self._upload_to_app_bucket(
-                auth=auth, content_base64=content_base64, key=storage_key, content_type=content_type
+                auth=auth, content_bytes=file_content_bytes, key=storage_key, content_type=content_type
             )
             # Create StorageFileInfo with version as INT
             sfi = StorageFileInfo(
@@ -1501,7 +1516,7 @@ class DocumentService:
                 size=len(file_content_bytes),
                 last_modified=datetime.now(UTC),
                 version=1,  # INT, as per StorageFileInfo model
-                filename=filename,
+                filename=safe_filename,
             )
             # Populate legacy doc.storage_info (Dict[str, str]) with stringified values
             doc.storage_info = {k: str(v) if v is not None else "" for k, v in sfi.model_dump().items()}
@@ -1578,6 +1593,7 @@ class DocumentService:
         try:
             job = await redis.enqueue_job(
                 "process_ingestion_job",
+                _job_id=f"ingest:{doc.external_id}",
                 document_id=doc.external_id,
                 file_key=full_storage_path,  # This is the key in storage
                 bucket=bucket_name,
@@ -1590,7 +1606,12 @@ class DocumentService:
                 folder_name=str(folder_name) if folder_name else None,  # Ensure folder_name is str or None
                 end_user_id=end_user_id,
             )
-            logger.info(f"Connector file ingestion job queued with ID: {job.job_id} for document: {doc.external_id}")
+            if job is None:
+                logger.info("Connector file ingestion job already queued (doc_id=%s)", doc.external_id)
+            else:
+                logger.info(
+                    "Connector file ingestion job queued with ID: %s for document: %s", job.job_id, doc.external_id
+                )
         except Exception as e:
             logger.error(f"Failed to enqueue ingestion job for doc {doc.external_id} ({filename}): {e}")
             # Update document status to failed if enqueuing fails
@@ -1615,6 +1636,24 @@ class DocumentService:
         img_byte = buffered.getvalue()
         img_str = "data:image/png;base64," + base64.b64encode(img_byte).decode()
         return img_str
+
+    def _render_pdf_with_pymupdf(self, file_content: bytes, dpi: int) -> List[str]:
+        """
+        Render a PDF into base64-encoded PNG images using PyMuPDF.
+        Raises the underlying PyMuPDF exception so callers can decide on fallbacks.
+        """
+        pdf_document = fitz.open("pdf", file_content)
+        try:
+            images_b64: List[str] = []
+            for page in pdf_document:
+                mat = fitz.Matrix(dpi / 72, dpi / 72)
+                pix = page.get_pixmap(matrix=mat)
+                png_bytes = pix.tobytes("png")
+                b64 = "data:image/png;base64," + base64.b64encode(png_bytes).decode("utf-8")
+                images_b64.append(b64)
+            return images_b64
+        finally:
+            pdf_document.close()
 
     def _create_chunks_multivector(
         self,
@@ -1683,41 +1722,33 @@ class DocumentService:
             case "application/pdf":
                 logger.info("Working with PDF file - using PyMuPDF for faster processing!")
 
+                if not file_content:
+                    logger.error("PDF file content is empty")
+                    raise PdfConversionError("PDF file content is empty")
+
                 try:
-                    # Load PDF document with PyMuPDF (much faster than pdf2image)
-                    pdf_document = fitz.open("pdf", file_content)
-                    images_b64 = []
+                    dpi = int(os.getenv("COLPALI_PDF_DPI", "150"))
+                except Exception:
+                    dpi = 150
 
-                    # Process each page individually for better memory management
-                    try:
-                        dpi = int(os.getenv("COLPALI_PDF_DPI", "150"))
-                    except Exception:
-                        dpi = 150
-
-                    for page_num in range(len(pdf_document)):
-                        page = pdf_document[page_num]
-                        mat = fitz.Matrix(dpi / 72, dpi / 72)
-                        pix = page.get_pixmap(matrix=mat)
-                        img_data = pix.tobytes("png")
-
-                        # Convert to PIL Image and then to base64
-                        img = PILImage.open(BytesIO(img_data))
-                        images_b64.append(self.img_to_base64_str(img))
-
-                    pdf_document.close()  # Clean up resources
-
+                try:
+                    images_b64 = self._render_pdf_with_pymupdf(file_content, dpi)
                     logger.info(f"PyMuPDF processed {len(images_b64)} pages")
                     return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
 
                 except Exception as e:
-                    # Fallback to pdf2image if PyMuPDF fails
                     logger.warning(f"PyMuPDF failed ({e}), falling back to pdf2image")
 
-                    images = pdf2image.convert_from_bytes(file_content)
-                    images_b64 = [self.img_to_base64_str(image) for image in images]
-
-                    logger.info(f"pdf2image fallback processed {len(images_b64)} pages")
-                    return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                    try:
+                        images = pdf2image.convert_from_bytes(file_content, dpi=dpi)
+                        images_b64 = [self.img_to_base64_str(image) for image in images]
+                        logger.info(f"pdf2image fallback processed {len(images_b64)} pages")
+                        return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                    except Exception as fallback_error:
+                        logger.error(f"pdf2image fallback failed: {fallback_error}")
+                        raise PdfConversionError(
+                            f"Unable to convert PDF to images: {fallback_error}"
+                        ) from fallback_error
             case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/msword":
                 logger.info("Working with Word document!")
                 # Check if file content is empty
@@ -3270,6 +3301,138 @@ class DocumentService:
             logger.error(f"Error extracting PDF pages from {bucket}/{key}: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to extract PDF pages: {str(e)}")
 
+    async def extract_presentation_pages(
+        self,
+        bucket: str,
+        key: str,
+        filename: str,
+        start_page: int,
+        end_page: int,
+    ) -> Dict[str, Any]:
+        """
+        Extract specific slides from a PowerPoint presentation as base64-encoded images.
+
+        Converts the presentation to PDF using LibreOffice (soffice) and then renders the
+        requested slide range to images via PyMuPDF.
+
+        Args:
+            bucket: Storage bucket containing the presentation
+            key: Storage key for the presentation file
+            filename: Original filename (used to determine extension)
+            start_page: Starting slide number (1-indexed)
+            end_page: Ending slide number (1-indexed)
+
+        Returns:
+            Dict containing:
+                - pages: List of base64-encoded images
+                - total_pages: Total number of slides
+        """
+        import shutil
+        import subprocess
+
+        try:
+            # Ensure LibreOffice is available for conversion
+            if not shutil.which("soffice"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="PowerPoint extraction requires LibreOffice (soffice) to be installed on the server",
+                )
+
+            # Download the presentation file
+            file_content = await self.storage.download_file(bucket, key)
+            if not file_content:
+                raise HTTPException(status_code=404, detail="Presentation file is empty or missing")
+
+            # Determine suffix from filename
+            _, ext = os.path.splitext((filename or "").lower())
+            suffix = ".ppt" if ext == ".ppt" else ".pptx"
+
+            temp_ppt_path = None
+            temp_pdf_path = None
+            expected_pdf_path = None
+
+            # Write the presentation to a temporary file
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_ppt:
+                temp_ppt.write(file_content)
+                temp_ppt_path = temp_ppt.name
+
+            # Create a temporary target path to locate the output directory
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf:
+                temp_pdf_path = temp_pdf.name
+
+            # Compute expected output PDF path
+            base_filename = os.path.splitext(os.path.basename(temp_ppt_path))[0]
+            output_dir = os.path.dirname(temp_pdf_path)
+            expected_pdf_path = os.path.join(output_dir, f"{base_filename}.pdf")
+
+            # Convert presentation to PDF
+            result = subprocess.run(
+                [
+                    "soffice",
+                    "--headless",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    output_dir,
+                    temp_ppt_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode != 0:
+                logger.error(f"LibreOffice conversion failed: {result.stderr}")
+                raise HTTPException(status_code=500, detail="Failed to convert presentation to PDF")
+
+            if not os.path.exists(expected_pdf_path) or os.path.getsize(expected_pdf_path) == 0:
+                logger.error(f"Converted PDF missing or empty at: {expected_pdf_path}")
+                raise HTTPException(status_code=500, detail="Converted PDF is missing or empty")
+
+            # Read the converted PDF
+            with open(expected_pdf_path, "rb") as pdf_file:
+                pdf_content = pdf_file.read()
+
+            # Open with PyMuPDF
+            pdf_document = fitz.open("pdf", pdf_content)
+            total_pages = len(pdf_document)
+
+            # Clamp requested range
+            start_page = max(1, start_page)
+            end_page = min(end_page, total_pages)
+
+            pages_base64: List[str] = []
+            for page_num in range(start_page - 1, end_page):
+                page = pdf_document[page_num]
+                matrix = fitz.Matrix(2.0, 2.0)
+                pix = page.get_pixmap(matrix=matrix)
+                img_data = pix.tobytes("jpeg", jpg_quality=85)
+                img = PILImage.open(BytesIO(img_data))
+                pages_base64.append(self.img_to_base64_str(img))
+
+            pdf_document.close()
+
+            return {"pages": pages_base64, "total_pages": total_pages}
+
+        except HTTPException:
+            raise
+        except subprocess.TimeoutExpired:
+            logger.error("LibreOffice conversion timed out for presentation")
+            raise HTTPException(status_code=500, detail="Presentation to PDF conversion timed out")
+        except Exception as e:
+            logger.error(f"Error extracting presentation pages from {bucket}/{key}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to extract presentation pages: {str(e)}")
+        finally:
+            try:
+                if "temp_ppt_path" in locals() and temp_ppt_path and os.path.exists(temp_ppt_path):
+                    os.unlink(temp_ppt_path)
+                if "temp_pdf_path" in locals() and temp_pdf_path and os.path.exists(temp_pdf_path):
+                    os.unlink(temp_pdf_path)
+                if "expected_pdf_path" in locals() and expected_pdf_path and os.path.exists(expected_pdf_path):
+                    os.unlink(expected_pdf_path)
+            except Exception as cleanup_error:
+                logger.debug(f"Cleanup error: {cleanup_error}")
+
     def close(self):
         """Close all resources."""
         # Close any active caches
@@ -3342,12 +3505,17 @@ class DocumentService:
     async def _upload_to_app_bucket(
         self,
         auth: AuthContext,
-        content_base64: str,
+        content_bytes: bytes,
         key: str,
         content_type: Optional[str] = None,
     ) -> tuple[str, str]:
         bucket_override = await self._get_bucket_for_app(auth.app_id)
-        return await self.storage.upload_from_base64(content_base64, key, content_type, bucket=bucket_override or "")
+        return await self.storage.upload_file(
+            content_bytes,
+            key,
+            content_type,
+            bucket=bucket_override or "",
+        )
 
     async def get_graph_visualization_data(
         self,

@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile
@@ -140,6 +141,7 @@ async def list_docs(
             limit=request.limit,
             filters=request.document_filters,
             system_filters=system_filters,
+            status_filter=["completed"] if request.completed_only else None,
             include_total_count=request.include_total_count,
             include_status_counts=request.include_status_counts,
             include_folder_counts=request.include_folder_counts,
@@ -578,7 +580,7 @@ async def extract_document_pages(
     auth: AuthContext = Depends(verify_token),
 ):
     """
-    Extract specific pages from a PDF document as base64-encoded images.
+    Extract specific pages from a document (PDF or PowerPoint) as base64-encoded images.
 
     Args:
         request: Request containing document_id, start_page, and end_page
@@ -597,18 +599,52 @@ async def extract_document_pages(
         if not doc.storage_info or not doc.storage_info.get("bucket") or not doc.storage_info.get("key"):
             raise HTTPException(status_code=404, detail="Document file not found in storage")
 
-        # Check if document is a PDF by filename extension
-        if not doc.filename or not doc.filename.lower().endswith(".pdf"):
-            raise HTTPException(status_code=400, detail="Document is not a PDF")
-
         # Validate page range
         if request.start_page > request.end_page:
             raise HTTPException(status_code=400, detail="start_page must be less than or equal to end_page")
 
-        # Extract pages using document service
-        pages_data = await document_service.extract_pdf_pages(
-            doc.storage_info["bucket"], doc.storage_info["key"], request.start_page, request.end_page
-        )
+        # Determine document type by content_type or filename
+        content_type = (doc.content_type or "").lower()
+        filename = (doc.filename or "").lower()
+        _, ext = os.path.splitext(filename)
+
+        is_pdf = content_type == "application/pdf" or ext == ".pdf"
+        is_ppt = content_type in {
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+        } or ext in {".ppt", ".pptx", ".pps", ".ppsx"}
+
+        # Extract pages using appropriate handler
+        if is_pdf:
+            pages_data = await document_service.extract_pdf_pages(
+                doc.storage_info["bucket"], doc.storage_info["key"], request.start_page, request.end_page
+            )
+        elif is_ppt:
+            # Assume PPT/PPTX were ingested via ColPali: fetch image chunks for the page range
+            if not getattr(document_service, "colpali_vector_store", None):
+                raise HTTPException(status_code=400, detail="ColPali is required for PowerPoint page extraction")
+
+            start_idx = max(0, request.start_page - 1)
+            end_idx = max(0, request.end_page - 1)
+            if end_idx < start_idx:
+                start_idx, end_idx = end_idx, start_idx
+
+            identifiers = [(doc.external_id, i) for i in range(start_idx, end_idx + 1)]
+            try:
+                chunks = await document_service.colpali_vector_store.get_chunks_by_id(identifiers, auth.app_id)
+            except Exception as e:
+                logger.error(f"Failed to retrieve ColPali chunks for {doc.external_id}: {e}")
+                raise HTTPException(status_code=500, detail="Failed to retrieve slide images")
+
+            # Order by chunk_number and extract base64 image content
+            chunks_sorted = sorted(chunks, key=lambda c: c.chunk_number)
+            pages_b64 = [c.content for c in chunks_sorted if isinstance(c.content, str) and c.content]
+
+            # Provide a best-effort total_pages placeholder (not authoritative)
+            pages_data = {"pages": pages_b64, "total_pages": request.end_page}
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported document type for page extraction")
 
         return DocumentPagesResponse(
             document_id=request.document_id,
