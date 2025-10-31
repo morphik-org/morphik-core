@@ -1642,9 +1642,9 @@ class DocumentService:
             for page in pdf_document:
                 mat = fitz.Matrix(dpi / 72, dpi / 72)
                 pix = page.get_pixmap(matrix=mat)
-                img_data = pix.tobytes("png")
-                with PILImage.open(BytesIO(img_data)) as img:
-                    images_b64.append(self.img_to_base64_str(img))
+                png_bytes = pix.tobytes("png")
+                b64 = "data:image/png;base64," + base64.b64encode(png_bytes).decode("utf-8")
+                images_b64.append(b64)
             return images_b64
         finally:
             pdf_document.close()
