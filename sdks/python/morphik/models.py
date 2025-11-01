@@ -215,8 +215,6 @@ class DocumentContent(BaseModel):
 
     @field_validator("filename")
     def filename_only_for_url(cls, v, values):
-        if values.data.get("type") == "string" and v is not None:
-            raise ValueError("filename can only be set when type is url")
         if values.data.get("type") == "url" and v is None:
             raise ValueError("filename is required when type is url")
         return v
