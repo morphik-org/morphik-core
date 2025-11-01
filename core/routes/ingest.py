@@ -357,6 +357,8 @@ async def batch_ingest_files(
 
     created_documents: List[Document] = []
 
+    from core.models.documents import StorageFileInfo  # local import to avoid cycles
+
     try:
         for idx, file in enumerate(files):
             metadata_item = metadata_value[idx] if isinstance(metadata_value, list) else metadata_value
@@ -418,9 +420,19 @@ async def batch_ingest_files(
             )
 
             doc.storage_info = {"bucket": bucket, "key": stored_key}
+            doc.storage_files = [
+                StorageFileInfo(
+                    bucket=bucket,
+                    key=stored_key,
+                    version=1,
+                    filename=safe_filename,
+                    content_type=file.content_type,
+                    timestamp=datetime.now(UTC),
+                )
+            ]
             await app_db.update_document(
                 document_id=doc.external_id,
-                updates={"storage_info": doc.storage_info},
+                updates={"storage_info": doc.storage_info, "storage_files": doc.storage_files},
                 auth=auth,
             )
 

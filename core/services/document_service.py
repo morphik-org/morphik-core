@@ -9,7 +9,7 @@ import uuid
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Optional, Type, Union
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Type, Union
 
 import arq
 import filetype
@@ -1629,29 +1629,61 @@ class DocumentService:
 
         return doc
 
-    def img_to_base64_str(self, img: PILImage.Image):
+    def _image_bytes_to_chunk(
+        self,
+        image_bytes: bytes,
+        mime_type: str,
+        base64_override: Optional[str] = None,
+    ) -> Chunk:
+        """
+        Build a Chunk that preserves raw image bytes alongside the data URI used for storage.
+        """
+        content = base64_override
+        if content is None:
+            content = f"data:{mime_type};base64," + base64.b64encode(image_bytes).decode()
+        return Chunk(
+            content=content,
+            metadata={"is_image": True, "_image_bytes": image_bytes, "mime_type": mime_type},
+        )
+
+    def img_to_base64_with_bytes(
+        self,
+        img: PILImage.Image,
+        format: str = "PNG",
+        mime_type: Optional[str] = None,
+    ) -> Tuple[str, bytes]:
         buffered = BytesIO()
-        img.save(buffered, format="PNG")
+        img.save(buffered, format=format)
         buffered.seek(0)
-        img_byte = buffered.getvalue()
-        img_str = "data:image/png;base64," + base64.b64encode(img_byte).decode()
+        img_bytes = buffered.getvalue()
+        mime = mime_type or f"image/{format.lower()}"
+        img_str = f"data:{mime};base64," + base64.b64encode(img_bytes).decode()
+        return img_str, img_bytes
+
+    def img_to_base64_str(self, img: PILImage.Image):
+        img_str, _ = self.img_to_base64_with_bytes(img)
         return img_str
 
-    def _render_pdf_with_pymupdf(self, file_content: bytes, dpi: int) -> List[str]:
+    def _render_pdf_with_pymupdf(
+        self, file_content: bytes, dpi: int, include_bytes: bool = False
+    ) -> List[Union[str, Tuple[str, bytes]]]:
         """
         Render a PDF into base64-encoded PNG images using PyMuPDF.
         Raises the underlying PyMuPDF exception so callers can decide on fallbacks.
         """
         pdf_document = fitz.open("pdf", file_content)
         try:
-            images_b64: List[str] = []
+            images: List[Union[str, Tuple[str, bytes]]] = []
             for page in pdf_document:
                 mat = fitz.Matrix(dpi / 72, dpi / 72)
                 pix = page.get_pixmap(matrix=mat)
                 png_bytes = pix.tobytes("png")
                 b64 = "data:image/png;base64," + base64.b64encode(png_bytes).decode("utf-8")
-                images_b64.append(b64)
-            return images_b64
+                if include_bytes:
+                    images.append((b64, png_bytes))
+                else:
+                    images.append(b64)
+            return images
         finally:
             pdf_document.close()
 
@@ -1682,7 +1714,13 @@ class DocumentService:
                 logger.info("Heuristic image detection succeeded (Pillow). Treating as image.")
                 if file_content_base64 is None:
                     file_content_base64 = base64.b64encode(file_content).decode()
-                return [Chunk(content=file_content_base64, metadata={"is_image": True})]
+                return [
+                    self._image_bytes_to_chunk(
+                        file_content,
+                        mime_type="image/unknown",
+                        base64_override=file_content_base64,
+                    )
+                ]
             except Exception:
                 logger.info("File type is None and not an image – treating as text")
                 return [
@@ -1706,19 +1744,39 @@ class DocumentService:
                 buffered = BytesIO()
                 # Save as JPEG with moderate quality instead of PNG to reduce size further
                 img.convert("RGB").save(buffered, format="JPEG", quality=70, optimize=True)
-                img_b64 = "data:image/jpeg;base64," + base64.b64encode(buffered.getvalue()).decode()
-                return [Chunk(content=img_b64, metadata={"is_image": True})]
+                jpeg_bytes = buffered.getvalue()
+                img_b64 = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode()
+                return [
+                    self._image_bytes_to_chunk(
+                        jpeg_bytes,
+                        mime_type="image/jpeg",
+                        base64_override=img_b64,
+                    )
+                ]
             except Exception as e:
                 logger.error(f"Error resizing image for base64 encoding: {e}. Falling back to original size.")
                 if file_content_base64 is None:
                     file_content_base64 = base64.b64encode(file_content).decode()
-                return [Chunk(content=file_content_base64, metadata={"is_image": True})]
+                return [
+                    self._image_bytes_to_chunk(
+                        file_content,
+                        mime_type=mime_type,
+                        base64_override=file_content_base64,
+                    )
+                ]
 
         match mime_type:
             case file_type if file_type in IMAGE:
                 if file_content_base64 is None:
                     file_content_base64 = base64.b64encode(file_content).decode()
-                return [Chunk(content=file_content_base64, metadata={"is_image": True})]
+                detected_mime = mime_type if isinstance(mime_type, str) else "image/unknown"
+                return [
+                    self._image_bytes_to_chunk(
+                        file_content,
+                        mime_type=detected_mime,
+                        base64_override=file_content_base64,
+                    )
+                ]
             case "application/pdf":
                 logger.info("Working with PDF file - using PyMuPDF for faster processing!")
 
@@ -1732,18 +1790,24 @@ class DocumentService:
                     dpi = 150
 
                 try:
-                    images_b64 = self._render_pdf_with_pymupdf(file_content, dpi)
-                    logger.info(f"PyMuPDF processed {len(images_b64)} pages")
-                    return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                    images_with_bytes = self._render_pdf_with_pymupdf(file_content, dpi, include_bytes=True)
+                    logger.info(f"PyMuPDF processed {len(images_with_bytes)} pages")
+                    return [
+                        self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
+                        for image_b64, raw_bytes in images_with_bytes
+                    ]
 
                 except Exception as e:
                     logger.warning(f"PyMuPDF failed ({e}), falling back to pdf2image")
 
                     try:
                         images = pdf2image.convert_from_bytes(file_content, dpi=dpi)
-                        images_b64 = [self.img_to_base64_str(image) for image in images]
-                        logger.info(f"pdf2image fallback processed {len(images_b64)} pages")
-                        return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                        image_payloads = [self.img_to_base64_with_bytes(image) for image in images]
+                        logger.info(f"pdf2image fallback processed {len(image_payloads)} pages")
+                        return [
+                            self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
+                            for image_b64, raw_bytes in image_payloads
+                        ]
                     except Exception as fallback_error:
                         logger.error(f"pdf2image fallback failed: {fallback_error}")
                         raise PdfConversionError(
@@ -1820,7 +1884,7 @@ class DocumentService:
                         # Use PyMuPDF for PDF processing (faster than pdf2image)
                         try:
                             pdf_document = fitz.open("pdf", pdf_content)
-                            images_b64 = []
+                            images_payload: List[Tuple[str, bytes]] = []
 
                             # Process each page individually
                             for page_num in range(len(pdf_document)):
@@ -1835,7 +1899,8 @@ class DocumentService:
 
                                 # Convert to PIL Image and then to base64
                                 img = PILImage.open(BytesIO(img_data))
-                                images_b64.append(self.img_to_base64_str(img))
+                                img_str, img_bytes = self.img_to_base64_with_bytes(img)
+                                images_payload.append((img_str, img_bytes))
 
                             pdf_document.close()  # Clean up resources
 
@@ -1854,9 +1919,9 @@ class DocumentService:
                                     )
                                     for chunk in chunks
                                 ]
-                            images_b64 = [self.img_to_base64_str(image) for image in images]
+                            images_payload = [self.img_to_base64_with_bytes(image) for image in images]
 
-                        if not images_b64:
+                        if not images_payload:
                             logger.warning("No images extracted from Word document PDF")
                             return [
                                 Chunk(
@@ -1866,8 +1931,11 @@ class DocumentService:
                                 for chunk in chunks
                             ]
 
-                        logger.info(f"Word document processed {len(images_b64)} pages")
-                        return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                        logger.info(f"Word document processed {len(images_payload)} pages")
+                        return [
+                            self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
+                            for image_b64, raw_bytes in images_payload
+                        ]
                     except Exception as pdf_error:
                         logger.error(f"Error converting PDF to images: {str(pdf_error)}")
                         return [
@@ -1997,7 +2065,7 @@ class DocumentService:
                         try:
                             # Use PyMuPDF for PDF processing
                             pdf_document = fitz.open("pdf", pdf_content)
-                            images_b64 = []
+                            images_payload: List[Tuple[str, bytes]] = []
 
                             # Process each slide as an image
                             for page_num in range(len(pdf_document)):
@@ -2012,27 +2080,34 @@ class DocumentService:
 
                                 # Convert to PIL Image and then to base64
                                 img = PILImage.open(BytesIO(img_data))
-                                images_b64.append(self.img_to_base64_str(img))
+                                img_str, img_bytes = self.img_to_base64_with_bytes(img)
+                                images_payload.append((img_str, img_bytes))
 
                             pdf_document.close()
 
                             logger.info(
-                                f"PowerPoint presentation successfully processed {len(images_b64)} slides as images"
+                                f"PowerPoint presentation successfully processed {len(images_payload)} slides as images"
                             )
-                            return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                            return [
+                                self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
+                                for image_b64, raw_bytes in images_payload
+                            ]
 
                         except Exception as pymupdf_error:
                             # Fallback to pdf2image if PyMuPDF fails
                             logger.warning(f"PyMuPDF failed for PowerPoint ({pymupdf_error}), trying pdf2image")
                             try:
                                 images = pdf2image.convert_from_bytes(pdf_content)
-                                images_b64 = [self.img_to_base64_str(image) for image in images]
+                                images_payload = [self.img_to_base64_with_bytes(image) for image in images]
 
                                 logger.info(
-                                    f"PowerPoint presentation processed {len(images_b64)} slides with pdf2image"
+                                    f"PowerPoint presentation processed {len(images_payload)} slides with pdf2image"
                                 )
                                 return [
-                                    Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64
+                                    self._image_bytes_to_chunk(
+                                        raw_bytes, mime_type="image/png", base64_override=image_b64
+                                    )
+                                    for image_b64, raw_bytes in images_payload
                                 ]
                             except Exception as pdf2image_error:
                                 logger.warning(f"pdf2image also failed: {pdf2image_error}")
@@ -2180,7 +2255,7 @@ class DocumentService:
                         try:
                             # Use PyMuPDF for PDF processing
                             pdf_document = fitz.open("pdf", pdf_content)
-                            images_b64 = []
+                            images_payload: List[Tuple[str, bytes]] = []
 
                             # Process each page/sheet as an image
                             for page_num in range(len(pdf_document)):
@@ -2195,23 +2270,32 @@ class DocumentService:
 
                                 # Convert to PIL Image and then to base64
                                 img = PILImage.open(BytesIO(img_data))
-                                images_b64.append(self.img_to_base64_str(img))
+                                img_str, img_bytes = self.img_to_base64_with_bytes(img)
+                                images_payload.append((img_str, img_bytes))
 
                             pdf_document.close()
 
-                            logger.info(f"Excel spreadsheet successfully processed {len(images_b64)} pages as images")
-                            return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                            logger.info(
+                                f"Excel spreadsheet successfully processed {len(images_payload)} pages as images"
+                            )
+                            return [
+                                self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
+                                for image_b64, raw_bytes in images_payload
+                            ]
 
                         except Exception as pymupdf_error:
                             # Fallback to pdf2image if PyMuPDF fails
                             logger.warning(f"PyMuPDF failed for Excel ({pymupdf_error}), trying pdf2image")
                             try:
                                 images = pdf2image.convert_from_bytes(pdf_content)
-                                images_b64 = [self.img_to_base64_str(image) for image in images]
+                                images_payload = [self.img_to_base64_with_bytes(image) for image in images]
 
-                                logger.info(f"Excel spreadsheet processed {len(images_b64)} pages with pdf2image")
+                                logger.info(f"Excel spreadsheet processed {len(images_payload)} pages with pdf2image")
                                 return [
-                                    Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64
+                                    self._image_bytes_to_chunk(
+                                        raw_bytes, mime_type="image/png", base64_override=image_b64
+                                    )
+                                    for image_b64, raw_bytes in images_payload
                                 ]
                             except Exception as pdf2image_error:
                                 logger.warning(f"pdf2image also failed: {pdf2image_error}")
@@ -2280,10 +2364,26 @@ class DocumentService:
         2. Vector search is only performed on already authorized and filtered documents
         3. This approach is more efficient as it reduces the size of chunk metadata
         """
-        return [
-            c.to_document_chunk(chunk_number=start_index + i, embedding=embedding, document_id=doc_id)
-            for i, (embedding, c) in enumerate(zip(embeddings, chunks))
-        ]
+        chunk_objects: List[DocumentChunk] = []
+        for index, (embedding, chunk) in enumerate(zip(embeddings, chunks)):
+            original_metadata = chunk.metadata or {}
+            sanitized_metadata: Dict[str, Any] = {}
+            for key, value in original_metadata.items():
+                if key == "_image_bytes":
+                    continue
+                if isinstance(value, (bytes, bytearray, memoryview)):
+                    sanitized_metadata[key] = base64.b64encode(bytes(value)).decode()
+                else:
+                    sanitized_metadata[key] = value
+            sanitized_chunk = Chunk(content=chunk.content, metadata=sanitized_metadata)
+            chunk_objects.append(
+                sanitized_chunk.to_document_chunk(
+                    chunk_number=start_index + index,
+                    embedding=embedding,
+                    document_id=doc_id,
+                )
+            )
+        return chunk_objects
 
     async def _store_chunks_and_doc(
         self,
