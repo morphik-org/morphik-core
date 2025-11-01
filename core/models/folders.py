@@ -18,7 +18,6 @@ class Folder(BaseModel):
             "updated_at": datetime.now(UTC),
         }
     )
-    rules: List[Dict[str, Any]] = Field(default_factory=list)
     # Flattened fields from system_metadata for performance
     app_id: Optional[str] = None
     end_user_id: Optional[str] = None

@@ -265,19 +265,6 @@ class GenerateUriRequest(BaseModel):
 
 
 # Add these classes before the extract_folder_data endpoint
-class MetadataExtractionRuleRequest(BaseModel):
-    """Request model for metadata extraction rule"""
-
-    type: str = "metadata_extraction"  # Only metadata_extraction supported for now
-    schema: Dict[str, Any]
-
-
-class SetFolderRuleRequest(BaseModel):
-    """Request model for setting folder rules"""
-
-    rules: List[MetadataExtractionRuleRequest]
-
-
 class AgentQueryRequest(BaseModel):
     """Request model for agent queries"""
 
