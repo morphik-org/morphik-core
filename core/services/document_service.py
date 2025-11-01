@@ -239,7 +239,13 @@ class DocumentService:
 
         settings = get_settings()
         should_rerank = use_reranking if use_reranking is not None else settings.USE_RERANKING
-        using_colpali = (use_colpali if use_colpali is not None else False) and settings.ENABLE_COLPALI
+        multivector_available = bool(self.colpali_embedding_model and self.colpali_vector_store)
+        requested_multivector = use_colpali if use_colpali is not None else False
+        using_multivector = bool(requested_multivector and settings.ENABLE_COLPALI and multivector_available)
+        if requested_multivector and not using_multivector:
+            logger.warning(
+                "Multivector retrieval requested but required components are unavailable. Falling back to regular search."
+            )
 
         # Build system filters for folder_name and end_user_id
         system_filters = {}
@@ -266,14 +272,8 @@ class DocumentService:
                     perf_tracker.add_suboperation(phase_key, duration, perf_parent)
 
         # Launch embedding queries concurrently
-        embedding_tasks = [
-            measure_phase(
-                self.embedding_model.embed_for_query(query),
-                "query_embedding",
-                "retrieve_embeddings_and_auth",
-            )
-        ]
-        if using_colpali and self.colpali_embedding_model:
+        embedding_tasks = []
+        if using_multivector:
             embedding_tasks.append(
                 measure_phase(
                     self.colpali_embedding_model.embed_for_query(query),
@@ -285,6 +285,15 @@ class DocumentService:
         else:
             multivector_pipeline_start = None
             phase_times["multivector_query_embedding"] = 0.0
+            embedding_tasks.append(
+                measure_phase(
+                    self.embedding_model.embed_for_query(query),
+                    "query_embedding",
+                    "retrieve_embeddings_and_auth",
+                )
+            )
+        if using_multivector:
+            phase_times["query_embedding"] = 0.0
 
         if not perf_tracker:
             phase_times["setup"] = time.time() - setup_start
@@ -327,8 +336,12 @@ class DocumentService:
         )
 
         embedding_results, doc_ids = results
-        query_embedding_regular = embedding_results[0]
-        query_embedding_multivector = embedding_results[1] if len(embedding_results) > 1 else None
+        query_embedding_regular = None
+        query_embedding_multivector = None
+        if using_multivector:
+            query_embedding_multivector = embedding_results[0]
+        else:
+            query_embedding_regular = embedding_results[0]
 
         if not perf_tracker:
             phase_times["retrieve_embeddings_and_auth"] = time.time() - parallel_start
@@ -347,26 +360,33 @@ class DocumentService:
             search_setup_start = time.time()
 
         # Check if we're using colpali multivector search
-        search_multi = using_colpali and self.colpali_vector_store and query_embedding_multivector is not None
+        search_multi = using_multivector and self.colpali_vector_store and query_embedding_multivector is not None
 
         # For regular reranking (without colpali), we'll use the existing reranker if available
-        # For colpali reranking, we'll handle it in _combine_multi_and_regular_chunks
-        use_standard_reranker = should_rerank and (not search_multi) and self.reranker is not None
+        # When ColPali is enabled we rely on the ColPali vector store scoring directly.
+        use_standard_reranker = should_rerank and (not using_multivector) and self.reranker is not None
 
         # Search chunks with vector similarity in parallel
         # When using standard reranker, we get more chunks initially to improve reranking quality
-        search_tasks = [
-            measure_phase(
-                self.vector_store.query_similar(
-                    query_embedding_regular,
-                    k=10 * k if use_standard_reranker else k,
-                    doc_ids=doc_ids,
-                    app_id=auth.app_id,
-                ),
-                "vector_search_regular",
-                "retrieve_vector_search",
+        search_tasks = []
+        if not using_multivector:
+            oversample_k = k
+            if use_standard_reranker:
+                oversample_k = max(k, min(3 * k, 20))
+            search_tasks.append(
+                measure_phase(
+                    self.vector_store.query_similar(
+                        query_embedding_regular,
+                        k=oversample_k,
+                        doc_ids=doc_ids,
+                        app_id=auth.app_id,
+                    ),
+                    "vector_search_regular",
+                    "retrieve_vector_search",
+                )
             )
-        ]
+        else:
+            phase_times["vector_search_regular"] = 0.0
 
         if search_multi:
             search_tasks.append(
@@ -378,7 +398,7 @@ class DocumentService:
                     "retrieve_vector_search",
                 )
             )
-        else:
+        elif not using_multivector:
             phase_times["multivector_vector_search"] = 0.0
 
         if not perf_tracker:
@@ -389,14 +409,21 @@ class DocumentService:
             vector_search_start = time.time()
 
         search_results = await asyncio.gather(*search_tasks)
-        chunks = search_results[0]
-        chunks_multivector = search_results[1] if len(search_results) > 1 else []
+        chunks: List[DocumentChunk] = []
+        chunks_multivector: List[DocumentChunk] = []
+        idx = 0
+        if not using_multivector:
+            chunks = search_results[idx]
+            idx += 1
+        if search_multi:
+            chunks_multivector = search_results[idx]
 
         if not perf_tracker:
             phase_times["vector_search"] = time.time() - vector_search_start
 
-        logger.debug(f"Found {len(chunks)} similar chunks via regular embedding")
-        if using_colpali:
+        if not using_multivector:
+            logger.debug(f"Found {len(chunks)} similar chunks via regular embedding")
+        if search_multi:
             logger.debug(
                 f"Found {len(chunks_multivector)} similar chunks via multivector embedding "
                 f"since we are also using colpali"
@@ -423,14 +450,12 @@ class DocumentService:
             perf_tracker.start_phase("retrieve_chunk_combination")
 
         combination_start = time.time()
-        chunks = await self._combine_multi_and_regular_chunks(
-            query, chunks, chunks_multivector, should_rerank=should_rerank
-        )
-
+        if using_multivector:
+            chunks = chunks_multivector
         combination_duration = time.time() - combination_start
         if not perf_tracker:
             phase_times["chunk_combination"] = combination_duration
-        if using_colpali and chunks_multivector:
+        if using_multivector:
             phase_times["multivector_chunk_combination"] = combination_duration
             if perf_tracker:
                 perf_tracker.add_suboperation(
@@ -442,7 +467,7 @@ class DocumentService:
             phase_times["multivector_chunk_combination"] = phase_times.get("multivector_chunk_combination", 0.0)
 
         # Apply padding if requested and using colpali
-        if padding > 0 and using_colpali:
+        if padding > 0 and using_multivector:
             if perf_tracker:
                 perf_tracker.start_phase("retrieve_padding")
 
@@ -469,7 +494,7 @@ class DocumentService:
         if not perf_tracker:
             phase_times["result_creation"] = time.time() - result_creation_start
 
-        if using_colpali and multivector_pipeline_start is not None:
+        if using_multivector and multivector_pipeline_start is not None:
             phase_times["multivector_pipeline_total"] = time.time() - multivector_pipeline_start
             if perf_tracker:
                 perf_tracker.add_suboperation(
@@ -492,51 +517,6 @@ class DocumentService:
             logger.info("==========================================================")
 
         return results
-
-    async def _combine_multi_and_regular_chunks(
-        self,
-        query: str,
-        chunks: List[DocumentChunk],
-        chunks_multivector: List[DocumentChunk],
-        should_rerank: bool = None,
-    ):
-        """Combine and potentially rerank regular and colpali chunks based on configuration.
-
-        ### 4 configurations:
-        1. No reranking, no colpali -> just return regular chunks - this already happens upstream, correctly
-        2. No reranking, colpali  -> return colpali chunks + regular chunks - no need to run smaller colpali model
-        3. Reranking, no colpali -> sort regular chunks by re-ranker score - this already happens upstream, correctly
-        4. Reranking, colpali -> return merged chunks sorted by smaller colpali model score
-
-        Args:
-            query: The user query
-            chunks: Regular chunks with embeddings
-            chunks_multivector: Colpali multi-vector chunks
-            should_rerank: Whether reranking is enabled
-        """
-        # Handle simple cases first
-        if len(chunks_multivector) == 0:
-            return chunks
-        if len(chunks) == 0:
-            return chunks_multivector
-
-        # Use global setting if not provided
-        if should_rerank is None:
-            settings = get_settings()
-            should_rerank = settings.USE_RERANKING
-
-        # Check if we need to run the reranking - if reranking is disabled, we just combine the chunks
-        # This is Configuration 2: No reranking, with colpali
-        if not should_rerank:
-            # For configuration 2, simply combine the chunks with multivector chunks first
-            # since they are generally higher quality
-            return chunks_multivector + chunks
-
-        # Configuration 4: Reranking with colpali
-        # Use colpali as a reranker to get consistent similarity scores for both types of chunks
-        # IMPORTANT: Multivector chunks already have proper ColPali similarity scores from their vector store,
-        # so we should preserve those. Only rescore regular text chunks to make them comparable.
-        return chunks_multivector + chunks
 
     def _count_tokens_simple(self, text: str) -> int:
         """Simple token counting using whitespace splitting.
@@ -2536,15 +2516,6 @@ class DocumentService:
         doc_map = {doc.external_id: doc for doc in docs}
         logger.debug(f"Retrieved metadata for {len(doc_map)} unique documents in a single batch")
 
-        # Generate download URLs for all documents that have storage info
-        download_urls = {}
-        for doc_id, doc in doc_map.items():
-            if doc.storage_info:
-                download_urls[doc_id] = await self.storage.get_download_url(
-                    doc.storage_info["bucket"], doc.storage_info["key"]
-                )
-                logger.debug(f"Generated download URL for document {doc_id}")
-
         # Create chunk results using the lookup dictionaries
         for chunk in chunks:
             doc = doc_map.get(chunk.document_id)
@@ -2567,7 +2538,7 @@ class DocumentService:
                     metadata=metadata,
                     content_type=doc.content_type,
                     filename=doc.filename,
-                    download_url=download_urls.get(chunk.document_id),
+                    download_url=None,
                 )
             )
 
@@ -2597,15 +2568,6 @@ class DocumentService:
         doc_map = {doc.external_id: doc for doc in docs}
         logger.debug(f"Retrieved metadata for {len(doc_map)} unique documents in a single batch")
 
-        # Generate download URLs for non-text documents in a single loop
-        download_urls = {}
-        for doc_id, doc in doc_map.items():
-            if doc.content_type != "text/plain" and doc.storage_info:
-                download_urls[doc_id] = await self.storage.get_download_url(
-                    doc.storage_info["bucket"], doc.storage_info["key"]
-                )
-                logger.debug(f"Generated download URL for document {doc_id}")
-
         # Create document results using the lookup dictionaries
         results = {}
         for doc_id, chunk in doc_chunks.items():
@@ -2614,14 +2576,8 @@ class DocumentService:
                 logger.warning(f"Document {doc_id} not found")
                 continue
 
-            # Create DocumentContent based on content type
-            if doc.content_type == "text/plain":
-                content = DocumentContent(type="string", value=chunk.content, filename=None)
-                logger.debug(f"Created text content for document {doc_id}")
-            else:
-                # Use pre-generated download URL for file types
-                content = DocumentContent(type="url", value=download_urls.get(doc_id), filename=doc.filename)
-                logger.debug(f"Created URL content for document {doc_id}")
+            # Use chunk content directly; callers can request download URLs explicitly when needed.
+            content = DocumentContent(type="string", value=chunk.content, filename=doc.filename)
 
             results[doc_id] = DocumentResult(
                 score=chunk.score,
