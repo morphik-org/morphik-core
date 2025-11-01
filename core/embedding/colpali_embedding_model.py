@@ -63,11 +63,17 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         for index, chunk in enumerate(chunks):
             if chunk.metadata.get("is_image"):
                 try:
-                    content = chunk.content
-                    if content.startswith("data:"):
-                        content = content.split(",", 1)[1]
-                    image_bytes = base64.b64decode(content)
+                    raw_bytes = chunk.metadata.get("_image_bytes")
+                    if isinstance(raw_bytes, (bytes, bytearray, memoryview)):
+                        image_bytes = bytes(raw_bytes)
+                    else:
+                        content = chunk.content
+                        if content.startswith("data:"):
+                            content = content.split(",", 1)[1]
+                        image_bytes = base64.b64decode(content)
                     image = open_image(io.BytesIO(image_bytes))
+                    # Drop cached bytes once we've materialized the image to keep metadata lean
+                    chunk.metadata.pop("_image_bytes", None)
                     image_items.append((index, image))
                 except Exception as e:
                     logger.error(f"Error processing image chunk {index}: {str(e)}. Falling back to text.")

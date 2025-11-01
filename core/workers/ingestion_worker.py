@@ -1240,21 +1240,7 @@ async def startup(ctx):
     telemetry = TelemetryService()
     ctx["telemetry"] = telemetry
 
-    # Create the document service using only the components needed for ingestion
-    document_service = DocumentService(
-        storage=storage,
-        database=database,
-        vector_store=vector_store,
-        embedding_model=embedding_model,
-        parser=parser,
-        cache_factory=None,
-        enable_colpali=settings.ENABLE_COLPALI,
-        colpali_embedding_model=colpali_embedding_model,
-        colpali_vector_store=colpali_vector_store,
-    )
-    ctx["document_service"] = document_service
-
-    logger.info("Worker startup complete. All services initialized.")
+    logger.info("Worker startup complete. Core ingestion components initialized.")
 
 
 async def shutdown(ctx):
