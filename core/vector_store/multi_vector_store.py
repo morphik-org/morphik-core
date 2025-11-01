@@ -610,33 +610,40 @@ class MultiVectorStore(BaseVectorStore):
             result = conn.execute(query, tuple(params)).fetchall()
 
         # Convert to DocumentChunks with external storage support
-        chunks = []
+        content_tasks = []
         for row in result:
-            try:
-                metadata = json.loads(row[4]) if row[4] else {}
-            except Exception:
-                metadata = {}
-
             content = row[3]
-
-            # Handle external storage retrieval
             logger.debug(
                 f"Checking content for chunk {row[1]}-{row[2]}: is_storage_key={self._is_storage_key(content)}, enable_external_storage={self.enable_external_storage}"
             )
             if self.enable_external_storage and self._is_storage_key(content):
                 logger.info(f"Retrieving external content for chunk {row[1]}-{row[2]} from storage key: {content}")
-                try:
-                    original_content = content
-                    content = await self._retrieve_content_from_storage(content, row[4])
-                    if content == original_content:
-                        logger.warning(f"Content retrieval failed, still showing storage key: {content}")
-                    else:
-                        logger.info(
-                            f"Successfully retrieved content for chunk {row[1]}-{row[2]}, length: {len(content)}"
-                        )
-                except Exception as e:
-                    logger.error(f"Failed to retrieve content from storage for chunk {row[1]}-{row[2]}: {e}")
-                    # Keep storage key as content if retrieval fails
+                content_tasks.append(self._retrieve_content_from_storage(content, row[4]))
+            else:
+                content_tasks.append(asyncio.sleep(0, result=content))
+
+        resolved_contents = await asyncio.gather(*content_tasks, return_exceptions=True)
+
+        chunks = []
+        for row, resolved in zip(result, resolved_contents):
+            try:
+                metadata = json.loads(row[4]) if row[4] else {}
+            except Exception:
+                metadata = {}
+
+            content = row[3] if isinstance(resolved, Exception) else resolved
+
+            if isinstance(resolved, Exception):
+                logger.error(
+                    "Failed to retrieve content from storage for chunk %s-%s: %s",
+                    row[1],
+                    row[2],
+                    resolved,
+                )
+            elif content == row[3] and self.enable_external_storage and self._is_storage_key(row[3]):
+                logger.warning(f"Content retrieval failed, still showing storage key: {content}")
+            elif self.enable_external_storage and self._is_storage_key(row[3]):
+                logger.info(f"Successfully retrieved content for chunk {row[1]}-{row[2]}, length: {len(content)}")
 
             chunk = DocumentChunk(
                 document_id=row[1],
@@ -693,33 +700,40 @@ class MultiVectorStore(BaseVectorStore):
             result = conn.execute(query).fetchall()
 
         # Convert to DocumentChunks with external storage support
-        chunks = []
+        content_tasks = []
         for row in result:
-            try:
-                metadata = json.loads(row[3]) if row[3] else {}
-            except Exception:
-                metadata = {}
-
             content = row[2]
-
-            # Handle external storage retrieval
             logger.debug(
                 f"Checking content for chunk {row[0]}-{row[1]}: is_storage_key={self._is_storage_key(content)}, enable_external_storage={self.enable_external_storage}"
             )
             if self.enable_external_storage and self._is_storage_key(content):
                 logger.info(f"Retrieving external content for chunk {row[0]}-{row[1]} from storage key: {content}")
-                try:
-                    original_content = content
-                    content = await self._retrieve_content_from_storage(content, row[3])
-                    if content == original_content:
-                        logger.warning(f"Content retrieval failed, still showing storage key: {content}")
-                    else:
-                        logger.info(
-                            f"Successfully retrieved content for chunk {row[0]}-{row[1]}, length: {len(content)}"
-                        )
-                except Exception as e:
-                    logger.error(f"Failed to retrieve content from storage for chunk {row[0]}-{row[1]}: {e}")
-                    # Keep storage key as content if retrieval fails
+                content_tasks.append(self._retrieve_content_from_storage(content, row[3]))
+            else:
+                content_tasks.append(asyncio.sleep(0, result=content))
+
+        resolved_contents = await asyncio.gather(*content_tasks, return_exceptions=True)
+
+        chunks = []
+        for row, resolved in zip(result, resolved_contents):
+            try:
+                metadata = json.loads(row[3]) if row[3] else {}
+            except Exception:
+                metadata = {}
+
+            content = row[2] if isinstance(resolved, Exception) else resolved
+
+            if isinstance(resolved, Exception):
+                logger.error(
+                    "Failed to retrieve content from storage for chunk %s-%s: %s",
+                    row[0],
+                    row[1],
+                    resolved,
+                )
+            elif content == row[2] and self.enable_external_storage and self._is_storage_key(row[2]):
+                logger.warning(f"Content retrieval failed, still showing storage key: {content}")
+            elif self.enable_external_storage and self._is_storage_key(row[2]):
+                logger.info(f"Successfully retrieved content for chunk {row[0]}-{row[1]}, length: {len(content)}")
 
             chunk = DocumentChunk(
                 document_id=row[0],

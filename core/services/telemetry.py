@@ -911,25 +911,6 @@ class TelemetryService:
             ]
         )
 
-        self.set_folder_rule_metadata = MetadataExtractor(
-            [
-                MetadataField("folder_id", "kwargs", attr_name="folder_id_or_name"),
-                MetadataField("apply_to_existing", "kwargs", default=True),
-                MetadataField(
-                    "rule_count",
-                    "request",
-                    "rules",
-                    transform=lambda rules: len(rules) if hasattr(rules, "__len__") else 0,
-                ),
-                MetadataField(
-                    "rule_types",
-                    "request",
-                    "rules",
-                    transform=lambda rules: ([rule.type for rule in rules] if hasattr(rules, "__iter__") else []),
-                ),
-            ]
-        )
-
         # Utility: dump full request payload (excluding giant fields)
         def _safe_dump(req):
             try:
