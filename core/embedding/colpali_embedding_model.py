@@ -1,4 +1,5 @@
 import base64
+import importlib.util
 import io
 import logging
 import time
@@ -26,11 +27,21 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Initializing ColpaliEmbeddingModel with device: {device}")
         start_time = time.time()
+        attn_implementation = "eager"
+        if device == "cuda":
+            if importlib.util.find_spec("flash_attn") is not None:
+                attn_implementation = "flash_attention_2"
+            else:
+                logger.warning(
+                    "flash_attn package not found; falling back to 'eager' attention. "
+                    "Install flash-attn to enable FlashAttention2 on GPU."
+                )
+
         self.model = ColQwen2_5.from_pretrained(
             "tsystems/colqwen2.5-3b-multilingual-v1.0",
             torch_dtype=torch.bfloat16,
             device_map=device,  # Automatically detect and use available device
-            attn_implementation="flash_attention_2" if device == "cuda" else "eager",
+            attn_implementation=attn_implementation,
         ).eval()
         self.processor: ColQwen2_5_Processor = ColQwen2_5_Processor.from_pretrained(
             "tsystems/colqwen2.5-3b-multilingual-v1.0"
@@ -63,11 +74,17 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         for index, chunk in enumerate(chunks):
             if chunk.metadata.get("is_image"):
                 try:
-                    content = chunk.content
-                    if content.startswith("data:"):
-                        content = content.split(",", 1)[1]
-                    image_bytes = base64.b64decode(content)
+                    raw_bytes = chunk.metadata.get("_image_bytes")
+                    if isinstance(raw_bytes, (bytes, bytearray, memoryview)):
+                        image_bytes = bytes(raw_bytes)
+                    else:
+                        content = chunk.content
+                        if content.startswith("data:"):
+                            content = content.split(",", 1)[1]
+                        image_bytes = base64.b64decode(content)
                     image = open_image(io.BytesIO(image_bytes))
+                    # Drop cached bytes once we've materialized the image to keep metadata lean
+                    chunk.metadata.pop("_image_bytes", None)
                     image_items.append((index, image))
                 except Exception as e:
                     logger.error(f"Error processing image chunk {index}: {str(e)}. Falling back to text.")

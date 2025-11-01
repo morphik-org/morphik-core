@@ -28,6 +28,18 @@ from .base_vector_store import BaseVectorStore
 
 logger = logging.getLogger(__name__)
 
+# Attach a dedicated handler to capture multivector retrieval diagnostics once per process.
+_multivector_log_path = os.path.join("logs", "multivector.log")
+if not any(
+    isinstance(handler, logging.FileHandler)
+    and getattr(handler, "baseFilename", "") == os.path.abspath(_multivector_log_path)
+    for handler in logger.handlers
+):
+    os.makedirs("logs", exist_ok=True)
+    _file_handler = logging.FileHandler(_multivector_log_path)
+    _file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    logger.addHandler(_file_handler)
+
 # Constants for external storage
 MULTIVECTOR_CHUNKS_BUCKET = "multivector-chunks"
 DEFAULT_APP_ID = "default"  # Fallback for local usage when app_id is None
@@ -378,6 +390,21 @@ class FastMultiVectorStore(BaseVectorStore):
         )[0]
         scores, idx = torch.topk(scores, min(k, len(scores)))
         scores, top_k_indices = scores.tolist(), idx.tolist()
+
+        # Log which positions from the initial store results were selected after reranking
+        # This shows if top-k chunks are consistently near the top or scattered throughout candidates
+        num_candidates = len(result.rows)
+        try:
+            selected_ids = [result.rows[i].get("id") for i in top_k_indices]
+        except Exception:  # noqa: BLE001
+            selected_ids = None
+        logger.info(
+            "ColPali rerank summary | requested_k=%d | candidates=%d | selected_positions=%s%s",
+            k,
+            num_candidates,
+            top_k_indices,
+            f" | selected_ids={selected_ids}" if selected_ids is not None else "",
+        )
         t4 = time.perf_counter()
         logger.info(f"query_similar timing - rerank_scoring: {(t4 - t3)*1000:.2f} ms")
 

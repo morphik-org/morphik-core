@@ -9,7 +9,7 @@ import uuid
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Optional, Type, Union
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Type, Union
 
 import arq
 import filetype
@@ -240,7 +240,13 @@ class DocumentService:
 
         settings = get_settings()
         should_rerank = use_reranking if use_reranking is not None else settings.USE_RERANKING
-        using_colpali = (use_colpali if use_colpali is not None else False) and settings.ENABLE_COLPALI
+        multivector_available = bool(self.colpali_embedding_model and self.colpali_vector_store)
+        requested_multivector = use_colpali if use_colpali is not None else False
+        using_multivector = bool(requested_multivector and settings.ENABLE_COLPALI and multivector_available)
+        if requested_multivector and not using_multivector:
+            logger.warning(
+                "Multivector retrieval requested but required components are unavailable. Falling back to regular search."
+            )
 
         # Build system filters for folder_name and end_user_id
         system_filters = {}
@@ -267,14 +273,8 @@ class DocumentService:
                     perf_tracker.add_suboperation(phase_key, duration, perf_parent)
 
         # Launch embedding queries concurrently
-        embedding_tasks = [
-            measure_phase(
-                self.embedding_model.embed_for_query(query),
-                "query_embedding",
-                "retrieve_embeddings_and_auth",
-            )
-        ]
-        if using_colpali and self.colpali_embedding_model:
+        embedding_tasks = []
+        if using_multivector:
             embedding_tasks.append(
                 measure_phase(
                     self.colpali_embedding_model.embed_for_query(query),
@@ -286,6 +286,15 @@ class DocumentService:
         else:
             multivector_pipeline_start = None
             phase_times["multivector_query_embedding"] = 0.0
+            embedding_tasks.append(
+                measure_phase(
+                    self.embedding_model.embed_for_query(query),
+                    "query_embedding",
+                    "retrieve_embeddings_and_auth",
+                )
+            )
+        if using_multivector:
+            phase_times["query_embedding"] = 0.0
 
         if not perf_tracker:
             phase_times["setup"] = time.time() - setup_start
@@ -328,8 +337,12 @@ class DocumentService:
         )
 
         embedding_results, doc_ids = results
-        query_embedding_regular = embedding_results[0]
-        query_embedding_multivector = embedding_results[1] if len(embedding_results) > 1 else None
+        query_embedding_regular = None
+        query_embedding_multivector = None
+        if using_multivector:
+            query_embedding_multivector = embedding_results[0]
+        else:
+            query_embedding_regular = embedding_results[0]
 
         if not perf_tracker:
             phase_times["retrieve_embeddings_and_auth"] = time.time() - parallel_start
@@ -348,26 +361,33 @@ class DocumentService:
             search_setup_start = time.time()
 
         # Check if we're using colpali multivector search
-        search_multi = using_colpali and self.colpali_vector_store and query_embedding_multivector is not None
+        search_multi = using_multivector and self.colpali_vector_store and query_embedding_multivector is not None
 
         # For regular reranking (without colpali), we'll use the existing reranker if available
-        # For colpali reranking, we'll handle it in _combine_multi_and_regular_chunks
-        use_standard_reranker = should_rerank and (not search_multi) and self.reranker is not None
+        # When ColPali is enabled we rely on the ColPali vector store scoring directly.
+        use_standard_reranker = should_rerank and (not using_multivector) and self.reranker is not None
 
         # Search chunks with vector similarity in parallel
         # When using standard reranker, we get more chunks initially to improve reranking quality
-        search_tasks = [
-            measure_phase(
-                self.vector_store.query_similar(
-                    query_embedding_regular,
-                    k=10 * k if use_standard_reranker else k,
-                    doc_ids=doc_ids,
-                    app_id=auth.app_id,
-                ),
-                "vector_search_regular",
-                "retrieve_vector_search",
+        search_tasks = []
+        if not using_multivector:
+            oversample_k = k
+            if use_standard_reranker:
+                oversample_k = max(k, min(3 * k, 20))
+            search_tasks.append(
+                measure_phase(
+                    self.vector_store.query_similar(
+                        query_embedding_regular,
+                        k=oversample_k,
+                        doc_ids=doc_ids,
+                        app_id=auth.app_id,
+                    ),
+                    "vector_search_regular",
+                    "retrieve_vector_search",
+                )
             )
-        ]
+        else:
+            phase_times["vector_search_regular"] = 0.0
 
         if search_multi:
             search_tasks.append(
@@ -379,7 +399,7 @@ class DocumentService:
                     "retrieve_vector_search",
                 )
             )
-        else:
+        elif not using_multivector:
             phase_times["multivector_vector_search"] = 0.0
 
         if not perf_tracker:
@@ -390,14 +410,21 @@ class DocumentService:
             vector_search_start = time.time()
 
         search_results = await asyncio.gather(*search_tasks)
-        chunks = search_results[0]
-        chunks_multivector = search_results[1] if len(search_results) > 1 else []
+        chunks: List[DocumentChunk] = []
+        chunks_multivector: List[DocumentChunk] = []
+        idx = 0
+        if not using_multivector:
+            chunks = search_results[idx]
+            idx += 1
+        if search_multi:
+            chunks_multivector = search_results[idx]
 
         if not perf_tracker:
             phase_times["vector_search"] = time.time() - vector_search_start
 
-        logger.debug(f"Found {len(chunks)} similar chunks via regular embedding")
-        if using_colpali:
+        if not using_multivector:
+            logger.debug(f"Found {len(chunks)} similar chunks via regular embedding")
+        if search_multi:
             logger.debug(
                 f"Found {len(chunks_multivector)} similar chunks via multivector embedding "
                 f"since we are also using colpali"
@@ -424,14 +451,12 @@ class DocumentService:
             perf_tracker.start_phase("retrieve_chunk_combination")
 
         combination_start = time.time()
-        chunks = await self._combine_multi_and_regular_chunks(
-            query, chunks, chunks_multivector, should_rerank=should_rerank
-        )
-
+        if using_multivector:
+            chunks = chunks_multivector
         combination_duration = time.time() - combination_start
         if not perf_tracker:
             phase_times["chunk_combination"] = combination_duration
-        if using_colpali and chunks_multivector:
+        if using_multivector:
             phase_times["multivector_chunk_combination"] = combination_duration
             if perf_tracker:
                 perf_tracker.add_suboperation(
@@ -443,7 +468,7 @@ class DocumentService:
             phase_times["multivector_chunk_combination"] = phase_times.get("multivector_chunk_combination", 0.0)
 
         # Apply padding if requested and using colpali
-        if padding > 0 and using_colpali:
+        if padding > 0 and using_multivector:
             if perf_tracker:
                 perf_tracker.start_phase("retrieve_padding")
 
@@ -470,7 +495,7 @@ class DocumentService:
         if not perf_tracker:
             phase_times["result_creation"] = time.time() - result_creation_start
 
-        if using_colpali and multivector_pipeline_start is not None:
+        if using_multivector and multivector_pipeline_start is not None:
             phase_times["multivector_pipeline_total"] = time.time() - multivector_pipeline_start
             if perf_tracker:
                 perf_tracker.add_suboperation(
@@ -493,51 +518,6 @@ class DocumentService:
             logger.info("==========================================================")
 
         return results
-
-    async def _combine_multi_and_regular_chunks(
-        self,
-        query: str,
-        chunks: List[DocumentChunk],
-        chunks_multivector: List[DocumentChunk],
-        should_rerank: bool = None,
-    ):
-        """Combine and potentially rerank regular and colpali chunks based on configuration.
-
-        ### 4 configurations:
-        1. No reranking, no colpali -> just return regular chunks - this already happens upstream, correctly
-        2. No reranking, colpali  -> return colpali chunks + regular chunks - no need to run smaller colpali model
-        3. Reranking, no colpali -> sort regular chunks by re-ranker score - this already happens upstream, correctly
-        4. Reranking, colpali -> return merged chunks sorted by smaller colpali model score
-
-        Args:
-            query: The user query
-            chunks: Regular chunks with embeddings
-            chunks_multivector: Colpali multi-vector chunks
-            should_rerank: Whether reranking is enabled
-        """
-        # Handle simple cases first
-        if len(chunks_multivector) == 0:
-            return chunks
-        if len(chunks) == 0:
-            return chunks_multivector
-
-        # Use global setting if not provided
-        if should_rerank is None:
-            settings = get_settings()
-            should_rerank = settings.USE_RERANKING
-
-        # Check if we need to run the reranking - if reranking is disabled, we just combine the chunks
-        # This is Configuration 2: No reranking, with colpali
-        if not should_rerank:
-            # For configuration 2, simply combine the chunks with multivector chunks first
-            # since they are generally higher quality
-            return chunks_multivector + chunks
-
-        # Configuration 4: Reranking with colpali
-        # Use colpali as a reranker to get consistent similarity scores for both types of chunks
-        # IMPORTANT: Multivector chunks already have proper ColPali similarity scores from their vector store,
-        # so we should preserve those. Only rescore regular text chunks to make them comparable.
-        return chunks_multivector + chunks
 
     def _count_tokens_simple(self, text: str) -> int:
         """Simple token counting using whitespace splitting.
@@ -1630,29 +1610,61 @@ class DocumentService:
 
         return doc
 
-    def img_to_base64_str(self, img: PILImage.Image):
+    def _image_bytes_to_chunk(
+        self,
+        image_bytes: bytes,
+        mime_type: str,
+        base64_override: Optional[str] = None,
+    ) -> Chunk:
+        """
+        Build a Chunk that preserves raw image bytes alongside the data URI used for storage.
+        """
+        content = base64_override
+        if content is None:
+            content = f"data:{mime_type};base64," + base64.b64encode(image_bytes).decode()
+        return Chunk(
+            content=content,
+            metadata={"is_image": True, "_image_bytes": image_bytes, "mime_type": mime_type},
+        )
+
+    def img_to_base64_with_bytes(
+        self,
+        img: PILImage.Image,
+        format: str = "PNG",
+        mime_type: Optional[str] = None,
+    ) -> Tuple[str, bytes]:
         buffered = BytesIO()
-        img.save(buffered, format="PNG")
+        img.save(buffered, format=format)
         buffered.seek(0)
-        img_byte = buffered.getvalue()
-        img_str = "data:image/png;base64," + base64.b64encode(img_byte).decode()
+        img_bytes = buffered.getvalue()
+        mime = mime_type or f"image/{format.lower()}"
+        img_str = f"data:{mime};base64," + base64.b64encode(img_bytes).decode()
+        return img_str, img_bytes
+
+    def img_to_base64_str(self, img: PILImage.Image):
+        img_str, _ = self.img_to_base64_with_bytes(img)
         return img_str
 
-    def _render_pdf_with_pymupdf(self, file_content: bytes, dpi: int) -> List[str]:
+    def _render_pdf_with_pymupdf(
+        self, file_content: bytes, dpi: int, include_bytes: bool = False
+    ) -> List[Union[str, Tuple[str, bytes]]]:
         """
         Render a PDF into base64-encoded PNG images using PyMuPDF.
         Raises the underlying PyMuPDF exception so callers can decide on fallbacks.
         """
         pdf_document = fitz.open("pdf", file_content)
         try:
-            images_b64: List[str] = []
+            images: List[Union[str, Tuple[str, bytes]]] = []
             for page in pdf_document:
                 mat = fitz.Matrix(dpi / 72, dpi / 72)
                 pix = page.get_pixmap(matrix=mat)
                 png_bytes = pix.tobytes("png")
                 b64 = "data:image/png;base64," + base64.b64encode(png_bytes).decode("utf-8")
-                images_b64.append(b64)
-            return images_b64
+                if include_bytes:
+                    images.append((b64, png_bytes))
+                else:
+                    images.append(b64)
+            return images
         finally:
             pdf_document.close()
 
@@ -1683,7 +1695,13 @@ class DocumentService:
                 logger.info("Heuristic image detection succeeded (Pillow). Treating as image.")
                 if file_content_base64 is None:
                     file_content_base64 = base64.b64encode(file_content).decode()
-                return [Chunk(content=file_content_base64, metadata={"is_image": True})]
+                return [
+                    self._image_bytes_to_chunk(
+                        file_content,
+                        mime_type="image/unknown",
+                        base64_override=file_content_base64,
+                    )
+                ]
             except Exception:
                 logger.info("File type is None and not an image – treating as text")
                 return [
@@ -1707,19 +1725,39 @@ class DocumentService:
                 buffered = BytesIO()
                 # Save as JPEG with moderate quality instead of PNG to reduce size further
                 img.convert("RGB").save(buffered, format="JPEG", quality=70, optimize=True)
-                img_b64 = "data:image/jpeg;base64," + base64.b64encode(buffered.getvalue()).decode()
-                return [Chunk(content=img_b64, metadata={"is_image": True})]
+                jpeg_bytes = buffered.getvalue()
+                img_b64 = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode()
+                return [
+                    self._image_bytes_to_chunk(
+                        jpeg_bytes,
+                        mime_type="image/jpeg",
+                        base64_override=img_b64,
+                    )
+                ]
             except Exception as e:
                 logger.error(f"Error resizing image for base64 encoding: {e}. Falling back to original size.")
                 if file_content_base64 is None:
                     file_content_base64 = base64.b64encode(file_content).decode()
-                return [Chunk(content=file_content_base64, metadata={"is_image": True})]
+                return [
+                    self._image_bytes_to_chunk(
+                        file_content,
+                        mime_type=mime_type,
+                        base64_override=file_content_base64,
+                    )
+                ]
 
         match mime_type:
             case file_type if file_type in IMAGE:
                 if file_content_base64 is None:
                     file_content_base64 = base64.b64encode(file_content).decode()
-                return [Chunk(content=file_content_base64, metadata={"is_image": True})]
+                detected_mime = mime_type if isinstance(mime_type, str) else "image/unknown"
+                return [
+                    self._image_bytes_to_chunk(
+                        file_content,
+                        mime_type=detected_mime,
+                        base64_override=file_content_base64,
+                    )
+                ]
             case "application/pdf":
                 logger.info("Working with PDF file - using PyMuPDF for faster processing!")
 
@@ -1733,18 +1771,24 @@ class DocumentService:
                     dpi = 150
 
                 try:
-                    images_b64 = self._render_pdf_with_pymupdf(file_content, dpi)
-                    logger.info(f"PyMuPDF processed {len(images_b64)} pages")
-                    return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                    images_with_bytes = self._render_pdf_with_pymupdf(file_content, dpi, include_bytes=True)
+                    logger.info(f"PyMuPDF processed {len(images_with_bytes)} pages")
+                    return [
+                        self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
+                        for image_b64, raw_bytes in images_with_bytes
+                    ]
 
                 except Exception as e:
                     logger.warning(f"PyMuPDF failed ({e}), falling back to pdf2image")
 
                     try:
                         images = pdf2image.convert_from_bytes(file_content, dpi=dpi)
-                        images_b64 = [self.img_to_base64_str(image) for image in images]
-                        logger.info(f"pdf2image fallback processed {len(images_b64)} pages")
-                        return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                        image_payloads = [self.img_to_base64_with_bytes(image) for image in images]
+                        logger.info(f"pdf2image fallback processed {len(image_payloads)} pages")
+                        return [
+                            self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
+                            for image_b64, raw_bytes in image_payloads
+                        ]
                     except Exception as fallback_error:
                         logger.error(f"pdf2image fallback failed: {fallback_error}")
                         raise PdfConversionError(
@@ -1822,7 +1866,7 @@ class DocumentService:
                         # Use PyMuPDF for PDF processing (faster than pdf2image)
                         try:
                             pdf_document = fitz.open("pdf", pdf_content)
-                            images_b64 = []
+                            images_payload: List[Tuple[str, bytes]] = []
 
                             # Process each page individually
                             for page_num in range(len(pdf_document)):
@@ -1837,7 +1881,8 @@ class DocumentService:
 
                                 # Convert to PIL Image and then to base64
                                 img = PILImage.open(BytesIO(img_data))
-                                images_b64.append(self.img_to_base64_str(img))
+                                img_str, img_bytes = self.img_to_base64_with_bytes(img)
+                                images_payload.append((img_str, img_bytes))
 
                             pdf_document.close()  # Clean up resources
 
@@ -1856,9 +1901,9 @@ class DocumentService:
                                     )
                                     for chunk in chunks
                                 ]
-                            images_b64 = [self.img_to_base64_str(image) for image in images]
+                            images_payload = [self.img_to_base64_with_bytes(image) for image in images]
 
-                        if not images_b64:
+                        if not images_payload:
                             logger.warning("No images extracted from Word document PDF")
                             return [
                                 Chunk(
@@ -1868,8 +1913,11 @@ class DocumentService:
                                 for chunk in chunks
                             ]
 
-                        logger.info(f"Word document processed {len(images_b64)} pages")
-                        return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                        logger.info(f"Word document processed {len(images_payload)} pages")
+                        return [
+                            self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
+                            for image_b64, raw_bytes in images_payload
+                        ]
                     except Exception as pdf_error:
                         logger.error(f"Error converting PDF to images: {str(pdf_error)}")
                         return [
@@ -1999,7 +2047,7 @@ class DocumentService:
                         try:
                             # Use PyMuPDF for PDF processing
                             pdf_document = fitz.open("pdf", pdf_content)
-                            images_b64 = []
+                            images_payload: List[Tuple[str, bytes]] = []
 
                             # Process each slide as an image
                             for page_num in range(len(pdf_document)):
@@ -2014,27 +2062,34 @@ class DocumentService:
 
                                 # Convert to PIL Image and then to base64
                                 img = PILImage.open(BytesIO(img_data))
-                                images_b64.append(self.img_to_base64_str(img))
+                                img_str, img_bytes = self.img_to_base64_with_bytes(img)
+                                images_payload.append((img_str, img_bytes))
 
                             pdf_document.close()
 
                             logger.info(
-                                f"PowerPoint presentation successfully processed {len(images_b64)} slides as images"
+                                f"PowerPoint presentation successfully processed {len(images_payload)} slides as images"
                             )
-                            return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                            return [
+                                self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
+                                for image_b64, raw_bytes in images_payload
+                            ]
 
                         except Exception as pymupdf_error:
                             # Fallback to pdf2image if PyMuPDF fails
                             logger.warning(f"PyMuPDF failed for PowerPoint ({pymupdf_error}), trying pdf2image")
                             try:
                                 images = pdf2image.convert_from_bytes(pdf_content)
-                                images_b64 = [self.img_to_base64_str(image) for image in images]
+                                images_payload = [self.img_to_base64_with_bytes(image) for image in images]
 
                                 logger.info(
-                                    f"PowerPoint presentation processed {len(images_b64)} slides with pdf2image"
+                                    f"PowerPoint presentation processed {len(images_payload)} slides with pdf2image"
                                 )
                                 return [
-                                    Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64
+                                    self._image_bytes_to_chunk(
+                                        raw_bytes, mime_type="image/png", base64_override=image_b64
+                                    )
+                                    for image_b64, raw_bytes in images_payload
                                 ]
                             except Exception as pdf2image_error:
                                 logger.warning(f"pdf2image also failed: {pdf2image_error}")
@@ -2182,7 +2237,7 @@ class DocumentService:
                         try:
                             # Use PyMuPDF for PDF processing
                             pdf_document = fitz.open("pdf", pdf_content)
-                            images_b64 = []
+                            images_payload: List[Tuple[str, bytes]] = []
 
                             # Process each page/sheet as an image
                             for page_num in range(len(pdf_document)):
@@ -2197,23 +2252,32 @@ class DocumentService:
 
                                 # Convert to PIL Image and then to base64
                                 img = PILImage.open(BytesIO(img_data))
-                                images_b64.append(self.img_to_base64_str(img))
+                                img_str, img_bytes = self.img_to_base64_with_bytes(img)
+                                images_payload.append((img_str, img_bytes))
 
                             pdf_document.close()
 
-                            logger.info(f"Excel spreadsheet successfully processed {len(images_b64)} pages as images")
-                            return [Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64]
+                            logger.info(
+                                f"Excel spreadsheet successfully processed {len(images_payload)} pages as images"
+                            )
+                            return [
+                                self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
+                                for image_b64, raw_bytes in images_payload
+                            ]
 
                         except Exception as pymupdf_error:
                             # Fallback to pdf2image if PyMuPDF fails
                             logger.warning(f"PyMuPDF failed for Excel ({pymupdf_error}), trying pdf2image")
                             try:
                                 images = pdf2image.convert_from_bytes(pdf_content)
-                                images_b64 = [self.img_to_base64_str(image) for image in images]
+                                images_payload = [self.img_to_base64_with_bytes(image) for image in images]
 
-                                logger.info(f"Excel spreadsheet processed {len(images_b64)} pages with pdf2image")
+                                logger.info(f"Excel spreadsheet processed {len(images_payload)} pages with pdf2image")
                                 return [
-                                    Chunk(content=image_b64, metadata={"is_image": True}) for image_b64 in images_b64
+                                    self._image_bytes_to_chunk(
+                                        raw_bytes, mime_type="image/png", base64_override=image_b64
+                                    )
+                                    for image_b64, raw_bytes in images_payload
                                 ]
                             except Exception as pdf2image_error:
                                 logger.warning(f"pdf2image also failed: {pdf2image_error}")
@@ -2282,10 +2346,26 @@ class DocumentService:
         2. Vector search is only performed on already authorized and filtered documents
         3. This approach is more efficient as it reduces the size of chunk metadata
         """
-        return [
-            c.to_document_chunk(chunk_number=start_index + i, embedding=embedding, document_id=doc_id)
-            for i, (embedding, c) in enumerate(zip(embeddings, chunks))
-        ]
+        chunk_objects: List[DocumentChunk] = []
+        for index, (embedding, chunk) in enumerate(zip(embeddings, chunks)):
+            original_metadata = chunk.metadata or {}
+            sanitized_metadata: Dict[str, Any] = {}
+            for key, value in original_metadata.items():
+                if key == "_image_bytes":
+                    continue
+                if isinstance(value, (bytes, bytearray, memoryview)):
+                    sanitized_metadata[key] = base64.b64encode(bytes(value)).decode()
+                else:
+                    sanitized_metadata[key] = value
+            sanitized_chunk = Chunk(content=chunk.content, metadata=sanitized_metadata)
+            chunk_objects.append(
+                sanitized_chunk.to_document_chunk(
+                    chunk_number=start_index + index,
+                    embedding=embedding,
+                    document_id=doc_id,
+                )
+            )
+        return chunk_objects
 
     async def _store_chunks_and_doc(
         self,
@@ -2438,15 +2518,6 @@ class DocumentService:
         doc_map = {doc.external_id: doc for doc in docs}
         logger.debug(f"Retrieved metadata for {len(doc_map)} unique documents in a single batch")
 
-        # Generate download URLs for all documents that have storage info
-        download_urls = {}
-        for doc_id, doc in doc_map.items():
-            if doc.storage_info:
-                download_urls[doc_id] = await self.storage.get_download_url(
-                    doc.storage_info["bucket"], doc.storage_info["key"]
-                )
-                logger.debug(f"Generated download URL for document {doc_id}")
-
         # Create chunk results using the lookup dictionaries
         for chunk in chunks:
             doc = doc_map.get(chunk.document_id)
@@ -2469,7 +2540,7 @@ class DocumentService:
                     metadata=metadata,
                     content_type=doc.content_type,
                     filename=doc.filename,
-                    download_url=download_urls.get(chunk.document_id),
+                    download_url=None,
                 )
             )
 
@@ -2499,15 +2570,6 @@ class DocumentService:
         doc_map = {doc.external_id: doc for doc in docs}
         logger.debug(f"Retrieved metadata for {len(doc_map)} unique documents in a single batch")
 
-        # Generate download URLs for non-text documents in a single loop
-        download_urls = {}
-        for doc_id, doc in doc_map.items():
-            if doc.content_type != "text/plain" and doc.storage_info:
-                download_urls[doc_id] = await self.storage.get_download_url(
-                    doc.storage_info["bucket"], doc.storage_info["key"]
-                )
-                logger.debug(f"Generated download URL for document {doc_id}")
-
         # Create document results using the lookup dictionaries
         results = {}
         for doc_id, chunk in doc_chunks.items():
@@ -2516,14 +2578,8 @@ class DocumentService:
                 logger.warning(f"Document {doc_id} not found")
                 continue
 
-            # Create DocumentContent based on content type
-            if doc.content_type == "text/plain":
-                content = DocumentContent(type="string", value=chunk.content, filename=None)
-                logger.debug(f"Created text content for document {doc_id}")
-            else:
-                # Use pre-generated download URL for file types
-                content = DocumentContent(type="url", value=download_urls.get(doc_id), filename=doc.filename)
-                logger.debug(f"Created URL content for document {doc_id}")
+            # Use chunk content directly; callers can request download URLs explicitly when needed.
+            content = DocumentContent(type="string", value=chunk.content, filename=doc.filename)
 
             results[doc_id] = DocumentResult(
                 score=chunk.score,
