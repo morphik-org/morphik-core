@@ -540,18 +540,6 @@ async def requeue_ingest_jobs(
             # This would prevent enqueueing jobs for deleted files
 
             rules_list: List[Dict[str, Any]] = []
-            if doc.folder_name:
-                try:
-                    folder = await document_service.db.get_folder_by_name(doc.folder_name, auth_for_doc)
-                    if folder and folder.rules:
-                        rules_list = folder.rules
-                except Exception as folder_exc:  # noqa: BLE001
-                    logger.warning(
-                        "Failed to fetch rules for folder %s while requeueing doc %s: %s",
-                        doc.folder_name,
-                        ext_id,
-                        folder_exc,
-                    )
 
             use_colpali_flag = override_flag
             if use_colpali_flag is None:

@@ -62,13 +62,6 @@ class DocumentPagesResponse(BaseModel):
     total_pages: int
 
 
-class FolderRuleResponse(BaseModel):
-    """Response for folder rule setting endpoint"""
-
-    status: str
-    message: str
-
-
 class DocumentAddToFolderResponse(BaseModel):
     """Response for adding document to folder endpoint"""
 

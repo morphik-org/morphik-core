@@ -616,28 +616,31 @@ class DocumentService:
 
         # Collect all chunk identifiers we need to retrieve (including padding)
         chunk_identifiers_to_retrieve = set()
+        original_keys = {(chunk.document_id, chunk.chunk_number) for chunk in image_chunks}
 
         for doc_id, doc_chunks in chunks_by_doc.items():
             for chunk in doc_chunks:
-                # Add the original chunk
-                chunk_identifiers_to_retrieve.add((doc_id, chunk.chunk_number))
-
                 # Add padding chunks before and after
                 for i in range(1, padding + 1):
                     # Add chunks before (if chunk_number > i)
                     if chunk.chunk_number >= i:
-                        chunk_identifiers_to_retrieve.add((doc_id, chunk.chunk_number - i))
+                        candidate = (doc_id, chunk.chunk_number - i)
+                        if candidate not in original_keys:
+                            chunk_identifiers_to_retrieve.add(candidate)
 
                     # Add chunks after
-                    chunk_identifiers_to_retrieve.add((doc_id, chunk.chunk_number + i))
+                    candidate = (doc_id, chunk.chunk_number + i)
+                    if candidate not in original_keys:
+                        chunk_identifiers_to_retrieve.add(candidate)
 
-        logger.debug(f"Need to retrieve {len(chunk_identifiers_to_retrieve)} chunks total (including padding)")
+        logger.debug(f"Need to retrieve {len(chunk_identifiers_to_retrieve)} additional padding chunks")
 
         # Convert to list for batch retrieval
         chunk_identifiers = list(chunk_identifiers_to_retrieve)
 
         # Use colpali vector store for retrieval since padding is only for colpali path
-        if self.colpali_vector_store:
+        padding_chunks: List[DocumentChunk] = []
+        if self.colpali_vector_store and chunk_identifiers:
             try:
                 retrieval_start = time.time()
                 padded_chunks = await self.colpali_vector_store.get_chunks_by_id(chunk_identifiers, auth.app_id)
@@ -647,36 +650,44 @@ class DocumentService:
                     len(padded_chunks),
                 )
                 logger.debug(f"Retrieved {len(padded_chunks)} chunks from colpali vector store")
+                padding_chunks = padded_chunks
             except Exception as e:
                 logger.error(f"Error retrieving padded chunks from colpali vector store: {e}")
                 # Fallback to original image chunks if padding fails
                 return image_chunks
         else:
-            logger.warning("ColPali vector store not available for padding, returning original image chunks")
-            return image_chunks
+            if not self.colpali_vector_store:
+                logger.warning("ColPali vector store not available for padding, returning original image chunks")
+            else:
+                logger.debug("No additional padding chunks required")
+            padding_chunks = []
 
         # Filter retrieved chunks to only image chunks (padding chunks should also be images)
-        padded_image_chunks = [chunk for chunk in padded_chunks if chunk.content.startswith("data")]
-        logger.debug(f"Filtered to {len(padded_image_chunks)} image chunks from {len(padded_chunks)} retrieved chunks")
+        padded_image_chunks = [chunk for chunk in padding_chunks if chunk.content.startswith("data")]
+        logger.debug(f"Filtered to {len(padded_image_chunks)} image chunks from {len(padding_chunks)} retrieved chunks")
 
         # Preserve original scores for matched chunks; padding gets 0.0
         original_scores = {(c.document_id, c.chunk_number): c.score for c in image_chunks}
-        for c in padded_image_chunks:
-            key = (c.document_id, c.chunk_number)
-            c.score = original_scores.get(key, 0.0)
-        chunk_id = set()
-        chunks = []
-        for chunk in padded_image_chunks:
-            if f"{chunk.document_id}-{chunk.chunk_number}" in chunk_id:
+        combined_chunks = list(image_chunks) + padded_image_chunks
+
+        deduped: List[DocumentChunk] = []
+        seen = set()
+        for chunk in combined_chunks:
+            key = (chunk.document_id, chunk.chunk_number)
+            if key in seen:
                 continue
-            chunks.append(chunk)
-            chunk_id.add(f"{chunk.document_id}-{chunk.chunk_number}")
+            chunk.score = original_scores.get(key, 0.0)
+            deduped.append(chunk)
+            seen.add(key)
 
         # Sort: matched chunks (higher score) first, then by document and page order
-        chunks.sort(key=lambda x: (-float(x.score or 0.0), x.document_id, x.chunk_number))
+        deduped.sort(key=lambda x: (-float(x.score or 0.0), x.document_id, x.chunk_number))
 
-        logger.info(f"Applied padding: returning {len(chunks)} image chunks (was {len(image_chunks)} image chunks)")
-        return chunks
+        logger.info(
+            f"Applied padding: returning {len(deduped)} image chunks (was {len(image_chunks)} image chunks, "
+            f"added {len(padded_image_chunks)} padding chunks)"
+        )
+        return deduped
 
     async def _create_grouped_chunk_response_from_results(
         self,

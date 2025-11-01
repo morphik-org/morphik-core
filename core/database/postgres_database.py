@@ -103,7 +103,6 @@ class FolderModel(Base):
     description = Column(String, nullable=True)
     document_ids = Column(JSONB, default=list)
     system_metadata = Column(JSONB, default=dict)
-    rules = Column(JSONB, default=list)
 
     # Flattened auth columns for performance
     owner_id = Column(String)
@@ -317,28 +316,6 @@ class PostgresDatabase(BaseDatabase):
                     """
                     )
                 )
-
-                # Add rules column to folders table if it doesn't exist
-                result = await conn.execute(
-                    text(
-                        """
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_name = 'folders' AND column_name = 'rules'
-                    """
-                    )
-                )
-                if not result.first():
-                    # Add rules column to folders table
-                    await conn.execute(
-                        text(
-                            """
-                        ALTER TABLE folders
-                        ADD COLUMN IF NOT EXISTS rules JSONB DEFAULT '[]'::jsonb
-                        """
-                        )
-                    )
-                    logger.info("Added rules column to folders table")
 
                 # Create indexes for folders table
                 await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_name ON folders (name);"))
@@ -1612,7 +1589,6 @@ class PostgresDatabase(BaseDatabase):
                     system_metadata=folder_dict.get("system_metadata", {}),
                     app_id=app_id_val,
                     end_user_id=folder_dict.get("end_user_id"),
-                    rules=folder_dict.get("rules", []),
                 )
 
                 session.add(folder_model)
@@ -1645,7 +1621,6 @@ class PostgresDatabase(BaseDatabase):
                     "description": folder_model.description,
                     "document_ids": folder_model.document_ids,
                     "system_metadata": folder_model.system_metadata,
-                    "rules": folder_model.rules,
                     "app_id": folder_model.app_id,
                     "end_user_id": folder_model.end_user_id,
                 }
@@ -1701,7 +1676,6 @@ class PostgresDatabase(BaseDatabase):
                         "description": folder_row.description,
                         "document_ids": folder_row.document_ids,
                         "system_metadata": folder_row.system_metadata,
-                        "rules": folder_row.rules,
                         "app_id": folder_row.app_id,
                         "end_user_id": folder_row.end_user_id,
                     }
@@ -1745,7 +1719,6 @@ class PostgresDatabase(BaseDatabase):
                         "description": folder_model.description,
                         "document_ids": folder_model.document_ids,
                         "system_metadata": folder_model.system_metadata,
-                        "rules": folder_model.rules,
                         "app_id": folder_model.app_id,
                         "end_user_id": folder_model.end_user_id,
                     }

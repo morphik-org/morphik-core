@@ -1,17 +1,15 @@
 import asyncio
-import json
 import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import text
 
 from core.auth_utils import verify_token
 from core.database.postgres_database import InvalidMetadataFilterError
 from core.models.auth import AuthContext
 from core.models.folders import Folder, FolderCreate, FolderSummary
-from core.models.request import FolderDetailsRequest, SetFolderRuleRequest
+from core.models.request import FolderDetailsRequest
 from core.models.responses import (
     DocumentAddToFolderResponse,
     DocumentDeleteResponse,
@@ -19,7 +17,6 @@ from core.models.responses import (
     FolderDetails,
     FolderDetailsResponse,
     FolderDocumentInfo,
-    FolderRuleResponse,
 )
 from core.routes.utils import project_document_fields
 from core.services.telemetry import TelemetryService
@@ -408,225 +405,4 @@ async def remove_document_from_folder(
         }
     except Exception as e:
         logger.error(f"Error removing document from folder: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ---------------------------------------------------------------------------
-# Folder rules endpoints
-# ---------------------------------------------------------------------------
-
-
-@router.post("/{folder_id_or_name}/set_rule", response_model=FolderRuleResponse)
-@telemetry.track(operation_type="set_folder_rule", metadata_resolver=telemetry.set_folder_rule_metadata)
-async def set_folder_rule(
-    folder_id_or_name: str,
-    request: SetFolderRuleRequest,
-    auth: AuthContext = Depends(verify_token),
-    apply_to_existing: bool = True,
-):
-    """
-    Set extraction rules for a folder.
-
-    Args:
-        folder_id_or_name: ID or name of the folder to set rules for
-        request: SetFolderRuleRequest containing metadata extraction rules
-        auth: Authentication context
-        apply_to_existing: Whether to apply rules to existing documents in the folder
-
-    Returns:
-        Success status with processing results
-    """
-    try:
-        folder = await _resolve_folder(folder_id_or_name, auth)
-        resolved_folder_id = folder.id
-        if not resolved_folder_id:
-            raise HTTPException(status_code=500, detail="Folder is missing an ID")
-
-        # Log detailed information about the rules
-        logger.debug(f"Setting rules for folder {resolved_folder_id}")
-        logger.debug(f"Number of rules: {len(request.rules)}")
-
-        for i, rule in enumerate(request.rules):
-            logger.debug(f"\nRule {i + 1}:")
-            logger.debug(f"Type: {rule.type}")
-            logger.debug("Schema:")
-            for field_name, field_config in rule.schema.items():
-                logger.debug(f"  Field: {field_name}")
-                logger.debug(f"    Type: {field_config.get('type', 'unknown')}")
-                logger.debug(f"    Description: {field_config.get('description', 'No description')}")
-                if "schema" in field_config:
-                    logger.debug("    Has JSON schema: Yes")
-                    logger.debug(f"    Schema: {field_config['schema']}")
-
-        # Note: Write access will be checked by the database operations
-
-        # Update folder with rules
-        # Convert rules to dicts for JSON serialization
-        rules_dicts = [rule.model_dump() for rule in request.rules]
-
-        # Update the folder in the database
-        async with document_service.db.async_session() as session:
-            # Execute update query
-            await session.execute(
-                text(
-                    """
-                    UPDATE folders
-                    SET rules = :rules
-                    WHERE id = :folder_id
-                    """
-                ),
-                {"folder_id": resolved_folder_id, "rules": json.dumps(rules_dicts)},
-            )
-            await session.commit()
-
-        logger.info(f"Successfully updated folder {resolved_folder_id} with {len(request.rules)} rules")
-
-        # Get updated folder
-        updated_folder = await document_service.db.get_folder(resolved_folder_id, auth)
-
-        # If apply_to_existing is True, apply these rules to all existing documents in the folder
-        processing_results = {"processed": 0, "errors": []}
-
-        if apply_to_existing and folder.document_ids:
-            logger.info(f"Applying rules to {len(folder.document_ids)} existing documents in folder")
-
-            # Get all documents in the folder
-            documents = await document_service.db.get_documents_by_id(folder.document_ids, auth)
-
-            # Process each document
-            for doc in documents:
-                try:
-                    # Get document content
-                    logger.info(f"Processing document {doc.external_id}")
-
-                    # For each document, apply the rules from the folder
-                    doc_content = None
-
-                    # Get content from system_metadata if available
-                    if doc.system_metadata and "content" in doc.system_metadata:
-                        doc_content = doc.system_metadata["content"]
-                        logger.info(f"Retrieved content from system_metadata for document {doc.external_id}")
-
-                    # If we still have no content, log error and continue
-                    if not doc_content:
-                        error_msg = f"No content found in system_metadata for document {doc.external_id}"
-                        logger.error(error_msg)
-                        processing_results["errors"].append({"document_id": doc.external_id, "error": error_msg})
-                        continue
-
-                    # Process document with rules
-                    try:
-                        # Convert request rules to actual rule models and apply them
-                        from core.models.rules import MetadataExtractionRule
-
-                        for rule_request in request.rules:
-                            if rule_request.type == "metadata_extraction":
-                                # Create the actual rule model
-                                rule = MetadataExtractionRule(type=rule_request.type, schema=rule_request.schema)
-
-                                # Apply the rule with retries
-                                max_retries = 3
-                                base_delay = 1  # seconds
-                                extracted_metadata = None
-                                last_error = None
-
-                                for retry_count in range(max_retries):
-                                    try:
-                                        if retry_count > 0:
-                                            # Exponential backoff
-                                            delay = base_delay * (2 ** (retry_count - 1))
-                                            logger.info(f"Retry {retry_count}/{max_retries} after {delay}s delay")
-                                            await asyncio.sleep(delay)
-
-                                        extracted_metadata, _ = await rule.apply(doc_content, {})
-                                        logger.info(
-                                            f"Successfully extracted metadata on attempt {retry_count + 1}: "
-                                            f"{extracted_metadata}"
-                                        )
-                                        break  # Success, exit retry loop
-
-                                    except Exception as rule_apply_error:
-                                        last_error = rule_apply_error
-                                        logger.warning(
-                                            f"Metadata extraction attempt {retry_count + 1} failed: "
-                                            f"{rule_apply_error}"
-                                        )
-                                        if retry_count == max_retries - 1:  # Last attempt
-                                            logger.error(f"All {max_retries} metadata extraction attempts failed")
-                                            processing_results["errors"].append(
-                                                {
-                                                    "document_id": doc.external_id,
-                                                    "error": f"Failed to extract metadata after {max_retries} "
-                                                    f"attempts: {str(last_error)}",
-                                                }
-                                            )
-                                            continue  # Skip to next document
-
-                                # Update document metadata if extraction succeeded
-                                if extracted_metadata:
-                                    # Merge new metadata with existing
-                                    doc.metadata.update(extracted_metadata)
-
-                                    # Create an updates dict that only updates metadata
-                                    # We need to create system_metadata with all preserved fields
-                                    # Note: In the database, metadata is stored as 'doc_metadata', not 'metadata'
-                                    updates = {
-                                        "doc_metadata": doc.metadata,  # Use doc_metadata for the database
-                                        "system_metadata": {},  # Will be merged with existing in update_document
-                                    }
-
-                                    # Explicitly preserve the content field in system_metadata
-                                    if "content" in doc.system_metadata:
-                                        updates["system_metadata"]["content"] = doc.system_metadata["content"]
-
-                                    # Log the updates we're making
-                                    logger.info(
-                                        f"Updating document {doc.external_id} with metadata: {extracted_metadata}"
-                                    )
-                                    logger.info(f"Full metadata being updated: {doc.metadata}")
-                                    logger.info(f"Update object being sent to database: {updates}")
-                                    logger.info(
-                                        f"Preserving content in system_metadata: {'content' in doc.system_metadata}"
-                                    )
-
-                                    # Update document in database
-                                    app_db = document_service.db
-                                    success = await app_db.update_document(doc.external_id, updates, auth)
-
-                                    if success:
-                                        logger.info(f"Updated metadata for document {doc.external_id}")
-                                        processing_results["processed"] += 1
-                                    else:
-                                        logger.error(f"Failed to update metadata for document {doc.external_id}")
-                                        processing_results["errors"].append(
-                                            {
-                                                "document_id": doc.external_id,
-                                                "error": "Failed to update document metadata",
-                                            }
-                                        )
-                    except Exception as rule_error:
-                        logger.error(f"Error processing rules for document {doc.external_id}: {rule_error}")
-                        processing_results["errors"].append(
-                            {
-                                "document_id": doc.external_id,
-                                "error": f"Error processing rules: {str(rule_error)}",
-                            }
-                        )
-
-                except Exception as doc_error:
-                    logger.error(f"Error processing document {doc.external_id}: {doc_error}")
-                    processing_results["errors"].append({"document_id": doc.external_id, "error": str(doc_error)})
-
-            return {
-                "status": "success",
-                "message": "Rules set successfully",
-                "folder_id": resolved_folder_id,
-                "rules": updated_folder.rules,
-                "processing_results": processing_results,
-            }
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        logger.error(f"Error setting folder rules: {e}")
         raise HTTPException(status_code=500, detail=str(e))
