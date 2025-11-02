@@ -656,20 +656,16 @@ async def batch_get_chunks(batch_request: Dict[str, Any], auth: AuthContext = De
             else:
                 chunk_sources.append(source)
 
-        # Create system filters for folder and user scoping
-        perf.start_phase("filter_creation")
-        system_filters = {}
-        if folder_name is not None:
-            normalized_folder_name = normalize_folder_name(folder_name)
-            system_filters["folder_name"] = normalized_folder_name
-        if end_user_id:
-            system_filters["end_user_id"] = end_user_id
-        # Note: Don't add auth.app_id here - it's already handled in document retrieval
+        normalized_folder_name = normalize_folder_name(folder_name) if folder_name is not None else None
 
         # Main batch retrieval operation
         perf.start_phase("batch_retrieve_chunks")
         results = await document_service.batch_retrieve_chunks(
-            chunk_sources, auth, folder_name, end_user_id, use_colpali
+            chunk_sources,
+            auth,
+            normalized_folder_name,
+            end_user_id,
+            use_colpali,
         )
 
         # Log consolidated performance summary
