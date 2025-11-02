@@ -1,9 +1,11 @@
 import io
+import json
 import logging
+from collections import deque
 from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
-from httpx import AsyncClient, Timeout  # replacing httpx.AsyncClient for clarity
+from httpx import AsyncClient, HTTPStatusError, Timeout  # replacing httpx.AsyncClient for clarity
 
 from core.config import get_settings
 from core.embedding.base_embedding_model import BaseEmbeddingModel
@@ -55,16 +57,14 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
 
         # Image embeddings
         if image_inputs:
-            indices, inputs = zip(*image_inputs)
-            data = await self.call_api(list(inputs), "image")
-            for idx, emb in zip(indices, data):
+            image_results = await self._embed_inputs_with_backoff(list(image_inputs), "image")
+            for idx, emb in image_results.items():
                 results[idx] = emb
 
         # Text embeddings
         if text_inputs:
-            indices, inputs = zip(*text_inputs)
-            data = await self.call_api(list(inputs), "text")
-            for idx, emb in zip(indices, data):
+            text_results = await self._embed_inputs_with_backoff(list(text_inputs), "text")
+            for idx, emb in text_results.items():
                 results[idx] = emb
 
         return results
@@ -105,3 +105,82 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
     def latest_ingest_metrics(self) -> Dict[str, Any]:
         """API-backed implementation does not expose detailed metrics."""
         return {}
+
+    async def _embed_inputs_with_backoff(
+        self, indexed_inputs: List[Tuple[int, str]], input_type: str
+    ) -> Dict[int, MultiVector]:
+        """
+        Embed inputs while dynamically shrinking the batch size to satisfy payload limits.
+
+        Args:
+            indexed_inputs: List of (original_index, payload) pairs.
+            input_type: Either "text" or "image".
+
+        Returns:
+            Dictionary mapping original index to embedding result.
+        """
+        if not indexed_inputs:
+            return {}
+
+        results: Dict[int, MultiVector] = {}
+        queue: deque[List[Tuple[int, str]]] = deque([indexed_inputs])
+
+        while queue:
+            batch = queue.popleft()
+            if not batch:
+                continue
+
+            try:
+                payload_inputs = [content for _, content in batch]
+                data = await self.call_api(payload_inputs, input_type)
+            except HTTPStatusError as exc:
+                if exc.response.status_code == 413:
+                    if len(batch) == 1:
+                        size_bytes = self._estimate_payload_size(batch, input_type)
+                        logger.error(
+                            "ColPali API rejected single %s payload (size≈%s bytes) – cannot downsplit further.",
+                            input_type,
+                            size_bytes,
+                        )
+                        raise ValueError(
+                            f"{input_type.title()} input exceeds ColPali API payload limit; "
+                            "consider downsampling or splitting the source document."
+                        ) from exc
+
+                    mid = max(1, len(batch) // 2)
+                    logger.warning(
+                        "ColPali API returned 413 for %s batch of %s inputs (estimated %s bytes). "
+                        "Retrying with %s and %s inputs.",
+                        input_type,
+                        len(batch),
+                        self._estimate_payload_size(batch, input_type),
+                        mid,
+                        len(batch) - mid,
+                    )
+                    queue.appendleft(batch[mid:])
+                    queue.appendleft(batch[:mid])
+                    continue
+                raise
+
+            for (idx, _), embedding in zip(batch, data):
+                results[idx] = embedding
+
+        return results
+
+    def _estimate_payload_size(self, batch: List[Tuple[int, str]], input_type: str) -> int:
+        """
+        Estimate the JSON payload size for a batch of inputs.
+
+        Args:
+            batch: List of (index, payload) tuples.
+            input_type: String descriptor ("text" or "image").
+
+        Returns:
+            Integer byte estimate of the serialized payload.
+        """
+        try:
+            payload = {"input_type": input_type, "inputs": [content for _, content in batch]}
+            return len(json.dumps(payload))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Failed to estimate payload size: %s", exc)
+            return sum(len(content) for _, content in batch)
