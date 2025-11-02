@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import inspect
 import json
 import logging
 import os
@@ -1097,15 +1098,32 @@ async def shutdown(ctx):
         logger.info("Closing database connections...")
         await ctx["database"].engine.dispose()
 
-    # Close vector store connections if they exist
-    if "vector_store" in ctx and hasattr(ctx["vector_store"], "engine"):
-        logger.info("Closing vector store connections...")
-        await ctx["vector_store"].engine.dispose()
+    async def _shutdown_store(store_key: str) -> None:
+        store = ctx.get(store_key)
+        if not store:
+            return
 
-    # Close colpali vector store connections if they exist
-    if "colpali_vector_store" in ctx and hasattr(ctx["colpali_vector_store"], "engine"):
-        logger.info("Closing colpali vector store connections...")
-        await ctx["colpali_vector_store"].engine.dispose()
+        close_candidate = getattr(store, "close", None)
+        if callable(close_candidate):
+            logger.info("Closing %s via close()...", store_key)
+            try:
+                if inspect.iscoroutinefunction(close_candidate):
+                    await close_candidate()
+                else:
+                    maybe_coro = close_candidate()
+                    if inspect.isawaitable(maybe_coro):
+                        await maybe_coro
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Failed to close %s cleanly: %s", store_key, exc)
+            return
+
+        engine = getattr(store, "engine", None)
+        if engine is not None and hasattr(engine, "dispose"):
+            logger.info("Disposing engine for %s...", store_key)
+            await engine.dispose()
+
+    await _shutdown_store("vector_store")
+    await _shutdown_store("colpali_vector_store")
 
     # Close any other open connections or resources that need cleanup
     logger.info("Worker shutdown complete.")

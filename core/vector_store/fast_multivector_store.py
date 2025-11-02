@@ -244,6 +244,25 @@ class FastMultiVectorStore(BaseVectorStore):
         )
         self.device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
 
+    async def close(self) -> None:
+        """Release network and database resources held by the vector store."""
+        logger.info("Closing FastMultiVectorStore resources...")
+
+        tpuf_client = getattr(self, "tpuf", None)
+        if tpuf_client is not None and hasattr(tpuf_client, "is_closed"):
+            try:
+                if not tpuf_client.is_closed():
+                    await tpuf_client.close()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Failed to close TurboPuffer client cleanly: %s", exc)
+
+        pool = getattr(self, "pool", None)
+        if pool is not None and not pool.closed:
+            try:
+                await asyncio.to_thread(pool.close)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Failed to close PostgreSQL connection pool cleanly: %s", exc)
+
     def _init_chunk_storage(self) -> Tuple[BaseStorage, Optional[str]]:
         """Initialize storage backend for chunk payloads."""
         settings = get_settings()
