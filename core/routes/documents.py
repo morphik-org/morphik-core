@@ -461,6 +461,9 @@ async def update_document_text(
         Document: Updated document metadata
     """
     try:
+        if request.rules:
+            logger.warning("Deprecated 'rules' field supplied to /documents/{document_id}/update_text; ignoring.")
+
         doc = await document_service.update_document(
             document_id=document_id,
             auth=auth,
@@ -468,7 +471,6 @@ async def update_document_text(
             file=None,
             filename=request.filename,
             metadata=request.metadata,
-            rules=request.rules,
             update_strategy=update_strategy,
             use_colpali=request.use_colpali,
         )
@@ -499,7 +501,7 @@ async def update_document_file(
         document_id: ID of the document to update
         file: File to add to the document
         metadata: JSON string of metadata to merge with existing metadata
-        rules: JSON string of rules to apply to the content
+        rules: JSON string of rules to apply to the content (deprecated; ignored)
         update_strategy: Strategy for updating the document (default: 'add')
         use_colpali: Whether to use multi-vector embedding
         auth: Authentication context
@@ -509,7 +511,9 @@ async def update_document_file(
     """
     try:
         metadata_dict = json.loads(metadata)
-        rules_list = json.loads(rules)
+        parsed_rules = json.loads(rules)
+        if parsed_rules:
+            logger.warning("Deprecated 'rules' payload supplied to /documents/{document_id}/update_file; ignoring.")
 
         doc = await document_service.update_document(
             document_id=document_id,
@@ -518,7 +522,6 @@ async def update_document_file(
             file=file,
             filename=file.filename,
             metadata=metadata_dict,
-            rules=rules_list,
             update_strategy=update_strategy,
             use_colpali=use_colpali,
         )
@@ -560,7 +563,6 @@ async def update_document_metadata(
             file=None,
             filename=None,
             metadata=metadata_updates,
-            rules=[],
             update_strategy="add",
             use_colpali=None,
         )

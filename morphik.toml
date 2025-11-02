@@ -129,10 +129,6 @@ provider = "pgvector"
 [multivector_store]
 provider = "morphik" #  "postgres" #   (morphik is faster, but also proprietary)
 
-[rules]
-model = "openai_gpt4-1-mini"
-batch_size = 4096
-
 [morphik]
 enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"

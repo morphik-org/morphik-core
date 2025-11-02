@@ -158,7 +158,10 @@ class IngestTextRequest(BaseModel):
     content: str
     filename: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    rules: List[Dict[str, Any]] = Field(default_factory=list)
+    rules: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Deprecated; retained for backwards compatibility but ignored by the server.",
+    )
     use_colpali: Optional[bool] = None
     folder_name: Optional[str] = Field(None, description="Optional folder scope for the operation")
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
