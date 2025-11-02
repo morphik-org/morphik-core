@@ -46,7 +46,6 @@ export function ConnectorCard({
   const [ingestionTargetFileId, setIngestionTargetFileId] = useState<string | null>(null);
   const [ingestionTargetFileName, setIngestionTargetFileName] = useState<string | null>(null);
   const [ingestionMetadata, setIngestionMetadata] = useState<string>("{}");
-  const [ingestionRules, setIngestionRules] = useState<string>("[]");
 
   // State for manual credentials modal
   const [showCredentialsModal, setShowCredentialsModal] = useState<boolean>(false);
@@ -152,7 +151,6 @@ export function ConnectorCard({
     setIngestionTargetFileId(fileId);
     setIngestionTargetFileName(fileName);
     setIngestionMetadata("{}"); // Reset metadata
-    setIngestionRules("[]"); // Reset rules
     setShowIngestionModal(true);
     setError(null); // Clear previous errors
   };
@@ -209,10 +207,9 @@ export function ConnectorCard({
     setIsSubmitting(true);
     setError(null);
     try {
-      // Pass metadata and rules to ingestConnectorFile
+      // Pass metadata to ingestConnectorFile
       const result = await ingestConnectorFile(apiBaseUrl, connectorType, authToken, ingestionTargetFileId, {
         metadata: JSON.parse(ingestionMetadata),
-        rules: JSON.parse(ingestionRules),
         // morphikFolderName and morphikEndUserId can be added here if there are UI elements to collect them
         // For now, they will be undefined and thus not sent if not explicitly set.
       });
@@ -440,18 +437,6 @@ export function ConnectorCard({
                 onChange={e => setIngestionMetadata(e.target.value)}
                 className="col-span-3 h-24"
                 placeholder='Enter metadata as JSON, e.g., { "source": "google_drive" }'
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <label htmlFor="rules" className="col-span-1 text-right">
-                Rules (JSON)
-              </label>
-              <Textarea
-                id="rules"
-                value={ingestionRules}
-                onChange={e => setIngestionRules(e.target.value)}
-                className="col-span-3 h-24"
-                placeholder='Enter rules as JSON array, e.g., [{ "type": "metadata_extraction", ... }]'
               />
             </div>
             {error && (

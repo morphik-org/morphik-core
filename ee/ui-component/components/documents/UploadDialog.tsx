@@ -21,9 +21,9 @@ interface UploadDialogProps {
   showUploadDialog: boolean;
   setShowUploadDialog: (show: boolean) => void;
   loading: boolean;
-  onFileUpload: (file: File | null, metadata: string, rules: string, useColpali: boolean) => Promise<void>;
-  onBatchFileUpload: (files: File[], metadata: string, rules: string, useColpali: boolean) => Promise<void>;
-  onTextUpload: (text: string, metadata: string, rules: string, useColpali: boolean) => Promise<void>;
+  onFileUpload: (file: File | null, metadata: string, useColpali: boolean) => Promise<void>;
+  onBatchFileUpload: (files: File[], metadata: string, useColpali: boolean) => Promise<void>;
+  onTextUpload: (text: string, metadata: string, useColpali: boolean) => Promise<void>;
 }
 
 const UploadDialog: React.FC<UploadDialogProps> = ({
@@ -41,7 +41,6 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const [batchFilesToUpload, setBatchFilesToUpload] = useState<File[]>([]);
   const [metadata, setMetadata] = useState("{}");
-  const [rules, setRules] = useState("[]");
   const [useColpali, setUseColpali] = useState(true);
 
   // Reset upload dialog state
@@ -51,7 +50,6 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
     setBatchFilesToUpload([]);
     setTextContent("");
     setMetadata("{}");
-    setRules("[]");
     setUseColpali(true);
   };
 
@@ -161,19 +159,6 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
             />
           </div>
 
-          <div>
-            <Label htmlFor="rules" className="mb-2 block">
-              Rules (JSON)
-            </Label>
-            <Textarea
-              id="rules"
-              value={rules}
-              onChange={e => setRules(e.target.value)}
-              placeholder='[{"type": "metadata_extraction", "schema": {...}}]'
-              rows={3}
-            />
-          </div>
-
           <div className="flex items-center space-x-2">
             <Checkbox
               id="useColpali"
@@ -197,11 +182,11 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
           <Button
             onClick={() => {
               if (uploadType === "file") {
-                onFileUpload(fileToUpload, metadata, rules, useColpali);
+                onFileUpload(fileToUpload, metadata, useColpali);
               } else if (uploadType === "batch") {
-                onBatchFileUpload(batchFilesToUpload, metadata, rules, useColpali);
+                onBatchFileUpload(batchFilesToUpload, metadata, useColpali);
               } else {
-                onTextUpload(textContent, metadata, rules, useColpali);
+                onTextUpload(textContent, metadata, useColpali);
               }
             }}
             disabled={loading}
@@ -226,7 +211,6 @@ export const useUploadDialog = () => {
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const [batchFilesToUpload, setBatchFilesToUpload] = useState<File[]>([]);
   const [metadata, setMetadata] = useState("{}");
-  const [rules, setRules] = useState("[]");
   const [useColpali, setUseColpali] = useState(true);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
 
@@ -236,7 +220,6 @@ export const useUploadDialog = () => {
     setBatchFilesToUpload([]);
     setTextContent("");
     setMetadata("{}");
-    setRules("[]");
     setUseColpali(true);
   };
 
@@ -251,8 +234,6 @@ export const useUploadDialog = () => {
     setBatchFilesToUpload,
     metadata,
     setMetadata,
-    rules,
-    setRules,
     useColpali,
     setUseColpali,
     showUploadDialog,

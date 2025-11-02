@@ -4,7 +4,7 @@ import json
 import logging
 import time
 from contextlib import contextmanager
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 import psycopg
@@ -680,24 +680,28 @@ class MultiVectorStore(BaseVectorStore):
         if not chunk_identifiers:
             return []
 
-        # Construct the WHERE clause with OR conditions
-        conditions = []
-        for doc_id, chunk_num in chunk_identifiers:
-            conditions.append(f"(document_id = '{doc_id}' AND chunk_number = {chunk_num})")
+        unique_identifiers = list(dict.fromkeys(chunk_identifiers))
+        logger.debug(f"Batch retrieving {len(unique_identifiers)} unique chunks from multi-vector store")
 
-        where_clause = " OR ".join(conditions)
+        values_clause = []
+        params: Dict[str, Any] = {}
+        for idx, (doc_id, chunk_num) in enumerate(unique_identifiers):
+            values_clause.append(f"(%(doc_id_{idx})s, %(chunk_num_{idx})s)")
+            params[f"doc_id_{idx}"] = doc_id
+            params[f"chunk_num_{idx}"] = chunk_num
 
-        # Build and execute query
         query = f"""
-            SELECT document_id, chunk_number, content, chunk_metadata
-            FROM multi_vector_embeddings
-            WHERE {where_clause}
+            WITH requested(document_id, chunk_number) AS (
+                VALUES {', '.join(values_clause)}
+            )
+            SELECT m.document_id, m.chunk_number, m.content, m.chunk_metadata
+            FROM multi_vector_embeddings AS m
+            JOIN requested AS r
+                ON m.document_id = r.document_id AND m.chunk_number = r.chunk_number
         """
 
-        logger.debug(f"Batch retrieving {len(chunk_identifiers)} chunks from multi-vector store")
-
         with self.get_connection() as conn:
-            result = conn.execute(query).fetchall()
+            result = conn.execute(query, params).fetchall()
 
         # Convert to DocumentChunks with external storage support
         content_tasks = []
