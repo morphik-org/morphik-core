@@ -20,10 +20,8 @@ from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
 from core.models.auth import AuthContext, EntityType
-from core.models.rules import MetadataExtractionRule
 from core.parser.morphik_parser import MorphikParser
 from core.services.document_service import DocumentService, PdfConversionError
-from core.services.rules_processor import RulesProcessor
 from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
@@ -183,7 +181,6 @@ async def process_ingestion_job(
     content_type: str,
     metadata_json: str,
     auth_dict: Dict[str, Any],
-    rules_list: List[Dict[str, Any]],
     use_colpali: bool,
     folder_name: Optional[str] = None,
     end_user_id: Optional[str] = None,
@@ -199,7 +196,6 @@ async def process_ingestion_job(
         content_type: The file's content type/MIME type
         metadata_json: JSON string of metadata
         auth_dict: Dict representation of AuthContext
-        rules_list: List of rules to apply (already converted to dictionaries)
         use_colpali: Whether to use ColPali embedding model
         folder_name: Optional folder to scope the document to
         end_user_id: Optional end-user ID to scope the document to
@@ -337,25 +333,6 @@ async def process_ingestion_job(
             phase_times["download_file"] = download_time
             logger.info(f"File download took {download_time:.2f}s for {len(file_content)/1024/1024:.2f}MB")
 
-            # ================== INGESTION FLOW DECISION LOGIC ==================
-            # Determine processing path based on ColPali and Rules configuration
-            # This section maps out all scenarios for clarity and maintainability
-            #
-            # Rule Types:
-            # 1. post_parsing rules: Applied to full document text BEFORE chunking
-            #    - Always require text extraction
-            #    - Example: Extract document-level metadata, clean text
-            #
-            # 2. post_chunking text rules: Applied to text chunks AFTER chunking
-            #    - Require text extraction and chunking
-            #    - Example: Extract metadata from each chunk's text
-            #
-            # 3. post_chunking image rules: Applied to image representations
-            #    - Don't require text extraction (work on images)
-            #    - Only relevant for ColPali/image processing
-            #    - Example: Extract visual features from images
-            # ===================================================================
-
             # Check if we're using ColPali
             using_colpali = (
                 use_colpali and document_service.colpali_embedding_model and document_service.colpali_vector_store
@@ -366,28 +343,6 @@ async def process_ingestion_job(
                 f"has_store={bool(document_service.colpali_vector_store)}, "
                 f"using_colpali={using_colpali}"
             )
-
-            # Check what types of rules we have
-            # Note: Default stage is "post_parsing" if not specified
-
-            # post_parsing rules always need text
-            has_post_parsing_rules = any(r.get("stage", "post_parsing") == "post_parsing" for r in rules_list or [])
-
-            # post_chunking text rules (non-image) need text chunks
-            has_text_chunking_rules = any(
-                r.get("stage") == "post_chunking" and not r.get("use_images", False) for r in rules_list or []
-            )
-
-            # post_chunking image rules work on images (don't need text)
-            has_image_chunking_rules = any(
-                r.get("stage") == "post_chunking"
-                and r.get("type") == "metadata_extraction"
-                and r.get("use_images", False)
-                for r in rules_list or []
-            )
-
-            # We need text if we have any text-based rules
-            has_text_rules = has_post_parsing_rules or has_text_chunking_rules
 
             # Detect file type early for optimization decisions
             file_type = None
@@ -428,17 +383,12 @@ async def process_ingestion_job(
                 logger.warning(f"Could not detect file type: {e}")
 
             # ===== PROCESSING FLOW DECISION =====
-            # Skip text parsing only when ALL conditions are met:
-            # 1. ColPali is enabled
-            # 2. No text-based rules (neither post_parsing nor text post_chunking)
-            # 3. File is a ColPali-native format (image/PDF/Word that converts to images)
-            skip_text_parsing = using_colpali and not has_text_rules and is_colpali_native_format
+            skip_text_parsing = using_colpali and is_colpali_native_format
 
             logger.info(
                 f"Processing decision for {mime_type or 'unknown'} file: "
                 f"skip_text_parsing={skip_text_parsing} "
-                f"(ColPali={using_colpali}, text_rules={has_text_rules}, native_format={is_colpali_native_format}, "
-                f"image_rules={has_image_chunking_rules})"
+                f"(ColPali={using_colpali}, native_format={is_colpali_native_format})"
             )
 
             # 4. Parse file to text
@@ -510,27 +460,6 @@ async def process_ingestion_job(
                     logger.error("User %s exceeded ingest limits: %s", auth.user_id, limit_exc)
                     raise
             # ---------------------------------------------------------------------
-
-            # === Apply post_parsing rules ===
-            rules_start = time.time()
-            document_rule_metadata = {}
-            if rules_list and not xml_processing:
-                # Apply document rules to extracted text for non-XML files
-                logger.info("Applying post-parsing rules...")
-                document_rule_metadata, text = await document_service.rules_processor.process_document_rules(
-                    text, rules_list
-                )
-                metadata.update(document_rule_metadata)  # Merge metadata into main doc metadata
-                logger.info(f"Document metadata after post-parsing rules: {metadata}")
-                logger.info(f"Content length after post-parsing rules: {len(text)}")
-            elif rules_list and xml_processing:
-                # For XML files, we skip document-level rules processing since we have structured chunks
-                # Rules will be applied at the chunk level later in the process
-                logger.info("Skipping document-level rules for XML file - will apply at chunk level")
-            rules_time = time.time() - rules_start
-            phase_times["apply_post_parsing_rules"] = rules_time
-            if rules_list:
-                logger.info(f"Post-parsing rules processing took {rules_time:.2f}s")
 
             # 6. Retrieve the existing document
             retrieve_start = time.time()
@@ -624,10 +553,8 @@ async def process_ingestion_job(
                 f"{'XML' if xml_processing else 'Text'} chunking took {chunking_time:.2f}s to create {len(parsed_chunks)} chunks"
             )
 
-            # Decide whether we need image chunks either for ColPali embedding or because
-            # there are image-based rules (use_images=True) that must process them.
-            # Note: has_image_chunking_rules was already computed above during rule analysis
-            should_create_image_chunks = has_image_chunking_rules or using_colpali
+            # Decide whether to generate image chunks; today this is driven solely by the ColPali flag.
+            should_create_image_chunks = using_colpali
 
             # Start timer for optional image chunk creation / multivector processing
             colpali_processing_start = time.time()
@@ -638,7 +565,7 @@ async def process_ingestion_job(
 
                 file_type = filetype.guess(file_content)
                 try:
-                    # Use the parsed chunks for ColPali/image rules – this will create image chunks if appropriate
+                    # Use the parsed chunks to create image-friendly slices when ColPali is enabled
                     chunks_multivector = document_service._create_chunks_multivector(
                         file_type, None, file_content, parsed_chunks
                     )
@@ -705,80 +632,8 @@ async def process_ingestion_job(
 
             colpali_count_for_limit_fn = len(chunks_multivector) if using_colpali else None
 
-            # 9. Apply post_chunking rules and aggregate metadata
-            processed_chunks = []
-            processed_chunks_multivector = []
-            aggregated_chunk_metadata: Dict[str, Any] = {}  # Initialize dict for aggregated metadata
-            chunk_contents = []  # Initialize list to collect chunk contents as we process them
-
-            if rules_list:
-                logger.info("Applying post-chunking rules...")
-
-                # Partition rules by type
-                text_rules = []
-                image_rules = []
-
-                for rule_dict in rules_list:
-                    rule = document_service.rules_processor._parse_rule(rule_dict)
-                    if rule.stage == "post_chunking":
-                        if isinstance(rule, MetadataExtractionRule) and rule.use_images:
-                            image_rules.append(rule_dict)
-                        else:
-                            text_rules.append(rule_dict)
-
-                logger.info(f"Partitioned rules: {len(text_rules)} text rules, {len(image_rules)} image rules")
-
-                # Process regular text chunks with text rules only
-                if text_rules:
-                    logger.info(f"Applying {len(text_rules)} text rules to text chunks...")
-                    for chunk_obj in parsed_chunks:
-                        # Get metadata *and* the potentially modified chunk
-                        (
-                            chunk_rule_metadata,
-                            processed_chunk,
-                        ) = await document_service.rules_processor.process_chunk_rules(chunk_obj, text_rules)
-                        processed_chunks.append(processed_chunk)
-                        chunk_contents.append(processed_chunk.content)  # Collect content as we process
-                        # Aggregate the metadata extracted from this chunk
-                        aggregated_chunk_metadata.update(chunk_rule_metadata)
-                else:
-                    processed_chunks = parsed_chunks  # No text rules, use original chunks
-
-                # Process colpali image chunks with image rules if they exist
-                if chunks_multivector and image_rules:
-                    logger.info(f"Applying {len(image_rules)} image rules to image chunks...")
-                    for chunk_obj in chunks_multivector:
-                        # Only process if it's an image chunk - pass the image content to the rule
-                        if chunk_obj.metadata.get("is_image", False):
-                            # Get metadata *and* the potentially modified chunk
-                            (
-                                chunk_rule_metadata,
-                                processed_chunk,
-                            ) = await document_service.rules_processor.process_chunk_rules(chunk_obj, image_rules)
-                            processed_chunks_multivector.append(processed_chunk)
-                            # Aggregate the metadata extracted from this chunk
-                            aggregated_chunk_metadata.update(chunk_rule_metadata)
-                        else:
-                            # Non-image chunks from multivector don't need further processing
-                            processed_chunks_multivector.append(chunk_obj)
-
-                    logger.info(f"Finished applying image rules to {len(processed_chunks_multivector)} image chunks.")
-                elif chunks_multivector:
-                    # No image rules, use original multivector chunks
-                    processed_chunks_multivector = chunks_multivector
-
-                logger.info(f"Finished applying post-chunking rules to {len(processed_chunks)} regular chunks.")
-                logger.info(f"Aggregated metadata from all chunks: {aggregated_chunk_metadata}")
-
-                # Update the document content with the stitched content from processed chunks
-                if processed_chunks:
-                    logger.info("Updating document content with processed chunks...")
-                    stitched_content = "\n".join(chunk_contents)
-                    doc.system_metadata["content"] = stitched_content
-                    logger.info(f"Updated document content with stitched chunks (length: {len(stitched_content)})")
-            else:
-                processed_chunks = parsed_chunks  # No rules, use original chunks
-                processed_chunks_multivector = chunks_multivector  # No rules, use original multivector chunks
+            processed_chunks = parsed_chunks
+            processed_chunks_multivector = chunks_multivector
 
             # ===== REGULAR EMBEDDING GENERATION DECISION =====
             # Generate regular embeddings only if we have chunks AND not using ColPali
@@ -933,16 +788,6 @@ async def process_ingestion_job(
                 phase_times["multivector_chunk_object_creation"] = 0
                 phase_times["multivector_store_embeddings"] = 0
                 phase_times["multivector_pipeline_total"] = 0
-
-            # === Merge aggregated chunk metadata into document metadata ===
-            if aggregated_chunk_metadata:
-                logger.info("Merging aggregated chunk metadata into document metadata...")
-                # Make sure doc.metadata exists
-                if not hasattr(doc, "metadata") or doc.metadata is None:
-                    doc.metadata = {}
-                doc.metadata.update(aggregated_chunk_metadata)
-                logger.info(f"Final document metadata after merge: {doc.metadata}")
-            # ===========================================================
 
             # 11. Store chunks and update document with is_update=True
             await update_document_progress(document_service, document_id, auth, 5, total_steps, "Storing chunks")
@@ -1231,10 +1076,6 @@ async def startup(ctx):
     ctx["colpali_embedding_model"] = colpali_embedding_model
     ctx["colpali_vector_store"] = colpali_vector_store
     ctx["cache_factory"] = None
-
-    # Initialize rules processor
-    rules_processor = RulesProcessor()
-    ctx["rules_processor"] = rules_processor
 
     # Initialize telemetry service
     telemetry = TelemetryService()

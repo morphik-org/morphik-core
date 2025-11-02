@@ -89,11 +89,6 @@ class Settings(BaseSettings):
     USE_CONTEXTUAL_CHUNKING: bool = False
     PARSER_XML: ParserXMLSettings = ParserXMLSettings()
 
-    # Rules configuration
-    RULES_PROVIDER: Literal["litellm"] = "litellm"
-    RULES_MODEL: str
-    RULES_BATCH_SIZE: int = 4096
-
     # Graph configuration
     GRAPH_MODE: Literal["local", "api"] = "local"
     GRAPH_PROVIDER: Literal["litellm"] = "litellm"
@@ -119,6 +114,7 @@ class Settings(BaseSettings):
     S3_BUCKET: Optional[str] = None
     CACHE_ENABLED: bool = False
     CACHE_MAX_BYTES: int = 10 * 1024 * 1024 * 1024
+    CACHE_CHUNK_MAX_BYTES: int = 10 * 1024 * 1024 * 1024
     CACHE_PATH: str = "./storage/cache"
 
     # Vector store configuration
@@ -336,6 +332,15 @@ def get_settings() -> Settings:
         cache_bytes = 10 * 1024 * 1024 * 1024
     settings_dict["CACHE_MAX_BYTES"] = max(cache_bytes, 0)
 
+    chunk_max_size_gb = config["storage"].get("cache_chunk_max_size_gb")
+    if chunk_max_size_gb is None:
+        chunk_max_size_gb = config["storage"].get("chunk_max_size_gb", 10)
+    try:
+        chunk_cache_bytes = int(float(chunk_max_size_gb) * 1024 * 1024 * 1024)
+    except (TypeError, ValueError):
+        chunk_cache_bytes = 10 * 1024 * 1024 * 1024
+    settings_dict["CACHE_CHUNK_MAX_BYTES"] = max(chunk_cache_bytes, 0)
+
     # Load vector store config
     settings_dict["VECTOR_STORE_PROVIDER"] = config["vector_store"]["provider"]
     if settings_dict["VECTOR_STORE_PROVIDER"] != "pgvector":
@@ -343,18 +348,6 @@ def get_settings() -> Settings:
 
     if "POSTGRES_URI" not in os.environ:
         raise ValueError(em.format(missing_value="POSTGRES_URI", field="vector_store.provider", value="pgvector"))
-
-    # Load rules config
-    settings_dict.update(
-        {
-            "RULES_PROVIDER": "litellm",
-            "RULES_BATCH_SIZE": config["rules"]["batch_size"],
-        }
-    )
-
-    if "model" not in config["rules"]:
-        raise ValueError("'model' is required in the rules configuration")
-    settings_dict["RULES_MODEL"] = config["rules"]["model"]
 
     # Load morphik config
     settings_dict.update(

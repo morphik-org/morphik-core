@@ -129,10 +129,6 @@ provider = "pgvector"
 [multivector_store]
 provider = "postgres"  # "morphik" # "postgres"  # "morphik" # "postgres"  # "postgres" or "morphik" for fast implementation
 
-[rules]
-model = "ollama_qwen_vision"
-batch_size = 4096
-
 [morphik]
 enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"

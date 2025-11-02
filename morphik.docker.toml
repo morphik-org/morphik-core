@@ -120,10 +120,6 @@ storage_path = "./storage"
 [vector_store]
 provider = "pgvector"
 
-[rules]
-model = "openai_gpt4-1-mini"
-batch_size = 4096
-
 [morphik]
 enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"

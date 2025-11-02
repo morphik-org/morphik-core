@@ -622,7 +622,6 @@ class TelemetryService:
             common_request_fields
             + [
                 MetadataField("metadata", "request", default={}),
-                MetadataField("rules", "request", default=[]),
             ]
         )
 
@@ -641,7 +640,6 @@ class TelemetryService:
                     "ingestion_options",
                     transform=lambda v: parse_json(v, {}).get("metadata", {}),
                 ),
-                MetadataField("rules", "kwargs", transform=lambda v: parse_json(v, [])),
                 MetadataField("use_colpali", "kwargs"),
                 MetadataField(
                     "use_colpali",
@@ -674,18 +672,6 @@ class TelemetryService:
                     "kwargs",
                     "metadata",
                     transform=lambda v: get_json_type(parse_json(v, {})),
-                ),
-                MetadataField(
-                    "rules_type",
-                    "kwargs",
-                    "rules",
-                    transform=lambda v: (
-                        "per_file"
-                        if isinstance(parse_json(v, []), list)
-                        and parse_json(v, [])
-                        and isinstance(parse_json(v, [])[0], list)
-                        else "shared"
-                    ),
                 ),
                 MetadataField("folder_name", "kwargs"),
                 MetadataField("end_user_id", "kwargs"),
