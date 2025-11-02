@@ -544,7 +544,6 @@ async def test_update_document_with_file(client: AsyncClient):
             files={"file": ("update_test.txt", f, "text/plain")},
             data={
                 "metadata": json.dumps({"updated_with_file": True}),
-                "rules": json.dumps([]),
                 "update_strategy": "add",
             },
             headers=headers,
@@ -611,66 +610,6 @@ async def test_update_document_metadata(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_update_document_with_rules(client: AsyncClient):
-    """Test updating a document with text content and applying rules"""
-    # First ingest a document to update
-    initial_content = "This is the initial content for rule testing."
-    doc_id = await test_ingest_text_document(client, content=initial_content)
-
-    headers = create_auth_header()
-    update_content = (
-        "This document contains information about John Doe who lives at 123 Main St and has SSN 123-45-6789."
-    )
-
-    # Create a rule to apply during update (natural language rule to remove PII)
-    rule = {
-        "type": "natural_language",
-        "prompt": "Remove all personally identifiable information (PII) such as names, addresses, and SSNs.",
-    }
-
-    # Test updating with text content and a rule
-    response = await client.post(
-        f"/documents/{doc_id}/update_text",
-        json={
-            "content": update_content,
-            "metadata": {"contains_pii": False},
-            "rules": [rule],
-            "use_colpali": True,
-        },
-        headers=headers,
-    )
-
-    assert response.status_code == 200
-    updated_doc = response.json()
-    assert updated_doc["external_id"] == doc_id
-    assert updated_doc["metadata"]["contains_pii"] is False
-
-    # Verify the content was updated and PII was removed by retrieving chunks
-    # Note: Exact behavior depends on the LLM response, so we check that something changed
-    search_response = await client.post(
-        "/retrieve/chunks",
-        json={
-            "query": "information about person",
-            "filters": {"external_id": doc_id},
-        },
-        headers=headers,
-    )
-
-    assert search_response.status_code == 200
-    chunks = search_response.json()
-    assert len(chunks) > 0
-    # The processed content should have some of the original content but not the PII
-    assert any("information" in chunk["content"] for chunk in chunks)
-    # Check that at least one of the PII elements is not in the content
-    # This is a loose check since the exact result depends on the LLM
-    content_text = " ".join([chunk["content"] for chunk in chunks])
-    has_some_pii_removed = (
-        ("John Doe" not in content_text) or ("123-45-6789" not in content_text) or ("123 Main St" not in content_text)
-    )
-    assert has_some_pii_removed, "Rule to remove PII did not seem to have any effect"
-
-
-@pytest.mark.asyncio
 async def test_file_versioning_with_add_strategy(client: AsyncClient):
     """Test that file versioning works correctly with 'add' update strategy"""
     # First ingest a document with a file
@@ -688,7 +627,6 @@ async def test_file_versioning_with_add_strategy(client: AsyncClient):
             files={"file": ("version_test.txt", f, "text/plain")},
             data={
                 "metadata": json.dumps({"test": True, "version": 1}),
-                "rules": json.dumps([]),
             },
             headers=headers,
         )
@@ -710,7 +648,6 @@ async def test_file_versioning_with_add_strategy(client: AsyncClient):
             files={"file": ("version_test_v2.txt", f, "text/plain")},
             data={
                 "metadata": json.dumps({"test": True, "version": 2}),
-                "rules": json.dumps([]),
                 "update_strategy": "add",
             },
             headers=headers,
@@ -730,7 +667,6 @@ async def test_file_versioning_with_add_strategy(client: AsyncClient):
             files={"file": ("version_test_v3.txt", f, "text/plain")},
             data={
                 "metadata": json.dumps({"test": True, "version": 3}),
-                "rules": json.dumps([]),
                 "update_strategy": "add",
             },
             headers=headers,
@@ -2003,7 +1939,6 @@ async def test_batch_ingest_with_shared_metadata(client: AsyncClient):
         files=files,
         data={
             "metadata": json.dumps(metadata),
-            "rules": json.dumps([]),
             "use_colpali": "true",
             "parallel": "true",
         },
@@ -2042,7 +1977,6 @@ async def test_batch_ingest_with_individual_metadata(client: AsyncClient):
         files=files,
         data={
             "metadata": json.dumps(metadata),
-            "rules": json.dumps([]),
             "use_colpali": "true",
             "parallel": "true",
         },
@@ -2080,7 +2014,6 @@ async def test_batch_ingest_metadata_validation(client: AsyncClient):
         files=files,
         data={
             "metadata": json.dumps(metadata),
-            "rules": json.dumps([]),
             "use_colpali": "true",
             "parallel": "true",
         },
@@ -2107,7 +2040,6 @@ async def test_batch_ingest_sequential(client: AsyncClient):
         files=files,
         data={
             "metadata": json.dumps(metadata),
-            "rules": json.dumps([]),
             "use_colpali": "true",
             "parallel": "false",  # Process sequentially
         },
@@ -2118,107 +2050,6 @@ async def test_batch_ingest_sequential(client: AsyncClient):
     result = response.json()
     assert len(result["documents"]) == 2
     assert len(result["errors"]) == 0
-
-
-@pytest.mark.asyncio
-async def test_batch_ingest_with_rules(client: AsyncClient):
-    """Test batch ingestion with rules applied."""
-    headers = create_auth_header()
-    files = [
-        ("files", ("test1.txt", b"Test content 1")),
-        ("files", ("test2.txt", b"Test content 2")),
-    ]
-
-    # Test shared rules for all files
-    shared_rules = [{"type": "natural_language", "prompt": "Extract keywords"}]
-
-    response = await client.post(
-        "/ingest/files",
-        files=files,
-        data={
-            "metadata": json.dumps({}),
-            "rules": json.dumps(shared_rules),
-            "use_colpali": "true",
-            "parallel": "true",
-        },
-        headers=headers,
-    )
-
-    assert response.status_code == 200
-    result = response.json()
-    assert len(result["documents"]) == 2
-    assert len(result["errors"]) == 0
-
-    # Test per-file rules
-    per_file_rules = [
-        [{"type": "natural_language", "prompt": "Extract keywords"}],  # Rules for first file
-        [{"type": "metadata_extraction", "schema": {"title": "string"}}],  # Rules for second file
-    ]
-
-    response = await client.post(
-        "/ingest/files",
-        files=files,
-        data={
-            "metadata": json.dumps({}),
-            "rules": json.dumps(per_file_rules),
-            "use_colpali": "true",
-            "parallel": "true",
-        },
-        headers=headers,
-    )
-
-    assert response.status_code == 200
-    result = response.json()
-    assert len(result["documents"]) == 2
-    assert len(result["errors"]) == 0
-
-
-@pytest.mark.asyncio
-async def test_batch_ingest_rules_validation(client: AsyncClient):
-    """Test validation of rules format and length."""
-    headers = create_auth_header()
-    files = [
-        ("files", ("test1.txt", b"Test content 1")),
-        ("files", ("test2.txt", b"Test content 2")),
-    ]
-
-    # Test invalid rules format
-    invalid_rules = "not a list"
-
-    response = await client.post(
-        "/ingest/files",
-        files=files,
-        data={
-            "metadata": json.dumps({}),
-            "rules": invalid_rules,
-            "use_colpali": "true",
-            "parallel": "true",
-        },
-        headers=headers,
-    )
-
-    assert response.status_code == 400
-    assert "Invalid JSON" in response.json()["detail"]
-
-    # Test per-file rules with wrong length
-    per_file_rules = [
-        [{"type": "natural_language", "prompt": "Extract keywords"}],  # Only one set of rules
-    ]
-
-    response = await client.post(
-        "/ingest/files",
-        files=files,
-        data={
-            "metadata": json.dumps({}),
-            "rules": json.dumps(per_file_rules),
-            "use_colpali": "true",
-            "parallel": "true",
-        },
-        headers=headers,
-    )
-
-    assert response.status_code == 400
-    assert "must match number of files" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -2237,7 +2068,6 @@ async def test_batch_ingest_sequential_vs_parallel(client: AsyncClient):
         files=files,
         data={
             "metadata": json.dumps({}),
-            "rules": json.dumps([]),
             "use_colpali": "true",
             "parallel": "true",
         },
@@ -2255,7 +2085,6 @@ async def test_batch_ingest_sequential_vs_parallel(client: AsyncClient):
         files=files,
         data={
             "metadata": json.dumps({}),
-            "rules": json.dumps([]),
             "use_colpali": "true",
             "parallel": "false",
         },

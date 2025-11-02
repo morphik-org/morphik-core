@@ -60,7 +60,6 @@ async def ingest_text(
             • content – raw text to ingest.
             • filename – optional filename to help detect MIME-type.
             • metadata – optional JSON metadata dict.
-            • rules – optional list of extraction / NL rules.
             • folder_name – optional folder scope.
             • end_user_id – optional end-user scope.
         auth: Decoded JWT context (injected).
@@ -79,11 +78,13 @@ async def ingest_text(
                 verify_only=True,
             )
 
+        if request.rules:
+            logger.warning("Deprecated 'rules' field supplied to /ingest/text; ignoring payload.")
+
         return await document_service.ingest_text(
             content=request.content,
             filename=request.filename,
             metadata=request.metadata,
-            rules=request.rules,
             use_colpali=request.use_colpali,
             auth=auth,
             folder_name=request.folder_name,
@@ -119,7 +120,7 @@ async def ingest_file(
     Args:
         file: Uploaded file from multipart/form-data.
         metadata: JSON-string representing user metadata.
-        rules: JSON-string with extraction / NL rules list.
+        rules: JSON-string with extraction / NL rules list (deprecated; ignored).
         auth: Caller context – must include *write* permission.
         use_colpali: Switch to multi-vector embeddings.
         folder_name: Optionally scope doc to a folder.
@@ -134,7 +135,9 @@ async def ingest_file(
         # Parse and validate inputs
         # ------------------------------------------------------------------
         metadata_dict = json.loads(metadata)
-        rules_list = json.loads(rules)
+        parsed_rules = json.loads(rules)
+        if parsed_rules:
+            logger.warning("Deprecated 'rules' payload supplied to /ingest/file; ignoring.")
 
         def str2bool(v):
             return v if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}
@@ -256,7 +259,6 @@ async def ingest_file(
             content_type=file.content_type,
             metadata_json=metadata,
             auth_dict=auth_dict,
-            rules_list=rules_list,
             use_colpali=use_colpali_bool,
             folder_name=folder_name,
             end_user_id=end_user_id,
@@ -303,7 +305,7 @@ async def batch_ingest_files(
         files: List of files to upload.
         metadata: Either a single JSON-string dict or list of dicts matching
             the number of files.
-        rules: Either a single rules list or list-of-lists per file.
+        rules: Either a single rules list or list-of-lists per file (deprecated; ignored).
         use_colpali: Enable multi-vector embeddings.
         folder_name: Optional folder scoping for **all** files.
         end_user_id: Optional end-user scoping for **all** files.
@@ -318,7 +320,9 @@ async def batch_ingest_files(
 
     try:
         metadata_value = json.loads(metadata)
-        rules_list = json.loads(rules)
+        parsed_rules = json.loads(rules)
+        if parsed_rules:
+            logger.warning("Deprecated 'rules' payload supplied to /ingest/files; ignoring.")
 
         def str2bool(v):
             return str(v).lower() in {"true", "1", "yes"}
@@ -339,14 +343,6 @@ async def batch_ingest_files(
             detail=(f"Number of metadata items ({len(metadata_value)}) must match number of files " f"({len(files)})"),
         )
 
-    # Validate rules when list-of-lists provided
-    if isinstance(rules_list, list) and rules_list and isinstance(rules_list[0], list):
-        if len(rules_list) != len(files):
-            raise HTTPException(
-                status_code=400,
-                detail=(f"Number of rule lists ({len(rules_list)}) must match number of files " f"({len(files)})"),
-            )
-
     auth_dict = {
         "entity_type": auth.entity_type.value,
         "entity_id": auth.entity_id,
@@ -362,12 +358,6 @@ async def batch_ingest_files(
     try:
         for idx, file in enumerate(files):
             metadata_item = metadata_value[idx] if isinstance(metadata_value, list) else metadata_value
-            file_rules = (
-                rules_list[idx]
-                if isinstance(rules_list, list) and rules_list and isinstance(rules_list[0], list)
-                else rules_list
-            )
-
             # ------------------------------------------------------------------
             # Create stub Document (processing)
             # ------------------------------------------------------------------
@@ -455,7 +445,6 @@ async def batch_ingest_files(
                 content_type=file.content_type,
                 metadata_json=metadata_json,
                 auth_dict=auth_dict,
-                rules_list=file_rules,
                 use_colpali=use_colpali_bool,
                 folder_name=folder_name,
                 end_user_id=end_user_id,
@@ -539,8 +528,6 @@ async def requeue_ingest_jobs(
             # TODO: Add storage file validation once storage.file_exists() is implemented
             # This would prevent enqueueing jobs for deleted files
 
-            rules_list: List[Dict[str, Any]] = []
-
             use_colpali_flag = override_flag
             if use_colpali_flag is None:
                 for source in (doc.system_metadata or {}, doc.metadata or {}):
@@ -592,7 +579,6 @@ async def requeue_ingest_jobs(
                 content_type=doc.content_type,
                 metadata_json=json.dumps(doc_metadata),
                 auth_dict=auth_dict,
-                rules_list=rules_list,
                 use_colpali=use_colpali_flag,
                 folder_name=doc.folder_name,
                 end_user_id=doc.end_user_id,
@@ -822,7 +808,6 @@ async def query_document(
                 redis=redis,
                 folder_name=folder_override,
                 end_user_id=end_user_override,
-                rules=None,
                 use_colpali=use_colpali_bool,
             )
         except PermissionError as exc:

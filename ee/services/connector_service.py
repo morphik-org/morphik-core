@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Dict, Type, List
+from typing import Dict, List, Optional
 
 # from core.models.auth import AuthContext # Morphik's AuthContext - Assuming this path is correct
 # For now, let's use a placeholder if the actual AuthContext is not available for type hinting
@@ -12,15 +12,14 @@ except ImportError:
         entity_id: Optional[str]
 
 
-from .connectors.base_connector import BaseConnector
-from .connectors.google_drive_connector import GoogleDriveConnector
-from .connectors.github_connector import GitHubConnector
-from .connectors.zotero_connector import ZoteroConnector
-
 from redis.asyncio import Redis
 
 from core.services.document_service import DocumentService
-from ee.services.connectors.base_connector import ConnectorAuthStatus
+
+from .connectors.base_connector import BaseConnector
+from .connectors.github_connector import GitHubConnector
+from .connectors.google_drive_connector import GoogleDriveConnector
+from .connectors.zotero_connector import ZoteroConnector
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +72,11 @@ class ConnectorService:
         final_metadata = {"source": connector_type, "connector_file_id": file_id}
         if metadata:
             final_metadata.update(metadata)
-        
+
         # Use the injected document_service
+        if rules:
+            logger.warning("ConnectorService received legacy 'rules' payload; ignoring.")
+
         doc = await document_service.ingest_file_content(
             file_content_bytes=file_content_bytes.getvalue(),
             filename=file_metadata.name,
@@ -83,7 +85,6 @@ class ConnectorService:
             auth=auth,
             redis=redis,
             folder_name=folder_name,
-            rules=rules,
             use_colpali=False,  # Or determine based on file type
         )
 
