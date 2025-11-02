@@ -403,7 +403,7 @@ const DocumentsSection = React.forwardRef<
     // Upload dialog state from custom hook
     const uploadDialogState = useUploadDialog();
     // Extract only the state variables we actually use in this component
-    const { metadata, rules, useColpali, resetUploadDialog } = uploadDialogState;
+    const { metadata, useColpali, resetUploadDialog } = uploadDialogState;
 
     // Use prop for upload dialog if provided
     const [showUploadDialogLocal, setShowUploadDialogLocal] = useState(false);
@@ -861,12 +861,7 @@ const DocumentsSection = React.forwardRef<
     }, []);
 
     // Handle file upload
-    const handleFileUpload = async (
-      file: File | null,
-      metadataParam?: string,
-      rulesParam?: string,
-      useColpaliParam?: boolean
-    ) => {
+    const handleFileUpload = async (file: File | null, metadataParam?: string, useColpaliParam?: boolean) => {
       if (!file) {
         showAlert("Please select a file to upload", {
           type: "error",
@@ -900,7 +895,6 @@ const DocumentsSection = React.forwardRef<
       // Use passed parameters or fall back to hook values
       const fileToUploadRef = file;
       const metadataRef = metadataParam ?? metadata;
-      const rulesRef = rulesParam ?? rules;
       const useColpaliRef = useColpaliParam ?? useColpali;
 
       // Reset form
@@ -910,7 +904,6 @@ const DocumentsSection = React.forwardRef<
         const formData = new FormData();
         formData.append("file", fileToUploadRef);
         formData.append("metadata", metadataRef);
-        formData.append("rules", rulesRef);
         formData.append("use_colpali", String(useColpaliRef));
 
         // If we're in a specific folder (not "all" documents), add the folder_name to form data
@@ -1060,7 +1053,6 @@ const DocumentsSection = React.forwardRef<
     const handleBatchFileUpload = async (
       files: File[],
       metadataParamOrFromDragAndDrop?: string | boolean,
-      rulesParam?: string,
       useColpaliParam?: boolean
     ) => {
       // Handle overloaded parameters - check if second param is boolean (old signature) or string (new signature)
@@ -1105,7 +1097,6 @@ const DocumentsSection = React.forwardRef<
       // Save form data locally - use passed parameters or fall back to hook values
       const batchFilesRef = [...files];
       const metadataRef = metadataParam ?? metadata;
-      const rulesRef = rulesParam ?? rules;
       const useColpaliRef = useColpaliParam ?? useColpali;
 
       // Only reset form if not from drag and drop
@@ -1133,7 +1124,6 @@ const DocumentsSection = React.forwardRef<
           console.log(`Adding batch files to folder: ${selectedFolder} as form field`);
         }
 
-        formData.append("rules", rulesRef);
         formData.append("parallel", "true");
         formData.append("use_colpali", String(useColpaliRef));
 
@@ -1295,7 +1285,7 @@ const DocumentsSection = React.forwardRef<
     };
 
     // Handle text upload
-    const handleTextUpload = async (text: string, meta: string, rulesText: string, useColpaliFlag: boolean) => {
+    const handleTextUpload = async (text: string, meta: string, useColpaliFlag: boolean) => {
       if (!text.trim()) {
         showAlert("Please enter text content", {
           type: "error",
@@ -1354,7 +1344,6 @@ const DocumentsSection = React.forwardRef<
 
       addOptimisticDocument(optimisticTextDoc);
 
-      const rulesRef = rulesText;
       const useColpaliRef = useColpaliFlag;
 
       // Reset form immediately
@@ -1373,7 +1362,6 @@ const DocumentsSection = React.forwardRef<
           body: JSON.stringify({
             content: textContentRef,
             metadata: metadataObj,
-            rules: JSON.parse(rulesRef || "[]"),
             folder_name: folderToUse,
             use_colpali: useColpaliRef,
           }),

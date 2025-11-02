@@ -9,7 +9,7 @@ import uuid
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, AsyncGenerator, Dict, List, Optional, Set, Tuple, Type, Union
 
 import arq
 import filetype
@@ -900,7 +900,8 @@ class DocumentService:
 
         # Find authorized documents in a single query
         authorized_docs = await self.batch_retrieve_documents(doc_ids, auth, folder_name, end_user_id)
-        authorized_doc_ids = {doc.external_id for doc in authorized_docs}
+        authorized_doc_map = {doc.external_id: doc for doc in authorized_docs}
+        authorized_doc_ids = set(authorized_doc_map.keys())
 
         # Filter sources to only include authorized documents
         authorized_sources = [source for source in chunk_ids if source.document_id in authorized_doc_ids]
@@ -909,7 +910,14 @@ class DocumentService:
             return []
 
         # Create list of (document_id, chunk_number) tuples for vector store query
-        chunk_identifiers = [(source.document_id, source.chunk_number) for source in authorized_sources]
+        chunk_identifiers: List[Tuple[str, int]] = []
+        seen_identifiers: Set[Tuple[str, int]] = set()
+        for source in authorized_sources:
+            identifier = (source.document_id, source.chunk_number)
+            if identifier in seen_identifiers:
+                continue
+            seen_identifiers.add(identifier)
+            chunk_identifiers.append(identifier)
 
         # Set up vector store retrieval tasks
         retrieval_tasks = [self.vector_store.get_chunks_by_id(chunk_identifiers, auth.app_id)]
@@ -976,7 +984,7 @@ class DocumentService:
         logger.debug(f"Sorted {len(chunks)} chunks by score")
 
         # Convert to chunk results
-        results = await self._create_chunk_results(auth, chunks)
+        results = await self._create_chunk_results(auth, chunks, preloaded_docs=authorized_doc_map)
         logger.info(f"Batch retrieved {len(results)} chunks out of {len(chunk_ids)} requested")
         return results
 
@@ -2460,7 +2468,12 @@ class DocumentService:
         logger.debug(f"Chunk IDs stored: {doc.chunk_ids}")
         return doc.chunk_ids
 
-    async def _create_chunk_results(self, auth: AuthContext, chunks: List[DocumentChunk]) -> List[ChunkResult]:
+    async def _create_chunk_results(
+        self,
+        auth: AuthContext,
+        chunks: List[DocumentChunk],
+        preloaded_docs: Optional[Dict[str, Document]] = None,
+    ) -> List[ChunkResult]:
         """Create ChunkResult objects with document metadata."""
         results = []
         if not chunks:
@@ -2470,12 +2483,20 @@ class DocumentService:
         # Collect all unique document IDs from chunks
         unique_doc_ids = list({chunk.document_id for chunk in chunks})
 
-        # Fetch all required documents in a single batch query
-        docs = await self.batch_retrieve_documents(unique_doc_ids, auth)
+        # Start with any preloaded documents if provided
+        doc_map: Dict[str, Document] = dict(preloaded_docs) if preloaded_docs else {}
 
-        # Create a lookup dictionary of documents by ID
-        doc_map = {doc.external_id: doc for doc in docs}
-        logger.debug(f"Retrieved metadata for {len(doc_map)} unique documents in a single batch")
+        # Fetch any documents that weren't preloaded
+        missing_doc_ids = [doc_id for doc_id in unique_doc_ids if doc_id not in doc_map]
+        if missing_doc_ids:
+            docs = await self.batch_retrieve_documents(missing_doc_ids, auth)
+            doc_map.update({doc.external_id: doc for doc in docs})
+            logger.debug(f"Retrieved metadata for {len(docs)} additional documents in a single batch")
+        else:
+            logger.debug(f"Using preloaded metadata for {len(doc_map)} unique documents")
+
+        if not doc_map:
+            logger.info("No document metadata available for provided chunks")
 
         # Create chunk results using the lookup dictionaries
         for chunk in chunks:

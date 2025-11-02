@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncContextManager, List, Optional, Tuple
 
-from sqlalchemy import Column, Index, Integer, String, select, text
+from sqlalchemy import Column, Index, Integer, String, select, text, tuple_
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -468,19 +468,13 @@ class PGVectorStore(BaseVectorStore):
             if not chunk_identifiers:
                 return []
 
+            unique_identifiers = list(dict.fromkeys(chunk_identifiers))
             async with self.get_session_with_retry() as session:
-                # Create a list of OR conditions for the query
-                conditions = []
-                for doc_id, chunk_num in chunk_identifiers:
-                    conditions.append(text(f"(document_id = '{doc_id}' AND chunk_number = {chunk_num})"))
+                # Build query to find all matching chunks in a single query using tuple comparison
+                comparison_tuple = tuple_(VectorEmbedding.document_id, VectorEmbedding.chunk_number)
+                query = select(VectorEmbedding).where(comparison_tuple.in_(unique_identifiers))
 
-                # Join conditions with OR
-                or_condition = text(" OR ".join(f"({condition.text})" for condition in conditions))
-
-                # Build query to find all matching chunks in a single query
-                query = select(VectorEmbedding).where(or_condition)
-
-                logger.debug(f"Batch retrieving {len(chunk_identifiers)} chunks with a single query")
+                logger.debug(f"Batch retrieving {len(unique_identifiers)} chunks with a single query")
 
                 # Execute query
                 result = await session.execute(query)
