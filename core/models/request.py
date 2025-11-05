@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from core.models.documents import Document
 from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
@@ -155,13 +155,11 @@ class CompletionQueryRequest(RetrieveRequest):
 class IngestTextRequest(BaseModel):
     """Request model for ingesting text content"""
 
+    model_config = ConfigDict(extra="allow")
+
     content: str
     filename: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    rules: Optional[List[Dict[str, Any]]] = Field(
-        default=None,
-        description="Deprecated; retained for backwards compatibility but ignored by the server.",
-    )
     use_colpali: Optional[bool] = None
     folder_name: Optional[str] = Field(None, description="Optional folder scope for the operation")
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
