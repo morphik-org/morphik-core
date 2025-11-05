@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
 
 class StorageFileInfo(BaseModel):
@@ -252,10 +252,16 @@ class CompletionResponse(BaseModel):
 class IngestTextRequest(BaseModel):
     """Request model for ingesting text content"""
 
+    model_config = ConfigDict(extra="allow")
+
     content: str
     filename: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    rules: List[Dict[str, Any]] = Field(default_factory=list)
+    rules: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        exclude=True,
+        json_schema_extra={"deprecated": True},
+    )
     use_colpali: bool = Field(default=False)
 
 

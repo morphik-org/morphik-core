@@ -2,10 +2,10 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Union
 
-import arq  # Added for Redis
-from fastapi import APIRouter, Depends, HTTPException, Request, Body
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+from redis.asyncio import Redis
 
 from core.auth_utils import verify_token
 
@@ -21,7 +21,6 @@ from ee.services.connectors.base_connector import ConnectorAuthStatus, Connector
 
 # from starlette.datastructures import URL  # Will be needed for oauth2callback
 
-from redis.asyncio import Redis
 # Connector models defined locally below
 
 logger = logging.getLogger(__name__)
@@ -48,18 +47,20 @@ async def get_connector_service(auth: AuthContext = Depends(verify_token)) -> Co
 
 # Placeholder for IngestFromConnectorRequest Pydantic model
 class IngestFromConnectorRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     file_id: str
     morphik_folder_name: Optional[str] = None
     morphik_end_user_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None  # New field for custom metadata
-    rules: Optional[List[Dict[str, Any]]] = None  # New field for custom rules
 
 
 class ConnectorIngestRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     file_id: str
     folder_name: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
-    rules: Optional[List[Dict[str, Any]]] = None
 
 
 class GitHubRepositoryIngestRequest(BaseModel):
@@ -443,7 +444,7 @@ async def ingest_file(
             auth=auth,
             redis=redis,
             metadata=ingest_request.metadata,
-            rules=ingest_request.rules,
+            rules=getattr(ingest_request, "rules", None),
         )
         return result
     except Exception as e:
@@ -460,15 +461,13 @@ async def ingest_repository(
     document_service: DocumentService = Depends(get_document_service),
 ):
     """Ingest an entire GitHub repository."""
-    logger.info(f"Repository ingestion endpoint called with connector_type={connector_type}, repo_path={ingest_request.repo_path}")
-    connector_service_instance = ConnectorService(auth_context=auth)
-    connector = await connector_service_instance.get_connector(
-        ingest_request.connector_type
+    logger.info(
+        f"Repository ingestion endpoint called with connector_type={connector_type}, repo_path={ingest_request.repo_path}"
     )
+    connector_service_instance = ConnectorService(auth_context=auth)
+    connector = await connector_service_instance.get_connector(ingest_request.connector_type)
     if connector.connector_type != "github":
-        raise HTTPException(
-            status_code=400, detail="Repository ingestion is only supported for GitHub"
-        )
+        raise HTTPException(status_code=400, detail="Repository ingestion is only supported for GitHub")
 
     auth_status = await connector.get_auth_status()
     if not auth_status.is_authenticated:
@@ -493,53 +492,51 @@ async def ingest_repository(
         error_detail = str(e)
         if hasattr(e, "detail"):
             error_detail = e.detail
-        raise HTTPException(
-            status_code=500, detail=f"Failed to ingest repository: {error_detail}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to ingest repository: {error_detail}")
 
 
 @router.post("/status")
 async def get_status(
-    auth_request: ConnectorAuthRequest, auth: AuthContext = Depends(verify_token)
+    auth_request: ConnectorAuthRequest,
+    auth: AuthContext = Depends(verify_token),
+    connector_service: ConnectorService = Depends(get_connector_service),
 ):
     """Get the authentication status for a connector."""
-    connector = await connector_service.get_connector(
-        auth_request.connector_type, auth.user_id
-    )
+    connector = await connector_service.get_connector(auth_request.connector_type, auth.user_id)
     return await connector.get_auth_status()
 
 
 @router.post("/initiate-auth")
 async def initiate_auth(
-    auth_request: ConnectorAuthRequest, auth: AuthContext = Depends(verify_token)
+    auth_request: ConnectorAuthRequest,
+    auth: AuthContext = Depends(verify_token),
+    connector_service: ConnectorService = Depends(get_connector_service),
 ):
     """Initiate the OAuth flow for a connector."""
-    connector = await connector_service.get_connector(
-        auth_request.connector_type, auth.user_id
-    )
+    connector = await connector_service.get_connector(auth_request.connector_type, auth.user_id)
     return await connector.initiate_auth()
 
 
 @router.post("/finalize-auth")
 async def finalize_auth(
-    auth_response: ConnectorAuthResponse, auth: AuthContext = Depends(verify_token)
+    auth_response: ConnectorAuthResponse,
+    auth: AuthContext = Depends(verify_token),
+    connector_service: ConnectorService = Depends(get_connector_service),
 ):
     """Finalize the OAuth flow and exchange the code for a token."""
-    connector = await connector_service.get_connector(
-        auth_response.connector_type, auth.user_id
-    )
+    connector = await connector_service.get_connector(auth_response.connector_type, auth.user_id)
     await connector.finalize_auth(auth_response.auth_response_data)
     return {"status": "success"}
 
 
 @router.post("/disconnect")
 async def disconnect(
-    auth_request: ConnectorAuthRequest, auth: AuthContext = Depends(verify_token)
+    auth_request: ConnectorAuthRequest,
+    auth: AuthContext = Depends(verify_token),
+    connector_service: ConnectorService = Depends(get_connector_service),
 ):
     """Disconnect from a connector and remove credentials."""
-    connector = await connector_service.get_connector(
-        auth_request.connector_type, auth.user_id
-    )
+    connector = await connector_service.get_connector(auth_request.connector_type, auth.user_id)
     await connector.disconnect()
     return {"status": "success"}
 
@@ -548,11 +545,8 @@ async def disconnect(
 async def list_files(
     list_request: ConnectorListFilesRequest,
     auth: AuthContext = Depends(verify_token),
+    connector_service: ConnectorService = Depends(get_connector_service),
 ):
     """List files from a connector."""
-    connector = await connector_service.get_connector(
-        list_request.connector_type, auth.user_id
-    )
-    return await connector.list_files(
-        path=list_request.path, page_token=list_request.page_token
-    )
+    connector = await connector_service.get_connector(list_request.connector_type, auth.user_id)
+    return await connector.list_files(path=list_request.path, page_token=list_request.page_token)

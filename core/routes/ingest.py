@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
 
 import arq
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
 from core.auth_utils import verify_token
 from core.config import get_settings
@@ -16,6 +16,7 @@ from core.models.auth import AuthContext
 from core.models.documents import Document
 from core.models.request import BatchIngestResponse, DocumentQueryResponse, IngestTextRequest, RequeueIngestionRequest
 from core.models.responses import RequeueIngestionResponse, RequeueIngestionResult
+from core.routes.utils import warn_if_legacy_rules
 from core.services.document_service import DocumentService
 from core.services.gemini_structured_output import GeminiContentError, generate_gemini_content
 from core.services.telemetry import TelemetryService
@@ -78,8 +79,8 @@ async def ingest_text(
                 verify_only=True,
             )
 
-        if request.rules:
-            logger.warning("Deprecated 'rules' field supplied to /ingest/text; ignoring payload.")
+        if getattr(request, "rules", None):
+            logger.warning("Legacy 'rules' field supplied to /ingest/text; ignoring payload.")
 
         return await document_service.ingest_text(
             content=request.content,
@@ -102,9 +103,9 @@ async def ingest_text(
 @router.post("/file", response_model=Document)
 @telemetry.track(operation_type="queue_ingest_file", metadata_resolver=telemetry.ingest_file_metadata)
 async def ingest_file(
+    request: Request,
     file: UploadFile,
     metadata: str = Form("{}"),
-    rules: str = Form("[]"),
     auth: AuthContext = Depends(verify_token),
     use_colpali: Optional[bool] = Form(None),
     folder_name: Optional[str] = Form(None),
@@ -120,7 +121,6 @@ async def ingest_file(
     Args:
         file: Uploaded file from multipart/form-data.
         metadata: JSON-string representing user metadata.
-        rules: JSON-string with extraction / NL rules list (deprecated; ignored).
         auth: Caller context – must include *write* permission.
         use_colpali: Switch to multi-vector embeddings.
         folder_name: Optionally scope doc to a folder.
@@ -134,12 +134,10 @@ async def ingest_file(
         # ------------------------------------------------------------------
         # Parse and validate inputs
         # ------------------------------------------------------------------
+        await warn_if_legacy_rules(request, "/ingest/file", logger)
         metadata_dict = json.loads(metadata)
-        parsed_rules = json.loads(rules)
-        if parsed_rules:
-            logger.warning("Deprecated 'rules' payload supplied to /ingest/file; ignoring.")
 
-        def str2bool(v):
+        def str2bool(v: Union[bool, str]) -> bool:
             return v if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}
 
         use_colpali_bool = str2bool(use_colpali)
@@ -286,9 +284,9 @@ async def ingest_file(
 @router.post("/files", response_model=BatchIngestResponse)
 @telemetry.track(operation_type="queue_batch_ingest", metadata_resolver=telemetry.batch_ingest_metadata)
 async def batch_ingest_files(
+    request: Request,
     files: List[UploadFile] = File(...),
     metadata: str = Form("{}"),
-    rules: str = Form("[]"),
     use_colpali: Optional[bool] = Form(None),
     folder_name: Optional[str] = Form(None),
     end_user_id: Optional[str] = Form(None),
@@ -305,7 +303,6 @@ async def batch_ingest_files(
         files: List of files to upload.
         metadata: Either a single JSON-string dict or list of dicts matching
             the number of files.
-        rules: Either a single rules list or list-of-lists per file (deprecated; ignored).
         use_colpali: Enable multi-vector embeddings.
         folder_name: Optional folder scoping for **all** files.
         end_user_id: Optional end-user scoping for **all** files.
@@ -319,13 +316,11 @@ async def batch_ingest_files(
         raise HTTPException(status_code=400, detail="No files provided for batch ingestion")
 
     try:
+        await warn_if_legacy_rules(request, "/ingest/files", logger)
         metadata_value = json.loads(metadata)
-        parsed_rules = json.loads(rules)
-        if parsed_rules:
-            logger.warning("Deprecated 'rules' payload supplied to /ingest/files; ignoring.")
 
-        def str2bool(v):
-            return str(v).lower() in {"true", "1", "yes"}
+        def str2bool(v: Union[bool, str]) -> bool:
+            return v if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}
 
         use_colpali_bool = str2bool(use_colpali)
 

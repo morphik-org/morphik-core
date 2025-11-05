@@ -1,4 +1,8 @@
+import json
+import logging
 from typing import Any, Dict, List, Optional
+
+from fastapi import Request
 
 
 def project_document_fields(document_dict: Dict[str, Any], fields: Optional[List[str]]) -> Dict[str, Any]:
@@ -41,3 +45,25 @@ def project_document_fields(document_dict: Dict[str, Any], fields: Optional[List
         projected["external_id"] = document_dict["external_id"]
 
     return projected
+
+
+async def warn_if_legacy_rules(request: Request, route: str, logger: logging.Logger) -> None:
+    """Inspect multipart form data for legacy ``rules`` payloads and emit warnings."""
+    try:
+        form_data = await request.form()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Failed to inspect legacy rules form field for %s: %s", route, exc)
+        return
+
+    legacy_rules_raw = form_data.get("rules")
+    if legacy_rules_raw is None:
+        return
+
+    try:
+        parsed_rules = json.loads(legacy_rules_raw)
+    except json.JSONDecodeError:
+        logger.warning("Legacy 'rules' payload supplied to %s but was invalid JSON; ignoring.", route)
+        return
+
+    if parsed_rules:
+        logger.warning("Legacy 'rules' payload supplied to %s; ignoring.", route)
