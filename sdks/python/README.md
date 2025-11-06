@@ -35,6 +35,14 @@ doc = db.ingest_file(
     metadata={"category": "reports"}
 )
 
+# Run a Morphik On-the-Fly document query
+doc_query = db.query_document(
+    file="path/to/document.pdf",
+    prompt="Extract the parties and effective date.",
+    ingestion_options={"ingest": True, "metadata": {"source": "contracts"}}
+)
+print(doc_query.structured_output)
+
 # Retrieve relevant chunks
 chunks = db.retrieve_chunks(
     query="Your search query",
@@ -68,6 +76,13 @@ async def main():
             metadata={"title": "Example Document"}
         )
 
+        doc_query = await db.query_document(
+            file="path/to/document.pdf",
+            prompt="Extract the parties and effective date.",
+            ingestion_options={"ingest": True, "metadata": {"source": "contracts"}}
+        )
+        print(doc_query.structured_output)
+
         # Query with RAG
         response = await db.query(
             query="Summarize the key points in the document",
@@ -84,6 +99,7 @@ asyncio.run(main())
 - Document ingestion (text, files, directories)
 - Semantic search and retrieval
 - Retrieval-augmented generation (RAG)
+- Morphik On-the-Fly document querying with optional ingestion follow-up
 - Knowledge graph creation and querying
 - Multi-user and multi-folder scoping
 - Metadata filtering

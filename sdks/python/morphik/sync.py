@@ -13,6 +13,7 @@ from .models import CompletionResponse  # Prompt override models
 from .models import (
     ChunkSource,
     Document,
+    DocumentQueryResponse,
     DocumentResult,
     FolderInfo,
     Graph,
@@ -278,6 +279,39 @@ class Folder:
         # Use ingest_files with collected paths
         return self.ingest_files(
             files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
+        )
+
+    def query_document(
+        self,
+        file: Union[str, bytes, BinaryIO, Path],
+        prompt: str,
+        schema: Optional[Union[Dict[str, Any], Type[BaseModel], BaseModel, str]] = None,
+        ingestion_options: Optional[Dict[str, Any]] = None,
+        filename: Optional[str] = None,
+    ) -> DocumentQueryResponse:
+        """
+        Run a one-off document query scoped to this folder.
+
+        Args:
+            file: File-like input analysed inline by Morphik On-the-Fly.
+            prompt: Natural-language instruction to execute against the document.
+            schema: Optional schema definition (dict, Pydantic model, or JSON string) for structured output.
+            ingestion_options: Optional dict controlling ingestion follow-up.
+            filename: Override filename when providing bytes or file-like objects.
+
+        Returns:
+            DocumentQueryResponse: Structured response containing outputs and ingestion status.
+        """
+        options = dict(ingestion_options or {})
+        options.setdefault("folder_name", self._name)
+
+        return self._client.query_document(
+            file=file,
+            prompt=prompt,
+            schema=schema,
+            ingestion_options=options,
+            filename=filename,
+            folder_name=self._name,
         )
 
     def retrieve_chunks(
@@ -840,6 +874,42 @@ class UserScope:
         # Use ingest_files with collected paths
         return self.ingest_files(
             files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
+        )
+
+    def query_document(
+        self,
+        file: Union[str, bytes, BinaryIO, Path],
+        prompt: str,
+        schema: Optional[Union[Dict[str, Any], Type[BaseModel], BaseModel, str]] = None,
+        ingestion_options: Optional[Dict[str, Any]] = None,
+        filename: Optional[str] = None,
+    ) -> DocumentQueryResponse:
+        """
+        Run a one-off document query scoped to this end user (and optional folder).
+
+        Args:
+            file: File-like input analysed inline by Morphik On-the-Fly.
+            prompt: Natural-language instruction to execute against the document.
+            schema: Optional schema definition (dict, Pydantic model, or JSON string) for structured output.
+            ingestion_options: Optional dict controlling ingestion follow-up.
+            filename: Override filename when providing bytes or file-like objects.
+
+        Returns:
+            DocumentQueryResponse: Structured response containing outputs and ingestion status.
+        """
+        options = dict(ingestion_options or {})
+        options.setdefault("end_user_id", self._end_user_id)
+        if self._folder_name and "folder_name" not in options:
+            options["folder_name"] = self._folder_name
+
+        return self._client.query_document(
+            file=file,
+            prompt=prompt,
+            schema=schema,
+            ingestion_options=options,
+            filename=filename,
+            folder_name=self._folder_name,
+            end_user_id=self._end_user_id,
         )
 
     def retrieve_chunks(
@@ -1459,6 +1529,59 @@ class Morphik:
             return doc
         finally:
             # Close file if we opened it
+            if isinstance(file, (str, Path)):
+                file_obj.close()
+
+    def query_document(
+        self,
+        file: Union[str, bytes, BinaryIO, Path],
+        prompt: str,
+        schema: Optional[Union[Dict[str, Any], Type[BaseModel], BaseModel, str]] = None,
+        ingestion_options: Optional[Dict[str, Any]] = None,
+        filename: Optional[str] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        end_user_id: Optional[str] = None,
+    ) -> DocumentQueryResponse:
+        """
+        Run a one-off document query using Morphik On-the-Fly.
+
+        Args:
+            file: File-like input analysed inline.
+            prompt: Natural-language instruction to execute against the document.
+            schema: Optional schema definition (dict, Pydantic model, or JSON string) for structured output.
+            ingestion_options: Optional dict controlling ingestion follow-up behaviour. Supported keys: `ingest`,
+                `metadata`, `use_colpali`, `folder_name`, `end_user_id`. Unknown keys are ignored server-side.
+            filename: Override filename when providing bytes or file-like objects.
+            folder_name: Optional folder scope (auto-set when using Folder helpers).
+            end_user_id: Optional end-user scope (auto-set when using UserScope helpers).
+
+        Returns:
+            DocumentQueryResponse: Structured response containing outputs and ingestion status. When `ingest=True`, the
+            server queues ingestion after merging any provided metadata with schema-derived fields.
+        """
+        file_obj, resolved_filename = self._logic._prepare_file_for_upload(file, filename)
+
+        try:
+            files = {"file": (resolved_filename, file_obj)}
+            form_data = self._logic._prepare_document_query_form_data(
+                prompt=prompt,
+                schema=schema,
+                ingestion_options=ingestion_options,
+                folder_name=folder_name,
+                end_user_id=end_user_id,
+            )
+
+            response = self._request(
+                "POST",
+                "ingest/document/query",
+                data=form_data,
+                files=files,
+            )
+            result = self._logic._parse_document_query_response(response)
+            if result.ingestion_document is not None:
+                result.ingestion_document._client = self
+            return result
+        finally:
             if isinstance(file, (str, Path)):
                 file_obj.close()
 

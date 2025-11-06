@@ -193,6 +193,45 @@ class Document(BaseModel):
         return self._client.update_document_metadata(document_id=self.external_id, metadata=metadata)
 
 
+class DocumentQueryResponse(BaseModel):
+    """Response model for Morphik On-the-Fly document queries with optional ingestion follow-up."""
+
+    structured_output: Optional[Any] = Field(
+        default=None,
+        description="Structured output returned by Morphik On-the-Fly when a schema is provided.",
+    )
+    extracted_metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Structured output coerced to metadata when possible.",
+    )
+    text_output: Optional[str] = Field(
+        default=None,
+        description="Unstructured text output when no schema is enforced.",
+    )
+    ingestion_enqueued: bool = Field(
+        default=False,
+        description="True when the document was queued for ingestion after extraction.",
+    )
+    ingestion_document: Optional[Document] = Field(
+        default=None,
+        description="Queued document stub when ingestion_enqueued is true.",
+    )
+    input_metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Original metadata supplied alongside the request.",
+    )
+    combined_metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Metadata that would be used if ingestion is performed (original metadata merged with extracted fields when available).",
+    )
+    ingestion_options: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Normalized ingestion options applied to this request.",
+    )
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class ChunkResult(BaseModel):
     """Query result at chunk level"""
 

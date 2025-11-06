@@ -18,7 +18,10 @@ from core.models.request import BatchIngestResponse, DocumentQueryResponse, Inge
 from core.models.responses import RequeueIngestionResponse, RequeueIngestionResult
 from core.routes.utils import warn_if_legacy_rules
 from core.services.document_service import DocumentService
-from core.services.gemini_structured_output import GeminiContentError, generate_gemini_content
+from core.services.morphik_on_the_fly_structured_output import (
+    MorphikOnTheFlyContentError,
+    generate_morphik_on_the_fly_content,
+)
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, storage
 from core.storage.utils_file_extensions import detect_file_type
@@ -32,7 +35,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 telemetry = TelemetryService()
 
-GEMINI_MAX_DOCUMENT_BYTES = 20 * 1024 * 1024  # 20 MB limit for Gemini inline uploads
+MORPHIK_ON_THE_FLY_MAX_DOCUMENT_BYTES = 20 * 1024 * 1024  # 20 MB limit for inline uploads to Morphik On-the-Fly
 
 
 def _parse_bool(value: Optional[Union[str, bool]]) -> bool:
@@ -688,16 +691,20 @@ async def query_document(
     redis: arq.ArqRedis = Depends(get_redis_pool),
 ) -> DocumentQueryResponse:
     """
-    Run an on-demand Gemini document query with optional structured output and ingestion.
+    Execute a one-off analysis for a document using Morphik On-the-Fly, optionally enforcing structured output and
+    scheduling a follow-up ingestion.
 
     Args:
-        file: Uploaded source document (PDF or another supported MIME type).
-        prompt: Natural-language instruction to execute against the document.
-        schema: Optional JSON schema enforcing structured Gemini output.
-        ingestion_options: JSON object controlling ingestion follow-up (keys: ingest, use_colpali, folder_name, end_user_id, metadata).
+        file: Uploaded document (PDF or any supported MIME type) analysed by Morphik On-the-Fly inline.
+        prompt: Natural-language instruction Morphik On-the-Fly should fulfil against the document.
+        schema: Optional JSON schema forcing structured output; accepts a JSON object encoded in the form data.
+        ingestion_options: JSON object encoded as a string that controls follow-up ingestion. Supported keys include
+            `ingest` (bool), `metadata` (dict merged with any extracted fields), `use_colpali` (bool), `folder_name`
+            (str or list[str]), and `end_user_id` (str). Additional keys are ignored.
 
     Returns:
-        DocumentQueryResponse containing Gemini outputs, original metadata, and ingestion status details.
+        DocumentQueryResponse containing raw and structured outputs alongside ingestion status details. When ingestion is
+        requested, the original metadata is merged with any schema-derived fields before the file is queued.
     """
     try:
         ingestion_options_dict = json.loads(ingestion_options or "{}")
@@ -747,10 +754,10 @@ async def query_document(
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    if len(file_bytes) > GEMINI_MAX_DOCUMENT_BYTES:
+    if len(file_bytes) > MORPHIK_ON_THE_FLY_MAX_DOCUMENT_BYTES:
         raise HTTPException(
             status_code=400,
-            detail=f"Uploaded file exceeds Gemini limit of {GEMINI_MAX_DOCUMENT_BYTES // (1024 * 1024)} MB",
+            detail=f"Uploaded file exceeds limit of {MORPHIK_ON_THE_FLY_MAX_DOCUMENT_BYTES // (1024 * 1024)} MB",
         )
 
     schema_obj: Optional[Dict[str, Any]] = None
@@ -765,16 +772,16 @@ async def query_document(
         schema_obj = parsed_schema
 
     try:
-        gemini_result = await generate_gemini_content(
+        morphik_on_the_fly_result = await generate_morphik_on_the_fly_content(
             prompt=prompt,
             schema=schema_obj,
             document_bytes=file_bytes,
             mime_type=file.content_type,
         )
-    except GeminiContentError as exc:
+    except MorphikOnTheFlyContentError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    structured_output = gemini_result.structured_output
+    structured_output = morphik_on_the_fly_result.structured_output
     input_metadata = dict(metadata_dict)
     if structured_output is None:
         combined_metadata = input_metadata
@@ -784,7 +791,7 @@ async def query_document(
         combined_metadata = {**input_metadata, **structured_output}
     else:
         extracted_metadata = None
-        combined_metadata = {**input_metadata, "gemini_structured_output": structured_output}
+        combined_metadata = {**input_metadata, "morphik_on_the_fly_structured_output": structured_output}
 
     ingestion_document: Optional[Document] = None
     if ingest_after_bool:
@@ -816,7 +823,7 @@ async def query_document(
     return DocumentQueryResponse(
         structured_output=structured_output,
         extracted_metadata=extracted_metadata,
-        text_output=gemini_result.text_output,
+        text_output=morphik_on_the_fly_result.text_output,
         ingestion_enqueued=ingest_after_bool and ingestion_document is not None,
         ingestion_document=ingestion_document,
         input_metadata=input_metadata,
