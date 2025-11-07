@@ -323,6 +323,7 @@ class Folder:
         use_colpali: bool = True,
         additional_folders: Optional[List[str]] = None,
         padding: int = 0,
+        output_format: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks within this folder.
@@ -341,7 +342,7 @@ class Folder:
         """
         effective_folder = self._merge_folders(additional_folders)
         payload = self._client._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, effective_folder, None, padding
+            query, filters, k, min_score, use_colpali, effective_folder, None, padding, output_format
         )
         response = self._client._request("POST", "retrieve/chunks", payload)
         return self._client._logic._parse_chunk_result_list_response(response)
@@ -1697,6 +1698,7 @@ class Morphik:
         use_colpali: bool = True,
         folder_name: Optional[Union[str, List[str]]] = None,
         padding: int = 0,
+        output_format: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks.
@@ -1721,7 +1723,7 @@ class Morphik:
             ```
         """
         payload = self._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, folder_name, None, padding
+            query, filters, k, min_score, use_colpali, folder_name, None, padding, output_format
         )
         response = self._request("POST", "retrieve/chunks", data=payload)
         return self._logic._parse_chunk_result_list_response(response)
