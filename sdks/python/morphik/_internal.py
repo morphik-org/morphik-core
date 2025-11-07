@@ -17,6 +17,7 @@ from .models import (
     ChunkResult,
     CompletionResponse,
     Document,
+    DocumentQueryResponse,
     DocumentResult,
     Graph,
     GraphPromptOverrides,
@@ -235,6 +236,36 @@ class _MorphikClientLogic:
             data["end_user_id"] = end_user_id
 
         return data
+
+    def _prepare_document_query_form_data(
+        self,
+        prompt: str,
+        schema: Optional[Union[Dict[str, Any], BaseModel, Type[BaseModel], str]],
+        ingestion_options: Optional[Dict[str, Any]],
+        folder_name: Optional[Union[str, List[str]]],
+        end_user_id: Optional[str],
+    ) -> Dict[str, Any]:
+        """Prepare form data for the document query endpoint."""
+        form_data: Dict[str, Any] = {"prompt": prompt}
+
+        if schema is not None:
+            if isinstance(schema, str):
+                form_data["schema"] = schema
+            elif isinstance(schema, type) and issubclass(schema, BaseModel):
+                form_data["schema"] = json.dumps(schema.model_json_schema())
+            elif isinstance(schema, BaseModel):
+                form_data["schema"] = json.dumps(schema.model_dump(exclude_none=True))
+            else:
+                form_data["schema"] = json.dumps(schema)
+
+        options: Dict[str, Any] = dict(ingestion_options or {})
+        if folder_name is not None and "folder_name" not in options:
+            options["folder_name"] = folder_name
+        if end_user_id is not None and "end_user_id" not in options:
+            options["end_user_id"] = end_user_id
+
+        form_data["ingestion_options"] = json.dumps(options)
+        return form_data
 
     def _prepare_query_request(
         self,
@@ -551,3 +582,11 @@ class _MorphikClientLogic:
     def _parse_graph_list_response(self, response_json: List[Dict[str, Any]]) -> List[Graph]:
         """Parse graph list response"""
         return [Graph(**graph) for graph in response_json]
+
+    def _parse_document_query_response(self, response_json: Dict[str, Any]) -> DocumentQueryResponse:
+        """Parse document query response."""
+        payload = dict(response_json)
+        ingestion_document = payload.get("ingestion_document")
+        if isinstance(ingestion_document, dict):
+            payload["ingestion_document"] = Document(**ingestion_document)
+        return DocumentQueryResponse(**payload)

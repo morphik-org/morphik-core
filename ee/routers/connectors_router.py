@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
 
 from core.auth_utils import verify_token
@@ -64,7 +64,10 @@ class ConnectorIngestRequest(BaseModel):
 
 
 class GitHubRepositoryIngestRequest(BaseModel):
-    connector_type: str = "github"
+    connector_type: str = Field(
+        default="github",
+        json_schema_extra={"x-stainless-param": "body_connector_type"},
+    )
     repo_path: str  # Format: "owner/repo"
     folder_name: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None

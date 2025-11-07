@@ -223,13 +223,13 @@ class DocumentQueryResponse(BaseModel):
     """Response model for document query with optional ingestion follow-up."""
 
     structured_output: Optional[Any] = Field(
-        default=None, description="Raw structured output returned from Gemini (may be list/dict)"
+        default=None, description="Raw structured output returned from Morphik On-the-Fly (may be list/dict)"
     )
     extracted_metadata: Optional[Dict[str, Any]] = Field(
         default=None, description="Structured output coerced to metadata when possible"
     )
     text_output: Optional[str] = Field(
-        default=None, description="Raw text returned from Gemini when no schema is provided"
+        default=None, description="Raw text returned from Morphik On-the-Fly when no schema is provided"
     )
     ingestion_enqueued: bool = Field(
         default=False, description="True when the document was queued for ingestion after extraction"
