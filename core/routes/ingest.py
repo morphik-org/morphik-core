@@ -201,12 +201,11 @@ async def ingest_file(
             if detected_ext:
                 file_key = f"{file_key}{detected_ext}"
 
-        bucket_override = await document_service._get_bucket_for_app(auth.app_id)
         bucket, stored_key = await storage.upload_file(
             file_content,
             file_key,
             file.content_type,
-            bucket=bucket_override or "",
+            bucket="",
         )
 
         doc.storage_info = {"bucket": bucket, "key": stored_key}
@@ -399,12 +398,11 @@ async def batch_ingest_files(
                 if detected_ext:
                     file_key = f"{file_key}{detected_ext}"
 
-            bucket_override = await document_service._get_bucket_for_app(auth.app_id)
             bucket, stored_key = await storage.upload_file(
                 file_content,
                 file_key,
                 file.content_type,
-                bucket=bucket_override or "",
+                bucket="",
             )
 
             doc.storage_info = {"bucket": bucket, "key": stored_key}
