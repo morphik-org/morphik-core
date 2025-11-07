@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import warnings
 from io import BytesIO
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Type, Union
@@ -16,6 +17,7 @@ from .models import (
     ChunkResult,
     CompletionResponse,
     Document,
+    DocumentQueryResponse,
     DocumentResult,
     Graph,
     GraphPromptOverrides,
@@ -83,6 +85,15 @@ class _MorphikClientLogic:
             return rule.to_dict()
         return rule
 
+    def _warn_legacy_rules(self, rules: Optional[List[RuleOrDict]], context: str) -> None:
+        """Emit a deprecation warning when legacy rules are supplied."""
+        if rules:
+            warnings.warn(
+                f"'rules' support has been removed; payload supplied to {context} is ignored.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+
     def _get_url(self, endpoint: str) -> str:
         """Get the full URL for an API endpoint"""
         return f"{self._base_url}/{endpoint.lstrip('/')}"
@@ -105,12 +116,11 @@ class _MorphikClientLogic:
         end_user_id: Optional[str],
     ) -> Dict[str, Any]:
         """Prepare request for ingest_text endpoint"""
-        rules_dict = [self._convert_rule(r) for r in (rules or [])]
+        self._warn_legacy_rules(rules, "ingest/text")
         payload = {
             "content": content,
             "filename": filename,
             "metadata": metadata or {},
-            "rules": rules_dict,
             "use_colpali": use_colpali,
         }
         if folder_name:
@@ -181,9 +191,9 @@ class _MorphikClientLogic:
         never relies on query-string values.  *use_colpali* is therefore always
         embedded here when provided.
         """
+        self._warn_legacy_rules(rules, "ingest/file")
         form_data = {
             "metadata": json.dumps(metadata or {}),
-            "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
         }
         if folder_name:
             form_data["folder_name"] = folder_name
@@ -207,20 +217,10 @@ class _MorphikClientLogic:
         end_user_id: Optional[str],
     ) -> Dict[str, Any]:
         """Prepare form data for ingest_files endpoint"""
-        # Convert rules appropriately based on whether it's a flat list or list of lists
-        if rules:
-            if all(isinstance(r, list) for r in rules):
-                # List of lists - per-file rules
-                converted_rules = [[self._convert_rule(r) for r in rule_list] for rule_list in rules]
-            else:
-                # Flat list - shared rules for all files
-                converted_rules = [self._convert_rule(r) for r in rules]
-        else:
-            converted_rules = []
+        self._warn_legacy_rules(rules, "ingest/files")
 
         data = {
             "metadata": json.dumps(metadata or {}),
-            "rules": json.dumps(converted_rules),
             "parallel": str(parallel).lower(),
         }
 
@@ -236,6 +236,36 @@ class _MorphikClientLogic:
             data["end_user_id"] = end_user_id
 
         return data
+
+    def _prepare_document_query_form_data(
+        self,
+        prompt: str,
+        schema: Optional[Union[Dict[str, Any], BaseModel, Type[BaseModel], str]],
+        ingestion_options: Optional[Dict[str, Any]],
+        folder_name: Optional[Union[str, List[str]]],
+        end_user_id: Optional[str],
+    ) -> Dict[str, Any]:
+        """Prepare form data for the document query endpoint."""
+        form_data: Dict[str, Any] = {"prompt": prompt}
+
+        if schema is not None:
+            if isinstance(schema, str):
+                form_data["schema"] = schema
+            elif isinstance(schema, type) and issubclass(schema, BaseModel):
+                form_data["schema"] = json.dumps(schema.model_json_schema())
+            elif isinstance(schema, BaseModel):
+                form_data["schema"] = json.dumps(schema.model_dump(exclude_none=True))
+            else:
+                form_data["schema"] = json.dumps(schema)
+
+        options: Dict[str, Any] = dict(ingestion_options or {})
+        if folder_name is not None and "folder_name" not in options:
+            options["folder_name"] = folder_name
+        if end_user_id is not None and "end_user_id" not in options:
+            options["end_user_id"] = end_user_id
+
+        form_data["ingestion_options"] = json.dumps(options)
+        return form_data
 
     def _prepare_query_request(
         self,
@@ -475,11 +505,12 @@ class _MorphikClientLogic:
         use_colpali: Optional[bool],
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Prepare request for update_document_with_text endpoint"""
+        self._warn_legacy_rules(rules, "documents/update_text")
+
         request = IngestTextRequest(
             content=content,
             filename=filename,
             metadata=metadata or {},
-            rules=[self._convert_rule(r) for r in (rules or [])],
             use_colpali=use_colpali if use_colpali is not None else True,
         )
 
@@ -551,3 +582,11 @@ class _MorphikClientLogic:
     def _parse_graph_list_response(self, response_json: List[Dict[str, Any]]) -> List[Graph]:
         """Parse graph list response"""
         return [Graph(**graph) for graph in response_json]
+
+    def _parse_document_query_response(self, response_json: Dict[str, Any]) -> DocumentQueryResponse:
+        """Parse document query response."""
+        payload = dict(response_json)
+        ingestion_document = payload.get("ingestion_document")
+        if isinstance(ingestion_document, dict):
+            payload["ingestion_document"] = Document(**ingestion_document)
+        return DocumentQueryResponse(**payload)

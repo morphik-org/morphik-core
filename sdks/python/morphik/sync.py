@@ -13,6 +13,7 @@ from .models import CompletionResponse  # Prompt override models
 from .models import (
     ChunkSource,
     Document,
+    DocumentQueryResponse,
     DocumentResult,
     FolderInfo,
     Graph,
@@ -120,15 +121,14 @@ class Folder:
             content: Text content to ingest
             filename: Optional file name
             metadata: Optional metadata dictionary
-            rules: Optional list of rules to apply during ingestion
+            rules: Deprecated; retained for backwards compatibility and ignored
             use_colpali: Whether to use ColPali-style embedding model
 
         Returns:
             Document: Metadata of the ingested document
         """
-        rules_list = [self._client._convert_rule(r) for r in (rules or [])]
         payload = self._client._logic._prepare_ingest_text_request(
-            content, filename, metadata, rules_list, use_colpali, self._name, None
+            content, filename, metadata, rules, use_colpali, self._name, None
         )
         response = self._client._request("POST", "ingest/text", data=payload)
         doc = self._client._logic._parse_document_response(response)
@@ -150,7 +150,7 @@ class Folder:
             file: File to ingest (path string, bytes, file object, or Path)
             filename: Name of the file
             metadata: Optional metadata dictionary
-            rules: Optional list of rules to apply during ingestion
+            rules: Deprecated; retained for backwards compatibility and ignored
             use_colpali: Whether to use ColPali-style embedding model
 
         Returns:
@@ -197,7 +197,7 @@ class Folder:
         Args:
             files: List of files to ingest
             metadata: Optional metadata
-            rules: Optional list of rules to apply
+            rules: Deprecated; retained for backwards compatibility and ignored
             use_colpali: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
@@ -253,7 +253,7 @@ class Folder:
             recursive: Whether to recursively process subdirectories
             pattern: Optional glob pattern to filter files
             metadata: Optional metadata dictionary to apply to all files
-            rules: Optional list of rules to apply
+            rules: Deprecated; retained for backwards compatibility and ignored
             use_colpali: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
@@ -279,6 +279,39 @@ class Folder:
         # Use ingest_files with collected paths
         return self.ingest_files(
             files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
+        )
+
+    def query_document(
+        self,
+        file: Union[str, bytes, BinaryIO, Path],
+        prompt: str,
+        schema: Optional[Union[Dict[str, Any], Type[BaseModel], BaseModel, str]] = None,
+        ingestion_options: Optional[Dict[str, Any]] = None,
+        filename: Optional[str] = None,
+    ) -> DocumentQueryResponse:
+        """
+        Run a one-off document query scoped to this folder.
+
+        Args:
+            file: File-like input analysed inline by Morphik On-the-Fly.
+            prompt: Natural-language instruction to execute against the document.
+            schema: Optional schema definition (dict, Pydantic model, or JSON string) for structured output.
+            ingestion_options: Optional dict controlling ingestion follow-up.
+            filename: Override filename when providing bytes or file-like objects.
+
+        Returns:
+            DocumentQueryResponse: Structured response containing outputs and ingestion status.
+        """
+        options = dict(ingestion_options or {})
+        options.setdefault("folder_name", self._name)
+
+        return self._client.query_document(
+            file=file,
+            prompt=prompt,
+            schema=schema,
+            ingestion_options=options,
+            filename=filename,
+            folder_name=self._name,
         )
 
     def retrieve_chunks(
@@ -647,18 +680,17 @@ class UserScope:
             content: Text content to ingest
             filename: Optional file name
             metadata: Optional metadata dictionary
-            rules: Optional list of rules to apply during ingestion
+            rules: Deprecated; retained for backwards compatibility and ignored
             use_colpali: Whether to use ColPali-style embedding model
 
         Returns:
             Document: Metadata of the ingested document
         """
-        rules_list = [self._client._convert_rule(r) for r in (rules or [])]
         payload = self._client._logic._prepare_ingest_text_request(
             content,
             filename,
             metadata,
-            rules_list,
+            rules,
             use_colpali,
             self._folder_name,
             self._end_user_id,
@@ -683,7 +715,7 @@ class UserScope:
             file: File to ingest (path string, bytes, file object, or Path)
             filename: Name of the file
             metadata: Optional metadata dictionary
-            rules: Optional list of rules to apply during ingestion
+            rules: Deprecated; retained for backwards compatibility and ignored
             use_colpali: Whether to use ColPali-style embedding model
 
         Returns:
@@ -711,16 +743,13 @@ class UserScope:
             # Prepare multipart form data
             files = {"file": (filename, file_obj)}
 
-            # Add metadata, rules and scoping information
-            form_data = {
-                "metadata": json.dumps(metadata or {}),
-                "rules": json.dumps([self._client._convert_rule(r) for r in (rules or [])]),
-                "end_user_id": self._end_user_id,
-                "use_colpali": str(use_colpali).lower(),
-            }
-
-            if self._folder_name:
-                form_data["folder_name"] = self._folder_name
+            form_data = self._client._logic._prepare_ingest_file_form_data(
+                metadata,
+                rules,
+                self._folder_name,
+                self._end_user_id,
+                use_colpali,
+            )
 
             response = self._client._request(
                 "POST",
@@ -750,7 +779,7 @@ class UserScope:
         Args:
             files: List of files to ingest
             metadata: Optional metadata
-            rules: Optional list of rules to apply
+            rules: Deprecated; retained for backwards compatibility and ignored
             use_colpali: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
@@ -770,28 +799,14 @@ class UserScope:
 
         try:
             # Prepare request data
-            # Convert rules appropriately
-            if rules:
-                if all(isinstance(r, list) for r in rules):
-                    # List of lists - per-file rules
-                    converted_rules = [[self._client._convert_rule(r) for r in rule_list] for rule_list in rules]
-                else:
-                    # Flat list - shared rules for all files
-                    converted_rules = [self._client._convert_rule(r) for r in rules]
-            else:
-                converted_rules = []
-
-            data = {
-                "metadata": json.dumps(metadata or {}),
-                "rules": json.dumps(converted_rules),
-                "parallel": str(parallel).lower(),
-                "end_user_id": self._end_user_id,  # Add end user ID here
-                "use_colpali": str(use_colpali).lower(),
-            }
-
-            # Add folder name if scoped to a folder
-            if self._folder_name:
-                data["folder_name"] = self._folder_name
+            data = self._client._logic._prepare_ingest_files_form_data(
+                metadata,
+                rules,
+                use_colpali,
+                parallel,
+                self._folder_name,
+                self._end_user_id,
+            )
 
             response = self._client._request(
                 "POST",
@@ -833,7 +848,7 @@ class UserScope:
             recursive: Whether to recursively process subdirectories
             pattern: Optional glob pattern to filter files
             metadata: Optional metadata dictionary to apply to all files
-            rules: Optional list of rules to apply
+            rules: Deprecated; retained for backwards compatibility and ignored
             use_colpali: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
@@ -859,6 +874,42 @@ class UserScope:
         # Use ingest_files with collected paths
         return self.ingest_files(
             files=files, metadata=metadata, rules=rules, use_colpali=use_colpali, parallel=parallel
+        )
+
+    def query_document(
+        self,
+        file: Union[str, bytes, BinaryIO, Path],
+        prompt: str,
+        schema: Optional[Union[Dict[str, Any], Type[BaseModel], BaseModel, str]] = None,
+        ingestion_options: Optional[Dict[str, Any]] = None,
+        filename: Optional[str] = None,
+    ) -> DocumentQueryResponse:
+        """
+        Run a one-off document query scoped to this end user (and optional folder).
+
+        Args:
+            file: File-like input analysed inline by Morphik On-the-Fly.
+            prompt: Natural-language instruction to execute against the document.
+            schema: Optional schema definition (dict, Pydantic model, or JSON string) for structured output.
+            ingestion_options: Optional dict controlling ingestion follow-up.
+            filename: Override filename when providing bytes or file-like objects.
+
+        Returns:
+            DocumentQueryResponse: Structured response containing outputs and ingestion status.
+        """
+        options = dict(ingestion_options or {})
+        options.setdefault("end_user_id", self._end_user_id)
+        if self._folder_name and "folder_name" not in options:
+            options["folder_name"] = self._folder_name
+
+        return self._client.query_document(
+            file=file,
+            prompt=prompt,
+            schema=schema,
+            ingestion_options=options,
+            filename=filename,
+            folder_name=self._folder_name,
+            end_user_id=self._end_user_id,
         )
 
     def retrieve_chunks(
@@ -1421,40 +1472,13 @@ class Morphik:
         Args:
             content: Text content to ingest
             metadata: Optional metadata dictionary
-            rules: Optional list of rules to apply during ingestion. Can be:
-                  - MetadataExtractionRule: Extract metadata using a schema
-                  - NaturalLanguageRule: Transform content using natural language
+            rules: Deprecated; retained for backwards compatibility and ignored
             use_colpali: Whether to use ColPali-style embedding model to ingest the text
                 (slower, but significantly better retrieval accuracy for text and images)
         Returns:
             Document: Metadata of the ingested document
-
-        Example:
-            ```python
-            from morphik.rules import MetadataExtractionRule, NaturalLanguageRule
-            from pydantic import BaseModel
-
-            class DocumentInfo(BaseModel):
-                title: str
-                author: str
-                date: str
-
-            doc = db.ingest_text(
-                "Machine learning is fascinating...",
-                metadata={"category": "tech"},
-                rules=[
-                    # Extract metadata using schema
-                    MetadataExtractionRule(schema=DocumentInfo),
-                    # Transform content
-                    NaturalLanguageRule(prompt="Shorten the content, use keywords")
-                ]
-            )
-            ```
         """
-        rules_list = [self._convert_rule(r) for r in (rules or [])]
-        payload = self._logic._prepare_ingest_text_request(
-            content, filename, metadata, rules_list, use_colpali, None, None
-        )
+        payload = self._logic._prepare_ingest_text_request(content, filename, metadata, rules, use_colpali, None, None)
         response = self._request("POST", "ingest/text", data=payload)
         doc = self._logic._parse_document_response(response)
         doc._client = self
@@ -1475,36 +1499,13 @@ class Morphik:
             file: File to ingest (path string, bytes, file object, or Path)
             filename: Name of the file
             metadata: Optional metadata dictionary
-            rules: Optional list of rules to apply during ingestion. Can be:
-                  - MetadataExtractionRule: Extract metadata using a schema
-                  - NaturalLanguageRule: Transform content using natural language
+            rules: Deprecated; retained for backwards compatibility and ignored
             use_colpali: Whether to use ColPali-style embedding model to ingest the file
                 (slower, but significantly better retrieval accuracy for images)
 
         Returns:
             Document: Metadata of the ingested document
 
-        Example:
-            ```python
-            from morphik.rules import MetadataExtractionRule, NaturalLanguageRule
-            from pydantic import BaseModel
-
-            class DocumentInfo(BaseModel):
-                title: str
-                author: str
-                department: str
-
-            doc = db.ingest_file(
-                "document.pdf",
-                filename="document.pdf",
-                metadata={"category": "research"},
-                rules=[
-                    MetadataExtractionRule(schema=DocumentInfo),
-                    NaturalLanguageRule(prompt="Extract key points only")
-                ], # Optional
-                use_colpali=True, # Optional
-            )
-            ```
         """
         # Process file input
         file_obj, filename = self._logic._prepare_file_for_upload(file, filename)
@@ -1531,6 +1532,59 @@ class Morphik:
             if isinstance(file, (str, Path)):
                 file_obj.close()
 
+    def query_document(
+        self,
+        file: Union[str, bytes, BinaryIO, Path],
+        prompt: str,
+        schema: Optional[Union[Dict[str, Any], Type[BaseModel], BaseModel, str]] = None,
+        ingestion_options: Optional[Dict[str, Any]] = None,
+        filename: Optional[str] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        end_user_id: Optional[str] = None,
+    ) -> DocumentQueryResponse:
+        """
+        Run a one-off document query using Morphik On-the-Fly.
+
+        Args:
+            file: File-like input analysed inline.
+            prompt: Natural-language instruction to execute against the document.
+            schema: Optional schema definition (dict, Pydantic model, or JSON string) for structured output.
+            ingestion_options: Optional dict controlling ingestion follow-up behaviour. Supported keys: `ingest`,
+                `metadata`, `use_colpali`, `folder_name`, `end_user_id`. Unknown keys are ignored server-side.
+            filename: Override filename when providing bytes or file-like objects.
+            folder_name: Optional folder scope (auto-set when using Folder helpers).
+            end_user_id: Optional end-user scope (auto-set when using UserScope helpers).
+
+        Returns:
+            DocumentQueryResponse: Structured response containing outputs and ingestion status. When `ingest=True`, the
+            server queues ingestion after merging any provided metadata with schema-derived fields.
+        """
+        file_obj, resolved_filename = self._logic._prepare_file_for_upload(file, filename)
+
+        try:
+            files = {"file": (resolved_filename, file_obj)}
+            form_data = self._logic._prepare_document_query_form_data(
+                prompt=prompt,
+                schema=schema,
+                ingestion_options=ingestion_options,
+                folder_name=folder_name,
+                end_user_id=end_user_id,
+            )
+
+            response = self._request(
+                "POST",
+                "ingest/document/query",
+                data=form_data,
+                files=files,
+            )
+            result = self._logic._parse_document_query_response(response)
+            if result.ingestion_document is not None:
+                result.ingestion_document._client = self
+            return result
+        finally:
+            if isinstance(file, (str, Path)):
+                file_obj.close()
+
     def ingest_files(
         self,
         files: List[Union[str, bytes, BinaryIO, Path]],
@@ -1545,7 +1599,7 @@ class Morphik:
         Args:
             files: List of files to ingest (path strings, bytes, file objects, or Paths)
             metadata: Optional metadata (single dict for all files or list of dicts)
-            rules: Optional list of rules to apply
+            rules: Deprecated; retained for backwards compatibility and ignored
             use_colpali: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
@@ -1603,7 +1657,7 @@ class Morphik:
             recursive: Whether to recursively process subdirectories
             pattern: Optional glob pattern to filter files (e.g. "*.pdf")
             metadata: Optional metadata dictionary to apply to all files
-            rules: Optional list of rules to apply
+            rules: Deprecated; retained for backwards compatibility and ignored
             use_colpali: Whether to use ColPali-style embedding
             parallel: Whether to process files in parallel
 
@@ -2086,7 +2140,7 @@ class Morphik:
             content: The new content to add
             filename: Optional new filename for the document
             metadata: Additional metadata to update (optional)
-            rules: Optional list of rules to apply to the content
+            rules: Deprecated; retained for backwards compatibility and ignored
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
             use_colpali: Whether to use multi-vector embedding
 
@@ -2107,11 +2161,12 @@ class Morphik:
             ```
         """
         # Use the dedicated text update endpoint
+        self._logic._warn_legacy_rules(rules, "documents/update_text")
+
         request = IngestTextRequest(
             content=content,
             filename=filename,
             metadata=metadata or {},
-            rules=[self._convert_rule(r) for r in (rules or [])],
             use_colpali=use_colpali if use_colpali is not None else True,
         )
 
@@ -2145,7 +2200,7 @@ class Morphik:
             file: File to add (path string, bytes, file object, or Path)
             filename: Name of the file
             metadata: Additional metadata to update (optional)
-            rules: Optional list of rules to apply to the content
+            rules: Deprecated; retained for backwards compatibility and ignored
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
             use_colpali: Whether to use multi-vector embedding
 
@@ -2186,10 +2241,10 @@ class Morphik:
             # Prepare multipart form data
             files = {"file": (filename, file_obj)}
 
-            # Convert metadata and rules to JSON strings
+            self._logic._warn_legacy_rules(rules, "documents/update_file")
+
             form_data = {
                 "metadata": json.dumps(metadata or {}),
-                "rules": json.dumps([self._convert_rule(r) for r in (rules or [])]),
                 "update_strategy": update_strategy,
             }
 
@@ -2256,7 +2311,7 @@ class Morphik:
             content: The new content to add
             new_filename: Optional new filename for the document
             metadata: Additional metadata to update (optional)
-            rules: Optional list of rules to apply to the content
+            rules: Deprecated; retained for backwards compatibility and ignored
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
             use_colpali: Whether to use multi-vector embedding
 
@@ -2308,7 +2363,7 @@ class Morphik:
             file: File to add (path string, bytes, file object, or Path)
             new_filename: Optional new filename for the document (defaults to the filename of the file)
             metadata: Additional metadata to update (optional)
-            rules: Optional list of rules to apply to the content
+            rules: Deprecated; retained for backwards compatibility and ignored
             update_strategy: Strategy for updating the document (currently only 'add' is supported)
             use_colpali: Whether to use multi-vector embedding
 
@@ -2391,7 +2446,6 @@ class Morphik:
                     "content": "",
                     "filename": new_filename,
                     "metadata": combined_metadata,
-                    "rules": [],
                 },
             )
             result = self._logic._parse_document_response(response)

@@ -34,17 +34,13 @@ TYPE_MAP = {
 }
 
 
-class GeminiContentError(RuntimeError):
-    """Raised when Gemini content generation fails."""
-
-
-# Backwards compatibility for previous name
-GeminiStructuredOutputError = GeminiContentError
+class MorphikOnTheFlyContentError(RuntimeError):
+    """Raised when Morphik On-the-Fly generation fails."""
 
 
 @dataclass(slots=True)
-class GeminiGenerationResult:
-    """Container for Gemini generation output."""
+class MorphikOnTheFlyGenerationResult:
+    """Container for Morphik On-the-Fly generation output."""
 
     text_output: str
     structured_output: Optional[Dict[str, Any]] = None
@@ -115,12 +111,12 @@ def _build_field_definition(raw: Any) -> Dict[str, Any]:
     return {"type": "STRING", "nullable": True}
 
 
-def build_gemini_schema(schema_input: Dict[str, Any]) -> Dict[str, Any]:
+def build_morphik_on_the_fly_schema(schema_input: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Normalise user-provided schema definitions into Gemini's responseSchema format.
+    Normalise user-provided schema definitions into the Morphik On-the-Fly response schema format.
 
     Supports two formats:
-      • A full Gemini-compatible schema dict (with "type"/"properties" keys) – returned unchanged.
+      • A full Morphik On-the-Fly-compatible schema dict (with "type"/"properties" keys) – returned unchanged.
       • A simple mapping of field name -> {type, description, nullable, ...} or string shorthand.
     """
     if not isinstance(schema_input, dict):
@@ -183,7 +179,7 @@ def _extract_text_from_payload(payload: Dict[str, Any]) -> Optional[str]:
     return joined or None
 
 
-async def generate_gemini_content(
+async def generate_morphik_on_the_fly_content(
     *,
     prompt: str,
     schema: Optional[Dict[str, Any]] = None,
@@ -196,27 +192,27 @@ async def generate_gemini_content(
     temperature: float = 0.0,
     thinking_budget: Optional[int] = None,
     timeout_seconds: float = 60,
-) -> GeminiGenerationResult:
+) -> MorphikOnTheFlyGenerationResult:
     """
-    Invoke Gemini to generate content, optionally enforcing structured output via schema.
+    Invoke the Morphik On-the-Fly layer to generate content, optionally enforcing structured output via schema.
     """
     if not prompt or not prompt.strip():
-        raise GeminiContentError("Prompt is required for Gemini generation")
+        raise MorphikOnTheFlyContentError("Prompt is required for Morphik On-the-Fly generation")
 
     api_key = api_key or getattr(settings, "GEMINI_API_KEY", None)
     if not api_key:
-        raise GeminiContentError("Gemini API key is not configured")
+        raise MorphikOnTheFlyContentError("Morphik On-the-Fly API key is not configured")
 
     api_base_url = (api_base_url or getattr(settings, "GEMINI_API_BASE_URL", None) or "").rstrip("/")
     if not api_base_url:
-        raise GeminiContentError("Gemini API base URL is not configured")
+        raise MorphikOnTheFlyContentError("Morphik On-the-Fly API base URL is not configured")
 
     response_schema: Optional[Dict[str, Any]] = None
     if schema:
         try:
-            response_schema = build_gemini_schema(schema)
+            response_schema = build_morphik_on_the_fly_schema(schema)
         except ValueError as exc:
-            raise GeminiContentError(str(exc)) from exc
+            raise MorphikOnTheFlyContentError(str(exc)) from exc
         if system_prompt is None:
             system_prompt = DEFAULT_SYSTEM_PROMPT
 
@@ -267,28 +263,30 @@ async def generate_gemini_content(
             error_payload = response.json()
         except json.JSONDecodeError:
             error_payload = response.text
-        logger.error("Gemini request failed: %s", error_payload)
-        raise GeminiContentError(f"Gemini request failed with status {response.status_code}: {response.text}")
+        logger.error("Morphik On-the-Fly request failed: %s", error_payload)
+        raise MorphikOnTheFlyContentError(
+            f"Morphik On-the-Fly request failed with status {response.status_code}: {response.text}"
+        )
 
     try:
         payload = response.json()
     except json.JSONDecodeError as exc:
-        raise GeminiContentError(f"Failed to parse Gemini response: {exc}") from exc
+        raise MorphikOnTheFlyContentError(f"Failed to parse Morphik On-the-Fly response: {exc}") from exc
 
     text = _extract_text_from_payload(payload)
     if text is None:
-        logger.error("Gemini response missing textual content: %s", payload)
-        raise GeminiContentError("Gemini response did not include textual output")
+        logger.error("Morphik On-the-Fly response missing textual content: %s", payload)
+        raise MorphikOnTheFlyContentError("Morphik On-the-Fly response did not include textual output")
 
     structured_output: Optional[Dict[str, Any]] = None
     if response_schema:
         try:
             structured_output = json.loads(text)
         except json.JSONDecodeError as exc:
-            logger.error("Gemini response was not valid JSON: %s", text)
-            raise GeminiContentError(f"Failed to parse Gemini JSON output: {exc}") from exc
+            logger.error("Morphik On-the-Fly response was not valid JSON: %s", text)
+            raise MorphikOnTheFlyContentError(f"Failed to parse Morphik On-the-Fly JSON output: {exc}") from exc
 
-    return GeminiGenerationResult(text_output=text, structured_output=structured_output)
+    return MorphikOnTheFlyGenerationResult(text_output=text, structured_output=structured_output)
 
 
 async def extract_structured_metadata(
@@ -303,7 +301,7 @@ async def extract_structured_metadata(
     timeout_seconds: float = 60,
 ) -> Dict[str, Any]:
     """Backwards-compatible helper that enforces structured output."""
-    result = await generate_gemini_content(
+    result = await generate_morphik_on_the_fly_content(
         prompt=prompt,
         schema=schema,
         document_bytes=document_bytes,
@@ -316,5 +314,5 @@ async def extract_structured_metadata(
     )
 
     if result.structured_output is None:
-        raise GeminiContentError("Gemini did not return structured output")
+        raise MorphikOnTheFlyContentError("Morphik On-the-Fly did not return structured output")
     return result.structured_output

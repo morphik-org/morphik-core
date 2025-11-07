@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from core.models.documents import Document
 from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
@@ -155,13 +155,11 @@ class CompletionQueryRequest(RetrieveRequest):
 class IngestTextRequest(BaseModel):
     """Request model for ingesting text content"""
 
+    model_config = ConfigDict(extra="allow")
+
     content: str
     filename: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    rules: Optional[List[Dict[str, Any]]] = Field(
-        default=None,
-        description="Deprecated; retained for backwards compatibility but ignored by the server.",
-    )
     use_colpali: Optional[bool] = None
     folder_name: Optional[str] = Field(None, description="Optional folder scope for the operation")
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
@@ -225,13 +223,13 @@ class DocumentQueryResponse(BaseModel):
     """Response model for document query with optional ingestion follow-up."""
 
     structured_output: Optional[Any] = Field(
-        default=None, description="Raw structured output returned from Gemini (may be list/dict)"
+        default=None, description="Raw structured output returned from Morphik On-the-Fly (may be list/dict)"
     )
     extracted_metadata: Optional[Dict[str, Any]] = Field(
         default=None, description="Structured output coerced to metadata when possible"
     )
     text_output: Optional[str] = Field(
-        default=None, description="Raw text returned from Gemini when no schema is provided"
+        default=None, description="Raw text returned from Morphik On-the-Fly when no schema is provided"
     )
     ingestion_enqueued: bool = Field(
         default=False, description="True when the document was queued for ingestion after extraction"

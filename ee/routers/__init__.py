@@ -12,8 +12,6 @@ from typing import List
 
 from fastapi import FastAPI
 
-from .apps import router as _apps_router  # noqa: F401 – imported for side effects
-
 __all__: List[str] = []
 
 
@@ -27,7 +25,6 @@ def init_app(app: FastAPI) -> None:
     # exposure of unfinished modules.
     for module_path in [
         "ee.routers.cloud_uri",
-        "ee.routers.apps",
         "ee.routers.connectors_router",
     ]:
         try:

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
 
 import arq
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
 from core.auth_utils import verify_token
 from core.config import get_settings
@@ -16,8 +16,12 @@ from core.models.auth import AuthContext
 from core.models.documents import Document
 from core.models.request import BatchIngestResponse, DocumentQueryResponse, IngestTextRequest, RequeueIngestionRequest
 from core.models.responses import RequeueIngestionResponse, RequeueIngestionResult
+from core.routes.utils import warn_if_legacy_rules
 from core.services.document_service import DocumentService
-from core.services.gemini_structured_output import GeminiContentError, generate_gemini_content
+from core.services.morphik_on_the_fly_structured_output import (
+    MorphikOnTheFlyContentError,
+    generate_morphik_on_the_fly_content,
+)
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, storage
 from core.storage.utils_file_extensions import detect_file_type
@@ -31,7 +35,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 telemetry = TelemetryService()
 
-GEMINI_MAX_DOCUMENT_BYTES = 20 * 1024 * 1024  # 20 MB limit for Gemini inline uploads
+MORPHIK_ON_THE_FLY_MAX_DOCUMENT_BYTES = 20 * 1024 * 1024  # 20 MB limit for inline uploads to Morphik On-the-Fly
 
 
 def _parse_bool(value: Optional[Union[str, bool]]) -> bool:
@@ -78,8 +82,8 @@ async def ingest_text(
                 verify_only=True,
             )
 
-        if request.rules:
-            logger.warning("Deprecated 'rules' field supplied to /ingest/text; ignoring payload.")
+        if getattr(request, "rules", None):
+            logger.warning("Legacy 'rules' field supplied to /ingest/text; ignoring payload.")
 
         return await document_service.ingest_text(
             content=request.content,
@@ -102,9 +106,9 @@ async def ingest_text(
 @router.post("/file", response_model=Document)
 @telemetry.track(operation_type="queue_ingest_file", metadata_resolver=telemetry.ingest_file_metadata)
 async def ingest_file(
+    request: Request,
     file: UploadFile,
     metadata: str = Form("{}"),
-    rules: str = Form("[]"),
     auth: AuthContext = Depends(verify_token),
     use_colpali: Optional[bool] = Form(None),
     folder_name: Optional[str] = Form(None),
@@ -120,7 +124,6 @@ async def ingest_file(
     Args:
         file: Uploaded file from multipart/form-data.
         metadata: JSON-string representing user metadata.
-        rules: JSON-string with extraction / NL rules list (deprecated; ignored).
         auth: Caller context – must include *write* permission.
         use_colpali: Switch to multi-vector embeddings.
         folder_name: Optionally scope doc to a folder.
@@ -134,12 +137,10 @@ async def ingest_file(
         # ------------------------------------------------------------------
         # Parse and validate inputs
         # ------------------------------------------------------------------
+        await warn_if_legacy_rules(request, "/ingest/file", logger)
         metadata_dict = json.loads(metadata)
-        parsed_rules = json.loads(rules)
-        if parsed_rules:
-            logger.warning("Deprecated 'rules' payload supplied to /ingest/file; ignoring.")
 
-        def str2bool(v):
+        def str2bool(v: Union[bool, str]) -> bool:
             return v if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}
 
         use_colpali_bool = str2bool(use_colpali)
@@ -200,12 +201,11 @@ async def ingest_file(
             if detected_ext:
                 file_key = f"{file_key}{detected_ext}"
 
-        bucket_override = await document_service._get_bucket_for_app(auth.app_id)
         bucket, stored_key = await storage.upload_file(
             file_content,
             file_key,
             file.content_type,
-            bucket=bucket_override or "",
+            bucket="",
         )
 
         doc.storage_info = {"bucket": bucket, "key": stored_key}
@@ -286,9 +286,9 @@ async def ingest_file(
 @router.post("/files", response_model=BatchIngestResponse)
 @telemetry.track(operation_type="queue_batch_ingest", metadata_resolver=telemetry.batch_ingest_metadata)
 async def batch_ingest_files(
+    request: Request,
     files: List[UploadFile] = File(...),
     metadata: str = Form("{}"),
-    rules: str = Form("[]"),
     use_colpali: Optional[bool] = Form(None),
     folder_name: Optional[str] = Form(None),
     end_user_id: Optional[str] = Form(None),
@@ -305,7 +305,6 @@ async def batch_ingest_files(
         files: List of files to upload.
         metadata: Either a single JSON-string dict or list of dicts matching
             the number of files.
-        rules: Either a single rules list or list-of-lists per file (deprecated; ignored).
         use_colpali: Enable multi-vector embeddings.
         folder_name: Optional folder scoping for **all** files.
         end_user_id: Optional end-user scoping for **all** files.
@@ -319,13 +318,11 @@ async def batch_ingest_files(
         raise HTTPException(status_code=400, detail="No files provided for batch ingestion")
 
     try:
+        await warn_if_legacy_rules(request, "/ingest/files", logger)
         metadata_value = json.loads(metadata)
-        parsed_rules = json.loads(rules)
-        if parsed_rules:
-            logger.warning("Deprecated 'rules' payload supplied to /ingest/files; ignoring.")
 
-        def str2bool(v):
-            return str(v).lower() in {"true", "1", "yes"}
+        def str2bool(v: Union[bool, str]) -> bool:
+            return v if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}
 
         use_colpali_bool = str2bool(use_colpali)
 
@@ -401,12 +398,11 @@ async def batch_ingest_files(
                 if detected_ext:
                     file_key = f"{file_key}{detected_ext}"
 
-            bucket_override = await document_service._get_bucket_for_app(auth.app_id)
             bucket, stored_key = await storage.upload_file(
                 file_content,
                 file_key,
                 file.content_type,
-                bucket=bucket_override or "",
+                bucket="",
             )
 
             doc.storage_info = {"bucket": bucket, "key": stored_key}
@@ -693,16 +689,20 @@ async def query_document(
     redis: arq.ArqRedis = Depends(get_redis_pool),
 ) -> DocumentQueryResponse:
     """
-    Run an on-demand Gemini document query with optional structured output and ingestion.
+    Execute a one-off analysis for a document using Morphik On-the-Fly, optionally enforcing structured output and
+    scheduling a follow-up ingestion.
 
     Args:
-        file: Uploaded source document (PDF or another supported MIME type).
-        prompt: Natural-language instruction to execute against the document.
-        schema: Optional JSON schema enforcing structured Gemini output.
-        ingestion_options: JSON object controlling ingestion follow-up (keys: ingest, use_colpali, folder_name, end_user_id, metadata).
+        file: Uploaded document (PDF or any supported MIME type) analysed by Morphik On-the-Fly inline.
+        prompt: Natural-language instruction Morphik On-the-Fly should fulfil against the document.
+        schema: Optional JSON schema forcing structured output; accepts a JSON object encoded in the form data.
+        ingestion_options: JSON object encoded as a string that controls follow-up ingestion. Supported keys include
+            `ingest` (bool), `metadata` (dict merged with any extracted fields), `use_colpali` (bool), `folder_name`
+            (str or list[str]), and `end_user_id` (str). Additional keys are ignored.
 
     Returns:
-        DocumentQueryResponse containing Gemini outputs, original metadata, and ingestion status details.
+        DocumentQueryResponse containing raw and structured outputs alongside ingestion status details. When ingestion is
+        requested, the original metadata is merged with any schema-derived fields before the file is queued.
     """
     try:
         ingestion_options_dict = json.loads(ingestion_options or "{}")
@@ -752,10 +752,10 @@ async def query_document(
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    if len(file_bytes) > GEMINI_MAX_DOCUMENT_BYTES:
+    if len(file_bytes) > MORPHIK_ON_THE_FLY_MAX_DOCUMENT_BYTES:
         raise HTTPException(
             status_code=400,
-            detail=f"Uploaded file exceeds Gemini limit of {GEMINI_MAX_DOCUMENT_BYTES // (1024 * 1024)} MB",
+            detail=f"Uploaded file exceeds limit of {MORPHIK_ON_THE_FLY_MAX_DOCUMENT_BYTES // (1024 * 1024)} MB",
         )
 
     schema_obj: Optional[Dict[str, Any]] = None
@@ -770,16 +770,16 @@ async def query_document(
         schema_obj = parsed_schema
 
     try:
-        gemini_result = await generate_gemini_content(
+        morphik_on_the_fly_result = await generate_morphik_on_the_fly_content(
             prompt=prompt,
             schema=schema_obj,
             document_bytes=file_bytes,
             mime_type=file.content_type,
         )
-    except GeminiContentError as exc:
+    except MorphikOnTheFlyContentError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    structured_output = gemini_result.structured_output
+    structured_output = morphik_on_the_fly_result.structured_output
     input_metadata = dict(metadata_dict)
     if structured_output is None:
         combined_metadata = input_metadata
@@ -789,7 +789,7 @@ async def query_document(
         combined_metadata = {**input_metadata, **structured_output}
     else:
         extracted_metadata = None
-        combined_metadata = {**input_metadata, "gemini_structured_output": structured_output}
+        combined_metadata = {**input_metadata, "morphik_on_the_fly_structured_output": structured_output}
 
     ingestion_document: Optional[Document] = None
     if ingest_after_bool:
@@ -821,7 +821,7 @@ async def query_document(
     return DocumentQueryResponse(
         structured_output=structured_output,
         extracted_metadata=extracted_metadata,
-        text_output=gemini_result.text_output,
+        text_output=morphik_on_the_fly_result.text_output,
         ingestion_enqueued=ingest_after_bool and ingestion_document is not None,
         ingestion_document=ingestion_document,
         input_metadata=input_metadata,

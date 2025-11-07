@@ -3,7 +3,7 @@ import logging
 import os
 from typing import Any, Dict, List, Optional, Union
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile
 
 from core.auth_utils import verify_token
 from core.config import get_settings
@@ -18,7 +18,7 @@ from core.models.responses import (
     FolderCount,
     ListDocsResponse,
 )
-from core.routes.utils import project_document_fields
+from core.routes.utils import project_document_fields, warn_if_legacy_rules
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
 
@@ -461,8 +461,8 @@ async def update_document_text(
         Document: Updated document metadata
     """
     try:
-        if request.rules:
-            logger.warning("Deprecated 'rules' field supplied to /documents/{document_id}/update_text; ignoring.")
+        if getattr(request, "rules", None):
+            logger.warning("Legacy 'rules' field supplied to /documents/{document_id}/update_text; ignoring.")
 
         doc = await document_service.update_document(
             document_id=document_id,
@@ -486,10 +486,10 @@ async def update_document_text(
 @router.post("/{document_id}/update_file", response_model=Document)
 @telemetry.track(operation_type="update_document_file", metadata_resolver=telemetry.document_update_file_metadata)
 async def update_document_file(
+    request: Request,
     document_id: str,
     file: UploadFile,
     metadata: str = Form("{}"),
-    rules: str = Form("[]"),
     update_strategy: str = Form("add"),
     use_colpali: Optional[bool] = Form(None),
     auth: AuthContext = Depends(verify_token),
@@ -501,7 +501,6 @@ async def update_document_file(
         document_id: ID of the document to update
         file: File to add to the document
         metadata: JSON string of metadata to merge with existing metadata
-        rules: JSON string of rules to apply to the content (deprecated; ignored)
         update_strategy: Strategy for updating the document (default: 'add')
         use_colpali: Whether to use multi-vector embedding
         auth: Authentication context
@@ -511,9 +510,7 @@ async def update_document_file(
     """
     try:
         metadata_dict = json.loads(metadata)
-        parsed_rules = json.loads(rules)
-        if parsed_rules:
-            logger.warning("Deprecated 'rules' payload supplied to /documents/{document_id}/update_file; ignoring.")
+        await warn_if_legacy_rules(request, f"/documents/{document_id}/update_file", logger)
 
         doc = await document_service.update_document(
             document_id=document_id,
