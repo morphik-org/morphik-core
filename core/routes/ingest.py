@@ -25,6 +25,7 @@ from core.services.morphik_on_the_fly_structured_output import (
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, storage
 from core.storage.utils_file_extensions import detect_file_type
+from core.utils.typed_metadata import TypedMetadataError, normalize_metadata
 
 # ---------------------------------------------------------------------------
 # Router initialisation & shared singletons
@@ -64,6 +65,7 @@ async def ingest_text(
             • content – raw text to ingest.
             • filename – optional filename to help detect MIME-type.
             • metadata – optional JSON metadata dict.
+            • metadata_types – optional type hints (string, number, decimal, datetime, date, boolean, array, object) for typed filtering.
             • folder_name – optional folder scope.
             • end_user_id – optional end-user scope.
         auth: Decoded JWT context (injected).
@@ -89,6 +91,7 @@ async def ingest_text(
             content=request.content,
             filename=request.filename,
             metadata=request.metadata,
+            metadata_types=request.metadata_types,
             use_colpali=request.use_colpali,
             auth=auth,
             folder_name=request.folder_name,
@@ -96,6 +99,8 @@ async def ingest_text(
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
+    except TypedMetadataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +114,7 @@ async def ingest_file(
     request: Request,
     file: UploadFile,
     metadata: str = Form("{}"),
+    metadata_types: str = Form("{}"),
     auth: AuthContext = Depends(verify_token),
     use_colpali: Optional[bool] = Form(None),
     folder_name: Optional[str] = Form(None),
@@ -124,6 +130,7 @@ async def ingest_file(
     Args:
         file: Uploaded file from multipart/form-data.
         metadata: JSON-string representing user metadata.
+        metadata_types: JSON-string with per-field type hints (string, number, decimal, datetime, date, boolean, array, object) for typed filtering.
         auth: Caller context – must include *write* permission.
         use_colpali: Switch to multi-vector embeddings.
         folder_name: Optionally scope doc to a folder.
@@ -139,6 +146,11 @@ async def ingest_file(
         # ------------------------------------------------------------------
         await warn_if_legacy_rules(request, "/ingest/file", logger)
         metadata_dict = json.loads(metadata)
+        metadata_types_dict = json.loads(metadata_types or "{}") if metadata_types else {}
+        if metadata_types_dict is None:
+            metadata_types_dict = {}
+        if not isinstance(metadata_types_dict, dict):
+            raise HTTPException(status_code=400, detail="metadata_types must be a JSON object")
 
         def str2bool(v: Union[bool, str]) -> bool:
             return v if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}
@@ -162,6 +174,11 @@ async def ingest_file(
             end_user_id=end_user_id,
             app_id=auth.app_id,
         )
+        metadata_payload = dict(metadata_dict)
+        metadata_payload.setdefault("external_id", doc.external_id)
+        normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types_dict or None)
+        doc.metadata = normalized_metadata
+        doc.metadata_types = normalized_types
 
         # Store stub in application database (not control-plane DB)
         app_db = document_service.db
@@ -258,6 +275,7 @@ async def ingest_file(
             original_filename=file.filename,
             content_type=file.content_type,
             metadata_json=metadata,
+            metadata_types_json=json.dumps(metadata_types_dict or {}),
             auth_dict=auth_dict,
             use_colpali=use_colpali_bool,
             folder_name=folder_name,
@@ -273,6 +291,8 @@ async def ingest_file(
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(exc)}")
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
+    except TypedMetadataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         logger.error("Error during file ingestion: %s", exc)
         raise HTTPException(status_code=500, detail=f"Error during file ingestion: {str(exc)}")
@@ -289,6 +309,7 @@ async def batch_ingest_files(
     request: Request,
     files: List[UploadFile] = File(...),
     metadata: str = Form("{}"),
+    metadata_types: str = Form("{}"),
     use_colpali: Optional[bool] = Form(None),
     folder_name: Optional[str] = Form(None),
     end_user_id: Optional[str] = Form(None),
@@ -320,6 +341,9 @@ async def batch_ingest_files(
     try:
         await warn_if_legacy_rules(request, "/ingest/files", logger)
         metadata_value = json.loads(metadata)
+        metadata_types_value = json.loads(metadata_types or "{}") if metadata_types else {}
+        if metadata_types_value is None:
+            metadata_types_value = {}
 
         def str2bool(v: Union[bool, str]) -> bool:
             return v if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}
@@ -339,6 +363,14 @@ async def batch_ingest_files(
             status_code=400,
             detail=(f"Number of metadata items ({len(metadata_value)}) must match number of files " f"({len(files)})"),
         )
+    if isinstance(metadata_types_value, list) and len(metadata_types_value) != len(files):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Number of metadata_types items ({len(metadata_types_value)}) must match number of files "
+                f"({len(files)})"
+            ),
+        )
 
     auth_dict = {
         "entity_type": auth.entity_type.value,
@@ -355,6 +387,13 @@ async def batch_ingest_files(
     try:
         for idx, file in enumerate(files):
             metadata_item = metadata_value[idx] if isinstance(metadata_value, list) else metadata_value
+            metadata_types_item = (
+                metadata_types_value[idx] if isinstance(metadata_types_value, list) else metadata_types_value
+            )
+            if metadata_types_item is None:
+                metadata_types_item = {}
+            if not isinstance(metadata_types_item, dict):
+                raise HTTPException(status_code=400, detail="metadata_types entries must be JSON objects")
             # ------------------------------------------------------------------
             # Create stub Document (processing)
             # ------------------------------------------------------------------
@@ -367,6 +406,11 @@ async def batch_ingest_files(
                 app_id=auth.app_id,
             )
             doc.system_metadata["status"] = "processing"
+            metadata_payload = dict(metadata_item or {})
+            metadata_payload.setdefault("external_id", doc.external_id)
+            normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types_item or None)
+            doc.metadata = normalized_metadata
+            doc.metadata_types = normalized_types
 
             app_db = document_service.db
             success = await app_db.store_document(doc, auth)
@@ -430,6 +474,7 @@ async def batch_ingest_files(
                     logger.error("Failed to record storage usage: %s", rec_exc)
 
             metadata_json = json.dumps(metadata_item)
+            metadata_types_json = json.dumps(metadata_types_item or {})
 
             job = await redis.enqueue_job(
                 "process_ingestion_job",
@@ -440,6 +485,7 @@ async def batch_ingest_files(
                 original_filename=file.filename,
                 content_type=file.content_type,
                 metadata_json=metadata_json,
+                metadata_types_json=metadata_types_json,
                 auth_dict=auth_dict,
                 use_colpali=use_colpali_bool,
                 folder_name=folder_name,
@@ -453,6 +499,8 @@ async def batch_ingest_files(
             created_documents.append(doc)
 
         return BatchIngestResponse(documents=created_documents, errors=[])
+    except TypedMetadataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         logger.error("Error queueing batch ingestion: %s", exc)
         raise HTTPException(status_code=500, detail=f"Error queueing batch ingestion: {str(exc)}")
@@ -564,6 +612,7 @@ async def requeue_ingest_jobs(
             doc_metadata = doc.metadata or {}
             if isinstance(doc_metadata, str):
                 doc_metadata = json.loads(doc_metadata)
+            doc_metadata_types = doc.metadata_types or {}
 
             job = await redis.enqueue_job(
                 "process_ingestion_job",
@@ -574,6 +623,7 @@ async def requeue_ingest_jobs(
                 original_filename=doc.filename,
                 content_type=doc.content_type,
                 metadata_json=json.dumps(doc_metadata),
+                metadata_types_json=json.dumps(doc_metadata_types),
                 auth_dict=auth_dict,
                 use_colpali=use_colpali_flag,
                 folder_name=doc.folder_name,
@@ -804,6 +854,7 @@ async def query_document(
                 filename=filename,
                 content_type=file.content_type,
                 metadata=combined_metadata,
+                metadata_types=None,
                 auth=auth,
                 redis=redis,
                 folder_name=folder_override,
@@ -812,6 +863,8 @@ async def query_document(
             )
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except TypedMetadataError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except HTTPException:
             raise
         except Exception as exc:  # noqa: BLE001

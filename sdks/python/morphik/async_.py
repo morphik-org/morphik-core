@@ -20,6 +20,7 @@ from .models import (
     Graph,
     GraphPromptOverrides,
     IngestTextRequest,
+    ListDocsResponse,
     QueryPromptOverrides,
 )
 
@@ -424,7 +425,13 @@ class AsyncFolder:
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
         additional_folders: Optional[List[str]] = None,
-    ) -> List[Document]:
+        include_total_count: bool = False,
+        include_status_counts: bool = False,
+        include_folder_counts: bool = False,
+        completed_only: bool = False,
+        sort_by: Optional[str] = "updated_at",
+        sort_direction: str = "desc",
+    ) -> ListDocsResponse:
         """
         List accessible documents within this folder.
 
@@ -433,9 +440,15 @@ class AsyncFolder:
             limit: Maximum number of documents to return
             filters: Optional filters
             additional_folders: Optional list of additional folder names to further scope operations
+            include_total_count: Include total count of matching documents
+            include_status_counts: Include counts grouped by status
+            include_folder_counts: Include counts grouped by folder
+            completed_only: Only return completed documents
+            sort_by: Field to sort by (created_at, updated_at, filename, external_id)
+            sort_direction: Sort direction (asc, desc)
 
         Returns:
-            List[Document]: List of documents
+            ListDocsResponse: Response with documents and metadata
         """
         effective_folder = self._merge_folders(additional_folders)
         return await self._client._scoped_list_documents(
@@ -444,6 +457,12 @@ class AsyncFolder:
             filters=filters,
             folder_name=effective_folder,
             end_user_id=None,
+            include_total_count=include_total_count,
+            include_status_counts=include_status_counts,
+            include_folder_counts=include_folder_counts,
+            completed_only=completed_only,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
         )
 
     async def batch_get_documents(
@@ -920,7 +939,13 @@ class AsyncUserScope:
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
         additional_folders: Optional[List[str]] = None,
-    ) -> List[Document]:
+        include_total_count: bool = False,
+        include_status_counts: bool = False,
+        include_folder_counts: bool = False,
+        completed_only: bool = False,
+        sort_by: Optional[str] = "updated_at",
+        sort_direction: str = "desc",
+    ) -> ListDocsResponse:
         """
         List accessible documents for this end user.
 
@@ -929,9 +954,15 @@ class AsyncUserScope:
             limit: Maximum number of documents to return
             filters: Optional filters
             additional_folders: Optional list of extra folders to include in the scope
+            include_total_count: Include total count of matching documents
+            include_status_counts: Include counts grouped by status
+            include_folder_counts: Include counts grouped by folder
+            completed_only: Only return completed documents
+            sort_by: Field to sort by (created_at, updated_at, filename, external_id)
+            sort_direction: Sort direction (asc, desc)
 
         Returns:
-            List[Document]: List of documents
+            ListDocsResponse: Response with documents and metadata
         """
         effective_folder = self._merge_folders(additional_folders)
         return await self._client._scoped_list_documents(
@@ -940,6 +971,12 @@ class AsyncUserScope:
             filters=filters,
             folder_name=effective_folder,
             end_user_id=self._end_user_id,
+            include_total_count=include_total_count,
+            include_status_counts=include_status_counts,
+            include_folder_counts=include_folder_counts,
+            completed_only=completed_only,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
         )
 
     async def batch_get_documents(
@@ -1625,7 +1662,13 @@ class AsyncMorphik(_ScopedOperationsMixin):
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
-    ) -> List[Document]:
+        include_total_count: bool = False,
+        include_status_counts: bool = False,
+        include_folder_counts: bool = False,
+        completed_only: bool = False,
+        sort_by: Optional[str] = "updated_at",
+        sort_direction: str = "desc",
+    ) -> ListDocsResponse:
         """
         List accessible documents.
 
@@ -1634,9 +1677,15 @@ class AsyncMorphik(_ScopedOperationsMixin):
             limit: Maximum number of documents to return
             filters: Optional filters
             folder_name: Optional folder name (or list of names) to scope the request
+            include_total_count: Include total count of matching documents
+            include_status_counts: Include counts grouped by status
+            include_folder_counts: Include counts grouped by folder
+            completed_only: Only return completed documents
+            sort_by: Field to sort by (created_at, updated_at, filename, external_id)
+            sort_direction: Sort direction (asc, desc)
 
         Returns:
-            List[Document]: List of accessible documents
+            ListDocsResponse: Response with documents and metadata
 
         """
         return await self._scoped_list_documents(
@@ -1645,6 +1694,12 @@ class AsyncMorphik(_ScopedOperationsMixin):
             filters=filters,
             folder_name=folder_name,
             end_user_id=None,
+            include_total_count=include_total_count,
+            include_status_counts=include_status_counts,
+            include_folder_counts=include_folder_counts,
+            completed_only=completed_only,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
         )
 
     async def get_document(self, document_id: str) -> Document:
@@ -1779,10 +1834,12 @@ class AsyncMorphik(_ScopedOperationsMixin):
         # Use the dedicated text update endpoint
         self._logic._warn_legacy_rules(rules, "documents/update_text")
 
+        serialized_metadata, metadata_types_map = self._logic._serialize_metadata_map(metadata)
         request = IngestTextRequest(
             content=content,
             filename=filename,
-            metadata=metadata or {},
+            metadata=serialized_metadata,
+            metadata_types=metadata_types_map or None,
             use_colpali=use_colpali if use_colpali is not None else True,
         )
 
@@ -1849,13 +1906,16 @@ class AsyncMorphik(_ScopedOperationsMixin):
             self._logic._warn_legacy_rules(rules, "documents/update_file")
 
             # Convert metadata to JSON strings
+            serialized_metadata, metadata_types_map = self._logic._serialize_metadata_map(metadata)
             form_data = {
-                "metadata": json.dumps(metadata or {}),
+                "metadata": json.dumps(serialized_metadata),
                 "update_strategy": update_strategy,
             }
 
             if use_colpali is not None:
                 form_data["use_colpali"] = str(use_colpali).lower()
+            if metadata_types_map:
+                form_data["metadata_types"] = json.dumps(metadata_types_map)
 
             # Use the dedicated file update endpoint
             response = await self._request("POST", f"documents/{document_id}/update_file", data=form_data, files=files)
@@ -1885,7 +1945,12 @@ class AsyncMorphik(_ScopedOperationsMixin):
 
         """
         # Use the dedicated metadata update endpoint
-        response = await self._request("POST", f"documents/{document_id}/update_metadata", data=metadata)
+        serialized_metadata, metadata_types_map = self._logic._serialize_metadata_map(metadata)
+        payload: Dict[str, Any] = {"metadata": serialized_metadata}
+        if metadata_types_map:
+            payload["metadata_types"] = metadata_types_map
+
+        response = await self._request("POST", f"documents/{document_id}/update_metadata", data=payload)
         doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc

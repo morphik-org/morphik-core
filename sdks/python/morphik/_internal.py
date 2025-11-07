@@ -2,6 +2,8 @@ import base64
 import io
 import json
 import warnings
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Type, Union
@@ -117,16 +119,19 @@ class _MorphikClientLogic:
     ) -> Dict[str, Any]:
         """Prepare request for ingest_text endpoint"""
         self._warn_legacy_rules(rules, "ingest/text")
+        serialized_metadata, metadata_types_map = self._serialize_metadata_map(metadata)
         payload = {
             "content": content,
             "filename": filename,
-            "metadata": metadata or {},
+            "metadata": serialized_metadata,
             "use_colpali": use_colpali,
         }
         if folder_name:
             payload["folder_name"] = folder_name
         if end_user_id:
             payload["end_user_id"] = end_user_id
+        if metadata_types_map:
+            payload["metadata_types"] = metadata_types_map
         return payload
 
     def _prepare_file_for_upload(
@@ -192,8 +197,9 @@ class _MorphikClientLogic:
         embedded here when provided.
         """
         self._warn_legacy_rules(rules, "ingest/file")
+        serialized_metadata, metadata_types_map = self._serialize_metadata_map(metadata)
         form_data = {
-            "metadata": json.dumps(metadata or {}),
+            "metadata": json.dumps(serialized_metadata),
         }
         if folder_name:
             form_data["folder_name"] = folder_name
@@ -204,6 +210,9 @@ class _MorphikClientLogic:
         # overriding server defaults unintentionally.
         if use_colpali is not None:
             form_data["use_colpali"] = str(use_colpali).lower()
+
+        if metadata_types_map:
+            form_data["metadata_types"] = json.dumps(metadata_types_map)
 
         return form_data
 
@@ -219,8 +228,10 @@ class _MorphikClientLogic:
         """Prepare form data for ingest_files endpoint"""
         self._warn_legacy_rules(rules, "ingest/files")
 
+        serialized_metadata, metadata_types_payload = self._serialize_metadata_collection(metadata)
+
         data = {
-            "metadata": json.dumps(metadata or {}),
+            "metadata": json.dumps(serialized_metadata),
             "parallel": str(parallel).lower(),
         }
 
@@ -234,6 +245,8 @@ class _MorphikClientLogic:
             data["folder_name"] = folder_name
         if end_user_id:
             data["end_user_id"] = end_user_id
+        if metadata_types_payload is not None:
+            data["metadata_types"] = json.dumps(metadata_types_payload)
 
         return data
 
@@ -394,18 +407,32 @@ class _MorphikClientLogic:
         filters: Optional[Dict[str, Any]],
         folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
+        include_total_count: bool,
+        include_status_counts: bool,
+        include_folder_counts: bool,
+        completed_only: bool,
+        sort_by: Optional[str],
+        sort_direction: str,
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """Prepare request for list_documents endpoint"""
-        params = {
-            "skip": skip,
-            "limit": limit,
-        }
+        """Prepare request for list_docs endpoint"""
+        params = {}
         if folder_name:
             params["folder_name"] = folder_name
         if end_user_id:
             params["end_user_id"] = end_user_id
-        # Wrap filters in document_filters parameter as expected by the API
-        data = {"document_filters": filters} if filters else {}
+
+        data = {
+            "skip": skip,
+            "limit": limit,
+            "document_filters": filters,
+            "return_documents": True,
+            "include_total_count": include_total_count,
+            "include_status_counts": include_status_counts,
+            "include_folder_counts": include_folder_counts,
+            "completed_only": completed_only,
+            "sort_by": sort_by,
+            "sort_direction": sort_direction,
+        }
         return params, data
 
     def _prepare_batch_get_documents_request(
@@ -507,11 +534,13 @@ class _MorphikClientLogic:
         """Prepare request for update_document_with_text endpoint"""
         self._warn_legacy_rules(rules, "documents/update_text")
 
+        serialized_metadata, metadata_types_map = self._serialize_metadata_map(metadata)
         request = IngestTextRequest(
             content=content,
             filename=filename,
-            metadata=metadata or {},
+            metadata=serialized_metadata,
             use_colpali=use_colpali if use_colpali is not None else True,
+            metadata_types=metadata_types_map or None,
         )
 
         params = {}
@@ -519,6 +548,90 @@ class _MorphikClientLogic:
             params["update_strategy"] = update_strategy
 
         return params, request.model_dump()
+
+    # ------------------------------------------------------------------
+    # Metadata serialization helpers
+    # ------------------------------------------------------------------
+
+    def _serialize_metadata_map(self, metadata: Optional[Dict[str, Any]]) -> Tuple[Dict[str, Any], Dict[str, str]]:
+        """Normalize metadata values and build a type map for top-level fields."""
+        serialized: Dict[str, Any] = {}
+        type_map: Dict[str, str] = {}
+        source = metadata or {}
+
+        for key, value in source.items():
+            normalized_value, type_name = self._normalize_metadata_value(value)
+            serialized[key] = normalized_value
+            if type_name:
+                type_map[key] = type_name
+
+        return serialized, type_map
+
+    def _serialize_metadata_collection(
+        self, metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]]
+    ) -> Tuple[Union[Dict[str, Any], List[Dict[str, Any]]], Optional[Union[Dict[str, str], List[Dict[str, str]]]]]:
+        """Serialize metadata for single or batched ingestion requests."""
+        if isinstance(metadata, list):
+            serialized_items: List[Dict[str, Any]] = []
+            type_maps: List[Dict[str, str]] = []
+            has_types = False
+            for item in metadata:
+                normalized, type_map = self._serialize_metadata_map(item)
+                serialized_items.append(normalized)
+                type_maps.append(type_map)
+                has_types = has_types or bool(type_map)
+            return serialized_items, type_maps if has_types else None
+
+        normalized, type_map = self._serialize_metadata_map(metadata)
+        return normalized, type_map if type_map else None
+
+    def _normalize_metadata_value(self, value: Any) -> Tuple[Any, Optional[str]]:
+        """Coerce a metadata value into a JSON-serializable form with optional type info."""
+        if value is None:
+            return None, None
+        if isinstance(value, bool):
+            return value, "boolean"
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return value, "number"
+        if isinstance(value, Decimal):
+            return self._format_decimal(value), "decimal"
+        if isinstance(value, datetime):
+            return self._format_datetime(value), "datetime"
+        if isinstance(value, date):
+            return value.isoformat(), "date"
+        if isinstance(value, list):
+            return [self._sanitize_nested_metadata(item) for item in value], None
+        if isinstance(value, dict):
+            return {k: self._sanitize_nested_metadata(v) for k, v in value.items()}, None
+        return value, None
+
+    def _sanitize_nested_metadata(self, value: Any) -> Any:
+        """Recursively sanitize nested metadata structures."""
+        if isinstance(value, datetime):
+            return self._format_datetime(value)
+        if isinstance(value, date):
+            return value.isoformat()
+        if isinstance(value, Decimal):
+            return self._format_decimal(value)
+        if isinstance(value, list):
+            return [self._sanitize_nested_metadata(item) for item in value]
+        if isinstance(value, dict):
+            return {k: self._sanitize_nested_metadata(v) for k, v in value.items()}
+        return value
+
+    def _format_datetime(self, value: datetime) -> str:
+        """Return an ISO 8601 string for datetime values, assuming UTC when naive."""
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+
+    def _format_decimal(self, value: Decimal) -> str:
+        """Serialize Decimal values without introducing binary floating point errors."""
+        normalized = value.normalize()
+        as_str = format(normalized, "f")
+        if "." in as_str:
+            as_str = as_str.rstrip("0").rstrip(".")
+        return as_str or "0"
 
     # Response parsing methods
 

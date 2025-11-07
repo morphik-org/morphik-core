@@ -41,6 +41,7 @@ from core.services.graph_service import GraphService
 from core.services.morphik_graph_service import MorphikGraphService
 from core.storage.base_storage import BaseStorage
 from core.storage.utils_file_extensions import detect_file_type
+from core.utils.typed_metadata import merge_metadata, normalize_metadata
 from core.vector_store.base_vector_store import BaseVectorStore
 
 from ..models.auth import AuthContext
@@ -1237,6 +1238,7 @@ class DocumentService:
         content: str,
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        metadata_types: Optional[Dict[str, str]] = None,
         auth: AuthContext = None,
         use_colpali: Optional[bool] = None,
         folder_name: Optional[str] = None,
@@ -1263,6 +1265,12 @@ class DocumentService:
 
         logger.debug(f"Created text document record with ID {doc.external_id}")
 
+        combined_metadata = dict(metadata or {})
+        combined_metadata.setdefault("external_id", doc.external_id)
+        normalized_metadata, normalized_types = normalize_metadata(combined_metadata, metadata_types)
+        doc.metadata = normalized_metadata
+        doc.metadata_types = normalized_types
+
         if settings.MODE == "cloud" and auth.user_id:
             # Verify limits before heavy processing
             num_pages = estimate_pages_by_chars(len(content))
@@ -1274,9 +1282,6 @@ class DocumentService:
                 verify_only=True,
             )
 
-        combined_metadata = dict(metadata or {})
-
-        doc.metadata = combined_metadata
         doc.system_metadata["content"] = content
 
         # Split text into chunks
@@ -1379,6 +1384,7 @@ class DocumentService:
         metadata: Optional[Dict[str, Any]],
         auth: AuthContext,
         redis: arq.ArqRedis,
+        metadata_types: Optional[Dict[str, str]] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
         use_colpali: Optional[bool] = False,
@@ -1438,7 +1444,11 @@ class DocumentService:
                 len(file_content_bytes),
             )
 
-        doc.metadata = dict(metadata or {})
+        metadata_payload = dict(metadata or {})
+        metadata_payload.setdefault("external_id", doc.external_id)
+        normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types)
+        doc.metadata = normalized_metadata
+        doc.metadata_types = normalized_types
 
         # 1. Create initial document record in DB
         # The app_db concept from core/api.py implies self.db is already app-specific if needed
@@ -1539,6 +1549,7 @@ class DocumentService:
         }
 
         metadata_json_str = json.dumps(doc.metadata or {})
+        metadata_types_json = json.dumps(doc.metadata_types or {})
 
         try:
             job = await redis.enqueue_job(
@@ -1550,6 +1561,7 @@ class DocumentService:
                 original_filename=filename,
                 content_type=content_type,
                 metadata_json=metadata_json_str,
+                metadata_types_json=metadata_types_json,
                 auth_dict=auth_dict,
                 use_colpali=use_colpali,
                 folder_name=str(folder_name) if folder_name else None,  # Ensure folder_name is str or None
@@ -2400,6 +2412,7 @@ class DocumentService:
                         updates = {
                             "chunk_ids": doc.chunk_ids,
                             "metadata": doc.metadata,
+                            "metadata_types": doc.metadata_types,
                             "system_metadata": doc.system_metadata,
                             "filename": doc.filename,
                             "content_type": doc.content_type,
@@ -2660,6 +2673,7 @@ class DocumentService:
         file: Optional[UploadFile] = None,
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        metadata_types: Optional[Dict[str, str]] = None,
         update_strategy: str = "add",
         use_colpali: Optional[bool] = None,
     ) -> Optional[Document]:
@@ -2747,7 +2761,7 @@ class DocumentService:
             logger.info(f"No content update - keeping current content of length {len(current_content)}")
 
         # Update metadata and version information
-        self._update_metadata_and_version(doc, metadata, update_strategy, file)
+        self._update_metadata_and_version(doc, metadata, metadata_types, update_strategy, file)
 
         # For metadata-only updates, we don't need to re-process chunks
         if metadata_only_update:
@@ -2945,6 +2959,7 @@ class DocumentService:
 
         updates = {
             "metadata": doc.metadata,
+            "metadata_types": doc.metadata_types,
             "system_metadata": doc.system_metadata,
             "filename": doc.filename,
             "storage_files": doc.storage_files if hasattr(doc, "storage_files") else None,
@@ -3406,6 +3421,7 @@ class DocumentService:
         self,
         doc: Document,
         metadata: Optional[Dict[str, Any]],
+        metadata_types: Optional[Dict[str, str]],
         update_strategy: str,
         file: Optional[UploadFile],
     ):
@@ -3413,10 +3429,17 @@ class DocumentService:
 
         # Merge/replace metadata
         if metadata:
-            doc.metadata.update(metadata)
-
-        # Ensure external_id is preserved
-        doc.metadata["external_id"] = doc.external_id
+            payload = dict(metadata)
+            doc.metadata, doc.metadata_types = merge_metadata(
+                doc.metadata,
+                doc.metadata_types,
+                payload,
+                metadata_types,
+                external_id=doc.external_id,
+            )
+        else:
+            doc.metadata.setdefault("external_id", doc.external_id)
+            doc.metadata_types.setdefault("external_id", "string")
 
         # Increment version counter
         current_version = doc.system_metadata.get("version", 1)

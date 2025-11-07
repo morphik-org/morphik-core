@@ -26,6 +26,7 @@ from core.services.document_service import DocumentService, PdfConversionError
 from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
+from core.utils.typed_metadata import merge_metadata
 from core.vector_store.dual_multivector_store import DualMultiVectorStore
 from core.vector_store.fast_multivector_store import FastMultiVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
@@ -183,6 +184,7 @@ async def process_ingestion_job(
     metadata_json: str,
     auth_dict: Dict[str, Any],
     use_colpali: bool,
+    metadata_types_json: Optional[str] = None,
     folder_name: Optional[str] = None,
     end_user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -198,6 +200,7 @@ async def process_ingestion_job(
         metadata_json: JSON string of metadata
         auth_dict: Dict representation of AuthContext
         use_colpali: Whether to use ColPali embedding model
+        metadata_types_json: JSON string of metadata type hints
         folder_name: Optional folder to scope the document to
         end_user_id: Optional end-user ID to scope the document to
 
@@ -236,6 +239,9 @@ async def process_ingestion_job(
             # 2. Deserialize metadata and auth
             deserialize_start = time.time()
             metadata = json.loads(metadata_json) if metadata_json else {}
+            metadata_types = json.loads(metadata_types_json) if metadata_types_json else {}
+            if metadata_types is None:
+                metadata_types = {}
             auth = AuthContext(
                 entity_type=EntityType(auth_dict.get("entity_type", "unknown")),
                 entity_id=auth_dict.get("entity_id", ""),
@@ -486,10 +492,14 @@ async def process_ingestion_job(
                 raise ValueError(f"Document {document_id} not found in database after multiple retries")
 
             # Prepare updates for the document
-            # Merge new metadata with existing metadata to preserve external_id
-            merged_metadata = {**doc.metadata, **metadata}
-            # Make sure external_id is preserved in the metadata
-            merged_metadata["external_id"] = doc.external_id
+            # Merge new metadata with existing metadata to preserve types and external_id
+            doc.metadata, doc.metadata_types = merge_metadata(
+                doc.metadata,
+                getattr(doc, "metadata_types", {}),
+                metadata or {},
+                metadata_types or None,
+                external_id=doc.external_id,
+            )
 
             # For XML files, store the combined content of all chunks as the document content
             if xml_processing:
@@ -501,7 +511,8 @@ async def process_ingestion_job(
             sanitized_system_metadata = DocumentService._clean_system_metadata(doc.system_metadata)
 
             updates = {
-                "metadata": merged_metadata,
+                "metadata": doc.metadata,
+                "metadata_types": doc.metadata_types,
                 "additional_metadata": additional_metadata,
                 "system_metadata": {**sanitized_system_metadata, "content": document_content},
             }

@@ -337,11 +337,13 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
     """
     Retrieve relevant chunks.
 
-    The optional `request.filters` payload accepts equality checks (automatically matching scalars inside JSON
-    arrays) plus the operators `$and`, `$or`, `$nor`, `$not`, `$in`, `$nin`, `$exists`, `$regex`, and `$contains`.
-    Regex filters allow the optional `i` flag for case-insensitive matching, while `$contains` performs substring
-    checks (case-insensitive by default, configurable via `case_sensitive`). Filters can be nested freely, for
-    example:
+    The optional `request.filters` payload accepts equality checks (which also match scalars inside JSON arrays)
+    plus the logical operators `$and`, `$or`, `$nor`, and `$not`. Field-level predicates include `$eq`, `$ne`,
+    `$in`, `$nin`, `$exists`, `$type`, `$regex`, `$contains`, and the comparison operators `$gt`, `$gte`, `$lt`,
+    and `$lte`. Comparison clauses evaluate typed metadata (`number`, `decimal`, `datetime`, or `date`) and
+    raise detailed validation errors when operands cannot be coerced. Regex filters allow the optional `i` flag
+    for case-insensitive matching, while `$contains` performs substring checks (case-insensitive by default,
+    configurable via `case_sensitive`). Filters can be nested freely, for example:
 
     ```json
     {
@@ -403,8 +405,9 @@ async def retrieve_chunks_grouped(request: RetrieveRequest, auth: AuthContext = 
     """
     Retrieve relevant chunks with grouped response format.
 
-    Uses the same filter operators as `/retrieve/chunks` (equality, nested logic operators, `$regex`, `$contains`,
-    etc.), with arbitrary nesting supported inside `request.filters`.
+    Uses the same filter operators as `/retrieve/chunks` (equality, `$eq/$ne`, `$gt/$gte/$lt/$lte`, `$in/$nin`,
+    `$exists`, `$type`, `$regex`, `$contains`, and the logical `$and/$or/$nor/$not`), with arbitrary nesting
+    supported inside `request.filters`.
 
     Returns both flat results (for backward compatibility) and grouped results (for UI).
     When padding > 0, groups chunks by main matches and their padding chunks.
@@ -452,9 +455,11 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
     """
     Retrieve relevant documents.
 
-    `request.filters` supports equality checks (including scalar-to-array matches) plus `$and`, `$or`, `$nor`,
-    `$not`, `$in`, `$nin`, `$exists`, `$regex`, and `$contains`, with arbitrary nesting. Use the same JSON structure
-    as in `/retrieve/chunks` when expressing complex logic.
+    `request.filters` supports equality checks (including scalar-to-array matches) and the same operator set as
+    `/retrieve/chunks`: logical composition via `$and`, `$or`, `$nor`, `$not`, plus field predicates `$eq`, `$ne`,
+    `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$exists`, `$type`, `$regex`, and `$contains`. Use the same JSON
+    structure as `/retrieve/chunks` when expressing complex logic. Comparison operators require metadata typed as
+    `number`, `decimal`, `datetime`, or `date`.
 
     Args:
         request: RetrieveRequest containing:
@@ -517,8 +522,10 @@ async def search_documents_by_name(
             - end_user_id: Optional end-user ID to scope search
         auth: Authentication context
 
-    `request.filters` accepts the same operator set as `/retrieve/chunks`, including `$regex` (with optional `i`
-    flag) and `$contains` for substring matches.
+    `request.filters` accepts the same operator set as `/retrieve/chunks`: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`,
+    `$lte`, `$in`, `$nin`, `$exists`, `$type`, `$regex` (with optional `i` flag), `$contains`, and the logical
+    operators `$and`, `$or`, `$nor`, `$not`. Comparison clauses honor typed metadata (`number`, `decimal`,
+    `datetime`, `date`).
 
     Returns:
         List[Document]: List of matching documents ordered by relevance

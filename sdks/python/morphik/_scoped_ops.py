@@ -272,15 +272,33 @@ class _ScopedOperationsMixin:
         filters: Optional[Dict[str, Any]],
         folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
+        include_total_count: bool,
+        include_status_counts: bool,
+        include_folder_counts: bool,
+        completed_only: bool,
+        sort_by: Optional[str],
+        sort_direction: str,
     ):
-        params, data = self._logic._prepare_list_documents_request(skip, limit, filters, folder_name, end_user_id)
+        params, data = self._logic._prepare_list_documents_request(
+            skip,
+            limit,
+            filters,
+            folder_name,
+            end_user_id,
+            include_total_count,
+            include_status_counts,
+            include_folder_counts,
+            completed_only,
+            sort_by,
+            sort_direction,
+        )
 
         return self._execute_scoped_operation(
             "POST",
-            "documents",
+            "documents/list_docs",
             data=data,
             params=params,
-            parser=self._parse_document_list_response,
+            parser=self._parse_list_docs_response,
         )
 
     # ------------------------------------------------------------------
@@ -295,5 +313,12 @@ class _ScopedOperationsMixin:
         docs = self._logic._parse_document_list_response(response)
         for doc in docs:
             doc._client = self
-
         return docs
+
+    def _parse_list_docs_response(self, response: Dict[str, Any]):
+        from .models import ListDocsResponse
+
+        result = ListDocsResponse(**response)
+        for doc in result.documents:
+            doc._client = self
+        return result
