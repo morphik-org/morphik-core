@@ -2830,25 +2830,6 @@ class Morphik:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    def create_app(self, app_id: str, name: str, expiry_days: int = 30) -> Dict[str, str]:
-        """Create a new application in Morphik Cloud and obtain its auth URI.
-
-        This wraps the enterprise endpoint ``/ee/create_app`` which
-        returns a dictionary ``{\"uri\": ..., \"app_id\": ...}``.
-
-        Parameters
-        ----------
-        app_id:
-            Identifier for the new application.
-        name:
-            Human-readable application name (will be slugified by the server).
-        expiry_days:
-            Token validity period.  Defaults to 30 days.
-        """
-
-        payload = {"app_id": app_id, "name": name, "expiry_days": expiry_days}
-        return self._request("POST", "ee/create_app", data=payload)
-
     def wait_for_graph_completion(
         self,
         graph_name: str,
