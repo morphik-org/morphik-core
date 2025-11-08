@@ -1,5 +1,7 @@
 "use client";
 
+import "@/lib/polyfills/promise-with-resolvers";
+
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { Button } from "@/components/ui/button";
