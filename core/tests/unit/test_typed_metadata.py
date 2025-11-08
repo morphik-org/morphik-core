@@ -108,6 +108,16 @@ class TestNormalizeMetadata:
         assert normalized["value"] == 123
         assert types["value"] == "number"
 
+    def test_explicit_type_hint_with_none_preserves_null(self):
+        """Explicit hints should not turn None into the string 'None'."""
+        metadata = {"Filename": None}
+        type_hints = {"Filename": "string"}
+
+        normalized, types = normalize_metadata(metadata, type_hints)
+
+        assert normalized["Filename"] is None
+        assert types["Filename"] == "null"
+
     def test_number_coercion_from_string(self):
         """Test number coercion from string."""
         metadata = {"int_val": "42", "float_val": "3.14", "negative": "-99"}
@@ -383,6 +393,18 @@ class TestMergeMetadata:
 
         assert merged["value"] == 123
         assert types["value"] == "number"
+
+    def test_merge_allows_clearing_string_field(self):
+        """Typed metadata should allow clearing values back to null."""
+        existing = {"Filename": "file.pdf"}
+        existing_types = {"Filename": "string"}
+        updates = {"Filename": None}
+        update_types = {"Filename": "string"}
+
+        merged, types = merge_metadata(existing, existing_types, updates, update_types)
+
+        assert merged["Filename"] is None
+        assert types["Filename"] == "null"
 
 
 class TestEdgeCases:

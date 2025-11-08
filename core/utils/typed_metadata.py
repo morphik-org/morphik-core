@@ -104,6 +104,10 @@ def merge_metadata(
 
 def _normalize_value(value: Any, declared_type: Optional[str], field: str) -> Tuple[Any, Optional[str]]:
     """Normalize a single metadata value, honoring any explicit type hint."""
+    if value is None:
+        # Preserve true nulls regardless of declared type so callers can clear fields.
+        return None, "null"
+
     if declared_type:
         canonical_type = _canonicalize_type_name(declared_type, field)
         return _coerce_to_type(value, canonical_type, field), canonical_type
