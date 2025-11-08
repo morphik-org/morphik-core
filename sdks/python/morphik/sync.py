@@ -289,6 +289,7 @@ class Folder:
         use_colpali: bool = True,
         additional_folders: Optional[List[str]] = None,
         padding: int = 0,
+        output_format: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks within this folder.
@@ -315,6 +316,7 @@ class Folder:
             folder_name=effective_folder,
             end_user_id=None,
             padding=padding,
+            output_format=output_format,
         )
 
     def retrieve_docs(
@@ -1560,6 +1562,7 @@ class Morphik(_ScopedOperationsMixin):
         use_colpali: bool = True,
         folder_name: Optional[Union[str, List[str]]] = None,
         padding: int = 0,
+        output_format: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks.
@@ -1585,6 +1588,7 @@ class Morphik(_ScopedOperationsMixin):
             folder_name=folder_name,
             end_user_id=None,
             padding=padding,
+            output_format=output_format,
         )
 
     def retrieve_docs(

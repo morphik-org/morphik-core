@@ -387,6 +387,7 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
             request.end_user_id,
             perf,  # Pass performance tracker
             request.padding,  # Pass padding parameter
+            request.output_format or "base64",
         )
 
         # Log consolidated performance summary
@@ -437,6 +438,7 @@ async def retrieve_chunks_grouped(request: RetrieveRequest, auth: AuthContext = 
             request.end_user_id,
             perf,  # Pass performance tracker
             request.padding,  # Pass padding parameter
+            request.output_format or "base64",
         )
 
         # Log consolidated performance summary

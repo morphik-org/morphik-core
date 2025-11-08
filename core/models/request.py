@@ -110,6 +110,10 @@ class RetrieveRequest(BaseModel):
     min_score: float = Field(default=0.0)
     use_reranking: Optional[bool] = None  # If None, use default from config
     use_colpali: Optional[bool] = None
+    output_format: Optional[Literal["base64", "url"]] = Field(
+        default="base64",
+        description="How to return image chunks: base64 data URI (default) or a presigned URL",
+    )
     padding: int = Field(
         default=0,
         ge=0,

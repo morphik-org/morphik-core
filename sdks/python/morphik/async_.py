@@ -289,6 +289,7 @@ class AsyncFolder:
         use_colpali: bool = True,
         additional_folders: Optional[List[str]] = None,
         padding: int = 0,
+        output_format: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks within this folder.
@@ -315,6 +316,7 @@ class AsyncFolder:
             folder_name=effective_folder,
             end_user_id=None,
             padding=padding,
+            output_format=output_format,
         )
 
     async def retrieve_docs(
@@ -1499,6 +1501,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
         use_colpali: bool = True,
         folder_name: Optional[Union[str, List[str]]] = None,
         padding: int = 0,
+        output_format: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Search for relevant chunks.
@@ -1525,6 +1528,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
             folder_name=effective_folder,
             end_user_id=None,
             padding=padding,
+            output_format=output_format,
         )
 
     async def retrieve_docs(
