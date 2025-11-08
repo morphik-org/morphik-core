@@ -792,7 +792,33 @@ class FastMultiVectorStore(BaseVectorStore):
                 logger.debug("Unable to parse chunk metadata for key %s: %s", storage_key, exc)
 
         if metadata.get("is_image"):
-            return base64.b64encode(content_bytes).decode("utf-8")
+            # Preserve previous behavior by returning a data URI for images.
+            # Use mime from metadata when available; otherwise sniff common headers.
+            try:
+                as_text = content_bytes.decode("utf-8")
+                if as_text.strip().startswith("data:") and "," in as_text:
+                    return as_text
+            except Exception:
+                pass
+            mime = metadata.get("mime_type")
+            if not mime:
+                b = content_bytes
+                if b.startswith(b"\x89PNG\r\n\x1a\n"):
+                    mime = "image/png"
+                elif b.startswith(b"\xff\xd8"):
+                    mime = "image/jpeg"
+                elif b.startswith(b"GIF8"):
+                    mime = "image/gif"
+                elif b.startswith(b"BM"):
+                    mime = "image/bmp"
+                elif b.startswith(b"II*\x00") or b.startswith(b"MM\x00*"):
+                    mime = "image/tiff"
+                elif b.startswith(b"RIFF") and b"WEBP" in b[:16]:
+                    mime = "image/webp"
+                else:
+                    mime = "image/png"
+            data_b64 = base64.b64encode(content_bytes).decode("utf-8")
+            return f"data:{mime};base64,{data_b64}"
 
         try:
             return content_bytes.decode("utf-8")
