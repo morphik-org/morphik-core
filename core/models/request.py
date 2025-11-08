@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from core.models.documents import Document
 from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
@@ -9,7 +9,10 @@ from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
 class ListDocumentsRequest(BaseModel):
     """Request model for listing documents"""
 
-    document_filters: Optional[Dict[str, Any]] = Field(None, description="Metadata filters for documents")
+    document_filters: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Metadata filters with operator support: $and, $or, $nor, $not, $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $exists, $type, $regex, $contains. Implicit equality uses JSONB containment; explicit operators support typed comparisons.",
+    )
     skip: int = Field(default=0, ge=0)
     limit: int = Field(default=10000, gt=0)
 
@@ -17,7 +20,10 @@ class ListDocumentsRequest(BaseModel):
 class ListDocsRequest(BaseModel):
     """Flexible request model for listing documents with projection and aggregates."""
 
-    document_filters: Optional[Dict[str, Any]] = Field(None, description="Metadata filters for documents")
+    document_filters: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Metadata filters with operator support: $and, $or, $nor, $not, $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $exists, $type, $regex, $contains. Implicit equality uses JSONB containment; explicit operators support typed comparisons.",
+    )
     skip: int = Field(default=0, ge=0, description="Number of documents to skip")
     limit: int = Field(default=100, ge=0, description="Maximum number of documents to return")
     return_documents: bool = Field(default=True, description="When false, only aggregates are returned")
@@ -104,6 +110,10 @@ class RetrieveRequest(BaseModel):
     min_score: float = Field(default=0.0)
     use_reranking: Optional[bool] = None  # If None, use default from config
     use_colpali: Optional[bool] = None
+    output_format: Optional[Literal["base64", "url"]] = Field(
+        default="base64",
+        description="How to return image chunks: base64 data URI (default) or a presigned URL",
+    )
     padding: int = Field(
         default=0,
         ge=0,
@@ -160,9 +170,30 @@ class IngestTextRequest(BaseModel):
     content: str
     filename: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata_types: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Optional per-field type hints: 'string', 'number', 'decimal', 'datetime', 'date', 'boolean', 'array', 'object'. Enables typed comparisons with $eq, $gt, etc. Types are inferred if omitted.",
+    )
     use_colpali: Optional[bool] = None
     folder_name: Optional[str] = Field(None, description="Optional folder scope for the operation")
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
+
+
+class MetadataUpdateRequest(BaseModel):
+    """Request payload for metadata-only document updates."""
+
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata_types: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Optional per-field type hints: 'string', 'number', 'decimal', 'datetime', 'date', 'boolean', 'array', 'object'. Enables typed comparisons.",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_plain_metadata(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "metadata" not in value:
+            return {"metadata": value}
+        return value
 
 
 class CreateGraphRequest(BaseModel):

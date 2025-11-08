@@ -36,6 +36,8 @@ class Document(BaseModel):
     filename: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     """user-defined metadata"""
+    metadata_types: Dict[str, str] = Field(default_factory=dict)
+    """per-field metadata type hints used for filtering"""
     storage_info: Dict[str, Any] = Field(default_factory=dict)
     """Legacy field for backwards compatibility - for single file storage"""
     storage_files: List[StorageFileInfo] = Field(default_factory=list)

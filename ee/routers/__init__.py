@@ -24,7 +24,6 @@ def init_app(app: FastAPI) -> None:
     # ``router`` attribute.  Keep the list here explicit to avoid accidental
     # exposure of unfinished modules.
     for module_path in [
-        "ee.routers.cloud_uri",
         "ee.routers.connectors_router",
     ]:
         try:

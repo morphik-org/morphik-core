@@ -1,14 +1,15 @@
 import json
 import logging
 from datetime import datetime
-from io import BytesIO, IOBase
+from io import BytesIO
 from pathlib import Path
-from typing import Any, BinaryIO, Dict, List, Literal, Optional, Type, Union
+from typing import Any, BinaryIO, Callable, Dict, List, Literal, Optional, Type, Union
 
 import httpx
 from pydantic import BaseModel
 
 from ._internal import FinalChunkResult, RuleOrDict, _MorphikClientLogic
+from ._scoped_ops import _ScopedOperationsMixin
 from .models import CompletionResponse  # Prompt override models
 from .models import (
     ChunkSource,
@@ -19,6 +20,7 @@ from .models import (
     Graph,
     GraphPromptOverrides,
     IngestTextRequest,
+    ListDocsResponse,
     QueryPromptOverrides,
 )
 
@@ -127,13 +129,15 @@ class AsyncFolder:
         Returns:
             Document: Metadata of the ingested document
         """
-        payload = self._client._logic._prepare_ingest_text_request(
-            content, filename, metadata, rules, use_colpali, self._name, None
+        return await self._client._scoped_ingest_text(
+            content=content,
+            filename=filename,
+            metadata=metadata,
+            rules=rules,
+            use_colpali=use_colpali,
+            folder_name=self._name,
+            end_user_id=None,
         )
-        response = await self._client._request("POST", "ingest/text", data=payload)
-        doc = self._client._logic._parse_document_response(response)
-        doc._client = self._client
-        return doc
 
     async def ingest_file(
         self,
@@ -156,31 +160,15 @@ class AsyncFolder:
         Returns:
             Document: Metadata of the ingested document
         """
-        # Process file input
-        file_obj, filename = self._client._logic._prepare_file_for_upload(file, filename)
-
-        try:
-            # Prepare multipart form data
-            files = {"file": (filename, file_obj)}
-
-            # Create form data
-            form_data = self._client._logic._prepare_ingest_file_form_data(
-                metadata, rules, self._name, None, use_colpali
-            )
-
-            response = await self._client._request(
-                "POST",
-                "ingest/file",
-                data=form_data,
-                files=files,
-            )
-            doc = self._client._logic._parse_document_response(response)
-            doc._client = self._client
-            return doc
-        finally:
-            # Close file if we opened it
-            if isinstance(file, (str, Path)):
-                file_obj.close()
+        return await self._client._scoped_ingest_file(
+            file=file,
+            filename=filename,
+            metadata=metadata,
+            rules=rules,
+            use_colpali=use_colpali,
+            folder_name=self._name,
+            end_user_id=None,
+        )
 
     async def ingest_files(
         self,
@@ -203,36 +191,15 @@ class AsyncFolder:
         Returns:
             List[Document]: List of ingested documents
         """
-        # Convert files to format expected by API
-        file_objects = self._client._logic._prepare_files_for_upload(files)
-
-        try:
-            # Prepare form data
-            data = self._client._logic._prepare_ingest_files_form_data(
-                metadata, rules, use_colpali, parallel, self._name, None
-            )
-
-            response = await self._client._request(
-                "POST",
-                "ingest/files",
-                data=data,
-                files=file_objects,
-            )
-
-            if response.get("errors"):
-                # Log errors but don't raise exception
-                for error in response["errors"]:
-                    logger.error(f"Failed to ingest {error['filename']}: {error['error']}")
-
-            docs = [self._client._logic._parse_document_response(doc) for doc in response["documents"]]
-            for doc in docs:
-                doc._client = self._client
-            return docs
-        finally:
-            # Clean up file objects
-            for _, (_, file_obj) in file_objects:
-                if isinstance(file_obj, (IOBase, BytesIO)) and not file_obj.closed:
-                    file_obj.close()
+        return await self._client._scoped_ingest_files(
+            files=files,
+            metadata=metadata,
+            rules=rules,
+            use_colpali=use_colpali,
+            parallel=parallel,
+            folder_name=self._name,
+            end_user_id=None,
+        )
 
     async def ingest_directory(
         self,
@@ -322,6 +289,7 @@ class AsyncFolder:
         use_colpali: bool = True,
         additional_folders: Optional[List[str]] = None,
         padding: int = 0,
+        output_format: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks within this folder.
@@ -339,11 +307,17 @@ class AsyncFolder:
             List[FinalChunkResult]: List of relevant chunks
         """
         effective_folder = self._merge_folders(additional_folders)
-        payload = self._client._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, effective_folder, None, padding
+        return await self._client._scoped_retrieve_chunks(
+            query=query,
+            filters=filters,
+            k=k,
+            min_score=min_score,
+            use_colpali=use_colpali,
+            folder_name=effective_folder,
+            end_user_id=None,
+            padding=padding,
+            output_format=output_format,
         )
-        response = await self._client._request("POST", "retrieve/chunks", data=payload)
-        return self._client._logic._parse_chunk_result_list_response(response)
 
     async def retrieve_docs(
         self,
@@ -371,11 +345,16 @@ class AsyncFolder:
             List[DocumentResult]: List of relevant documents
         """
         effective_folder = self._merge_folders(additional_folders)
-        payload = self._client._logic._prepare_retrieve_docs_request(
-            query, filters, k, min_score, use_colpali, effective_folder, use_reranking
+        return await self._client._scoped_retrieve_docs(
+            query=query,
+            filters=filters,
+            k=k,
+            min_score=min_score,
+            use_colpali=use_colpali,
+            folder_name=effective_folder,
+            end_user_id=None,
+            use_reranking=use_reranking,
         )
-        response = await self._client._request("POST", "retrieve/docs", data=payload)
-        return self._client._logic._parse_document_result_list_response(response)
 
     async def query(
         self,
@@ -421,40 +400,26 @@ class AsyncFolder:
             CompletionResponse: Generated completion or structured output
         """
         effective_folder = self._merge_folders(additional_folders)
-        payload = self._client._logic._prepare_query_request(
-            query,
-            filters,
-            k,
-            min_score,
-            max_tokens,
-            temperature,
-            use_colpali,
-            graph_name,
-            hop_depth,
-            include_paths,
-            prompt_overrides,
-            effective_folder,
-            None,
-            use_reranking,
-            chat_id,
-            schema,
-            llm_config,
-            padding,
+        return await self._client._scoped_query(
+            query=query,
+            filters=filters,
+            k=k,
+            min_score=min_score,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            use_colpali=use_colpali,
+            graph_name=graph_name,
+            hop_depth=hop_depth,
+            include_paths=include_paths,
+            prompt_overrides=prompt_overrides,
+            folder_name=effective_folder,
+            end_user_id=None,
+            use_reranking=use_reranking,
+            chat_id=chat_id,
+            schema=schema,
+            llm_config=llm_config,
+            padding=padding,
         )
-
-        # Add schema to payload if provided
-        if schema:
-            # If schema is a Pydantic model class, we need to serialize it to a schema dict
-            if isinstance(schema, type) and issubclass(schema, BaseModel):
-                payload["schema"] = schema.model_json_schema()
-            else:
-                payload["schema"] = schema
-
-            # Add a hint to the query to return in JSON format
-            payload["query"] = f"{payload['query']}\nReturn the answer in JSON format according to the required schema."
-
-        response = await self._client._request("POST", "query", data=payload)
-        return self._client._logic._parse_completion_response(response)
 
     async def list_documents(
         self,
@@ -462,7 +427,13 @@ class AsyncFolder:
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
         additional_folders: Optional[List[str]] = None,
-    ) -> List[Document]:
+        include_total_count: bool = False,
+        include_status_counts: bool = False,
+        include_folder_counts: bool = False,
+        completed_only: bool = False,
+        sort_by: Optional[str] = "updated_at",
+        sort_direction: str = "desc",
+    ) -> ListDocsResponse:
         """
         List accessible documents within this folder.
 
@@ -471,17 +442,30 @@ class AsyncFolder:
             limit: Maximum number of documents to return
             filters: Optional filters
             additional_folders: Optional list of additional folder names to further scope operations
+            include_total_count: Include total count of matching documents
+            include_status_counts: Include counts grouped by status
+            include_folder_counts: Include counts grouped by folder
+            completed_only: Only return completed documents
+            sort_by: Field to sort by (created_at, updated_at, filename, external_id)
+            sort_direction: Sort direction (asc, desc)
 
         Returns:
-            List[Document]: List of documents
+            ListDocsResponse: Response with documents and metadata
         """
         effective_folder = self._merge_folders(additional_folders)
-        params, data = self._client._logic._prepare_list_documents_request(skip, limit, filters, effective_folder, None)
-        response = await self._client._request("POST", "documents", data=data, params=params)
-        docs = self._client._logic._parse_document_list_response(response)
-        for doc in docs:
-            doc._client = self._client
-        return docs
+        return await self._client._scoped_list_documents(
+            skip=skip,
+            limit=limit,
+            filters=filters,
+            folder_name=effective_folder,
+            end_user_id=None,
+            include_total_count=include_total_count,
+            include_status_counts=include_status_counts,
+            include_folder_counts=include_folder_counts,
+            completed_only=completed_only,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
+        )
 
     async def batch_get_documents(
         self, document_ids: List[str], additional_folders: Optional[List[str]] = None
@@ -658,19 +642,15 @@ class AsyncUserScope:
         Returns:
             Document: Metadata of the ingested document
         """
-        payload = self._client._logic._prepare_ingest_text_request(
-            content,
-            filename,
-            metadata,
-            rules,
-            use_colpali,
-            self._folder_name,
-            self._end_user_id,
+        return await self._client._scoped_ingest_text(
+            content=content,
+            filename=filename,
+            metadata=metadata,
+            rules=rules,
+            use_colpali=use_colpali,
+            folder_name=self._folder_name,
+            end_user_id=self._end_user_id,
         )
-        response = await self._client._request("POST", "ingest/text", data=payload)
-        doc = self._client._logic._parse_document_response(response)
-        doc._client = self._client
-        return doc
 
     async def ingest_file(
         self,
@@ -693,44 +673,15 @@ class AsyncUserScope:
         Returns:
             Document: Metadata of the ingested document
         """
-        # Handle different file input types
-        if isinstance(file, (str, Path)):
-            file_path = Path(file)
-            if not file_path.exists():
-                raise ValueError(f"File not found: {file}")
-            filename = file_path.name if filename is None else filename
-            with open(file_path, "rb") as f:
-                content = f.read()
-                file_obj = BytesIO(content)
-        elif isinstance(file, bytes):
-            if filename is None:
-                raise ValueError("filename is required when ingesting bytes")
-            file_obj = BytesIO(file)
-        else:
-            if filename is None:
-                raise ValueError("filename is required when ingesting file object")
-            file_obj = file
-
-        try:
-            # Prepare multipart form data
-            files = {"file": (filename, file_obj)}
-
-            data = self._client._logic._prepare_ingest_file_form_data(
-                metadata,
-                rules,
-                self._folder_name,
-                self._end_user_id,
-                use_colpali,
-            )
-
-            response = await self._client._request("POST", "ingest/file", data=data, files=files)
-            doc = self._client._logic._parse_document_response(response)
-            doc._client = self._client
-            return doc
-        finally:
-            # Close file if we opened it
-            if isinstance(file, (str, Path)):
-                file_obj.close()
+        return await self._client._scoped_ingest_file(
+            file=file,
+            filename=filename,
+            metadata=metadata,
+            rules=rules,
+            use_colpali=use_colpali,
+            folder_name=self._folder_name,
+            end_user_id=self._end_user_id,
+        )
 
     async def ingest_files(
         self,
@@ -753,49 +704,15 @@ class AsyncUserScope:
         Returns:
             List[Document]: List of ingested documents
         """
-        # Convert files to format expected by API
-        file_objects = []
-        for file in files:
-            if isinstance(file, (str, Path)):
-                path = Path(file)
-                file_objects.append(("files", (path.name, open(path, "rb"))))
-            elif isinstance(file, bytes):
-                file_objects.append(("files", ("file.bin", file)))
-            else:
-                file_objects.append(("files", (getattr(file, "name", "file.bin"), file)))
-
-        try:
-            # Prepare request data
-            data = self._client._logic._prepare_ingest_files_form_data(
-                metadata,
-                rules,
-                use_colpali,
-                parallel,
-                self._folder_name,
-                self._end_user_id,
-            )
-
-            response = await self._client._request(
-                "POST",
-                "ingest/files",
-                data=data,
-                files=file_objects,
-            )
-
-            if response.get("errors"):
-                # Log errors but don't raise exception
-                for error in response["errors"]:
-                    logger.error(f"Failed to ingest {error['filename']}: {error['error']}")
-
-            docs = [self._client._logic._parse_document_response(doc) for doc in response["documents"]]
-            for doc in docs:
-                doc._client = self._client
-            return docs
-        finally:
-            # Clean up file objects
-            for _, (_, file_obj) in file_objects:
-                if isinstance(file_obj, (IOBase, BytesIO)) and not file_obj.closed:
-                    file_obj.close()
+        return await self._client._scoped_ingest_files(
+            files=files,
+            metadata=metadata,
+            rules=rules,
+            use_colpali=use_colpali,
+            parallel=parallel,
+            folder_name=self._folder_name,
+            end_user_id=self._end_user_id,
+        )
 
     async def ingest_directory(
         self,
@@ -905,11 +822,16 @@ class AsyncUserScope:
             List[FinalChunkResult]: List of relevant chunks
         """
         effective_folder = self._merge_folders(additional_folders)
-        payload = self._client._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, effective_folder, self._end_user_id, padding
+        return await self._client._scoped_retrieve_chunks(
+            query=query,
+            filters=filters,
+            k=k,
+            min_score=min_score,
+            use_colpali=use_colpali,
+            folder_name=effective_folder,
+            end_user_id=self._end_user_id,
+            padding=padding,
         )
-        response = await self._client._request("POST", "retrieve/chunks", data=payload)
-        return self._client._logic._parse_chunk_result_list_response(response)
 
     async def retrieve_docs(
         self,
@@ -937,11 +859,16 @@ class AsyncUserScope:
             List[DocumentResult]: List of relevant documents
         """
         effective_folder = self._merge_folders(additional_folders)
-        payload = self._client._logic._prepare_retrieve_docs_request(
-            query, filters, k, min_score, use_colpali, effective_folder, self._end_user_id, use_reranking
+        return await self._client._scoped_retrieve_docs(
+            query=query,
+            filters=filters,
+            k=k,
+            min_score=min_score,
+            use_colpali=use_colpali,
+            folder_name=effective_folder,
+            end_user_id=self._end_user_id,
+            use_reranking=use_reranking,
         )
-        response = await self._client._request("POST", "retrieve/docs", data=payload)
-        return self._client._logic._parse_document_result_list_response(response)
 
     async def query(
         self,
@@ -987,48 +914,40 @@ class AsyncUserScope:
             CompletionResponse: Generated completion or structured output
         """
         effective_folder = self._merge_folders(additional_folders)
-        payload = self._client._logic._prepare_query_request(
-            query,
-            filters,
-            k,
-            min_score,
-            max_tokens,
-            temperature,
-            use_colpali,
-            graph_name,
-            hop_depth,
-            include_paths,
-            prompt_overrides,
-            effective_folder,
-            self._end_user_id,
-            use_reranking,
-            chat_id,
-            schema,
-            llm_config,
-            padding,
+        return await self._client._scoped_query(
+            query=query,
+            filters=filters,
+            k=k,
+            min_score=min_score,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            use_colpali=use_colpali,
+            graph_name=graph_name,
+            hop_depth=hop_depth,
+            include_paths=include_paths,
+            prompt_overrides=prompt_overrides,
+            folder_name=effective_folder,
+            end_user_id=self._end_user_id,
+            use_reranking=use_reranking,
+            chat_id=chat_id,
+            schema=schema,
+            llm_config=llm_config,
+            padding=padding,
         )
-
-        # Add schema to payload if provided
-        if schema:
-            # If schema is a Pydantic model class, we need to serialize it to a schema dict
-            if isinstance(schema, type) and issubclass(schema, BaseModel):
-                payload["schema"] = schema.model_json_schema()
-            else:
-                payload["schema"] = schema
-
-            # Add a hint to the query to return in JSON format
-            payload["query"] = f"{payload['query']}\nReturn the answer in JSON format according to the required schema."
-
-        response = await self._client._request("POST", "query", data=payload)
-        return self._client._logic._parse_completion_response(response)
 
     async def list_documents(
         self,
         skip: int = 0,
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
-        folder_name: Optional[Union[str, List[str]]] = None,
-    ) -> List[Document]:
+        additional_folders: Optional[List[str]] = None,
+        include_total_count: bool = False,
+        include_status_counts: bool = False,
+        include_folder_counts: bool = False,
+        completed_only: bool = False,
+        sort_by: Optional[str] = "updated_at",
+        sort_direction: str = "desc",
+    ) -> ListDocsResponse:
         """
         List accessible documents for this end user.
 
@@ -1036,19 +955,31 @@ class AsyncUserScope:
             skip: Number of documents to skip
             limit: Maximum number of documents to return
             filters: Optional filters
-            folder_name: Optional folder name (or list of names) to scope the request
+            additional_folders: Optional list of extra folders to include in the scope
+            include_total_count: Include total count of matching documents
+            include_status_counts: Include counts grouped by status
+            include_folder_counts: Include counts grouped by folder
+            completed_only: Only return completed documents
+            sort_by: Field to sort by (created_at, updated_at, filename, external_id)
+            sort_direction: Sort direction (asc, desc)
 
         Returns:
-            List[Document]: List of documents
+            ListDocsResponse: Response with documents and metadata
         """
-        params, data = self._client._logic._prepare_list_documents_request(
-            skip, limit, filters, folder_name, self._end_user_id
+        effective_folder = self._merge_folders(additional_folders)
+        return await self._client._scoped_list_documents(
+            skip=skip,
+            limit=limit,
+            filters=filters,
+            folder_name=effective_folder,
+            end_user_id=self._end_user_id,
+            include_total_count=include_total_count,
+            include_status_counts=include_status_counts,
+            include_folder_counts=include_folder_counts,
+            completed_only=completed_only,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
         )
-        response = await self._client._request("POST", "documents", data=data, params=params)
-        docs = self._client._logic._parse_document_list_response(response)
-        for doc in docs:
-            doc._client = self._client
-        return docs
 
     async def batch_get_documents(
         self, document_ids: List[str], folder_name: Optional[Union[str, List[str]]] = None
@@ -1181,8 +1112,18 @@ class AsyncUserScope:
         # Then delete by ID
         return await self._client.delete_document(doc.external_id)
 
+    # Helper --------------------------------------------------------------
+    def _merge_folders(self, additional_folders: Optional[List[str]] = None) -> Union[str, List[str], None]:
+        """Return combined folder scope for this async user."""
+        base = self._folder_name
+        if additional_folders:
+            if base:
+                return [base] + additional_folders
+            return additional_folders
+        return base
 
-class AsyncMorphik:
+
+class AsyncMorphik(_ScopedOperationsMixin):
     """
     Morphik client for document operations.
 
@@ -1386,11 +1327,15 @@ class AsyncMorphik:
         Returns:
             Document: Metadata of the ingested document
         """
-        payload = self._logic._prepare_ingest_text_request(content, filename, metadata, rules, use_colpali, None, None)
-        response = await self._request("POST", "ingest/text", data=payload)
-        doc = self._logic._parse_document_response(response)
-        doc._client = self
-        return doc
+        return await self._scoped_ingest_text(
+            content=content,
+            filename=filename,
+            metadata=metadata,
+            rules=rules,
+            use_colpali=use_colpali,
+            folder_name=None,
+            end_user_id=None,
+        )
 
     async def ingest_file(
         self,
@@ -1401,29 +1346,15 @@ class AsyncMorphik:
         use_colpali: bool = True,
     ) -> Document:
         """Ingest a file document into Morphik."""
-        # Process file input
-        file_obj, filename = self._logic._prepare_file_for_upload(file, filename)
-
-        try:
-            # Prepare multipart form data
-            files = {"file": (filename, file_obj)}
-
-            # Create form data
-            form_data = self._logic._prepare_ingest_file_form_data(metadata, rules, None, None, use_colpali)
-
-            response = await self._request(
-                "POST",
-                "ingest/file",
-                data=form_data,
-                files=files,
-            )
-            doc = self._logic._parse_document_response(response)
-            doc._client = self
-            return doc
-        finally:
-            # Close file if we opened it
-            if isinstance(file, (str, Path)):
-                file_obj.close()
+        return await self._scoped_ingest_file(
+            file=file,
+            filename=filename,
+            metadata=metadata,
+            rules=rules,
+            use_colpali=use_colpali,
+            folder_name=None,
+            end_user_id=None,
+        )
 
     async def query_document(
         self,
@@ -1502,35 +1433,15 @@ class AsyncMorphik:
         Raises:
             ValueError: If metadata list length doesn't match files length
         """
-        # Convert files to format expected by API
-        file_objects = self._logic._prepare_files_for_upload(files)
-
-        try:
-            # Prepare form data
-            data = self._logic._prepare_ingest_files_form_data(metadata, rules, use_colpali, parallel, None, None)
-
-            response = await self._request(
-                "POST",
-                "ingest/files",
-                data=data,
-                files=file_objects,
-            )
-
-            if response.get("errors"):
-                # Log errors but don't raise exception
-                for error in response["errors"]:
-                    logger.error(f"Failed to ingest {error['filename']}: {error['error']}")
-
-            # Parse the documents from the response
-            docs = [self._logic._parse_document_response(doc) for doc in response["documents"]]
-            for doc in docs:
-                doc._client = self
-            return docs
-        finally:
-            # Clean up file objects
-            for _, (_, file_obj) in file_objects:
-                if isinstance(file_obj, (IOBase, BytesIO)) and not file_obj.closed:
-                    file_obj.close()
+        return await self._scoped_ingest_files(
+            files=files,
+            metadata=metadata,
+            rules=rules,
+            use_colpali=use_colpali,
+            parallel=parallel,
+            folder_name=None,
+            end_user_id=None,
+        )
 
     async def ingest_directory(
         self,
@@ -1590,6 +1501,7 @@ class AsyncMorphik:
         use_colpali: bool = True,
         folder_name: Optional[Union[str, List[str]]] = None,
         padding: int = 0,
+        output_format: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Search for relevant chunks.
@@ -1605,21 +1517,19 @@ class AsyncMorphik:
         Returns:
             List[FinalChunkResult]
 
-        Example:
-            ```python
-            chunks = await db.retrieve_chunks(
-                "What are the key findings?",
-                filters={"department": "research"},
-                padding=2  # Get 2 pages before and after each matched page
-            )
-            ```
         """
         effective_folder = folder_name if folder_name is not None else None
-        payload = self._logic._prepare_retrieve_chunks_request(
-            query, filters, k, min_score, use_colpali, effective_folder, None, padding
+        return await self._scoped_retrieve_chunks(
+            query=query,
+            filters=filters,
+            k=k,
+            min_score=min_score,
+            use_colpali=use_colpali,
+            folder_name=effective_folder,
+            end_user_id=None,
+            padding=padding,
+            output_format=output_format,
         )
-        response = await self._request("POST", "retrieve/chunks", data=payload)
-        return self._logic._parse_chunk_result_list_response(response)
 
     async def retrieve_docs(
         self,
@@ -1647,20 +1557,18 @@ class AsyncMorphik:
         Returns:
             List[DocumentResult]
 
-        Example:
-            ```python
-            docs = await db.retrieve_docs(
-                "machine learning",
-                k=5
-            )
-            ```
         """
         effective_folder = folder_name if folder_name is not None else None
-        payload = self._logic._prepare_retrieve_docs_request(
-            query, filters, k, min_score, use_colpali, effective_folder, None, use_reranking
+        return await self._scoped_retrieve_docs(
+            query=query,
+            filters=filters,
+            k=k,
+            min_score=min_score,
+            use_colpali=use_colpali,
+            folder_name=effective_folder,
+            end_user_id=None,
+            use_reranking=use_reranking,
         )
-        response = await self._request("POST", "retrieve/docs", data=payload)
-        return self._logic._parse_document_result_list_response(response)
 
     async def query(
         self,
@@ -1706,108 +1614,28 @@ class AsyncMorphik:
         Returns:
             CompletionResponse
 
-        Example:
-            ```python
-            # Standard query
-            response = await db.query(
-                "What are the key findings about customer satisfaction?",
-                filters={"department": "research"},
-                temperature=0.7
-            )
-
-            # Knowledge graph enhanced query
-            response = await db.query(
-                "How does product X relate to customer segment Y?",
-                graph_name="market_graph",
-                hop_depth=2,
-                include_paths=True
-            )
-
-            # With prompt customization
-            from morphik.models import QueryPromptOverride, QueryPromptOverrides
-            response = await db.query(
-                "What are the key findings?",
-                prompt_overrides=QueryPromptOverrides(
-                    query=QueryPromptOverride(
-                        prompt_template="Answer the question in a formal, academic tone: {question}"
-                    )
-                )
-            )
-
-            # Or using a dictionary
-            response = await db.query(
-                "What are the key findings?",
-                prompt_overrides={
-                    "query": {
-                        "prompt_template": "Answer the question in a formal, academic tone: {question}"
-                    }
-                }
-            )
-
-            print(response.completion)
-
-            # If include_paths=True, you can inspect the graph paths
-            if response.metadata and "graph" in response.metadata:
-                for path in response.metadata["graph"]["paths"]:
-                    print(" -> ".join(path))
-
-            # Using structured output with a Pydantic model
-            from pydantic import BaseModel
-
-            class ResearchFindings(BaseModel):
-                main_finding: str
-                supporting_evidence: List[str]
-                limitations: List[str]
-
-            response = await db.query(
-                "Summarize the key research findings from these documents",
-                schema=ResearchFindings
-            )
-
-            # Access structured output
-            if response.structured_output:
-                findings = response.structured_output
-                print(f"Main finding: {findings.main_finding}")
-                print("Supporting evidence:")
-                for evidence in findings.supporting_evidence:
-                    print(f"- {evidence}")
-            ```
         """
         effective_folder = folder_name if folder_name is not None else None
-        payload = self._logic._prepare_query_request(
-            query,
-            filters,
-            k,
-            min_score,
-            max_tokens,
-            temperature,
-            use_colpali,
-            graph_name,
-            hop_depth,
-            include_paths,
-            prompt_overrides,
-            effective_folder,
-            None,
-            use_reranking,
-            chat_id,
-            schema,
-            llm_config,
-            padding,
+        return await self._scoped_query(
+            query=query,
+            filters=filters,
+            k=k,
+            min_score=min_score,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            use_colpali=use_colpali,
+            graph_name=graph_name,
+            hop_depth=hop_depth,
+            include_paths=include_paths,
+            prompt_overrides=prompt_overrides,
+            folder_name=effective_folder,
+            end_user_id=None,
+            use_reranking=use_reranking,
+            chat_id=chat_id,
+            schema=schema,
+            llm_config=llm_config,
+            padding=padding,
         )
-
-        # Add schema to payload if provided
-        if schema:
-            # If schema is a Pydantic model class, we need to serialize it to a schema dict
-            if isinstance(schema, type) and issubclass(schema, BaseModel):
-                payload["schema"] = schema.model_json_schema()
-            else:
-                payload["schema"] = schema
-
-            # Add a hint to the query to return in JSON format
-            payload["query"] = f"{payload['query']}\nReturn the answer in JSON format according to the required schema."
-
-        response = await self._request("POST", "query", data=payload)
-        return self._logic._parse_completion_response(response)
 
     async def agent_query(self, query: str, display_mode: Literal["formatted", "raw"] = "formatted") -> Dict[str, Any]:
         """
@@ -1827,23 +1655,6 @@ class AsyncMorphik:
         Returns:
             Dict[str, Any]: Agent response with potential tool execution results and sources
 
-        Example:
-            ```python
-            # Simple query
-            result = await db.agent_query("What are the main trends in our Q3 sales data?")
-            print(result["response"])
-
-            # Complex analysis request
-            result = await db.agent_query(
-                "Analyze all documents from the marketing department, "
-                "identify key performance metrics, and create a summary "
-                "with actionable insights"
-            )
-            print(result["response"])
-
-            # Tool usage is automatic - the agent will decide which tools to use
-            # based on the query requirements
-            ```
         """
         request = {"query": query, "display_mode": display_mode}
         response = await self._request("POST", "agent", data=request)
@@ -1855,7 +1666,13 @@ class AsyncMorphik:
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
-    ) -> List[Document]:
+        include_total_count: bool = False,
+        include_status_counts: bool = False,
+        include_folder_counts: bool = False,
+        completed_only: bool = False,
+        sort_by: Optional[str] = "updated_at",
+        sort_direction: str = "desc",
+    ) -> ListDocsResponse:
         """
         List accessible documents.
 
@@ -1864,25 +1681,30 @@ class AsyncMorphik:
             limit: Maximum number of documents to return
             filters: Optional filters
             folder_name: Optional folder name (or list of names) to scope the request
+            include_total_count: Include total count of matching documents
+            include_status_counts: Include counts grouped by status
+            include_folder_counts: Include counts grouped by folder
+            completed_only: Only return completed documents
+            sort_by: Field to sort by (created_at, updated_at, filename, external_id)
+            sort_direction: Sort direction (asc, desc)
 
         Returns:
-            List[Document]: List of accessible documents
+            ListDocsResponse: Response with documents and metadata
 
-        Example:
-            ```python
-            # Get first page
-            docs = await db.list_documents(limit=10)
-
-            # Get next page
-            next_page = await db.list_documents(skip=10, limit=10, filters={"department": "research"})
-            ```
         """
-        params, data = self._logic._prepare_list_documents_request(skip, limit, filters, folder_name, None)
-        response = await self._request("POST", "documents", data=data, params=params)
-        docs = self._logic._parse_document_list_response(response)
-        for doc in docs:
-            doc._client = self
-        return docs
+        return await self._scoped_list_documents(
+            skip=skip,
+            limit=limit,
+            filters=filters,
+            folder_name=folder_name,
+            end_user_id=None,
+            include_total_count=include_total_count,
+            include_status_counts=include_status_counts,
+            include_folder_counts=include_folder_counts,
+            completed_only=completed_only,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
+        )
 
     async def get_document(self, document_id: str) -> Document:
         """
@@ -1894,11 +1716,6 @@ class AsyncMorphik:
         Returns:
             Document: Document metadata
 
-        Example:
-            ```python
-            doc = await db.get_document("doc_123")
-            print(f"Title: {doc.metadata.get('title')}")
-            ```
         """
         response = await self._request("GET", f"documents/{document_id}")
         doc = self._logic._parse_document_response(response)
@@ -1915,16 +1732,6 @@ class AsyncMorphik:
         Returns:
             Dict[str, Any]: Status information including current status, potential errors, and other metadata
 
-        Example:
-            ```python
-            status = await db.get_document_status("doc_123")
-            if status["status"] == "completed":
-                print("Document processing complete")
-            elif status["status"] == "failed":
-                print(f"Processing failed: {status['error']}")
-            else:
-                print("Document still processing...")
-            ```
         """
         response = await self._request("GET", f"documents/{document_id}/status")
         return response
@@ -1949,25 +1756,6 @@ class AsyncMorphik:
             TimeoutError: If processing doesn't complete within the timeout period
             ValueError: If processing fails with an error
 
-        Example:
-            ```python
-            # Upload a file and wait for processing to complete
-            doc = await db.ingest_file("large_document.pdf")
-
-            async def on_progress(current, total, step_name, percentage):
-                print(f"Progress: {step_name} ({current}/{total}) - {percentage}%")
-
-            try:
-                completed_doc = await db.wait_for_document_completion(
-                    doc.external_id,
-                    progress_callback=on_progress
-                )
-                print(f"Processing complete! Document has {len(completed_doc.chunk_ids)} chunks")
-            except TimeoutError:
-                print("Processing is taking too long")
-            except ValueError as e:
-                print(f"Processing failed: {e}")
-            ```
         """
         import asyncio
 
@@ -2015,11 +1803,6 @@ class AsyncMorphik:
         Returns:
             Document: Document metadata
 
-        Example:
-            ```python
-            doc = await db.get_document_by_filename("report.pdf")
-            print(f"Document ID: {doc.external_id}")
-            ```
         """
         response = await self._request("GET", f"documents/filename/{filename}")
         doc = self._logic._parse_document_response(response)
@@ -2051,26 +1834,16 @@ class AsyncMorphik:
         Returns:
             Document: Updated document metadata
 
-        Example:
-            ```python
-            # Add new content to an existing document
-            updated_doc = await db.update_document_with_text(
-                document_id="doc_123",
-                content="This is additional content that will be appended to the document.",
-                filename="updated_document.txt",
-                metadata={"category": "updated"},
-                update_strategy="add"
-            )
-            print(f"Document version: {updated_doc.system_metadata.get('version')}")
-            ```
         """
         # Use the dedicated text update endpoint
         self._logic._warn_legacy_rules(rules, "documents/update_text")
 
+        serialized_metadata, metadata_types_map = self._logic._serialize_metadata_map(metadata)
         request = IngestTextRequest(
             content=content,
             filename=filename,
-            metadata=metadata or {},
+            metadata=serialized_metadata,
+            metadata_types=metadata_types_map or None,
             use_colpali=use_colpali if use_colpali is not None else True,
         )
 
@@ -2111,17 +1884,6 @@ class AsyncMorphik:
         Returns:
             Document: Updated document metadata
 
-        Example:
-            ```python
-            # Add content from a file to an existing document
-            updated_doc = await db.update_document_with_file(
-                document_id="doc_123",
-                file="path/to/update.pdf",
-                metadata={"status": "updated"},
-                update_strategy="add"
-            )
-            print(f"Document version: {updated_doc.system_metadata.get('version')}")
-            ```
         """
         # Handle different file input types
         if isinstance(file, (str, Path)):
@@ -2148,13 +1910,16 @@ class AsyncMorphik:
             self._logic._warn_legacy_rules(rules, "documents/update_file")
 
             # Convert metadata to JSON strings
+            serialized_metadata, metadata_types_map = self._logic._serialize_metadata_map(metadata)
             form_data = {
-                "metadata": json.dumps(metadata or {}),
+                "metadata": json.dumps(serialized_metadata),
                 "update_strategy": update_strategy,
             }
 
             if use_colpali is not None:
                 form_data["use_colpali"] = str(use_colpali).lower()
+            if metadata_types_map:
+                form_data["metadata_types"] = json.dumps(metadata_types_map)
 
             # Use the dedicated file update endpoint
             response = await self._request("POST", f"documents/{document_id}/update_file", data=form_data, files=files)
@@ -2182,18 +1947,14 @@ class AsyncMorphik:
         Returns:
             Document: Updated document metadata
 
-        Example:
-            ```python
-            # Update just the metadata of a document
-            updated_doc = await db.update_document_metadata(
-                document_id="doc_123",
-                metadata={"status": "reviewed", "reviewer": "Jane Smith"}
-            )
-            print(f"Updated metadata: {updated_doc.metadata}")
-            ```
         """
         # Use the dedicated metadata update endpoint
-        response = await self._request("POST", f"documents/{document_id}/update_metadata", data=metadata)
+        serialized_metadata, metadata_types_map = self._logic._serialize_metadata_map(metadata)
+        payload: Dict[str, Any] = {"metadata": serialized_metadata}
+        if metadata_types_map:
+            payload["metadata_types"] = metadata_types_map
+
+        response = await self._request("POST", f"documents/{document_id}/update_metadata", data=payload)
         doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
@@ -2223,18 +1984,6 @@ class AsyncMorphik:
         Returns:
             Document: Updated document metadata
 
-        Example:
-            ```python
-            # Add new content to an existing document identified by filename
-            updated_doc = await db.update_document_by_filename_with_text(
-                filename="report.pdf",
-                content="This is additional content that will be appended to the document.",
-                new_filename="updated_report.pdf",
-                metadata={"category": "updated"},
-                update_strategy="add"
-            )
-            print(f"Document version: {updated_doc.system_metadata.get('version')}")
-            ```
         """
         # First get the document by filename to obtain its ID
         doc = await self.get_document_by_filename(filename)
@@ -2275,17 +2024,6 @@ class AsyncMorphik:
         Returns:
             Document: Updated document metadata
 
-        Example:
-            ```python
-            # Add content from a file to an existing document identified by filename
-            updated_doc = await db.update_document_by_filename_with_file(
-                filename="report.pdf",
-                file="path/to/update.pdf",
-                metadata={"status": "updated"},
-                update_strategy="add"
-            )
-            print(f"Document version: {updated_doc.system_metadata.get('version')}")
-            ```
         """
         # First get the document by filename to obtain its ID
         doc = await self.get_document_by_filename(filename)
@@ -2318,16 +2056,6 @@ class AsyncMorphik:
         Returns:
             Document: Updated document metadata
 
-        Example:
-            ```python
-            # Update just the metadata of a document identified by filename
-            updated_doc = await db.update_document_by_filename_metadata(
-                filename="report.pdf",
-                metadata={"status": "reviewed", "reviewer": "Jane Smith"},
-                new_filename="reviewed_report.pdf"  # Optional: rename the file
-            )
-            print(f"Updated metadata: {updated_doc.metadata}")
-            ```
         """
         # First get the document by filename to obtain its ID
         doc = await self.get_document_by_filename(filename)
@@ -2371,12 +2099,6 @@ class AsyncMorphik:
         Returns:
             List[Document]: List of document metadata for found documents
 
-        Example:
-            ```python
-            docs = await db.batch_get_documents(["doc_123", "doc_456", "doc_789"])
-            for doc in docs:
-                print(f"Document {doc.external_id}: {doc.metadata.get('title')}")
-            ```
         """
         # API expects a dict with document_ids key, not a direct list
         request = {"document_ids": document_ids}
@@ -2405,25 +2127,6 @@ class AsyncMorphik:
         Returns:
             List[FinalChunkResult]: List of chunk results
 
-        Example:
-            ```python
-            # Using dictionaries
-            sources = [
-                {"document_id": "doc_123", "chunk_number": 0},
-                {"document_id": "doc_456", "chunk_number": 2}
-            ]
-
-            # Or using ChunkSource objects
-            from morphik.models import ChunkSource
-            sources = [
-                ChunkSource(document_id="doc_123", chunk_number=0),
-                ChunkSource(document_id="doc_456", chunk_number=2)
-            ]
-
-            chunks = await db.batch_get_chunks(sources)
-            for chunk in chunks:
-                print(f"Chunk from {chunk.document_id}, number {chunk.chunk_number}: {chunk.content[:50]}...")
-            ```
         """
         request = self._logic._prepare_batch_get_chunks_request(sources, folder_name, None, use_colpali)
         response = await self._request("POST", "batch/chunks", data=request)
@@ -2452,19 +2155,6 @@ class AsyncMorphik:
         Returns:
             Dict[str, Any]: Created cache configuration
 
-        Example:
-            ```python
-            # This will include both:
-            # 1. Any documents with category="programming"
-            # 2. The specific documents "doc1" and "doc2" (regardless of their category)
-            cache = await db.create_cache(
-                name="programming_cache",
-                model="llama2",
-                gguf_file="llama-2-7b-chat.Q4_K_M.gguf",
-                filters={"category": "programming"},
-                docs=["doc1", "doc2"]
-            )
-            ```
         """
         # Build query parameters for name, model and gguf_file
         params = {"name": name, "model": model, "gguf_file": gguf_file}
@@ -2485,10 +2175,6 @@ class AsyncMorphik:
         Returns:
             cache: A cache object that is used to interact with the cache.
 
-        Example:
-            ```python
-            cache = await db.get_cache("programming_cache")
-            ```
         """
         response = await self._request("GET", f"cache/{name}")
         if response.get("exists", False):
@@ -2518,35 +2204,6 @@ class AsyncMorphik:
         Returns:
             Graph: The created graph object
 
-        Example:
-            ```python
-            # Create a graph from documents with category="research"
-            graph = await db.create_graph(
-                name="research_graph",
-                filters={"category": "research"}
-            )
-
-            # Create a graph from specific documents
-            graph = await db.create_graph(
-                name="custom_graph",
-                documents=["doc1", "doc2", "doc3"]
-            )
-
-            # With custom entity extraction examples
-            from morphik.models import EntityExtractionPromptOverride, EntityExtractionExample, GraphPromptOverrides
-            graph = await db.create_graph(
-                name="medical_graph",
-                filters={"category": "medical"},
-                prompt_overrides=GraphPromptOverrides(
-                    entity_extraction=EntityExtractionPromptOverride(
-                        examples=[
-                            EntityExtractionExample(label="Insulin", type="MEDICATION"),
-                            EntityExtractionExample(label="Diabetes", type="CONDITION")
-                        ]
-                    )
-                )
-            )
-            ```
         """
         request = self._logic._prepare_create_graph_request(name, filters, documents, prompt_overrides, None, None)
         response = await self._request("POST", "graph/create", data=request)
@@ -2564,12 +2221,6 @@ class AsyncMorphik:
         Returns:
             Graph: The requested graph object
 
-        Example:
-            ```python
-            # Get a graph by name
-            graph = await db.get_graph("finance_graph")
-            print(f"Graph has {len(graph.entities)} entities and {len(graph.relationships)} relationships")
-            ```
         """
         response = await self._request("GET", f"graph/{name}")
         graph = self._logic._parse_graph_response(response)
@@ -2583,13 +2234,6 @@ class AsyncMorphik:
         Returns:
             List[Graph]: List of graph objects
 
-        Example:
-            ```python
-            # List all accessible graphs
-            graphs = await db.list_graphs()
-            for graph in graphs:
-                print(f"Graph: {graph.name}, Entities: {len(graph.entities)}")
-            ```
         """
         response = await self._request("GET", "graph")
         graphs = self._logic._parse_graph_list_response(response)
@@ -2620,33 +2264,6 @@ class AsyncMorphik:
         Returns:
             Graph: The updated graph
 
-        Example:
-            ```python
-            # Update a graph with new documents
-            updated_graph = await db.update_graph(
-                name="research_graph",
-                additional_filters={"category": "new_research"},
-                additional_documents=["doc4", "doc5"]
-            )
-            print(f"Graph now has {len(updated_graph.entities)} entities")
-
-            # With entity resolution examples
-            from morphik.models import EntityResolutionPromptOverride, EntityResolutionExample, GraphPromptOverrides
-            updated_graph = await db.update_graph(
-                name="research_graph",
-                additional_documents=["doc4"],
-                prompt_overrides=GraphPromptOverrides(
-                    entity_resolution=EntityResolutionPromptOverride(
-                        examples=[
-                            EntityResolutionExample(
-                                canonical="Machine Learning",
-                                variants=["ML", "machine learning", "AI/ML"]
-                            )
-                        ]
-                    )
-                )
-            )
-            ```
         """
         request = self._logic._prepare_update_graph_request(
             name, additional_filters, additional_documents, prompt_overrides, None, None
@@ -2671,12 +2288,6 @@ class AsyncMorphik:
         Returns:
             Dict[str, str]: Deletion status
 
-        Example:
-            ```python
-            # Delete a document
-            result = await db.delete_document("doc_123")
-            print(result["message"])  # Document doc_123 deleted successfully
-            ```
         """
         response = await self._request("DELETE", f"documents/{document_id}")
         return response
@@ -2694,12 +2305,6 @@ class AsyncMorphik:
         Returns:
             Dict[str, str]: Deletion status
 
-        Example:
-            ```python
-            # Delete a document by filename
-            result = await db.delete_document_by_filename("report.pdf")
-            print(result["message"])
-            ```
         """
         # First get the document by filename to obtain its ID
         doc = await self.get_document_by_filename(filename)
@@ -2716,12 +2321,6 @@ class AsyncMorphik:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
-
-    async def create_app(self, app_id: str, name: str, expiry_days: int = 30) -> Dict[str, str]:
-        """Create a new application in Morphik Cloud and obtain its auth URI (async)."""
-
-        payload = {"app_id": app_id, "name": name, "expiry_days": expiry_days}
-        return await self._request("POST", "ee/create_app", data=payload)
 
     async def wait_for_graph_completion(
         self,
@@ -2754,6 +2353,27 @@ class AsyncMorphik:
     async def ping(self) -> Dict[str, Any]:
         """Simple health-check call to ``/ping`` endpoint."""
         return await self._request("GET", "ping")
+
+    # ------------------------------------------------------------------
+    # Scoped helper execution shared with sync client
+    # ------------------------------------------------------------------
+    async def _execute_scoped_operation(
+        self,
+        method: str,
+        endpoint: str,
+        *,
+        parser: Callable[[Any], Any],
+        data: Optional[Any] = None,
+        files: Optional[Any] = None,
+        params: Optional[Dict[str, Any]] = None,
+        cleanup: Optional[Callable[[], None]] = None,
+    ) -> Any:
+        try:
+            response = await self._request(method, endpoint, data=data, files=files, params=params)
+            return parser(response)
+        finally:
+            if cleanup:
+                cleanup()
 
     # ------------------------------------------------------------------
     # Chat API ----------------------------------------------------------

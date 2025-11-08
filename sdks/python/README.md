@@ -2,6 +2,25 @@
 
 A Python client for Morphik API that enables document ingestion, semantic search, and retrieval augmented generation capabilities.
 
+## 🚨 Upgrading to v1.0
+
+**Breaking Change:** `list_documents()` now returns a `ListDocsResponse` object instead of a list.
+
+**Quick Migration:**
+```python
+# Change this:
+for doc in db.list_documents():
+    process(doc)
+
+# To this:
+for doc in db.list_documents().documents:
+    process(doc)
+```
+
+See [CHANGELOG.md](./CHANGELOG.md) for full details and new features.
+
+---
+
 ## Installation
 
 ```bash

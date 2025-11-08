@@ -23,6 +23,7 @@ class Document(BaseModel):
     content_type: str = Field(..., description="Content type of the document")
     filename: Optional[str] = Field(None, description="Original filename if available")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="User-defined metadata")
+    metadata_types: Dict[str, str] = Field(default_factory=dict, description="Per-field metadata type hints")
     storage_info: Dict[str, str] = Field(default_factory=dict, description="Storage-related information")
     system_metadata: Dict[str, Any] = Field(
         default_factory=dict,
@@ -288,6 +289,27 @@ class CompletionResponse(BaseModel):
     finish_reason: Optional[str] = Field(None, description="Reason the generation finished (e.g., 'stop', 'length')")
 
 
+class FolderCount(BaseModel):
+    """Document count for a folder"""
+
+    folder: Optional[str] = Field(None, description="Folder name (None for root)")
+    count: int = Field(..., description="Number of documents in folder")
+
+
+class ListDocsResponse(BaseModel):
+    """Response model for list_documents with pagination and aggregates"""
+
+    documents: List[Document] = Field(default_factory=list, description="List of documents")
+    skip: int = Field(..., description="Pagination offset used")
+    limit: int = Field(..., description="Limit used")
+    returned_count: int = Field(..., description="Number of documents in this response")
+    total_count: Optional[int] = Field(None, description="Total matching documents (if include_total_count=True)")
+    has_more: bool = Field(False, description="Whether more documents exist beyond this page")
+    next_skip: Optional[int] = Field(None, description="Skip value for next page")
+    status_counts: Optional[Dict[str, int]] = Field(None, description="Document counts by status")
+    folder_counts: Optional[List[FolderCount]] = Field(None, description="Document counts by folder")
+
+
 class IngestTextRequest(BaseModel):
     """Request model for ingesting text content"""
 
@@ -296,6 +318,7 @@ class IngestTextRequest(BaseModel):
     content: str
     filename: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata_types: Optional[Dict[str, str]] = Field(default=None)
     rules: Optional[List[Dict[str, Any]]] = Field(
         default=None,
         exclude=True,

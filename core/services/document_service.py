@@ -42,6 +42,7 @@ from core.services.graph_service import GraphService
 from core.services.morphik_graph_service import MorphikGraphService
 from core.storage.base_storage import BaseStorage
 from core.storage.utils_file_extensions import detect_file_type
+from core.utils.typed_metadata import merge_metadata, normalize_metadata
 from core.vector_store.base_vector_store import BaseVectorStore
 
 from ..models.auth import AuthContext
@@ -207,6 +208,7 @@ class DocumentService:
         end_user_id: Optional[str] = None,
         perf_tracker: Optional[Any] = None,  # Performance tracker from API layer
         padding: int = 0,  # Number of additional chunks to retrieve before and after matched chunks
+        output_format: str = "base64",
     ) -> List[ChunkResult]:
         """Retrieve relevant chunks."""
 
@@ -485,7 +487,7 @@ class DocumentService:
         else:
             result_creation_start = time.time()
 
-        results = await self._create_chunk_results(auth, chunks)
+        results = await self._create_chunk_results(auth, chunks, output_format=output_format)
 
         if not perf_tracker:
             phase_times["result_creation"] = time.time() - result_creation_start
@@ -772,6 +774,7 @@ class DocumentService:
         end_user_id: Optional[str] = None,
         perf_tracker: Optional[Any] = None,
         padding: int = 0,
+        output_format: str = "base64",
     ):  # -> "GroupedChunkResponse"
         """
         Retrieve chunks with grouped response format that differentiates main chunks from padding.
@@ -791,6 +794,7 @@ class DocumentService:
             end_user_id,
             perf_tracker,
             padding=0,  # No padding for original
+            output_format=output_format,
         )
 
         # Get final chunks with padding (as ChunkResult objects)
@@ -807,6 +811,7 @@ class DocumentService:
                 end_user_id,
                 perf_tracker,
                 padding,
+                output_format=output_format,
             )
         else:
             final_chunk_results = original_chunk_results
@@ -1238,6 +1243,7 @@ class DocumentService:
         content: str,
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        metadata_types: Optional[Dict[str, str]] = None,
         auth: AuthContext = None,
         use_colpali: Optional[bool] = None,
         folder_name: Optional[str] = None,
@@ -1264,6 +1270,12 @@ class DocumentService:
 
         logger.debug(f"Created text document record with ID {doc.external_id}")
 
+        combined_metadata = dict(metadata or {})
+        combined_metadata.setdefault("external_id", doc.external_id)
+        normalized_metadata, normalized_types = normalize_metadata(combined_metadata, metadata_types)
+        doc.metadata = normalized_metadata
+        doc.metadata_types = normalized_types
+
         if settings.MODE == "cloud" and auth.user_id:
             # Verify limits before heavy processing
             num_pages = estimate_pages_by_chars(len(content))
@@ -1275,9 +1287,6 @@ class DocumentService:
                 verify_only=True,
             )
 
-        combined_metadata = dict(metadata or {})
-
-        doc.metadata = combined_metadata
         doc.system_metadata["content"] = content
 
         # Split text into chunks
@@ -1380,6 +1389,7 @@ class DocumentService:
         metadata: Optional[Dict[str, Any]],
         auth: AuthContext,
         redis: arq.ArqRedis,
+        metadata_types: Optional[Dict[str, str]] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
         use_colpali: Optional[bool] = False,
@@ -1439,7 +1449,11 @@ class DocumentService:
                 len(file_content_bytes),
             )
 
-        doc.metadata = dict(metadata or {})
+        metadata_payload = dict(metadata or {})
+        metadata_payload.setdefault("external_id", doc.external_id)
+        normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types)
+        doc.metadata = normalized_metadata
+        doc.metadata_types = normalized_types
 
         # 1. Create initial document record in DB
         # The app_db concept from core/api.py implies self.db is already app-specific if needed
@@ -1540,6 +1554,7 @@ class DocumentService:
         }
 
         metadata_json_str = json.dumps(doc.metadata or {})
+        metadata_types_json = json.dumps(doc.metadata_types or {})
 
         try:
             job = await redis.enqueue_job(
@@ -1551,6 +1566,7 @@ class DocumentService:
                 original_filename=filename,
                 content_type=content_type,
                 metadata_json=metadata_json_str,
+                metadata_types_json=metadata_types_json,
                 auth_dict=auth_dict,
                 use_colpali=use_colpali,
                 folder_name=str(folder_name) if folder_name else None,  # Ensure folder_name is str or None
@@ -2402,6 +2418,7 @@ class DocumentService:
                         updates = {
                             "chunk_ids": doc.chunk_ids,
                             "metadata": doc.metadata,
+                            "metadata_types": doc.metadata_types,
                             "system_metadata": doc.system_metadata,
                             "filename": doc.filename,
                             "content_type": doc.content_type,
@@ -2475,6 +2492,7 @@ class DocumentService:
         auth: AuthContext,
         chunks: List[DocumentChunk],
         preloaded_docs: Optional[Dict[str, Document]] = None,
+        output_format: str = "base64",
     ) -> List[ChunkResult]:
         """Create ChunkResult objects with document metadata."""
         results = []
@@ -2500,6 +2518,57 @@ class DocumentService:
         if not doc_map:
             logger.info("No document metadata available for provided chunks")
 
+        # Lazy import to avoid circular dependency
+        try:
+            from core.vector_store.multi_vector_store import MULTIVECTOR_CHUNKS_BUCKET
+        except Exception:
+            MULTIVECTOR_CHUNKS_BUCKET = "multivector-chunks"
+
+        mime_to_ext = {
+            "image/jpeg": ".jpg",
+            "image/jpg": ".jpg",
+            "image/png": ".png",
+            "image/webp": ".webp",
+            "image/gif": ".gif",
+            "image/bmp": ".bmp",
+            "image/tiff": ".tiff",
+        }
+
+        def _infer_image_mime_from_content(content_str: str) -> Optional[str]:
+            """Try to infer an image MIME type from base64 or data URI content.
+
+            Returns a MIME string (e.g., 'image/png') if detection succeeds, otherwise None.
+            """
+            if not isinstance(content_str, str):
+                return None
+            # Data URI path
+            if content_str.startswith("data:"):
+                try:
+                    header = content_str.split(",", 1)[0]
+                    return header.split(":", 1)[1].split(";", 1)[0]
+                except Exception:
+                    return None
+            # Raw base64 path – attempt to decode and inspect magic bytes
+            try:
+                raw = base64.b64decode(content_str, validate=False)
+            except Exception:
+                return None
+            if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+                return "image/png"
+            if raw.startswith(b"\xff\xd8"):
+                return "image/jpeg"
+            if raw.startswith(b"GIF8"):
+                return "image/gif"
+            if raw.startswith(b"BM"):
+                return "image/bmp"
+            # TIFF little/big endian
+            if raw.startswith(b"II*\x00") or raw.startswith(b"MM\x00*"):
+                return "image/tiff"
+            # WEBP: RIFF....WEBP
+            if raw.startswith(b"RIFF") and b"WEBP" in raw[:16]:
+                return "image/webp"
+            return None
+
         # Create chunk results using the lookup dictionaries
         for chunk in chunks:
             doc = doc_map.get(chunk.document_id)
@@ -2513,16 +2582,156 @@ class DocumentService:
             metadata.update(chunk.metadata)
             # Ensure is_image is set (fallback to False if not present)
             metadata["is_image"] = chunk.metadata.get("is_image", False)
+            # Default values
+            content_value = chunk.content
+            download_url: Optional[str] = None
+
+            # If requested, convert image chunks to presigned URLs
+            is_img = bool(metadata.get("is_image"))
+            mime = chunk.metadata.get("mime_type") if isinstance(chunk.metadata, dict) else None
+            # Try to infer from content if metadata was not properly populated
+            if not is_img and (output_format or "base64") == "url":
+                inferred_mime = _infer_image_mime_from_content(chunk.content)
+                if inferred_mime:
+                    is_img = True
+                    if not mime:
+                        mime = inferred_mime
+
+            if (output_format or "base64") == "url" and is_img:
+                try:
+                    app_part = doc.app_id or auth.app_id or "default"
+                    ext = mime_to_ext.get(mime)
+                    if not ext and isinstance(chunk.content, str) and chunk.content.startswith("data:"):
+                        try:
+                            mime_from_data = chunk.content.split(",", 1)[0].split(":", 1)[1].split(";", 1)[0]
+                            ext = mime_to_ext.get(mime_from_data)
+                        except Exception:
+                            ext = None
+                    if not ext:
+                        ext = ".png"
+
+                    storage_key = f"{app_part}/{doc.external_id}/{chunk.chunk_number}{ext}"
+
+                    # Choose storage and bucket
+                    storage = None
+                    bucket_name = MULTIVECTOR_CHUNKS_BUCKET
+                    # Prefer the ColPali vector store's storage if available
+                    if getattr(self, "colpali_vector_store", None) is not None:
+                        if hasattr(self.colpali_vector_store, "storage"):
+                            storage = self.colpali_vector_store.storage
+                        # Some stores expose a chunk_bucket
+                        if hasattr(self.colpali_vector_store, "chunk_bucket") and getattr(
+                            self.colpali_vector_store, "chunk_bucket"
+                        ):
+                            bucket_name = getattr(self.colpali_vector_store, "chunk_bucket")
+                    if storage is None:
+                        storage = self.storage
+                    # If storage has a default_bucket and no explicit chunk_bucket was set, use it
+                    if hasattr(storage, "default_bucket") and bucket_name == MULTIVECTOR_CHUNKS_BUCKET:
+                        try:
+                            dbucket = getattr(storage, "default_bucket")
+                            if dbucket:
+                                bucket_name = dbucket
+                        except Exception:
+                            pass
+
+                    # Hotswap: ensure object exists; if missing, convert from base64/data URI and upload
+                    if storage is not None:
+                        # try:
+                        # Check existing object: if missing or not binary image, upload raw bytes
+                        existing_bytes: Optional[bytes] = None
+                        try:
+                            existing_bytes = await storage.download_file(bucket=bucket_name, key=storage_key)
+                        except Exception:
+                            existing_bytes = None
+
+                        def _is_binary_image(b: bytes) -> bool:
+                            return (
+                                b.startswith(b"\x89PNG\r\n\x1a\n")
+                                or b.startswith(b"\xff\xd8")
+                                or b.startswith(b"GIF8")
+                                or b.startswith(b"BM")
+                                or b.startswith(b"II*\x00")
+                                or b.startswith(b"MM\x00*")
+                                or (b.startswith(b"RIFF") and b"WEBP" in b[:16])
+                            )
+
+                        needs_upload = existing_bytes is None
+                        # If a file exists but is not a recognized image binary, we will attempt to convert
+                        if existing_bytes is not None and not _is_binary_image(existing_bytes):
+                            needs_upload = True
+
+                        if needs_upload:
+                            try:
+                                # Prepare raw bytes from base64 or data URI and upload as binary
+                                payload = chunk.content
+                                raw_bytes: Optional[bytes] = None
+                                if isinstance(payload, str) and payload.startswith("data:"):
+                                    try:
+                                        header, base64_part = payload.split(",", 1)
+                                        raw_bytes = base64.b64decode(base64_part)
+                                    except Exception:
+                                        raw_bytes = None
+                                if raw_bytes is None and isinstance(payload, str):
+                                    try:
+                                        raw = base64.b64decode(payload)
+                                        # If decoding yields a data URI string, unwrap one more time
+                                        try:
+                                            as_text = raw.decode("utf-8")
+                                            if as_text.strip().startswith("data:") and "," in as_text:
+                                                inner_b64 = as_text.split(",", 1)[1]
+                                                raw = base64.b64decode(inner_b64)
+                                        except Exception:
+                                            pass
+                                        raw_bytes = raw
+                                    except Exception:
+                                        raw_bytes = None
+                                if raw_bytes is None and existing_bytes is not None:
+                                    # Last resort: the existing file might be a data URI string
+                                    try:
+                                        s = existing_bytes.decode("utf-8", errors="ignore")
+                                        if s.startswith("data:"):
+                                            raw_bytes = base64.b64decode(s.split(",", 1)[1])
+                                        else:
+                                            # Attempt plain base64 decode
+                                            raw_bytes = base64.b64decode(s)
+                                    except Exception:
+                                        raw_bytes = None
+
+                                if raw_bytes is None:
+                                    raise ValueError("Unable to decode image payload for hotswap upload")
+
+                                effective_mime = mime or _infer_image_mime_from_content(chunk.content) or "image/png"
+                                await storage.upload_file(
+                                    file=raw_bytes,
+                                    key=storage_key,
+                                    content_type=effective_mime,
+                                    bucket=bucket_name,
+                                )
+                            except Exception as up_e:
+                                logger.warning(
+                                    f"Failed to hotswap-upload image for {chunk.document_id}-{chunk.chunk_number}: {up_e}"
+                                )
+
+                    if storage is not None and hasattr(storage, "get_download_url"):
+                        download_url = await storage.get_download_url(bucket=bucket_name, key=storage_key)
+                        if download_url:
+                            content_value = download_url
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to create presigned URL for image chunk {chunk.document_id}-{chunk.chunk_number}: {e}"
+                    )
+
             results.append(
                 ChunkResult(
-                    content=chunk.content,
+                    content=content_value,
                     score=chunk.score,
                     document_id=chunk.document_id,
                     chunk_number=chunk.chunk_number,
                     metadata=metadata,
                     content_type=doc.content_type,
                     filename=doc.filename,
-                    download_url=None,
+                    download_url=download_url,
                 )
             )
 
@@ -2662,6 +2871,7 @@ class DocumentService:
         file: Optional[UploadFile] = None,
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        metadata_types: Optional[Dict[str, str]] = None,
         update_strategy: str = "add",
         use_colpali: Optional[bool] = None,
     ) -> Optional[Document]:
@@ -2749,7 +2959,7 @@ class DocumentService:
             logger.info(f"No content update - keeping current content of length {len(current_content)}")
 
         # Update metadata and version information
-        self._update_metadata_and_version(doc, metadata, update_strategy, file)
+        self._update_metadata_and_version(doc, metadata, metadata_types, update_strategy, file)
 
         # For metadata-only updates, we don't need to re-process chunks
         if metadata_only_update:
@@ -2947,6 +3157,7 @@ class DocumentService:
 
         updates = {
             "metadata": doc.metadata,
+            "metadata_types": doc.metadata_types,
             "system_metadata": doc.system_metadata,
             "filename": doc.filename,
             "storage_files": doc.storage_files if hasattr(doc, "storage_files") else None,
@@ -3408,6 +3619,7 @@ class DocumentService:
         self,
         doc: Document,
         metadata: Optional[Dict[str, Any]],
+        metadata_types: Optional[Dict[str, str]],
         update_strategy: str,
         file: Optional[UploadFile],
     ):
@@ -3415,10 +3627,17 @@ class DocumentService:
 
         # Merge/replace metadata
         if metadata:
-            doc.metadata.update(metadata)
-
-        # Ensure external_id is preserved
-        doc.metadata["external_id"] = doc.external_id
+            payload = dict(metadata)
+            doc.metadata, doc.metadata_types = merge_metadata(
+                doc.metadata,
+                doc.metadata_types,
+                payload,
+                metadata_types,
+                external_id=doc.external_id,
+            )
+        else:
+            doc.metadata.setdefault("external_id", doc.external_id)
+            doc.metadata_types.setdefault("external_id", "string")
 
         # Increment version counter
         current_version = doc.system_metadata.get("version", 1)

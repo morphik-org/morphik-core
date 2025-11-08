@@ -112,18 +112,72 @@ class S3Storage(BaseStorage):
     async def upload_from_base64(
         self, content: str, key: str, content_type: Optional[str] = None, bucket: str = ""
     ) -> Tuple[str, str]:
-        """Upload base64 encoded content to S3."""
-        key = f"{bucket}/{key}" if bucket else key
-        try:
-            decoded_content = base64.b64decode(content)
-            extension = detect_file_type(content)
-            key = f"{key}{extension}"
+        """Upload base64-encoded content to S3.
 
-            return await self.upload_file(file=decoded_content, key=key, content_type=content_type, bucket=bucket)
+        Accepts either a raw base64 string or a data URI (e.g. "data:image/png;base64,...").
+        Does not prefix the S3 key with the bucket name, and only appends a file extension
+        when the provided key does not already include one.
+        """
+        try:
+            # Handle data URI format explicitly
+            derived_mime: Optional[str] = None
+            base64_payload = content
+            if isinstance(content, str) and content.startswith("data:"):
+                try:
+                    header, base64_part = content.split(",", 1)
+                    # header like: data:image/png;base64
+                    if ";" in header and ":" in header:
+                        derived_mime = header.split(":", 1)[1].split(";", 1)[0]
+                    base64_payload = base64_part
+                except Exception:
+                    # Fall back to original content if parsing fails
+                    base64_payload = content
+
+            decoded_content = base64.b64decode(base64_payload)
+
+            # Decide on extension
+            from pathlib import Path
+
+            current_ext = Path(key).suffix
+            if not current_ext:
+                # Try to determine extension from data URI mime, otherwise from bytes
+                if derived_mime:
+                    mime_to_ext = {
+                        "image/jpeg": ".jpg",
+                        "image/jpg": ".jpg",
+                        "image/png": ".png",
+                        "image/webp": ".webp",
+                        "image/gif": ".gif",
+                        "image/bmp": ".bmp",
+                        "image/tiff": ".tiff",
+                        "application/pdf": ".pdf",
+                        "text/plain": ".txt",
+                    }
+                    extension = mime_to_ext.get(derived_mime, ".bin")
+                else:
+                    extension = detect_file_type(decoded_content)
+                # Append extension only when missing
+                key = f"{key}{extension}"
+
+            # Prefer provided content_type; fall back to derived mime if available
+            effective_content_type = content_type or derived_mime
+
+            # Choose bucket
+            target_bucket = bucket or self.default_bucket
+            # Ensure bucket exists
+            self._ensure_bucket(target_bucket)
+
+            # Upload directly from bytes
+            return await self.upload_file(
+                file=decoded_content,
+                key=key,
+                content_type=effective_content_type,
+                bucket=target_bucket,
+            )
 
         except Exception as e:
             logger.error(f"Error uploading base64 content to S3: {e}")
-            raise e
+            raise
 
     async def download_file(self, bucket: str, key: str, version: str | None = None, **kwargs) -> bytes:
         """Download file from S3 asynchronously using a thread pool to avoid blocking the event loop."""
