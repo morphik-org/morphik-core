@@ -529,16 +529,35 @@ class MultiVectorStore(BaseVectorStore):
                 logger.debug(f"Chunk metadata indicates is_image: {is_image}")
 
                 if is_image:
-                    # For images, return base64 of raw bytes.
-                    # If storage object contains a data URI string, unwrap it first.
+                    # For images, return a data URI string to preserve previous behavior.
+                    # If the stored object is already a data URI string, return it unchanged.
                     try:
                         as_text = content_bytes.decode("utf-8")
                         if as_text.strip().startswith("data:") and "," in as_text:
-                            b64_part = as_text.split(",", 1)[1]
-                            return base64.b64encode(base64.b64decode(b64_part)).decode("utf-8")
+                            return as_text
                     except Exception:
                         pass
-                    return base64.b64encode(content_bytes).decode("utf-8")
+
+                    # Otherwise, build a data URI from raw bytes using mime from metadata or by sniffing magic bytes.
+                    mime = metadata.get("mime_type")
+                    if not mime:
+                        b = content_bytes
+                        if b.startswith(b"\x89PNG\r\n\x1a\n"):
+                            mime = "image/png"
+                        elif b.startswith(b"\xff\xd8"):
+                            mime = "image/jpeg"
+                        elif b.startswith(b"GIF8"):
+                            mime = "image/gif"
+                        elif b.startswith(b"BM"):
+                            mime = "image/bmp"
+                        elif b.startswith(b"II*\x00") or b.startswith(b"MM\x00*"):
+                            mime = "image/tiff"
+                        elif b.startswith(b"RIFF") and b"WEBP" in b[:16]:
+                            mime = "image/webp"
+                        else:
+                            mime = "image/png"
+                    data_b64 = base64.b64encode(content_bytes).decode("utf-8")
+                    return f"data:{mime};base64,{data_b64}"
 
                 # Not an image; treat as text if valid UTF-8
                 try:
