@@ -749,23 +749,15 @@ class FastMultiVectorStore(BaseVectorStore):
 
     async def _download_chunk_bytes(self, bucket: str, storage_key: str) -> Optional[bytes]:
         """Attempt to fetch chunk payload bytes from storage, considering variant keys."""
-        if bucket:
-            prefixed_base = storage_key if storage_key.startswith(f"{bucket}/") else f"{bucket}/{storage_key}"
-        else:
-            prefixed_base = storage_key
-
+        # Keys passed to the storage API should NOT include the bucket prefix; the bucket
+        # is provided separately. Build candidate keys without embedding the bucket name.
         original_suffix = Path(storage_key).suffix
         candidate_order: List[str] = []
-        if prefixed_base and prefixed_base not in candidate_order:
-            candidate_order.append(prefixed_base)
         if storage_key not in candidate_order:
             candidate_order.append(storage_key)
+        # Try explicit suffix variants as a fallback when the original key omitted it
         if original_suffix:
-            suffix_keys = [
-                f"{prefixed_base}{original_suffix}" if prefixed_base else f"{storage_key}{original_suffix}",
-                f"{storage_key}{original_suffix}",
-            ]
-            for key in suffix_keys:
+            for key in (f"{storage_key}{original_suffix}",):
                 if key not in candidate_order:
                     candidate_order.append(key)
 

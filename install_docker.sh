@@ -9,6 +9,7 @@ set -e
 
 # --- Configuration ---
 REPO_URL="https://raw.githubusercontent.com/morphik-org/morphik-core/main"
+REPO_ARCHIVE_URL="https://codeload.github.com/morphik-org/morphik-core/tar.gz/refs/heads/main"
 COMPOSE_FILE="docker-compose.run.yml"
 DIRECT_INSTALL_URL="https://www.morphik.ai/docs/getting-started#self-host-direct-installation-advanced"
 
@@ -37,6 +38,86 @@ check_command() {
     if ! command -v "$1" &> /dev/null; then
         print_error "'$1' is not installed. Please install it to continue."
     fi
+}
+
+set_env_value() {
+    local key="$1"
+    local value="$2"
+    local env_file=".env"
+
+    if [ -f "$env_file" ] && grep -q "^${key}=" "$env_file"; then
+        local tmp_file
+        tmp_file=$(mktemp "${env_file}.XXXXXX") || {
+            print_error "Failed to create temporary file while updating ${key}"
+            return 1
+        }
+        grep -v "^${key}=" "$env_file" > "$tmp_file" || true
+        mv "$tmp_file" "$env_file" || {
+            rm -f "$tmp_file"
+            print_error "Failed to update ${env_file} while setting ${key}"
+            return 1
+        }
+    elif [ ! -f "$env_file" ]; then
+        touch "$env_file"
+    fi
+
+    echo "${key}=${value}" >> "$env_file"
+}
+
+ensure_compose_profile() {
+    local profile="$1"
+
+    if grep -q "^COMPOSE_PROFILES=" .env 2>/dev/null; then
+        local current
+        current=$(grep "^COMPOSE_PROFILES=" .env | tail -n1 | cut -d= -f2-)
+        if [[ -z "$current" ]]; then
+            set_env_value "COMPOSE_PROFILES" "$profile"
+            return
+        fi
+
+        if [[ ",${current}," != *",${profile},"* ]]; then
+            set_env_value "COMPOSE_PROFILES" "${current},${profile}"
+        fi
+    else
+        set_env_value "COMPOSE_PROFILES" "$profile"
+    fi
+}
+
+copy_ui_from_image() {
+    local tmp_container
+    tmp_container=$(docker create ghcr.io/morphik-org/morphik-core:latest 2>/dev/null) || return 1
+
+    mkdir -p ee
+    rm -rf ee/ui-component
+
+    if docker cp "$tmp_container:/app/ee/ui-component" ee/ui-component >/dev/null 2>&1; then
+        docker rm "$tmp_container" >/dev/null 2>&1 || true
+        return 0
+    fi
+
+    docker rm "$tmp_container" >/dev/null 2>&1 || true
+    rm -rf ee/ui-component
+    return 1
+}
+
+download_ui_from_repo() {
+    local tmpdir
+    tmpdir=$(mktemp -d 2>/dev/null) || return 1
+
+    if curl -fsSL "$REPO_ARCHIVE_URL" | tar -xz -C "$tmpdir"; then
+        local extracted_dir
+        extracted_dir=$(find "$tmpdir" -maxdepth 1 -mindepth 1 -type d -name "morphik-org-morphik-core*" | head -1)
+        if [[ -n "$extracted_dir" && -d "$extracted_dir/ee/ui-component" ]]; then
+            mkdir -p ee
+            rm -rf ee/ui-component
+            cp -R "$extracted_dir/ee/ui-component" ee/
+            rm -rf "$tmpdir"
+            return 0
+        fi
+    fi
+
+    rm -rf "$tmpdir"
+    return 1
 }
 
 # --- Main Script ---
@@ -331,20 +412,24 @@ read -p "Would you like to install the Admin UI? (y/N): " install_ui < /dev/tty
 UI_PROFILE=""
 if [[ "$install_ui" == "y" || "$install_ui" == "Y" ]]; then
     print_info "Extracting UI component files from Docker image..."
-    # Extract the UI component from the Docker image (now included in the image)
-    docker run --rm ghcr.io/morphik-org/morphik-core:latest \
-           tar -czf - -C /app ee/ui-component | tar -xzf -
+
+    if copy_ui_from_image; then
+        print_success "UI component copied from Docker image."
+    else
+        print_warning "Failed to copy UI component from Docker image. Attempting to download from repository..."
+        if download_ui_from_repo; then
+            print_success "UI component downloaded from repository."
+        fi
+    fi
 
     if [ -d "ee/ui-component" ]; then
-        print_success "UI component downloaded successfully."
         UI_PROFILE="--profile ui"
+        ensure_compose_profile "ui"
+        set_env_value "UI_INSTALLED" "true"
 
         # Update NEXT_PUBLIC_API_URL to use the correct port
         sed -i.bak "s|NEXT_PUBLIC_API_URL=http://localhost:8000|NEXT_PUBLIC_API_URL=http://localhost:${API_PORT}|g" "$COMPOSE_FILE"
         rm -f ${COMPOSE_FILE}.bak
-
-        # Save UI installation flag for start-morphik.sh
-        echo "UI_INSTALLED=true" >> .env
     else
         print_warning "Failed to download UI component. Continuing without UI."
     fi
@@ -377,7 +462,7 @@ fi
 echo ""
 print_info "📋 Management commands:"
 print_info "   View logs:    docker compose -f $COMPOSE_FILE $UI_PROFILE logs -f"
-print_info "   Stop services: docker compose -f $COMPOSE_FILE $UI_PROFILE down"
+print_info "   Stop services: ./stop-morphik.sh   # runs docker compose down --volumes --remove-orphans"
 print_info "   Restart:      ./start-morphik.sh"
 
 # Create convenience startup script
@@ -429,6 +514,36 @@ if [ -n "$UI_PROFILE" ]; then
 fi
 EOF
 chmod +x start-morphik.sh
+
+cat > stop-morphik.sh << 'EOF'
+#!/bin/bash
+set -e
+
+COMPOSE_FILE="docker-compose.run.yml"
+
+if [ ! -f "$COMPOSE_FILE" ]; then
+    echo "docker-compose.run.yml not found. Run this script from the Morphik install directory."
+    exit 1
+fi
+
+PROFILE_FLAGS=()
+if [ -f ".env" ] && grep -q "^COMPOSE_PROFILES=" .env; then
+    PROFILES=$(grep "^COMPOSE_PROFILES=" .env | tail -n1 | cut -d= -f2-)
+    IFS=',' read -r -a PROFILE_ARRAY <<< "$PROFILES"
+    for profile in "${PROFILE_ARRAY[@]}"; do
+        profile=$(echo "$profile" | xargs)
+        if [ -n "$profile" ]; then
+            PROFILE_FLAGS+=("--profile" "$profile")
+        fi
+    done
+elif [ -f ".env" ] && grep -q "UI_INSTALLED=true" .env; then
+    PROFILE_FLAGS+=("--profile" "ui")
+fi
+
+docker compose -f "$COMPOSE_FILE" "${PROFILE_FLAGS[@]}" down --volumes --remove-orphans
+echo "🛑 Morphik services stopped. Containers, networks, and anonymous volumes removed."
+EOF
+chmod +x stop-morphik.sh
 
 # Remind about Lemonade if installed
 if [ "$LEMONADE_INSTALLED" = true ]; then

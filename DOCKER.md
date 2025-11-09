@@ -40,6 +40,8 @@ docker compose down  # Stop all services
 docker compose down -v
 ```
 
+> **Note:** If you enabled the optional UI profile (or any other compose profile), make sure to include `--profile ui` when stopping services (`docker compose --profile ui down --volumes --remove-orphans`). The hosted installer generates a `stop-morphik` script that does this for you automatically.
+
 ## Configuration
 
 ### 1. Default Setup
