@@ -748,18 +748,49 @@ class FastMultiVectorStore(BaseVectorStore):
         return key
 
     async def _download_chunk_bytes(self, bucket: str, storage_key: str) -> Optional[bytes]:
-        """Attempt to fetch chunk payload bytes from storage, considering variant keys."""
-        # Keys passed to the storage API should NOT include the bucket prefix; the bucket
-        # is provided separately. Build candidate keys without embedding the bucket name.
-        original_suffix = Path(storage_key).suffix
+        """Attempt to fetch chunk payload bytes from storage, considering legacy/variant keys.
+
+        We try multiple combinations to handle historical key formats:
+        - key (as stored currently)
+        - key + ".txt" (legacy text objects)
+        - f"{bucket}/{key}" (legacy keys that accidentally embedded the bucket name)
+        - f"{bucket}/{key}.txt" (legacy with both bucket prefix and .txt suffix)
+        """
         candidate_order: List[str] = []
-        if storage_key not in candidate_order:
-            candidate_order.append(storage_key)
-        # Try explicit suffix variants as a fallback when the original key omitted it
-        if original_suffix:
-            for key in (f"{storage_key}{original_suffix}",):
-                if key not in candidate_order:
-                    candidate_order.append(key)
+        base = storage_key
+        # Current expected key
+        candidate_order.append(base)
+        # Variants derived from base name
+        _, ext = str(Path(base)), Path(base).suffix
+        # Add base + .txt
+        if not base.endswith(".txt"):
+            candidate_order.append(f"{base}.txt")
+        # Replace extension with .txt and .txt.txt
+        try:
+            if ext:
+                without_ext = base[: -len(ext)]
+            else:
+                without_ext = base
+            if not without_ext.endswith(".txt"):
+                candidate_order.append(f"{without_ext}.txt")
+                candidate_order.append(f"{without_ext}.txt.txt")
+        except Exception:
+            pass
+        # Legacy bucket-prefixed keys (only if bucket provided)
+        if bucket:
+            candidate_order.append(f"{bucket}/{base}")
+            if not base.endswith(".txt"):
+                candidate_order.append(f"{bucket}/{base}.txt")
+            try:
+                if ext:
+                    without_ext = base[: -len(ext)]
+                else:
+                    without_ext = base
+                if not without_ext.endswith(".txt"):
+                    candidate_order.append(f"{bucket}/{without_ext}.txt")
+                    candidate_order.append(f"{bucket}/{without_ext}.txt.txt")
+            except Exception:
+                pass
 
         for candidate_key in candidate_order:
             try:
@@ -942,8 +973,34 @@ class FastMultiVectorStore(BaseVectorStore):
         try:
             bucket_options: List[str] = []
             preferred_bucket = self.chunk_bucket if self.chunk_bucket else ""
+            # 1) Preferred chunk bucket (from settings)
             bucket_options.append(preferred_bucket)
-            if preferred_bucket != MULTIVECTOR_CHUNKS_BUCKET:
+            # 2) Storage default bucket (if available and distinct)
+            try:
+                default_bucket = getattr(self.chunk_storage, "default_bucket", None)
+                if default_bucket is not None and default_bucket not in bucket_options:
+                    bucket_options.append(default_bucket)
+            except Exception:
+                pass
+            # 2b) Heuristic alternates for historical naming (e.g., removing '-s3')
+            try:
+                for b in list(bucket_options):
+                    if not b:
+                        continue
+                    alt_candidates = set()
+                    if "-s3-" in b:
+                        alt_candidates.add(b.replace("-s3-", "-"))
+                    if b.endswith("-s3"):
+                        alt_candidates.add(b[:-3])
+                    if b.startswith("s3-"):
+                        alt_candidates.add(b[3:])
+                    for alt in alt_candidates:
+                        if alt and alt not in bucket_options:
+                            bucket_options.append(alt)
+            except Exception:
+                pass
+            # 3) Legacy constant bucket
+            if MULTIVECTOR_CHUNKS_BUCKET not in bucket_options:
                 bucket_options.append(MULTIVECTOR_CHUNKS_BUCKET)
 
             logger.info(f"Downloading from bucket candidates: {bucket_options}, key: {storage_key}")

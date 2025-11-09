@@ -493,8 +493,23 @@ class MultiVectorStore(BaseVectorStore):
             # Download content from storage (support legacy keys with bucket prefix)
             logger.debug(f"Downloading from bucket: {MULTIVECTOR_CHUNKS_BUCKET}, key candidates for: {storage_key}")
             key_candidates = [storage_key]
-            # Also consider .txt suffix variant (for legacy text chunks)
+            # Legacy form where bucket name was prefixed into the key
+            key_candidates.append(f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}")
+            # Also consider .txt suffix variants (legacy text chunks)
             key_candidates.append(f"{storage_key}.txt")
+            key_candidates.append(f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}.txt")
+            # Replace extension with .txt and .txt.txt
+            try:
+                from pathlib import Path as _Path
+
+                ext = _Path(storage_key).suffix
+                without_ext = storage_key[: -len(ext)] if ext else storage_key
+                key_candidates.append(f"{without_ext}.txt")
+                key_candidates.append(f"{MULTIVECTOR_CHUNKS_BUCKET}/{without_ext}.txt")
+                key_candidates.append(f"{without_ext}.txt.txt")
+                key_candidates.append(f"{MULTIVECTOR_CHUNKS_BUCKET}/{without_ext}.txt.txt")
+            except Exception:
+                pass
 
             content_bytes = None
             last_err = None
