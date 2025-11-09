@@ -5,6 +5,19 @@ All notable changes to the Morphik Python SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `retrieve_chunks`: New `output_format` parameter (`"base64"` | `"url"`). When set to `"url"`, image chunks are returned as presigned URLs in `content` and `download_url` is populated. Default remains `"base64"` for backward compatibility.
+- `retrieve_chunks`: `padding` parameter surfaced consistently in SDK convenience methods (folder/user scopes) to fetch neighboring page chunks for ColPali.
+
+### Changed
+- Image handling in SDK parsing: When `output_format="url"`, `FinalChunkResult.content` is a string URL for image chunks; when `"base64"`, the SDK attempts to decode to `PIL.Image` (unchanged behavior).
+
+### Notes
+- Server now hot-swaps base64/data-URI image chunks into binary storage when necessary and returns a presigned URL. In local dev, URLs may be `file://...` paths; in S3-backed deployments, HTTPS presigned URLs.
+- API accepts `output_format` on `/retrieve/chunks` and `/retrieve/chunks/grouped`.
+
 ## [1.0.0] - 2024-01-15
 
 ### 🎉 Major Release
