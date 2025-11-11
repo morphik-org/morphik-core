@@ -1,5 +1,6 @@
 import json
 import logging
+import secrets
 import time  # Add time import for profiling
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -194,6 +195,17 @@ if settings.MODE == "cloud":
     )
 else:
     app.add_middleware(SessionMiddleware, secret_key=settings.SESSION_SECRET_KEY)
+
+
+def _validate_admin_secret(admin_secret: Optional[str]) -> bool:
+    """Return True if the provided admin secret is valid, otherwise raise."""
+    if not admin_secret:
+        return False
+    if not settings.ADMIN_SERVICE_SECRET:
+        raise HTTPException(status_code=403, detail="Admin secret authentication is not configured")
+    if not secrets.compare_digest(admin_secret, settings.ADMIN_SERVICE_SECRET):
+        raise HTTPException(status_code=403, detail="Invalid admin secret")
+    return True
 
 
 @app.get("/models", response_model=ModelsResponse)
@@ -1224,6 +1236,7 @@ async def generate_local_uri(
 async def generate_cloud_uri(
     request: GenerateUriRequest,
     authorization: str = Header(None),
+    admin_secret: Optional[str] = Header(default=None, alias="X-Morphik-Admin-Secret"),
 ) -> Dict[str, str]:
     """Generate an authenticated URI for a cloud-hosted Morphik application.
 
@@ -1240,39 +1253,46 @@ async def generate_cloud_uri(
         user_id = request.user_id
         expiry_days = request.expiry_days
 
-        logger.debug(f"Generating cloud URI for app_id={app_id}, name={name}, user_id={user_id}")
+        logger.debug(
+            "Generating cloud URI for app_id=%s, name=%s, user_id=%s (admin_header=%s)",
+            app_id,
+            name,
+            user_id,
+            bool(admin_secret),
+        )
 
-        # Verify authorization header before proceeding
-        if not authorization:
-            logger.warning("Missing authorization header")
-            raise HTTPException(
-                status_code=401,
-                detail="Missing authorization header",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        is_admin_call = _validate_admin_secret(admin_secret)
 
-        # Verify the token is valid
-        if not authorization.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Invalid authorization header")
-
-        token = authorization[7:]  # Remove "Bearer "
-
-        try:
-            # Decode the token to ensure it's valid
-            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-
-            # Only allow users to create apps for themselves (or admin)
-            token_user_id = payload.get("user_id")
-            logger.debug(f"Token user ID: {token_user_id}")
-            logger.debug(f"User ID: {user_id}")
-            if not (token_user_id == user_id or "admin" in payload.get("permissions", [])):
+        if not is_admin_call:
+            # Verify authorization header before proceeding
+            if not authorization:
+                logger.warning("Missing authorization header")
                 raise HTTPException(
-                    status_code=403,
-                    detail="You can only create apps for your own account unless you have admin permissions",
+                    status_code=401,
+                    detail="Missing authorization header",
+                    headers={"WWW-Authenticate": "Bearer"},
                 )
-        except jwt.InvalidTokenError as e:
-            raise HTTPException(status_code=401, detail=str(e))
 
+            if not authorization.startswith("Bearer "):
+                raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+            token = authorization[7:]  # Remove "Bearer "
+
+            try:
+                # Decode the token to ensure it's valid
+                payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+
+                # Only allow users to create apps for themselves (or admin)
+                token_user_id = payload.get("user_id")
+                logger.debug(f"Token user ID: {token_user_id}")
+                logger.debug(f"User ID: {user_id}")
+                if not (token_user_id == user_id or "admin" in payload.get("permissions", [])):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="You can only create apps for your own account unless you have admin permissions",
+                    )
+            except jwt.InvalidTokenError as e:
+                raise HTTPException(status_code=401, detail=str(e))
         # Import UserService here to avoid circular imports
         from core.services.user_service import UserService
 
@@ -1285,13 +1305,26 @@ async def generate_cloud_uri(
         name = name.replace(" ", "_").lower()
 
         # Check if the user is within app limit and generate URI
-        uri = await user_service.generate_cloud_uri(user_id, app_id, name, expiry_days)
+        uri = await user_service.generate_cloud_uri(
+            user_id,
+            app_id,
+            name,
+            expiry_days,
+            org_id=request.org_id,
+            created_by_user_id=request.created_by_user_id,
+            is_admin_call=is_admin_call,
+        )
 
         if not uri:
-            logger.debug("Application limit reached for this account tier with user_id: %s", user_id)
+            logger.warning(
+                "URI generation returned None for user_id=%s, app_id=%s (likely limit reached)", user_id, app_id
+            )
             raise HTTPException(status_code=403, detail="Application limit reached for this account tier")
 
         return {"uri": uri, "app_id": app_id}
+    except ValueError as e:
+        # Handle duplicate name or validation errors
+        raise HTTPException(status_code=409, detail=str(e))
     except HTTPException:
         # Re-raise HTTP exceptions
         raise

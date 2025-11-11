@@ -325,6 +325,34 @@ class PostgresDatabase(BaseDatabase):
                     )
                     logger.info("Added metadata_types column to documents table")
 
+                # Keep lightweight apps metadata aligned with multi-tenant control plane needs
+                await conn.execute(
+                    text(
+                        """
+                    DO $$
+                    BEGIN
+                        -- Make user_id nullable for multi-tenant scenarios where org_id is primary
+                        ALTER TABLE apps ALTER COLUMN user_id DROP NOT NULL;
+
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'apps' AND column_name = 'org_id'
+                        ) THEN
+                            ALTER TABLE apps ADD COLUMN org_id VARCHAR;
+                        END IF;
+
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'apps' AND column_name = 'created_by_user_id'
+                        ) THEN
+                            ALTER TABLE apps ADD COLUMN created_by_user_id VARCHAR;
+                        END IF;
+
+                    END$$;
+                    """
+                    )
+                )
+
                 # Create folders table if it doesn't exist
                 await conn.execute(
                     text(

@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     dev_entity_type: str = "developer"
     dev_entity_id: str = "dev_user"
     dev_permissions: list = ["read", "write", "admin"]
+    ADMIN_SERVICE_SECRET: Optional[str] = None
 
     # Registered models configuration
     REGISTERED_MODELS: Dict[str, Dict[str, Any]] = {}
