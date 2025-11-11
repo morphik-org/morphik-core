@@ -294,6 +294,11 @@ class GenerateUriRequest(BaseModel):
     name: str = Field(..., description="Name of the application")
     user_id: str = Field(..., description="ID of the user who owns the app")
     expiry_days: int = Field(default=30, description="Number of days until the token expires")
+    org_id: Optional[str] = Field(None, description="Optional organization identifier for multi-tenant control planes")
+    created_by_user_id: Optional[str] = Field(
+        None,
+        description="ID of the admin or service user that initiated the request",
+    )
 
 
 # Add these classes before the extract_folder_data endpoint
