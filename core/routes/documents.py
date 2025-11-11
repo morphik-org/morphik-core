@@ -598,7 +598,7 @@ async def extract_document_pages(
     auth: AuthContext = Depends(verify_token),
 ):
     """
-    Extract specific pages from a document (PDF or PowerPoint) as base64-encoded images.
+    Extract specific pages from a document (PDF, PowerPoint, or Word) as base64-encoded images.
 
     Args:
         request: Request containing document_id, start_page, and end_page
@@ -632,6 +632,10 @@ async def extract_document_pages(
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
         } or ext in {".ppt", ".pptx", ".pps", ".ppsx"}
+        is_word = content_type in {
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        } or ext in {".doc", ".docx"}
 
         # Extract pages using appropriate handler
         if is_pdf:
@@ -660,6 +664,26 @@ async def extract_document_pages(
             pages_b64 = [c.content for c in chunks_sorted if isinstance(c.content, str) and c.content]
 
             # Provide a best-effort total_pages placeholder (not authoritative)
+            pages_data = {"pages": pages_b64, "total_pages": request.end_page}
+        elif is_word:
+            # Fetch image chunks for DOC/DOCX from the multi-vector store, same as PPT
+            if not getattr(document_service, "colpali_vector_store", None):
+                raise HTTPException(status_code=400, detail="ColPali is required for Word page extraction")
+
+            start_idx = max(0, request.start_page - 1)
+            end_idx = max(0, request.end_page - 1)
+            if end_idx < start_idx:
+                start_idx, end_idx = end_idx, start_idx
+
+            identifiers = [(doc.external_id, i) for i in range(start_idx, end_idx + 1)]
+            try:
+                chunks = await document_service.colpali_vector_store.get_chunks_by_id(identifiers, auth.app_id)
+            except Exception as e:
+                logger.error(f"Failed to retrieve ColPali chunks for {doc.external_id}: {e}")
+                raise HTTPException(status_code=500, detail="Failed to retrieve document page images")
+
+            chunks_sorted = sorted(chunks, key=lambda c: c.chunk_number)
+            pages_b64 = [c.content for c in chunks_sorted if isinstance(c.content, str) and c.content]
             pages_data = {"pages": pages_b64, "total_pages": request.end_page}
         else:
             raise HTTPException(status_code=400, detail="Unsupported document type for page extraction")
