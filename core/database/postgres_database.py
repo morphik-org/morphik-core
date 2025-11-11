@@ -281,6 +281,12 @@ class PostgresDatabase(BaseDatabase):
 
         try:
             logger.info("Initializing PostgreSQL database tables and indexes...")
+
+            # Ensure all declarative models (including ones defined outside this module)
+            # are registered with SQLAlchemy's metadata before create_all runs.
+            # Import is local to avoid circular import overhead at module load.
+            from core.models.apps import AppModel  # noqa: F401
+
             # Create ORM models
             async with self.engine.begin() as conn:
                 # Explicitly create all tables with checkfirst=True to avoid errors if tables already exist
@@ -346,29 +352,35 @@ class PostgresDatabase(BaseDatabase):
                     )
                     logger.info("Added metadata_types column to documents table")
 
-                # Keep lightweight apps metadata aligned with multi-tenant control plane needs
+                # Keep lightweight apps metadata aligned with multi-tenant control plane needs.
+                # This block only runs when the apps table already exists to avoid bootstrap errors.
                 await conn.execute(
                     text(
                         """
                     DO $$
                     BEGIN
-                        -- Make user_id nullable for multi-tenant scenarios where org_id is primary
-                        ALTER TABLE apps ALTER COLUMN user_id DROP NOT NULL;
-
-                        IF NOT EXISTS (
-                            SELECT 1 FROM information_schema.columns
-                            WHERE table_name = 'apps' AND column_name = 'org_id'
+                        IF EXISTS (
+                            SELECT 1
+                            FROM information_schema.tables
+                            WHERE table_name = 'apps'
                         ) THEN
-                            ALTER TABLE apps ADD COLUMN org_id VARCHAR;
-                        END IF;
+                            -- Make user_id nullable for multi-tenant scenarios where org_id is primary
+                            ALTER TABLE apps ALTER COLUMN user_id DROP NOT NULL;
 
-                        IF NOT EXISTS (
-                            SELECT 1 FROM information_schema.columns
-                            WHERE table_name = 'apps' AND column_name = 'created_by_user_id'
-                        ) THEN
-                            ALTER TABLE apps ADD COLUMN created_by_user_id VARCHAR;
-                        END IF;
+                            IF NOT EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_name = 'apps' AND column_name = 'org_id'
+                            ) THEN
+                                ALTER TABLE apps ADD COLUMN org_id VARCHAR;
+                            END IF;
 
+                            IF NOT EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_name = 'apps' AND column_name = 'created_by_user_id'
+                            ) THEN
+                                ALTER TABLE apps ADD COLUMN created_by_user_id VARCHAR;
+                            END IF;
+                        END IF;
                     END$$;
                     """
                     )
