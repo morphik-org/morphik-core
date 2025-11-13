@@ -805,6 +805,7 @@ class AsyncUserScope:
         use_colpali: bool = True,
         additional_folders: Optional[List[str]] = None,
         padding: int = 0,
+        output_format: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks as this end user.
@@ -817,6 +818,7 @@ class AsyncUserScope:
             use_colpali: Whether to use ColPali-style embedding model
             additional_folders: Optional list of additional folder names to further scope operations
             padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
+            output_format: Controls how image chunks are returned (e.g., "base64" or "url")
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
@@ -831,6 +833,7 @@ class AsyncUserScope:
             folder_name=effective_folder,
             end_user_id=self._end_user_id,
             padding=padding,
+            output_format=output_format,
         )
 
     async def retrieve_docs(
