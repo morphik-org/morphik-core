@@ -1,8 +1,10 @@
 import logging
+import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, Optional
 
 import jwt
+from sqlalchemy import select
 
 from ..config import get_settings
 from ..database.user_limits_db import UserLimitsDatabase
@@ -40,9 +42,9 @@ class UserService:
         """Get user limits information."""
         return await self.db.get_user_limits(user_id)
 
-    async def create_user(self, user_id: str) -> bool:
-        """Create a new user with FREE tier."""
-        return await self.db.create_user_limits(user_id, tier=AccountTier.FREE)
+    async def create_user(self, user_id: str, *, tier: AccountTier = AccountTier.FREE) -> bool:
+        """Create a new user with the specified tier (defaults to FREE)."""
+        return await self.db.create_user_limits(user_id, tier=tier)
 
     async def update_user_tier(self, user_id: str, tier: str, custom_limits: Optional[Dict[str, Any]] = None) -> bool:
         """Update user tier and custom limits."""
@@ -60,7 +62,7 @@ class UserService:
         # If user limits don't exist, create them first
         if not user_limits:
             logger.info(f"Creating user limits for user {user_id}")
-            success = await self.db.create_user_limits(user_id, tier=AccountTier.FREE)
+            success = await self.create_user(user_id)
             if not success:
                 logger.error(f"Failed to create user limits for user {user_id}")
                 return False
@@ -245,7 +247,17 @@ class UserService:
         # Record usage in database
         return await self.db.update_usage(user_id, usage_type, increment)
 
-    async def generate_cloud_uri(self, user_id: str, app_id: str, name: str, expiry_days: int = 30) -> Optional[str]:
+    async def generate_cloud_uri(
+        self,
+        user_id: str,
+        app_id: str,
+        name: str,
+        expiry_days: int = 30,
+        *,
+        org_id: Optional[str] = None,
+        created_by_user_id: Optional[str] = None,
+        is_admin_call: bool = False,
+    ) -> Optional[str]:
         """
         Generate a cloud URI for an app.
 
@@ -254,71 +266,58 @@ class UserService:
             app_id: The app ID
             name: App name for display purposes
             expiry_days: Number of days until token expires
+            org_id: Optional organization identifier
+            created_by_user_id: Service/admin user that initiated the request
+            is_admin_call: When True, bypass user-tier limits and auto-upgrade to SELF_HOSTED tier
 
         Returns:
             URI string with embedded token, or None if failed
         """
+        target_tier = AccountTier.SELF_HOSTED if is_admin_call else AccountTier.FREE
+
         # Get user limits to check app limit
         user_limits = await self.db.get_user_limits(user_id)
 
-        # If user doesn't exist yet, create them
+        # If user doesn't exist yet, create them with the appropriate tier
         if not user_limits:
-            await self.create_user(user_id)
+            await self.create_user(user_id, tier=target_tier)
             user_limits = await self.db.get_user_limits(user_id)
             if not user_limits:
-                logger.error(f"Failed to create user limits for user {user_id}")
+                logger.error("Failed to create user limits for user %s", user_id)
                 return None
+        elif is_admin_call and user_limits.get("tier") != AccountTier.SELF_HOSTED:
+            updated = await self.update_user_tier(user_id, AccountTier.SELF_HOSTED.value)
+            if updated:
+                user_limits = await self.db.get_user_limits(user_id)
+            else:
+                logger.warning("Unable to promote user %s to SELF_HOSTED tier for admin provisioning", user_id)
 
         # Get tier information
-        tier = user_limits.get("tier", AccountTier.FREE)
-        current_apps = user_limits.get("app_ids", [])
+        if not is_admin_call:
+            tier = user_limits.get("tier", AccountTier.FREE)
+            current_apps = user_limits.get("app_ids", [])
 
-        # Skip the limit check if app is already registered
-        if app_id not in current_apps:
-            # Only apply app limits to free tier users
-            if tier == AccountTier.FREE:
-                # Get tier limits to enforce app limit for free tier
-                tier_limits = get_tier_limits(tier, user_limits.get("custom_limits"))
-                app_limit = tier_limits.get("app_limit", 1)  # Default to 1 if not specified
+            if app_id not in current_apps:
+                if tier == AccountTier.FREE:
+                    tier_limits = get_tier_limits(tier, user_limits.get("custom_limits"))
+                    app_limit = tier_limits.get("app_limit", 1)
 
-                # Check if user has reached app limit
-                if len(current_apps) >= app_limit:
-                    logger.info(f"User {user_id} has reached app limit ({app_limit}) for free tier")
-                    return None
+                    if len(current_apps) >= app_limit:
+                        logger.info("User %s has reached app limit (%s) for tier %s", user_id, app_limit, tier)
+                        return None
 
-        # ------------------------------------------------------------------
-        # Persist lightweight *apps* record + enforce name uniqueness -------
-        # ------------------------------------------------------------------
-        from core.models.apps import AppModel  # Local import to avoid cycles
-        from sqlalchemy import select, insert, text
-        import uuid as _uuid
+        user_uuid = self._safe_uuid(user_id)
 
-        async with self.db.async_session() as session:
-            # Ensure uniqueness of app name per user
-            stmt = select(AppModel).where(AppModel.user_id == user_id, AppModel.name == name)
-            exists_res = await session.execute(stmt)
-            existing_app = exists_res.scalar_one_or_none()
-            if existing_app:
-                logger.info("App with name '%s' already exists for user %s", name, user_id)
-                return None
+        # Enforce name uniqueness within the same owner/org scope
+        if await self._app_name_exists(name=name, user_uuid=user_uuid, org_id=org_id):
+            logger.warning("App with name '%s' already exists for scope user=%s org=%s", name, user_id, org_id)
+            raise ValueError(f"App with name '{name}' already exists")
 
-            # Upfront register app_id in user limits
-            success = await self.register_app(user_id, app_id)
-            if not success:
-                logger.info("Failed to register app %s for user %s", app_id, user_id)
-                return None
-
-            # Insert into apps table
-            uri_placeholder = ""  # Will be filled after token generation
-            await session.execute(
-                insert(AppModel).values(
-                    app_id=app_id,
-                    user_id=_uuid.UUID(user_id),
-                    name=name,
-                    uri=uri_placeholder,
-                )
-            )
-            await session.commit()
+        # Upfront register app_id in user limits
+        success = await self.register_app(user_id, app_id)
+        if not success:
+            logger.info("Failed to register app %s for user %s", app_id, user_id)
+            return None
 
         # Create token payload
         payload = {
@@ -331,21 +330,93 @@ class UserService:
             "entity_id": user_id,
         }
 
-        # Generate token
         token = jwt.encode(payload, self.settings.JWT_SECRET_KEY, algorithm=self.settings.JWT_ALGORITHM)
 
         # Generate URI with API domain
         api_domain = getattr(self.settings, "API_DOMAIN", "api.morphik.ai")
         uri = f"morphik://{name}:{token}@{api_domain}"
 
-        # Update the previously inserted apps row with the real URI
-        async with self.db.async_session() as session:
-            await session.execute(
-                text(
-                    "UPDATE apps SET uri = :uri WHERE app_id = :app_id"
-                ),
-                {"uri": uri, "app_id": app_id},
-            )
-            await session.commit()
+        await self._upsert_app_record(
+            app_id=app_id,
+            user_uuid=user_uuid,
+            org_id=org_id,
+            created_by_user_id=created_by_user_id,
+            name=name,
+            uri=uri,
+        )
 
         return uri
+
+    async def _app_name_exists(
+        self,
+        *,
+        name: str,
+        user_uuid: Optional[_uuid.UUID],
+        org_id: Optional[str],
+        exclude_app_id: Optional[str] = None,
+    ) -> bool:
+        """Check whether an app name already exists within the same owner/org scope."""
+        from core.models.apps import AppModel  # Local import to avoid cycles
+
+        async with self.db.async_session() as session:
+            stmt = select(AppModel).where(AppModel.name == name)
+            if user_uuid:
+                stmt = stmt.where(AppModel.user_id == user_uuid)
+            elif org_id:
+                stmt = stmt.where(AppModel.org_id == org_id)
+
+            result = await session.execute(stmt)
+            existing = result.scalar_one_or_none()
+
+            if existing is None:
+                return False
+            if exclude_app_id and existing.app_id == exclude_app_id:
+                return False
+            return True
+
+    async def _upsert_app_record(
+        self,
+        *,
+        app_id: str,
+        user_uuid: Optional[_uuid.UUID],
+        org_id: Optional[str],
+        created_by_user_id: Optional[str],
+        name: str,
+        uri: str,
+    ) -> None:
+        """Create or update the lightweight dashboard app record."""
+        from core.models.apps import AppModel  # Local import to avoid cycles
+
+        async with self.db.async_session() as session:
+            app_record = await session.get(AppModel, app_id)
+            if app_record is None:
+                app_record = AppModel(
+                    app_id=app_id,
+                    user_id=user_uuid,
+                    org_id=org_id,
+                    created_by_user_id=created_by_user_id,
+                    name=name,
+                    uri=uri,
+                )
+                session.add(app_record)
+            else:
+                if user_uuid:
+                    app_record.user_id = user_uuid
+                if org_id:
+                    app_record.org_id = org_id
+                if created_by_user_id:
+                    app_record.created_by_user_id = created_by_user_id
+                app_record.name = name
+                app_record.uri = uri
+            await session.commit()
+
+    @staticmethod
+    def _safe_uuid(value: Optional[str]) -> Optional[_uuid.UUID]:
+        """Convert string to UUID if possible; otherwise return None."""
+        if not value:
+            return None
+        try:
+            return _uuid.UUID(str(value))
+        except (ValueError, TypeError):
+            logger.debug("Value %s is not a valid UUID – storing NULL in apps.user_id", value)
+            return None

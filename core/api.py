@@ -1,5 +1,6 @@
 import json
 import logging
+import secrets
 import time  # Add time import for profiling
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -196,6 +197,17 @@ else:
     app.add_middleware(SessionMiddleware, secret_key=settings.SESSION_SECRET_KEY)
 
 
+def _validate_admin_secret(admin_secret: Optional[str]) -> bool:
+    """Return True if the provided admin secret is valid, otherwise raise."""
+    if not admin_secret:
+        return False
+    if not settings.ADMIN_SERVICE_SECRET:
+        raise HTTPException(status_code=403, detail="Admin secret authentication is not configured")
+    if not secrets.compare_digest(admin_secret, settings.ADMIN_SERVICE_SECRET):
+        raise HTTPException(status_code=403, detail="Invalid admin secret")
+    return True
+
+
 @app.get("/models", response_model=ModelsResponse)
 async def get_available_models(auth: AuthContext = Depends(verify_token)):
     """
@@ -337,11 +349,13 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
     """
     Retrieve relevant chunks.
 
-    The optional `request.filters` payload accepts equality checks (automatically matching scalars inside JSON
-    arrays) plus the operators `$and`, `$or`, `$nor`, `$not`, `$in`, `$nin`, `$exists`, `$regex`, and `$contains`.
-    Regex filters allow the optional `i` flag for case-insensitive matching, while `$contains` performs substring
-    checks (case-insensitive by default, configurable via `case_sensitive`). Filters can be nested freely, for
-    example:
+    The optional `request.filters` payload accepts equality checks (which also match scalars inside JSON arrays)
+    plus the logical operators `$and`, `$or`, `$nor`, and `$not`. Field-level predicates include `$eq`, `$ne`,
+    `$in`, `$nin`, `$exists`, `$type`, `$regex`, `$contains`, and the comparison operators `$gt`, `$gte`, `$lt`,
+    and `$lte`. Comparison clauses evaluate typed metadata (`number`, `decimal`, `datetime`, or `date`) and
+    raise detailed validation errors when operands cannot be coerced. Regex filters allow the optional `i` flag
+    for case-insensitive matching, while `$contains` performs substring checks (case-insensitive by default,
+    configurable via `case_sensitive`). Filters can be nested freely, for example:
 
     ```json
     {
@@ -385,6 +399,7 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
             request.end_user_id,
             perf,  # Pass performance tracker
             request.padding,  # Pass padding parameter
+            request.output_format or "base64",
         )
 
         # Log consolidated performance summary
@@ -403,8 +418,9 @@ async def retrieve_chunks_grouped(request: RetrieveRequest, auth: AuthContext = 
     """
     Retrieve relevant chunks with grouped response format.
 
-    Uses the same filter operators as `/retrieve/chunks` (equality, nested logic operators, `$regex`, `$contains`,
-    etc.), with arbitrary nesting supported inside `request.filters`.
+    Uses the same filter operators as `/retrieve/chunks` (equality, `$eq/$ne`, `$gt/$gte/$lt/$lte`, `$in/$nin`,
+    `$exists`, `$type`, `$regex`, `$contains`, and the logical `$and/$or/$nor/$not`), with arbitrary nesting
+    supported inside `request.filters`.
 
     Returns both flat results (for backward compatibility) and grouped results (for UI).
     When padding > 0, groups chunks by main matches and their padding chunks.
@@ -434,6 +450,7 @@ async def retrieve_chunks_grouped(request: RetrieveRequest, auth: AuthContext = 
             request.end_user_id,
             perf,  # Pass performance tracker
             request.padding,  # Pass padding parameter
+            request.output_format or "base64",
         )
 
         # Log consolidated performance summary
@@ -452,9 +469,11 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
     """
     Retrieve relevant documents.
 
-    `request.filters` supports equality checks (including scalar-to-array matches) plus `$and`, `$or`, `$nor`,
-    `$not`, `$in`, `$nin`, `$exists`, `$regex`, and `$contains`, with arbitrary nesting. Use the same JSON structure
-    as in `/retrieve/chunks` when expressing complex logic.
+    `request.filters` supports equality checks (including scalar-to-array matches) and the same operator set as
+    `/retrieve/chunks`: logical composition via `$and`, `$or`, `$nor`, `$not`, plus field predicates `$eq`, `$ne`,
+    `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$exists`, `$type`, `$regex`, and `$contains`. Use the same JSON
+    structure as `/retrieve/chunks` when expressing complex logic. Comparison operators require metadata typed as
+    `number`, `decimal`, `datetime`, or `date`.
 
     Args:
         request: RetrieveRequest containing:
@@ -517,8 +536,10 @@ async def search_documents_by_name(
             - end_user_id: Optional end-user ID to scope search
         auth: Authentication context
 
-    `request.filters` accepts the same operator set as `/retrieve/chunks`, including `$regex` (with optional `i`
-    flag) and `$contains` for substring matches.
+    `request.filters` accepts the same operator set as `/retrieve/chunks`: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`,
+    `$lte`, `$in`, `$nin`, `$exists`, `$type`, `$regex` (with optional `i` flag), `$contains`, and the logical
+    operators `$and`, `$or`, `$nor`, `$not`. Comparison clauses honor typed metadata (`number`, `decimal`,
+    `datetime`, `date`).
 
     Returns:
         List[Document]: List of matching documents ordered by relevance
@@ -1215,6 +1236,7 @@ async def generate_local_uri(
 async def generate_cloud_uri(
     request: GenerateUriRequest,
     authorization: str = Header(None),
+    admin_secret: Optional[str] = Header(default=None, alias="X-Morphik-Admin-Secret"),
 ) -> Dict[str, str]:
     """Generate an authenticated URI for a cloud-hosted Morphik application.
 
@@ -1231,39 +1253,46 @@ async def generate_cloud_uri(
         user_id = request.user_id
         expiry_days = request.expiry_days
 
-        logger.debug(f"Generating cloud URI for app_id={app_id}, name={name}, user_id={user_id}")
+        logger.debug(
+            "Generating cloud URI for app_id=%s, name=%s, user_id=%s (admin_header=%s)",
+            app_id,
+            name,
+            user_id,
+            bool(admin_secret),
+        )
 
-        # Verify authorization header before proceeding
-        if not authorization:
-            logger.warning("Missing authorization header")
-            raise HTTPException(
-                status_code=401,
-                detail="Missing authorization header",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        is_admin_call = _validate_admin_secret(admin_secret)
 
-        # Verify the token is valid
-        if not authorization.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Invalid authorization header")
-
-        token = authorization[7:]  # Remove "Bearer "
-
-        try:
-            # Decode the token to ensure it's valid
-            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-
-            # Only allow users to create apps for themselves (or admin)
-            token_user_id = payload.get("user_id")
-            logger.debug(f"Token user ID: {token_user_id}")
-            logger.debug(f"User ID: {user_id}")
-            if not (token_user_id == user_id or "admin" in payload.get("permissions", [])):
+        if not is_admin_call:
+            # Verify authorization header before proceeding
+            if not authorization:
+                logger.warning("Missing authorization header")
                 raise HTTPException(
-                    status_code=403,
-                    detail="You can only create apps for your own account unless you have admin permissions",
+                    status_code=401,
+                    detail="Missing authorization header",
+                    headers={"WWW-Authenticate": "Bearer"},
                 )
-        except jwt.InvalidTokenError as e:
-            raise HTTPException(status_code=401, detail=str(e))
 
+            if not authorization.startswith("Bearer "):
+                raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+            token = authorization[7:]  # Remove "Bearer "
+
+            try:
+                # Decode the token to ensure it's valid
+                payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+
+                # Only allow users to create apps for themselves (or admin)
+                token_user_id = payload.get("user_id")
+                logger.debug(f"Token user ID: {token_user_id}")
+                logger.debug(f"User ID: {user_id}")
+                if not (token_user_id == user_id or "admin" in payload.get("permissions", [])):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="You can only create apps for your own account unless you have admin permissions",
+                    )
+            except jwt.InvalidTokenError as e:
+                raise HTTPException(status_code=401, detail=str(e))
         # Import UserService here to avoid circular imports
         from core.services.user_service import UserService
 
@@ -1276,13 +1305,26 @@ async def generate_cloud_uri(
         name = name.replace(" ", "_").lower()
 
         # Check if the user is within app limit and generate URI
-        uri = await user_service.generate_cloud_uri(user_id, app_id, name, expiry_days)
+        uri = await user_service.generate_cloud_uri(
+            user_id,
+            app_id,
+            name,
+            expiry_days,
+            org_id=request.org_id,
+            created_by_user_id=request.created_by_user_id,
+            is_admin_call=is_admin_call,
+        )
 
         if not uri:
-            logger.debug("Application limit reached for this account tier with user_id: %s", user_id)
+            logger.warning(
+                "URI generation returned None for user_id=%s, app_id=%s (likely limit reached)", user_id, app_id
+            )
             raise HTTPException(status_code=403, detail="Application limit reached for this account tier")
 
         return {"uri": uri, "app_id": app_id}
+    except ValueError as e:
+        # Handle duplicate name or validation errors
+        raise HTTPException(status_code=409, detail=str(e))
     except HTTPException:
         # Re-raise HTTP exceptions
         raise

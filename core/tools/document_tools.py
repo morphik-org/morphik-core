@@ -89,6 +89,13 @@ async def retrieve_chunks(
                 if chunk.content.startswith("data:"):
                     # Already in data URL format
                     chunk_content.append({"type": "image_url", "image_url": {"url": chunk.content}})
+                elif (
+                    chunk.content.startswith("http://")
+                    or chunk.content.startswith("https://")
+                    or chunk.content.startswith("file://")
+                ):
+                    # Presigned URL or file URL provided
+                    chunk_content.append({"type": "image_url", "image_url": {"url": chunk.content}})
                 else:
                     # Assuming it's base64, convert to data URL format
                     chunk_content.append(

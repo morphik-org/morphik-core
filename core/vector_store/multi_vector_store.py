@@ -78,6 +78,26 @@ class MultiVectorStore(BaseVectorStore):
                 # can still attempt explicit initialization or handle errors.
                 logger.error("Auto-initialization of MultiVectorStore failed: %s", exc)
 
+    @staticmethod
+    def _parse_metadata(meta: Optional[str]) -> Dict[str, Any]:
+        """Robustly parse metadata stored as JSON or Python dict string.
+
+        Some historical rows stored `str(dict)` rather than JSON; handle both.
+        """
+        if not meta:
+            return {}
+        try:
+            return json.loads(meta)
+        except Exception:
+            pass
+        try:
+            import ast
+
+            obj = ast.literal_eval(meta)
+            return obj if isinstance(obj, dict) else {}
+        except Exception:
+            return {}
+
     def _init_storage(self) -> BaseStorage:
         """Initialize appropriate storage backend based on settings."""
         try:
@@ -313,26 +333,39 @@ class MultiVectorStore(BaseVectorStore):
             return DEFAULT_APP_ID
 
     def _determine_file_extension(self, content: str, chunk_metadata: Optional[str]) -> str:
-        """Determine appropriate file extension based on content and metadata."""
+        """Determine appropriate file extension based on content and metadata.
+
+        Handles both raw base64 strings and data URIs (e.g. "data:image/png;base64,...").
+        """
         try:
-            # Parse chunk metadata to check if it's an image
             if chunk_metadata:
                 metadata = json.loads(chunk_metadata)
                 is_image = metadata.get("is_image", False)
-
                 if is_image:
-                    # For images, auto-detect from base64 content
+                    # Prefer the data URI's MIME when present; otherwise sniff content
+                    if isinstance(content, str) and content.startswith("data:"):
+                        try:
+                            header = content.split(",", 1)[0]
+                            mime = header.split(":", 1)[1].split(";", 1)[0]
+                            mime_to_ext = {
+                                "image/jpeg": ".jpg",
+                                "image/jpg": ".jpg",
+                                "image/png": ".png",
+                                "image/webp": ".webp",
+                                "image/gif": ".gif",
+                                "image/bmp": ".bmp",
+                                "image/tiff": ".tiff",
+                            }
+                            return mime_to_ext.get(mime, ".bin")
+                        except Exception:
+                            pass
                     return detect_file_type(content)
                 else:
-                    # For text content, use .txt
                     return ".txt"
-            else:
-                # No metadata, try to auto-detect
-                return detect_file_type(content)
-
+            # No metadata, try to auto-detect
+            return detect_file_type(content)
         except (json.JSONDecodeError, Exception) as e:
             logger.warning(f"Error parsing chunk metadata: {e}")
-            # Fallback to auto-detection
             return detect_file_type(content)
 
     def _generate_storage_key(self, app_id: str, document_id: str, chunk_number: int, extension: str) -> str:
@@ -457,15 +490,43 @@ class MultiVectorStore(BaseVectorStore):
             return storage_key  # Return storage key as fallback
 
         try:
-            # Download content from storage
-            logger.debug(f"Downloading from bucket: {MULTIVECTOR_CHUNKS_BUCKET}, key: {storage_key}")
-            if isinstance(self.storage, S3Storage):
-                attempted_key = f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}"
+            # Download content from storage (support legacy keys with bucket prefix)
+            logger.debug(f"Downloading from bucket: {MULTIVECTOR_CHUNKS_BUCKET}, key candidates for: {storage_key}")
+            key_candidates = [storage_key]
+            # Legacy form where bucket name was prefixed into the key
+            key_candidates.append(f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}")
+            # Also consider .txt suffix variants (legacy text chunks)
+            key_candidates.append(f"{storage_key}.txt")
+            key_candidates.append(f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}.txt")
+            # Replace extension with .txt and .txt.txt
             try:
-                content_bytes = await self.storage.download_file(bucket=MULTIVECTOR_CHUNKS_BUCKET, key=attempted_key)
+                from pathlib import Path as _Path
+
+                ext = _Path(storage_key).suffix
+                without_ext = storage_key[: -len(ext)] if ext else storage_key
+                key_candidates.append(f"{without_ext}.txt")
+                key_candidates.append(f"{MULTIVECTOR_CHUNKS_BUCKET}/{without_ext}.txt")
+                key_candidates.append(f"{without_ext}.txt.txt")
+                key_candidates.append(f"{MULTIVECTOR_CHUNKS_BUCKET}/{without_ext}.txt.txt")
             except Exception:
-                attempted_key = f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}.txt"
-                content_bytes = await self.storage.download_file(bucket=MULTIVECTOR_CHUNKS_BUCKET, key=attempted_key)
+                pass
+
+            content_bytes = None
+            last_err = None
+            for candidate in key_candidates:
+                try:
+                    content_bytes = await self.storage.download_file(bucket=MULTIVECTOR_CHUNKS_BUCKET, key=candidate)
+                    if content_bytes:
+                        storage_key = candidate
+                        break
+                except Exception as e:
+                    last_err = e
+                    continue
+            if not content_bytes:
+                if last_err:
+                    raise last_err
+                logger.error(f"No content downloaded for storage key: {storage_key}")
+                return storage_key
 
             if not content_bytes:
                 logger.error(f"No content downloaded for storage key: {storage_key}")
@@ -475,38 +536,49 @@ class MultiVectorStore(BaseVectorStore):
 
             # Determine if this should be returned as base64 or text
             try:
-                if chunk_metadata:
-                    metadata = json.loads(chunk_metadata)
-                    is_image = metadata.get("is_image", False)
-                    logger.debug(f"Chunk metadata indicates is_image: {is_image}")
+                metadata = self._parse_metadata(chunk_metadata) if chunk_metadata else {}
+                is_image = metadata.get("is_image", False)
+                logger.debug(f"Chunk metadata indicates is_image: {is_image}")
 
-                    if is_image:
-                        # For images, return as base64 string
-                        result = base64.b64encode(content_bytes).decode("utf-8")
-                        logger.debug(f"Returning image as base64, length: {len(result)}")
-                        return result
-                    else:
-                        # For text, return decoded string
-                        result = content_bytes.decode("utf-8")
-                        logger.debug(f"Returning text content, length: {len(result)}")
-                        return result
-                else:
-                    # No metadata, try to determine based on content
-                    logger.debug("No metadata, auto-detecting content type")
-                    # If it's valid UTF-8, treat as text
+                if is_image:
+                    # For images, return a data URI string to preserve previous behavior.
+                    # If the stored object is already a data URI string, return it unchanged.
                     try:
-                        result = content_bytes.decode("utf-8")
-                        logger.debug(f"Auto-detected as text, length: {len(result)}")
-                        return result
-                    except UnicodeDecodeError:
-                        # If not valid UTF-8, treat as binary (image) and return base64
-                        result = base64.b64encode(content_bytes).decode("utf-8")
-                        logger.debug(f"Auto-detected as binary, returning base64, length: {len(result)}")
-                        return result
+                        as_text = content_bytes.decode("utf-8")
+                        if as_text.strip().startswith("data:") and "," in as_text:
+                            return as_text
+                    except Exception:
+                        pass
 
-            except (json.JSONDecodeError, Exception) as e:
+                    # Otherwise, build a data URI from raw bytes using mime from metadata or by sniffing magic bytes.
+                    mime = metadata.get("mime_type")
+                    if not mime:
+                        b = content_bytes
+                        if b.startswith(b"\x89PNG\r\n\x1a\n"):
+                            mime = "image/png"
+                        elif b.startswith(b"\xff\xd8"):
+                            mime = "image/jpeg"
+                        elif b.startswith(b"GIF8"):
+                            mime = "image/gif"
+                        elif b.startswith(b"BM"):
+                            mime = "image/bmp"
+                        elif b.startswith(b"II*\x00") or b.startswith(b"MM\x00*"):
+                            mime = "image/tiff"
+                        elif b.startswith(b"RIFF") and b"WEBP" in b[:16]:
+                            mime = "image/webp"
+                        else:
+                            mime = "image/png"
+                    data_b64 = base64.b64encode(content_bytes).decode("utf-8")
+                    return f"data:{mime};base64,{data_b64}"
+
+                # Not an image; treat as text if valid UTF-8
+                try:
+                    return content_bytes.decode("utf-8")
+                except UnicodeDecodeError:
+                    # Binary fallback → base64
+                    return base64.b64encode(content_bytes).decode("utf-8")
+            except Exception as e:
                 logger.warning(f"Error determining content type for {storage_key}: {e}")
-                # Fallback: try text first, then base64
                 try:
                     return content_bytes.decode("utf-8")
                 except UnicodeDecodeError:
@@ -546,12 +618,14 @@ class MultiVectorStore(BaseVectorStore):
                         f"Failed to store chunk {chunk.document_id}-{chunk.chunk_number} externally, using database"
                     )
 
+            import json as _json
+
             rows.append(
                 (
                     chunk.document_id,
                     chunk.chunk_number,
                     content_to_store,
-                    str(chunk.metadata),
+                    _json.dumps(chunk.metadata or {}),
                     binary_embeddings,
                 )
             )
@@ -626,10 +700,7 @@ class MultiVectorStore(BaseVectorStore):
 
         chunks = []
         for row, resolved in zip(result, resolved_contents):
-            try:
-                metadata = json.loads(row[4]) if row[4] else {}
-            except Exception:
-                metadata = {}
+            metadata = self._parse_metadata(row[4])
 
             content = row[3] if isinstance(resolved, Exception) else resolved
 
@@ -720,10 +791,7 @@ class MultiVectorStore(BaseVectorStore):
 
         chunks = []
         for row, resolved in zip(result, resolved_contents):
-            try:
-                metadata = json.loads(row[3]) if row[3] else {}
-            except Exception:
-                metadata = {}
+            metadata = self._parse_metadata(row[3])
 
             content = row[2] if isinstance(resolved, Exception) else resolved
 

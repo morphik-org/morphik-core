@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     dev_entity_type: str = "developer"
     dev_entity_id: str = "dev_user"
     dev_permissions: list = ["read", "write", "admin"]
+    ADMIN_SERVICE_SECRET: Optional[str] = None
 
     # Registered models configuration
     REGISTERED_MODELS: Dict[str, Dict[str, Any]] = {}
@@ -350,15 +351,18 @@ def get_settings() -> Settings:
         raise ValueError(em.format(missing_value="POSTGRES_URI", field="vector_store.provider", value="pgvector"))
 
     # Load morphik config
+    api_domain = os.getenv("API_DOMAIN") or config["morphik"].get("api_domain", "api.morphik.ai")
+    embedding_api_domain = (
+        os.getenv("MORPHIK_EMBEDDING_API_DOMAIN") or config["morphik"].get("morphik_embedding_api_domain") or api_domain
+    )
+
     settings_dict.update(
         {
             "ENABLE_COLPALI": config["morphik"]["enable_colpali"],
             "COLPALI_MODE": config["morphik"].get("colpali_mode", "local"),
             "MODE": config["morphik"].get("mode", "cloud"),
-            "API_DOMAIN": config["morphik"].get("api_domain", "api.morphik.ai"),
-            "MORPHIK_EMBEDDING_API_DOMAIN": config["morphik"].get(
-                "morphik_embedding_api_domain", config["morphik"].get("api_domain", "api.morphik.ai")
-            ),
+            "API_DOMAIN": api_domain,
+            "MORPHIK_EMBEDDING_API_DOMAIN": embedding_api_domain,
         }
     )
 

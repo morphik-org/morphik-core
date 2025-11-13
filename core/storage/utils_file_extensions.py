@@ -10,15 +10,46 @@ def detect_file_type(content: Union[str, bytes]) -> str:
     Detect file type from content string and return appropriate extension.
     Content can be either base64 encoded or plain text.
     """
-    # Decode base64 content
-    if isinstance(content, bytes):
-        decoded_content = content
-    else:
+    # Special-case data URIs (e.g. "data:image/png;base64,...")
+    if isinstance(content, str) and content.startswith("data:"):
         try:
-            decoded_content = base64.b64decode(content)
-        except binascii.Error:
-            # If not base64, treat as plain text
+            header, base64_part = content.split(",", 1)
+            mime = header.split(":", 1)[1].split(";", 1)[0]
+            extension_map = {
+                "application/pdf": ".pdf",
+                "image/jpeg": ".jpg",
+                "image/png": ".png",
+                "image/gif": ".gif",
+                "image/webp": ".webp",
+                "image/tiff": ".tiff",
+                "image/bmp": ".bmp",
+                "image/svg+xml": ".svg",
+                "video/mp4": ".mp4",
+                "video/mpeg": ".mpeg",
+                "video/quicktime": ".mov",
+                "video/x-msvideo": ".avi",
+                "video/webm": ".webm",
+                "video/x-matroska": ".mkv",
+                "video/3gpp": ".3gp",
+                "text/plain": ".txt",
+            }
+            # Prefer mapping by MIME
+            ext = extension_map.get(mime)
+            if ext:
+                return ext
+            # Fallback to sniffing decoded bytes when MIME not recognized
+            decoded_content = base64.b64decode(base64_part)
+        except Exception:
             decoded_content = content.encode("utf-8")
+    else:
+        # Decode base64 if possible, otherwise treat as plain text
+        if isinstance(content, bytes):
+            decoded_content = content
+        else:
+            try:
+                decoded_content = base64.b64decode(content)
+            except binascii.Error:
+                decoded_content = content.encode("utf-8")
 
     # Use filetype to detect mime type from content
     kind = filetype.guess(decoded_content)

@@ -1,5 +1,25 @@
+"""
+Metadata filter SQL generation with typed comparison support.
+
+Translates JSON-style filter expressions into PostgreSQL WHERE clauses with
+special handling for typed metadata (number, decimal, datetime, date).
+
+**Implicit equality** (backwards compatible, JSONB containment):
+    {"field": value}
+
+**Explicit operators** (typed comparisons with safe casting):
+    {"field": {"$eq": value}}
+
+Supported operators: $and, $or, $nor, $not, $eq, $ne, $gt, $gte, $lt, $lte,
+$in, $nin, $exists, $type, $regex, $contains.
+"""
+
 import json
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
+
+from core.utils.typed_metadata import TypedMetadataError, canonicalize_type_name
 
 
 class InvalidMetadataFilterError(ValueError):
@@ -108,10 +128,13 @@ class MetadataFilterBuilder:
 
         clauses: List[str] = []
         for operator, operand in operators.items():
-            if operator == "$eq":
-                clauses.append(self._build_single_value_clause(field, operand))
-            elif operator == "$ne":
-                clauses.append(f"(NOT {self._build_single_value_clause(field, operand)})")
+            if operator in {"$eq", "$ne", "$gt", "$gte", "$lt", "$lte"}:
+                # All comparison operators support typed metadata (number, decimal, date, datetime)
+                comparison_clause = self._build_comparison_clause(field, operator, operand)
+                if operator == "$ne":
+                    clauses.append(f"(NOT {comparison_clause})")
+                else:
+                    clauses.append(comparison_clause)
             elif operator == "$in":
                 if not isinstance(operand, list):
                     raise InvalidMetadataFilterError(f"$in operator for field '{field}' expects a list of values.")
@@ -124,6 +147,8 @@ class MetadataFilterBuilder:
                 clauses.append(self._build_exists_clause(field, operand))
             elif operator == "$not":
                 clauses.append(f"(NOT {self._build_field_metadata_clause(field, operand)})")
+            elif operator == "$type":
+                clauses.append(self._build_type_clause(field, operand))
             elif operator == "$regex":
                 clauses.append(self._build_regex_clause(field, operand))
             elif operator == "$contains":
@@ -172,13 +197,147 @@ class MetadataFilterBuilder:
         clause = f"(doc_metadata ? '{field_key}')"
         return clause if expected else f"(NOT {clause})"
 
+    def _build_comparison_clause(self, field: str, operator: str, operand: Any) -> str:
+        """Build typed comparison clauses (number, decimal, date, datetime, string)."""
+        sql_operator = self._map_comparison_operator(operator)
+        clauses = []
+
+        # Try numeric types
+        numeric_clause = self._build_numeric_comparison_clause(field, sql_operator, operand)
+        if numeric_clause:
+            clauses.append(numeric_clause)
+
+        decimal_clause = self._build_decimal_comparison_clause(field, sql_operator, operand)
+        if decimal_clause:
+            clauses.append(decimal_clause)
+
+        # Try datetime types
+        datetime_clause = self._build_datetime_comparison_clause(field, sql_operator, operand)
+        if datetime_clause:
+            clauses.append(datetime_clause)
+
+        date_clause = self._build_date_comparison_clause(field, sql_operator, operand)
+        if date_clause:
+            clauses.append(date_clause)
+
+        # Try string type (only for $eq/$ne)
+        if operator in {"$eq", "$ne"} and isinstance(operand, str):
+            string_clause = self._build_string_comparison_clause(field, sql_operator, operand)
+            if string_clause:
+                clauses.append(string_clause)
+
+        if not clauses:
+            raise InvalidMetadataFilterError(
+                f"Operator '{operator}' for field '{field}' requires a numeric, decimal, ISO8601 date/datetime, or string value."
+            )
+
+        if len(clauses) == 1:
+            return clauses[0]
+        return "(" + " OR ".join(clauses) + ")"
+
+    def _build_numeric_comparison_clause(self, field: str, sql_operator: str, operand: Any) -> str:
+        """Build comparison clause for 'number' typed metadata."""
+        try:
+            literal = self._format_numeric_literal(operand)
+        except InvalidMetadataFilterError:
+            return ""
+
+        field_key = self._escape_single_quotes(field)
+        type_expr = self._metadata_type_expr(field_key)
+        # Use CASE to ensure casting only happens when type is correct
+        value_expr = (
+            f"(CASE WHEN {type_expr} = 'number' THEN (doc_metadata ->> '{field_key}')::double precision ELSE NULL END)"
+        )
+        return f"({value_expr} {sql_operator} {literal})"
+
+    def _build_decimal_comparison_clause(self, field: str, sql_operator: str, operand: Any) -> str:
+        """Build comparison clause for 'decimal' typed metadata."""
+        try:
+            literal = self._format_numeric_literal(operand)
+        except InvalidMetadataFilterError:
+            return ""
+
+        field_key = self._escape_single_quotes(field)
+        type_expr = self._metadata_type_expr(field_key)
+        # Use CASE to ensure casting only happens when type is correct
+        value_expr = f"(CASE WHEN {type_expr} = 'decimal' THEN (doc_metadata ->> '{field_key}')::numeric ELSE NULL END)"
+        return f"({value_expr} {sql_operator} {literal}::numeric)"
+
+    def _build_datetime_comparison_clause(self, field: str, sql_operator: str, operand: Any) -> str:
+        """Build comparison clause for 'datetime' typed metadata."""
+        try:
+            literal = self._format_datetime_literal(operand, field)
+        except InvalidMetadataFilterError:
+            return ""
+
+        field_key = self._escape_single_quotes(field)
+        type_expr = self._metadata_type_expr(field_key)
+        # Use CASE to ensure casting only happens when type is correct
+        value_expr = (
+            f"(CASE WHEN {type_expr} = 'datetime' THEN (doc_metadata ->> '{field_key}')::timestamptz ELSE NULL END)"
+        )
+        return f"({value_expr} {sql_operator} {literal})"
+
+    def _build_date_comparison_clause(self, field: str, sql_operator: str, operand: Any) -> str:
+        """Build comparison clause for 'date' typed metadata."""
+        try:
+            literal = self._format_date_literal(operand, field)
+        except InvalidMetadataFilterError:
+            return ""
+
+        field_key = self._escape_single_quotes(field)
+        type_expr = self._metadata_type_expr(field_key)
+        # Use CASE to ensure casting only happens when type is correct
+        value_expr = f"(CASE WHEN {type_expr} = 'date' THEN (doc_metadata ->> '{field_key}')::date ELSE NULL END)"
+        return f"({value_expr} {sql_operator} {literal})"
+
+    def _build_string_comparison_clause(self, field: str, sql_operator: str, operand: str) -> str:
+        """Build comparison clause for 'string' typed metadata (only for $eq/$ne)."""
+        field_key = self._escape_single_quotes(field)
+        escaped_value = self._escape_single_quotes(operand)
+        type_expr = self._metadata_type_expr(field_key)
+        value_expr = f"(doc_metadata ->> '{field_key}')"
+        # For strings without explicit type, assume string type (COALESCE handles missing metadata_types)
+        return f"((COALESCE({type_expr}, 'string') = 'string') AND {value_expr} {sql_operator} '{escaped_value}')"
+
+    def _build_type_clause(self, field: str, operand: Any) -> str:
+        """Build clause enforcing metadata type."""
+        if isinstance(operand, str):
+            type_names = [operand]
+        elif isinstance(operand, list) and operand:
+            if not all(isinstance(item, str) for item in operand):
+                raise InvalidMetadataFilterError(f"$type operator for field '{field}' expects string entries.")
+            type_names = operand
+        else:
+            raise InvalidMetadataFilterError(f"$type operator for field '{field}' expects a string or list of strings.")
+
+        canonical_types: List[str] = []
+        for type_name in type_names:
+            try:
+                canonical_types.append(canonicalize_type_name(type_name, field=field))
+            except TypedMetadataError as exc:
+                raise InvalidMetadataFilterError(str(exc)) from exc
+
+        field_key = self._escape_single_quotes(field)
+        type_expr = f"COALESCE(metadata_types ->> '{field_key}', 'string')"
+        clauses = [f"({type_expr} = '{type_name}')" for type_name in canonical_types]
+        if len(clauses) == 1:
+            return clauses[0]
+        return "(" + " OR ".join(clauses) + ")"
+
     def _jsonb_contains_clause(self, field: str, value: Any) -> str:
-        """Build JSONB containment clause for a field/value pairing."""
+        """Build JSONB containment clause for a field/value pairing.
+
+        This is used for implicit equality (e.g., {"field": "value"}) and only supports
+        JSON-serializable types. For typed comparisons with date/datetime/Decimal objects,
+        use explicit operators like $eq, $gt, etc.
+        """
         try:
             json_payload = json.dumps({field: value})
         except (TypeError, ValueError) as exc:  # noqa: BLE001
             raise InvalidMetadataFilterError(
-                f"Metadata filter for field '{field}' contains a non-serializable value: {exc}"
+                f"Metadata filter for field '{field}' contains a non-serializable value: {exc}. "
+                f"Use explicit operators like {{'$eq': value}} for typed comparisons with date, datetime, or Decimal objects."
             ) from exc
 
         escaped_payload = json_payload.replace("'", "''")
@@ -190,7 +349,10 @@ class MetadataFilterBuilder:
         return base_clause
 
     def _build_array_membership_clause(self, field: str, value: Any) -> str:
-        """Match scalar comparisons against array-valued metadata fields."""
+        """Match scalar comparisons against array-valued metadata fields.
+
+        Only supports JSON-serializable primitives (str, int, float, bool, None).
+        """
         if not isinstance(value, (str, int, float, bool)) and value is not None:
             return ""
 
@@ -309,6 +471,84 @@ class MetadataFilterBuilder:
             f"WHERE jsonb_typeof(arr.value) = 'string' AND "
             f"{array_value_expr} {like_operator} '%{escaped_pattern}%'))"
         )
+
+    def _metadata_type_expr(self, field_key: str) -> str:
+        """Return SQL expression fetching the stored metadata type for a field."""
+        return f"(metadata_types ->> '{field_key}')"
+
+    def _map_comparison_operator(self, operator: str) -> str:
+        """Map comparison operators to SQL symbols."""
+        mapping = {"$eq": "=", "$ne": "=", "$gt": ">", "$gte": ">=", "$lt": "<", "$lte": "<="}
+        return mapping[operator]
+
+    def _format_numeric_literal(self, operand: Any) -> str:
+        """Serialize numeric operands into SQL-safe literals."""
+        if isinstance(operand, bool) or operand is None:
+            raise InvalidMetadataFilterError("Numeric comparisons require a numeric operand.")
+
+        if isinstance(operand, (int, float)):
+            text = str(operand)
+        elif isinstance(operand, str):
+            text = operand.strip()
+            if not text:
+                raise InvalidMetadataFilterError("Numeric comparisons require a numeric operand.")
+        else:
+            raise InvalidMetadataFilterError("Numeric comparisons require a numeric operand.")
+
+        try:
+            value = Decimal(text)
+        except (InvalidOperation, ValueError) as exc:  # noqa: BLE001
+            raise InvalidMetadataFilterError(f"'{operand}' is not a valid numeric literal.") from exc
+
+        normalized = format(value.normalize(), "f")
+        if "." in normalized:
+            normalized = normalized.rstrip("0").rstrip(".")
+        return normalized or "0"
+
+    def _format_datetime_literal(self, operand: Any, field: str) -> str:
+        """Serialize datetime operands into SQL timestamptz literals."""
+        iso_value = self._coerce_datetime_string(operand, field, is_date=False)
+        escaped = self._escape_single_quotes(iso_value)
+        return f"'{escaped}'::timestamptz"
+
+    def _format_date_literal(self, operand: Any, field: str) -> str:
+        """Serialize date operands into SQL date literals."""
+        iso_value = self._coerce_datetime_string(operand, field, is_date=True)
+        escaped = self._escape_single_quotes(iso_value)
+        return f"'{escaped}'::date"
+
+    def _coerce_datetime_string(self, operand: Any, field: str, is_date: bool) -> str:
+        """Convert supported operand types into ISO date/datetime strings."""
+        if isinstance(operand, datetime):
+            if is_date:
+                return operand.date().isoformat()
+            dt_value = operand
+        elif isinstance(operand, date):
+            if is_date:
+                return operand.isoformat()
+            dt_value = datetime(operand.year, operand.month, operand.day)
+        elif isinstance(operand, str):
+            text = operand.strip()
+            if not text:
+                raise InvalidMetadataFilterError(
+                    f"Comparison operator for field '{field}' expects a non-empty ISO8601 string."
+                )
+            try:
+                if text.endswith("Z"):
+                    text = text[:-1] + "+00:00"
+                if is_date:
+                    return date.fromisoformat(text.split("T", 1)[0]).isoformat()
+                dt_value = datetime.fromisoformat(text)
+            except ValueError as exc:
+                raise InvalidMetadataFilterError(
+                    f"Value '{operand}' for field '{field}' is not a valid ISO8601 date/datetime."
+                ) from exc
+        else:
+            raise InvalidMetadataFilterError(
+                f"Comparison operator for field '{field}' expects a string or datetime/date object."
+            )
+
+        return dt_value.isoformat()
 
     @staticmethod
     def _escape_single_quotes(value: str) -> str:

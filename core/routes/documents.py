@@ -10,7 +10,13 @@ from core.config import get_settings
 from core.database.postgres_database import InvalidMetadataFilterError
 from core.models.auth import AuthContext
 from core.models.documents import Document
-from core.models.request import DocumentPagesRequest, IngestTextRequest, ListDocsRequest, ListDocumentsRequest
+from core.models.request import (
+    DocumentPagesRequest,
+    IngestTextRequest,
+    ListDocsRequest,
+    ListDocumentsRequest,
+    MetadataUpdateRequest,
+)
 from core.models.responses import (
     DocumentDeleteResponse,
     DocumentDownloadUrlResponse,
@@ -21,6 +27,7 @@ from core.models.responses import (
 from core.routes.utils import project_document_fields, warn_if_legacy_rules
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
+from core.utils.typed_metadata import TypedMetadataError
 
 # ---------------------------------------------------------------------------
 # Router initialization & shared singletons
@@ -57,22 +64,22 @@ async def list_documents(
     end_user_id: Optional[str] = Query(None),
 ):
     """
-    List accessible documents.
+    List accessible documents with metadata filtering.
 
-    `request.document_filters` may include the following operators in addition to equality checks (which also match
-    scalars inside JSON arrays): `$and`, `$or`, `$nor`, `$not`, `$in`, `$nin`, `$exists`, `$regex`, and `$contains`.
-    Filters can be nested arbitrarily. Regex filters accept the optional `i` flag; `$contains` performs substring
-    matches with optional `case_sensitive` overrides.
-    Example:
+    **Supported operators**: `$and`, `$or`, `$nor`, `$not`, `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`,
+    `$in`, `$nin`, `$exists`, `$type`, `$regex`, `$contains`.
 
+    **Implicit equality** (backwards compatible):
     ```json
-    {
-      "$and": [
-        {"department": "sales"},
-        {"$or": [{"status": "approved"}, {"priority": {"$in": ["high", "urgent"]}}]}
-      ]
-    }
+    {"status": "active"}
     ```
+    Uses JSONB containment, matches scalars inside arrays, JSON-serializable types only.
+
+    **Explicit operators** (typed comparisons):
+    ```json
+    {"priority": {"$eq": 42}, "created_date": {"$gte": "2024-01-01T00:00:00Z"}}
+    ```
+    Supports typed metadata (number, decimal, datetime, date) with safe casting.
 
     Args:
         request: Request body containing filters and pagination
@@ -110,23 +117,22 @@ async def list_docs(
     end_user_id: Optional[str] = Query(None),
 ) -> ListDocsResponse:
     """
-    Flexible document listing endpoint with support for aggregates, projections, and advanced pagination.
+    Flexible document listing with aggregates, projections, and advanced pagination.
 
-    `request.document_filters` supports equality plus `$and`, `$or`, `$nor`, `$not`, `$in`, `$nin`, `$exists`,
-    `$regex`, and `$contains`, with arbitrary nesting. Scalar comparisons match array elements automatically.
-    Example:
+    **Supported operators**: `$and`, `$or`, `$nor`, `$not`, `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`,
+    `$in`, `$nin`, `$exists`, `$type`, `$regex`, `$contains`.
 
+    **Implicit equality** (backwards compatible, JSONB containment):
     ```json
-    {
-      "$and": [
-        {"category": "patent"},
-        {"$nor": [{"status": "archived"}, {"priority": {"$in": ["low", "medium"]}}]}
-      ]
-    }
+    {"status": "active"}
     ```
 
-    Use the `folder_name` and `end_user_id` query parameters to scope system metadata instead of embedding those
-    keys in the filter payload.
+    **Explicit operators** (typed comparisons for number, decimal, datetime, date):
+    ```json
+    {"priority": {"$gte": 40}, "end_date": {"$lt": "2025-01-01"}}
+    ```
+
+    Use `folder_name` and `end_user_id` query parameters to scope system metadata.
     """
     try:
         system_filters: Dict[str, Any] = {}
@@ -283,6 +289,8 @@ async def delete_document(document_id: str, auth: AuthContext = Depends(verify_t
         return {"status": "success", "message": f"Document {document_id} deleted successfully"}
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except TypedMetadataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/filename/{filename}", response_model=Document)
@@ -471,6 +479,7 @@ async def update_document_text(
             file=None,
             filename=request.filename,
             metadata=request.metadata,
+            metadata_types=request.metadata_types,
             update_strategy=update_strategy,
             use_colpali=request.use_colpali,
         )
@@ -490,6 +499,7 @@ async def update_document_file(
     document_id: str,
     file: UploadFile,
     metadata: str = Form("{}"),
+    metadata_types: str = Form("{}"),
     update_strategy: str = Form("add"),
     use_colpali: Optional[bool] = Form(None),
     auth: AuthContext = Depends(verify_token),
@@ -510,6 +520,11 @@ async def update_document_file(
     """
     try:
         metadata_dict = json.loads(metadata)
+        metadata_types_dict = json.loads(metadata_types or "{}") if metadata_types else {}
+        if metadata_types_dict is None:
+            metadata_types_dict = {}
+        if not isinstance(metadata_types_dict, dict):
+            raise HTTPException(status_code=400, detail="metadata_types must be a JSON object")
         await warn_if_legacy_rules(request, f"/documents/{document_id}/update_file", logger)
 
         doc = await document_service.update_document(
@@ -519,6 +534,7 @@ async def update_document_file(
             file=file,
             filename=file.filename,
             metadata=metadata_dict,
+            metadata_types=metadata_types_dict,
             update_strategy=update_strategy,
             use_colpali=use_colpali,
         )
@@ -531,6 +547,8 @@ async def update_document_file(
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except TypedMetadataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/{document_id}/update_metadata", response_model=Document)
@@ -539,7 +557,7 @@ async def update_document_file(
     metadata_resolver=telemetry.document_update_metadata_resolver,
 )
 async def update_document_metadata(
-    document_id: str, metadata_updates: Dict[str, Any], auth: AuthContext = Depends(verify_token)
+    document_id: str, metadata_updates: MetadataUpdateRequest, auth: AuthContext = Depends(verify_token)
 ):
     """
     Update only a document's metadata.
@@ -559,7 +577,8 @@ async def update_document_metadata(
             content=None,
             file=None,
             filename=None,
-            metadata=metadata_updates,
+            metadata=metadata_updates.metadata,
+            metadata_types=metadata_updates.metadata_types,
             update_strategy="add",
             use_colpali=None,
         )
@@ -579,7 +598,7 @@ async def extract_document_pages(
     auth: AuthContext = Depends(verify_token),
 ):
     """
-    Extract specific pages from a document (PDF or PowerPoint) as base64-encoded images.
+    Extract specific pages from a document (PDF, PowerPoint, or Word) as base64-encoded images.
 
     Args:
         request: Request containing document_id, start_page, and end_page
@@ -613,6 +632,10 @@ async def extract_document_pages(
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
         } or ext in {".ppt", ".pptx", ".pps", ".ppsx"}
+        is_word = content_type in {
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        } or ext in {".doc", ".docx"}
 
         # Extract pages using appropriate handler
         if is_pdf:
@@ -641,6 +664,26 @@ async def extract_document_pages(
             pages_b64 = [c.content for c in chunks_sorted if isinstance(c.content, str) and c.content]
 
             # Provide a best-effort total_pages placeholder (not authoritative)
+            pages_data = {"pages": pages_b64, "total_pages": request.end_page}
+        elif is_word:
+            # Fetch image chunks for DOC/DOCX from the multi-vector store, same as PPT
+            if not getattr(document_service, "colpali_vector_store", None):
+                raise HTTPException(status_code=400, detail="ColPali is required for Word page extraction")
+
+            start_idx = max(0, request.start_page - 1)
+            end_idx = max(0, request.end_page - 1)
+            if end_idx < start_idx:
+                start_idx, end_idx = end_idx, start_idx
+
+            identifiers = [(doc.external_id, i) for i in range(start_idx, end_idx + 1)]
+            try:
+                chunks = await document_service.colpali_vector_store.get_chunks_by_id(identifiers, auth.app_id)
+            except Exception as e:
+                logger.error(f"Failed to retrieve ColPali chunks for {doc.external_id}: {e}")
+                raise HTTPException(status_code=500, detail="Failed to retrieve document page images")
+
+            chunks_sorted = sorted(chunks, key=lambda c: c.chunk_number)
+            pages_b64 = [c.content for c in chunks_sorted if isinstance(c.content, str) and c.content]
             pages_data = {"pages": pages_b64, "total_pages": request.end_page}
         else:
             raise HTTPException(status_code=400, detail="Unsupported document type for page extraction")

@@ -23,6 +23,7 @@ function Write-Ok($msg)    { Write-Host "[OK]    $msg" -ForegroundColor Green }
 function Write-Err($msg)   { Write-Host "[ERROR] $msg" -ForegroundColor Red }
 
 $REPO_URL   = "https://raw.githubusercontent.com/morphik-org/morphik-core/main"
+$REPO_ZIP   = "https://codeload.github.com/morphik-org/morphik-core/zip/refs/heads/main"
 $COMPOSE    = "docker-compose.run.yml"
 $IMAGE      = "ghcr.io/morphik-org/morphik-core:latest"
 $DIRECT_URL = "https://www.morphik.ai/docs/getting-started#self-host-direct-installation-advanced"
@@ -56,6 +57,100 @@ function New-RandomHex($bytes) {
 
 function Download-File($url, $outPath) {
   Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $outPath -ErrorAction Stop
+}
+
+function Set-EnvValue {
+  param([Parameter(Mandatory)] [string] $Key,
+        [Parameter(Mandatory)] [string] $Value)
+
+  if (-not (Test-Path '.env')) {
+    Add-Content -Path .env -Value "$Key=$Value"
+    return
+  }
+
+  $lines = Get-Content .env
+  $match = $lines | Select-String ("^{0}=" -f [Regex]::Escape($Key)) | Select-Object -First 1
+  if ($match) {
+    $index = $match.LineNumber - 1
+    $lines[$index] = "$Key=$Value"
+    Set-Content -Path .env -Value $lines
+  } else {
+    Add-Content -Path .env -Value "$Key=$Value"
+  }
+}
+
+function Add-ComposeProfile {
+  param([Parameter(Mandatory)] [string] $Profile)
+
+  if (-not (Test-Path '.env')) {
+    Add-Content -Path .env -Value "COMPOSE_PROFILES=$Profile"
+    return
+  }
+
+  $lines = Get-Content .env
+  $match = $lines | Select-String '^COMPOSE_PROFILES=' | Select-Object -First 1
+  if ($match) {
+    $index = $match.LineNumber - 1
+    $value = $lines[$index].Substring("COMPOSE_PROFILES=".Length)
+    $profiles = $value -split '\s*,\s*' | Where-Object { $_ }
+    if ($profiles -notcontains $Profile) {
+      if ($value.Trim()) {
+        $value = "$value,$Profile"
+      } else {
+        $value = $Profile
+      }
+      $lines[$index] = "COMPOSE_PROFILES=$value"
+      Set-Content -Path .env -Value $lines
+    }
+  } else {
+    Add-Content -Path .env -Value "COMPOSE_PROFILES=$Profile"
+  }
+}
+
+function Copy-UiFromImage {
+  param([Parameter(Mandatory)] [string] $Image)
+
+  $cid = ''
+  try { $cid = docker create $Image } catch { $cid = '' }
+  if (-not $cid) { return $false }
+
+  try {
+    if (-not (Test-Path "ee")) { New-Item -ItemType Directory -Path "ee" | Out-Null }
+    if (Test-Path "ee/ui-component") { Remove-Item -Recurse -Force "ee/ui-component" }
+    docker cp "$cid`:/app/ee/ui-component" "ee/ui-component" | Out-Null
+    return (Test-Path "ee/ui-component")
+  } catch {
+    return $false
+  } finally {
+    docker rm $cid | Out-Null
+  }
+}
+
+function Download-UiFromRepo {
+  param([Parameter(Mandatory)] [string] $ZipUrl)
+
+  $tmpRoot = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString())
+  New-Item -ItemType Directory -Path $tmpRoot | Out-Null
+  $zipPath = Join-Path $tmpRoot "morphik-ui.zip"
+
+  try {
+    Invoke-WebRequest -UseBasicParsing -Uri $ZipUrl -OutFile $zipPath -ErrorAction Stop
+    Expand-Archive -LiteralPath $zipPath -DestinationPath $tmpRoot -Force
+    $folder = Get-ChildItem $tmpRoot | Where-Object { $_.PSIsContainer -and $_.Name -like "morphik-org-morphik-core*" } | Select-Object -First 1
+    if (-not $folder) { return $false }
+
+    $source = Join-Path $folder.FullName "ee/ui-component"
+    if (-not (Test-Path $source)) { return $false }
+
+    if (-not (Test-Path "ee")) { New-Item -ItemType Directory -Path "ee" | Out-Null }
+    if (Test-Path "ee/ui-component") { Remove-Item -Recurse -Force "ee/ui-component" }
+    Copy-Item -Path $source -Destination "ee" -Recurse -Force
+    return $true
+  } catch {
+    return $false
+  } finally {
+    Remove-Item -Recurse -Force $tmpRoot -ErrorAction SilentlyContinue
+  }
 }
 
 function Ensure-ComposeFile {
@@ -284,29 +379,23 @@ function Maybe-Install-UI($apiPort) {
   $ans = Read-Host "Would you like to install the Admin UI? (y/N)"
   if ($ans -in @('y','Y')) {
     Write-Step "Extracting UI component files from Docker image..."
-    $cid = ''
-    try { $cid = docker create $IMAGE } catch { $cid = '' }
-    if ($cid) {
-      $ok = $true
-      try {
-        if (-not (Test-Path "ee")) { New-Item -ItemType Directory -Path "ee" | Out-Null }
-        docker cp "$cid`:/app/ee/ui-component" "ee/ui-component" | Out-Null
-      } catch { $ok = $false }
-      try { docker rm $cid | Out-Null } catch { }
-      if ($ok -and (Test-Path "ee/ui-component")) {
-        Write-Ok "UI component downloaded successfully."
-        (Get-Content .env -Raw) + [Environment]::NewLine + "UI_INSTALLED=true" |
-          Set-Content .env
-        $composeContent = Get-Content $COMPOSE -Raw
-        $composeContent = $composeContent -replace 'NEXT_PUBLIC_API_URL=http://localhost:8000',
-                                     ('NEXT_PUBLIC_API_URL=http://localhost:{0}' -f $apiPort)
-        [System.IO.File]::WriteAllText($COMPOSE, $composeContent, (New-Object System.Text.UTF8Encoding($false)))
-        return $true
-      } else {
-        Write-Err "Failed to download UI component. Continuing without UI."
-      }
+    $installed = Copy-UiFromImage -Image $IMAGE
+    if (-not $installed) {
+      Write-Step "Falling back to repository download..."
+      $installed = Download-UiFromRepo -ZipUrl $REPO_ZIP
+    }
+
+    if ($installed -and (Test-Path "ee/ui-component")) {
+      Write-Ok "UI component downloaded successfully."
+      Set-EnvValue -Key "UI_INSTALLED" -Value "true"
+      Add-ComposeProfile -Profile "ui"
+      $composeContent = Get-Content $COMPOSE -Raw
+      $composeContent = $composeContent -replace 'NEXT_PUBLIC_API_URL=http://localhost:8000',
+                                   ('NEXT_PUBLIC_API_URL=http://localhost:{0}' -f $apiPort)
+      [System.IO.File]::WriteAllText($COMPOSE, $composeContent, (New-Object System.Text.UTF8Encoding($false)))
+      return $true
     } else {
-      Write-Err "Could not create a container to extract UI. Continuing without UI."
+      Write-Err "Failed to download UI component. Continuing without UI."
     }
   }
   return $false
@@ -374,6 +463,36 @@ function Start-Stack($apiPort, $ui) {
   ) -join [Environment]::NewLine
   Set-Content -Path 'start-morphik.ps1' -Value $start }
 
+  $stop = @(
+    "Set-StrictMode -Version Latest",
+    "`$ErrorActionPreference = 'Stop'",
+    "",
+    "if (-not (Test-Path 'docker-compose.run.yml')) {",
+    "  Write-Error 'docker-compose.run.yml not found. Run this script from your Morphik install directory.'",
+    "}",
+    "",
+    "`$profiles = @()",
+    "if (Test-Path '.env') {",
+    "  `$envLines = Get-Content .env",
+    "  `$match = `$envLines | Select-String '^COMPOSE_PROFILES=' | Select-Object -First 1",
+    "  if (`$match) {",
+    "    `$value = `$envLines[`$match.LineNumber - 1].Split('=')[1]",
+    "    `$value.Split(',') | ForEach-Object {",
+    "      `$p = `$_.Trim()",
+    "      if (`$p) { `$profiles += @('--profile', `$p) }",
+    "    }",
+    "  } elseif (`$envLines | Select-String 'UI_INSTALLED=true') {",
+    "    `$profiles += @('--profile','ui')",
+    "  }",
+    "}",
+    "",
+    "`$args = @('-f','docker-compose.run.yml') + `$profiles + @('down','--volumes','--remove-orphans')",
+    "docker compose @args",
+    "Write-Host 'Morphik services stopped and cleaned up.'"
+  ) -join [Environment]::NewLine
+  Set-Content -Path 'stop-morphik.ps1' -Value $stop
+}
+
 # --- Main ---
 Write-Info "Checking for Docker and Docker Compose..."
 Assert-Docker
@@ -405,7 +524,7 @@ Start-Stack -apiPort $apiPort -ui $uiInstalled
 Write-Host ""
 Write-Ok "Management commands:"
 Write-Info "View logs:    docker compose -f $COMPOSE $(if($uiInstalled){'--profile ui '})logs -f"
-Write-Info "Stop services: docker compose -f $COMPOSE $(if($uiInstalled){'--profile ui '})down"
+Write-Info "Stop services: ./stop-morphik.ps1   (runs docker compose down --volumes --remove-orphans)"
 Write-Info "Restart:      ./start-morphik.ps1"
 
 Write-Host ""

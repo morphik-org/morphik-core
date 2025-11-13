@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from core.config import get_settings
+from core.utils.typed_metadata import TypedMetadataError, normalize_metadata
 
 from ..models.auth import AuthContext
 from ..models.documents import Document, StorageFileInfo
@@ -34,6 +35,7 @@ class DocumentModel(Base):
     content_type = Column(String)
     filename = Column(String, nullable=True)
     doc_metadata = Column(JSONB, default=dict)
+    metadata_types = Column(JSONB, default=dict)
     storage_info = Column(JSONB, default=dict)
     system_metadata = Column(JSONB, default=dict)
     additional_metadata = Column(JSONB, default=dict)
@@ -258,6 +260,12 @@ class PostgresDatabase(BaseDatabase):
 
         try:
             logger.info("Initializing PostgreSQL database tables and indexes...")
+
+            # Ensure all declarative models (including ones defined outside this module)
+            # are registered with SQLAlchemy's metadata before create_all runs.
+            # Import is local to avoid circular import overhead at module load.
+            from core.models.apps import AppModel  # noqa: F401
+
             # Create ORM models
             async with self.engine.begin() as conn:
                 # Explicitly create all tables with checkfirst=True to avoid errors if tables already exist
@@ -301,6 +309,61 @@ class PostgresDatabase(BaseDatabase):
                         )
                     )
                     logger.info("Added storage_files column to documents table")
+
+                # Ensure metadata_types column exists for typed metadata filters
+                result = await conn.execute(
+                    text(
+                        """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'documents' AND column_name = 'metadata_types'
+                    """
+                    )
+                )
+                if not result.first():
+                    await conn.execute(
+                        text(
+                            """
+                        ALTER TABLE documents
+                        ADD COLUMN IF NOT EXISTS metadata_types JSONB DEFAULT '{}'::jsonb
+                        """
+                        )
+                    )
+                    logger.info("Added metadata_types column to documents table")
+
+                # Keep lightweight apps metadata aligned with multi-tenant control plane needs.
+                # This block only runs when the apps table already exists to avoid bootstrap errors.
+                await conn.execute(
+                    text(
+                        """
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1
+                            FROM information_schema.tables
+                            WHERE table_name = 'apps'
+                        ) THEN
+                            -- Make user_id nullable for multi-tenant scenarios where org_id is primary
+                            ALTER TABLE apps ALTER COLUMN user_id DROP NOT NULL;
+
+                            IF NOT EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_name = 'apps' AND column_name = 'org_id'
+                            ) THEN
+                                ALTER TABLE apps ADD COLUMN org_id VARCHAR;
+                            END IF;
+
+                            IF NOT EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_name = 'apps' AND column_name = 'created_by_user_id'
+                            ) THEN
+                                ALTER TABLE apps ADD COLUMN created_by_user_id VARCHAR;
+                            END IF;
+                        END IF;
+                    END$$;
+                    """
+                    )
+                )
 
                 # Create folders table if it doesn't exist
                 await conn.execute(
@@ -411,10 +474,12 @@ class PostgresDatabase(BaseDatabase):
         try:
             doc_dict = document.model_dump()
 
-            # Rename metadata to doc_metadata
-            if "metadata" in doc_dict:
-                doc_dict["doc_metadata"] = doc_dict.pop("metadata")
-            doc_dict["doc_metadata"]["external_id"] = doc_dict["external_id"]
+            metadata = doc_dict.pop("metadata", {}) or {}
+            metadata.setdefault("external_id", doc_dict["external_id"])
+            metadata_type_hints = doc_dict.pop("metadata_types", {}) or {}
+            normalized_metadata, normalized_types = normalize_metadata(metadata, metadata_type_hints)
+            doc_dict["doc_metadata"] = normalized_metadata
+            doc_dict["metadata_types"] = normalized_types
 
             # Ensure system metadata
             if "system_metadata" not in doc_dict:
@@ -442,6 +507,9 @@ class PostgresDatabase(BaseDatabase):
                 await session.commit()
             return True
 
+        except TypedMetadataError as exc:
+            logger.error("Invalid typed metadata for document %s: %s", document.external_id, exc)
+            raise
         except Exception as e:
             logger.error(f"Error storing document metadata: {str(e)}")
             return False
@@ -839,6 +907,15 @@ class PostgresDatabase(BaseDatabase):
             # Serialize datetime objects to ISO format strings
             updates = _serialize_datetime(updates)
 
+            if "metadata" in updates:
+                logger.info("Converting 'metadata' to 'doc_metadata' for database update")
+                metadata_payload = updates.pop("metadata") or {}
+                metadata_payload.setdefault("external_id", document_id)
+                metadata_type_hints = updates.pop("metadata_types", {}) or {}
+                normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_type_hints)
+                updates["doc_metadata"] = normalized_metadata
+                updates["metadata_types"] = normalized_types
+
             async with self.async_session() as session:
                 result = await session.execute(select(DocumentModel).where(DocumentModel.external_id == document_id))
                 doc_model = result.scalar_one_or_none()
@@ -846,11 +923,6 @@ class PostgresDatabase(BaseDatabase):
                 if doc_model:
                     # Log what we're updating
                     logger.info(f"Document update: updating fields {list(updates.keys())}")
-
-                    # Special handling for metadata/doc_metadata conversion
-                    if "metadata" in updates and "doc_metadata" not in updates:
-                        logger.info("Converting 'metadata' to 'doc_metadata' for database update")
-                        updates["doc_metadata"] = updates.pop("metadata")
 
                     # The flattened fields (owner_id, app_id)
                     # should be in updates directly if they need to be updated
@@ -877,6 +949,9 @@ class PostgresDatabase(BaseDatabase):
                     return True
                 return False
 
+        except TypedMetadataError as exc:
+            logger.error("Invalid typed metadata for document %s: %s", document_id, exc)
+            raise
         except Exception as e:
             logger.error(f"Error updating document metadata: {str(e)}")
             return False
@@ -1166,6 +1241,7 @@ class PostgresDatabase(BaseDatabase):
             "content_type": doc_model.content_type,
             "filename": doc_model.filename,
             "metadata": doc_model.doc_metadata,
+            "metadata_types": doc_model.metadata_types or {},
             "storage_info": doc_model.storage_info,
             "system_metadata": doc_model.system_metadata,
             "additional_metadata": doc_model.additional_metadata,

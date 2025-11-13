@@ -31,10 +31,16 @@ class LocalStorage(BaseStorage):
     async def upload_from_base64(
         self, content: str, key: str, content_type: Optional[str] = None, bucket: str = ""
     ) -> Tuple[str, str]:
-        base64_content = content
-        """Upload base64 encoded content to local storage."""
+        """Upload base64 encoded content (or data URI) to local storage."""
+        base64_payload = content
+        if isinstance(content, str) and content.startswith("data:"):
+            try:
+                _, base64_part = content.split(",", 1)
+                base64_payload = base64_part
+            except Exception:
+                base64_payload = content
         # Decode base64 content
-        file_content = base64.b64decode(base64_content)
+        file_content = base64.b64decode(base64_payload)
 
         key = f"{bucket}/{key}" if (bucket and bucket != "storage") else key
         # Create file path
