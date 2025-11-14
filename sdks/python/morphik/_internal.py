@@ -455,6 +455,7 @@ class _MorphikClientLogic:
         folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
         use_colpali: bool = True,
+        output_format: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Prepare request for batch_get_chunks endpoint"""
         source_dicts = []
@@ -471,6 +472,8 @@ class _MorphikClientLogic:
             request["folder_name"] = folder_name
         if end_user_id:
             request["end_user_id"] = end_user_id
+        if output_format:
+            request["output_format"] = output_format
         return request
 
     def _prepare_create_graph_request(
