@@ -8,13 +8,6 @@ from fastapi import Request
 def project_document_fields(document_dict: Dict[str, Any], fields: Optional[List[str]]) -> Dict[str, Any]:
     """
     Project document data to a subset of fields, always including the external_id for reference.
-
-    Args:
-        document_dict: Source document dictionary
-        fields: Optional list of dot-notation field paths to include
-
-    Returns:
-        Dictionary containing only the requested fields (plus external_id if available)
     """
     if not fields:
         return document_dict

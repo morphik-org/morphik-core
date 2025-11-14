@@ -54,12 +54,6 @@ async def create_graph(
     ``status = "processing"`` while a background task extracts entities and
     relationships.
 
-    Args:
-        request: Graph creation parameters including name and optional filters.
-        auth: Authentication context authorizing the operation.
-
-    Returns:
-        The placeholder :class:`Graph` object which clients can poll for status.
     """
     try:
         # Validate prompt overrides before proceeding
@@ -153,15 +147,6 @@ async def get_graph(
     Get a graph by name.
 
     This endpoint retrieves a graph by its name if the user has access to it.
-
-    Args:
-        name: Name of the graph to retrieve
-        auth: Authentication context
-        folder_name: Optional folder to scope the operation to
-        end_user_id: Optional end-user ID to scope the operation to
-
-    Returns:
-        Graph: The requested graph object
     """
     try:
         # Create system filters for folder and user scoping
@@ -197,13 +182,6 @@ async def list_graphs(
 
     This endpoint retrieves all graphs the user has access to.
 
-    Args:
-        auth: Authentication context
-        folder_name: Optional folder to scope the operation to
-        end_user_id: Optional end-user ID to scope the operation to
-
-    Returns:
-        List[Graph]: List of graph objects
     """
     try:
         # Create system filters for folder and user scoping
@@ -237,15 +215,6 @@ async def get_graph_visualization(
 
     This endpoint retrieves the nodes and links data needed for graph visualization.
     It works with both local and API-based graph services.
-
-    Args:
-        name: Name of the graph to visualize
-        auth: Authentication context
-        folder_name: Optional folder to scope the operation to
-        end_user_id: Optional end-user ID to scope the operation to
-
-    Returns:
-        Dict: Visualization data containing nodes and links arrays
     """
     try:
         return await document_service.get_graph_visualization_data(
@@ -275,18 +244,6 @@ async def update_graph(
     and/or new filters/document IDs, extracts entities and relationships, and
     updates the graph with new information.
 
-    Args:
-        name: Name of the graph to update
-        request: UpdateGraphRequest containing:
-            - additional_filters: Optional additional metadata filters to determine which new documents to include
-            - additional_documents: Optional list of additional document IDs to include
-            - prompt_overrides: Optional customizations for entity extraction and resolution prompts
-            - folder_name: Optional folder to scope the operation to
-            - end_user_id: Optional end-user ID to scope the operation to
-        auth: Authentication context
-
-    Returns:
-        Graph: The updated graph object
     """
     try:
         # Validate prompt overrides before proceeding
@@ -326,15 +283,7 @@ async def delete_graph(
     name: str,
     auth: AuthContext = Depends(verify_token),
 ) -> Dict[str, Any]:
-    """Delete a graph by name.
-
-    Args:
-        name: Name of the graph to delete
-        auth: Authentication context (must have write access to the graph)
-
-    Returns:
-        Deletion status
-    """
+    """Delete a graph by name."""
     try:
         # Check if graph exists first
         graph = await document_service.db.get_graph(name, auth)
@@ -387,22 +336,6 @@ async def get_graph_status(
     This endpoint is designed for polling during graph creation/update operations.
     For MorphikGraphService backends, it synchronizes the local graph status with
     the remote service status automatically.
-
-    Args:
-        name: Name of the graph to check
-        auth: Authentication context
-        folder_name: Optional folder to scope the operation to
-        end_user_id: Optional end-user ID to scope the operation to
-
-    Returns:
-        Dict containing:
-            - status: Current status (processing, completed, failed)
-            - message: Optional status message
-            - error: Error details if status is failed
-            - created_at: Creation timestamp
-            - updated_at: Last update timestamp
-            - node_count: Number of nodes (if available)
-            - edge_count: Number of edges (if available)
     """
     try:
         # Create system filters for folder and user scoping
@@ -485,14 +418,6 @@ async def check_workflow_status(
     """Check the status of a graph build/update workflow.
 
     This endpoint polls the external graph API to check the status of an async operation.
-
-    Args:
-        workflow_id: The workflow ID returned from build/update operations
-        run_id: Optional run ID for the specific workflow run
-        auth: Authentication context
-
-    Returns:
-        Dict containing status ('running', 'completed', or 'failed') and optional result
     """
     try:
         # Get the graph service (either local or API-based)

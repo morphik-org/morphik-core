@@ -35,19 +35,7 @@ async def create_cache(
     docs: Optional[List[str]] = None,
     auth: AuthContext = Depends(verify_token),
 ) -> Dict[str, Any]:
-    """Create a persistent cache for low-latency completions.
-
-    Args:
-        name: Unique identifier for the cache.
-        model: The model name to use when generating completions.
-        gguf_file: Path to the ``gguf`` weights file to load.
-        filters: Optional metadata filters used to select documents.
-        docs: Explicit list of document IDs to include in the cache.
-        auth: Authentication context used for permission checks.
-
-    Returns:
-        A dictionary describing the created cache.
-    """
+    """Create a persistent cache for low-latency completions."""
     try:
         # Check cache creation limits if in cloud mode
         if settings.MODE == "cloud" and auth.user_id:
@@ -72,16 +60,7 @@ async def create_cache(
 @router.get("/{name}")
 @telemetry.track(operation_type="get_cache", metadata_resolver=telemetry.cache_get_metadata)
 async def get_cache(name: str, auth: AuthContext = Depends(verify_token)) -> Dict[str, Any]:
-    """Retrieve information about a specific cache.
-
-    Args:
-        name: Name of the cache to inspect.
-        auth: Authentication context used to authorize the request.
-
-    Returns:
-        A dictionary with a boolean ``exists`` field indicating whether the
-        cache is loaded.
-    """
+    """Retrieve information about a specific cache."""
     try:
         exists = await document_service.load_cache(name)
         return {"exists": exists}
@@ -92,15 +71,7 @@ async def get_cache(name: str, auth: AuthContext = Depends(verify_token)) -> Dic
 @router.post("/{name}/update")
 @telemetry.track(operation_type="update_cache", metadata_resolver=telemetry.cache_update_metadata)
 async def update_cache(name: str, auth: AuthContext = Depends(verify_token)) -> Dict[str, bool]:
-    """Refresh an existing cache with newly available documents.
-
-    Args:
-        name: Identifier of the cache to update.
-        auth: Authentication context used for permission checks.
-
-    Returns:
-        A dictionary indicating whether any documents were added.
-    """
+    """Refresh an existing cache with newly available documents."""
     try:
         if name not in document_service.active_caches:
             exists = await document_service.load_cache(name)
@@ -119,16 +90,7 @@ async def update_cache(name: str, auth: AuthContext = Depends(verify_token)) -> 
 async def add_docs_to_cache(
     name: str, document_ids: List[str], auth: AuthContext = Depends(verify_token)
 ) -> Dict[str, bool]:
-    """Manually add documents to an existing cache.
-
-    Args:
-        name: Name of the target cache.
-        document_ids: List of document IDs to insert.
-        auth: Authentication context used for authorization.
-
-    Returns:
-        A dictionary indicating whether the documents were queued for addition.
-    """
+    """Manually add documents to an existing cache."""
     try:
         cache = document_service.active_caches[name]
         docs_to_add = [
@@ -148,18 +110,7 @@ async def query_cache(
     temperature: Optional[float] = None,
     auth: AuthContext = Depends(verify_token),
 ) -> CompletionResponse:
-    """Generate a completion using a pre-populated cache.
-
-    Args:
-        name: Name of the cache to query.
-        query: Prompt text to send to the model.
-        max_tokens: Optional maximum number of tokens to generate.
-        temperature: Optional sampling temperature for the model.
-        auth: Authentication context for permission checks.
-
-    Returns:
-        A :class:`CompletionResponse` object containing the model output.
-    """
+    """Generate a completion using a pre-populated cache."""
     try:
         # Check cache query limits if in cloud mode
         if settings.MODE == "cloud" and auth.user_id:
