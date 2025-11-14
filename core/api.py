@@ -1384,7 +1384,13 @@ async def list_cloud_apps(
 
         user_service = UserService()
         await user_service.initialize()
-        apps = await user_service.list_apps(org_id=org_id, user_id=user_id, limit=limit, offset=offset)
+        apps = await user_service.list_apps(
+            org_id=org_id,
+            user_id=user_id,
+            limit=limit,
+            offset=offset,
+            strict_org_scope=not is_admin_call,
+        )
         return {"apps": apps, "count": len(apps)}
     except HTTPException:
         raise
