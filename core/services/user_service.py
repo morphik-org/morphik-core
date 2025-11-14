@@ -1,7 +1,7 @@
 import logging
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import jwt
 from sqlalchemy import select
@@ -409,6 +409,52 @@ class UserService:
                 app_record.name = name
                 app_record.uri = uri
             await session.commit()
+
+    async def list_apps(
+        self,
+        *,
+        org_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """Return dashboard app rows filtered by org or user."""
+
+        from core.models.apps import AppModel  # Local import to avoid cycles
+
+        normalized_limit = max(1, min(limit, 500))
+        normalized_offset = max(0, offset)
+
+        async with self.db.async_session() as session:
+            stmt = select(AppModel).order_by(AppModel.created_at.desc())
+
+            if org_id:
+                stmt = stmt.where(AppModel.org_id == org_id)
+
+            user_uuid: Optional[_uuid.UUID] = None
+            if user_id:
+                user_uuid = self._safe_uuid(user_id)
+                if user_uuid:
+                    stmt = stmt.where(AppModel.user_id == user_uuid)
+                else:
+                    stmt = stmt.where(AppModel.created_by_user_id == user_id)
+
+            stmt = stmt.offset(normalized_offset).limit(normalized_limit)
+            result = await session.execute(stmt)
+            apps = result.scalars().all()
+
+        return [
+            {
+                "app_id": app.app_id,
+                "org_id": app.org_id,
+                "user_id": str(app.user_id) if app.user_id else None,
+                "created_by_user_id": app.created_by_user_id,
+                "name": app.name,
+                "uri": app.uri,
+                "created_at": app.created_at.isoformat() if app.created_at else None,
+            }
+            for app in apps
+        ]
 
     @staticmethod
     def _safe_uuid(value: Optional[str]) -> Optional[_uuid.UUID]:
