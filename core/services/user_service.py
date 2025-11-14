@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import jwt
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from ..config import get_settings
 from ..database.user_limits_db import UserLimitsDatabase
@@ -417,6 +417,7 @@ class UserService:
         user_id: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
+        strict_org_scope: bool = True,
     ) -> List[Dict[str, Any]]:
         """Return dashboard app rows filtered by org or user."""
 
@@ -429,7 +430,10 @@ class UserService:
             stmt = select(AppModel).order_by(AppModel.created_at.desc())
 
             if org_id:
-                stmt = stmt.where(AppModel.org_id == org_id)
+                if strict_org_scope:
+                    stmt = stmt.where(AppModel.org_id == org_id)
+                else:
+                    stmt = stmt.where(or_(AppModel.org_id == org_id, AppModel.org_id.is_(None)))
 
             user_uuid: Optional[_uuid.UUID] = None
             if user_id:
