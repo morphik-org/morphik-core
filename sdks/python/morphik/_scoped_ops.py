@@ -155,6 +155,7 @@ class _ScopedOperationsMixin:
         folder_name: Optional[Union[str, List[str]]],
         end_user_id: Optional[str],
         padding: int,
+        output_format: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         payload = self._logic._prepare_retrieve_chunks_request(
             query,
@@ -165,6 +166,7 @@ class _ScopedOperationsMixin:
             folder_name,
             end_user_id,
             padding,
+            output_format,
         )
 
         return self._execute_scoped_operation(

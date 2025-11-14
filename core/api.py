@@ -1348,12 +1348,72 @@ async def generate_cloud_uri(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/apps", include_in_schema=True)
+async def list_cloud_apps(
+    org_id: Optional[str] = Query(default=None, description="Filter apps by organization ID"),
+    user_id: Optional[str] = Query(default=None, description="Filter apps by creator"),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    authorization: Optional[str] = Header(default=None),
+    admin_secret: Optional[str] = Header(default=None, alias="X-Morphik-Admin-Secret"),
+):
+    """List provisioned apps for the specified organization/user."""
+
+    try:
+        is_admin_call = _validate_admin_secret(admin_secret)
+    except HTTPException:
+        # Invalid admin secret provided
+        raise
+
+    token_user_id: Optional[str] = None
+    token_permissions: List[str] = []
+
+    if not is_admin_call:
+        if not authorization:
+            raise HTTPException(
+                status_code=401,
+                detail="Missing authorization header",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+        token = authorization[7:]
+        try:
+            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        except jwt.InvalidTokenError as exc:  # pragma: no cover - propagated error
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+        token_user_id = payload.get("user_id")
+        token_permissions = payload.get("permissions", []) or []
+
+    if not is_admin_call:
+        if user_id and user_id != token_user_id and "admin" not in token_permissions:
+            raise HTTPException(status_code=403, detail="Cannot list apps for another user")
+        if not user_id:
+            user_id = token_user_id
+
+    try:
+        from core.services.user_service import UserService
+
+        user_service = UserService()
+        await user_service.initialize()
+        apps = await user_service.list_apps(org_id=org_id, user_id=user_id, limit=limit, offset=offset)
+        return {"apps": apps, "count": len(apps)}
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - server failure
+        logger.error("Failed to list apps: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to list applications")
+
+
 # ---------------------------------------------------------------------------
 # Cloud – delete application (control-plane only)
 # ---------------------------------------------------------------------------
 
 
-@app.delete("/cloud/apps")
+@app.delete("/apps")
 async def delete_cloud_app(
     app_name: str = Query(..., description="Name of the application to delete"),
     auth: AuthContext = Depends(verify_token),
@@ -1413,18 +1473,21 @@ async def delete_cloud_app(
     doc_ids = await document_service.db.find_authorized_and_filtered_documents(app_auth)
 
     deleted = 0
+    doc_failures: List[str] = []
     for doc_id in doc_ids:
         try:
             await document_service.delete_document(doc_id, app_auth)
             deleted += 1
         except Exception as exc:
             logger.warning("Failed to delete document %s for app %s: %s", doc_id, app_id, exc)
+            doc_failures.append(str(doc_id))
 
     # 3) Delete folders associated with this app -----------------------
     # ------------------------------------------------------------------
     # Fetch ALL folders for *this* app using the same app-scoped auth.
     # ------------------------------------------------------------------
     folder_ids_deleted = 0
+    folder_failures: List[str] = []
     folders = await document_service.db.list_folders(app_auth)
 
     for folder in folders:
@@ -1433,6 +1496,20 @@ async def delete_cloud_app(
             folder_ids_deleted += 1
         except Exception as f_exc:  # noqa: BLE001
             logger.warning("Failed to delete folder %s for app %s: %s", folder.id, app_id, f_exc)
+            folder_failures.append(folder.id)
+
+    if doc_failures or folder_failures:
+        failure_detail = {
+            "documents_failed": doc_failures,
+            "folders_failed": folder_failures,
+        }
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "Failed to delete all application resources; aborting app deletion",
+                **failure_detail,
+            },
+        )
 
     # 4) Remove apps table entry ---------------------------------------
     async with document_service.db.async_session() as session:
