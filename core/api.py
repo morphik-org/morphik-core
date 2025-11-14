@@ -579,6 +579,7 @@ async def batch_get_chunks(batch_request: Dict[str, Any], auth: AuthContext = De
         folder_name = batch_request.get("folder_name")
         end_user_id = batch_request.get("end_user_id")
         use_colpali = batch_request.get("use_colpali")
+        output_format = batch_request.get("output_format")
 
         if not sources:
             perf.log_summary("No sources provided")
@@ -595,6 +596,9 @@ async def batch_get_chunks(batch_request: Dict[str, Any], auth: AuthContext = De
 
         normalized_folder_name = normalize_folder_name(folder_name) if folder_name is not None else None
 
+        if output_format and output_format not in {"base64", "url"}:
+            raise HTTPException(status_code=400, detail="output_format must be 'base64' or 'url'")
+
         # Main batch retrieval operation
         perf.start_phase("batch_retrieve_chunks")
         results = await document_service.batch_retrieve_chunks(
@@ -603,6 +607,7 @@ async def batch_get_chunks(batch_request: Dict[str, Any], auth: AuthContext = De
             normalized_folder_name,
             end_user_id,
             use_colpali,
+            output_format or "base64",
         )
 
         # Log consolidated performance summary
