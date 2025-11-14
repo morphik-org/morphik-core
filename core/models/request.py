@@ -13,8 +13,8 @@ class ListDocumentsRequest(BaseModel):
         None,
         description="Metadata filters with operator support: $and, $or, $nor, $not, $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $exists, $type, $regex, $contains. Implicit equality uses JSONB containment; explicit operators support typed comparisons.",
     )
-    skip: int = Field(default=0, ge=0)
-    limit: int = Field(default=10000, gt=0)
+    skip: int = Field(default=0, ge=0, description="Number of documents to skip before returning results.")
+    limit: int = Field(default=1000, gt=0, description="Maximum number of documents to return.")
 
 
 class ListDocsRequest(BaseModel):
@@ -104,12 +104,35 @@ class SearchDocumentsRequest(BaseModel):
 class RetrieveRequest(BaseModel):
     """Base retrieve request model"""
 
-    query: str = Field(..., min_length=1)
-    filters: Optional[Dict[str, Any]] = None
-    k: int = Field(default=4, gt=0)
-    min_score: float = Field(default=0.0)
-    use_reranking: Optional[bool] = None  # If None, use default from config
-    use_colpali: Optional[bool] = None
+    query: str = Field(
+        ...,
+        min_length=1,
+        description="Natural-language query used to retrieve relevant chunks or documents.",
+    )
+    filters: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Metadata filters supporting logical operators ($and/$or/$not/$nor) "
+            "and field predicates ($eq/$ne/$gt/$gte/$lt/$lte/$in/$nin/$exists/$type/$regex/$contains)."
+        ),
+    )
+    k: int = Field(
+        default=4,
+        gt=0,
+        description="Maximum number of chunks or documents to return.",
+    )
+    min_score: float = Field(
+        default=0.0,
+        description="Minimum similarity score a result must meet before it is returned.",
+    )
+    use_reranking: Optional[bool] = Field(
+        default=None,
+        description="When provided, overrides the workspace reranking configuration for this request.",
+    )
+    use_colpali: Optional[bool] = Field(
+        default=None,
+        description="When provided, uses Morphik's finetuned ColPali style embeddings (recommended to be True for high quality retrieval).",
+    )
     output_format: Optional[Literal["base64", "url"]] = Field(
         default="base64",
         description="How to return image chunks: base64 data URI (default) or a presigned URL",
@@ -134,8 +157,14 @@ class RetrieveRequest(BaseModel):
 class CompletionQueryRequest(RetrieveRequest):
     """Request model for completion generation"""
 
-    max_tokens: Optional[int] = None
-    temperature: Optional[float] = None
+    max_tokens: Optional[int] = Field(
+        default=None,
+        description="Maximum number of tokens allowed in the generated completion.",
+    )
+    temperature: Optional[float] = Field(
+        default=None,
+        description="Sampling temperature passed to the completion model (None uses provider default).",
+    )
     prompt_overrides: Optional[QueryPromptOverrides] = Field(
         None,
         description="Optional customizations for entity extraction, resolution, and query prompts",
@@ -167,14 +196,26 @@ class IngestTextRequest(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    content: str
-    filename: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    content: str = Field(
+        ...,
+        description="Raw text content to store as a document.",
+    )
+    filename: Optional[str] = Field(
+        default=None,
+        description="Optional filename hint used when inferring MIME type or displaying the document.",
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="User-defined metadata stored with the document (JSON-serializable).",
+    )
     metadata_types: Optional[Dict[str, str]] = Field(
         default=None,
         description="Optional per-field type hints: 'string', 'number', 'decimal', 'datetime', 'date', 'boolean', 'array', 'object'. Enables typed comparisons with $eq, $gt, etc. Types are inferred if omitted.",
     )
-    use_colpali: Optional[bool] = None
+    use_colpali: Optional[bool] = Field(
+        default=None,
+        description="When provided, uses Morphik's finetuned ColPali style embeddings (recommended to be True for high quality retrieval).",
+    )
     folder_name: Optional[str] = Field(None, description="Optional folder scope for the operation")
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
 
@@ -182,7 +223,7 @@ class IngestTextRequest(BaseModel):
 class MetadataUpdateRequest(BaseModel):
     """Request payload for metadata-only document updates."""
 
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Metadata fields to merge into the document.")
     metadata_types: Optional[Dict[str, str]] = Field(
         default=None,
         description="Optional per-field type hints: 'string', 'number', 'decimal', 'datetime', 'date', 'boolean', 'array', 'object'. Enables typed comparisons.",
@@ -330,7 +371,7 @@ class RequeueIngestionJob(BaseModel):
     external_id: str = Field(..., description="External identifier of the document to requeue")
     use_colpali: Optional[bool] = Field(
         default=None,
-        description="Override ColPali processing flag. When omitted the server attempts to infer it.",
+        description="When provided, uses Morphik's finetuned ColPali style embeddings (recommended to be True for high quality retrieval).",
     )
 
 

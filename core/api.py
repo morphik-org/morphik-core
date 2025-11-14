@@ -380,21 +380,7 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
       ]
     }
     ```
-
-    Args:
-        request: RetrieveRequest containing:
-            - query: Search query text
-            - filters: Optional metadata filters
-            - k: Number of results (default: 4)
-            - min_score: Minimum similarity threshold (default: 0.0)
-            - use_reranking: Whether to use reranking
-            - use_colpali: Whether to use ColPali-style embedding model
-            - folder_name: Optional folder to scope the search to
-            - end_user_id: Optional end-user ID to scope the search to
-        auth: Authentication context
-
-    Returns:
-        List[ChunkResult]: List of relevant chunks
+    Returns a list of `ChunkResult` objects ordered by relevance.
     """
     # Initialize performance tracker
     perf = PerformanceTracker(f"Retrieve Chunks: '{request.query[:50]}...'")
@@ -439,13 +425,6 @@ async def retrieve_chunks_grouped(request: RetrieveRequest, auth: AuthContext = 
 
     Returns both flat results (for backward compatibility) and grouped results (for UI).
     When padding > 0, groups chunks by main matches and their padding chunks.
-
-    Args:
-        request: RetrieveRequest containing query parameters, metadata filters, and padding instructions
-        auth: Authentication context
-
-    Returns:
-        GroupedChunkResponse: Contains both flat chunks and grouped chunks
     """
     # Initialize performance tracker
     perf = PerformanceTracker(f"Retrieve Chunks Grouped: '{request.query[:50]}...'")
@@ -489,21 +468,6 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
     `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$exists`, `$type`, `$regex`, and `$contains`. Use the same JSON
     structure as `/retrieve/chunks` when expressing complex logic. Comparison operators require metadata typed as
     `number`, `decimal`, `datetime`, or `date`.
-
-    Args:
-        request: RetrieveRequest containing:
-            - query: Search query text
-            - filters: Optional metadata filters
-            - k: Number of results (default: 4)
-            - min_score: Minimum similarity threshold (default: 0.0)
-            - use_reranking: Whether to use reranking
-            - use_colpali: Whether to use ColPali-style embedding model
-            - folder_name: Optional folder to scope the search to
-            - end_user_id: Optional end-user ID to scope the search to
-        auth: Authentication context
-
-    Returns:
-        List[DocumentResult]: List of relevant documents
     """
     # Initialize performance tracker
     perf = PerformanceTracker(f"Retrieve Docs: '{request.query[:50]}...'")
@@ -542,22 +506,10 @@ async def search_documents_by_name(
     """
     Search documents by filename using full-text search.
 
-    Args:
-        request: SearchDocumentsRequest containing:
-            - query: Search query for document names/filenames
-            - limit: Number of documents to return (1-100)
-            - filters: Optional metadata filters for documents
-            - folder_name: Optional folder to scope search
-            - end_user_id: Optional end-user ID to scope search
-        auth: Authentication context
-
     `request.filters` accepts the same operator set as `/retrieve/chunks`: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`,
     `$lte`, `$in`, `$nin`, `$exists`, `$type`, `$regex` (with optional `i` flag), `$contains`, and the logical
     operators `$and`, `$or`, `$nor`, `$not`. Comparison clauses honor typed metadata (`number`, `decimal`,
     `datetime`, `date`).
-
-    Returns:
-        List[Document]: List of matching documents ordered by relevance
     """
     try:
         # Normalize folder_name if needed
@@ -589,16 +541,6 @@ async def search_documents_by_name(
 async def batch_get_documents(batch_request: Dict[str, Any], auth: AuthContext = Depends(verify_token)):
     """
     Retrieve multiple documents by their IDs in a single batch operation.
-
-    Args:
-        batch_request: Dictionary containing:
-            - document_ids: List of document IDs to retrieve
-            - folder_name: Optional folder to scope the operation to
-            - end_user_id: Optional end-user ID to scope the operation to
-        auth: Authentication context
-
-    Returns:
-        List[Document]: List of documents matching the IDs
     """
     # Initialize performance tracker
     perf = PerformanceTracker("Batch Get Documents")
@@ -641,17 +583,6 @@ async def batch_get_documents(batch_request: Dict[str, Any], auth: AuthContext =
 async def batch_get_chunks(batch_request: Dict[str, Any], auth: AuthContext = Depends(verify_token)):
     """
     Retrieve specific chunks by their document ID and chunk number in a single batch operation.
-
-    Args:
-        request: Dictionary containing:
-            - sources: List of ChunkSource objects (with document_id and chunk_number)
-            - folder_name: Optional folder to scope the operation to
-            - end_user_id: Optional end-user ID to scope the operation to
-            - use_colpali: Whether to use ColPali-style embedding
-        auth: Authentication context
-
-    Returns:
-        List[ChunkResult]: List of chunk results
     """
     # Initialize performance tracker
     perf = PerformanceTracker("Batch Get Chunks")
@@ -708,29 +639,6 @@ async def query_completion(
 
     When graph_name is provided, the query will leverage the knowledge graph
     to enhance retrieval by finding relevant entities and their connected documents.
-
-    Args:
-        request: CompletionQueryRequest containing:
-            - query: Query text
-            - filters: Optional metadata filters
-            - k: Number of chunks to use as context (default: 4)
-            - min_score: Minimum similarity threshold (default: 0.0)
-            - max_tokens: Maximum tokens in completion
-            - temperature: Model temperature
-            - use_reranking: Whether to use reranking
-            - use_colpali: Whether to use ColPali-style embedding model
-            - graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
-            - hop_depth: Number of relationship hops to traverse in the graph (1-3)
-            - include_paths: Whether to include relationship paths in the response
-            - prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
-            - folder_name: Optional folder to scope the operation to
-            - end_user_id: Optional end-user ID to scope the operation to
-            - schema: Optional schema for structured output
-            - chat_id: Optional chat conversation identifier for maintaining history
-        auth: Authentication context
-
-    Returns:
-        CompletionResponse: Generated text completion or structured output
     """
     # Initialize performance tracker
     perf = PerformanceTracker(f"Query: '{request.query[:50]}...'")
@@ -923,17 +831,7 @@ async def get_chat_history(
     auth: AuthContext = Depends(verify_token),
     redis: arq.ArqRedis = Depends(get_redis_pool),
 ):
-    """Retrieve the message history for a chat conversation.
-
-    Args:
-        chat_id: Identifier of the conversation whose history should be loaded.
-        auth: Authentication context used to verify access to the conversation.
-        redis: Redis connection where chat messages are stored.
-
-    Returns:
-        A list of :class:`ChatMessage` objects or an empty list if no history
-        exists.
-    """
+    """Retrieve the message history for a chat conversation."""
     history_key = f"chat:{chat_id}"
     stored = await redis.get(history_key)
     if not stored:
@@ -1045,16 +943,7 @@ async def agent_query(
     auth: AuthContext = Depends(verify_token),
     redis: arq.ArqRedis = Depends(get_redis_pool),
 ):
-    """Execute an agent-style query using the :class:`MorphikAgent`.
-
-    Args:
-        request: The query payload containing the natural language question and optional chat_id.
-        auth: Authentication context used to enforce limits and access control.
-        redis: Redis connection for chat history storage.
-
-    Returns:
-        A dictionary with the agent's full response.
-    """
+    """Execute an agent-style query using the :class:`MorphikAgent`."""
     # Chat history retrieval
     history_key = None
     history: List[Dict[str, Any]] = []
@@ -1117,14 +1006,7 @@ async def agent_query(
 @app.get("/usage/stats")
 @telemetry.track(operation_type="get_usage_stats", metadata_resolver=telemetry.usage_stats_metadata)
 async def get_usage_stats(auth: AuthContext = Depends(verify_token)) -> Dict[str, int]:
-    """Get usage statistics for the authenticated user.
-
-    Args:
-        auth: Authentication context identifying the caller.
-
-    Returns:
-        A mapping of operation types to token usage counts.
-    """
+    """Get usage statistics for the authenticated user."""
     if not auth.permissions or "admin" not in auth.permissions:
         return telemetry.get_user_usage(auth.entity_id)
     return telemetry.get_user_usage(auth.entity_id)
@@ -1138,18 +1020,7 @@ async def get_recent_usage(
     since: Optional[datetime] = None,
     status: Optional[str] = None,
 ) -> List[Dict]:
-    """Retrieve recent telemetry records for the user or application.
-
-    Args:
-        auth: Authentication context; admin users receive global records.
-        operation_type: Optional operation type to filter by.
-        since: Only return records newer than this timestamp.
-        status: Optional status filter (e.g. ``success`` or ``error``).
-
-    Returns:
-        A list of usage entries sorted by timestamp, each represented as a
-        dictionary.
-    """
+    """Retrieve recent telemetry records for the user or application."""
     if not auth.permissions or "admin" not in auth.permissions:
         records = telemetry.get_recent_usage(
             user_id=auth.entity_id, operation_type=operation_type, since=since, status=status
@@ -1178,18 +1049,7 @@ async def generate_local_uri(
     password_token: str = Form(...),
     server_mode: bool = Form(False),
 ) -> Dict[str, str]:
-    """Generate a development URI for running Morphik locally.
-
-    Args:
-        name: Developer name to embed in the token payload.
-        expiry_days: Number of days the generated token should remain valid.
-        password_token: Authentication token that must match LOCAL_URI_TOKEN from .env.
-        server_mode: If True, return server IP instead of localhost.
-
-    Returns:
-        A dictionary containing the ``uri`` that can be used to connect to the
-        local instance.
-    """
+    """Generate a development URI for running Morphik locally."""
     try:
         # Authenticate with LOCAL_URI_TOKEN
         if not settings.LOCAL_URI_TOKEN:
@@ -1253,15 +1113,7 @@ async def generate_cloud_uri(
     authorization: str = Header(None),
     admin_secret: Optional[str] = Header(default=None, alias="X-Morphik-Admin-Secret"),
 ) -> Dict[str, str]:
-    """Generate an authenticated URI for a cloud-hosted Morphik application.
-
-    Args:
-        request: Parameters for URI generation including ``app_id`` and ``name``.
-        authorization: Bearer token of the user requesting the URI.
-
-    Returns:
-        A dictionary with the generated ``uri`` and associated ``app_id``.
-    """
+    """Generate an authenticated URI for a cloud-hosted Morphik application."""
     try:
         app_id = request.app_id
         name = request.name
@@ -1424,15 +1276,7 @@ async def delete_cloud_app(
     app_name: str = Query(..., description="Name of the application to delete"),
     auth: AuthContext = Depends(verify_token),
 ) -> Dict[str, Any]:
-    """Delete all resources associated with a given cloud application.
-
-    Args:
-        app_name: Name of the application whose data should be removed.
-        auth: Authentication context of the requesting user.
-
-    Returns:
-        A summary describing how many documents and folders were removed.
-    """
+    """Delete all resources associated with a given cloud application."""
 
     user_id = auth.user_id or auth.entity_id
     logger.info(f"Deleting app {app_name} for user {user_id}")
@@ -1540,16 +1384,7 @@ async def list_chat_conversations(
     auth: AuthContext = Depends(verify_token),
     limit: int = Query(100, ge=1, le=500),
 ):
-    """List chat conversations available to the current user.
-
-    Args:
-        auth: Authentication context containing user and app identifiers.
-        limit: Maximum number of conversations to return (1-500)
-
-    Returns:
-        A list of dictionaries describing each conversation, ordered by most
-        recent activity.
-    """
+    """List chat conversations available to the current user."""
     try:
         convos = await document_service.db.list_chat_conversations(
             user_id=auth.user_id,
@@ -1568,16 +1403,7 @@ async def update_chat_title(
     title: str = Query(..., description="New title for the chat"),
     auth: AuthContext = Depends(verify_token),
 ):
-    """Update the title of a chat conversation.
-
-    Args:
-        chat_id: ID of the chat conversation to update
-        title: New title for the chat
-        auth: Authentication context
-
-    Returns:
-        Success status
-    """
+    """Update the title of a chat conversation."""
     try:
         success = await document_service.db.update_chat_title(
             conversation_id=chat_id,

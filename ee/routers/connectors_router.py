@@ -49,18 +49,33 @@ async def get_connector_service(auth: AuthContext = Depends(verify_token)) -> Co
 class IngestFromConnectorRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    file_id: str
-    morphik_folder_name: Optional[str] = None
-    morphik_end_user_id: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None  # New field for custom metadata
+    file_id: str = Field(..., description="Identifier of the connector-managed file to ingest into Morphik.")
+    morphik_folder_name: Optional[str] = Field(
+        default=None,
+        description="Optional Morphik folder name for the ingested document.",
+    )
+    morphik_end_user_id: Optional[str] = Field(
+        default=None,
+        description="Optional end-user identifier to associate with the ingested document.",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Additional metadata merged with the ingested document.",
+    )
 
 
 class ConnectorIngestRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    file_id: str
-    folder_name: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    file_id: str = Field(..., description="Identifier of the connector file being ingested.")
+    folder_name: Optional[str] = Field(
+        default=None,
+        description="Optional Morphik folder name applied to the ingested document.",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Metadata attached to the document when ingesting from the connector.",
+    )
 
 
 class GitHubRepositoryIngestRequest(BaseModel):
@@ -68,13 +83,31 @@ class GitHubRepositoryIngestRequest(BaseModel):
         default="github",
         json_schema_extra={"x-stainless-param": "body_connector_type"},
     )
-    repo_path: str  # Format: "owner/repo"
-    folder_name: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
-    include_patterns: Optional[List[str]] = None
-    ignore_patterns: Optional[List[str]] = None
-    compress: bool = True
-    force: bool = False  # Force re-ingestion even if repository already exists
+    repo_path: str = Field(..., description='Repository path in the format "owner/repo".')
+    folder_name: Optional[str] = Field(
+        default=None,
+        description="Optional Morphik folder for the ingested repository documents.",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Metadata applied to each document created from the repository.",
+    )
+    include_patterns: Optional[List[str]] = Field(
+        default=None,
+        description="Optional glob patterns restricting which files are ingested.",
+    )
+    ignore_patterns: Optional[List[str]] = Field(
+        default=None,
+        description="Optional glob patterns for files that should be skipped.",
+    )
+    compress: bool = Field(
+        default=True,
+        description="When true, package repository files before uploading to Morphik.",
+    )
+    force: bool = Field(
+        default=False,
+        description="Re-ingest the repository even if it was previously processed.",
+    )
 
 
 class ConnectorAuthRequest(BaseModel):

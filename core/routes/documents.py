@@ -80,15 +80,6 @@ async def list_documents(
     {"priority": {"$eq": 42}, "created_date": {"$gte": "2024-01-01T00:00:00Z"}}
     ```
     Supports typed metadata (number, decimal, datetime, date) with safe casting.
-
-    Args:
-        request: Request body containing filters and pagination
-        auth: Authentication context
-        folder_name: Optional folder to scope the operation to
-        end_user_id: Optional end-user ID to scope the operation to
-
-    Returns:
-        List[Document]: List of accessible documents
     """
     # Create system filters for folder and user scoping
     system_filters = {}
@@ -202,12 +193,7 @@ async def list_docs(
 async def get_document(document_id: str, auth: AuthContext = Depends(verify_token)):
     """Retrieve a single document by its external identifier.
 
-    Args:
-        document_id: External ID of the document to fetch.
-        auth: Authentication context used to verify access rights.
-
-    Returns:
-        The :class:`Document` metadata if found.
+    Returns the :class:`Document` metadata if found or raises 404.
     """
     try:
         doc = await document_service.db.get_document(document_id, auth)
@@ -225,12 +211,6 @@ async def get_document_status(document_id: str, auth: AuthContext = Depends(veri
     """
     Get the processing status of a document.
 
-    Args:
-        document_id: ID of the document to check
-        auth: Authentication context
-
-    Returns:
-        Dict containing status information for the document
     """
     try:
         doc = await document_service.db.get_document(document_id, auth)
@@ -274,13 +254,6 @@ async def delete_document(document_id: str, auth: AuthContext = Depends(verify_t
     - Document metadata
     - Document content in storage
     - Document chunks and embeddings in vector store
-
-    Args:
-        document_id: ID of the document to delete
-        auth: Authentication context (must have write access to the document)
-
-    Returns:
-        Deletion status
     """
     try:
         success = await document_service.delete_document(document_id, auth)
@@ -302,15 +275,6 @@ async def get_document_by_filename(
 ):
     """
     Get document by filename.
-
-    Args:
-        filename: Filename of the document to retrieve
-        auth: Authentication context
-        folder_name: Optional folder to scope the operation to
-        end_user_id: Optional end-user ID to scope the operation to
-
-    Returns:
-        Document: Document metadata if found and accessible
     """
     try:
         # Create system filters for folder and user scoping
@@ -339,14 +303,6 @@ async def get_document_download_url(
 ):
     """
     Get a download URL for a specific document.
-
-    Args:
-        document_id: External ID of the document
-        auth: Authentication context
-        expires_in: URL expiration time in seconds (default: 1 hour)
-
-    Returns:
-        Dictionary containing the download URL and metadata
     """
     try:
         # Get the document
@@ -383,13 +339,6 @@ async def download_document_file(document_id: str, auth: AuthContext = Depends(v
     """
     Download the actual file content for a document.
     This endpoint is used for local storage when file:// URLs cannot be accessed by browsers.
-
-    Args:
-        document_id: External ID of the document
-        auth: Authentication context
-
-    Returns:
-        StreamingResponse with the file content
     """
     try:
         logger.info(f"Attempting to download file for document ID: {document_id}")
@@ -458,15 +407,6 @@ async def update_document_text(
 ):
     """
     Update a document with new text content using the specified strategy.
-
-    Args:
-        document_id: ID of the document to update
-        request: Text content and metadata for the update
-        update_strategy: Strategy for updating the document (default: 'add')
-        auth: Authentication context
-
-    Returns:
-        Document: Updated document metadata
     """
     try:
         if getattr(request, "rules", None):
@@ -506,17 +446,6 @@ async def update_document_file(
 ):
     """
     Update a document with content from a file using the specified strategy.
-
-    Args:
-        document_id: ID of the document to update
-        file: File to add to the document
-        metadata: JSON string of metadata to merge with existing metadata
-        update_strategy: Strategy for updating the document (default: 'add')
-        use_colpali: Whether to use multi-vector embedding
-        auth: Authentication context
-
-    Returns:
-        Document: Updated document metadata
     """
     try:
         metadata_dict = json.loads(metadata)
@@ -561,14 +490,6 @@ async def update_document_metadata(
 ):
     """
     Update only a document's metadata.
-
-    Args:
-        document_id: ID of the document to update
-        metadata_updates: New metadata to merge with existing metadata
-        auth: Authentication context
-
-    Returns:
-        Document: Updated document metadata
     """
     try:
         doc = await document_service.update_document(
@@ -599,13 +520,6 @@ async def extract_document_pages(
 ):
     """
     Extract specific pages from a document (PDF, PowerPoint, or Word) as base64-encoded images.
-
-    Args:
-        request: Request containing document_id, start_page, and end_page
-        auth: Authentication context
-
-    Returns:
-        DocumentPagesResponse: Base64-encoded images of the requested pages
     """
     try:
         # Get the document

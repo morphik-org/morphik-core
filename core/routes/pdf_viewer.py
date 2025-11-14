@@ -63,16 +63,7 @@ async def get_document_chat_history(
     auth: AuthContext = Depends(verify_token),
     redis: arq.ArqRedis = Depends(get_redis_pool),
 ):
-    """Retrieve the message history for a document chat conversation.
-
-    Args:
-        chat_id: Identifier of the document chat conversation.
-        auth: Authentication context used to verify access to the conversation.
-        redis: Redis connection where chat messages are stored.
-
-    Returns:
-        A list of message dictionaries or an empty list if no history exists.
-    """
+    """Retrieve the message history for a document chat conversation."""
     history_key = f"document_chat:{chat_id}"
     stored = await redis.get(history_key)
 
@@ -162,17 +153,7 @@ async def complete_document_chat(
     auth: AuthContext = Depends(verify_token),
     redis: arq.ArqRedis = Depends(get_redis_pool),
 ):
-    """Stream a chat completion response for a document chat conversation.
-
-    Args:
-        chat_id: Identifier of the document chat conversation.
-        request: The chat request containing the user message.
-        auth: Authentication context.
-        redis: Redis connection for chat history storage.
-
-    Returns:
-        StreamingResponse with the assistant's response.
-    """
+    """Stream a chat completion response for a document chat conversation."""
     try:
         # Validate request
         if not request.message or not request.message.strip():
@@ -527,12 +508,6 @@ async def complete_document_chat(
 def safe_content_to_string(content) -> str:
     """
     Safely convert content to string, handling None/null values.
-
-    Args:
-        content: Content that might be None, string, or other type
-
-    Returns:
-        String representation of content, empty string if None
     """
     if content is None:
         return ""

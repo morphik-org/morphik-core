@@ -32,9 +32,6 @@ async def health_check(redis: arq.ArqRedis = Depends(get_redis_pool), document_s
     - PGVector store
     - Storage service (Local/S3)
     - ColPali vector store (if enabled)
-
-    Returns:
-        DetailedHealthCheckResponse with status of each service
     """
     services = []
     overall_status = "healthy"

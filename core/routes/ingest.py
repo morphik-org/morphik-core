@@ -58,21 +58,7 @@ async def ingest_text(
     request: IngestTextRequest,
     auth: AuthContext = Depends(verify_token),
 ) -> Document:
-    """Ingest a **text** document.
-
-    Args:
-        request: IngestTextRequest payload containing:
-            • content – raw text to ingest.
-            • filename – optional filename to help detect MIME-type.
-            • metadata – optional JSON metadata dict.
-            • metadata_types – optional type hints (string, number, decimal, datetime, date, boolean, array, object) for typed filtering.
-            • folder_name – optional folder scope.
-            • end_user_id – optional end-user scope.
-        auth: Decoded JWT context (injected).
-
-    Returns:
-        Document metadata row representing the newly-ingested text.
-    """
+    """Ingest a **text** document."""
     try:
         # Free-tier usage limits (cloud mode only)
         if settings.MODE == "cloud" and auth.user_id:
@@ -126,19 +112,6 @@ async def ingest_file(
     The file is uploaded to object storage, a *Document* stub is persisted
     with ``status='processing'`` and a background worker picks up the heavy
     parsing / chunking work.
-
-    Args:
-        file: Uploaded file from multipart/form-data.
-        metadata: JSON-string representing user metadata.
-        metadata_types: JSON-string with per-field type hints (string, number, decimal, datetime, date, boolean, array, object) for typed filtering.
-        auth: Caller context – must include *write* permission.
-        use_colpali: Switch to multi-vector embeddings.
-        folder_name: Optionally scope doc to a folder.
-        end_user_id: Optionally scope doc to an end-user.
-        redis: arq redis connection – used to enqueue the job.
-
-    Returns:
-        Document stub with ``status='processing'``.
     """
     try:
         # ------------------------------------------------------------------
@@ -321,19 +294,6 @@ async def batch_ingest_files(
     Each file is treated the same as :func:`ingest_file` but sharing the same
     request avoids many round-trips. All heavy work is still delegated to the
     background worker pool.
-
-    Args:
-        files: List of files to upload.
-        metadata: Either a single JSON-string dict or list of dicts matching
-            the number of files.
-        use_colpali: Enable multi-vector embeddings.
-        folder_name: Optional folder scoping for **all** files.
-        end_user_id: Optional end-user scoping for **all** files.
-        auth: Caller context with *write* permission.
-        redis: arq redis connection to enqueue jobs.
-
-    Returns:
-        BatchIngestResponse summarising created documents & errors.
     """
     if not files:
         raise HTTPException(status_code=400, detail="No files provided for batch ingestion")
@@ -742,17 +702,9 @@ async def query_document(
     Execute a one-off analysis for a document using Morphik On-the-Fly, optionally enforcing structured output and
     scheduling a follow-up ingestion.
 
-    Args:
-        file: Uploaded document (PDF or any supported MIME type) analysed by Morphik On-the-Fly inline.
-        prompt: Natural-language instruction Morphik On-the-Fly should fulfil against the document.
-        schema: Optional JSON schema forcing structured output; accepts a JSON object encoded in the form data.
-        ingestion_options: JSON object encoded as a string that controls follow-up ingestion. Supported keys include
-            `ingest` (bool), `metadata` (dict merged with any extracted fields), `use_colpali` (bool), `folder_name`
-            (str or list[str]), and `end_user_id` (str). Additional keys are ignored.
-
-    Returns:
-        DocumentQueryResponse containing raw and structured outputs alongside ingestion status details. When ingestion is
-        requested, the original metadata is merged with any schema-derived fields before the file is queued.
+    `ingestion_options` is a JSON string controlling post-analysis ingestion behaviour via keys such as `ingest`,
+    `metadata`, `use_colpali`, `folder_name`, and `end_user_id`. Additional keys are ignored. A
+    :class:`DocumentQueryResponse` describing the inline analysis and any queued ingestion is returned.
     """
     try:
         ingestion_options_dict = json.loads(ingestion_options or "{}")
