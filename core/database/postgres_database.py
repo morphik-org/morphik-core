@@ -365,36 +365,6 @@ class PostgresDatabase(BaseDatabase):
                     )
                 )
 
-                # Ensure shared user_limits table carries dedicated-cluster metadata
-                await conn.execute(
-                    text(
-                        """
-                    DO $$
-                    BEGIN
-                        IF EXISTS (
-                            SELECT 1
-                            FROM information_schema.tables
-                            WHERE table_name = 'user_limits'
-                        ) THEN
-                            IF NOT EXISTS (
-                                SELECT 1 FROM information_schema.columns
-                                WHERE table_name = 'user_limits' AND column_name = 'cluster_api_host'
-                            ) THEN
-                                ALTER TABLE user_limits ADD COLUMN cluster_api_host TEXT;
-                            END IF;
-
-                            IF NOT EXISTS (
-                                SELECT 1 FROM information_schema.columns
-                                WHERE table_name = 'user_limits' AND column_name = 'cluster_admin_secret'
-                            ) THEN
-                                ALTER TABLE user_limits ADD COLUMN cluster_admin_secret TEXT;
-                            END IF;
-                        END IF;
-                    END$$;
-                    """
-                    )
-                )
-
                 # Create folders table if it doesn't exist
                 await conn.execute(
                     text(
