@@ -358,10 +358,10 @@ class PostgresDatabase(BaseDatabase):
                                 WHERE table_name = 'apps' AND column_name = 'created_by_user_id'
                             ) THEN
                                 ALTER TABLE apps ADD COLUMN created_by_user_id VARCHAR;
+                            END IF;
                         END IF;
-                    END IF;
-                END$$;
-                """
+                    END$$;
+                    """
                     )
                 )
 
