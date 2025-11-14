@@ -495,6 +495,7 @@ class Folder:
         sources: List[Union[ChunkSource, Dict[str, Any]]],
         additional_folders: Optional[List[str]] = None,
         use_colpali: bool = True,
+        output_format: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in this folder.
@@ -503,12 +504,19 @@ class Folder:
             sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
             additional_folders: Optional list of extra folders to include in the scope
             use_colpali: Whether to request multimodal chunks when available
+            output_format: Controls how image chunks are returned (e.g., "base64" or "url")
 
         Returns:
             List[FinalChunkResult]: List of chunk results
         """
         merged = self._merge_folders(additional_folders)
-        request = self._client._logic._prepare_batch_get_chunks_request(sources, merged, None, use_colpali)
+        request = self._client._logic._prepare_batch_get_chunks_request(
+            sources,
+            merged,
+            None,
+            use_colpali,
+            output_format,
+        )
 
         response = self._client._request("POST", "batch/chunks", data=request)
         return self._client._logic._parse_chunk_result_list_response(response)
@@ -1035,6 +1043,7 @@ class UserScope:
         sources: List[Union[ChunkSource, Dict[str, Any]]],
         additional_folders: Optional[List[str]] = None,
         use_colpali: bool = True,
+        output_format: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in this folder.
@@ -1043,12 +1052,19 @@ class UserScope:
             sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
             additional_folders: Optional list of extra folders to include in the scope
             use_colpali: Whether to request multimodal chunks when available
+            output_format: Controls how image chunks are returned (e.g., "base64" or "url")
 
         Returns:
             List[FinalChunkResult]: List of chunk results
         """
         merged = self._merge_folders(additional_folders)
-        request = self._client._logic._prepare_batch_get_chunks_request(sources, merged, None, use_colpali)
+        request = self._client._logic._prepare_batch_get_chunks_request(
+            sources,
+            merged,
+            None,
+            use_colpali,
+            output_format,
+        )
 
         response = self._client._request("POST", "batch/chunks", data=request)
         return self._client._logic._parse_chunk_result_list_response(response)
@@ -2166,6 +2182,7 @@ class Morphik(_ScopedOperationsMixin):
         sources: List[Union[ChunkSource, Dict[str, Any]]],
         folder_name: Optional[Union[str, List[str]]] = None,
         use_colpali: bool = True,
+        output_format: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number.
@@ -2173,12 +2190,20 @@ class Morphik(_ScopedOperationsMixin):
         Args:
             sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
             folder_name: Optional folder name (or list of names) to scope the request
+            use_colpali: Whether to request multimodal chunks when available
+            output_format: Controls how image chunks are returned (e.g., "base64" or "url")
 
         Returns:
             List[FinalChunkResult]: List of chunk results
 
         """
-        request = self._logic._prepare_batch_get_chunks_request(sources, folder_name, None, use_colpali)
+        request = self._logic._prepare_batch_get_chunks_request(
+            sources,
+            folder_name,
+            None,
+            use_colpali,
+            output_format,
+        )
         response = self._request("POST", "batch/chunks", data=request)
         return self._logic._parse_chunk_result_list_response(response)
 

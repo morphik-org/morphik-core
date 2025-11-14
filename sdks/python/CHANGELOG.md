@@ -10,13 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `retrieve_chunks`: New `output_format` parameter (`"base64"` | `"url"`). When set to `"url"`, image chunks are returned as presigned URLs in `content` and `download_url` is populated. Default remains `"base64"` for backward compatibility.
 - `retrieve_chunks`: `padding` parameter surfaced consistently in SDK convenience methods (folder/user scopes) to fetch neighboring page chunks for ColPali.
+- `batch_get_chunks`: `output_format` parameter mirrors retrieval APIs so batch lookups can request presigned URLs for image chunks.
 
 ### Changed
 - Image handling in SDK parsing: When `output_format="url"`, `FinalChunkResult.content` is a string URL for image chunks; when `"base64"`, the SDK attempts to decode to `PIL.Image` (unchanged behavior).
 
 ### Notes
 - Server now hot-swaps base64/data-URI image chunks into binary storage when necessary and returns a presigned URL. In local dev, URLs may be `file://...` paths; in S3-backed deployments, HTTPS presigned URLs.
-- API accepts `output_format` on `/retrieve/chunks` and `/retrieve/chunks/grouped`.
+- API accepts `output_format` on `/retrieve/chunks`, `/retrieve/chunks/grouped`, and `/batch/chunks`.
 
 ## [1.0.0] - 2024-01-15
 
