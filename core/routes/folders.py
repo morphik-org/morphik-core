@@ -34,13 +34,6 @@ telemetry = TelemetryService()
 async def _resolve_folder(identifier: str, auth: AuthContext) -> Folder:
     """
     Resolve a folder identifier that might be either an ID or a name.
-
-    Args:
-        identifier: Folder ID or name supplied by the caller
-        auth: Authentication context
-
-    Returns:
-        Folder model if found
     """
     folder = await document_service.db.get_folder(identifier, auth)
     if folder:
@@ -66,13 +59,6 @@ async def create_folder(
 ) -> Folder:
     """
     Create a new folder.
-
-    Args:
-        folder_create: Folder creation request containing name and optional description
-        auth: Authentication context
-
-    Returns:
-        Folder: Created folder
     """
     try:
         # Validate folder name - no slashes allowed (nested folders not supported)
@@ -116,12 +102,6 @@ async def list_folders(
 ) -> List[Folder]:
     """
     List all folders the user has access to.
-
-    Args:
-        auth: Authentication context
-
-    Returns:
-        List[Folder]: List of folders
     """
     try:
         folders = await document_service.db.list_folders(auth)
@@ -251,13 +231,6 @@ async def get_folder(
 ) -> Folder:
     """
     Get a folder by ID or name.
-
-    Args:
-        folder_id_or_name: ID or name of the folder
-        auth: Authentication context
-
-    Returns:
-        Folder: Folder if found and accessible
     """
     try:
         return await _resolve_folder(folder_id_or_name, auth)
@@ -276,13 +249,6 @@ async def delete_folder(
 ):
     """
     Delete a folder and all associated documents.
-
-    Args:
-        folder_id_or_name: Name or ID of the folder to delete
-        auth: Authentication context (must have write access to the folder)
-
-    Returns:
-        Deletion status
     """
     try:
         folder = await _resolve_folder(folder_id_or_name, auth)
@@ -347,14 +313,6 @@ async def add_document_to_folder(
 ):
     """
     Add a document to a folder.
-
-    Args:
-        folder_id_or_name: ID or name of the folder
-        document_id: ID of the document
-        auth: Authentication context
-
-    Returns:
-        Success status
     """
     try:
         folder = await _resolve_folder(folder_id_or_name, auth)
@@ -383,14 +341,6 @@ async def remove_document_from_folder(
 ):
     """
     Remove a document from a folder.
-
-    Args:
-        folder_id_or_name: ID or name of the folder
-        document_id: ID of the document
-        auth: Authentication context
-
-    Returns:
-        Success status
     """
     try:
         folder = await _resolve_folder(folder_id_or_name, auth)

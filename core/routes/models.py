@@ -22,9 +22,6 @@ def get_user_and_app_id(auth: AuthContext) -> tuple[str, str]:
 
     In dev mode, provides defaults for missing values.
     In production mode, raises HTTPException if values are missing.
-
-    Returns:
-        Tuple of (user_id, app_id)
     """
     settings = get_settings()
 
