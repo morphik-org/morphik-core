@@ -883,6 +883,7 @@ class DocumentService:
         folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
         use_colpali: Optional[bool] = None,
+        output_format: str = "base64",
     ) -> List[ChunkResult]:
         """
         Retrieve specific chunks by their document ID and chunk number in a single batch operation.
@@ -893,6 +894,7 @@ class DocumentService:
             folder_name: Optional folder to scope the operation to
             end_user_id: Optional end-user ID to scope the operation to
             use_colpali: Whether to use colpali multimodal features for image chunks
+            output_format: How to return image chunks (base64 data or presigned URLs)
 
         Returns:
             List of ChunkResult objects
@@ -989,7 +991,12 @@ class DocumentService:
         logger.debug(f"Sorted {len(chunks)} chunks by score")
 
         # Convert to chunk results
-        results = await self._create_chunk_results(auth, chunks, preloaded_docs=authorized_doc_map)
+        results = await self._create_chunk_results(
+            auth,
+            chunks,
+            preloaded_docs=authorized_doc_map,
+            output_format=output_format,
+        )
         logger.info(f"Batch retrieved {len(results)} chunks out of {len(chunk_ids)} requested")
         return results
 
