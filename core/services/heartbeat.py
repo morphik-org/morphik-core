@@ -71,7 +71,8 @@ class Heartbeat:
         payload = {
             "project_name": self.project_name,
             "installation_id": self.installation_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            # RFC3339 timestamp with explicit Zulu suffix for zod validator.
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "version": self.version,
             "event_type": event_type,
         }
