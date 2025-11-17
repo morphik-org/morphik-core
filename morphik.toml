@@ -149,14 +149,6 @@ enable_entity_resolution = true
 # base_url="https://graph-api.morphik.ai"
 
 [telemetry]
-enabled = true
-honeycomb_enabled = true
-honeycomb_endpoint = "https://api.honeycomb.io"
-honeycomb_proxy_endpoint = "https://otel-proxy.onrender.com"
 service_name = "databridge-core"
-otlp_timeout = 10
-otlp_max_retries = 3
-otlp_retry_delay = 1
-otlp_max_export_batch_size = 512
-otlp_schedule_delay_millis = 5000
-otlp_max_queue_size = 2048
+upload_interval_hours = 4.0
+max_local_bytes = 1073741824

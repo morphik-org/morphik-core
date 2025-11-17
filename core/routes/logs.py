@@ -1,22 +1,80 @@
-import json
-from datetime import datetime
+import logging
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import httpx
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from core.auth_utils import verify_token
-from core.database.logs_db import LogsDB
 from core.models.auth import AuthContext
-from core.services.telemetry import TelemetryService, UsageRecord
+from core.services.telemetry_events import TelemetryEventReader
 
 router = APIRouter(prefix="/logs", tags=["Logs"])
+logger = logging.getLogger(__name__)
 
-telemetry = TelemetryService()
+event_reader = TelemetryEventReader(log_dir=Path("logs/telemetry"))
+LOGS_PROXY_URL = "https://logs.morphik.ai/api/events/query"
+LOCAL_RETENTION_HOURS = 4
+
+
+async def _query_proxy(
+    app_id: str,
+    since: datetime,
+    limit: int,
+    operation_type: Optional[str] = None,
+    status: Optional[str] = None,
+) -> List[Any]:
+    """Query logs.morphik.ai for historical events filtered by app_id."""
+    try:
+        params = {
+            "app_id": app_id,
+            "since": since.isoformat(),
+            "limit": str(limit),
+        }
+        if operation_type:
+            params["operation_type"] = operation_type
+        if status:
+            params["status"] = status
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(LOGS_PROXY_URL, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            if not data.get("ok"):
+                logger.warning("Proxy query failed: %s", data.get("error"))
+                return []
+
+            raw_events = data.get("events", [])
+            from core.services.telemetry_events import TelemetryEvent
+
+            return [
+                TelemetryEvent(
+                    timestamp=datetime.fromisoformat(e["timestamp"]),
+                    installation_id=e.get("installation_id"),
+                    operation_type=e["operation_type"],
+                    status=e.get("status", "unknown"),
+                    duration_ms=float(e.get("duration_ms", 0.0)),
+                    user_id=e.get("user_id"),
+                    app_id=e.get("app_id"),
+                    tokens_used=int(e.get("tokens_used", 0)),
+                    metadata=e.get("metadata"),
+                    error=e.get("error"),
+                    trace_id=e.get("trace_id"),
+                    span_id=e.get("span_id"),
+                    worker_pid=e.get("worker_pid"),
+                )
+                for e in raw_events
+            ]
+    except Exception as exc:
+        logger.error("Failed to query logs proxy: %s", exc)
+        return []
 
 
 class LogResponse(BaseModel):
-    """Public serialisable view of a UsageRecord."""
+    """Public serialisable view of a telemetry event."""
 
     timestamp: datetime
     user_id: str
@@ -34,61 +92,51 @@ class LogResponse(BaseModel):
 async def get_logs(
     auth: AuthContext = Depends(verify_token),
     limit: int = Query(100, ge=1, le=500),
-    since: Optional[datetime] = None,
+    hours: float = Query(4.0, ge=0.1, le=168.0),
     op_type: Optional[str] = Query(None, alias="op_type"),
     status_filter: Optional[str] = Query(None, alias="status"),
 ):
-    """Return recent logs for the authenticated user (scoped by user_id)."""
+    """Return recent logs for the authenticated user (scoped by app_id).
 
-    # Prefer persisted logs if table exists
-    try:
-        db = await LogsDB.get()
-        rows = await db.query(
-            auth.entity_id,
-            auth.app_id or "unknown",
-            limit,
-            since.isoformat() if since else None,
-            op_type,
-            status_filter,
-        )
-        records = [
-            UsageRecord(
-                timestamp=row["timestamp"],
-                operation_type=row["operation_type"],
-                tokens_used=row["tokens_used"],
-                user_id=row["user_id"],
-                app_id=row["app_id"],
-                duration_ms=float(row["duration_ms"] or 0),
-                status=row["status"],
-                metadata=(
-                    row["metadata"] if not isinstance(row["metadata"], str) else json.loads(row["metadata"] or "{}")
-                ),
-                error=row["error"],
-            )
-            for row in rows
-        ]
-    except Exception:
-        # Fallback to in-memory for backwards compatibility
-        records = telemetry.get_recent_usage(
+    Args:
+        hours: Number of hours of history to retrieve (default 4)
+               - <= 4 hours: reads from local files
+               - > 4 hours: queries logs.morphik.ai proxy (requires proxy endpoint)
+    """
+    if not auth.app_id:
+        return []
+
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    if hours <= LOCAL_RETENTION_HOURS:
+        events = event_reader.recent_events(
+            limit=limit,
             user_id=auth.entity_id,
             app_id=auth.app_id,
             operation_type=op_type,
+            status=status_filter,
             since=since,
+        )
+    else:
+        events = await _query_proxy(
+            app_id=auth.app_id,
+            since=since,
+            limit=limit,
+            operation_type=op_type,
             status=status_filter,
         )
 
-    # Return the *most recent* first, truncated by limit
     return [
         LogResponse(
-            timestamp=r.timestamp,
-            user_id=r.user_id,
-            operation_type=r.operation_type,
-            status=r.status,
-            tokens_used=r.tokens_used,
-            duration_ms=r.duration_ms,
-            app_id=r.app_id,
-            metadata=r.metadata,
-            error=r.error,
+            timestamp=event.timestamp,
+            user_id=event.user_id or auth.entity_id,
+            operation_type=event.operation_type,
+            status=event.status,
+            tokens_used=event.tokens_used,
+            duration_ms=event.duration_ms,
+            app_id=event.app_id,
+            metadata=event.metadata,
+            error=event.error,
         )
-        for r in sorted(records, key=lambda x: x.timestamp, reverse=True)[:limit]
+        for event in events
     ]

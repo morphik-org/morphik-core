@@ -8,6 +8,7 @@ import time
 import traceback
 import urllib.parse as up
 from datetime import UTC, datetime
+from logging.handlers import RotatingFileHandler
 from typing import Any, Dict, List, Optional
 
 from arq.connections import RedisSettings
@@ -43,8 +44,13 @@ settings = get_settings()
 # Create logs directory if it doesn't exist
 os.makedirs("logs", exist_ok=True)
 
-# Set up file handler for worker_ingestion.log
-file_handler = logging.FileHandler("logs/worker_ingestion.log")
+# Set up file handler for worker_ingestion.log with rotation
+file_handler = RotatingFileHandler(
+    "logs/worker_ingestion.log",
+    maxBytes=100 * 1024 * 1024,
+    backupCount=10,
+    encoding="utf-8",
+)
 file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 logger.addHandler(file_handler)
 # Set logger level based on settings (diff used INFO directly)
