@@ -120,6 +120,9 @@ storage_path = "./storage"
 [vector_store]
 provider = "pgvector"
 
+[multivector_store]
+provider = "postgres"
+
 [morphik]
 enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"
@@ -127,6 +130,9 @@ api_domain = "api.morphik.ai"  # API domain for cloud URIs
 # Only call the embedding API if colpali_mode is "api"
 morphik_embedding_api_domain = "http://localhost:6000"  # endpoint for multivector embedding service
 colpali_mode = "local" # "off", "local", or "api"
+
+[pdf_viewer]
+frontend_url = "http://localhost:3000/api/pdf"
 
 [graph]
 model = "openai_gpt4-1-mini"
@@ -137,14 +143,6 @@ enable_entity_resolution = true
 # base_url="https://graph-api.morphik.ai"
 
 [telemetry]
-enabled = true
-honeycomb_enabled = true
-honeycomb_endpoint = "https://api.honeycomb.io"
-honeycomb_proxy_endpoint = "https://otel-proxy.onrender.com"
 service_name = "databridge-core"
-otlp_timeout = 10
-otlp_max_retries = 3
-otlp_retry_delay = 1
-otlp_max_export_batch_size = 512
-otlp_schedule_delay_millis = 5000
-otlp_max_queue_size = 2048
+upload_interval_hours = 4.0
+max_local_bytes = 1073741824

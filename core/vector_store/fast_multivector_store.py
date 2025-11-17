@@ -7,6 +7,7 @@ import tempfile
 import time
 from contextlib import contextmanager
 from io import BytesIO
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 from uuid import uuid4
@@ -31,12 +32,17 @@ logger = logging.getLogger(__name__)
 # Attach a dedicated handler to capture multivector retrieval diagnostics once per process.
 _multivector_log_path = os.path.join("logs", "multivector.log")
 if not any(
-    isinstance(handler, logging.FileHandler)
+    isinstance(handler, RotatingFileHandler)
     and getattr(handler, "baseFilename", "") == os.path.abspath(_multivector_log_path)
     for handler in logger.handlers
 ):
     os.makedirs("logs", exist_ok=True)
-    _file_handler = logging.FileHandler(_multivector_log_path)
+    _file_handler = RotatingFileHandler(
+        _multivector_log_path,
+        maxBytes=100 * 1024 * 1024,
+        backupCount=10,
+        encoding="utf-8",
+    )
     _file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
     logger.addHandler(_file_handler)
 
