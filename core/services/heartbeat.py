@@ -39,10 +39,10 @@ class Heartbeat:
     # ------------------------------------------------------------------
     def start(self) -> None:
         if not self.heartbeat_url:
-            LOGGER.info("Heartbeat disabled (no URL configured)")
+            LOGGER.debug("Heartbeat disabled (no URL configured)")
             return
         if self.interval_seconds <= 0:
-            LOGGER.info("Heartbeat disabled (interval=%s)", self.interval_seconds)
+            LOGGER.debug("Heartbeat disabled (interval=%s)", self.interval_seconds)
             return
         if self._thread and self._thread.is_alive():
             return
@@ -50,7 +50,7 @@ class Heartbeat:
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._run_forever, name="heartbeat", daemon=True)
         self._thread.start()
-        LOGGER.info("Heartbeat thread started for project %s", self.project_name)
+        LOGGER.debug("Heartbeat thread started for project %s", self.project_name)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -92,7 +92,7 @@ class Heartbeat:
             return
 
         if self._is_first_ping:
-            LOGGER.info("Sent first_start heartbeat for project: %s", self.project_name)
+            LOGGER.debug("Sent first_start heartbeat for project: %s", self.project_name)
         else:
             LOGGER.debug("Sent heartbeat for project: %s", self.project_name)
         self._is_first_ping = False
