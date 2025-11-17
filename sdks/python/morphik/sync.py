@@ -1,6 +1,5 @@
 import json
 import logging
-from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Dict, List, Literal, Optional, Type, Union
@@ -2502,32 +2501,6 @@ class Morphik(_ScopedOperationsMixin):
         """
         limit_capped = max(1, min(limit, 500))
         return self._request("GET", "chats", params={"limit": limit_capped})
-
-    # ------------------------------------------------------------------
-    # Usage API ---------------------------------------------------------
-    # ------------------------------------------------------------------
-    def get_usage_stats(self) -> Dict[str, int]:
-        """Return cumulative usage statistics for the authenticated user."""
-        return self._request("GET", "usage/stats")
-
-    def get_recent_usage(
-        self,
-        operation_type: Optional[str] = None,
-        since: Optional["datetime"] = None,
-        status: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return recent usage records with optional filtering."""
-        from datetime import datetime  # Local import ensures small dependency surface
-
-        params: Dict[str, Any] = {}
-        if operation_type:
-            params["operation_type"] = operation_type
-        if since:
-            # Accept either ``str`` or ``datetime`` for *since*
-            params["since"] = since.isoformat() if isinstance(since, datetime) else str(since)
-        if status:
-            params["status"] = status
-        return self._request("GET", "usage/recent", params=params)
 
     # ------------------------------------------------------------------
     # Graph helpers -----------------------------------------------------

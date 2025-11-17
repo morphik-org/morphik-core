@@ -1,6 +1,5 @@
 import json
 import logging
-from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Dict, List, Literal, Optional, Type, Union
@@ -2411,31 +2410,6 @@ class AsyncMorphik(_ScopedOperationsMixin):
         """List recent chat conversations for the current user (async)."""
         limit_capped = max(1, min(limit, 500))
         return await self._request("GET", "chats", params={"limit": limit_capped})
-
-    # ------------------------------------------------------------------
-    # Usage API ---------------------------------------------------------
-    # ------------------------------------------------------------------
-    async def get_usage_stats(self) -> Dict[str, int]:
-        """Return cumulative token usage statistics (async)."""
-        return await self._request("GET", "usage/stats")
-
-    async def get_recent_usage(
-        self,
-        operation_type: Optional[str] = None,
-        since: Optional["datetime"] = None,
-        status: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return recent usage entries with optional filtering (async)."""
-        from datetime import datetime
-
-        params: Dict[str, Any] = {}
-        if operation_type:
-            params["operation_type"] = operation_type
-        if since:
-            params["since"] = since.isoformat() if isinstance(since, datetime) else str(since)
-        if status:
-            params["status"] = status
-        return await self._request("GET", "usage/recent", params=params)
 
     # ------------------------------------------------------------------
     # Graph helpers -----------------------------------------------------
