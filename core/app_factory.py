@@ -1,8 +1,13 @@
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import arq
 from fastapi import FastAPI
+
+HEARTBEAT_URL = "https://logs.morphik.ai/api/heartbeat"
+HEARTBEAT_INTERVAL_HOURS = 4.0
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +112,41 @@ async def lifespan(app_instance: FastAPI):
         ) from exc
     # --- END MOVED STARTUP LOGIC ---
 
+    log_uploader = None
+    heartbeat = None
+    if settings.TELEMETRY_ENABLED:
+        try:
+            from core.services.heartbeat import Heartbeat
+            from core.services.log_uploader import LogUploader
+            from core.services.telemetry import get_installation_id
+
+            installation_id = get_installation_id()
+            project_name = settings.PROJECT_NAME or "oss"
+
+            log_uploader = LogUploader(
+                log_dir=Path("logs"),
+                project_name=project_name,
+                installation_id=installation_id,
+                interval_hours=settings.TELEMETRY_UPLOAD_INTERVAL_HOURS,
+                max_local_bytes=settings.TELEMETRY_MAX_LOCAL_BYTES,
+                service_name=settings.SERVICE_NAME,
+                environment=os.getenv("ENVIRONMENT", settings.MODE),
+            )
+            log_uploader.start()
+            app_instance.state.log_uploader = log_uploader
+
+            heartbeat = Heartbeat(
+                heartbeat_url=HEARTBEAT_URL,
+                project_name=project_name,
+                installation_id=installation_id,
+                version=os.getenv("DATABRIDGE_VERSION", "unknown"),
+                interval_hours=HEARTBEAT_INTERVAL_HOURS,
+            )
+            heartbeat.start()
+            app_instance.state.heartbeat = heartbeat
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to start telemetry services: %s", exc, exc_info=True)
+
     logger.info("Lifespan: Core startup logic executed.")
     yield
     # Shutdown logic
@@ -117,4 +157,8 @@ async def lifespan(app_instance: FastAPI):
         pool_to_close.close()
         # await pool_to_close.wait_closed()  # Uncomment if needed
         logger.info("Redis connection pool closed from lifespan.")
+    if log_uploader:
+        log_uploader.stop()
+    if heartbeat:
+        heartbeat.stop()
     logger.info("Lifespan: Shutdown complete.")

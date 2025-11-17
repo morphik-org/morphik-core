@@ -1,6 +1,10 @@
 import logging
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+LOG_MAX_BYTES = 100 * 1024 * 1024
+LOG_BACKUP_COUNT = 10
 
 
 def setup_logging(log_level: str = "INFO"):
@@ -37,8 +41,13 @@ def setup_logging(log_level: str = "INFO"):
     console_handler.setFormatter(console_formatter)
     console_handler.setLevel(level)
 
-    # File handler
-    file_handler = logging.FileHandler(log_dir / "morphik.log")
+    # File handler with rotation to keep disk usage bounded
+    file_handler = RotatingFileHandler(
+        log_dir / "morphik.log",
+        maxBytes=LOG_MAX_BYTES,
+        backupCount=LOG_BACKUP_COUNT,
+        encoding="utf-8",
+    )
     file_handler.setFormatter(console_formatter)
     file_handler.setLevel(level)
 

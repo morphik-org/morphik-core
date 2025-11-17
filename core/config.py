@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     PORT: int
     RELOAD: bool
     SENTRY_DSN: Optional[str] = None
+    PROJECT_NAME: Optional[str] = None
     # Morphik Embedding API server configuration
     MORPHIK_EMBEDDING_API_KEY: Optional[str] = None
     MORPHIK_EMBEDDING_API_DOMAIN: str
@@ -147,16 +148,9 @@ class Settings(BaseSettings):
 
     # Telemetry configuration
     TELEMETRY_ENABLED: bool = True
-    HONEYCOMB_ENABLED: bool = True
-    HONEYCOMB_ENDPOINT: str = "https://api.honeycomb.io"
-    HONEYCOMB_PROXY_ENDPOINT: str = "https://otel-proxy.onrender.com/"
     SERVICE_NAME: str = "morphik-core"
-    OTLP_TIMEOUT: int = 10
-    OTLP_MAX_RETRIES: int = 3
-    OTLP_RETRY_DELAY: int = 1
-    OTLP_MAX_EXPORT_BATCH_SIZE: int = 512
-    OTLP_SCHEDULE_DELAY_MILLIS: int = 5000
-    OTLP_MAX_QUEUE_SIZE: int = 2048
+    TELEMETRY_UPLOAD_INTERVAL_HOURS: float = 4.0
+    TELEMETRY_MAX_LOCAL_BYTES: int = 1073741824
 
     # Local URI token for authentication
     LOCAL_URI_TOKEN: Optional[str] = None
@@ -181,6 +175,7 @@ def get_settings() -> Settings:
             "PORT": int(config["api"]["port"]),
             "RELOAD": bool(config["api"]["reload"]),
             "SENTRY_DSN": os.getenv("SENTRY_DSN", None),
+            "PROJECT_NAME": os.getenv("PROJECT_NAME"),
         }
     )
 
@@ -400,20 +395,16 @@ def get_settings() -> Settings:
 
     # Load telemetry config
     if "telemetry" in config:
+        telemetry_cfg = config["telemetry"]
         settings_dict.update(
             {
-                "TELEMETRY_ENABLED": config["telemetry"].get("enabled", True),
-                "HONEYCOMB_ENABLED": config["telemetry"].get("honeycomb_enabled", True),
-                "HONEYCOMB_ENDPOINT": config["telemetry"].get("honeycomb_endpoint", "https://api.honeycomb.io"),
-                "SERVICE_NAME": config["telemetry"].get("service_name", "morphik-core"),
-                "OTLP_TIMEOUT": config["telemetry"].get("otlp_timeout", 10),
-                "OTLP_MAX_RETRIES": config["telemetry"].get("otlp_max_retries", 3),
-                "OTLP_RETRY_DELAY": config["telemetry"].get("otlp_retry_delay", 1),
-                "OTLP_MAX_EXPORT_BATCH_SIZE": config["telemetry"].get("otlp_max_export_batch_size", 512),
-                "OTLP_SCHEDULE_DELAY_MILLIS": config["telemetry"].get("otlp_schedule_delay_millis", 5000),
-                "OTLP_MAX_QUEUE_SIZE": config["telemetry"].get("otlp_max_queue_size", 2048),
+                "SERVICE_NAME": telemetry_cfg.get("service_name", "morphik-core"),
+                "TELEMETRY_UPLOAD_INTERVAL_HOURS": telemetry_cfg.get("upload_interval_hours", 4.0),
+                "TELEMETRY_MAX_LOCAL_BYTES": telemetry_cfg.get("max_local_bytes", 1073741824),
             }
         )
+
+    settings_dict["TELEMETRY_ENABLED"] = os.getenv("TELEMETRY", "").strip().lower() != "false"
 
     # Load LOCAL_URI_TOKEN from environment
     settings_dict["LOCAL_URI_TOKEN"] = os.environ.get("LOCAL_URI_TOKEN")
