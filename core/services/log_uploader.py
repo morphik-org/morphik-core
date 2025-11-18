@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import gzip
-import hashlib
 import io
 import json
 import logging
@@ -15,9 +14,10 @@ from typing import List, Optional, Sequence
 
 import requests
 
+from core.utils.telemetry_signature import compute_telemetry_signature
+
 LOGGER = logging.getLogger(__name__)
 TELEMETRY_PATTERN = "usage_events_worker_*.jsonl"
-PROXY_SIGNATURE_SALT = "morphik-telemetry-upload-v1"
 PROXY_UPLOAD_URL = "https://logs.morphik.ai/api/events/upload"
 PROXY_TIMEOUT_SECONDS = 10.0
 
@@ -257,8 +257,7 @@ class LogUploader:
         }
 
     def _compute_signature(self) -> str:
-        value = f"{self.installation_id}{PROXY_SIGNATURE_SALT}".encode("utf-8")
-        return hashlib.sha256(value).hexdigest()
+        return compute_telemetry_signature(self.installation_id)
 
     def _truncate_files(self, paths: Sequence[Path]) -> None:
         for path in paths:
