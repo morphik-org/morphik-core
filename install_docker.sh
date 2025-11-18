@@ -310,22 +310,22 @@ fi
 echo ""
 print_info "🔐 Setting up authentication for your Morphik deployment:"
 print_info "   • If you plan to access Morphik from outside this server, setting a LOCAL_URI_TOKEN will secure your deployment"
-print_info "   • For local-only access, you can skip this step (dev_mode will be enabled)"
+print_info "   • For local-only access, you can skip this step (bypass_auth_mode will be enabled)"
 print_info "   • With a LOCAL_URI_TOKEN set, you'll need to use /generate_local_uri endpoint for authorization tokens"
 echo ""
 read -p "Please enter a secure LOCAL_URI_TOKEN (or press Enter to skip for local-only access): " local_uri_token < /dev/tty
 if [[ -z "$local_uri_token" ]]; then
-    print_info "No LOCAL_URI_TOKEN provided - enabling development mode (dev_mode=true) for local access"
+    print_info "No LOCAL_URI_TOKEN provided - enabling authentication bypass (bypass_auth_mode=true) for local access"
     print_info "This is suitable for local development and testing"
-    # Enable dev_mode in morphik.toml (now that the file exists!)
+    # Enable bypass_auth_mode in morphik.toml (now that the file exists!)
     if [ -f morphik.toml ]; then
-        sed -i.bak 's/dev_mode = false/dev_mode = true/' morphik.toml
+        sed -i.bak 's/bypass_auth_mode = false/bypass_auth_mode = true/' morphik.toml
         rm -f morphik.toml.bak
     else
-        print_warning "morphik.toml not found, cannot set dev_mode"
+        print_warning "morphik.toml not found, cannot set bypass_auth_mode"
     fi
 else
-    print_success "LOCAL_URI_TOKEN set - keeping production mode (dev_mode=false) with authentication enabled"
+    print_success "LOCAL_URI_TOKEN set - keeping production mode (bypass_auth_mode=false) with authentication enabled"
     print_info "Use the /generate_local_uri endpoint with this token to create authorized connection URIs"
 fi
 

@@ -313,18 +313,18 @@ function Try-Extract-Config {
   }
 }
 
-function Update-DevMode-Or-Auth {
+function Update-AuthBypassOrToken {
   Write-Host ""; Write-Info "Setting up authentication for your Morphik deployment:"
   Write-Info " • For external access, set a LOCAL_URI_TOKEN."
-  Write-Info " • For local-only access, press Enter to enable dev_mode."
+  Write-Info " • For local-only access, press Enter to enable bypass_auth_mode."
   $token = Read-Host "Enter a secure LOCAL_URI_TOKEN (or press Enter to skip)"
   if ([string]::IsNullOrWhiteSpace($token)) {
-    Write-Info "No token provided - enabling development mode (dev_mode=true)."
+    Write-Info "No token provided - enabling authentication bypass (bypass_auth_mode=true)."
     $content = Get-Content morphik.toml -Raw
-    $content = $content -replace '(?m)^dev_mode\s*=\s*false', 'dev_mode = true'
+    $content = $content -replace '(?m)^bypass_auth_mode\s*=\s*false', 'bypass_auth_mode = true'
     Set-Content morphik.toml -Value $content
   } else {
-    Write-Ok "LOCAL_URI_TOKEN set - keeping production mode (dev_mode=false)."
+    Write-Ok "LOCAL_URI_TOKEN set - keeping production mode (bypass_auth_mode=false)."
     (Get-Content .env -Raw) -replace 'LOCAL_URI_TOKEN=', "LOCAL_URI_TOKEN=$token" |
       Set-Content .env
   }
@@ -491,7 +491,6 @@ function Start-Stack($apiPort, $ui) {
     "Write-Host 'Morphik services stopped and cleaned up.'"
   ) -join [Environment]::NewLine
   Set-Content -Path 'stop-morphik.ps1' -Value $stop
-}
 
 # --- Main ---
 Write-Info "Checking for Docker and Docker Compose..."
@@ -511,7 +510,7 @@ Try-Extract-Config
 if ($script:EmbeddingSelection) {
   Update-EmbeddingConfig -Model $script:EmbeddingSelection.Model -Label $script:EmbeddingSelection.Label
 }
-Update-DevMode-Or-Auth
+Update-AuthBypassOrToken
 Update-GPU-Options
 Enable-Config-Mount
 
