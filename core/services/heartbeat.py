@@ -7,6 +7,8 @@ from typing import Optional
 
 import requests
 
+from core.utils.telemetry_signature import compute_telemetry_signature
+
 LOGGER = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 10
 
@@ -30,6 +32,7 @@ class Heartbeat:
         self.version = version or "unknown"
         self.interval_seconds = max(interval_hours, 0) * 3600
         self.timeout = timeout
+        self._signature = compute_telemetry_signature(installation_id)
 
         self._is_first_ping = True
         self._thread: Optional[threading.Thread] = None
@@ -75,6 +78,7 @@ class Heartbeat:
             "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "version": self.version,
             "event_type": event_type,
+            "signature": self._signature,
         }
 
         try:
