@@ -412,6 +412,11 @@ async def update_document_text(
         if getattr(request, "rules", None):
             logger.warning("Legacy 'rules' field supplied to /documents/{document_id}/update_text; ignoring.")
 
+        extra_fields = getattr(request, "model_extra", {}) if hasattr(request, "model_extra") else {}
+        document_service._enforce_no_user_mutable_fields(
+            request.metadata, request.folder_name, extra_fields, context="update"
+        )
+
         doc = await document_service.update_document(
             document_id=document_id,
             auth=auth,
@@ -430,6 +435,8 @@ async def update_document_text(
         return doc
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/{document_id}/update_file", response_model=Document)
@@ -476,6 +483,8 @@ async def update_document_file(
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except TypedMetadataError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -510,6 +519,8 @@ async def update_document_metadata(
         return doc
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # TODO: add @telemetry.track(operation_type="extract_document_pages", metadata_resolver=telemetry.document_pages_metadata)
