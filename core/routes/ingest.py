@@ -73,6 +73,11 @@ async def ingest_text(
         if getattr(request, "rules", None):
             logger.warning("Legacy 'rules' field supplied to /ingest/text; ignoring payload.")
 
+        extra_fields = getattr(request, "model_extra", {}) if hasattr(request, "model_extra") else {}
+        document_service._enforce_no_user_mutable_fields(
+            request.metadata, request.folder_name, extra_fields, context="ingest"
+        )
+
         return await document_service.ingest_text(
             content=request.content,
             filename=request.filename,
@@ -85,6 +90,8 @@ async def ingest_text(
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except TypedMetadataError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -135,6 +142,8 @@ async def ingest_file(
 
         logger.debug("Queueing file ingestion with use_colpali=%s", use_colpali_bool)
 
+        document_service._enforce_no_user_mutable_fields(metadata_dict, folder_name, context="ingest")
+
         # ------------------------------------------------------------------
         # Create initial Document stub (status = processing)
         # ------------------------------------------------------------------
@@ -149,6 +158,8 @@ async def ingest_file(
         )
         metadata_payload = dict(metadata_dict)
         metadata_payload.setdefault("external_id", doc.external_id)
+        if folder_name is not None:
+            metadata_payload["folder_name"] = folder_name
         normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types_dict or None)
         doc.metadata = normalized_metadata
         doc.metadata_types = normalized_types
@@ -264,6 +275,8 @@ async def ingest_file(
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(exc)}")
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except TypedMetadataError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -357,6 +370,8 @@ async def batch_ingest_files(
             # ------------------------------------------------------------------
             # Create stub Document (processing)
             # ------------------------------------------------------------------
+            document_service._enforce_no_user_mutable_fields(metadata_item, folder_name, context="ingest")
+
             doc = Document(
                 content_type=file.content_type,
                 filename=file.filename,
@@ -368,6 +383,8 @@ async def batch_ingest_files(
             doc.system_metadata["status"] = "processing"
             metadata_payload = dict(metadata_item or {})
             metadata_payload.setdefault("external_id", doc.external_id)
+            if folder_name is not None:
+                metadata_payload["folder_name"] = folder_name
             normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types_item or None)
             doc.metadata = normalized_metadata
             doc.metadata_types = normalized_types
@@ -460,6 +477,8 @@ async def batch_ingest_files(
 
         return BatchIngestResponse(documents=created_documents, errors=[])
     except TypedMetadataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         logger.error("Error queueing batch ingestion: %s", exc)

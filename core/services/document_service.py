@@ -64,6 +64,30 @@ class PdfConversionError(Exception):
 
 class DocumentService:
     _SYSTEM_METADATA_SCOPE_KEYS = {"folder_name", "end_user_id", "app_id"}
+    _USER_IMMUTABLE_FIELDS = {"folder_name", "external_id"}
+
+    def _enforce_no_user_mutable_fields(
+        self,
+        metadata: Optional[Dict[str, Any]],
+        folder_name: Optional[Union[str, List[str]]],
+        extra_fields: Optional[Dict[str, Any]] = None,
+        context: str = "ingest",
+    ) -> None:
+        """Prevent users from setting reserved system fields directly."""
+        invalid_fields = set()
+
+        if isinstance(metadata, dict):
+            invalid_fields.update({key for key in metadata.keys() if key in self._USER_IMMUTABLE_FIELDS})
+
+        if isinstance(extra_fields, dict):
+            invalid_fields.update({key for key in extra_fields.keys() if key in self._USER_IMMUTABLE_FIELDS})
+
+        if invalid_fields:
+            fields_str = ", ".join(sorted(invalid_fields))
+            raise ValueError(
+                f"The following fields are managed by Morphik and cannot be set during {context}: {fields_str}. "
+                "Remove them from the request."
+            )
 
     @classmethod
     def _clean_system_metadata(cls, metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -1266,6 +1290,9 @@ class DocumentService:
 
         settings = get_settings()
 
+        # Prevent callers from overriding reserved fields like folder_name/external_id
+        self._enforce_no_user_mutable_fields(metadata, folder_name, context="ingest")
+
         doc = Document(
             content_type="text/plain",
             filename=filename,
@@ -1279,6 +1306,8 @@ class DocumentService:
 
         combined_metadata = dict(metadata or {})
         combined_metadata.setdefault("external_id", doc.external_id)
+        if folder_name is not None:
+            combined_metadata["folder_name"] = folder_name
         normalized_metadata, normalized_types = normalize_metadata(combined_metadata, metadata_types)
         doc.metadata = normalized_metadata
         doc.metadata_types = normalized_types
@@ -2898,6 +2927,9 @@ class DocumentService:
         Returns:
             Updated document if successful, None if failed
         """
+        # Prevent callers from modifying reserved fields
+        self._enforce_no_user_mutable_fields(metadata, folder_name=None, context="update")
+
         # Validate permissions and get document
         doc = await self._validate_update_access(document_id, auth)
         if not doc:

@@ -18,15 +18,15 @@ settings = get_settings()
 async def verify_token(authorization: str = Header(None)) -> AuthContext:  # noqa: D401 – FastAPI dependency
     """Return an :class:`AuthContext` for a valid JWT bearer *authorization* header.
 
-    In *dev_mode* we skip cryptographic checks and fabricate a permissive
-    context so that local development environments can quickly spin up
-    without real tokens.
+    When *bypass_auth_mode* is enabled we skip cryptographic checks and
+    fabricate a permissive context so that local development environments
+    can quickly spin up without real tokens.
     """
 
     # ------------------------------------------------------------------
-    # 1. Development shortcut – trust everyone when *dev_mode* is active.
+    # 1. Development shortcut – trust everyone when auth-bypass mode is active.
     # ------------------------------------------------------------------
-    if settings.dev_mode:
+    if settings.bypass_auth_mode:
         return AuthContext(
             entity_type=EntityType(settings.dev_entity_type),
             entity_id=settings.dev_entity_id,

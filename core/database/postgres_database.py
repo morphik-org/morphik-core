@@ -501,6 +501,8 @@ class PostgresDatabase(BaseDatabase):
             normalized_metadata, normalized_types = normalize_metadata(metadata, metadata_type_hints)
             doc_dict["doc_metadata"] = normalized_metadata
             doc_dict["metadata_types"] = normalized_types
+            # Mirror folder_name into doc_metadata for convenience in downstream filters (allow clearing)
+            doc_dict["doc_metadata"]["folder_name"] = doc_dict.get("folder_name")
 
             # Ensure system metadata
             if "system_metadata" not in doc_dict:
@@ -947,6 +949,15 @@ class PostgresDatabase(BaseDatabase):
 
                     # The flattened fields (owner_id, app_id)
                     # should be in updates directly if they need to be updated
+
+                    # Keep doc_metadata.folder_name in sync with the flattened column (support clearing)
+                    if "doc_metadata" in updates:
+                        folder_value = updates["folder_name"] if "folder_name" in updates else doc_model.folder_name
+                        try:
+                            if isinstance(updates["doc_metadata"], dict):
+                                updates["doc_metadata"]["folder_name"] = folder_value
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning("Unable to set folder_name in doc_metadata for %s: %s", document_id, exc)
 
                     # Set all attributes
                     for key, value in updates.items():

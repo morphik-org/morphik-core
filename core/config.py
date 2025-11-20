@@ -46,7 +46,7 @@ class Settings(BaseSettings):
 
     # Auth configuration
     JWT_ALGORITHM: str
-    dev_mode: bool = False
+    bypass_auth_mode: bool = False
     dev_entity_type: str = "developer"
     dev_entity_id: str = "dev_user"
     dev_permissions: list = ["read", "write", "admin"]
@@ -135,6 +135,7 @@ class Settings(BaseSettings):
 
     # Mode configuration
     MODE: Literal["cloud", "self_hosted"] = "cloud"
+    USE_LOCAL_ENV: bool = True
 
     # API configuration
     API_DOMAIN: str = "api.morphik.ai"
@@ -154,6 +155,11 @@ class Settings(BaseSettings):
 
     # Local URI token for authentication
     LOCAL_URI_TOKEN: Optional[str] = None
+
+    @property
+    def dev_mode(self) -> bool:  # pragma: no cover - compatibility shim
+        """Backward-compatible alias for bypass_auth_mode."""
+        return self.bypass_auth_mode
 
 
 @lru_cache()
@@ -183,9 +189,9 @@ def get_settings() -> Settings:
     settings_dict.update(
         {
             "JWT_ALGORITHM": config["auth"]["jwt_algorithm"],
-            "JWT_SECRET_KEY": os.environ.get("JWT_SECRET_KEY", "dev-secret-key"),  # Default for dev mode
+            "JWT_SECRET_KEY": os.environ.get("JWT_SECRET_KEY", "dev-secret-key"),  # Default for bypass mode
             "SESSION_SECRET_KEY": os.environ.get("SESSION_SECRET_KEY", "super-secret-dev-session-key"),
-            "dev_mode": config["auth"].get("dev_mode", False),
+            "bypass_auth_mode": config["auth"].get("bypass_auth_mode", config["auth"].get("dev_mode", False)),
             "dev_entity_type": config["auth"].get("dev_entity_type", "developer"),
             "dev_entity_id": config["auth"].get("dev_entity_id", "dev_user"),
             "dev_permissions": config["auth"].get("dev_permissions", ["read", "write", "admin"]),
@@ -193,8 +199,8 @@ def get_settings() -> Settings:
     )
 
     # Only require JWT_SECRET_KEY in non-dev mode
-    if not settings_dict["dev_mode"] and "JWT_SECRET_KEY" not in os.environ:
-        raise ValueError("JWT_SECRET_KEY is required when dev_mode is disabled")
+    if not settings_dict["bypass_auth_mode"] and "JWT_SECRET_KEY" not in os.environ:
+        raise ValueError("JWT_SECRET_KEY is required when bypass_auth_mode is disabled")
 
     # Load registered models if available
     if "registered_models" in config:
@@ -356,6 +362,7 @@ def get_settings() -> Settings:
             "ENABLE_COLPALI": config["morphik"]["enable_colpali"],
             "COLPALI_MODE": config["morphik"].get("colpali_mode", "local"),
             "MODE": config["morphik"].get("mode", "cloud"),
+            "USE_LOCAL_ENV": config["morphik"].get("use_local_env", True),
             "API_DOMAIN": api_domain,
             "MORPHIK_EMBEDDING_API_DOMAIN": embedding_api_domain,
         }
