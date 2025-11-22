@@ -160,7 +160,7 @@ async def ingest_file(
         metadata_payload.setdefault("external_id", doc.external_id)
         if folder_name is not None:
             metadata_payload["folder_name"] = folder_name
-        normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types_dict or None)
+        normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types_dict)
         doc.metadata = normalized_metadata
         doc.metadata_types = normalized_types
 
@@ -385,7 +385,7 @@ async def batch_ingest_files(
             metadata_payload.setdefault("external_id", doc.external_id)
             if folder_name is not None:
                 metadata_payload["folder_name"] = folder_name
-            normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types_item or None)
+            normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types_item)
             doc.metadata = normalized_metadata
             doc.metadata_types = normalized_types
 

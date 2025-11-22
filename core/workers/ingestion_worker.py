@@ -503,7 +503,7 @@ async def process_ingestion_job(
                 doc.metadata,
                 getattr(doc, "metadata_types", {}),
                 metadata or {},
-                metadata_types or None,
+                metadata_types,
                 external_id=doc.external_id,
             )
 
