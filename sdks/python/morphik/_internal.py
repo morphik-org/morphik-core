@@ -130,8 +130,8 @@ class _MorphikClientLogic:
             payload["folder_name"] = folder_name
         if end_user_id:
             payload["end_user_id"] = end_user_id
-        if metadata_types_map:
-            payload["metadata_types"] = metadata_types_map
+        # Always send metadata_types, even if empty, to be explicit
+        payload["metadata_types"] = metadata_types_map
         return payload
 
     def _prepare_file_for_upload(
@@ -211,8 +211,8 @@ class _MorphikClientLogic:
         if use_colpali is not None:
             form_data["use_colpali"] = str(use_colpali).lower()
 
-        if metadata_types_map:
-            form_data["metadata_types"] = json.dumps(metadata_types_map)
+        # Always send metadata_types, even if empty, to be explicit
+        form_data["metadata_types"] = json.dumps(metadata_types_map)
 
         return form_data
 
@@ -245,8 +245,9 @@ class _MorphikClientLogic:
             data["folder_name"] = folder_name
         if end_user_id:
             data["end_user_id"] = end_user_id
-        if metadata_types_payload is not None:
-            data["metadata_types"] = json.dumps(metadata_types_payload)
+        # Always send metadata_types, even if empty, to be explicit
+        # For batch ingestion: send empty dict {} (not list) if no type info, so each file gets {}
+        data["metadata_types"] = json.dumps(metadata_types_payload if metadata_types_payload is not None else {})
 
         return data
 
@@ -546,7 +547,7 @@ class _MorphikClientLogic:
             filename=filename,
             metadata=serialized_metadata,
             use_colpali=use_colpali if use_colpali is not None else True,
-            metadata_types=metadata_types_map or None,
+            metadata_types=metadata_types_map,
         )
 
         params = {}
