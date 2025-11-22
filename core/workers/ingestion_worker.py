@@ -1,7 +1,6 @@
 import asyncio
 import contextlib
 import inspect
-import json
 import logging
 import os
 import time
@@ -27,7 +26,6 @@ from core.services.document_service import DocumentService, PdfConversionError
 from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
-from core.utils.typed_metadata import merge_metadata
 from core.vector_store.dual_multivector_store import DualMultiVectorStore
 from core.vector_store.fast_multivector_store import FastMultiVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
@@ -242,12 +240,8 @@ async def process_ingestion_job(
             # Define total steps for progress tracking
             total_steps = 6
 
-            # 2. Deserialize metadata and auth
+            # 2. Deserialize auth
             deserialize_start = time.time()
-            metadata = json.loads(metadata_json) if metadata_json else {}
-            metadata_types = json.loads(metadata_types_json) if metadata_types_json else {}
-            if metadata_types is None:
-                metadata_types = {}
             auth = AuthContext(
                 entity_type=EntityType(auth_dict.get("entity_type", "unknown")),
                 entity_id=auth_dict.get("entity_id", ""),
@@ -498,14 +492,9 @@ async def process_ingestion_job(
                 raise ValueError(f"Document {document_id} not found in database after multiple retries")
 
             # Prepare updates for the document
-            # Merge new metadata with existing metadata to preserve types and external_id
-            doc.metadata, doc.metadata_types = merge_metadata(
-                doc.metadata,
-                getattr(doc, "metadata_types", {}),
-                metadata or {},
-                metadata_types,
-                external_id=doc.external_id,
-            )
+            # NOTE: Metadata and metadata_types are already set correctly by the route when creating the document.
+            # The worker should NOT merge/update them as that causes type inference issues with serialized values.
+            # We only need to update system_metadata and additional_metadata.
 
             # For XML files, store the combined content of all chunks as the document content
             if xml_processing:
@@ -517,8 +506,6 @@ async def process_ingestion_job(
             sanitized_system_metadata = DocumentService._clean_system_metadata(doc.system_metadata)
 
             updates = {
-                "metadata": doc.metadata,
-                "metadata_types": doc.metadata_types,
                 "additional_metadata": additional_metadata,
                 "system_metadata": {**sanitized_system_metadata, "content": document_content},
             }
@@ -812,29 +799,14 @@ async def process_ingestion_job(
             store_start = time.time()
             if using_colpali:
                 # We already stored ColPali chunks in batches; just persist doc.chunk_ids via DB update
+                # Only update chunk_ids and system_metadata - everything else was set correctly by the route
                 doc.chunk_ids = colpali_chunk_ids
                 doc.system_metadata = DocumentService._clean_system_metadata(doc.system_metadata)
                 await document_service.db.update_document(
                     document_id=doc.external_id,
                     updates={
                         "chunk_ids": doc.chunk_ids,
-                        "metadata": doc.metadata,
                         "system_metadata": doc.system_metadata,
-                        "filename": doc.filename,
-                        "content_type": doc.content_type,
-                        "storage_info": doc.storage_info,
-                        "storage_files": (
-                            [
-                                (
-                                    file.model_dump()
-                                    if hasattr(file, "model_dump")
-                                    else (file.dict() if hasattr(file, "dict") else file)
-                                )
-                                for file in doc.storage_files
-                            ]
-                            if doc.storage_files
-                            else []
-                        ),
                     },
                     auth=auth,
                 )
