@@ -52,11 +52,15 @@ class DocumentModel(Base):
     __table_args__ = (
         Index("idx_system_metadata", "system_metadata", postgresql_using="gin"),
         Index("idx_doc_metadata_gin", "doc_metadata", postgresql_using="gin"),
-        # Flattened column indexes are created directly on the columns
+        # Flattened column indexes
         Index("idx_doc_app_id", "app_id"),
         Index("idx_doc_folder_name", "folder_name"),
         Index("idx_doc_end_user_id", "end_user_id"),
         Index("idx_doc_owner_id", "owner_id"),
+        # Composite indexes for common query patterns
+        Index("idx_documents_owner_app", "owner_id", "app_id"),
+        Index("idx_documents_app_folder", "app_id", "folder_name"),
+        Index("idx_documents_app_end_user", "app_id", "end_user_id"),
     )
 
 
@@ -92,6 +96,11 @@ class GraphModel(Base):
         Index("idx_graph_app_id", "app_id"),
         Index("idx_graph_folder_name", "folder_name"),
         Index("idx_graph_end_user_id", "end_user_id"),
+        Index("idx_graph_owner_id", "owner_id"),
+        # Composite indexes for common query patterns
+        Index("idx_graphs_owner_app", "owner_id", "app_id"),
+        Index("idx_graphs_app_folder", "app_id", "folder_name"),
+        Index("idx_graphs_app_end_user", "app_id", "end_user_id"),
     )
 
 
@@ -118,6 +127,9 @@ class FolderModel(Base):
         Index("idx_folder_app_id", "app_id"),
         Index("idx_folder_owner_id", "owner_id"),
         Index("idx_folder_end_user_id", "end_user_id"),
+        # Composite indexes for common query patterns
+        Index("idx_folders_owner_app", "owner_id", "app_id"),
+        Index("idx_folders_app_end_user", "app_id", "end_user_id"),
     )
 
 
@@ -158,6 +170,19 @@ class ModelConfigModel(Base):
         Index("idx_model_config_user_app", "user_id", "app_id"),
         Index("idx_model_config_provider", "provider"),
     )
+
+
+class CacheModel(Base):
+    """SQLAlchemy model for cache metadata."""
+
+    __tablename__ = "caches"
+
+    name = Column(String, primary_key=True)
+    cache_metadata = Column("metadata", JSONB, nullable=False)  # Map to 'metadata' column, avoid reserved name
+    created_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+
+    __table_args__ = ()
 
 
 def _serialize_datetime(obj: Any) -> Any:
@@ -265,208 +290,23 @@ class PostgresDatabase(BaseDatabase):
             # are registered with SQLAlchemy's metadata before create_all runs.
             # Import is local to avoid circular import overhead at module load.
             from core.models.apps import AppModel  # noqa: F401
+            from core.vector_store.pgvector_store import VectorEmbedding  # noqa: F401
 
-            # Create ORM models
+            # Create all tables and indexes via SQLAlchemy metadata
             async with self.engine.begin() as conn:
-                # Explicitly create all tables with checkfirst=True to avoid errors if tables already exist
+                # Enable pgvector extension (required for Vector column type)
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                logger.info("Enabled pgvector extension")
+
                 await conn.run_sync(lambda conn: Base.metadata.create_all(conn, checkfirst=True))
+                logger.info("Created database tables and indexes successfully")
 
-                # No need to manually create graphs table again since SQLAlchemy does it
-                logger.info("Created database tables successfully")
-
-                # Create caches table if it doesn't exist (kept as direct SQL for backward compatibility)
-                await conn.execute(
-                    text(
-                        """
-                    CREATE TABLE IF NOT EXISTS caches (
-                        name TEXT PRIMARY KEY,
-                        metadata JSONB NOT NULL,
-                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                    )
-                """
-                    )
-                )
-
-                # Check if storage_files column exists
-                result = await conn.execute(
-                    text(
-                        """
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_name = 'documents' AND column_name = 'storage_files'
-                    """
-                    )
-                )
-                if not result.first():
-                    # Add storage_files column to documents table
-                    await conn.execute(
-                        text(
-                            """
-                        ALTER TABLE documents
-                        ADD COLUMN IF NOT EXISTS storage_files JSONB DEFAULT '[]'::jsonb
-                        """
-                        )
-                    )
-                    logger.info("Added storage_files column to documents table")
-
-                # Ensure metadata_types column exists for typed metadata filters
-                result = await conn.execute(
-                    text(
-                        """
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_name = 'documents' AND column_name = 'metadata_types'
-                    """
-                    )
-                )
-                if not result.first():
-                    await conn.execute(
-                        text(
-                            """
-                        ALTER TABLE documents
-                        ADD COLUMN IF NOT EXISTS metadata_types JSONB DEFAULT '{}'::jsonb
-                        """
-                        )
-                    )
-                    logger.info("Added metadata_types column to documents table")
-
-                # Keep lightweight apps metadata aligned with multi-tenant control plane needs.
-                # This block only runs when the apps table already exists to avoid bootstrap errors.
-                await conn.execute(
-                    text(
-                        """
-                    DO $$
-                    BEGIN
-                        IF EXISTS (
-                            SELECT 1
-                            FROM information_schema.tables
-                            WHERE table_name = 'apps'
-                        ) THEN
-                            -- Make user_id nullable for multi-tenant scenarios where org_id is primary
-                            ALTER TABLE apps ALTER COLUMN user_id DROP NOT NULL;
-
-                            IF NOT EXISTS (
-                                SELECT 1 FROM information_schema.columns
-                                WHERE table_name = 'apps' AND column_name = 'org_id'
-                            ) THEN
-                                ALTER TABLE apps ADD COLUMN org_id VARCHAR;
-                            END IF;
-
-                            IF NOT EXISTS (
-                                SELECT 1 FROM information_schema.columns
-                                WHERE table_name = 'apps' AND column_name = 'created_by_user_id'
-                            ) THEN
-                                ALTER TABLE apps ADD COLUMN created_by_user_id VARCHAR;
-                            END IF;
-                        END IF;
-                    END$$;
-                    """
-                    )
-                )
-
-                # Create folders table if it doesn't exist
-                await conn.execute(
-                    text(
-                        """
-                    CREATE TABLE IF NOT EXISTS folders (
-                        id TEXT PRIMARY KEY,
-                        name TEXT,
-                        description TEXT,
-                        document_ids JSONB DEFAULT '[]',
-                        system_metadata JSONB DEFAULT '{}'
-                    );
-                    """
-                    )
-                )
-
-                # Create indexes for folders table
-                await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_folder_name ON folders (name);"))
-
-                # Check if system_metadata column exists in graphs table
-                result = await conn.execute(
-                    text(
-                        """
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_name = 'graphs' AND column_name = 'system_metadata'
-                    """
-                    )
-                )
-                if not result.first():
-                    # Add system_metadata column to graphs table
-                    await conn.execute(
-                        text(
-                            """
-                        ALTER TABLE graphs
-                        ADD COLUMN IF NOT EXISTS system_metadata JSONB DEFAULT '{}'::jsonb
-                        """
-                        )
-                    )
-                    logger.info("Added system_metadata column to graphs table")
-
-                # Note: Indexes for folder_name, end_user_id, and app_id are created as direct column indexes
-                # in the flattened columns section below, so we don't need JSONB path indexes
-
-                # Check if title column exists in chat_conversations table
-                result = await conn.execute(
-                    text(
-                        """
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_name = 'chat_conversations' AND column_name = 'title'
-                    """
-                    )
-                )
-                if not result.first():
-                    # Add title column to chat_conversations table
-                    await conn.execute(
-                        text(
-                            """
-                        ALTER TABLE chat_conversations
-                        ADD COLUMN IF NOT EXISTS title VARCHAR
-                        """
-                        )
-                    )
-                    logger.info("Added title column to chat_conversations table")
-
-                # ---------------------------------------------
-                # Legacy ALTER-TABLE loop removed: SQLAlchemy now
-                # creates flattened auth columns (owner_id,…, ACL
-                # arrays) during metadata.create_all().  We keep
-                # *tables_to_update* for the index creation block
-                # that follows, but skip redundant DDL.
-                # ---------------------------------------------
-
-                tables_to_update = ["documents", "graphs", "folders"]
-
-                logger.info("Creating optimised indexes for flattened columns …")
-
-                for table in tables_to_update:
-                    # Create indexes for scalar columns
-                    await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table}_owner_id ON {table}(owner_id);"))
-                    await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table}_app_id ON {table}(app_id);"))
-
-                    # Create composite indexes for common query patterns
-                    await conn.execute(
-                        text(f"CREATE INDEX IF NOT EXISTS idx_{table}_owner_app ON {table}(owner_id, app_id);")
-                    )
-                    if table != "folders":  # folders don't have folder_name column
-                        await conn.execute(
-                            text(f"CREATE INDEX IF NOT EXISTS idx_{table}_app_folder ON {table}(app_id, folder_name);")
-                        )
-                    await conn.execute(
-                        text(f"CREATE INDEX IF NOT EXISTS idx_{table}_app_end_user ON {table}(app_id, end_user_id);")
-                    )
-
-                logger.info("Flattened auth columns and indexes created successfully")
-
-            logger.info("PostgreSQL tables and indexes created successfully")
+            logger.info("PostgreSQL initialization complete")
             self._initialized = True
             return True
 
         except Exception as e:
-            logger.error(f"Error creating PostgreSQL tables and indexes: {str(e)}")
+            logger.error(f"Error initializing PostgreSQL: {str(e)}")
             return False
 
     async def store_document(self, document: Document, auth: AuthContext) -> bool:

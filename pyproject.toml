@@ -27,7 +27,7 @@ dependencies = [
     "itsdangerous>=2.2.0",
     "litellm>=1.69.1",
     "lxml>=5.2.2",
-    "morphik==0.2.7",
+    "morphik==1.0.3",
     "ollama>=0.4.8",
     "openai>=1.75.0",
     "opencv-python>=4.11.0.86",
@@ -69,6 +69,7 @@ dependencies = [
     "types-boto3[s3]>=1.39.1",
     "sentry-sdk[fastapi]>=2.33.0",
     "turbopuffer>=0.5.8",
+    "colpali-engine @ git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3",
 ]
 
 [dependency-groups]
