@@ -1,7 +1,6 @@
 # This is the beginning of the GoogleDriveConnector implementation.
 
 import logging
-import os
 import pickle
 from io import BytesIO
 from pathlib import Path
@@ -33,10 +32,7 @@ class GoogleDriveConnector(BaseConnector):
         self._load_credentials()
 
     def _get_user_token_path(self) -> Path:
-        token_dir = Path(self.ee_settings.GOOGLE_TOKEN_STORAGE_PATH)
-        # Create the token directory if it doesn't exist
-        os.makedirs(token_dir, exist_ok=True)
-        return token_dir / f"gdrive_token_{self.user_morphik_id}.pickle"
+        return self._build_storage_path(self.ee_settings.GOOGLE_TOKEN_STORAGE_PATH, "gdrive_token_", ".pickle")
 
     def _save_credentials(self) -> None:
         if not self.creds:

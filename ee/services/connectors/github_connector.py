@@ -1,6 +1,5 @@
 import logging
 import mimetypes
-import os
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -32,9 +31,7 @@ class GitHubConnector(BaseConnector):
         self._load_credentials()
 
     def _get_user_token_path(self) -> Path:
-        token_dir = Path(self.ee_settings.GITHUB_TOKEN_STORAGE_PATH)
-        os.makedirs(token_dir, exist_ok=True)
-        return token_dir / f"github_token_{self.user_morphik_id}.txt"
+        return self._build_storage_path(self.ee_settings.GITHUB_TOKEN_STORAGE_PATH, "github_token_", ".txt")
 
     def _save_credentials(self, access_token: str) -> None:
         token_path = self._get_user_token_path()
