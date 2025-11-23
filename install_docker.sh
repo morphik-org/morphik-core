@@ -337,33 +337,14 @@ if [[ -n "$local_uri_token" ]]; then
     print_success "'.env' file has been configured with your LOCAL_URI_TOKEN."
 fi
 
-# 5.1 Ask about local inference with Lemonade (Windows only)
+# 5.1 Inform about local inference options (Windows/WSL users)
 if grep -qEi "(Microsoft|WSL)" /proc/version &> /dev/null || [ -f /proc/sys/fs/binfmt_misc/WSLInterop ]; then
     echo ""
-    print_info "🍋 Detected WSL environment. Morphik supports local inference with Lemonade SDK (Windows only)."
-    print_info "   Lemonade provides high-performance local LLM inference with AMD GPU/NPU optimization."
-    print_info "   This allows you to run both embeddings and completions completely locally."
+    print_info "🍋 Detected WSL environment. For local inference on Windows, consider:"
+    print_info "   • Lemonade SDK: Download from https://lemonade-server.ai/ (AMD GPU/NPU optimized)"
+    print_info "   • Ollama: Download from https://ollama.com/ (Cross-platform)"
+    print_info "   See our docs for setup: https://morphik.ai/docs/local-inference"
     echo ""
-    read -p "Would you like to install Lemonade SDK for local inference? (y/N): " install_lemonade < /dev/tty
-
-    if [[ "$install_lemonade" == "y" || "$install_lemonade" == "Y" ]]; then
-        print_info "Downloading Lemonade installer..."
-
-        # Download and run the Lemonade installer
-        if curl -fsSL -o lemonade-installer.sh "$REPO_URL/lemonade-installer.sh"; then
-            chmod +x lemonade-installer.sh
-            if ./lemonade-installer.sh; then
-                LEMONADE_INSTALLED=true
-                print_success "Lemonade installation completed!"
-            else
-                print_warning "Lemonade installation failed. You can retry later by running: ./lemonade-installer.sh"
-            fi
-        else
-            print_warning "Failed to download Lemonade installer"
-            print_info "You can manually install Lemonade later with:"
-            print_info "  curl -sSL https://raw.githubusercontent.com/morphik-org/morphik-core/main/lemonade-installer.sh | bash"
-        fi
-    fi
 fi
 
 # 5.2 Ask about GPU availability for multimodal embeddings
