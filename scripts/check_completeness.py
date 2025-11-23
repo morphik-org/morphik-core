@@ -332,8 +332,9 @@ async def main():
         print(f"Using default namespace: {turbopuffer_namespace}")
         print("(You can specify a different namespace as: python check_completeness.py <namespace>)")
 
-    print(f"Using Supabase URI: {settings.POSTGRES_URI}")
-    print(f"Using TurboPuffer API key: {settings.TURBOPUFFER_API_KEY[:10]}...")
+    # Avoid printing secrets directly; just confirm they are configured.
+    print("Using Supabase URI: [configured]")
+    print("Using TurboPuffer API key: [configured]")
 
     print("Fetching data from Supabase...")
     try:
