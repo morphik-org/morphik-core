@@ -1,21 +1,22 @@
 """Request-scoped profiling middleware using yappi.
 
-Set environment variable ``ENABLE_PROFILING=1`` before launching the API (or the
-ARQ worker) to enable.  For each HTTP request we create a fresh yappi profile
-and store it as ``logs/profile_<timestamp>.prof`` which can later be opened
-with ``snakeviz`` or converted to callgrind with ``pyprof2calltree``.
+Set ``enable_profiling = true`` in [service] section of morphik.toml to enable.
+For each HTTP request we create a fresh yappi profile and store it as
+``logs/profile_<timestamp>.prof`` which can later be opened with ``snakeviz``
+or converted to callgrind with ``pyprof2calltree``.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import time
 from pathlib import Path
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
+
+from core.config import get_settings
 
 try:
     import yappi  # type: ignore
@@ -27,6 +28,8 @@ logger = logging.getLogger("profiler")
 # Ensure logs directory exists
 Path("logs").mkdir(exist_ok=True)
 
+settings = get_settings()
+
 
 class ProfilingMiddleware(BaseHTTPMiddleware):
     """Starts yappi before each request and stops it afterwards."""
@@ -36,7 +39,7 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
         SKIP_PATH_SUFFIXES = ("/status", "/documents", "/folders")
 
         if (
-            os.getenv("ENABLE_PROFILING") != "1"
+            not settings.ENABLE_PROFILING
             or yappi is None
             or any(request.url.path.endswith(suf) for suf in SKIP_PATH_SUFFIXES)
         ):

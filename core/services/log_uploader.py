@@ -5,7 +5,6 @@ import gzip
 import io
 import json
 import logging
-import os
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -67,7 +66,10 @@ class LogUploader:
         self._project_slug = self._sanitize_slug(self.project_name)
         self._service_name = service_name
         self._environment = environment
-        self._uploader_version = os.getenv("DATABRIDGE_VERSION", "unknown")
+        # Import here to avoid circular imports at module level
+        from core.config import get_settings
+
+        self._uploader_version = get_settings().VERSION
 
     # ------------------------------------------------------------------
     def start(self) -> None:

@@ -1,5 +1,4 @@
 import logging
-import os
 from typing import List, Union
 
 import litellm
@@ -76,7 +75,7 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
             looks_like_local_provider = self._is_local_provider
             if looks_like_local_provider and "api_key" not in model_params:
                 # Use a harmless placeholder; some LiteLLM providers demand a key even if backend ignores it
-                model_params["api_key"] = os.environ.get("LITELLM_DUMMY_API_KEY", "ollama")
+                model_params["api_key"] = get_settings().LITELLM_DUMMY_API_KEY
 
             # Call LiteLLM
             response = await litellm.aembedding(input=texts, **model_params)

@@ -174,8 +174,8 @@ function Ensure-EnvFile {
     "# A secret key for signing JWTs. A random one is generated for you.",
     "JWT_SECRET_KEY=$jwt",
     "",
-    "# Local URI token for secure URI generation (required for creating connection URIs)",
-    "LOCAL_URI_TOKEN="
+    "# Local URI password for secure URI generation (required for creating connection URIs)",
+    "LOCAL_URI_PASSWORD="
   ) -join [Environment]::NewLine
   Set-Content -Path .env -Value $envContent
 
@@ -313,19 +313,19 @@ function Try-Extract-Config {
   }
 }
 
-function Update-AuthBypassOrToken {
+function Update-AuthBypassOrPassword {
   Write-Host ""; Write-Info "Setting up authentication for your Morphik deployment:"
-  Write-Info " • For external access, set a LOCAL_URI_TOKEN."
+  Write-Info " • For external access, set a LOCAL_URI_PASSWORD."
   Write-Info " • For local-only access, press Enter to enable bypass_auth_mode."
-  $token = Read-Host "Enter a secure LOCAL_URI_TOKEN (or press Enter to skip)"
-  if ([string]::IsNullOrWhiteSpace($token)) {
-    Write-Info "No token provided - enabling authentication bypass (bypass_auth_mode=true)."
+  $password = Read-Host "Enter a secure LOCAL_URI_PASSWORD (or press Enter to skip)"
+  if ([string]::IsNullOrWhiteSpace($password)) {
+    Write-Info "No password provided - enabling authentication bypass (bypass_auth_mode=true)."
     $content = Get-Content morphik.toml -Raw
     $content = $content -replace '(?m)^bypass_auth_mode\s*=\s*false', 'bypass_auth_mode = true'
     Set-Content morphik.toml -Value $content
   } else {
-    Write-Ok "LOCAL_URI_TOKEN set - keeping production mode (bypass_auth_mode=false)."
-    (Get-Content .env -Raw) -replace 'LOCAL_URI_TOKEN=', "LOCAL_URI_TOKEN=$token" |
+    Write-Ok "LOCAL_URI_PASSWORD set - keeping production mode (bypass_auth_mode=false)."
+    (Get-Content .env -Raw) -replace 'LOCAL_URI_PASSWORD=', "LOCAL_URI_PASSWORD=$password" |
       Set-Content .env
   }
 }
@@ -510,7 +510,7 @@ Try-Extract-Config
 if ($script:EmbeddingSelection) {
   Update-EmbeddingConfig -Model $script:EmbeddingSelection.Model -Label $script:EmbeddingSelection.Label
 }
-Update-AuthBypassOrToken
+Update-AuthBypassOrPassword
 Update-GPU-Options
 Enable-Config-Mount
 

@@ -146,7 +146,7 @@ async def get_document_with_retry(document_service, document_id, auth, max_retri
 # Profiling helpers (worker-level)
 # ---------------------------------------------------------------------------
 
-if os.getenv("ENABLE_PROFILING") == "1":
+if settings.ENABLE_PROFILING:
     try:
         import yappi  # type: ignore
     except ImportError:
@@ -681,10 +681,7 @@ async def process_ingestion_job(
             colpali_chunk_ids: List[str] = []
             if using_colpali:
                 # Stream in batches to cap memory: embed -> store -> release
-                try:
-                    store_batch_size = int(os.getenv("COLPALI_STORE_BATCH_SIZE", "16"))
-                except Exception:
-                    store_batch_size = 16
+                store_batch_size = settings.COLPALI_STORE_BATCH_SIZE
 
                 total = len(processed_chunks_multivector)
                 logger.info(
@@ -1003,7 +1000,6 @@ async def startup(ctx):
         chunk_size=settings.CHUNK_SIZE,
         chunk_overlap=settings.CHUNK_OVERLAP,
         use_unstructured_api=settings.USE_UNSTRUCTURED_API,
-        unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
         assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
         anthropic_api_key=settings.ANTHROPIC_API_KEY,
         use_contextual_chunking=settings.USE_CONTEXTUAL_CHUNKING,
@@ -1125,7 +1121,7 @@ def redis_settings_from_env() -> RedisSettings:
     Returns:
         RedisSettings configured for Redis connection with optimized performance
     """
-    url = up.urlparse(os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"))
+    url = up.urlparse(settings.REDIS_URL)
 
     # Use ARQ's supported parameters with optimized values for stability
     # For high-volume ingestion (100+ documents), these settings help prevent timeouts
@@ -1159,8 +1155,8 @@ class WorkerSettings:
     keep_result_ms = 15 * 60 * 1000  # Keep results for 15 minutes
 
     # Concurrency settings - keep low by default to avoid OOM on small EC2s.
-    # Override with ARQ_MAX_JOBS if you have sufficient memory.
-    max_jobs = int(os.getenv("ARQ_MAX_JOBS", "1"))
+    # Override with [worker].arq_max_jobs in morphik.toml if you have sufficient memory.
+    max_jobs = settings.ARQ_MAX_JOBS
 
     # Resource management
     health_check_interval = 600  # Extended to 10 minutes to reduce Redis overhead
