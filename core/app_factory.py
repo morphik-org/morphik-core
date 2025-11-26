@@ -1,5 +1,4 @@
 import logging
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -130,7 +129,7 @@ async def lifespan(app_instance: FastAPI):
                 interval_hours=settings.TELEMETRY_UPLOAD_INTERVAL_HOURS,
                 max_local_bytes=settings.TELEMETRY_MAX_LOCAL_BYTES,
                 service_name=settings.SERVICE_NAME,
-                environment=os.getenv("ENVIRONMENT", settings.MODE),
+                environment=settings.ENVIRONMENT,
             )
             log_uploader.start()
             app_instance.state.log_uploader = log_uploader
@@ -139,7 +138,7 @@ async def lifespan(app_instance: FastAPI):
                 heartbeat_url=HEARTBEAT_URL,
                 project_name=project_name,
                 installation_id=installation_id,
-                version=os.getenv("DATABRIDGE_VERSION", "unknown"),
+                version=settings.VERSION,
                 interval_hours=HEARTBEAT_INTERVAL_HOURS,
             )
             heartbeat.start()

@@ -1001,11 +1001,11 @@ async def generate_local_uri(
 ) -> Dict[str, str]:
     """Generate a development URI for running Morphik locally."""
     try:
-        # Authenticate with LOCAL_URI_TOKEN
-        if not settings.LOCAL_URI_TOKEN:
-            raise HTTPException(status_code=500, detail="LOCAL_URI_TOKEN not configured")
+        # Authenticate with LOCAL_URI_PASSWORD
+        if not settings.LOCAL_URI_PASSWORD:
+            raise HTTPException(status_code=500, detail="LOCAL_URI_PASSWORD not configured")
 
-        if password_token != settings.LOCAL_URI_TOKEN:
+        if password_token != settings.LOCAL_URI_PASSWORD:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
 
         # Clean name
