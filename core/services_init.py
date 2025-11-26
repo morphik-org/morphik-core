@@ -16,12 +16,10 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from core.cache.llama_cache_factory import LlamaCacheFactory
 from core.completion.litellm_completion import LiteLLMCompletionModel
 from core.config import get_settings
 from core.database.postgres_database import PostgresDatabase
 from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
-from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.parser.morphik_parser import MorphikParser
 from core.reranker.flag_reranker import FlagReranker
@@ -118,7 +116,14 @@ logger.debug("Reranker enabled: %s", bool(reranker))
 # Cache factory
 # ---------------------------------------------------------------------------
 
-cache_factory = LlamaCacheFactory(Path(settings.STORAGE_PATH))
+cache_factory = None
+if settings.KV_CACHE_ENABLED:
+    from core.cache.llama_cache_factory import LlamaCacheFactory
+
+    cache_factory = LlamaCacheFactory(Path(settings.STORAGE_PATH))
+    logger.info("KV cache enabled - initialized LlamaCacheFactory")
+else:
+    logger.info("KV cache disabled")
 
 # ---------------------------------------------------------------------------
 # ColPali multi-vector support
@@ -138,6 +143,8 @@ else:
             colpali_vector_store = None
         case "local":
             logger.info("Initializing ColPali in local mode")
+            from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
+
             colpali_embedding_model = ColpaliEmbeddingModel()
             # Choose multivector store implementation based on provider and dual ingestion setting
             if settings.ENABLE_DUAL_MULTIVECTOR_INGESTION:

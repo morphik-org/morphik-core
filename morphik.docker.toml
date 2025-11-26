@@ -128,6 +128,9 @@ provider = "pgvector"
 [multivector_store]
 provider = "postgres"
 
+[kv_cache]
+enabled = false  # Enable LlamaCache for semantic caching
+
 [redis]
 url = "redis://redis:6379/0"  # Docker service name
 host = "redis"
