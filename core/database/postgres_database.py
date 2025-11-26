@@ -258,6 +258,27 @@ class PostgresDatabase(BaseDatabase):
             f"max_overflow={max_overflow}, pool_recycle={pool_recycle}s"
         )
 
+        # Strip parameters that asyncpg doesn't accept as keyword arguments
+        # These will raise "unexpected keyword argument" errors
+        from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+        parsed = urlparse(uri)
+        query_params = parse_qs(parsed.query)
+
+        # List of parameters that asyncpg doesn't accept
+        incompatible_params = ["sslmode", "channel_binding"]
+        removed_params = []
+
+        for param in incompatible_params:
+            if param in query_params:
+                query_params.pop(param, None)
+                removed_params.append(param)
+
+        if removed_params:
+            logger.debug(f"Removing parameters from PostgreSQL URI (not compatible with asyncpg): {removed_params}")
+            parsed = parsed._replace(query=urlencode(query_params, doseq=True))
+            uri = urlunparse(parsed)
+
         # Create async engine with explicit pool settings
         self.engine = create_async_engine(
             uri,

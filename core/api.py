@@ -307,8 +307,9 @@ app.include_router(models_router)
 # Register logs router
 app.include_router(logs_router)
 
-# Register cache router
-app.include_router(cache_router)
+# Register cache router (only if KV cache is enabled)
+if settings.KV_CACHE_ENABLED:
+    app.include_router(cache_router)
 
 # Register graph router
 app.include_router(graph_router)
