@@ -61,7 +61,6 @@ class PerformanceTracker:
         self.operation_name = operation_name
         self.start_time = time.time()
         self.phases = {}
-        self.sub_operations = {}  # Track sub-operations for hierarchical display
         self.current_phase = None
         self.sub_operations = {}  # Track sub-operations for hierarchical display
         self.phase_start = None
@@ -105,14 +104,6 @@ class PerformanceTracker:
         for phase, duration in sorted(self.phases.items(), key=lambda x: x[1], reverse=True):
             percentage = (duration / total_time) * 100 if total_time > 0 else 0
             logger.info(f"  - {phase}: {duration:.2f}s ({percentage:.1f}%)")
-
-            # Display sub-operations for this phase if any exist
-            if phase in self.sub_operations:
-                for sub_name, sub_duration in sorted(
-                    self.sub_operations[phase].items(), key=lambda x: x[1], reverse=True
-                ):
-                    sub_percentage = (sub_duration / total_time) * 100 if total_time > 0 else 0
-                    logger.info(f"    - {sub_name}: {sub_duration:.2f}s ({sub_percentage:.1f}%)")
 
             # Display sub-operations for this phase if any exist
             if phase in self.sub_operations:
