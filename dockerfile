@@ -69,10 +69,6 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" > /etc/apt/s
     update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100 && \
     update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
 
-# Cache buster: 1 - verbose flag already present
-RUN --mount=type=cache,target=${UV_CACHE_DIR} \
-    uv pip install --upgrade --verbose --force-reinstall --no-cache-dir llama-cpp-python==0.3.5
-
 # Download NLTK data
 RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt averaged_perceptron_tagger
 

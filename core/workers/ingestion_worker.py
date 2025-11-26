@@ -321,7 +321,6 @@ async def process_ingestion_job(
                 vector_store=vector_store,
                 embedding_model=ctx["embedding_model"],
                 parser=ctx["parser"],
-                cache_factory=None,
                 enable_colpali=use_colpali,
                 colpali_embedding_model=ctx.get("colpali_embedding_model"),
                 colpali_vector_store=colpali_vector_store,
@@ -1061,7 +1060,6 @@ async def startup(ctx):
             logger.error("ColPali vector store initialization failed")
     ctx["colpali_embedding_model"] = colpali_embedding_model
     ctx["colpali_vector_store"] = colpali_vector_store
-    ctx["cache_factory"] = None
 
     # Initialize telemetry service
     telemetry = TelemetryService()

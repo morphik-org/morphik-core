@@ -56,7 +56,6 @@ dependencies = [
     "torchaudio==2.5.1",
     "torchvision==0.20.1",
     "tqdm>=4.67.1",
-    "transformers==4.51.3",
     "twine>=6.1.0",
     "ty>=0.0.1a6",
     "unstructured[pdf]>=0.17.2",

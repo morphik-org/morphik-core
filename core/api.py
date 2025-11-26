@@ -39,7 +39,6 @@ from core.models.request import (
     SearchDocumentsRequest,
 )
 from core.models.responses import ChatTitleResponse, ModelsResponse
-from core.routes.cache import router as cache_router
 from core.routes.documents import router as documents_router
 from core.routes.folders import router as folders_router
 from core.routes.graph import router as graph_router
@@ -306,10 +305,6 @@ app.include_router(models_router)
 
 # Register logs router
 app.include_router(logs_router)
-
-# Register cache router (only if KV cache is enabled)
-if settings.KV_CACHE_ENABLED:
-    app.include_router(cache_router)
 
 # Register graph router
 app.include_router(graph_router)
