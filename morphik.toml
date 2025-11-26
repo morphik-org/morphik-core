@@ -3,6 +3,11 @@ host = "0.0.0.0"
 port = 8000
 reload = true
 
+[service]
+environment = "production"  # "development", "staging", or "production"
+version = "unknown"
+enable_profiling = false  # Enable request profiling (creates .prof files in logs/)
+
 [auth]
 jwt_algorithm = "HS256"
 bypass_auth_mode = false  # Enabled by default for easier local development
@@ -129,6 +134,18 @@ provider = "pgvector"
 [multivector_store]
 provider = "morphik" #  "postgres" #   (morphik is faster, but also proprietary)
 
+[redis]
+url = "redis://localhost:6379/0"  # Full Redis URL (takes precedence over host/port)
+host = "localhost"
+port = 6379
+
+[worker]
+arq_max_jobs = 1  # Maximum concurrent jobs for ARQ worker
+colpali_store_batch_size = 16  # Batch size for ColPali vector storage
+
+[pdf]
+colpali_pdf_dpi = 150  # DPI for PDF to image conversion in ColPali processing
+
 [morphik]
 enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"
@@ -155,5 +172,6 @@ base_url="https://graph-api.morphik.ai"
 
 [telemetry]
 service_name = "databridge-core"
+project_name = ""
 upload_interval_hours = 4.0
 max_local_bytes = 1073741824

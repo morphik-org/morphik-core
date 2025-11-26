@@ -306,9 +306,9 @@ class TelemetryService:
         resource = Resource.create(
             {
                 "service.name": SERVICE_NAME,
-                "service.version": os.getenv("DATABRIDGE_VERSION", "unknown"),
+                "service.version": settings.VERSION,
                 "installation.id": self._installation_id,
-                "environment": os.getenv("ENVIRONMENT", "production"),
+                "environment": settings.ENVIRONMENT,
                 "telemetry.sdk.name": "opentelemetry",
                 "telemetry.sdk.language": "python",
                 "telemetry.sdk.version": "1.0.0",

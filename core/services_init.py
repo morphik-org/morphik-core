@@ -13,7 +13,6 @@ No behaviour has changed – only the physical location of the code.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Optional
 
 # from core.cache.llama_cache_factory import LlamaCacheFactory
@@ -21,6 +20,7 @@ from core.completion.litellm_completion import LiteLLMCompletionModel
 from core.config import get_settings
 from core.database.postgres_database import PostgresDatabase
 from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
+
 # from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.parser.morphik_parser import MorphikParser
@@ -83,7 +83,6 @@ parser = MorphikParser(
     chunk_size=settings.CHUNK_SIZE,
     chunk_overlap=settings.CHUNK_OVERLAP,
     use_unstructured_api=settings.USE_UNSTRUCTURED_API,
-    unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
     assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
     anthropic_api_key=settings.ANTHROPIC_API_KEY,
     use_contextual_chunking=settings.USE_CONTEXTUAL_CHUNKING,
@@ -140,7 +139,7 @@ else:
             colpali_vector_store = None
         case "local":
             logger.info("Initializing ColPali in local mode")
-            colpali_embedding_model = None #ColpaliEmbeddingModel()
+            colpali_embedding_model = None  # ColpaliEmbeddingModel()
             # Choose multivector store implementation based on provider and dual ingestion setting
             if settings.ENABLE_DUAL_MULTIVECTOR_INGESTION:
                 # Dual ingestion mode: create both stores and wrap them

@@ -12,10 +12,8 @@ import requests
 import sentry_sdk
 import tomli
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware  # Import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from starlette.middleware.sessions import SessionMiddleware
 
 from core.agent import MorphikAgent
 from core.app_factory import lifespan
@@ -25,7 +23,6 @@ from core.database.postgres_database import InvalidMetadataFilterError
 from core.dependencies import get_redis_pool
 from core.limits_utils import check_and_increment_limits
 from core.logging_config import setup_logging
-from core.middleware.profiling import ProfilingMiddleware
 from core.models.auth import AuthContext, EntityType
 from core.models.chat import ChatMessage
 from core.models.completion import ChunkSource, CompletionResponse
@@ -168,8 +165,8 @@ app = FastAPI(lifespan=lifespan)
 # Optional per-request profiler (ENABLE_PROFILING=1)
 # --------------------------------------------------------
 
-# NOTE FOR AI AND OTHER HUMANS: 
-# THIS IS SUPPOSED TO COMMENTED OUT 
+# NOTE FOR AI AND OTHER HUMANS:
+# THIS IS SUPPOSED TO COMMENTED OUT
 # - REQUESTS FROM TYPESCRIPT SDK
 #  WILL FAIL IF YOU CHANGE THIS
 
@@ -1016,11 +1013,11 @@ async def generate_local_uri(
 ) -> Dict[str, str]:
     """Generate a development URI for running Morphik locally."""
     try:
-        # Authenticate with LOCAL_URI_TOKEN
-        if not settings.LOCAL_URI_TOKEN:
-            raise HTTPException(status_code=500, detail="LOCAL_URI_TOKEN not configured")
+        # Authenticate with LOCAL_URI_PASSWORD
+        if not settings.LOCAL_URI_PASSWORD:
+            raise HTTPException(status_code=500, detail="LOCAL_URI_PASSWORD not configured")
 
-        if password_token != settings.LOCAL_URI_TOKEN:
+        if password_token != settings.LOCAL_URI_PASSWORD:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
 
         # Clean name

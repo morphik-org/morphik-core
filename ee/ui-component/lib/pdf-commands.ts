@@ -28,12 +28,21 @@ if (!globalThis.pdfSessions) {
 
 const sessions: Map<string, PDFSession> = globalThis.pdfSessions;
 
+const MAX_LOG_VALUE_LENGTH = 200;
+
+function sanitizeForLog(value: string): string {
+  if (!value) return "";
+  const trimmed = value.replace(/[\r\n\t]+/g, " ").replace(/[^\x20-\x7E]/g, "");
+  return trimmed.length > MAX_LOG_VALUE_LENGTH ? `${trimmed.slice(0, MAX_LOG_VALUE_LENGTH)}...` : trimmed;
+}
+
 // Clean up inactive sessions (older than 1 hour)
 function cleanupInactiveSessions() {
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
   for (const [sessionId, session] of Array.from(sessions.entries())) {
     if (session.lastActivity < oneHourAgo) {
-      console.log(`Cleaning up inactive session: ${sessionId}`);
+      const safeSessionId = sanitizeForLog(sessionId);
+      console.log("Cleaning up inactive session:", safeSessionId);
       // Close all clients in the session
       session.clients.forEach((client: ReadableStreamDefaultController) => {
         try {
@@ -51,6 +60,8 @@ function cleanupInactiveSessions() {
 setInterval(cleanupInactiveSessions, 30 * 60 * 1000);
 
 export function getOrCreateSession(sessionId: string, userId: string): PDFSession {
+  const safeSessionId = sanitizeForLog(sessionId);
+  const safeUserId = sanitizeForLog(userId);
   let session = sessions.get(sessionId);
 
   if (!session) {
@@ -62,7 +73,7 @@ export function getOrCreateSession(sessionId: string, userId: string): PDFSessio
       lastActivity: new Date(),
     };
     sessions.set(sessionId, session);
-    console.log(`Created new PDF session: ${sessionId} for user: ${userId}`);
+    console.log("Created new PDF session", safeSessionId, "for user", safeUserId);
   } else {
     // Verify user owns this session (allow anonymous/authenticated user mixing for development)
     const isUserMatch =
@@ -84,12 +95,14 @@ export function getOrCreateSession(sessionId: string, userId: string): PDFSessio
 }
 
 export function addClient(controller: ReadableStreamDefaultController, sessionId: string, userId: string) {
-  console.log(`Adding new PDF API client for session: ${sessionId}, user: ${userId}`);
+  const safeSessionId = sanitizeForLog(sessionId);
+  const safeUserId = sanitizeForLog(userId);
+  console.log("Adding new PDF API client for session", safeSessionId, "user", safeUserId);
 
   const session = getOrCreateSession(sessionId, userId);
   session.clients.push(controller);
 
-  console.log(`Total clients in session ${sessionId}:`, session.clients.length);
+  console.log("Total clients in session", safeSessionId, session.clients.length);
 
   // Send initial connection message
   const connectionMessage = `data: ${JSON.stringify({ type: "connected", sessionId, userId })}\n\n`;
@@ -97,7 +110,7 @@ export function addClient(controller: ReadableStreamDefaultController, sessionId
   controller.enqueue(connectionMessage);
 
   // Send any queued commands for this session
-  console.log(`Sending queued commands for session ${sessionId}:`, session.commandQueue.length);
+  console.log("Sending queued commands for session", safeSessionId, session.commandQueue.length);
   session.commandQueue.forEach(command => {
     const message = `data: ${JSON.stringify(command)}\n\n`;
     console.log("Sending queued command:", message);
@@ -109,18 +122,19 @@ export function addClient(controller: ReadableStreamDefaultController, sessionId
 }
 
 export function removeClient(controller: ReadableStreamDefaultController, sessionId: string) {
-  console.log(`Removing PDF API client from session: ${sessionId}`);
+  const safeSessionId = sanitizeForLog(sessionId);
+  console.log("Removing PDF API client from session", safeSessionId);
 
   const session = sessions.get(sessionId);
   if (!session) {
-    console.log(`Session ${sessionId} not found`);
+    console.log("Session not found", safeSessionId);
     return;
   }
 
   const index = session.clients.indexOf(controller);
   if (index > -1) {
     session.clients.splice(index, 1);
-    console.log(`Client removed from session ${sessionId}. Remaining clients:`, session.clients.length);
+    console.log("Client removed from session", safeSessionId, "Remaining clients:", session.clients.length);
 
     // If no clients left in session, we could optionally clean it up
     // For now, we'll keep it for a while in case the client reconnects
@@ -131,11 +145,13 @@ export function removeClient(controller: ReadableStreamDefaultController, sessio
 
 // Function to broadcast commands to all connected clients in a specific session
 export function broadcastPDFCommand(command: PDFCommand, sessionId: string, userId: string) {
-  console.log(`Broadcasting PDF command to session ${sessionId}:`, command);
+  const safeSessionId = sanitizeForLog(sessionId);
+  const safeUserId = sanitizeForLog(userId);
+  console.log("Broadcasting PDF command to session", safeSessionId, "user", safeUserId, command);
 
   const session = sessions.get(sessionId);
   if (!session) {
-    console.log(`Session ${sessionId} not found, creating new session`);
+    console.log("Session not found, creating new session", safeSessionId, "user", safeUserId);
     getOrCreateSession(sessionId, userId);
     return broadcastPDFCommand(command, sessionId, userId);
   }
@@ -166,22 +182,22 @@ export function broadcastPDFCommand(command: PDFCommand, sessionId: string, user
   // Send to all connected clients in this session
   session.clients.forEach((controller, index) => {
     try {
-      console.log(`Sending command to client ${index + 1} in session ${sessionId}:`, message);
+      console.log("Sending command to client", index + 1, "in session", safeSessionId, message);
       controller.enqueue(message);
     } catch (error) {
-      console.error(`Error sending command to client ${index + 1} in session ${sessionId}:`, error);
+      console.error("Error sending command to client", index + 1, "in session", safeSessionId, error);
       // Remove failed client
       const clientIndex = session.clients.indexOf(controller);
       if (clientIndex > -1) {
         session.clients.splice(clientIndex, 1);
-        console.log(`Removed failed client from session ${sessionId}. Remaining clients: ${session.clients.length}`);
+        console.log("Removed failed client from session", safeSessionId, "Remaining clients:", session.clients.length);
       }
     }
   });
 
   // If no clients connected in this session, queue the command
   if (session.clients.length === 0) {
-    console.log(`No clients connected in session ${sessionId}, queueing command`);
+    console.log("No clients connected in session", safeSessionId, "queueing command");
     session.commandQueue.push(scopedCommand);
     // Keep only the last 10 commands to prevent memory issues
     if (session.commandQueue.length > 10) {

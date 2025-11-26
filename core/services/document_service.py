@@ -1786,10 +1786,7 @@ class DocumentService:
                     logger.error("PDF file content is empty")
                     raise PdfConversionError("PDF file content is empty")
 
-                try:
-                    dpi = int(os.getenv("COLPALI_PDF_DPI", "150"))
-                except Exception:
-                    dpi = 150
+                dpi = settings.COLPALI_PDF_DPI
 
                 try:
                     images_with_bytes = self._render_pdf_with_pymupdf(file_content, dpi, include_bytes=True)
@@ -1892,10 +1889,7 @@ class DocumentService:
                             # Process each page individually
                             for page_num in range(len(pdf_document)):
                                 page = pdf_document[page_num]
-                                try:
-                                    dpi = int(os.getenv("COLPALI_PDF_DPI", "150"))
-                                except Exception:
-                                    dpi = 150
+                                dpi = settings.COLPALI_PDF_DPI
                                 mat = fitz.Matrix(dpi / 72, dpi / 72)
                                 pix = page.get_pixmap(matrix=mat)
                                 img_data = pix.tobytes("png")
@@ -2073,10 +2067,7 @@ class DocumentService:
                             # Process each slide as an image
                             for page_num in range(len(pdf_document)):
                                 page = pdf_document[page_num]
-                                try:
-                                    dpi = int(os.getenv("COLPALI_PDF_DPI", "150"))
-                                except Exception:
-                                    dpi = 150
+                                dpi = settings.COLPALI_PDF_DPI
                                 mat = fitz.Matrix(dpi / 72, dpi / 72)
                                 pix = page.get_pixmap(matrix=mat)
                                 img_data = pix.tobytes("png")
@@ -2263,10 +2254,7 @@ class DocumentService:
                             # Process each page/sheet as an image
                             for page_num in range(len(pdf_document)):
                                 page = pdf_document[page_num]
-                                try:
-                                    dpi = int(os.getenv("COLPALI_PDF_DPI", "150"))
-                                except Exception:
-                                    dpi = 150
+                                dpi = settings.COLPALI_PDF_DPI
                                 mat = fitz.Matrix(dpi / 72, dpi / 72)
                                 pix = page.get_pixmap(matrix=mat)
                                 img_data = pix.tobytes("png")
