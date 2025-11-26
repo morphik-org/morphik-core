@@ -560,40 +560,6 @@ class TelemetryService:
             ]
         )
 
-        self.cache_create_metadata = MetadataExtractor(
-            [
-                MetadataField("name", "kwargs"),
-                MetadataField("model", "kwargs"),
-                MetadataField("gguf_file", "kwargs"),
-                MetadataField("filters", "kwargs"),
-                MetadataField("docs", "kwargs"),
-            ]
-        )
-
-        self.cache_get_metadata = MetadataExtractor(
-            [
-                MetadataField("name", "kwargs"),
-            ]
-        )
-
-        self.cache_update_metadata = self.cache_get_metadata
-
-        self.cache_add_docs_metadata = MetadataExtractor(
-            [
-                MetadataField("name", "kwargs"),
-                MetadataField("docs", "kwargs"),
-            ]
-        )
-
-        self.cache_query_metadata = MetadataExtractor(
-            [
-                MetadataField("name", "kwargs"),
-                MetadataField("query", "kwargs"),
-                MetadataField("max_tokens", "kwargs"),
-                MetadataField("temperature", "kwargs"),
-            ]
-        )
-
         self.create_graph_metadata = MetadataExtractor(
             [
                 MetadataField("name", "request"),

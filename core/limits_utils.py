@@ -203,8 +203,6 @@ async def check_and_increment_limits(
                 "Please delete some files or upgrade to remove limits."
             ),
             "graph": "Graph creation limit exceeded for your free tier. Please upgrade to remove limits.",
-            "cache": "Cache creation limit exceeded for your free tier. Please upgrade to remove limits.",
-            "cache_query": "Cache query limit exceeded for your free tier. Please upgrade to remove limits.",
             "agent": "Agent call limit exceeded for your free tier. Please upgrade to remove limits.",
         }
 

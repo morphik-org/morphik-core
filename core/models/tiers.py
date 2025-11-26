@@ -27,10 +27,6 @@ TIER_LIMITS = {
         "graph_creation_limit": 1,  # Maximum number of graphs
         "hourly_graph_query_limit": 1,  # Maximum graph queries per hour
         "monthly_graph_query_limit": 1,  # Maximum graph queries per month
-        # Cache limits
-        "cache_creation_limit": 0,  # Maximum number of caches
-        "hourly_cache_query_limit": 0,  # Maximum cache queries per hour
-        "monthly_cache_query_limit": 0,  # Maximum cache queries per month
         # Agent call limits
         "hourly_agent_limit": 3,
         "monthly_agent_limit": 3,
@@ -49,10 +45,6 @@ TIER_LIMITS = {
         "graph_creation_limit": 10,  # Maximum number of graphs
         "hourly_graph_query_limit": 50,  # Maximum graph queries per hour
         "monthly_graph_query_limit": 1000,  # Maximum graph queries per month
-        # Cache limits
-        "cache_creation_limit": 5,  # Maximum number of caches
-        "hourly_cache_query_limit": 200,  # Maximum cache queries per hour
-        "monthly_cache_query_limit": 5000,  # Maximum cache queries per month
         # Agent call limits for PRO (unlimited)
         "hourly_agent_limit": 30,
         "monthly_agent_limit": 30,
@@ -72,10 +64,6 @@ TIER_LIMITS = {
         "graph_creation_limit": 50,  # Maximum number of graphs
         "hourly_graph_query_limit": 200,  # Maximum graph queries per hour
         "monthly_graph_query_limit": 10000,  # Maximum graph queries per month
-        # Cache limits
-        "cache_creation_limit": 20,  # Maximum number of caches
-        "hourly_cache_query_limit": 1000,  # Maximum cache queries per hour
-        "monthly_cache_query_limit": 50000,  # Maximum cache queries per month
         # Agent call limits
         "hourly_agent_limit": 100,
         "monthly_agent_limit": 100,
@@ -95,10 +83,6 @@ TIER_LIMITS = {
         "graph_creation_limit": float("inf"),  # Maximum number of graphs
         "hourly_graph_query_limit": float("inf"),  # Maximum graph queries per hour
         "monthly_graph_query_limit": float("inf"),  # Maximum graph queries per month
-        # Cache limits
-        "cache_creation_limit": float("inf"),  # Maximum number of caches
-        "hourly_cache_query_limit": float("inf"),  # Maximum cache queries per hour
-        "monthly_cache_query_limit": float("inf"),  # Maximum cache queries per month
     },
 }
 

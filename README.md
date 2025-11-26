@@ -42,7 +42,6 @@ The result is AI applications that confidently return wrong answers because they
 - [Knowledge Graphs](https://morphik.ai/docs/concepts/knowledge-graphs): Build knowledge graphs for domain-specific use cases in a single line of code. Use our battle-tested system prompts, or use your own.
 - [Fast and Scalable Metadata Extraction](https://morphik.ai/docs/concepts/rules-processing): Extract metadata from documents - including bounding boxes, labeling, classification, and more.
 - [Integrations](https://morphik.ai/docs/integrations): Integrate with existing tools and workflows. Including (but not limited to) Google Suite, Slack, and Confluence.
-- [Cache-Augmented-Generation](https://morphik.ai/docs/python-sdk/create_cache): Create persistent KV-caches of your documents to speed up generation.
 
 The best part? Morphik has a [free tier](https://www.morphik.ai/pricing)! Get started by signing up at [Morphik](https://www.morphik.ai/signup).
 

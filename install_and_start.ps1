@@ -137,19 +137,6 @@ Write-Step "Installing ColPali engine..."
 uv pip install --python $venvPython `
   colpali-engine@git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3
 
-# 6) Install llama-cpp-python (CPU build by default on Windows)
-Write-Step "Installing llama-cpp-python... (this may take a while)"
-try {
-  # Prefer wheels to avoid CMake/MSVC builds on Windows. Wheels exist for Python 3.11/3.12.
-  uv pip install --python $venvPython --upgrade --verbose --force-reinstall --no-cache-dir --only-binary=:all: `
-    llama-cpp-python==0.3.5
-} catch {
-  Write-Err "Failed to install llama-cpp-python prebuilt wheel."
-  Write-Info "If you need local llama.cpp, install 'Visual Studio 2022 Build Tools' with the C++ workload, then re-run. Continuing without llama-cpp-python."
-}
-
-# 7) Start the server
+# 6) Start the server
 Write-Host "`nStarting Morphik server...`n" -ForegroundColor Green
 uv run --python $venvPython start_server.py
-
-
