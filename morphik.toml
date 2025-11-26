@@ -134,6 +134,9 @@ provider = "pgvector"
 [multivector_store]
 provider = "morphik" #  "postgres" #   (morphik is faster, but also proprietary)
 
+[kv_cache]
+enabled = false  # Enable LlamaCache for semantic caching
+
 [redis]
 url = "redis://localhost:6379/0"  # Full Redis URL (takes precedence over host/port)
 host = "localhost"

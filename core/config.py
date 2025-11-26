@@ -118,6 +118,9 @@ class Settings(BaseSettings):
     CACHE_CHUNK_MAX_BYTES: int = 10 * 1024 * 1024 * 1024
     CACHE_PATH: str = "./storage/cache"
 
+    # KV Cache configuration (LlamaCache for semantic caching)
+    KV_CACHE_ENABLED: bool = False
+
     # Vector store configuration
     VECTOR_STORE_PROVIDER: Literal["pgvector"]
     VECTOR_STORE_DATABASE_NAME: Optional[str] = None
@@ -474,5 +477,9 @@ def get_settings() -> Settings:
                     em.format(missing_value="TURBOPUFFER_API_KEY", field="multivector_store.provider", value="morphik")
                 )
             settings_dict["TURBOPUFFER_API_KEY"] = os.environ["TURBOPUFFER_API_KEY"]
+
+    # Load kv_cache config
+    if "kv_cache" in config:
+        settings_dict["KV_CACHE_ENABLED"] = config["kv_cache"].get("enabled", False)
 
     return Settings(**settings_dict)
