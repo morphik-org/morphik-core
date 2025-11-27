@@ -592,3 +592,61 @@ class FolderInfo(BaseModel):
     rules: List[Dict[str, Any]] = Field(default_factory=list, description="Rules associated with the folder")
     app_id: Optional[str] = Field(None, description="Application ID associated with the folder")
     end_user_id: Optional[str] = Field(None, description="End user ID associated with the folder")
+
+
+class DocumentPagesResponse(BaseModel):
+    """Response for document pages extraction endpoint"""
+
+    document_id: str = Field(..., description="ID of the document")
+    pages: List[str] = Field(..., description="List of page contents as base64 encoded strings")
+    start_page: int = Field(..., description="Start page number (1-indexed)")
+    end_page: int = Field(..., description="End page number (1-indexed)")
+    total_pages: int = Field(..., description="Total number of pages in the document")
+
+
+class ChunkGroup(BaseModel):
+    """Represents a group of chunks: one main match + its padding chunks"""
+
+    main_chunk: ChunkResult = Field(..., description="The primary matched chunk")
+    padding_chunks: List[ChunkResult] = Field(default_factory=list, description="Surrounding context chunks")
+    total_chunks: int = Field(..., description="Total number of chunks in this group")
+
+
+class GroupedChunkResponse(BaseModel):
+    """Response that includes both flat results and grouped results for UI"""
+
+    chunks: List[ChunkResult] = Field(..., description="Flat list of all chunks (for backward compatibility)")
+    groups: List[ChunkGroup] = Field(..., description="Grouped chunks for UI display")
+    total_results: int = Field(..., description="Total number of unique chunks")
+    has_padding: bool = Field(..., description="Whether padding was applied to any results")
+
+
+class FolderSummary(BaseModel):
+    """Summary information for a folder"""
+
+    id: str = Field(..., description="Unique folder identifier")
+    name: str = Field(..., description="Folder name")
+    description: Optional[str] = Field(None, description="Folder description")
+    doc_count: int = Field(default=0, description="Number of documents in folder")
+    updated_at: Optional[str] = Field(None, description="Last update timestamp")
+
+
+class FolderDocumentInfo(BaseModel):
+    """Document count and status information for a folder"""
+
+    total_count: Optional[int] = Field(None, description="Total document count")
+    status_counts: Optional[Dict[str, int]] = Field(None, description="Document counts by status")
+    documents: Optional[List[Document]] = Field(None, description="Paginated list of documents")
+
+
+class FolderDetails(BaseModel):
+    """Folder details with optional document summary"""
+
+    folder: FolderInfo = Field(..., description="Folder information")
+    document_info: Optional[FolderDocumentInfo] = Field(None, description="Document statistics and list")
+
+
+class FolderDetailsResponse(BaseModel):
+    """Response wrapping folder detail entries"""
+
+    folders: List[FolderDetails] = Field(..., description="List of folder details")
