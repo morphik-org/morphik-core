@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from core.models.completion import ChunkSource
 from core.models.documents import Document
 from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
 
@@ -378,4 +379,30 @@ class RequeueIngestionRequest(BaseModel):
         default=None,
         ge=1,
         description="Maximum number of documents to auto-select from the provided statuses when include_all is true.",
+    )
+
+
+class BatchDocumentsRequest(BaseModel):
+    """Request model for batch document retrieval."""
+
+    document_ids: List[str] = Field(default_factory=list, description="List of document IDs to retrieve")
+    folder_name: Optional[Union[str, List[str]]] = Field(
+        None,
+        description="Optional folder scope for the operation. Accepts a single folder name or a list of folder names.",
+    )
+    end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
+
+
+class BatchChunksRequest(BaseModel):
+    """Request model for batch chunk retrieval."""
+
+    sources: List[ChunkSource] = Field(default_factory=list, description="List of chunk sources to retrieve")
+    folder_name: Optional[Union[str, List[str]]] = Field(
+        None,
+        description="Optional folder scope for the operation. Accepts a single folder name or a list of folder names.",
+    )
+    end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
+    use_colpali: Optional[bool] = Field(None, description="Whether to use ColPali embeddings for retrieval")
+    output_format: Optional[Literal["base64", "url"]] = Field(
+        None, description="How to return image chunks: base64 data URI (default) or a presigned URL"
     )
