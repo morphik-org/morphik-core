@@ -17,13 +17,13 @@ from core.models.documents import Document
 from core.models.request import BatchIngestResponse, DocumentQueryResponse, IngestTextRequest, RequeueIngestionRequest
 from core.models.responses import RequeueIngestionResponse, RequeueIngestionResult
 from core.routes.utils import warn_if_legacy_rules
-from core.services.document_service import DocumentService
+from core.services.ingestion_service import IngestionService
 from core.services.morphik_on_the_fly_structured_output import (
     MorphikOnTheFlyContentError,
     generate_morphik_on_the_fly_content,
 )
 from core.services.telemetry import TelemetryService
-from core.services_init import document_service, storage
+from core.services_init import ingestion_service, storage
 from core.storage.utils_file_extensions import detect_file_type
 from core.utils.typed_metadata import TypedMetadataError, normalize_metadata
 
@@ -74,11 +74,11 @@ async def ingest_text(
             logger.warning("Legacy 'rules' field supplied to /ingest/text; ignoring payload.")
 
         extra_fields = getattr(request, "model_extra", {}) if hasattr(request, "model_extra") else {}
-        document_service._enforce_no_user_mutable_fields(
+        ingestion_service._enforce_no_user_mutable_fields(
             request.metadata, request.folder_name, extra_fields, context="ingest"
         )
 
-        return await document_service.ingest_text(
+        return await ingestion_service.ingest_text(
             content=request.content,
             filename=request.filename,
             metadata=request.metadata,
@@ -142,7 +142,7 @@ async def ingest_file(
 
         logger.debug("Queueing file ingestion with use_colpali=%s", use_colpali_bool)
 
-        document_service._enforce_no_user_mutable_fields(metadata_dict, folder_name, context="ingest")
+        ingestion_service._enforce_no_user_mutable_fields(metadata_dict, folder_name, context="ingest")
 
         # ------------------------------------------------------------------
         # Create initial Document stub (status = processing)
@@ -165,7 +165,7 @@ async def ingest_file(
         doc.metadata_types = normalized_types
 
         # Store stub in application database (not control-plane DB)
-        app_db = document_service.db
+        app_db = ingestion_service.db
         success = await app_db.store_document(doc, auth)
         if not success:
             raise Exception("Failed to store document metadata")
@@ -174,7 +174,7 @@ async def ingest_file(
         # The ingestion worker re-runs this to ensure the folder is still in sync on completion.
         if folder_name:
             try:
-                await document_service._ensure_folder_exists(folder_name, doc.external_id, auth)
+                await ingestion_service._ensure_folder_exists(folder_name, doc.external_id, auth)
             except Exception as folder_exc:  # noqa: BLE001
                 logger.warning(
                     "Failed to add document %s to folder %s immediately after ingest: %s",
@@ -370,7 +370,7 @@ async def batch_ingest_files(
             # ------------------------------------------------------------------
             # Create stub Document (processing)
             # ------------------------------------------------------------------
-            document_service._enforce_no_user_mutable_fields(metadata_item, folder_name, context="ingest")
+            ingestion_service._enforce_no_user_mutable_fields(metadata_item, folder_name, context="ingest")
 
             doc = Document(
                 content_type=file.content_type,
@@ -389,7 +389,7 @@ async def batch_ingest_files(
             doc.metadata = normalized_metadata
             doc.metadata_types = normalized_types
 
-            app_db = document_service.db
+            app_db = ingestion_service.db
             success = await app_db.store_document(doc, auth)
             if not success:
                 raise Exception(f"Failed to store document metadata for {file.filename}")
@@ -397,7 +397,7 @@ async def batch_ingest_files(
             # Keep folder listings in sync immediately; worker re-runs this when processing finishes.
             if folder_name:
                 try:
-                    await document_service._ensure_folder_exists(folder_name, doc.external_id, auth)
+                    await ingestion_service._ensure_folder_exists(folder_name, doc.external_id, auth)
                 except Exception as folder_exc:  # noqa: BLE001
                     logger.warning(
                         "Failed to add batch document %s to folder %s immediately after ingest: %s",
@@ -573,8 +573,8 @@ async def requeue_ingest_jobs(
             system_metadata["status"] = "processing"
             system_metadata["updated_at"] = datetime.now(UTC)
 
-            sanitized_system_metadata = DocumentService._clean_system_metadata(system_metadata)
-            await document_service.db.update_document(
+            sanitized_system_metadata = IngestionService._clean_system_metadata(system_metadata)
+            await ingestion_service.db.update_document(
                 document_id=ext_id,
                 updates={"system_metadata": sanitized_system_metadata},
                 auth=auth_for_doc,
@@ -644,7 +644,7 @@ async def requeue_ingest_jobs(
         while True:
             if auto_limit is not None and auto_selected >= auto_limit:
                 break
-            batch = await document_service.db.list_documents_flexible(
+            batch = await ingestion_service.db.list_documents_flexible(
                 auth=auth,
                 skip=skip,
                 limit=limit,
@@ -675,7 +675,7 @@ async def requeue_ingest_jobs(
         if ext_id in processed_ids:
             continue
         try:
-            doc = await document_service.db.get_document(ext_id, auth)
+            doc = await ingestion_service.db.get_document(ext_id, auth)
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed to fetch document %s during requeue: %s", ext_id, exc, exc_info=True)
             results.append(
@@ -820,7 +820,7 @@ async def query_document(
         filename = file.filename or "uploaded_document"
 
         try:
-            ingestion_document = await document_service.ingest_file_content(
+            ingestion_document = await ingestion_service.ingest_file_content(
                 file_content_bytes=file_bytes,
                 filename=filename,
                 content_type=file.content_type,

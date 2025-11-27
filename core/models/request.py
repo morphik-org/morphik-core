@@ -342,21 +342,6 @@ class GenerateUriRequest(BaseModel):
     )
 
 
-# Add these classes before the extract_folder_data endpoint
-class AgentQueryRequest(BaseModel):
-    """Request model for agent queries"""
-
-    query: str = Field(..., description="Natural language query for the Morphik agent")
-    chat_id: Optional[str] = Field(
-        None,
-        description="Optional chat session ID for persisting conversation history",
-    )
-    display_mode: Literal["formatted", "raw"] = Field(
-        default="formatted",
-        description="Display mode for images: 'formatted' (default) creates bounding boxes with Gemini, 'raw' returns uncropped images",
-    )
-
-
 class DocumentPagesRequest(BaseModel):
     """Request model for extracting pages from a document"""
 

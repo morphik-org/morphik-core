@@ -163,10 +163,6 @@ class UserLimitsDatabase:
                         "monthly_query_reset": now,
                         "ingest_count": 0,
                         "graph_count": 0,
-                        "hourly_agent_count": 0,
-                        "hourly_agent_reset": now,
-                        "monthly_agent_count": 0,
-                        "monthly_agent_reset": now,
                     }
                 )
                 app_ids_json = json.dumps([])  # Empty array but as JSON string
@@ -466,34 +462,6 @@ class UserLimitsDatabase:
 
                 elif usage_type == "graph":
                     usage["graph_count"] = usage.get("graph_count", 0) + increment
-
-                elif usage_type == "agent":
-                    # Agent call limits: hourly and monthly resets
-                    # Hourly reset
-                    hourly_reset_str = usage.get("hourly_agent_reset", "")
-                    if hourly_reset_str:
-                        hourly_reset = datetime.fromisoformat(hourly_reset_str)
-                        if now > hourly_reset + timedelta(hours=1):
-                            usage["hourly_agent_count"] = increment
-                            usage["hourly_agent_reset"] = now_iso
-                        else:
-                            usage["hourly_agent_count"] = usage.get("hourly_agent_count", 0) + increment
-                    else:
-                        usage["hourly_agent_count"] = increment
-                        usage["hourly_agent_reset"] = now_iso
-
-                    # Monthly reset
-                    monthly_reset_str = usage.get("monthly_agent_reset", "")
-                    if monthly_reset_str:
-                        monthly_reset = datetime.fromisoformat(monthly_reset_str)
-                        if now > monthly_reset + timedelta(days=30):
-                            usage["monthly_agent_count"] = increment
-                            usage["monthly_agent_reset"] = now_iso
-                        else:
-                            usage["monthly_agent_count"] = usage.get("monthly_agent_count", 0) + increment
-                    else:
-                        usage["monthly_agent_count"] = increment
-                        usage["monthly_agent_reset"] = now_iso
 
                 # Force SQLAlchemy to recognize the change by assigning a new dict
                 user_limits.usage = usage

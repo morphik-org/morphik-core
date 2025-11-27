@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 # from core.models.auth import AuthContext # Morphik's AuthContext - Assuming this path is correct
 # For now, let's use a placeholder if the actual AuthContext is not available for type hinting
@@ -14,7 +14,8 @@ except ImportError:
 
 from redis.asyncio import Redis
 
-from core.services.document_service import DocumentService
+if TYPE_CHECKING:
+    from core.services.ingestion_service import IngestionService
 
 from .connectors.base_connector import BaseConnector
 from .connectors.github_connector import GitHubConnector
@@ -49,7 +50,7 @@ class ConnectorService:
         self,
         connector_type: str,
         file_id: str,
-        document_service: DocumentService,
+        ingestion_service: "IngestionService",
         auth: AuthContext,
         redis: Redis,
         folder_name: Optional[str] = None,
@@ -73,11 +74,11 @@ class ConnectorService:
         if metadata:
             final_metadata.update(metadata)
 
-        # Use the injected document_service
+        # Use the injected ingestion_service
         if rules:
             logger.warning("ConnectorService received legacy 'rules' payload; ignoring.")
 
-        doc = await document_service.ingest_file_content(
+        doc = await ingestion_service.ingest_file_content(
             file_content_bytes=file_content_bytes.getvalue(),
             filename=file_metadata.name,
             content_type=file_metadata.mime_type,

@@ -23,6 +23,7 @@ from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.parser.morphik_parser import MorphikParser
 from core.reranker.flag_reranker import FlagReranker
 from core.services.document_service import DocumentService
+from core.services.ingestion_service import IngestionService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.vector_store.dual_multivector_store import DualMultiVectorStore
@@ -208,6 +209,21 @@ document_service = DocumentService(
 )
 logger.info("Document service initialised")
 
+# ---------------------------------------------------------------------------
+# Ingestion service (handles document ingestion operations)
+# ---------------------------------------------------------------------------
+
+ingestion_service = IngestionService(
+    database=database,
+    vector_store=vector_store,
+    storage=storage,
+    parser=parser,
+    embedding_model=embedding_model,
+    colpali_embedding_model=colpali_embedding_model,
+    colpali_vector_store=colpali_vector_store,
+)
+logger.info("Ingestion service initialised")
+
 __all__ = [
     "settings",
     "database",
@@ -216,4 +232,5 @@ __all__ = [
     "embedding_model",
     "completion_model",
     "document_service",
+    "ingestion_service",
 ]
