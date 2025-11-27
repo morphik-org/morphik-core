@@ -22,7 +22,7 @@ from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
 from core.models.auth import AuthContext, EntityType
 from core.parser.morphik_parser import MorphikParser
-from core.services.document_service import DocumentService, PdfConversionError
+from core.services.ingestion_service import IngestionService, PdfConversionError
 from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
@@ -55,12 +55,12 @@ logger.addHandler(file_handler)
 logger.setLevel(logging.INFO)
 
 
-async def update_document_progress(document_service, document_id, auth, current_step, total_steps, step_name):
+async def update_document_progress(ingestion_service, document_id, auth, current_step, total_steps, step_name):
     """
     Helper function to update document progress during ingestion.
 
     Args:
-        document_service: The document service instance
+        ingestion_service: The ingestion service instance
         document_id: ID of the document to update
         auth: Authentication context
         current_step: Current step number (1-based)
@@ -80,19 +80,19 @@ async def update_document_progress(document_service, document_id, auth, current_
                 "updated_at": datetime.now(UTC),
             }
         }
-        await document_service.db.update_document(document_id, updates, auth)
+        await ingestion_service.db.update_document(document_id, updates, auth)
         logger.debug(f"Updated progress: {step_name} ({current_step}/{total_steps})")
     except Exception as e:
         logger.warning(f"Failed to update progress for document {document_id}: {e}")
         # Don't fail the ingestion if progress update fails
 
 
-async def get_document_with_retry(document_service, document_id, auth, max_retries=3, initial_delay=0.3):
+async def get_document_with_retry(ingestion_service, document_id, auth, max_retries=3, initial_delay=0.3):
     """
     Helper function to get a document with retries to handle race conditions.
 
     Args:
-        document_service: The document service instance
+        ingestion_service: The ingestion service instance
         document_id: ID of the document to retrieve
         auth: Authentication context
         max_retries: Maximum number of retry attempts
@@ -110,7 +110,7 @@ async def get_document_with_retry(document_service, document_id, auth, max_retri
 
     while attempt < max_retries:
         try:
-            doc = await document_service.db.get_document(document_id, auth)
+            doc = await ingestion_service.db.get_document(document_id, auth)
             if doc:
                 logger.debug(f"Successfully retrieved document {document_id} on attempt {attempt+1}")
                 return doc
@@ -312,25 +312,24 @@ async def process_ingestion_job(
                 except Exception as e:
                     logger.warning(f"Failed to initialise ColPali MultiVectorStore for app {auth.app_id}: {e}")
 
-            # Build a fresh DocumentService scoped to this job/app so we don't
+            # Build a fresh IngestionService scoped to this job/app so we don't
             # mutate the shared instance kept in *ctx* (avoids cross-talk between
             # concurrent jobs for different apps).
-            document_service = DocumentService(
+            ingestion_service = IngestionService(
                 storage=ctx["storage"],
                 database=database,
                 vector_store=vector_store,
                 embedding_model=ctx["embedding_model"],
                 parser=ctx["parser"],
-                enable_colpali=use_colpali,
                 colpali_embedding_model=ctx.get("colpali_embedding_model"),
                 colpali_vector_store=colpali_vector_store,
             )
 
             # 3. Download the file from storage
-            await update_document_progress(document_service, document_id, auth, 1, total_steps, "Downloading file")
+            await update_document_progress(ingestion_service, document_id, auth, 1, total_steps, "Downloading file")
             logger.info(f"Downloading file from {bucket}/{file_key}")
             download_start = time.time()
-            file_content = await document_service.storage.download_file(bucket, file_key)
+            file_content = await ingestion_service.storage.download_file(bucket, file_key)
 
             # Ensure file_content is bytes
             if hasattr(file_content, "read"):
@@ -341,12 +340,12 @@ async def process_ingestion_job(
 
             # Check if we're using ColPali
             using_colpali = (
-                use_colpali and document_service.colpali_embedding_model and document_service.colpali_vector_store
+                use_colpali and ingestion_service.colpali_embedding_model and ingestion_service.colpali_vector_store
             )
             logger.info(
                 f"ColPali decision: use_colpali={use_colpali}, "
-                f"has_model={bool(document_service.colpali_embedding_model)}, "
-                f"has_store={bool(document_service.colpali_vector_store)}, "
+                f"has_model={bool(ingestion_service.colpali_embedding_model)}, "
+                f"has_store={bool(ingestion_service.colpali_vector_store)}, "
                 f"using_colpali={using_colpali}"
             )
 
@@ -398,7 +397,7 @@ async def process_ingestion_job(
             )
 
             # 4. Parse file to text
-            await update_document_progress(document_service, document_id, auth, 2, total_steps, "Parsing file")
+            await update_document_progress(ingestion_service, document_id, auth, 2, total_steps, "Parsing file")
             # Use the filename derived from the storage key so the parser
             # receives the correct extension (.txt, .pdf, etc.).  Passing the UI
             # provided original_filename (often .pdf) can mislead the parser when
@@ -408,14 +407,14 @@ async def process_ingestion_job(
             parse_start = time.time()
 
             # ===== FILE PARSING LOGIC =====
-            is_xml = document_service.parser.is_xml_file(parse_filename, content_type)
+            is_xml = ingestion_service.parser.is_xml_file(parse_filename, content_type)
             xml_processing = False
             xml_chunks = []
 
             if is_xml:
                 # XML files always need special parsing
                 logger.info(f"Detected XML file: {parse_filename}")
-                xml_chunks = await document_service.parser.parse_and_chunk_xml(file_content, parse_filename)
+                xml_chunks = await ingestion_service.parser.parse_and_chunk_xml(file_content, parse_filename)
                 additional_metadata = {}
                 text = ""
                 xml_processing = True
@@ -426,7 +425,7 @@ async def process_ingestion_job(
                 logger.info("Skipping text extraction - ColPali will handle this file directly")
             else:
                 # Normal text parsing required
-                additional_metadata, text = await document_service.parser.parse_file_to_text(
+                additional_metadata, text = await ingestion_service.parser.parse_file_to_text(
                     file_content, parse_filename
                 )
                 # Clean the extracted text to remove problematic escape characters
@@ -475,7 +474,7 @@ async def process_ingestion_job(
             )
 
             # Use the retry helper function with initial delay to handle race conditions
-            doc = await get_document_with_retry(document_service, document_id, auth, max_retries=5, initial_delay=1.0)
+            doc = await get_document_with_retry(ingestion_service, document_id, auth, max_retries=5, initial_delay=1.0)
             retrieve_time = time.time() - retrieve_start
             phase_times["retrieve_document"] = retrieve_time
             logger.info(f"Document retrieval took {retrieve_time:.2f}s")
@@ -502,7 +501,7 @@ async def process_ingestion_job(
             else:
                 document_content = text
 
-            sanitized_system_metadata = DocumentService._clean_system_metadata(doc.system_metadata)
+            sanitized_system_metadata = IngestionService._clean_system_metadata(doc.system_metadata)
 
             updates = {
                 "additional_metadata": additional_metadata,
@@ -517,7 +516,7 @@ async def process_ingestion_job(
 
             # Update the document in the database
             update_start = time.time()
-            success = await document_service.db.update_document(document_id=document_id, updates=updates, auth=auth)
+            success = await ingestion_service.db.update_document(document_id=document_id, updates=updates, auth=auth)
             update_time = time.time() - update_start
             phase_times["update_document_parsed"] = update_time
             logger.info(f"Initial document update took {update_time:.2f}s")
@@ -526,11 +525,13 @@ async def process_ingestion_job(
                 raise ValueError(f"Failed to update document {document_id}")
 
             # Refresh document object with updated data
-            doc = await document_service.db.get_document(document_id, auth)
+            doc = await ingestion_service.db.get_document(document_id, auth)
             logger.debug("Updated document in database with parsed content")
 
             # 7. Split text into chunks
-            await update_document_progress(document_service, document_id, auth, 3, total_steps, "Splitting into chunks")
+            await update_document_progress(
+                ingestion_service, document_id, auth, 3, total_steps, "Splitting into chunks"
+            )
             chunking_start = time.time()
 
             # ===== CHUNKING LOGIC =====
@@ -544,7 +545,7 @@ async def process_ingestion_job(
                 logger.info("No text chunking needed - ColPali will create image-based chunks")
             else:
                 # Normal text chunking required
-                parsed_chunks = await document_service.parser.split_text(text)
+                parsed_chunks = await ingestion_service.parser.split_text(text)
                 if not parsed_chunks:
                     logger.warning(
                         "No text chunks extracted after parsing. Will attempt to continue "
@@ -570,7 +571,7 @@ async def process_ingestion_job(
                 file_type = filetype.guess(file_content)
                 try:
                     # Use the parsed chunks to create image-friendly slices when ColPali is enabled
-                    chunks_multivector = document_service._create_chunks_multivector(
+                    chunks_multivector = ingestion_service._create_chunks_multivector(
                         file_type, None, file_content, parsed_chunks
                     )
                 except PdfConversionError as conversion_error:
@@ -596,8 +597,8 @@ async def process_ingestion_job(
                             "progress": None,
                         }
                     )
-                    cleaned_metadata = DocumentService._clean_system_metadata(system_metadata)
-                    await document_service.db.update_document(
+                    cleaned_metadata = IngestionService._clean_system_metadata(system_metadata)
+                    await ingestion_service.db.update_document(
                         document_id=document_id,
                         updates={"system_metadata": cleaned_metadata},
                         auth=auth,
@@ -646,10 +647,10 @@ async def process_ingestion_job(
             if processed_chunks and not using_colpali:
                 # Generate regular embeddings for standard flow
                 await update_document_progress(
-                    document_service, document_id, auth, 4, total_steps, "Generating embeddings"
+                    ingestion_service, document_id, auth, 4, total_steps, "Generating embeddings"
                 )
                 embedding_start = time.time()
-                embeddings = await document_service.embedding_model.embed_for_ingestion(processed_chunks)
+                embeddings = await ingestion_service.embedding_model.embed_for_ingestion(processed_chunks)
                 logger.debug(f"Generated {len(embeddings)} embeddings")
                 embedding_time = time.time() - embedding_start
                 phase_times["generate_embeddings"] = embedding_time
@@ -661,7 +662,7 @@ async def process_ingestion_job(
 
                 # Create chunk objects
                 chunk_objects_start = time.time()
-                chunk_objects = document_service._create_chunk_objects(doc.external_id, processed_chunks, embeddings)
+                chunk_objects = ingestion_service._create_chunk_objects(doc.external_id, processed_chunks, embeddings)
                 logger.debug(f"Created {len(chunk_objects)} chunk objects")
                 chunk_objects_time = time.time() - chunk_objects_start
                 phase_times["create_chunk_objects"] = chunk_objects_time
@@ -706,9 +707,9 @@ async def process_ingestion_job(
 
                     # Embed this batch
                     batch_embed_start = time.time()
-                    batch_embeddings = await document_service.colpali_embedding_model.embed_for_ingestion(batch_chunks)
+                    batch_embeddings = await ingestion_service.colpali_embedding_model.embed_for_ingestion(batch_chunks)
                     colpali_embedding_time += time.time() - batch_embed_start
-                    metrics_getter = getattr(document_service.colpali_embedding_model, "latest_ingest_metrics", None)
+                    metrics_getter = getattr(ingestion_service.colpali_embedding_model, "latest_ingest_metrics", None)
                     metrics = metrics_getter() if callable(metrics_getter) else {}
                     colpali_sort_time += metrics.get("sorting", 0.0)
                     colpali_preprocess_time += metrics.get("process", 0.0)
@@ -726,14 +727,14 @@ async def process_ingestion_job(
 
                     # Create chunk objects for this batch with correct global indices
                     batch_chunk_objects_start = time.time()
-                    batch_chunk_objects = document_service._create_chunk_objects(
+                    batch_chunk_objects = ingestion_service._create_chunk_objects(
                         doc.external_id, batch_chunks, batch_embeddings, start_index=start_idx
                     )
                     colpali_chunk_object_time += time.time() - batch_chunk_objects_start
 
                     # Store this batch immediately to release memory pressure
                     batch_store_start = time.time()
-                    success, stored_ids = await document_service.colpali_vector_store.store_embeddings(
+                    success, stored_ids = await ingestion_service.colpali_vector_store.store_embeddings(
                         batch_chunk_objects, auth.app_id if auth else None
                     )
                     colpali_store_time += time.time() - batch_store_start
@@ -791,14 +792,14 @@ async def process_ingestion_job(
                 phase_times["multivector_pipeline_total"] = 0
 
             # 11. Store chunks and update document with is_update=True
-            await update_document_progress(document_service, document_id, auth, 5, total_steps, "Storing chunks")
+            await update_document_progress(ingestion_service, document_id, auth, 5, total_steps, "Storing chunks")
             store_start = time.time()
             if using_colpali:
                 # We already stored ColPali chunks in batches; just persist doc.chunk_ids via DB update
                 # Only update chunk_ids and system_metadata - everything else was set correctly by the route
                 doc.chunk_ids = colpali_chunk_ids
-                doc.system_metadata = DocumentService._clean_system_metadata(doc.system_metadata)
-                await document_service.db.update_document(
+                doc.system_metadata = IngestionService._clean_system_metadata(doc.system_metadata)
+                await ingestion_service.db.update_document(
                     document_id=doc.external_id,
                     updates={
                         "chunk_ids": doc.chunk_ids,
@@ -807,7 +808,7 @@ async def process_ingestion_job(
                     auth=auth,
                 )
             else:
-                await document_service._store_chunks_and_doc(
+                await ingestion_service._store_chunks_and_doc(
                     chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
                 )
             store_time = time.time() - store_start
@@ -832,12 +833,12 @@ async def process_ingestion_job(
             if folder_name:
                 try:
                     logger.info(f"Adding document {doc.external_id} to folder '{folder_name}'")
-                    await document_service._ensure_folder_exists(folder_name, doc.external_id, auth)
+                    await ingestion_service._ensure_folder_exists(folder_name, doc.external_id, auth)
                 except Exception as folder_exc:
                     logger.error(f"Failed to add document to folder: {folder_exc}")
                     # Don't fail the entire ingestion if folder processing fails
 
-            await update_document_progress(document_service, document_id, auth, 6, total_steps, "Finalizing")
+            await update_document_progress(ingestion_service, document_id, auth, 6, total_steps, "Finalizing")
             # Update document status to completed after all processing
             doc.system_metadata["status"] = "completed"
             doc.system_metadata["updated_at"] = datetime.now(UTC)
@@ -845,8 +846,8 @@ async def process_ingestion_job(
             doc.system_metadata.pop("progress", None)
 
             # Final update to mark as completed
-            doc.system_metadata = DocumentService._clean_system_metadata(doc.system_metadata)
-            await document_service.db.update_document(
+            doc.system_metadata = IngestionService._clean_system_metadata(doc.system_metadata)
+            await ingestion_service.db.update_document(
                 document_id=document_id, updates={"system_metadata": doc.system_metadata}, auth=auth
             )
 

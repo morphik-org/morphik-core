@@ -27,9 +27,6 @@ TIER_LIMITS = {
         "graph_creation_limit": 1,  # Maximum number of graphs
         "hourly_graph_query_limit": 1,  # Maximum graph queries per hour
         "monthly_graph_query_limit": 1,  # Maximum graph queries per month
-        # Agent call limits
-        "hourly_agent_limit": 3,
-        "monthly_agent_limit": 3,
     },
     AccountTier.PRO: {
         # Application limits
@@ -45,9 +42,6 @@ TIER_LIMITS = {
         "graph_creation_limit": 10,  # Maximum number of graphs
         "hourly_graph_query_limit": 50,  # Maximum graph queries per hour
         "monthly_graph_query_limit": 1000,  # Maximum graph queries per month
-        # Agent call limits for PRO (unlimited)
-        "hourly_agent_limit": 30,
-        "monthly_agent_limit": 30,
     },
     AccountTier.TEAMS: {
         # Teams tier – generous limits but still bounded
@@ -64,9 +58,6 @@ TIER_LIMITS = {
         "graph_creation_limit": 50,  # Maximum number of graphs
         "hourly_graph_query_limit": 200,  # Maximum graph queries per hour
         "monthly_graph_query_limit": 10000,  # Maximum graph queries per month
-        # Agent call limits
-        "hourly_agent_limit": 100,
-        "monthly_agent_limit": 100,
     },
     AccountTier.SELF_HOSTED: {
         # Self-hosted has no limits

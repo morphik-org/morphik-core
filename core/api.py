@@ -15,7 +15,6 @@ from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
-from core.agent import MorphikAgent
 from core.app_factory import lifespan
 from core.auth_utils import verify_token
 from core.config import get_settings
@@ -28,13 +27,7 @@ from core.models.chat import ChatMessage
 from core.models.completion import ChunkSource, CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentResult, GroupedChunkResponse
 from core.models.prompts import validate_prompt_overrides_with_http_exception
-from core.models.request import (
-    AgentQueryRequest,
-    CompletionQueryRequest,
-    GenerateUriRequest,
-    RetrieveRequest,
-    SearchDocumentsRequest,
-)
+from core.models.request import CompletionQueryRequest, GenerateUriRequest, RetrieveRequest, SearchDocumentsRequest
 from core.models.responses import ChatTitleResponse, ModelsResponse
 from core.routes.documents import router as documents_router
 from core.routes.folders import router as folders_router
@@ -46,7 +39,7 @@ from core.routes.model_config import router as model_config_router
 from core.routes.models import router as models_router
 from core.routes.pdf_viewer import router as pdf_viewer_router
 from core.services.telemetry import TelemetryService
-from core.services_init import document_service
+from core.services_init import document_service, ingestion_service
 
 # Set up logging configuration for Docker environment
 setup_logging()
@@ -244,7 +237,6 @@ async def get_available_models(auth: AuthContext = Depends(verify_token)):
         # Also add the default configured models
         default_models = {
             "completion": config.get("completion", {}).get("model"),
-            "agent": config.get("agent", {}).get("model"),
             "embedding": config.get("embedding", {}).get("model"),
         }
 
@@ -282,7 +274,8 @@ def _extract_provider(model_name: str) -> str:
 
 # Store on app.state for later access
 app.state.document_service = document_service
-logger.info("Document service initialized and stored on app.state")
+app.state.ingestion_service = ingestion_service
+logger.info("Document and ingestion services initialized and stored on app.state")
 
 # Register health router
 app.include_router(health_router)
@@ -310,9 +303,6 @@ app.include_router(logs_router)
 
 # Register graph router
 app.include_router(graph_router)
-
-# Single MorphikAgent instance (tool definitions cached)
-morphik_agent = MorphikAgent(document_service=document_service)
 
 
 # Helper function to normalize folder_name parameter
@@ -922,72 +912,6 @@ async def get_available_models_for_selection(auth: AuthContext = Depends(verify_
                 )
 
     return {"models": models}
-
-
-@app.post("/agent", response_model=Dict[str, Any])
-@telemetry.track(operation_type="agent_query")
-async def agent_query(
-    request: AgentQueryRequest,
-    auth: AuthContext = Depends(verify_token),
-    redis: arq.ArqRedis = Depends(get_redis_pool),
-):
-    """Execute an agent-style query using the :class:`MorphikAgent`."""
-    # Chat history retrieval
-    history_key = None
-    history: List[Dict[str, Any]] = []
-    if request.chat_id:
-        history_key = f"chat:{request.chat_id}"
-        stored = await redis.get(history_key)
-        if stored:
-            try:
-                history = json.loads(stored)
-            except Exception:
-                history = []
-        else:
-            db_hist = await document_service.db.get_chat_history(request.chat_id, auth.user_id, auth.app_id)
-            if db_hist:
-                history = db_hist
-
-        history.append(
-            {
-                "role": "user",
-                "content": request.query,
-                "timestamp": datetime.now(UTC).isoformat(),
-            }
-        )
-
-    # Check free-tier agent call limits in cloud mode
-    if settings.MODE == "cloud" and auth.user_id:
-        await check_and_increment_limits(auth, "agent", 1)
-
-    # Use the shared MorphikAgent instance; per-run state is now isolated internally
-    response = await morphik_agent.run(request.query, auth, history, request.display_mode)
-
-    # Chat history storage
-    if history_key:
-        # Store the full agent response with structured data
-        agent_message = {
-            "role": "assistant",
-            "content": response.get("response", ""),
-            "timestamp": datetime.now(UTC).isoformat(),
-            # Store agent-specific structured data
-            "agent_data": {
-                "display_objects": response.get("display_objects", []),
-                "tool_history": response.get("tool_history", []),
-                "sources": response.get("sources", []),
-            },
-        }
-        history.append(agent_message)
-        await redis.set(history_key, json.dumps(history))
-        await document_service.db.upsert_chat_history(
-            request.chat_id,
-            auth.user_id,
-            auth.app_id,
-            history,
-        )
-
-    # Return the complete response dictionary
-    return response
 
 
 @app.post("/local/generate_uri", include_in_schema=True)

@@ -8,16 +8,6 @@ interface ChatSessionMeta {
   lastMessage?: {
     role: string;
     content: string;
-    agent_data?: {
-      display_objects?: Array<{
-        type: string;
-        content: string;
-        source?: string;
-        caption?: string;
-      }>;
-      tool_history?: any[];
-      sources?: any[];
-    };
   } | null;
 }
 

@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from core.models.auth import AuthContext
 from core.services.document_service import DocumentService
+from core.services.ingestion_service import IngestionService
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +187,7 @@ async def save_to_memory(
     content: str,
     memory_type: Literal["session", "long_term", "research_thread"],
     tags: Optional[List[str]] = None,
-    document_service: DocumentService = None,
+    ingestion_service: IngestionService = None,
     auth: AuthContext = None,
     end_user_id: Optional[str] = None,
 ) -> str:
@@ -197,26 +198,26 @@ async def save_to_memory(
         content: Content to save
         memory_type: Type of memory to save to
         tags: Tags for categorizing the memory
-        document_service: DocumentService instance
+        ingestion_service: IngestionService instance
         auth: Authentication context
         end_user_id: Optional end-user ID to save as
 
     Returns:
         Save operation result as a string
     """
-    if document_service is None:
-        raise ToolError("Document service not provided")
+    if ingestion_service is None:
+        raise ToolError("Ingestion service not provided")
 
     try:
         # Create metadata for the saved memory
-        metadata = {"memory_type": memory_type, "source": "agent"}
+        metadata = {"memory_type": memory_type, "source": "tool"}
 
         if tags:
             metadata["tags"] = tags
 
-        # Use document service to ingest the content as a document
+        # Use ingestion service to ingest the content as a document
         timestamp = await get_timestamp()
-        result = await document_service.ingest_text(
+        result = await ingestion_service.ingest_text(
             content=content,
             filename=f"memory_{memory_type}_{timestamp}",
             metadata=metadata,

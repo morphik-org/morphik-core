@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -10,7 +10,6 @@ class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     timestamp: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
-    agent_data: Optional[Dict[str, Any]] = None  # For agent-specific data like display_objects, tool_history, sources
 
 
 class ChatConversation(BaseModel):
