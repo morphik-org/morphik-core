@@ -31,13 +31,6 @@ class UserUsage(BaseModel):
     monthly_graph_query_count: int = 0
     monthly_graph_query_reset: Optional[datetime] = None
 
-    # Cache usage
-    cache_count: int = 0
-    hourly_cache_query_count: int = 0
-    hourly_cache_query_reset: Optional[datetime] = None
-    monthly_cache_query_count: int = 0
-    monthly_cache_query_reset: Optional[datetime] = None
-
 
 class UserLimits(BaseModel):
     """Stores user tier and usage information."""

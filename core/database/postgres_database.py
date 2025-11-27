@@ -172,19 +172,6 @@ class ModelConfigModel(Base):
     )
 
 
-class CacheModel(Base):
-    """SQLAlchemy model for cache metadata."""
-
-    __tablename__ = "caches"
-
-    name = Column(String, primary_key=True)
-    cache_metadata = Column("metadata", JSONB, nullable=False)  # Map to 'metadata' column, avoid reserved name
-    created_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
-    updated_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
-
-    __table_args__ = ()
-
-
 def _serialize_datetime(obj: Any) -> Any:
     """Helper function to serialize datetime objects to ISO format strings."""
     if isinstance(obj, datetime):
@@ -1124,55 +1111,6 @@ class PostgresDatabase(BaseDatabase):
             "app_id": doc_model.app_id,
             "end_user_id": doc_model.end_user_id,
         }
-
-    async def store_cache_metadata(self, name: str, metadata: Dict[str, Any]) -> bool:
-        """Store metadata for a cache in PostgreSQL.
-
-        Args:
-            name: Name of the cache
-            metadata: Cache metadata including model info and storage location
-
-        Returns:
-            bool: Whether the operation was successful
-        """
-        try:
-            async with self.async_session() as session:
-                await session.execute(
-                    text(
-                        """
-                        INSERT INTO caches (name, metadata, updated_at)
-                        VALUES (:name, :metadata, CURRENT_TIMESTAMP)
-                        ON CONFLICT (name)
-                        DO UPDATE SET
-                            metadata = :metadata,
-                            updated_at = CURRENT_TIMESTAMP
-                        """
-                    ),
-                    {"name": name, "metadata": json.dumps(metadata)},
-                )
-                await session.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Failed to store cache metadata: {e}")
-            return False
-
-    async def get_cache_metadata(self, name: str) -> Optional[Dict[str, Any]]:
-        """Get metadata for a cache from PostgreSQL.
-
-        Args:
-            name: Name of the cache
-
-        Returns:
-            Optional[Dict[str, Any]]: Cache metadata if found, None otherwise
-        """
-        try:
-            async with self.async_session() as session:
-                result = await session.execute(text("SELECT metadata FROM caches WHERE name = :name"), {"name": name})
-                row = result.first()
-                return row[0] if row else None
-        except Exception as e:
-            logger.error(f"Failed to get cache metadata: {e}")
-            return None
 
     async def store_graph(self, graph: Graph, auth: AuthContext) -> bool:
         """Store a graph in PostgreSQL.

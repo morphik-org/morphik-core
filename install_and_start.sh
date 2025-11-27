@@ -43,18 +43,5 @@ printf "\n📦 Installing ColPali engine...\n"
 uv pip install \
   colpali-engine@git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3
 
-# Extra build flags for Apple Silicon (Metal acceleration)
-if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
-  printf "\n⚙️  Configuring Metal build flags for llama-cpp-python...\n"
-  export CMAKE_ARGS="-DCMAKE_OSX_ARCHITECTURES=arm64 \
-    -DCMAKE_APPLE_SILICON_PROCESSOR=arm64 \
-    -DGGML_METAL=on"
-fi
-
-# Install llama-cpp with aggressive flags (rebuild to ensure proper arch back-end)
-printf "\n📦 Installing llama-cpp-python...\n"
-uv pip install --upgrade --verbose --force-reinstall --no-cache-dir \
-  llama-cpp-python==0.3.5
-
 printf "\n🚀 Starting Morphik server...\n\n"
 uv run start_server.py

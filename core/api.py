@@ -308,12 +308,6 @@ app.include_router(models_router)
 # Register logs router
 app.include_router(logs_router)
 
-# Register cache router (only if KV cache is enabled)
-if settings.KV_CACHE_ENABLED:
-    from core.routes.cache import router as cache_router
-
-    app.include_router(cache_router)
-
 # Register graph router
 app.include_router(graph_router)
 

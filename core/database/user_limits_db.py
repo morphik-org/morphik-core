@@ -163,7 +163,6 @@ class UserLimitsDatabase:
                         "monthly_query_reset": now,
                         "ingest_count": 0,
                         "graph_count": 0,
-                        "cache_count": 0,
                         "hourly_agent_count": 0,
                         "hourly_agent_reset": now,
                         "monthly_agent_count": 0,
@@ -467,9 +466,6 @@ class UserLimitsDatabase:
 
                 elif usage_type == "graph":
                     usage["graph_count"] = usage.get("graph_count", 0) + increment
-
-                elif usage_type == "cache":
-                    usage["cache_count"] = usage.get("cache_count", 0) + increment
 
                 elif usage_type == "agent":
                     # Agent call limits: hourly and monthly resets

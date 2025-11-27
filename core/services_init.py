@@ -13,7 +13,6 @@ No behaviour has changed – only the physical location of the code.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Optional
 
 from core.completion.litellm_completion import LiteLLMCompletionModel
@@ -113,19 +112,6 @@ if settings.USE_RERANKING:
 logger.debug("Reranker enabled: %s", bool(reranker))
 
 # ---------------------------------------------------------------------------
-# Cache factory
-# ---------------------------------------------------------------------------
-
-cache_factory = None
-if settings.KV_CACHE_ENABLED:
-    from core.cache.llama_cache_factory import LlamaCacheFactory
-
-    cache_factory = LlamaCacheFactory(Path(settings.STORAGE_PATH))
-    logger.info("KV cache enabled - initialized LlamaCacheFactory")
-else:
-    logger.info("KV cache disabled")
-
-# ---------------------------------------------------------------------------
 # ColPali multi-vector support
 # ---------------------------------------------------------------------------
 
@@ -215,7 +201,6 @@ document_service = DocumentService(
     parser=parser,
     embedding_model=embedding_model,
     completion_model=completion_model,
-    cache_factory=cache_factory,
     reranker=reranker,
     enable_colpali=settings.ENABLE_COLPALI,
     colpali_embedding_model=colpali_embedding_model,

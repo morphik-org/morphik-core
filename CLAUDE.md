@@ -17,7 +17,6 @@ Morphik is an AI-native toolset for visually rich documents and multimodal data.
 - **Vector Store**: Multiple providers (pgvector, TurboPuffer) in `core/vector_store/`
 - **Embedding**: Support for multiple providers (OpenAI, Ollama, Azure) in `core/embedding/`
 - **Parser**: Document processing and chunking in `core/parser/`
-- **Cache**: Caching layer in `core/cache/`
 
 ### Frontend (TypeScript/Next.js)
 - **Location**: `ee/ui-component/` - Enterprise Edition UI component
