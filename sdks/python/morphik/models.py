@@ -1,8 +1,50 @@
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
+
+
+def _reconstruct_metadata_types(metadata: Dict[str, Any], metadata_types: Dict[str, str]) -> Dict[str, Any]:
+    """Reconstruct typed Python objects from stored string representations.
+
+    Uses the metadata_types hints to convert ISO 8601 strings back to datetime/date objects,
+    and decimal strings back to Decimal objects.
+
+    Args:
+        metadata: The metadata dictionary with string values
+        metadata_types: Type hints for each field (e.g., {"created_at": "datetime"})
+
+    Returns:
+        Metadata dictionary with reconstructed typed values
+    """
+    if not metadata or not metadata_types:
+        return metadata
+
+    result = {}
+    for key, value in metadata.items():
+        type_hint = metadata_types.get(key)
+        if value is None:
+            result[key] = None
+        elif type_hint == "datetime" and isinstance(value, str):
+            try:
+                result[key] = datetime.fromisoformat(value)
+            except ValueError:
+                result[key] = value  # Keep as string if parsing fails
+        elif type_hint == "date" and isinstance(value, str):
+            try:
+                result[key] = date.fromisoformat(value)
+            except ValueError:
+                result[key] = value
+        elif type_hint == "decimal" and isinstance(value, str):
+            try:
+                result[key] = Decimal(value)
+            except Exception:
+                result[key] = value
+        else:
+            result[key] = value
+    return result
 
 
 class StorageFileInfo(BaseModel):
@@ -38,6 +80,14 @@ class Document(BaseModel):
 
     # Client reference for update methods
     _client = None
+
+    @model_validator(mode="after")
+    def _reconstruct_types(self) -> "Document":
+        """Reconstruct typed metadata values from stored string representations."""
+        if self.metadata and self.metadata_types:
+            reconstructed = _reconstruct_metadata_types(self.metadata, self.metadata_types)
+            object.__setattr__(self, "metadata", reconstructed)
+        return self
 
     @property
     def status(self) -> Dict[str, Any]:
