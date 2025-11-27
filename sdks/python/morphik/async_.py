@@ -13,11 +13,15 @@ from .models import CompletionResponse  # Prompt override models
 from .models import (
     ChunkSource,
     Document,
+    DocumentPagesResponse,
     DocumentQueryResponse,
     DocumentResult,
+    FolderDetailsResponse,
     FolderInfo,
+    FolderSummary,
     Graph,
     GraphPromptOverrides,
+    GroupedChunkResponse,
     IngestTextRequest,
     ListDocsResponse,
     QueryPromptOverrides,
@@ -2107,6 +2111,208 @@ class AsyncMorphik(_ScopedOperationsMixin):
         )
         response = await self._request("POST", "batch/chunks", data=request)
         return self._logic._parse_chunk_result_list_response(response)
+
+    async def get_document_file(self, document_id: str) -> bytes:
+        """
+        Download the raw file content of a document.
+
+        Args:
+            document_id: ID of the document to download
+
+        Returns:
+            bytes: Raw file content
+        """
+        url = self._logic._get_url(f"documents/{document_id}/file")
+        headers = self._logic._get_headers()
+        if self._logic._auth_token:
+            headers["Authorization"] = f"Bearer {self._logic._auth_token}"
+        response = await self._client.get(url, headers=headers)
+        response.raise_for_status()
+        return response.content
+
+    async def extract_document_pages(
+        self,
+        document_id: str,
+        start_page: int,
+        end_page: int,
+    ) -> DocumentPagesResponse:
+        """
+        Extract specific pages from a document.
+
+        Args:
+            document_id: ID of the document
+            start_page: Starting page number (1-indexed)
+            end_page: Ending page number (1-indexed)
+
+        Returns:
+            DocumentPagesResponse: Extracted pages with metadata
+        """
+        request = {
+            "document_id": document_id,
+            "start_page": start_page,
+            "end_page": end_page,
+        }
+        response = await self._request("POST", "documents/pages", data=request)
+        return DocumentPagesResponse(**response)
+
+    async def search_documents(
+        self,
+        query: str,
+        limit: int = 10,
+        filters: Optional[Dict[str, Any]] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        end_user_id: Optional[str] = None,
+    ) -> List[Document]:
+        """
+        Search for documents by name/filename.
+
+        Args:
+            query: Search query for document names/filenames
+            limit: Maximum number of documents to return (default: 10)
+            filters: Optional metadata filters
+            folder_name: Optional folder scope (single name or list of names)
+            end_user_id: Optional end-user scope
+
+        Returns:
+            List[Document]: List of matching documents
+        """
+        request: Dict[str, Any] = {"query": query, "limit": limit}
+        if filters:
+            request["filters"] = filters
+        if folder_name:
+            request["folder_name"] = folder_name
+        if end_user_id:
+            request["end_user_id"] = end_user_id
+
+        response = await self._request("POST", "search/documents", data=request)
+        docs = self._logic._parse_document_list_response(response)
+        for doc in docs:
+            doc._client = self
+        return docs
+
+    async def retrieve_chunks_grouped(
+        self,
+        query: str,
+        filters: Optional[Dict[str, Any]] = None,
+        k: int = 4,
+        min_score: float = 0.0,
+        use_colpali: bool = True,
+        use_reranking: Optional[bool] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        end_user_id: Optional[str] = None,
+        padding: int = 0,
+        output_format: Optional[str] = None,
+        graph_name: Optional[str] = None,
+        hop_depth: int = 1,
+        include_paths: bool = False,
+    ) -> GroupedChunkResponse:
+        """
+        Retrieve relevant chunks with grouping for UI display.
+
+        Args:
+            query: Search query text
+            filters: Optional metadata filters
+            k: Number of results (default: 4)
+            min_score: Minimum similarity threshold (default: 0.0)
+            use_colpali: Whether to use ColPali-style embedding model
+            use_reranking: Whether to use reranking
+            folder_name: Optional folder scope (single name or list of names)
+            end_user_id: Optional end-user scope
+            padding: Number of additional chunks to retrieve around matches (default: 0)
+            output_format: Controls how image chunks are returned (e.g., "base64" or "url")
+            graph_name: Optional knowledge graph to enhance retrieval
+            hop_depth: Number of hops for graph traversal (default: 1)
+            include_paths: Whether to include entity paths in results (default: False)
+
+        Returns:
+            GroupedChunkResponse: Grouped chunks with flat list for compatibility
+        """
+        request: Dict[str, Any] = {
+            "query": query,
+            "k": k,
+            "min_score": min_score,
+            "use_colpali": use_colpali,
+            "padding": padding,
+            "hop_depth": hop_depth,
+            "include_paths": include_paths,
+        }
+        if filters:
+            request["filters"] = filters
+        if folder_name:
+            request["folder_name"] = folder_name
+        if end_user_id:
+            request["end_user_id"] = end_user_id
+        if output_format:
+            request["output_format"] = output_format
+        if use_reranking is not None:
+            request["use_reranking"] = use_reranking
+        if graph_name:
+            request["graph_name"] = graph_name
+
+        response = await self._request("POST", "retrieve/chunks/grouped", data=request)
+        return GroupedChunkResponse(**response)
+
+    async def get_folders_summary(self) -> List[FolderSummary]:
+        """
+        Get summary information for all accessible folders.
+
+        Returns:
+            List[FolderSummary]: List of folder summaries with document counts
+        """
+        response = await self._request("GET", "folders/summary")
+        return [FolderSummary(**folder) for folder in response]
+
+    async def get_folders_details(
+        self,
+        identifiers: Optional[List[str]] = None,
+        include_document_count: bool = True,
+        include_status_counts: bool = False,
+        include_documents: bool = False,
+        document_filters: Optional[Dict[str, Any]] = None,
+        document_skip: int = 0,
+        document_limit: int = 25,
+        document_fields: Optional[List[str]] = None,
+        sort_by: Optional[str] = None,
+        sort_direction: Optional[str] = None,
+    ) -> FolderDetailsResponse:
+        """
+        Get detailed information about folders with optional document statistics.
+
+        Args:
+            identifiers: List of folder IDs or names. If None, returns all accessible folders.
+            include_document_count: Include total document count (default: True)
+            include_status_counts: Include document counts by status (default: False)
+            include_documents: Include paginated document list (default: False)
+            document_filters: Optional metadata filters for document stats
+            document_skip: Number of documents to skip per folder (default: 0)
+            document_limit: Max documents per folder (default: 25)
+            document_fields: Optional list of fields to project for documents
+            sort_by: Field to sort documents by (created_at, updated_at, filename, external_id)
+            sort_direction: Sort direction (asc or desc)
+
+        Returns:
+            FolderDetailsResponse: Detailed folder information
+        """
+        request: Dict[str, Any] = {
+            "include_document_count": include_document_count,
+            "include_status_counts": include_status_counts,
+            "include_documents": include_documents,
+            "document_skip": document_skip,
+            "document_limit": document_limit,
+        }
+        if identifiers:
+            request["identifiers"] = identifiers
+        if document_filters:
+            request["document_filters"] = document_filters
+        if document_fields:
+            request["document_fields"] = document_fields
+        if sort_by:
+            request["sort_by"] = sort_by
+        if sort_direction:
+            request["sort_direction"] = sort_direction
+
+        response = await self._request("POST", "folders/details", data=request)
+        return FolderDetailsResponse(**response)
 
     async def create_graph(
         self,
