@@ -27,10 +27,17 @@ from core.logging_config import setup_logging
 from core.middleware.profiling import ProfilingMiddleware
 from core.models.auth import AuthContext, EntityType
 from core.models.chat import ChatMessage
-from core.models.completion import ChunkSource, CompletionResponse
+from core.models.completion import CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentResult, GroupedChunkResponse
 from core.models.prompts import validate_prompt_overrides_with_http_exception
-from core.models.request import CompletionQueryRequest, GenerateUriRequest, RetrieveRequest, SearchDocumentsRequest
+from core.models.request import (
+    BatchChunksRequest,
+    BatchDocumentsRequest,
+    CompletionQueryRequest,
+    GenerateUriRequest,
+    RetrieveRequest,
+    SearchDocumentsRequest,
+)
 from core.models.responses import ChatTitleResponse, ModelsResponse
 from core.routes.documents import router as documents_router
 from core.routes.folders import router as folders_router
@@ -509,7 +516,7 @@ async def search_documents_by_name(
 
 @app.post("/batch/documents", response_model=List[Document])
 @telemetry.track(operation_type="batch_get_documents", metadata_resolver=telemetry.batch_documents_metadata)
-async def batch_get_documents(batch_request: Dict[str, Any], auth: AuthContext = Depends(verify_token)):
+async def batch_get_documents(request: BatchDocumentsRequest, auth: AuthContext = Depends(verify_token)):
     """
     Retrieve multiple documents by their IDs in a single batch operation.
     """
@@ -517,32 +524,29 @@ async def batch_get_documents(batch_request: Dict[str, Any], auth: AuthContext =
     perf = PerformanceTracker("Batch Get Documents")
 
     try:
-        # Extract document_ids from request
         perf.start_phase("request_extraction")
-        document_ids = batch_request.get("document_ids", [])
-        folder_name = batch_request.get("folder_name")
-        end_user_id = batch_request.get("end_user_id")
-
-        if not document_ids:
+        if not request.document_ids:
             perf.log_summary("No document IDs provided")
             return []
 
         # Create system filters for folder and user scoping
         perf.start_phase("filter_creation")
         system_filters = {}
-        if folder_name is not None:
-            normalized_folder_name = normalize_folder_name(folder_name)
+        if request.folder_name is not None:
+            normalized_folder_name = normalize_folder_name(request.folder_name)
             system_filters["folder_name"] = normalized_folder_name
-        if end_user_id:
-            system_filters["end_user_id"] = end_user_id
+        if request.end_user_id:
+            system_filters["end_user_id"] = request.end_user_id
         # Note: Don't add auth.app_id here - it's already handled in document retrieval
 
         # Main batch retrieval operation
         perf.start_phase("batch_retrieve_documents")
-        results = await document_service.batch_retrieve_documents(document_ids, auth, folder_name, end_user_id)
+        results = await document_service.batch_retrieve_documents(
+            request.document_ids, auth, request.folder_name, request.end_user_id
+        )
 
         # Log consolidated performance summary
-        perf.log_summary(f"Retrieved {len(results)}/{len(document_ids)} documents")
+        perf.log_summary(f"Retrieved {len(results)}/{len(request.document_ids)} documents")
 
         return results
     except PermissionError as e:
@@ -551,7 +555,7 @@ async def batch_get_documents(batch_request: Dict[str, Any], auth: AuthContext =
 
 @app.post("/batch/chunks", response_model=List[ChunkResult])
 @telemetry.track(operation_type="batch_get_chunks", metadata_resolver=telemetry.batch_chunks_metadata)
-async def batch_get_chunks(batch_request: Dict[str, Any], auth: AuthContext = Depends(verify_token)):
+async def batch_get_chunks(request: BatchChunksRequest, auth: AuthContext = Depends(verify_token)):
     """
     Retrieve specific chunks by their document ID and chunk number in a single batch operation.
     """
@@ -559,45 +563,26 @@ async def batch_get_chunks(batch_request: Dict[str, Any], auth: AuthContext = De
     perf = PerformanceTracker("Batch Get Chunks")
 
     try:
-        # Extract sources from request
         perf.start_phase("request_extraction")
-        sources = batch_request.get("sources", [])
-        folder_name = batch_request.get("folder_name")
-        end_user_id = batch_request.get("end_user_id")
-        use_colpali = batch_request.get("use_colpali")
-        output_format = batch_request.get("output_format")
-
-        if not sources:
+        if not request.sources:
             perf.log_summary("No sources provided")
             return []
 
-        # Convert sources to ChunkSource objects if needed
-        perf.start_phase("source_conversion")
-        chunk_sources = []
-        for source in sources:
-            if isinstance(source, dict):
-                chunk_sources.append(ChunkSource(**source))
-            else:
-                chunk_sources.append(source)
-
-        normalized_folder_name = normalize_folder_name(folder_name) if folder_name is not None else None
-
-        if output_format and output_format not in {"base64", "url"}:
-            raise HTTPException(status_code=400, detail="output_format must be 'base64' or 'url'")
+        normalized_folder_name = normalize_folder_name(request.folder_name) if request.folder_name is not None else None
 
         # Main batch retrieval operation
         perf.start_phase("batch_retrieve_chunks")
         results = await document_service.batch_retrieve_chunks(
-            chunk_sources,
+            request.sources,
             auth,
             normalized_folder_name,
-            end_user_id,
-            use_colpali,
-            output_format or "base64",
+            request.end_user_id,
+            request.use_colpali,
+            request.output_format or "base64",
         )
 
         # Log consolidated performance summary
-        perf.log_summary(f"Retrieved {len(results)}/{len(sources)} chunks")
+        perf.log_summary(f"Retrieved {len(results)}/{len(request.sources)} chunks")
 
         return results
     except PermissionError as e:
