@@ -9,6 +9,11 @@ host = "0.0.0.0"
 port = 8000
 reload = true
 
+[service]
+environment = "docker"  # "development", "staging", "production", or "docker"
+version = "unknown"
+enable_profiling = false  # Enable request profiling (creates .prof files in logs/)
+
 [auth]
 jwt_algorithm = "HS256"
 bypass_auth_mode = false  # Enabled by default for easier local development
@@ -55,9 +60,6 @@ azure_embedding = { model_name = "text-embedding-ada-002", api_base = "YOUR_AZUR
 
 
 #### Component configurations ####
-
-[agent]
-model = "openai_gpt4-1-mini" # Model for the agent logic
 
 [completion]
 model = "openai_gpt4-1-mini" #"openai_gpt4-1-mini"  # Reference to a key in registered_models
@@ -123,6 +125,18 @@ provider = "pgvector"
 [multivector_store]
 provider = "postgres"
 
+[redis]
+url = "redis://redis:6379/0"  # Docker service name
+host = "redis"
+port = 6379
+
+[worker]
+arq_max_jobs = 1  # Maximum concurrent jobs for ARQ worker
+colpali_store_batch_size = 16  # Batch size for ColPali vector storage
+
+[pdf]
+colpali_pdf_dpi = 150  # DPI for PDF to image conversion in ColPali processing
+
 [morphik]
 enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"
@@ -145,5 +159,6 @@ enable_entity_resolution = true
 
 [telemetry]
 service_name = "databridge-core"
+project_name = ""
 upload_interval_hours = 4.0
 max_local_bytes = 1073741824

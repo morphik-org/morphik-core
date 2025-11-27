@@ -2,7 +2,7 @@ import json
 import logging
 from io import BytesIO
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Dict, List, Literal, Optional, Type, Union
+from typing import Any, BinaryIO, Callable, Dict, List, Optional, Type, Union
 
 import httpx
 from pydantic import BaseModel
@@ -24,31 +24,6 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class Cache:
-    def __init__(self, db: "Morphik", name: str):
-        self._db = db
-        self._name = name
-
-    def update(self) -> bool:
-        response = self._db._request("POST", f"cache/{self._name}/update")
-        return response.get("success", False)
-
-    def add_docs(self, docs: List[str]) -> bool:
-        response = self._db._request("POST", f"cache/{self._name}/add_docs", {"document_ids": docs})
-        return response.get("success", False)
-
-    def query(
-        self, query: str, max_tokens: Optional[int] = None, temperature: Optional[float] = None
-    ) -> CompletionResponse:
-        response = self._db._request(
-            "POST",
-            f"cache/{self._name}/query",
-            params={"query": query, "max_tokens": max_tokens, "temperature": temperature},
-            data="",
-        )
-        return CompletionResponse(**response)
 
 
 class Folder:
@@ -1714,29 +1689,6 @@ class Morphik(_ScopedOperationsMixin):
             padding=padding,
         )
 
-    def agent_query(self, query: str, display_mode: Literal["formatted", "raw"] = "formatted") -> Dict[str, Any]:
-        """
-        Execute an agentic query with tool access and conversation handling.
-
-        The agent can autonomously use various tools to answer complex queries including:
-        - Searching and retrieving relevant documents
-        - Analyzing document content
-        - Performing calculations and data processing
-        - Creating summaries and reports
-        - Managing knowledge graphs
-
-        Args:
-            query: Natural language query for the Morphik agent
-            display_mode: Display mode for images: 'formatted' (default) creates bounding boxes with Gemini, 'raw' returns uncropped images
-
-        Returns:
-            Dict[str, Any]: Agent response with potential tool execution results and sources
-
-        """
-        request = {"query": query, "display_mode": display_mode}
-        response = self._request("POST", "agent", data=request)
-        return response
-
     def list_documents(
         self,
         skip: int = 0,
@@ -2205,55 +2157,6 @@ class Morphik(_ScopedOperationsMixin):
         )
         response = self._request("POST", "batch/chunks", data=request)
         return self._logic._parse_chunk_result_list_response(response)
-
-    def create_cache(
-        self,
-        name: str,
-        model: str,
-        gguf_file: str,
-        filters: Optional[Dict[str, Any]] = None,
-        docs: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
-        """
-        Create a new cache with specified configuration.
-
-        Args:
-            name: Name of the cache to create
-            model: Name of the model to use (e.g. "llama2")
-            gguf_file: Name of the GGUF file to use for the model
-            filters: Optional metadata filters to determine which documents to include.
-                These filters will be applied in addition to any specific docs provided.
-            docs: Optional list of specific document IDs to include.
-                These docs will be included in addition to any documents matching the filters.
-
-        Returns:
-            Dict[str, Any]: Created cache configuration
-
-        """
-        # Build query parameters for name, model and gguf_file
-        params = {"name": name, "model": model, "gguf_file": gguf_file}
-
-        # Build request body for filters and docs
-        request = {"filters": filters, "docs": docs}
-
-        response = self._request("POST", "cache/create", request, params=params)
-        return response
-
-    def get_cache(self, name: str) -> Cache:
-        """
-        Get a cache by name.
-
-        Args:
-            name: Name of the cache to retrieve
-
-        Returns:
-            cache: A cache object that is used to interact with the cache.
-
-        """
-        response = self._request("GET", f"cache/{name}")
-        if response.get("exists", False):
-            return Cache(self, name)
-        raise ValueError(f"Cache '{name}' not found")
 
     def create_graph(
         self,

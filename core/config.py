@@ -23,7 +23,6 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str
     SESSION_SECRET_KEY: str
     POSTGRES_URI: Optional[str] = None
-    UNSTRUCTURED_API_KEY: Optional[str] = None
     AWS_ACCESS_KEY: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
@@ -58,9 +57,6 @@ class Settings(BaseSettings):
     # Completion configuration
     COMPLETION_PROVIDER: Literal["litellm"] = "litellm"
     COMPLETION_MODEL: str
-
-    # Agent configuration
-    AGENT_MODEL: str
 
     # Document analysis configuration
     DOCUMENT_ANALYSIS_MODEL: str
@@ -143,18 +139,35 @@ class Settings(BaseSettings):
     # PDF Viewer configuration
     PDF_VIEWER_FRONTEND_URL: Optional[str] = "https://morphik.ai/api/pdf"
 
+    # Service configuration
+    ENVIRONMENT: str = "development"
+    VERSION: str = "unknown"
+    ENABLE_PROFILING: bool = False
+
     # Redis configuration
+    REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
 
+    # Worker configuration
+    ARQ_MAX_JOBS: int = 1
+    COLPALI_STORE_BATCH_SIZE: int = 16
+
+    # PDF processing configuration
+    COLPALI_PDF_DPI: int = 150
+
     # Telemetry configuration
     TELEMETRY_ENABLED: bool = True
-    SERVICE_NAME: str = "morphik-core"
+    SERVICE_NAME: str = "databridge-core"
+    PROJECT_NAME: Optional[str] = None
     TELEMETRY_UPLOAD_INTERVAL_HOURS: float = 4.0
     TELEMETRY_MAX_LOCAL_BYTES: int = 1073741824
 
-    # Local URI token for authentication
-    LOCAL_URI_TOKEN: Optional[str] = None
+    # LiteLLM configuration
+    LITELLM_DUMMY_API_KEY: str = "ollama"
+
+    # Local URI password for authentication
+    LOCAL_URI_PASSWORD: Optional[str] = None
 
     @property
     def dev_mode(self) -> bool:  # pragma: no cover - compatibility shim
@@ -181,9 +194,19 @@ def get_settings() -> Settings:
             "PORT": int(config["api"]["port"]),
             "RELOAD": bool(config["api"]["reload"]),
             "SENTRY_DSN": os.getenv("SENTRY_DSN", None),
-            "PROJECT_NAME": os.getenv("PROJECT_NAME"),
         }
     )
+
+    # Load service config
+    if "service" in config:
+        service_cfg = config["service"]
+        settings_dict.update(
+            {
+                "ENVIRONMENT": service_cfg.get("environment", "development"),
+                "VERSION": service_cfg.get("version", "unknown"),
+                "ENABLE_PROFILING": service_cfg.get("enable_profiling", False),
+            }
+        )
 
     # Load auth config
     settings_dict.update(
@@ -211,11 +234,6 @@ def get_settings() -> Settings:
     if "model" not in config["completion"]:
         raise ValueError("'model' is required in the completion configuration")
     settings_dict["COMPLETION_MODEL"] = config["completion"]["model"]
-
-    # Load agent config
-    if "model" not in config["agent"]:
-        raise ValueError("'model' is required in the agent configuration")
-    settings_dict["AGENT_MODEL"] = config["agent"]["model"]
 
     # Load database config
     settings_dict.update(
@@ -271,13 +289,6 @@ def get_settings() -> Settings:
             preferred_unit_tags=xml_config.get("preferred_unit_tags", ["SECTION", "Section", "Article", "clause"]),
             ignore_tags=xml_config.get("ignore_tags", ["TOC", "INDEX"]),
         )
-
-    if settings_dict["USE_UNSTRUCTURED_API"] and "UNSTRUCTURED_API_KEY" not in os.environ:
-        raise ValueError(
-            em.format(missing_value="UNSTRUCTURED_API_KEY", field="parser.use_unstructured_api", value="true")
-        )
-    elif settings_dict["USE_UNSTRUCTURED_API"]:
-        settings_dict["UNSTRUCTURED_API_KEY"] = os.environ["UNSTRUCTURED_API_KEY"]
 
     # Load reranker config
     settings_dict["USE_RERANKING"] = config["reranker"]["use_reranker"]
@@ -352,10 +363,8 @@ def get_settings() -> Settings:
         raise ValueError(em.format(missing_value="POSTGRES_URI", field="vector_store.provider", value="pgvector"))
 
     # Load morphik config
-    api_domain = os.getenv("API_DOMAIN") or config["morphik"].get("api_domain", "api.morphik.ai")
-    embedding_api_domain = (
-        os.getenv("MORPHIK_EMBEDDING_API_DOMAIN") or config["morphik"].get("morphik_embedding_api_domain") or api_domain
-    )
+    api_domain = config["morphik"].get("api_domain", "api.morphik.ai")
+    embedding_api_domain = config["morphik"].get("morphik_embedding_api_domain") or api_domain
 
     settings_dict.update(
         {
@@ -400,12 +409,39 @@ def get_settings() -> Settings:
     if "document_analysis" in config:
         settings_dict["DOCUMENT_ANALYSIS_MODEL"] = config["document_analysis"]["model"]
 
+    # Load redis config
+    if "redis" in config:
+        redis_cfg = config["redis"]
+        settings_dict.update(
+            {
+                "REDIS_URL": redis_cfg.get("url", "redis://localhost:6379/0"),
+                "REDIS_HOST": redis_cfg.get("host", "localhost"),
+                "REDIS_PORT": redis_cfg.get("port", 6379),
+            }
+        )
+
+    # Load worker config
+    if "worker" in config:
+        worker_cfg = config["worker"]
+        settings_dict.update(
+            {
+                "ARQ_MAX_JOBS": worker_cfg.get("arq_max_jobs", 1),
+                "COLPALI_STORE_BATCH_SIZE": worker_cfg.get("colpali_store_batch_size", 16),
+            }
+        )
+
+    # Load pdf config
+    if "pdf" in config:
+        pdf_cfg = config["pdf"]
+        settings_dict["COLPALI_PDF_DPI"] = pdf_cfg.get("colpali_pdf_dpi", 150)
+
     # Load telemetry config
     if "telemetry" in config:
         telemetry_cfg = config["telemetry"]
         settings_dict.update(
             {
-                "SERVICE_NAME": telemetry_cfg.get("service_name", "morphik-core"),
+                "SERVICE_NAME": telemetry_cfg.get("service_name", "databridge-core"),
+                "PROJECT_NAME": telemetry_cfg.get("project_name") or None,
                 "TELEMETRY_UPLOAD_INTERVAL_HOURS": telemetry_cfg.get("upload_interval_hours", 4.0),
                 "TELEMETRY_MAX_LOCAL_BYTES": telemetry_cfg.get("max_local_bytes", 1073741824),
             }
@@ -413,8 +449,11 @@ def get_settings() -> Settings:
 
     settings_dict["TELEMETRY_ENABLED"] = os.getenv("TELEMETRY", "").strip().lower() != "false"
 
-    # Load LOCAL_URI_TOKEN from environment
-    settings_dict["LOCAL_URI_TOKEN"] = os.environ.get("LOCAL_URI_TOKEN")
+    # Load LOCAL_URI_PASSWORD from environment
+    settings_dict["LOCAL_URI_PASSWORD"] = os.environ.get("LOCAL_URI_PASSWORD")
+
+    # Load LiteLLM config (dummy API key for providers that don't need auth)
+    settings_dict["LITELLM_DUMMY_API_KEY"] = os.environ.get("LITELLM_DUMMY_API_KEY", "ollama")
 
     # Load multivector store config
     if "multivector_store" in config:

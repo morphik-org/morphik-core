@@ -1,6 +1,5 @@
 import logging
 import mimetypes
-import os
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -14,7 +13,7 @@ from ee.config import EESettings, get_ee_settings
 from .base_connector import BaseConnector, ConnectorAuthStatus, ConnectorFile
 
 if TYPE_CHECKING:
-    from core.services.document_service import DocumentService
+    from core.services.ingestion_service import IngestionService
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +31,7 @@ class GitHubConnector(BaseConnector):
         self._load_credentials()
 
     def _get_user_token_path(self) -> Path:
-        token_dir = Path(self.ee_settings.GITHUB_TOKEN_STORAGE_PATH)
-        os.makedirs(token_dir, exist_ok=True)
-        return token_dir / f"github_token_{self.user_morphik_id}.txt"
+        return self._build_storage_path(self.ee_settings.GITHUB_TOKEN_STORAGE_PATH, "github_token_", ".txt")
 
     def _save_credentials(self, access_token: str) -> None:
         token_path = self._get_user_token_path()
@@ -571,7 +568,7 @@ class GitHubConnector(BaseConnector):
     async def ingest_repository(
         self,
         repo_path: str,
-        document_service: "DocumentService",
+        ingestion_service: "IngestionService",
         auth_context,
         redis,
         folder_name: Optional[str] = None,
@@ -593,7 +590,7 @@ class GitHubConnector(BaseConnector):
 
         Args:
             repo_path: Repository path in format 'owner/repo'
-            document_service: An initialized DocumentService instance.
+            ingestion_service: An initialized IngestionService instance.
             auth_context: Authentication context for ingestion.
             redis: Redis connection for queueing jobs.
             folder_name: Morphik folder to ingest into
@@ -686,9 +683,9 @@ class GitHubConnector(BaseConnector):
                 # Convert content to bytes
                 content_bytes = chunk["content"].encode("utf-8")
 
-                # Ingest using existing document service
+                # Ingest using existing ingestion service
                 if auth_context and redis:
-                    doc = await document_service.ingest_file_content(
+                    doc = await ingestion_service.ingest_file_content(
                         file_content_bytes=content_bytes,
                         filename=filename,
                         content_type="application/xml",
@@ -725,6 +722,7 @@ class GitHubConnector(BaseConnector):
         compress: bool = True,
         auth_context=None,
         redis=None,
+        ingestion_service: Optional["IngestionService"] = None,
     ) -> Dict[str, Any]:
         """
         Ingest entire repository as a single document using Repomix CLI.
@@ -754,11 +752,6 @@ class GitHubConnector(BaseConnector):
                 **(metadata or {}),
             }
 
-            # Import document service
-            from core.services.document_service import DocumentService
-
-            document_service = DocumentService()
-
             # Create filename
             parts = repo_path.split("/")
             repo_name = parts[1]
@@ -767,9 +760,11 @@ class GitHubConnector(BaseConnector):
             # Convert content to bytes
             content_bytes = packed_repo["content"].encode("utf-8")
 
-            # Ingest using existing document service
+            # Ingest using existing ingestion service
             if auth_context and redis:
-                doc = await document_service.ingest_file_content(
+                if ingestion_service is None:
+                    raise ValueError("Ingestion service is required to ingest repository content.")
+                doc = await ingestion_service.ingest_file_content(
                     file_content_bytes=content_bytes,
                     filename=filename,
                     content_type="application/xml",

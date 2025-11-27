@@ -159,8 +159,8 @@ OPENAI_API_KEY=
 # A secret key for signing JWTs. A random one is generated for you.
 JWT_SECRET_KEY=your-super-secret-key-that-is-long-and-random-$(openssl rand -hex 16)
 
-# Local URI token for secure URI generation (required for creating connection URIs)
-LOCAL_URI_TOKEN=
+# Local URI password for secure URI generation (required for creating connection URIs)
+LOCAL_URI_PASSWORD=
 EOF
 
 print_info "Morphik supports 100s of models including OpenAI, Anthropic (Claude), Google Gemini, local models, and even custom models!"
@@ -306,16 +306,16 @@ if [[ -n "$EMBEDDING_PROVIDER" && "$EMBEDDING_PROVIDER" == "lemonade_embedding" 
     print_warning "Ensure the Lemonade SDK is installed and running (see Lemonade installation prompt later in this script)."
 fi
 
-# 5.0.5 Now that morphik.toml exists, handle LOCAL_URI_TOKEN configuration
+# 5.0.5 Now that morphik.toml exists, handle LOCAL_URI_PASSWORD configuration
 echo ""
 print_info "🔐 Setting up authentication for your Morphik deployment:"
-print_info "   • If you plan to access Morphik from outside this server, setting a LOCAL_URI_TOKEN will secure your deployment"
+print_info "   • If you plan to access Morphik from outside this server, setting a LOCAL_URI_PASSWORD will secure your deployment"
 print_info "   • For local-only access, you can skip this step (bypass_auth_mode will be enabled)"
-print_info "   • With a LOCAL_URI_TOKEN set, you'll need to use /generate_local_uri endpoint for authorization tokens"
+print_info "   • With a LOCAL_URI_PASSWORD set, you'll need to use /generate_local_uri endpoint for authorization tokens"
 echo ""
-read -p "Please enter a secure LOCAL_URI_TOKEN (or press Enter to skip for local-only access): " local_uri_token < /dev/tty
-if [[ -z "$local_uri_token" ]]; then
-    print_info "No LOCAL_URI_TOKEN provided - enabling authentication bypass (bypass_auth_mode=true) for local access"
+read -p "Please enter a secure LOCAL_URI_PASSWORD (or press Enter to skip for local-only access): " local_uri_password < /dev/tty
+if [[ -z "$local_uri_password" ]]; then
+    print_info "No LOCAL_URI_PASSWORD provided - enabling authentication bypass (bypass_auth_mode=true) for local access"
     print_info "This is suitable for local development and testing"
     # Enable bypass_auth_mode in morphik.toml (now that the file exists!)
     if [ -f morphik.toml ]; then
@@ -325,45 +325,26 @@ if [[ -z "$local_uri_token" ]]; then
         print_warning "morphik.toml not found, cannot set bypass_auth_mode"
     fi
 else
-    print_success "LOCAL_URI_TOKEN set - keeping production mode (bypass_auth_mode=false) with authentication enabled"
-    print_info "Use the /generate_local_uri endpoint with this token to create authorized connection URIs"
+    print_success "LOCAL_URI_PASSWORD set - keeping production mode (bypass_auth_mode=false) with authentication enabled"
+    print_info "Use the /generate_local_uri endpoint with this password to create authorized connection URIs"
 fi
 
-# Only update .env if a token was provided
-if [[ -n "$local_uri_token" ]]; then
-    # Use sed to safely replace the token in the .env file.
-    sed -i.bak "s|LOCAL_URI_TOKEN=|LOCAL_URI_TOKEN=$local_uri_token|" .env
+# Only update .env if a password was provided
+if [[ -n "$local_uri_password" ]]; then
+    # Use sed to safely replace the password in the .env file.
+    sed -i.bak "s|LOCAL_URI_PASSWORD=|LOCAL_URI_PASSWORD=$local_uri_password|" .env
     rm -f .env.bak
-    print_success "'.env' file has been configured with your LOCAL_URI_TOKEN."
+    print_success "'.env' file has been configured with your LOCAL_URI_PASSWORD."
 fi
 
-# 5.1 Ask about local inference with Lemonade (Windows only)
+# 5.1 Inform about local inference options (Windows/WSL users)
 if grep -qEi "(Microsoft|WSL)" /proc/version &> /dev/null || [ -f /proc/sys/fs/binfmt_misc/WSLInterop ]; then
     echo ""
-    print_info "🍋 Detected WSL environment. Morphik supports local inference with Lemonade SDK (Windows only)."
-    print_info "   Lemonade provides high-performance local LLM inference with AMD GPU/NPU optimization."
-    print_info "   This allows you to run both embeddings and completions completely locally."
+    print_info "🍋 Detected WSL environment. For local inference on Windows, consider:"
+    print_info "   • Lemonade SDK: Download from https://lemonade-server.ai/ (AMD GPU/NPU optimized)"
+    print_info "   • Ollama: Download from https://ollama.com/ (Cross-platform)"
+    print_info "   See our docs for setup: https://morphik.ai/docs/local-inference"
     echo ""
-    read -p "Would you like to install Lemonade SDK for local inference? (y/N): " install_lemonade < /dev/tty
-
-    if [[ "$install_lemonade" == "y" || "$install_lemonade" == "Y" ]]; then
-        print_info "Downloading Lemonade installer..."
-
-        # Download and run the Lemonade installer
-        if curl -fsSL -o lemonade-installer.sh "$REPO_URL/lemonade-installer.sh"; then
-            chmod +x lemonade-installer.sh
-            if ./lemonade-installer.sh; then
-                LEMONADE_INSTALLED=true
-                print_success "Lemonade installation completed!"
-            else
-                print_warning "Lemonade installation failed. You can retry later by running: ./lemonade-installer.sh"
-            fi
-        else
-            print_warning "Failed to download Lemonade installer"
-            print_info "You can manually install Lemonade later with:"
-            print_info "  curl -sSL https://raw.githubusercontent.com/morphik-org/morphik-core/main/lemonade-installer.sh | bash"
-        fi
-    fi
 fi
 
 # 5.2 Ask about GPU availability for multimodal embeddings

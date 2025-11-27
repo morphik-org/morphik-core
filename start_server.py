@@ -307,10 +307,8 @@ def main():
     # Load settings (this will validate all required env vars)
     settings = get_settings()
 
-    # Wait for Redis to be available (using environment variables)
-    redis_host = os.environ.get("REDIS_HOST", "localhost")
-    redis_port = int(os.environ.get("REDIS_PORT", "6379"))
-    if not wait_for_redis(host=redis_host, port=redis_port):
+    # Wait for Redis to be available
+    if not wait_for_redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT):
         logging.error("Cannot start server without Redis. Please ensure Redis is running.")
         sys.exit(1)
 

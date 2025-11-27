@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -27,9 +26,7 @@ class ZoteroConnector(BaseConnector):
     def _get_user_credentials_path(self) -> Path:
         """Get the path to store user credentials."""
         # Use the same directory structure as Google Drive but for Zotero
-        token_dir = Path(self.ee_settings.GOOGLE_TOKEN_STORAGE_PATH)
-        os.makedirs(token_dir, exist_ok=True)
-        return token_dir / f"zotero_creds_{self.user_morphik_id}.json"
+        return self._build_storage_path(self.ee_settings.GOOGLE_TOKEN_STORAGE_PATH, "zotero_creds_", ".json")
 
     def _save_credentials(self) -> None:
         """Save credentials to file."""

@@ -13,19 +13,17 @@ No behaviour has changed – only the physical location of the code.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Optional
 
-from core.cache.llama_cache_factory import LlamaCacheFactory
 from core.completion.litellm_completion import LiteLLMCompletionModel
 from core.config import get_settings
 from core.database.postgres_database import PostgresDatabase
 from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
-from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.parser.morphik_parser import MorphikParser
 from core.reranker.flag_reranker import FlagReranker
 from core.services.document_service import DocumentService
+from core.services.ingestion_service import IngestionService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.vector_store.dual_multivector_store import DualMultiVectorStore
@@ -83,7 +81,6 @@ parser = MorphikParser(
     chunk_size=settings.CHUNK_SIZE,
     chunk_overlap=settings.CHUNK_OVERLAP,
     use_unstructured_api=settings.USE_UNSTRUCTURED_API,
-    unstructured_api_key=settings.UNSTRUCTURED_API_KEY,
     assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
     anthropic_api_key=settings.ANTHROPIC_API_KEY,
     use_contextual_chunking=settings.USE_CONTEXTUAL_CHUNKING,
@@ -116,12 +113,6 @@ if settings.USE_RERANKING:
 logger.debug("Reranker enabled: %s", bool(reranker))
 
 # ---------------------------------------------------------------------------
-# Cache factory
-# ---------------------------------------------------------------------------
-
-cache_factory = LlamaCacheFactory(Path(settings.STORAGE_PATH))
-
-# ---------------------------------------------------------------------------
 # ColPali multi-vector support
 # ---------------------------------------------------------------------------
 
@@ -139,6 +130,8 @@ else:
             colpali_vector_store = None
         case "local":
             logger.info("Initializing ColPali in local mode")
+            from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
+
             colpali_embedding_model = ColpaliEmbeddingModel()
             # Choose multivector store implementation based on provider and dual ingestion setting
             if settings.ENABLE_DUAL_MULTIVECTOR_INGESTION:
@@ -209,13 +202,27 @@ document_service = DocumentService(
     parser=parser,
     embedding_model=embedding_model,
     completion_model=completion_model,
-    cache_factory=cache_factory,
     reranker=reranker,
     enable_colpali=settings.ENABLE_COLPALI,
     colpali_embedding_model=colpali_embedding_model,
     colpali_vector_store=colpali_vector_store,
 )
 logger.info("Document service initialised")
+
+# ---------------------------------------------------------------------------
+# Ingestion service (handles document ingestion operations)
+# ---------------------------------------------------------------------------
+
+ingestion_service = IngestionService(
+    database=database,
+    vector_store=vector_store,
+    storage=storage,
+    parser=parser,
+    embedding_model=embedding_model,
+    colpali_embedding_model=colpali_embedding_model,
+    colpali_vector_store=colpali_vector_store,
+)
+logger.info("Ingestion service initialised")
 
 __all__ = [
     "settings",
@@ -225,4 +232,5 @@ __all__ = [
     "embedding_model",
     "completion_model",
     "document_service",
+    "ingestion_service",
 ]

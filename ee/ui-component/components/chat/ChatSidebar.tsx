@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { RotateCw, Plus, Search, MoreVertical, Edit3, Check, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-// import { DisplayObject } from "./AgentChatMessages"; // Potentially for a more robust type
 
 interface ChatSidebarProps {
   apiBaseUrl: string;
@@ -23,91 +22,18 @@ interface ChatSidebarProps {
   onToggle: () => void;
 }
 
-// Define types for message preview generation
-interface DisplayObjectPreview {
-  type: string;
-  content?: string;
-}
+// Function to generate a message preview
+const generateMessagePreview = (content: string): string => {
+  if (!content) return "(no message)";
 
-interface AgentDataPreview {
-  display_objects?: DisplayObjectPreview[];
-}
-
-interface MessagePreviewContent {
-  content?: string;
-  agent_data?: AgentDataPreview;
-  // Include other properties from session.lastMessage if necessary for context
-}
-
-// Function to generate a better preview for agent messages
-const generateMessagePreview = (content: string, lastMessage?: MessagePreviewContent): string => {
-  if (!content && !lastMessage?.agent_data?.display_objects) return "(no message)";
-  if (!content && lastMessage?.agent_data?.display_objects) content = ""; // Ensure content is not null if we have display objects
-
-  // Check if this is an agent message with agent_data
-  if (lastMessage?.agent_data?.display_objects && Array.isArray(lastMessage.agent_data.display_objects)) {
-    const displayObjects = lastMessage.agent_data.display_objects;
-
-    // Find the first text display object
-    const textObject = displayObjects.find((obj: DisplayObjectPreview) => obj.type === "text" && obj.content);
-
-    if (textObject && textObject.content) {
-      let textContent = textObject.content;
-      // Remove markdown formatting for preview
-      textContent = textContent.replace(/#{1,6}\s+/g, "");
-      textContent = textContent.replace(/\*\*(.*?)\*\*/g, "$1");
-      textContent = textContent.replace(/\*(.*?)\*/g, "$1");
-      textContent = textContent.replace(/`(.*?)`/g, "$1");
-      textContent = textContent.replace(/\n+/g, " ");
-      return textContent.trim().slice(0, 35) || "Agent response (text)"; // ensure not empty string
-    }
-
-    // If no text objects, show a generic agent response message
-    return "Agent response (media)"; // Differentiated for clarity
-  }
-
-  // For regular text messages, avoid showing raw JSON
-  const trimmedContent = content.trim();
-  if (trimmedContent.startsWith("[") || trimmedContent.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(trimmedContent);
-
-      if (Array.isArray(parsed)) {
-        const textObjects = parsed.filter((obj: DisplayObjectPreview) => obj.type === "text" && obj.content);
-        if (textObjects.length > 0 && textObjects[0].content) {
-          let textContent = textObjects[0].content;
-          textContent = textContent.replace(/#{1,6}\s+/g, "");
-          textContent = textContent.replace(/\*\*(.*?)\*\*/g, "$1");
-          textContent = textContent.replace(/\*(.*?)\*/g, "$1");
-          textContent = textContent.replace(/`(.*?)`/g, "$1");
-          textContent = textContent.replace(/\n+/g, " ");
-          return textContent.trim().slice(0, 35) || "Agent response (parsed text)";
-        }
-        return "Agent response (parsed media)";
-      }
-
-      if (parsed.content && typeof parsed.content === "string") {
-        return parsed.content.slice(0, 35) || "Agent response (parsed content)";
-      }
-
-      return "Agent response (JSON)";
-    } catch (_e) {
-      console.log("Error parsing JSON:", _e);
-      // Prefixed 'e' with an underscore
-      if (trimmedContent.length < 100 && !trimmedContent.includes('"type"')) {
-        return content.slice(0, 35);
-      }
-      return "Agent response (error)";
-    }
-  }
-
-  // for regular chat
-  content = content.replace(/#{1,6}\s+/g, "");
-  content = content.replace(/\*\*(.*?)\*\*/g, "$1");
-  content = content.replace(/\*(.*?)\*/g, "$1");
-  content = content.replace(/`(.*?)`/g, "$1");
-  content = content.replace(/\n+/g, " ");
-  return content.trim().slice(0, 35) || "chat response (text)";
+  // Remove markdown formatting for preview
+  let cleanContent = content;
+  cleanContent = cleanContent.replace(/#{1,6}\s+/g, "");
+  cleanContent = cleanContent.replace(/\*\*(.*?)\*\*/g, "$1");
+  cleanContent = cleanContent.replace(/\*(.*?)\*/g, "$1");
+  cleanContent = cleanContent.replace(/`(.*?)`/g, "$1");
+  cleanContent = cleanContent.replace(/\n+/g, " ");
+  return cleanContent.trim().slice(0, 35) || "(no message)";
 };
 
 export const ChatSidebar: React.FC<ChatSidebarProps> = React.memo(function ChatSidebar({
@@ -127,12 +53,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = React.memo(function ChatS
   // Filter sessions based on search query and ensure they're sorted by most recent
   const filteredSessions = sessions
     .filter(session => {
-      const title =
-        session.title ||
-        generateMessagePreview(
-          session.lastMessage?.content || "",
-          session.lastMessage === null ? undefined : session.lastMessage
-        );
+      const title = session.title || generateMessagePreview(session.lastMessage?.content || "");
       return title.toLowerCase().includes(searchQuery.toLowerCase());
     })
     .sort((a, b) => {
@@ -216,12 +137,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = React.memo(function ChatS
             <li className="px-2 py-1 text-center text-xs text-muted-foreground">No chats yet</li>
           ) : (
             filteredSessions.map(session => {
-              const fullTitle =
-                session.title ||
-                generateMessagePreview(
-                  session.lastMessage?.content || "",
-                  session.lastMessage === null ? undefined : session.lastMessage
-                );
+              const fullTitle = session.title || generateMessagePreview(session.lastMessage?.content || "");
 
               const displayTitle = fullTitle.length > 30 ? fullTitle.slice(0, 30) + "..." : fullTitle;
 

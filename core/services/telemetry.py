@@ -306,9 +306,9 @@ class TelemetryService:
         resource = Resource.create(
             {
                 "service.name": SERVICE_NAME,
-                "service.version": os.getenv("DATABRIDGE_VERSION", "unknown"),
+                "service.version": settings.VERSION,
                 "installation.id": self._installation_id,
-                "environment": os.getenv("ENVIRONMENT", "production"),
+                "environment": settings.ENVIRONMENT,
                 "telemetry.sdk.name": "opentelemetry",
                 "telemetry.sdk.language": "python",
                 "telemetry.sdk.version": "1.0.0",
@@ -557,40 +557,6 @@ class TelemetryService:
         self.document_update_metadata_resolver = MetadataExtractor(
             [
                 MetadataField("document_id", "kwargs"),
-            ]
-        )
-
-        self.cache_create_metadata = MetadataExtractor(
-            [
-                MetadataField("name", "kwargs"),
-                MetadataField("model", "kwargs"),
-                MetadataField("gguf_file", "kwargs"),
-                MetadataField("filters", "kwargs"),
-                MetadataField("docs", "kwargs"),
-            ]
-        )
-
-        self.cache_get_metadata = MetadataExtractor(
-            [
-                MetadataField("name", "kwargs"),
-            ]
-        )
-
-        self.cache_update_metadata = self.cache_get_metadata
-
-        self.cache_add_docs_metadata = MetadataExtractor(
-            [
-                MetadataField("name", "kwargs"),
-                MetadataField("docs", "kwargs"),
-            ]
-        )
-
-        self.cache_query_metadata = MetadataExtractor(
-            [
-                MetadataField("name", "kwargs"),
-                MetadataField("query", "kwargs"),
-                MetadataField("max_tokens", "kwargs"),
-                MetadataField("temperature", "kwargs"),
             ]
         )
 

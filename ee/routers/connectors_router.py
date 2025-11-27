@@ -9,13 +9,13 @@ from redis.asyncio import Redis
 
 from core.auth_utils import verify_token
 
-# Attempt to import global document_service and redis_pool dependency from core.api
+# Attempt to import global ingestion_service and redis_pool dependency from core.api
 # This is a simplification; a more robust solution might use app.state or a dedicated dependency module
-from core.dependencies import get_document_service, get_redis_pool
+from core.dependencies import get_ingestion_service, get_redis_pool
 from core.models.auth import AuthContext
 
-# Import DocumentService type for dependency injection hint
-from core.services.document_service import DocumentService
+# Import IngestionService type for dependency injection hint
+from core.services.ingestion_service import IngestionService
 from ee.services.connector_service import ConnectorService
 from ee.services.connectors.base_connector import ConnectorAuthStatus, ConnectorFile  # Importing specific models
 
@@ -467,7 +467,7 @@ async def ingest_file(
     ingest_request: ConnectorIngestRequest,
     auth: AuthContext = Depends(verify_token),
     redis: Redis = Depends(get_redis_pool),
-    document_service: DocumentService = Depends(get_document_service),
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
 ):
     """Ingest a single file from a connector."""
     try:
@@ -476,7 +476,7 @@ async def ingest_file(
             connector_type=connector_type,
             file_id=ingest_request.file_id,
             folder_name=ingest_request.folder_name,
-            document_service=document_service,
+            ingestion_service=ingestion_service,
             auth=auth,
             redis=redis,
             metadata=ingest_request.metadata,
@@ -494,7 +494,7 @@ async def ingest_repository(
     ingest_request: GitHubRepositoryIngestRequest,
     auth: AuthContext = Depends(verify_token),
     redis: Redis = Depends(get_redis_pool),
-    document_service: DocumentService = Depends(get_document_service),
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
 ):
     """Ingest an entire GitHub repository."""
     logger.info(
@@ -512,7 +512,7 @@ async def ingest_repository(
     try:
         documents = await connector.ingest_repository(
             repo_path=ingest_request.repo_path,
-            document_service=document_service,
+            ingestion_service=ingestion_service,
             auth_context=auth,
             redis=redis,
             folder_name=ingest_request.folder_name,

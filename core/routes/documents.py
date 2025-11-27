@@ -26,7 +26,7 @@ from core.models.responses import (
 )
 from core.routes.utils import project_document_fields, warn_if_legacy_rules
 from core.services.telemetry import TelemetryService
-from core.services_init import document_service
+from core.services_init import document_service, ingestion_service
 from core.utils.typed_metadata import TypedMetadataError
 
 # ---------------------------------------------------------------------------
@@ -413,11 +413,11 @@ async def update_document_text(
             logger.warning("Legacy 'rules' field supplied to /documents/{document_id}/update_text; ignoring.")
 
         extra_fields = getattr(request, "model_extra", {}) if hasattr(request, "model_extra") else {}
-        document_service._enforce_no_user_mutable_fields(
+        ingestion_service._enforce_no_user_mutable_fields(
             request.metadata, request.folder_name, extra_fields, context="update"
         )
 
-        doc = await document_service.update_document(
+        doc = await ingestion_service.update_document(
             document_id=document_id,
             auth=auth,
             content=request.content,
@@ -463,7 +463,7 @@ async def update_document_file(
             raise HTTPException(status_code=400, detail="metadata_types must be a JSON object")
         await warn_if_legacy_rules(request, f"/documents/{document_id}/update_file", logger)
 
-        doc = await document_service.update_document(
+        doc = await ingestion_service.update_document(
             document_id=document_id,
             auth=auth,
             content=None,
@@ -501,7 +501,7 @@ async def update_document_metadata(
     Update only a document's metadata.
     """
     try:
-        doc = await document_service.update_document(
+        doc = await ingestion_service.update_document(
             document_id=document_id,
             auth=auth,
             content=None,
