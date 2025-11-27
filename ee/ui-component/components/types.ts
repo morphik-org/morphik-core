@@ -59,9 +59,6 @@ export interface MorphikUIProps {
   onSearchSubmit?: (query: string, options: SearchOptions) => void;
   onChatSubmit?: (query: string, options: QueryOptions, initialMessages?: UIMessage[]) => void; // Use UIMessage[]
 
-  // Callback for Agent Chat tracking
-  onAgentSubmit?: (query: string) => void;
-
   // Callbacks for Graph tracking
   onGraphClick?: (graphName: string | undefined) => void;
   onGraphCreate?: (graphName: string, numDocuments: number) => void;

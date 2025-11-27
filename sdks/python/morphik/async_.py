@@ -2,7 +2,7 @@ import json
 import logging
 from io import BytesIO
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Dict, List, Literal, Optional, Type, Union
+from typing import Any, BinaryIO, Callable, Dict, List, Optional, Type, Union
 
 import httpx
 from pydantic import BaseModel
@@ -1627,29 +1627,6 @@ class AsyncMorphik(_ScopedOperationsMixin):
             llm_config=llm_config,
             padding=padding,
         )
-
-    async def agent_query(self, query: str, display_mode: Literal["formatted", "raw"] = "formatted") -> Dict[str, Any]:
-        """
-        Execute an agentic query with tool access and conversation handling.
-
-        The agent can autonomously use various tools to answer complex queries including:
-        - Searching and retrieving relevant documents
-        - Analyzing document content
-        - Performing calculations and data processing
-        - Creating summaries and reports
-        - Managing knowledge graphs
-
-        Args:
-            query: Natural language query for the Morphik agent
-            display_mode: Display mode for images: 'formatted' (default) creates bounding boxes with Gemini, 'raw' returns uncropped images
-
-        Returns:
-            Dict[str, Any]: Agent response with potential tool execution results and sources
-
-        """
-        request = {"query": query, "display_mode": display_mode}
-        response = await self._request("POST", "agent", data=request)
-        return response
 
     async def list_documents(
         self,

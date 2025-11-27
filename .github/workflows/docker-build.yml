@@ -56,27 +56,36 @@ jobs:
           IMAGE_TAG="morphik-core:test"
           echo "Testing image: $IMAGE_TAG"
 
-          # Create a minimal config file for testing
+          # Create a config file for testing (mirrors morphik.docker.toml)
           cat > morphik.toml.test << 'EOF'
           [api]
           host = "0.0.0.0"
           port = 8000
           reload = true
 
+          [service]
+          environment = "docker"
+          version = "unknown"
+          enable_profiling = false
+
           [auth]
           jwt_algorithm = "HS256"
-          dev_mode = true  # Enabled by default for easier local development
-          dev_entity_id = "dev_user"  # Default dev user ID
-          dev_entity_type = "developer"  # Default dev entity type
-          dev_permissions = ["read", "write", "admin"]  # Default dev permissions
+          bypass_auth_mode = true
+          dev_entity_id = "dev_user"
+          dev_entity_type = "developer"
+          dev_permissions = ["read", "write", "admin"]
 
           #### Registered models
           [registered_models]
-
           # OpenAI models
-          openai_gpt4 = { model_name = "gpt-4" }
           openai_gpt4-1 = { model_name = "gpt-4.1" }
-          openai_gpt4o = { model_name = "gpt-4o" }
+          openai_gpt4-1-mini = { model_name = "gpt-4.1-mini" }
+
+          # Anthropic models
+          claude_sonnet = { model_name = "claude-3-7-sonnet-latest" }
+
+          # Google Gemini models
+          gemini_flash = { model_name = "gemini/gemini-2.5-flash-preview-05-20" }
 
           # Embedding models
           openai_embedding = { model_name = "text-embedding-3-small" }
@@ -84,30 +93,23 @@ jobs:
 
           #### Component configurations ####
 
-          [agent]
-          model = "openai_gpt4-1"
-
           [completion]
-          model = "openai_gpt4o"
+          model = "openai_gpt4-1-mini"
           default_max_tokens = "1000"
-          default_temperature = 0.5
-
-          [document_analysis]
-          model = "openai_gpt4-1"
+          default_temperature = 0.3
 
           [database]
           provider = "postgres"
-          # Connection pool settings
-          pool_size = 10           # Maximum number of connections in the pool
-          max_overflow = 15        # Maximum number of connections that can be created beyond pool_size
-          pool_recycle = 3600      # Time in seconds after which a connection is recycled (1 hour)
-          pool_timeout = 10        # Seconds to wait for a connection from the pool
-          pool_pre_ping = true     # Check connection viability before using it from the pool
-          max_retries = 3          # Number of retries for database operations
-          retry_delay = 1.0        # Initial delay between retries in seconds
+          pool_size = 10
+          max_overflow = 15
+          pool_recycle = 3600
+          pool_timeout = 10
+          pool_pre_ping = true
+          max_retries = 3
+          retry_delay = 1.0
 
           [embedding]
-          model = "openai_embedding"  # Reference to registered model
+          model = "openai_embedding"
           dimensions = 1536
           similarity_metric = "cosine"
 
@@ -116,49 +118,72 @@ jobs:
           chunk_overlap = 300
           use_unstructured_api = false
           use_contextual_chunking = false
-          contextual_chunking_model = "openai_gpt4-1"  # Reference to a key in registered_models
+          contextual_chunking_model = "openai_gpt4-1-mini"
+
+          [parser.xml]
+          max_tokens = 350
+          preferred_unit_tags = ["SECTION", "Section", "Article", "clause"]
+          ignore_tags = ["TOC", "INDEX"]
+
+          [document_analysis]
+          model = "openai_gpt4-1-mini"
 
           [parser.vision]
-          model = "openai_gpt4-1"  # Reference to a key in registered_models
-          frame_sample_rate = -1  # Set to -1 to disable frame captioning
+          model = "openai_gpt4-1-mini"
+          frame_sample_rate = -1
 
           [reranker]
-          use_reranker = true
+          use_reranker = false
           provider = "flag"
           model_name = "BAAI/bge-reranker-large"
           query_max_length = 256
           passage_max_length = 512
           use_fp16 = true
-          device = "cpu" # use "cpu" if on docker and using a mac, "cuda" if cuda enabled device
+          device = "cpu"
 
           [storage]
           provider = "local"
           storage_path = "./storage"
 
-          # [storage]
-          # provider = "aws-s3"
-          # region = "us-east-2"
-          # bucket_name = "morphik-s3-storage"
-
           [vector_store]
           provider = "pgvector"
 
-          [rules]
-          model = "openai_gpt4-1"
-          batch_size = 4096
+          [multivector_store]
+          provider = "postgres"
+
+          [redis]
+          url = "redis://redis:6379/0"
+          host = "redis"
+          port = 6379
+
+          [worker]
+          arq_max_jobs = 1
+          colpali_store_batch_size = 16
+
+          [pdf]
+          colpali_pdf_dpi = 150
 
           [morphik]
           enable_colpali = true
-          mode = "self_hosted"  # "cloud" or "self_hosted"
-          api_domain = "api.morphik.ai"  # API domain for cloud URIs
+          mode = "self_hosted"
+          use_local_env = true
+          api_domain = "api.morphik.ai"
+          morphik_embedding_api_domain = "http://localhost:6000"
+          colpali_mode = "local"
 
-          [redis]
-          host = "redis"  # use "redis" for docker
-          port = 6379
+          [pdf_viewer]
+          frontend_url = "http://localhost:3000/api/pdf"
 
           [graph]
-          model = "openai_gpt4-1"
+          model = "openai_gpt4-1-mini"
           enable_entity_resolution = true
+
+          [telemetry]
+          service_name = "databridge-core"
+          project_name = ""
+          upload_interval_hours = 4.0
+          max_local_bytes = 1073741824
+          EOF
 
           # Start container in detached mode with config mounted
           CONTAINER_ID=$(docker run -d -p 8000:8000 \

@@ -1,4 +1,4 @@
-"""Tool implementations for the agent."""
+"""Tool implementations for document operations."""
 
 import logging
 

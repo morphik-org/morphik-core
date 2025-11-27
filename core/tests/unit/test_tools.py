@@ -181,9 +181,9 @@ async def test_retrieve_document_and_list_documents(dummy_doc_service, sample_do
 async def test_save_to_memory_and_timestamp(dummy_doc_service):
     # save_to_memory errors
     with pytest.raises(DocToolError):
-        await save_to_memory(content="c", memory_type="session", document_service=None)
-    # successful save
-    res = await save_to_memory(content="c", memory_type="long_term", tags=["t1"], document_service=dummy_doc_service)
+        await save_to_memory(content="c", memory_type="session", ingestion_service=None)
+    # successful save (dummy_doc_service has ingest_text method, so it works as ingestion_service)
+    res = await save_to_memory(content="c", memory_type="long_term", tags=["t1"], ingestion_service=dummy_doc_service)
     parsed = json.loads(res)
     assert parsed["success"] is True
     assert parsed["memory_type"] == "long_term"

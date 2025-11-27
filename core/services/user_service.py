@@ -87,7 +87,7 @@ class UserService:
 
         Args:
             user_id: The user ID to check
-            limit_type: Type of limit (query, ingest, graph, agent, etc.)
+            limit_type: Type of limit (query, ingest, graph, etc.)
             value: Value to check (e.g., file size for storage)
 
         Returns:
@@ -159,14 +159,6 @@ class UserService:
             graph_count = usage.get("graph_count", 0)
 
             return graph_count + value <= graph_limit
-
-        # Agent call limits
-        elif limit_type == "agent":
-            hourly_limit = tier_limits.get("hourly_agent_limit", 0)
-            monthly_limit = tier_limits.get("monthly_agent_limit", 0)
-            hourly_usage = usage.get("hourly_agent_count", 0)
-            monthly_usage = usage.get("monthly_agent_count", 0)
-            return hourly_usage + value <= hourly_limit and monthly_usage + value <= monthly_limit
 
         return True
 
