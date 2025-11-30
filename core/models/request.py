@@ -45,7 +45,10 @@ class ListDocsRequest(BaseModel):
     sort_direction: Literal["asc", "desc"] = Field(default="desc", description="Sort direction for the results")
     fields: Optional[List[str]] = Field(
         default=None,
-        description="Optional list of fields to project for each document (dot notation supported)",
+        description=(
+            "Optional list of fields to project for each document (dot notation supported). "
+            "Derived fields such as 'page_count' are also supported."
+        ),
     )
 
 
