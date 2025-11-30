@@ -123,6 +123,9 @@ class Settings(BaseSettings):
     MULTIVECTOR_STORE_PROVIDER: Literal["postgres", "morphik"] = "postgres"
     # Enable dual ingestion to both fast and slow multivector stores during migration
     ENABLE_DUAL_MULTIVECTOR_INGESTION: bool = False
+    MULTIVECTOR_BLOCK_STORAGE_ENABLED: bool = True
+    MULTIVECTOR_BLOCK_SIZE: int = 2048
+    MULTIVECTOR_BLOCK_PREFIX: str = "multivector_blocks"
 
     # Colpali configuration
     ENABLE_COLPALI: bool
