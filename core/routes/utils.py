@@ -5,10 +5,42 @@ from typing import Any, Dict, List, Optional
 from fastapi import Request
 
 
+def _derive_page_count(document_dict: Dict[str, Any]) -> Optional[int]:
+    """Compute page count from stored metadata or chunk identifiers."""
+    system_metadata = document_dict.get("system_metadata") or {}
+    if isinstance(system_metadata, dict):
+        page_count_raw = system_metadata.get("page_count")
+        try:
+            if page_count_raw is not None:
+                page_count_int = int(page_count_raw)
+                if page_count_int >= 0:
+                    return page_count_int
+        except (TypeError, ValueError):
+            # Ignore malformed values and fall back to chunk count
+            pass
+
+    chunk_ids = document_dict.get("chunk_ids")
+    if isinstance(chunk_ids, list):
+        return len(chunk_ids)
+
+    return None
+
+
+def _add_derived_fields(document_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Attach derived fields (e.g., page_count) without mutating the input."""
+    enriched = dict(document_dict)
+    page_count = _derive_page_count(document_dict)
+    if page_count is not None:
+        enriched["page_count"] = page_count
+    return enriched
+
+
 def project_document_fields(document_dict: Dict[str, Any], fields: Optional[List[str]]) -> Dict[str, Any]:
     """
     Project document data to a subset of fields, always including the external_id for reference.
     """
+    document_dict = _add_derived_fields(document_dict)
+
     if not fields:
         return document_dict
 

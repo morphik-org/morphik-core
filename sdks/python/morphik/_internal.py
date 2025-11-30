@@ -2,7 +2,7 @@ import base64
 import io
 import json
 import warnings
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
@@ -627,9 +627,11 @@ class _MorphikClientLogic:
         return value
 
     def _format_datetime(self, value: datetime) -> str:
-        """Return an ISO 8601 string for datetime values, assuming UTC when naive."""
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
+        """Return an ISO 8601 string for datetime values, preserving timezone presence.
+
+        If the input has no timezone, the output will have no timezone.
+        If the input has a timezone, the output will preserve it.
+        """
         return value.isoformat()
 
     def _format_decimal(self, value: Decimal) -> str:

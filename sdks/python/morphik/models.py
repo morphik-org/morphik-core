@@ -1,8 +1,50 @@
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
+
+
+def _reconstruct_metadata_types(metadata: Dict[str, Any], metadata_types: Dict[str, str]) -> Dict[str, Any]:
+    """Reconstruct typed Python objects from stored string representations.
+
+    Uses the metadata_types hints to convert ISO 8601 strings back to datetime/date objects,
+    and decimal strings back to Decimal objects.
+
+    Args:
+        metadata: The metadata dictionary with string values
+        metadata_types: Type hints for each field (e.g., {"created_at": "datetime"})
+
+    Returns:
+        Metadata dictionary with reconstructed typed values
+    """
+    if not metadata or not metadata_types:
+        return metadata
+
+    result = {}
+    for key, value in metadata.items():
+        type_hint = metadata_types.get(key)
+        if value is None:
+            result[key] = None
+        elif type_hint == "datetime" and isinstance(value, str):
+            try:
+                result[key] = datetime.fromisoformat(value)
+            except ValueError:
+                result[key] = value  # Keep as string if parsing fails
+        elif type_hint == "date" and isinstance(value, str):
+            try:
+                result[key] = date.fromisoformat(value)
+            except ValueError:
+                result[key] = value
+        elif type_hint == "decimal" and isinstance(value, str):
+            try:
+                result[key] = Decimal(value)
+            except Exception:
+                result[key] = value
+        else:
+            result[key] = value
+    return result
 
 
 class StorageFileInfo(BaseModel):
@@ -32,12 +74,21 @@ class Document(BaseModel):
     additional_metadata: Dict[str, Any] = Field(default_factory=dict, description="Ingestion-generated metadata")
     storage_files: List[StorageFileInfo] = Field(default_factory=list, description="Files associated with the document")
     chunk_ids: List[str] = Field(default_factory=list, description="IDs of document chunks")
+    page_count: Optional[int] = Field(None, description="Number of pages derived during ingestion")
     folder_name: Optional[str] = Field(None, description="Folder scope for the document")
     end_user_id: Optional[str] = Field(None, description="End-user scope for the document")
     app_id: Optional[str] = Field(None, description="App identifier for the document")
 
     # Client reference for update methods
     _client = None
+
+    @model_validator(mode="after")
+    def _reconstruct_types(self) -> "Document":
+        """Reconstruct typed metadata values from stored string representations."""
+        if self.metadata and self.metadata_types:
+            reconstructed = _reconstruct_metadata_types(self.metadata, self.metadata_types)
+            object.__setattr__(self, "metadata", reconstructed)
+        return self
 
     @property
     def status(self) -> Dict[str, Any]:
@@ -592,3 +643,61 @@ class FolderInfo(BaseModel):
     rules: List[Dict[str, Any]] = Field(default_factory=list, description="Rules associated with the folder")
     app_id: Optional[str] = Field(None, description="Application ID associated with the folder")
     end_user_id: Optional[str] = Field(None, description="End user ID associated with the folder")
+
+
+class DocumentPagesResponse(BaseModel):
+    """Response for document pages extraction endpoint"""
+
+    document_id: str = Field(..., description="ID of the document")
+    pages: List[str] = Field(..., description="List of page contents as base64 encoded strings")
+    start_page: int = Field(..., description="Start page number (1-indexed)")
+    end_page: int = Field(..., description="End page number (1-indexed)")
+    total_pages: int = Field(..., description="Total number of pages in the document")
+
+
+class ChunkGroup(BaseModel):
+    """Represents a group of chunks: one main match + its padding chunks"""
+
+    main_chunk: ChunkResult = Field(..., description="The primary matched chunk")
+    padding_chunks: List[ChunkResult] = Field(default_factory=list, description="Surrounding context chunks")
+    total_chunks: int = Field(..., description="Total number of chunks in this group")
+
+
+class GroupedChunkResponse(BaseModel):
+    """Response that includes both flat results and grouped results for UI"""
+
+    chunks: List[ChunkResult] = Field(..., description="Flat list of all chunks (for backward compatibility)")
+    groups: List[ChunkGroup] = Field(..., description="Grouped chunks for UI display")
+    total_results: int = Field(..., description="Total number of unique chunks")
+    has_padding: bool = Field(..., description="Whether padding was applied to any results")
+
+
+class FolderSummary(BaseModel):
+    """Summary information for a folder"""
+
+    id: str = Field(..., description="Unique folder identifier")
+    name: str = Field(..., description="Folder name")
+    description: Optional[str] = Field(None, description="Folder description")
+    doc_count: int = Field(default=0, description="Number of documents in folder")
+    updated_at: Optional[str] = Field(None, description="Last update timestamp")
+
+
+class FolderDocumentInfo(BaseModel):
+    """Document count and status information for a folder"""
+
+    total_count: Optional[int] = Field(None, description="Total document count")
+    status_counts: Optional[Dict[str, int]] = Field(None, description="Document counts by status")
+    documents: Optional[List[Document]] = Field(None, description="Paginated list of documents")
+
+
+class FolderDetails(BaseModel):
+    """Folder details with optional document summary"""
+
+    folder: FolderInfo = Field(..., description="Folder information")
+    document_info: Optional[FolderDocumentInfo] = Field(None, description="Document statistics and list")
+
+
+class FolderDetailsResponse(BaseModel):
+    """Response wrapping folder detail entries"""
+
+    folders: List[FolderDetails] = Field(..., description="List of folder details")

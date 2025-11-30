@@ -231,9 +231,12 @@ def _coerce_boolean(value: Any, field: str) -> bool:
 
 
 def _coerce_datetime(value: Any, field: str) -> str:
+    """Convert value to ISO 8601 datetime string, preserving timezone presence.
+
+    If the input has no timezone, the output will have no timezone.
+    If the input has a timezone, the output will preserve it.
+    """
     dt = _parse_datetime_like(value, field)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
     return dt.isoformat()
 
 
@@ -259,8 +262,10 @@ def _parse_datetime_like(value: Any, field: str) -> datetime:
     if isinstance(value, datetime):
         return value
     if isinstance(value, date):
-        return datetime(value.year, value.month, value.day, tzinfo=UTC)
+        # date objects have no timezone concept, return naive datetime
+        return datetime(value.year, value.month, value.day)
     if isinstance(value, (int, float)) and not isinstance(value, bool):
+        # UNIX timestamps are inherently UTC
         return datetime.fromtimestamp(float(value), tz=UTC)
     if isinstance(value, str):
         text = value.strip()

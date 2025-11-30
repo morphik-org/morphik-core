@@ -221,7 +221,7 @@ class LogUploader:
         except ValueError:
             response_key = None
 
-        LOGGER.info(
+        LOGGER.debug(
             "Uploaded telemetry via proxy (events=%s, invalid_lines=%s, key=%s)",
             bundle.event_count,
             bundle.invalid_lines,
