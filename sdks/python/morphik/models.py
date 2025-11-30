@@ -74,6 +74,7 @@ class Document(BaseModel):
     additional_metadata: Dict[str, Any] = Field(default_factory=dict, description="Ingestion-generated metadata")
     storage_files: List[StorageFileInfo] = Field(default_factory=list, description="Files associated with the document")
     chunk_ids: List[str] = Field(default_factory=list, description="IDs of document chunks")
+    page_count: Optional[int] = Field(None, description="Number of pages derived during ingestion")
     folder_name: Optional[str] = Field(None, description="Folder scope for the document")
     end_user_id: Optional[str] = Field(None, description="End-user scope for the document")
     app_id: Optional[str] = Field(None, description="App identifier for the document")
