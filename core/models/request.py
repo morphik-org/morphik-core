@@ -108,10 +108,14 @@ class SearchDocumentsRequest(BaseModel):
 class RetrieveRequest(BaseModel):
     """Base retrieve request model"""
 
-    query: str = Field(
-        ...,
+    query: Optional[str] = Field(
+        default=None,
         min_length=1,
         description="Natural-language query used to retrieve relevant chunks or documents.",
+    )
+    query_image: Optional[str] = Field(
+        default=None,
+        description="Base64-encoded image to use as query for Morphik multimodal retrieval. Requires use_colpali=True. Mutually exclusive with 'query'.",
     )
     filters: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -156,6 +160,16 @@ class RetrieveRequest(BaseModel):
         description="Optional folder scope for the operation. Accepts a single folder name or a list of folder names.",
     )
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
+
+    @model_validator(mode="after")
+    def validate_query_xor_image(self) -> "RetrieveRequest":
+        has_query = bool(self.query)
+        has_image = bool(self.query_image)
+        if has_query and has_image:
+            raise ValueError("Provide either 'query' or 'query_image', not both")
+        if not has_query and not has_image:
+            raise ValueError("Either 'query' or 'query_image' must be provided")
+        return self
 
 
 class CompletionQueryRequest(RetrieveRequest):

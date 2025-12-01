@@ -350,7 +350,7 @@ class _MorphikClientLogic:
 
     def _prepare_retrieve_chunks_request(
         self,
-        query: str,
+        query: Optional[str],
         filters: Optional[Dict[str, Any]],
         k: int,
         min_score: float,
@@ -359,15 +359,32 @@ class _MorphikClientLogic:
         end_user_id: Optional[str],
         padding: int = 0,
         output_format: Optional[str] = None,
+        query_image: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Prepare request for retrieve_chunks endpoint"""
-        request = {
-            "query": query,
+        """Prepare request for retrieve_chunks endpoint.
+
+        Either query or query_image must be provided, but not both.
+        query_image requires use_colpali=True.
+        """
+        # Validate XOR: exactly one of query or query_image
+        if query and query_image:
+            raise ValueError("Provide either 'query' or 'query_image', not both")
+        if not query and not query_image:
+            raise ValueError("Either 'query' or 'query_image' must be provided")
+        if query_image and not use_colpali:
+            raise ValueError("Image queries require use_colpali=True")
+
+        request: Dict[str, Any] = {
             "filters": filters,
             "k": k,
             "min_score": min_score,
             "use_colpali": use_colpali,
         }
+        # Add either query or query_image (mutually exclusive)
+        if query_image:
+            request["query_image"] = query_image
+        else:
+            request["query"] = query
         if folder_name:
             request["folder_name"] = folder_name
         if end_user_id:

@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import logging
@@ -6,6 +7,7 @@ from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
 from httpx import AsyncClient, HTTPStatusError, Timeout  # replacing httpx.AsyncClient for clarity
+from PIL.Image import Image
 
 from core.config import get_settings
 from core.embedding.base_embedding_model import BaseEmbeddingModel
@@ -75,6 +77,28 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         if not data:
             raise RuntimeError("No embeddings returned from Morphik Embedding API")
         return data[0]
+
+    async def generate_embeddings(self, content: Union[str, Image]) -> np.ndarray:
+        """Generate embeddings for either text or image content.
+
+        Args:
+            content: Either a text string or a PIL Image object.
+
+        Returns:
+            numpy array of embeddings.
+        """
+        if isinstance(content, Image):
+            # Convert PIL Image to base64
+            buffer = io.BytesIO()
+            content.save(buffer, format="PNG")
+            image_b64 = base64.b64encode(buffer.getvalue()).decode()
+            data = await self.call_api([image_b64], "image")
+        else:
+            data = await self.call_api([content], "text")
+
+        if not data:
+            raise RuntimeError("No embeddings returned from Morphik Embedding API")
+        return np.array(data[0])
 
     async def call_api(self, inputs, input_type) -> List[MultiVector]:
         headers = {"Authorization": f"Bearer {self.api_key}"}
