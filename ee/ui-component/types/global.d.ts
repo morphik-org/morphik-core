@@ -1,4 +1,4 @@
-export interface PDFViewerControls {
+interface PDFViewerControls {
   changePage: (page: number) => void;
   zoomToY: (bounds: { top: number; bottom: number }) => void;
   zoomToX: (bounds: { left: number; right: number }) => void;
@@ -18,9 +18,6 @@ declare global {
   interface Window {
     pdfViewerControls?: PDFViewerControls;
   }
-
-  var pdfClients: ReadableStreamDefaultController[];
-  var pdfCommandQueue: any[];
 }
 
 export {};
