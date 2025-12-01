@@ -314,16 +314,6 @@ class IngestionService:
                     folder_exc,
                 )
 
-        # Update the document status to completed after successful storage
-        doc.system_metadata["status"] = "completed"
-        doc.system_metadata["updated_at"] = datetime.now(UTC)
-        doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
-        await self.db.update_document(
-            document_id=doc.external_id, updates={"system_metadata": doc.system_metadata}, auth=auth
-        )
-        logger.debug(f"Updated document status to 'completed' for {doc.external_id}")
-
-        # Determine the final page count for usage recording
         colpali_count_for_limit_fn = (
             len(chunk_objects_multivector)
             if use_colpali and settings.ENABLE_COLPALI and chunk_objects_multivector
@@ -333,7 +323,17 @@ class IngestionService:
         if use_colpali and settings.ENABLE_COLPALI and colpali_count_for_limit_fn is not None:
             final_page_count = colpali_count_for_limit_fn
         final_page_count = max(1, final_page_count)
+        doc.system_metadata["page_count"] = final_page_count
         logger.info(f"Determined final page count for ingest_text usage: {final_page_count}")
+
+        # Update the document status to completed after successful storage
+        doc.system_metadata["status"] = "completed"
+        doc.system_metadata["updated_at"] = datetime.now(UTC)
+        doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
+        await self.db.update_document(
+            document_id=doc.external_id, updates={"system_metadata": doc.system_metadata}, auth=auth
+        )
+        logger.debug(f"Updated document status to 'completed' for {doc.external_id}")
 
         # Record ingest usage after successful completion
         if settings.MODE == "cloud" and auth.user_id:

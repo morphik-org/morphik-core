@@ -99,7 +99,7 @@ class DocumentService:
 
     async def retrieve_chunks(
         self,
-        query: str,
+        query: Optional[str],
         auth: AuthContext,
         filters: Optional[Dict[str, Any]] = None,
         k: int = 5,
@@ -111,8 +111,13 @@ class DocumentService:
         perf_tracker: Optional[Any] = None,  # Performance tracker from API layer
         padding: int = 0,  # Number of additional chunks to retrieve before and after matched chunks
         output_format: str = "base64",
+        query_image: Optional[bytes] = None,  # Base64-decoded image bytes for visual search
     ) -> List[ChunkResult]:
-        """Retrieve relevant chunks."""
+        """Retrieve relevant chunks.
+
+        Either query (text) or query_image (image bytes) must be provided.
+        Image queries require use_colpali=True for Morphik multimodal retrieval.
+        """
 
         phase_times: Dict[str, float] = {}
 
@@ -142,6 +147,22 @@ class DocumentService:
         multivector_available = bool(self.colpali_embedding_model and self.colpali_vector_store)
         requested_multivector = use_colpali if use_colpali is not None else False
         using_multivector = bool(requested_multivector and settings.ENABLE_COLPALI and multivector_available)
+
+        # Image queries require Morphik multimodal retrieval (use_colpali=True)
+        if query_image and not using_multivector:
+            raise HTTPException(
+                status_code=400,
+                detail="Image queries require use_colpali=True for Morphik multimodal retrieval",
+            )
+
+        # Validate image size (max 10MB to prevent memory issues)
+        MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
+        if query_image and len(query_image) > MAX_IMAGE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Image size exceeds maximum allowed size of 10MB (got {len(query_image) / (1024 * 1024):.1f}MB)",
+            )
+
         if requested_multivector and not using_multivector:
             logger.warning(
                 "Multivector retrieval requested but required components are unavailable. Falling back to regular search."
@@ -174,15 +195,31 @@ class DocumentService:
         # Launch embedding queries concurrently
         embedding_tasks = []
         if using_multivector:
+            # For image queries, use generate_embeddings with a PIL Image
+            if query_image:
+                try:
+                    query_pil_image = PILImage.open(BytesIO(query_image))
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid or unsupported image format: {e}",
+                    )
+                embedding_coro = self.colpali_embedding_model.generate_embeddings(query_pil_image)
+            else:
+                # Text query path - query is guaranteed non-None by request validation
+                assert query is not None, "Either query or query_image must be provided"
+                embedding_coro = self.colpali_embedding_model.embed_for_query(query)
             embedding_tasks.append(
                 measure_phase(
-                    self.colpali_embedding_model.embed_for_query(query),
+                    embedding_coro,
                     "multivector_query_embedding",
                     "retrieve_embeddings_and_auth",
                 )
             )
             multivector_pipeline_start = time.time()
         else:
+            # Non-multivector path only supports text queries (image queries require use_colpali=True)
+            assert query is not None, "Text query required for non-ColPali retrieval"
             multivector_pipeline_start = None
             phase_times["multivector_query_embedding"] = 0.0
             embedding_tasks.append(
@@ -665,7 +702,7 @@ class DocumentService:
 
     async def retrieve_chunks_grouped(
         self,
-        query: str,
+        query: Optional[str],
         auth: AuthContext,
         filters: Optional[Dict[str, Any]] = None,
         k: int = 5,
@@ -677,6 +714,7 @@ class DocumentService:
         perf_tracker: Optional[Any] = None,
         padding: int = 0,
         output_format: str = "base64",
+        query_image: Optional[bytes] = None,
     ):  # -> "GroupedChunkResponse"
         """
         Retrieve chunks with grouped response format that differentiates main chunks from padding.
@@ -697,6 +735,7 @@ class DocumentService:
             perf_tracker,
             padding=0,  # No padding for original
             output_format=output_format,
+            query_image=query_image,
         )
 
         # Get final chunks with padding (as ChunkResult objects)
@@ -714,6 +753,7 @@ class DocumentService:
                 perf_tracker,
                 padding,
                 output_format=output_format,
+                query_image=query_image,
             )
         else:
             final_chunk_results = original_chunk_results

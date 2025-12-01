@@ -54,6 +54,30 @@ from core.services_init import document_service, ingestion_service
 # Set up logging configuration for Docker environment
 setup_logging()
 
+
+def decode_query_image(query_image: Optional[str]) -> Optional[bytes]:
+    """Decode a base64-encoded query image to bytes.
+
+    Handles data URI format (e.g., "data:image/png;base64,...") by stripping the prefix.
+    Raises HTTPException with 400 status if the base64 encoding is invalid.
+    """
+    if not query_image:
+        return None
+
+    import base64
+    import binascii
+
+    # Handle data URI format if present
+    image_data = query_image
+    if image_data.startswith("data:"):
+        image_data = image_data.split(",", 1)[1]
+
+    try:
+        return base64.b64decode(image_data)
+    except (binascii.Error, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid base64-encoded image: {e}")
+
+
 # Initialize FastAPI app
 logger = logging.getLogger(__name__)
 
@@ -361,7 +385,11 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
     Returns a list of `ChunkResult` objects ordered by relevance.
     """
     # Initialize performance tracker
-    perf = PerformanceTracker(f"Retrieve Chunks: '{request.query[:50]}...'")
+    query_preview = (request.query[:50] + "...") if request.query else "[image query]"
+    perf = PerformanceTracker(f"Retrieve Chunks: '{query_preview}'")
+
+    # Decode query_image if provided (base64 -> bytes)
+    query_image_bytes = decode_query_image(request.query_image)
 
     try:
         # Main retrieval operation
@@ -379,6 +407,7 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
             perf,  # Pass performance tracker
             request.padding,  # Pass padding parameter
             request.output_format or "base64",
+            query_image=query_image_bytes,
         )
 
         # Log consolidated performance summary
@@ -405,7 +434,11 @@ async def retrieve_chunks_grouped(request: RetrieveRequest, auth: AuthContext = 
     When padding > 0, groups chunks by main matches and their padding chunks.
     """
     # Initialize performance tracker
-    perf = PerformanceTracker(f"Retrieve Chunks Grouped: '{request.query[:50]}...'")
+    query_preview = (request.query[:50] + "...") if request.query else "[image query]"
+    perf = PerformanceTracker(f"Retrieve Chunks Grouped: '{query_preview}'")
+
+    # Decode query_image if provided (base64 -> bytes)
+    query_image_bytes = decode_query_image(request.query_image)
 
     try:
         # Main retrieval operation
@@ -423,6 +456,7 @@ async def retrieve_chunks_grouped(request: RetrieveRequest, auth: AuthContext = 
             perf,  # Pass performance tracker
             request.padding,  # Pass padding parameter
             request.output_format or "base64",
+            query_image=query_image_bytes,
         )
 
         # Log consolidated performance summary
@@ -447,6 +481,20 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
     structure as `/retrieve/chunks` when expressing complex logic. Comparison operators require metadata typed as
     `number`, `decimal`, `datetime`, or `date`.
     """
+    # Image queries not supported for document retrieval
+    if request.query_image:
+        raise HTTPException(
+            status_code=400,
+            detail="Image queries are not supported for document retrieval. Use /retrieve/chunks instead.",
+        )
+
+    # Text query is required for document retrieval
+    if not request.query:
+        raise HTTPException(
+            status_code=400,
+            detail="A text query is required for document retrieval.",
+        )
+
     # Initialize performance tracker
     perf = PerformanceTracker(f"Retrieve Docs: '{request.query[:50]}...'")
 
@@ -601,6 +649,20 @@ async def query_completion(
     When graph_name is provided, the query will leverage the knowledge graph
     to enhance retrieval by finding relevant entities and their connected documents.
     """
+    # Image queries not supported for completion
+    if request.query_image:
+        raise HTTPException(
+            status_code=400,
+            detail="Image queries are not supported for completion. Use /retrieve/chunks instead.",
+        )
+
+    # Text query is required for completion
+    if not request.query:
+        raise HTTPException(
+            status_code=400,
+            detail="A text query is required for completion.",
+        )
+
     # Initialize performance tracker
     perf = PerformanceTracker(f"Query: '{request.query[:50]}...'")
 

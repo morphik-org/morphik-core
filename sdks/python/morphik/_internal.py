@@ -2,7 +2,7 @@ import base64
 import io
 import json
 import warnings
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
@@ -350,7 +350,7 @@ class _MorphikClientLogic:
 
     def _prepare_retrieve_chunks_request(
         self,
-        query: str,
+        query: Optional[str],
         filters: Optional[Dict[str, Any]],
         k: int,
         min_score: float,
@@ -359,15 +359,32 @@ class _MorphikClientLogic:
         end_user_id: Optional[str],
         padding: int = 0,
         output_format: Optional[str] = None,
+        query_image: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Prepare request for retrieve_chunks endpoint"""
-        request = {
-            "query": query,
+        """Prepare request for retrieve_chunks endpoint.
+
+        Either query or query_image must be provided, but not both.
+        query_image requires use_colpali=True.
+        """
+        # Validate XOR: exactly one of query or query_image
+        if query and query_image:
+            raise ValueError("Provide either 'query' or 'query_image', not both")
+        if not query and not query_image:
+            raise ValueError("Either 'query' or 'query_image' must be provided")
+        if query_image and not use_colpali:
+            raise ValueError("Image queries require use_colpali=True")
+
+        request: Dict[str, Any] = {
             "filters": filters,
             "k": k,
             "min_score": min_score,
             "use_colpali": use_colpali,
         }
+        # Add either query or query_image (mutually exclusive)
+        if query_image:
+            request["query_image"] = query_image
+        else:
+            request["query"] = query
         if folder_name:
             request["folder_name"] = folder_name
         if end_user_id:
@@ -627,9 +644,11 @@ class _MorphikClientLogic:
         return value
 
     def _format_datetime(self, value: datetime) -> str:
-        """Return an ISO 8601 string for datetime values, assuming UTC when naive."""
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
+        """Return an ISO 8601 string for datetime values, preserving timezone presence.
+
+        If the input has no timezone, the output will have no timezone.
+        If the input has a timezone, the output will preserve it.
+        """
         return value.isoformat()
 
     def _format_decimal(self, value: Decimal) -> str:

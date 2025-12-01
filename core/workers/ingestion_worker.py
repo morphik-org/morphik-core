@@ -840,6 +840,7 @@ async def process_ingestion_job(
 
             await update_document_progress(ingestion_service, document_id, auth, 6, total_steps, "Finalizing")
             # Update document status to completed after all processing
+            doc.system_metadata["page_count"] = final_page_count
             doc.system_metadata["status"] = "completed"
             doc.system_metadata["updated_at"] = datetime.now(UTC)
             # Clear progress info on completion

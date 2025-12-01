@@ -147,7 +147,7 @@ class _ScopedOperationsMixin:
     def _scoped_retrieve_chunks(
         self,
         *,
-        query: str,
+        query: Optional[str],
         filters: Optional[Dict[str, Any]],
         k: int,
         min_score: float,
@@ -156,6 +156,7 @@ class _ScopedOperationsMixin:
         end_user_id: Optional[str],
         padding: int,
         output_format: Optional[str] = None,
+        query_image: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         payload = self._logic._prepare_retrieve_chunks_request(
             query,
@@ -167,6 +168,7 @@ class _ScopedOperationsMixin:
             end_user_id,
             padding,
             output_format,
+            query_image,
         )
 
         return self._execute_scoped_operation(
