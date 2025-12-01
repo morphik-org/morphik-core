@@ -388,12 +388,7 @@ curl -X POST "${apiBaseUrl}${endpoint}" \\
 
   // Escape HTML entities to prevent XSS
   const escapeHtml = (str: string): string => {
-    return str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   };
 
   // Simple syntax highlighting for code
@@ -406,7 +401,7 @@ curl -X POST "${apiBaseUrl}${endpoint}" \\
       const result = escaped
         .replace(/\b(from|import|for|in|def|class|return|if|else|elif|True|False|None|async|await)\b/g, "<kw>$1</kw>")
         .replace(/&quot;([^&]*)&quot;/g, "<str>&quot;$1&quot;</str>")
-        .replace(/&#039;([^&]*)&#039;/g, "<str>&#039;$1&#039;</str>")
+        .replace(/'([^']*)'/g, "<str>'$1'</str>")
         .replace(/\b(\d+\.?\d*)\b/g, "<num>$1</num>")
         .replace(/\b(print|len|range|str|int|float|list|dict)\b(?=\()/g, "<fn>$1</fn>")
         .replace(/\.(\w+)\(/g, ".<method>$1</method>(")
@@ -440,7 +435,7 @@ curl -X POST "${apiBaseUrl}${endpoint}" \\
           "<kw>$1</kw>"
         )
         .replace(/&quot;([^&]*)&quot;/g, "<str>&quot;$1&quot;</str>")
-        .replace(/&#039;([^&]*)&#039;/g, "<str>&#039;$1&#039;</str>")
+        .replace(/'([^']*)'/g, "<str>'$1'</str>")
         .replace(/`([^`]*)`/g, "<str>`$1`</str>")
         .replace(/\b(\d+\.?\d*)\b/g, "<num>$1</num>")
         .replace(/\b(console)\b/g, "<fn>$1</fn>")
@@ -470,7 +465,7 @@ curl -X POST "${apiBaseUrl}${endpoint}" \\
       .replace(/\b(curl)\b/g, "<kw>$1</kw>")
       .replace(/(-X|-H|-d)\b/g, "<flag>$1</flag>")
       .replace(/&quot;([^&]*)&quot;/g, "<str>&quot;$1&quot;</str>")
-      .replace(/&#039;([^&]*)&#039;/g, "<str>&#039;$1&#039;</str>")
+      .replace(/'([^']*)'/g, "<str>'$1'</str>")
       .replace(/\b(\d+\.?\d*)\b/g, "<num>$1</num>")
       .replace(/\b(POST|GET|PUT|DELETE|PATCH)\b/g, "<method>$1</method>");
 
