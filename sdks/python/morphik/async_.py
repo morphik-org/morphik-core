@@ -260,7 +260,7 @@ class AsyncFolder:
 
     async def retrieve_chunks(
         self,
-        query: str,
+        query: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
@@ -268,18 +268,20 @@ class AsyncFolder:
         additional_folders: Optional[List[str]] = None,
         padding: int = 0,
         output_format: Optional[str] = None,
+        query_image: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks within this folder.
 
         Args:
-            query: Search query text
+            query: Search query text (mutually exclusive with query_image)
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
             additional_folders: Optional list of additional folder names to further scope operations
             padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
+            query_image: Base64-encoded image for visual search (mutually exclusive with query, requires use_colpali=True)
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
@@ -295,6 +297,7 @@ class AsyncFolder:
             end_user_id=None,
             padding=padding,
             output_format=output_format,
+            query_image=query_image,
         )
 
     async def retrieve_docs(
@@ -784,7 +787,7 @@ class AsyncUserScope:
 
     async def retrieve_chunks(
         self,
-        query: str,
+        query: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
@@ -792,12 +795,13 @@ class AsyncUserScope:
         additional_folders: Optional[List[str]] = None,
         padding: int = 0,
         output_format: Optional[str] = None,
+        query_image: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Retrieve relevant chunks as this end user.
 
         Args:
-            query: Search query text
+            query: Search query text (mutually exclusive with query_image)
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
@@ -805,6 +809,7 @@ class AsyncUserScope:
             additional_folders: Optional list of additional folder names to further scope operations
             padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
             output_format: Controls how image chunks are returned (e.g., "base64" or "url")
+            query_image: Base64-encoded image for visual search (mutually exclusive with query, requires use_colpali=True)
 
         Returns:
             List[FinalChunkResult]: List of relevant chunks
@@ -820,6 +825,7 @@ class AsyncUserScope:
             end_user_id=self._end_user_id,
             padding=padding,
             output_format=output_format,
+            query_image=query_image,
         )
 
     async def retrieve_docs(
@@ -1489,7 +1495,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
 
     async def retrieve_chunks(
         self,
-        query: str,
+        query: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
@@ -1497,18 +1503,20 @@ class AsyncMorphik(_ScopedOperationsMixin):
         folder_name: Optional[Union[str, List[str]]] = None,
         padding: int = 0,
         output_format: Optional[str] = None,
+        query_image: Optional[str] = None,
     ) -> List[FinalChunkResult]:
         """
         Search for relevant chunks.
 
         Args:
-            query: Search query text
+            query: Search query text (mutually exclusive with query_image)
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model to retrieve chunks
                 (only works for documents ingested with `use_colpali=True`)
             padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
+            query_image: Base64-encoded image for visual search (mutually exclusive with query, requires use_colpali=True)
         Returns:
             List[FinalChunkResult]
 
@@ -1524,6 +1532,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
             end_user_id=None,
             padding=padding,
             output_format=output_format,
+            query_image=query_image,
         )
 
     async def retrieve_docs(
@@ -2192,7 +2201,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
 
     async def retrieve_chunks_grouped(
         self,
-        query: str,
+        query: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
         k: int = 4,
         min_score: float = 0.0,
@@ -2205,12 +2214,13 @@ class AsyncMorphik(_ScopedOperationsMixin):
         graph_name: Optional[str] = None,
         hop_depth: int = 1,
         include_paths: bool = False,
+        query_image: Optional[str] = None,
     ) -> GroupedChunkResponse:
         """
         Retrieve relevant chunks with grouping for UI display.
 
         Args:
-            query: Search query text
+            query: Search query text (mutually exclusive with query_image)
             filters: Optional metadata filters
             k: Number of results (default: 4)
             min_score: Minimum similarity threshold (default: 0.0)
@@ -2223,12 +2233,20 @@ class AsyncMorphik(_ScopedOperationsMixin):
             graph_name: Optional knowledge graph to enhance retrieval
             hop_depth: Number of hops for graph traversal (default: 1)
             include_paths: Whether to include entity paths in results (default: False)
+            query_image: Base64-encoded image for visual search (mutually exclusive with query, requires use_colpali=True)
 
         Returns:
             GroupedChunkResponse: Grouped chunks with flat list for compatibility
         """
+        # Validate XOR: exactly one of query or query_image
+        if query and query_image:
+            raise ValueError("Provide either 'query' or 'query_image', not both")
+        if not query and not query_image:
+            raise ValueError("Either 'query' or 'query_image' must be provided")
+        if query_image and not use_colpali:
+            raise ValueError("Image queries require use_colpali=True")
+
         request: Dict[str, Any] = {
-            "query": query,
             "k": k,
             "min_score": min_score,
             "use_colpali": use_colpali,
@@ -2236,6 +2254,11 @@ class AsyncMorphik(_ScopedOperationsMixin):
             "hop_depth": hop_depth,
             "include_paths": include_paths,
         }
+        # Add either query or query_image (mutually exclusive)
+        if query_image:
+            request["query_image"] = query_image
+        else:
+            request["query"] = query
         if filters:
             request["filters"] = filters
         if folder_name:

@@ -12,6 +12,10 @@ export interface SearchOptions {
    * Optional folder scoping for retrieval endpoints.
    */
   folder_name?: string | string[];
+  /**
+   * Base64-encoded image for visual search (requires use_colpali=true).
+   */
+  query_image?: string;
 }
 
 export interface QueryOptions extends SearchOptions {

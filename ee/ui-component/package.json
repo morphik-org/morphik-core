@@ -1,37 +1,10 @@
 {
-  "name": "@morphik/ui",
+  "name": "morphik-ui",
   "version": "0.4.7",
   "private": true,
-  "description": "Modern UI component for Morphik - A powerful document processing and querying system",
-  "author": "Morphik Team",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/morphik-org/morphik-core"
-  },
-  "keywords": [
-    "morphik",
-    "ui",
-    "react",
-    "document-processing",
-    "chat",
-    "search"
-  ],
-  "homepage": "https://github.com/morphik-org/morphik-core",
-  "bugs": {
-    "url": "https://github.com/morphik-org/morphik-core/issues"
-  },
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:package": "tsup",
-    "prepublishOnly": "npm run build:package",
     "start": "next start -p ${PORT:-3000}",
     "lint": "next lint",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,css,scss,md}\"",
@@ -61,7 +34,6 @@
     "eslint-config-next": "14.2.16",
     "eslint-plugin-prettier": "^5.4.0",
     "prettier-plugin-tailwindcss": "^0.6.11",
-    "tsup": "^8.4.0",
     "accessor-fn": "^1.5.3",
     "accordion": "^3.0.2",
     "alert": "^6.0.2",
@@ -102,16 +74,6 @@
     "prettier": "^3.5.3",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.8.3"
-  },
-  "peerDependencies": {
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "next": "^14",
-    "next-themes": "^0.4.6",
-    "react": "^18",
-    "react-dom": "^18",
-    "tailwind-merge": "^2.6.0",
-    "tailwindcss-animate": "^1.0.7"
   },
   "engines": {
     "node": ">=18"
