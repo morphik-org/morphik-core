@@ -357,7 +357,7 @@ class QueryPromptOverrides(BaseModel):
 
 
 def validate_prompt_overrides_with_http_exception(
-    prompt_overrides=None, operation_type: str = None, error: ValueError = None
+    prompt_overrides=None, operation_type: Optional[str] = None, error: Optional[ValueError] = None
 ):
     """
     Validate prompt overrides and raise appropriate HTTP exceptions if validation fails.

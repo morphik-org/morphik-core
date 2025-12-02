@@ -924,7 +924,7 @@ class MorphikGraphService:
         self,
         workflow_id: str,
         run_id: Optional[str] = None,
-        auth: AuthContext = None,
+        auth: Optional[AuthContext] = None,
     ) -> Dict[str, Any]:
         """Check the status of a workflow from the graph API.
 

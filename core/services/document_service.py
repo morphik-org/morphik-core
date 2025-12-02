@@ -443,7 +443,7 @@ class DocumentService:
             phase_times["multivector_pipeline_total"] = phase_times.get("multivector_pipeline_total", 0.0)
 
         # Log performance summary only for standalone calls
-        if local_perf:
+        if local_perf and retrieve_start_time is not None:
             total_time = time.time() - retrieve_start_time
             logger.info("=== DocumentService.retrieve_chunks Performance Summary ===")
             logger.info(f"Total retrieve_chunks time: {total_time:.2f}s")
@@ -883,10 +883,10 @@ class DocumentService:
             vector_results = await asyncio.gather(*retrieval_tasks, return_exceptions=True)
 
             # Process regular chunks
-            chunks = vector_results[0] if not isinstance(vector_results[0], Exception) else []
+            chunks = vector_results[0] if not isinstance(vector_results[0], BaseException) else []
 
             # Process colpali chunks if available
-            if len(vector_results) > 1 and not isinstance(vector_results[1], Exception):
+            if len(vector_results) > 1 and not isinstance(vector_results[1], BaseException):
                 colpali_chunks = vector_results[1]
 
                 if colpali_chunks:
@@ -905,7 +905,7 @@ class DocumentService:
 
             # Handle any exceptions that occurred during retrieval
             for i, result in enumerate(vector_results):
-                if isinstance(result, Exception):
+                if isinstance(result, BaseException):
                     store_type = "regular" if i == 0 else "colpali"
                     logger.error(f"Error retrieving chunks from {store_type} vector store: {result}", exc_info=True)
                     if i == 0:  # If regular store failed, we can't proceed

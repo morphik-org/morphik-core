@@ -220,7 +220,7 @@ class IngestionService:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         metadata_types: Optional[Dict[str, str]] = None,
-        auth: AuthContext = None,
+        auth: Optional[AuthContext] = None,
         use_colpali: Optional[bool] = None,
         folder_name: Optional[str] = None,
         end_user_id: Optional[str] = None,

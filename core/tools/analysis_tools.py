@@ -146,8 +146,8 @@ async def analyze_sentiment(text: str, model: str) -> Sentiment:
 async def document_analyzer(
     document_id: str,
     analysis_type: Literal["entity_extraction", "summarization", "fact_extraction", "sentiment", "full"] = "full",
-    document_service: DocumentService = None,
-    auth: AuthContext = None,
+    document_service: Optional[DocumentService] = None,
+    auth: Optional[AuthContext] = None,
 ) -> str:
     """
     Extract structured information from documents.

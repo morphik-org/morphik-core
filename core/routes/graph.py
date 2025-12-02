@@ -14,6 +14,7 @@ from core.models.prompts import validate_prompt_overrides_with_http_exception
 from core.models.request import CreateGraphRequest, UpdateGraphRequest
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
+from core.utils.folder_utils import normalize_folder_name
 
 # ---------------------------------------------------------------------------
 # Router initialization & shared singletons
@@ -23,18 +24,6 @@ router = APIRouter(prefix="/graph", tags=["Graph"])
 logger = logging.getLogger(__name__)
 settings = get_settings()
 telemetry = TelemetryService()
-
-
-# Helper function to normalize folder_name parameter
-def normalize_folder_name(folder_name: Optional[Union[str, List[str]]]) -> Optional[Union[str, List[str]]]:
-    """Convert string 'null' to None for folder_name parameter."""
-    if folder_name is None:
-        return None
-    if isinstance(folder_name, str):
-        return None if folder_name.lower() == "null" else folder_name
-    if isinstance(folder_name, list):
-        return [None if f.lower() == "null" else f for f in folder_name]
-    return folder_name
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +122,7 @@ async def create_graph(
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         validate_prompt_overrides_with_http_exception(operation_type="graph", error=e)
+        raise  # Never reached - validate_prompt_overrides_with_http_exception always raises
 
 
 @router.get("/{name}", response_model=Graph)
@@ -272,6 +262,7 @@ async def update_graph(
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         validate_prompt_overrides_with_http_exception(operation_type="graph", error=e)
+        raise  # Never reached - validate_prompt_overrides_with_http_exception always raises
     except Exception as e:
         logger.error(f"Error updating graph: {e}")
         raise HTTPException(status_code=500, detail=str(e))

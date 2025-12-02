@@ -1,7 +1,7 @@
 import base64
 import uuid
 from io import BytesIO
-from typing import List
+from typing import List, Optional
 
 import fitz  # PyMuPDF
 import httpx
@@ -17,12 +17,12 @@ class PDFViewer:
 
     def __init__(
         self,
-        pdf_document: fitz.Document = None,
-        images: List = None,  # Keep for backward compatibility
-        api_base_url: str = None,
-        session_id: str = None,
-        user_id: str = None,
-        document_id: str = None,
+        pdf_document: Optional[fitz.Document] = None,
+        images: Optional[List] = None,  # Keep for backward compatibility
+        api_base_url: Optional[str] = None,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        document_id: Optional[str] = None,
         document_service=None,
         auth=None,
     ):
@@ -81,7 +81,7 @@ class PDFViewer:
         image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
         return "data:image/png;base64," + image_base64
 
-    def _make_api_call(self, method: str, endpoint: str, json_data: dict = None) -> httpx.Response:
+    def _make_api_call(self, method: str, endpoint: str, json_data: Optional[dict] = None) -> httpx.Response:
         """Make API call to PDF viewer for UI side effects with session and user scoping."""
         # Add session and user info to the request
         if json_data is None:
@@ -97,6 +97,8 @@ class PDFViewer:
             return self.client.post(endpoint, json=json_data, headers=headers)
         elif method.upper() == "GET":
             return self.client.get(endpoint, headers=headers)
+        else:
+            raise ValueError(f"Unsupported HTTP method: {method}")
 
     def get_current_frame(self) -> str:
         """Get the current frame as a base64 data URL."""
