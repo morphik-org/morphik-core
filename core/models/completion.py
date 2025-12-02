@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .chat import ChatMessage
 
@@ -36,6 +36,8 @@ class CompletionResponse(BaseModel):
 class CompletionRequest(BaseModel):
     """Request for completion generation"""
 
+    model_config = {"populate_by_name": True}
+
     query: str
     context_chunks: List[str]
     max_tokens: Optional[int] = 1000
@@ -43,7 +45,7 @@ class CompletionRequest(BaseModel):
     prompt_template: Optional[str] = None
     folder_name: Optional[str] = None
     end_user_id: Optional[str] = None
-    schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None
+    response_schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = Field(default=None, alias="schema")
     chat_history: Optional[List[ChatMessage]] = None
     stream_response: Optional[bool] = False
     llm_config: Optional[Dict[str, Any]] = None

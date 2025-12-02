@@ -175,6 +175,8 @@ class RetrieveRequest(BaseModel):
 class CompletionQueryRequest(RetrieveRequest):
     """Request model for completion generation"""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     max_tokens: Optional[int] = Field(
         default=None,
         description="Maximum number of tokens allowed in the generated completion.",
@@ -187,8 +189,9 @@ class CompletionQueryRequest(RetrieveRequest):
         None,
         description="Optional customizations for entity extraction, resolution, and query prompts",
     )
-    schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = Field(
-        None,
+    response_schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = Field(
+        default=None,
+        alias="schema",
         description="Schema for structured output, can be a Pydantic model or JSON schema dict",
     )
     chat_id: Optional[str] = Field(

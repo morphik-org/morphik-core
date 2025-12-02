@@ -44,7 +44,8 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
             attn_implementation=attn_implementation,
         ).eval()
         self.processor: ColQwen2_5_Processor = ColQwen2_5_Processor.from_pretrained(
-            "tsystems/colqwen2.5-3b-multilingual-v1.0"
+            "tsystems/colqwen2.5-3b-multilingual-v1.0",
+            use_fast=True,
         )
         self.settings = get_settings()
         self.mode = self.settings.MODE
