@@ -26,6 +26,7 @@ from core.storage.s3_storage import S3Storage
 from core.storage.utils_file_extensions import detect_file_type
 
 from .base_vector_store import BaseVectorStore
+from .utils import MULTIVECTOR_CHUNKS_BUCKET, normalize_storage_key
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,6 @@ if not any(
     logger.addHandler(_file_handler)
 
 # Constants for external storage
-MULTIVECTOR_CHUNKS_BUCKET = "multivector-chunks"
 DEFAULT_APP_ID = "default"  # Fallback for local usage when app_id is None
 
 
@@ -747,12 +747,6 @@ class FastMultiVectorStore(BaseVectorStore):
             len(content) < 500 and "/" in content and not content.startswith("data:") and not content.startswith("http")
         )
 
-    @staticmethod
-    def _normalize_storage_key(key: str) -> str:
-        if key.startswith(f"{MULTIVECTOR_CHUNKS_BUCKET}/"):
-            return key[len(MULTIVECTOR_CHUNKS_BUCKET) + 1 :]
-        return key
-
     async def _download_chunk_bytes(self, bucket: str, storage_key: str) -> Optional[bytes]:
         """Attempt to fetch chunk payload bytes from storage, considering legacy/variant keys.
 
@@ -911,14 +905,14 @@ class FastMultiVectorStore(BaseVectorStore):
                 content = self._row_get(row, "content")
                 if isinstance(content, str) and self._is_storage_key(content):
                     bucket_name = self.chunk_bucket if self.chunk_bucket else ""
-                    targets["chunk"].add((bucket_name, self._normalize_storage_key(content)))
+                    targets["chunk"].add((bucket_name, normalize_storage_key(content)))
 
                 multivector = self._row_get(row, "multivector")
                 if isinstance(multivector, (list, tuple)) and len(multivector) == 2:
                     bucket, key = multivector
                     if isinstance(bucket, str) and isinstance(key, str):
                         normalized_bucket = bucket if bucket else ""
-                        targets["vector"].add((normalized_bucket, self._normalize_storage_key(key)))
+                        targets["vector"].add((normalized_bucket, normalize_storage_key(key)))
 
                 row_id = self._row_get(row, "id")
                 if isinstance(row_id, str):

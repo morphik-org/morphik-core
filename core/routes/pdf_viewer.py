@@ -32,7 +32,7 @@ class DocumentChatRequest(BaseModel):
 
 
 async def get_pdf_viewer(
-    document_id: str, auth: AuthContext, api_base_url: str = None, session_id: str = None
+    document_id: str, auth: AuthContext, api_base_url: Optional[str] = None, session_id: Optional[str] = None
 ) -> PDFViewer:
     document = await document_service.db.get_document(document_id, auth)
     as_bytes = await document_service.storage.download_file(**document.storage_info)

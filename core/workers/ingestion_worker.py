@@ -897,6 +897,18 @@ async def process_ingestion_job(
         # fail because the row doesn't exist there.
         # ------------------------------------------------------------------
 
+        # Reconstruct auth from auth_dict in case exception occurred before auth was defined
+        try:
+            auth
+        except NameError:
+            auth = AuthContext(
+                entity_type=EntityType(auth_dict.get("entity_type", "unknown")),
+                entity_id=auth_dict.get("entity_id", ""),
+                app_id=auth_dict.get("app_id"),
+                permissions=set(auth_dict.get("permissions", ["read"])),
+                user_id=auth_dict.get("user_id", auth_dict.get("entity_id", "")),
+            )
+
         try:
             database: Optional[PostgresDatabase] = None
 

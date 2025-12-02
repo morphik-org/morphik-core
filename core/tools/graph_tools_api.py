@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 async def graph_api_retrieve(
     query: str,
     graph_name: Optional[str] = None,
-    document_service: DocumentService = None,
-    auth: AuthContext = None,
+    document_service: Optional[DocumentService] = None,
+    auth: Optional[AuthContext] = None,
     end_user_id: Optional[str] = None,
 ) -> str:
     """Retrieve information from a remote (API-backed) Morphik knowledge graph.

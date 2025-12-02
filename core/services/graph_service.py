@@ -1384,7 +1384,11 @@ class GraphService:
 
             # Add to the first chunk or create a new first chunk if none
             if chunk_contents:
-                chunk_contents[0] = paths_text + "\n\n" + chunk_contents[0]
+                if isinstance(chunk_contents[0], str):
+                    chunk_contents[0] = paths_text + "\n\n" + chunk_contents[0]
+                else:
+                    # First chunk is an image, insert paths_text as new first element
+                    chunk_contents.insert(0, paths_text)
             else:
                 chunk_contents = [paths_text]
 

@@ -38,13 +38,6 @@ class ModelsResponse(BaseModel):
     providers: List[str]
 
 
-class OAuthCallbackResponse(BaseModel):
-    """Response for OAuth callback endpoint"""
-
-    status: str
-    message: Optional[str] = None
-
-
 class FolderDeleteResponse(BaseModel):
     """Response for folder deletion endpoint"""
 
@@ -81,31 +74,6 @@ class DocumentDownloadUrlResponse(BaseModel):
 
     download_url: str
     expires_in: int
-
-
-class DocumentFileResponse(BaseModel):
-    """Response for document file endpoint"""
-
-    file_data: bytes
-    content_type: str
-    filename: str
-
-
-class ChatResponse(BaseModel):
-    """Response for chat endpoint"""
-
-    chat_id: str
-    messages: List[Dict[str, Any]]
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class ChatCompletionResponse(BaseModel):
-    """Response for chat completion endpoint"""
-
-    completion: str
-    usage: Dict[str, int]
-    finish_reason: Optional[str] = None
-    sources: List[Dict[str, Any]] = []
 
 
 class ChatTitleResponse(BaseModel):

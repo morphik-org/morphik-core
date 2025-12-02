@@ -137,6 +137,7 @@ async def folder_details(
             document_info: Optional[FolderDocumentInfo] = None
 
             if request.include_documents or request.include_document_count or request.include_status_counts:
+                doc_result: Dict[str, Any]
                 if not folder.name:
                     doc_result = {
                         "documents": [],

@@ -20,11 +20,11 @@ from core.storage.s3_storage import S3Storage
 from core.storage.utils_file_extensions import detect_file_type
 
 from .base_vector_store import BaseVectorStore
+from .utils import MULTIVECTOR_CHUNKS_BUCKET, normalize_storage_key
 
 logger = logging.getLogger(__name__)
 
 # Constants for external storage
-MULTIVECTOR_CHUNKS_BUCKET = "multivector-chunks"
 DEFAULT_APP_ID = "default"  # Fallback for local usage when app_id is None
 
 
@@ -427,13 +427,6 @@ class MultiVectorStore(BaseVectorStore):
             len(content) < 500 and "/" in content and not content.startswith("data:") and not content.startswith("http")
         )
 
-    @staticmethod
-    def _normalize_storage_key(key: str) -> str:
-        """Strip bucket prefix if it is embedded in the key."""
-        if key.startswith(f"{MULTIVECTOR_CHUNKS_BUCKET}/"):
-            return key[len(MULTIVECTOR_CHUNKS_BUCKET) + 1 :]
-        return key
-
     def _collect_storage_keys(self, document_id: str) -> Set[str]:
         """Gather storage keys for a document before deletion."""
         keys: Set[str] = set()
@@ -452,7 +445,7 @@ class MultiVectorStore(BaseVectorStore):
                     rows = cur.fetchall()
             for (content,) in rows:
                 if isinstance(content, str) and self._is_storage_key(content):
-                    keys.add(self._normalize_storage_key(content))
+                    keys.add(normalize_storage_key(content))
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Failed to collect external storage keys for document %s: %s",

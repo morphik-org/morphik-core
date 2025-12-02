@@ -84,15 +84,15 @@ class DualMultiVectorStore(BaseVectorStore):
 
             # Handle results
             fast_success = False
-            fast_ids = []
-            if isinstance(fast_result, Exception):
+            fast_ids: list[str] = []
+            if isinstance(fast_result, BaseException):
                 logger.error(f"Fast store ingestion failed: {fast_result}")
             else:
                 fast_success, fast_ids = fast_result
 
             slow_success = False
-            slow_ids = []
-            if isinstance(slow_result, Exception):
+            slow_ids: list[str] = []
+            if isinstance(slow_result, BaseException):
                 logger.error(f"Slow store ingestion failed: {slow_result}")
                 # If slow store fails, this is critical since we search from it
                 raise slow_result
