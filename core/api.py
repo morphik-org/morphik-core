@@ -718,7 +718,7 @@ async def query_completion(
             request.prompt_overrides,
             request.folder_name,
             request.end_user_id,
-            request.schema,
+            request.response_schema,
             history,
             perf,
             request.stream_response,

@@ -52,9 +52,9 @@ dependencies = [
     "stripe>=12.1.0",
     "toml>=0.10.2",
     "tomli>=2.2.1",
-    "torch==2.5.1",
-    "torchaudio==2.5.1",
-    "torchvision==0.20.1",
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "torchvision==0.23.0",
     "tqdm>=4.67.1",
     "twine>=6.1.0",
     "ty>=0.0.1a6",
@@ -68,7 +68,9 @@ dependencies = [
     "types-boto3[s3]>=1.39.1",
     "sentry-sdk[fastapi]>=2.33.0",
     "turbopuffer>=0.5.8",
-    "colpali-engine @ git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3",
+    "colpali-engine @ git+https://github.com/illuin-tech/colpali@v0.3.13",
+    "fast-plaid",
+    "fastkmeans",
 ]
 
 [dependency-groups]
