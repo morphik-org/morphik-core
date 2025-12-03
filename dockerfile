@@ -37,10 +37,11 @@ ENV PATH="/app/.venv/bin:${PATH}"
 # Copy project definition and lock file
 COPY pyproject.toml uv.lock ./
 COPY fde ./fde
+COPY morphik_rust ./morphik_rust
 
 # Create venv and install dependencies from lockfile (excluding the project itself initially for better caching)
 # This also creates the /app/.venv directory
-# Cache buster: 1 - verbose flag added
+# morphik-rust is a required dependency - Rust toolchain installed above
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv sync --verbose --locked --no-install-project
 
@@ -53,7 +54,6 @@ COPY . .
 COPY ee/ui-component /app/ee/ui-component
 
 # Install the project itself into the venv in non-editable mode
-# Cache buster: 1 - verbose flag added
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv sync --verbose --locked --no-editable
 

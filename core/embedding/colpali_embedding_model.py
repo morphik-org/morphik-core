@@ -1,4 +1,3 @@
-import base64
 import importlib.util
 import io
 import logging
@@ -15,6 +14,7 @@ from PIL.Image import open as open_image
 from core.config import get_settings
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.models.chunk import Chunk
+from core.utils.fast_ops import data_uri_to_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +79,8 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                     if isinstance(raw_bytes, (bytes, bytearray, memoryview)):
                         image_bytes = bytes(raw_bytes)
                     else:
-                        content = chunk.content
-                        if content.startswith("data:"):
-                            content = content.split(",", 1)[1]
-                        image_bytes = base64.b64decode(content)
+                        # data_uri_to_bytes handles both data URIs and raw base64
+                        image_bytes = data_uri_to_bytes(chunk.content)
                     image = open_image(io.BytesIO(image_bytes))
                     # Drop cached bytes once we've materialized the image to keep metadata lean
                     chunk.metadata.pop("_image_bytes", None)

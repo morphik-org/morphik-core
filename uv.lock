@@ -2296,6 +2296,7 @@ dependencies = [
     { name = "litellm" },
     { name = "lxml" },
     { name = "morphik" },
+    { name = "morphik-rust" },
     { name = "ollama" },
     { name = "openai" },
     { name = "opencv-python" },
@@ -2372,6 +2373,7 @@ requires-dist = [
     { name = "litellm", specifier = ">=1.69.1" },
     { name = "lxml", specifier = ">=5.2.2" },
     { name = "morphik", specifier = "==1.0.3" },
+    { name = "morphik-rust", directory = "morphik_rust" },
     { name = "ollama", specifier = ">=0.4.8" },
     { name = "openai", specifier = ">=1.75.0" },
     { name = "opencv-python", specifier = ">=4.11.0.86" },
@@ -2417,6 +2419,11 @@ dev-local = [
     { name = "fixed-dimensional-encoding", directory = "fde" },
     { name = "turbopuffer", specifier = ">=0.5.8" },
 ]
+
+[[package]]
+name = "morphik-rust"
+version = "0.1.0"
+source = { directory = "morphik_rust" }
 
 [[package]]
 name = "mpire"

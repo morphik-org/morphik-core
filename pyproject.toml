@@ -72,6 +72,7 @@ dependencies = [
     "colpali-engine @ git+https://github.com/illuin-tech/colpali@v0.3.13",
     "fast-plaid; sys_platform != 'linux' or platform_machine != 'aarch64'",
     "fastkmeans",
+    "morphik-rust",
 ]
 
 [dependency-groups]
@@ -93,3 +94,4 @@ ignore = ["I"]
 
 [tool.uv.sources]
 fixed-dimensional-encoding = { path = "fde" }
+morphik-rust = { path = "morphik_rust" }

@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import json
 import logging
 import time
@@ -18,6 +17,7 @@ from core.storage.base_storage import BaseStorage
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.storage.utils_file_extensions import detect_file_type
+from core.utils.fast_ops import binary_quantize, bytes_to_data_uri, encode_base64
 
 from .base_vector_store import BaseVectorStore
 from .utils import MULTIVECTOR_CHUNKS_BUCKET, normalize_storage_key
@@ -307,13 +307,18 @@ class MultiVectorStore(BaseVectorStore):
             return False
 
     def _binary_quantize(self, embeddings: Union[np.ndarray, torch.Tensor, List]) -> List[Bit]:
-        """Convert embeddings to binary format for PostgreSQL BIT[] arrays."""
+        """Convert embeddings to binary format for PostgreSQL BIT[] arrays.
+
+        Uses Rust-optimized binary quantization when available (5-10x faster).
+        """
         if isinstance(embeddings, torch.Tensor):
             embeddings = embeddings.cpu().numpy()
         if isinstance(embeddings, list) and not isinstance(embeddings[0], np.ndarray):
             embeddings = np.array(embeddings)
 
-        return [Bit(embedding > 0) for embedding in embeddings]
+        # Use Rust-optimized quantization (returns List[List[bool]])
+        binary_lists = binary_quantize(embeddings)
+        return [Bit(bits) for bits in binary_lists]
 
     async def _get_document_app_id(self, document_id: str) -> str:
         """Get app_id for a document, with caching."""
@@ -403,7 +408,7 @@ class MultiVectorStore(BaseVectorStore):
                 # For text content, store as-is without base64 encoding
                 # Convert content to base64 for storage interface compatibility
                 content_bytes = content.encode("utf-8")
-                content_b64 = base64.b64encode(content_bytes).decode("utf-8")
+                content_b64 = encode_base64(content_bytes)
                 await self.storage.upload_from_base64(
                     content=content_b64, key=storage_key, content_type="text/plain", bucket=MULTIVECTOR_CHUNKS_BUCKET
                 )
@@ -561,21 +566,20 @@ class MultiVectorStore(BaseVectorStore):
                             mime = "image/webp"
                         else:
                             mime = "image/png"
-                    data_b64 = base64.b64encode(content_bytes).decode("utf-8")
-                    return f"data:{mime};base64,{data_b64}"
+                    return bytes_to_data_uri(content_bytes, mime)
 
                 # Not an image; treat as text if valid UTF-8
                 try:
                     return content_bytes.decode("utf-8")
                 except UnicodeDecodeError:
                     # Binary fallback → base64
-                    return base64.b64encode(content_bytes).decode("utf-8")
+                    return encode_base64(content_bytes)
             except Exception as e:
                 logger.warning(f"Error determining content type for {storage_key}: {e}")
                 try:
                     return content_bytes.decode("utf-8")
                 except UnicodeDecodeError:
-                    return base64.b64encode(content_bytes).decode("utf-8")
+                    return encode_base64(content_bytes)
 
         except Exception as e:
             logger.error(f"Failed to retrieve content from storage key {storage_key}: {e}", exc_info=True)
@@ -611,14 +615,12 @@ class MultiVectorStore(BaseVectorStore):
                         f"Failed to store chunk {chunk.document_id}-{chunk.chunk_number} externally, using database"
                     )
 
-            import json as _json
-
             rows.append(
                 (
                     chunk.document_id,
                     chunk.chunk_number,
                     content_to_store,
-                    _json.dumps(chunk.metadata or {}),
+                    json.dumps(chunk.metadata or {}),
                     binary_embeddings,
                 )
             )
