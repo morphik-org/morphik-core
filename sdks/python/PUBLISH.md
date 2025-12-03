@@ -9,7 +9,7 @@
 pip install build twine
 
 rm -rf dist
-python -m build
-twine check dist/*
-twine upload dist/*
+uv run python -m build
+uv run twine check dist/*
+uv run twine upload dist/*
 ```

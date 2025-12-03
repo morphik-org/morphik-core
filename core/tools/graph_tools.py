@@ -17,8 +17,8 @@ async def knowledge_graph_query(
     start_nodes: List[str],
     max_depth: int = 3,
     graph_name: Optional[str] = None,
-    document_service: DocumentService = None,
-    auth: AuthContext = None,
+    document_service: Optional[DocumentService] = None,
+    auth: Optional[AuthContext] = None,
     end_user_id: Optional[str] = None,
 ) -> str:
     """
@@ -216,7 +216,9 @@ async def knowledge_graph_query(
 
 
 async def list_graphs(
-    document_service: DocumentService = None, auth: AuthContext = None, end_user_id: Optional[str] = None
+    document_service: Optional[DocumentService] = None,
+    auth: Optional[AuthContext] = None,
+    end_user_id: Optional[str] = None,
 ) -> str:
     """
     List all available knowledge graphs for the authorized user.

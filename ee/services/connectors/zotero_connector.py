@@ -262,6 +262,8 @@ class ZoteroConnector(BaseConnector):
                     file_content = self.zot_client.file(file_id)
                     if isinstance(file_content, bytes):
                         return BytesIO(file_content)
+                    logger.warning(f"Attachment {file_id} returned non-bytes content")
+                    return None
                 except Exception as e:
                     logger.error(f"Failed to download attachment {file_id}: {e}")
                     return None

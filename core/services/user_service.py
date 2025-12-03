@@ -162,7 +162,9 @@ class UserService:
 
         return True
 
-    async def record_usage(self, user_id: str, usage_type: str, increment: int = 1, document_id: str = None) -> bool:
+    async def record_usage(
+        self, user_id: str, usage_type: str, increment: int = 1, document_id: Optional[str] = None
+    ) -> bool:
         """
         Record usage for a user. For non-free tier users in cloud mode, also sends metering data to Stripe.
 

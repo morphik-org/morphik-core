@@ -82,7 +82,6 @@ class Settings(BaseSettings):
     # Parser configuration
     CHUNK_SIZE: int
     CHUNK_OVERLAP: int
-    USE_UNSTRUCTURED_API: bool
     FRAME_SAMPLE_RATE: Optional[int] = None
     USE_CONTEXTUAL_CHUNKING: bool = False
     PARSER_XML: ParserXMLSettings = ParserXMLSettings()
@@ -276,7 +275,6 @@ def get_settings() -> Settings:
         {
             "CHUNK_SIZE": config["parser"]["chunk_size"],
             "CHUNK_OVERLAP": config["parser"]["chunk_overlap"],
-            "USE_UNSTRUCTURED_API": config["parser"]["use_unstructured_api"],
             "USE_CONTEXTUAL_CHUNKING": config["parser"].get("use_contextual_chunking", False),
         }
     )

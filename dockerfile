@@ -37,10 +37,11 @@ ENV PATH="/app/.venv/bin:${PATH}"
 # Copy project definition and lock file
 COPY pyproject.toml uv.lock ./
 COPY fde ./fde
+COPY morphik_rust ./morphik_rust
 
 # Create venv and install dependencies from lockfile (excluding the project itself initially for better caching)
 # This also creates the /app/.venv directory
-# Cache buster: 1 - verbose flag added
+# morphik-rust is a required dependency - Rust toolchain installed above
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv sync --verbose --locked --no-install-project
 
@@ -53,7 +54,6 @@ COPY . .
 COPY ee/ui-component /app/ee/ui-component
 
 # Install the project itself into the venv in non-editable mode
-# Cache buster: 1 - verbose flag added
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv sync --verbose --locked --no-editable
 
@@ -69,9 +69,6 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" > /etc/apt/s
     update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100 && \
     update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
 
-# Download NLTK data
-RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt averaged_perceptron_tagger
-
 # Production stage
 FROM python:3.11.12-slim
 
@@ -79,12 +76,12 @@ FROM python:3.11.12-slim
 WORKDIR /app
 
 # Install runtime dependencies
+# Note: tesseract-ocr removed - docling uses rapidocr (pure Python) instead
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsm6 \
     libxext6 \
     libmagic1 \
-    tesseract-ocr \
     postgresql-client \
     poppler-utils \
     gcc \
@@ -99,9 +96,6 @@ COPY --from=builder /app/.venv /app/.venv
 # Copy uv binaries from the builder stage
 COPY --from=builder /bin/uv /bin/uv
 COPY --from=builder /bin/uvx /bin/uvx
-
-# Copy NLTK data from builder
-COPY --from=builder /usr/local/share/nltk_data /usr/local/share/nltk_data
 
 ## copy fde package to avoid error at server startup
 COPY --from=builder /app/fde ./fde
@@ -181,7 +175,7 @@ COPY start_server.py ./
 # Labels for the image
 LABEL org.opencontainers.image.title="Morphik Core"
 LABEL org.opencontainers.image.description="Morphik Core - A powerful document processing and retrieval system"
-LABEL org.opencontainers.image.source="https://github.com/yourusername/morphik"
+LABEL org.opencontainers.image.source="https://github.com/morphik-org/morphik-core"
 LABEL org.opencontainers.image.version="1.0.0"
 LABEL org.opencontainers.image.licenses="MIT"
 

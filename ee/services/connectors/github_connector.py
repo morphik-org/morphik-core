@@ -761,28 +761,29 @@ class GitHubConnector(BaseConnector):
             content_bytes = packed_repo["content"].encode("utf-8")
 
             # Ingest using existing ingestion service
-            if auth_context and redis:
-                if ingestion_service is None:
-                    raise ValueError("Ingestion service is required to ingest repository content.")
-                doc = await ingestion_service.ingest_file_content(
-                    file_content_bytes=content_bytes,
-                    filename=filename,
-                    content_type="application/xml",
-                    metadata=repo_metadata,
-                    auth=auth_context,
-                    redis=redis,
-                    folder_name=folder_name,
-                    use_colpali=False,
-                )
+            if not auth_context or not redis:
+                raise ValueError("auth_context and redis are required to ingest repository content.")
+            if ingestion_service is None:
+                raise ValueError("Ingestion service is required to ingest repository content.")
+            doc = await ingestion_service.ingest_file_content(
+                file_content_bytes=content_bytes,
+                filename=filename,
+                content_type="application/xml",
+                metadata=repo_metadata,
+                auth=auth_context,
+                redis=redis,
+                folder_name=folder_name,
+                use_colpali=False,
+            )
 
-                return {
-                    "document_id": doc.external_id,
-                    "filename": filename,
-                    "repository": repo_path,
-                    "size_bytes": packed_repo["size_bytes"],
-                    "files_processed": packed_repo["metadata"]["files_processed"],
-                    "total_tokens": packed_repo["metadata"]["total_tokens"],
-                }
+            return {
+                "document_id": doc.external_id,
+                "filename": filename,
+                "repository": repo_path,
+                "size_bytes": packed_repo["size_bytes"],
+                "files_processed": packed_repo["metadata"]["files_processed"],
+                "total_tokens": packed_repo["metadata"]["total_tokens"],
+            }
 
         except Exception as e:
             logger.error(f"Error in simple repository ingestion for {repo_path}: {e}")

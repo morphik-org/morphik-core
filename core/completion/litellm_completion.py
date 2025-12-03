@@ -640,7 +640,7 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         history_messages = [{"role": m.role, "content": m.content} for m in (request.chat_history or [])]
 
         # Check if structured output is requested
-        structured_output = request.schema is not None
+        structured_output = request.response_schema is not None
 
         # Streaming is not supported with structured output
         if request.stream_response and structured_output:
@@ -657,11 +657,13 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         # If structured output is requested, use instructor to handle it
         if structured_output:
             # Get dynamic model from schema
-            dynamic_model = create_dynamic_model_from_schema(request.schema)
+            dynamic_model = create_dynamic_model_from_schema(request.response_schema)
 
             # If schema format is not recognized, log warning and fall back to text completion
             if not dynamic_model:
-                logger.warning(f"Unrecognized schema format: {request.schema}. Falling back to text completion.")
+                logger.warning(
+                    f"Unrecognized schema format: {request.response_schema}. Falling back to text completion."
+                )
                 structured_output = False
             else:
                 logger.info(f"Using structured output with model: {dynamic_model.__name__}")

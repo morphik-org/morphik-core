@@ -4,7 +4,7 @@ import secrets
 import time  # Add time import for profiling
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import arq
 import jwt
@@ -50,6 +50,7 @@ from core.routes.models import router as models_router
 from core.routes.pdf_viewer import router as pdf_viewer_router
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, ingestion_service
+from core.utils.folder_utils import normalize_folder_name
 
 # Set up logging configuration for Docker environment
 setup_logging()
@@ -107,7 +108,7 @@ class PerformanceTracker:
             self.current_phase = None
             self.phase_start = None
 
-    def add_suboperation(self, name: str, duration: float, parent_phase: str = None):
+    def add_suboperation(self, name: str, duration: float, parent_phase: Optional[str] = None):
         """Add a sub-operation timing that will be displayed under its parent phase"""
         if parent_phase:
             if parent_phase not in self.sub_operations:
@@ -332,18 +333,6 @@ app.include_router(logs_router)
 
 # Register graph router
 app.include_router(graph_router)
-
-
-# Helper function to normalize folder_name parameter
-def normalize_folder_name(folder_name: Optional[Union[str, List[str]]]) -> Optional[Union[str, List[str]]]:
-    """Convert string 'null' to None for folder_name parameter."""
-    if folder_name is None:
-        return None
-    if isinstance(folder_name, str):
-        return None if folder_name.lower() == "null" else folder_name
-    if isinstance(folder_name, list):
-        return [None if f.lower() == "null" else f for f in folder_name]
-    return folder_name
 
 
 # Enterprise-only routes (optional)
@@ -729,7 +718,7 @@ async def query_completion(
             request.prompt_overrides,
             request.folder_name,
             request.end_user_id,
-            request.schema,
+            request.response_schema,
             history,
             perf,
             request.stream_response,

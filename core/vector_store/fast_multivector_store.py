@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import json
 import logging
 import os
@@ -24,8 +23,10 @@ from core.storage.base_storage import BaseStorage
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.storage.utils_file_extensions import detect_file_type
+from core.utils.fast_ops import bytes_to_data_uri, encode_base64
 
 from .base_vector_store import BaseVectorStore
+from .utils import MULTIVECTOR_CHUNKS_BUCKET, normalize_storage_key
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,6 @@ if not any(
     logger.addHandler(_file_handler)
 
 # Constants for external storage
-MULTIVECTOR_CHUNKS_BUCKET = "multivector-chunks"
 DEFAULT_APP_ID = "default"  # Fallback for local usage when app_id is None
 
 settings = get_settings()
@@ -718,7 +718,7 @@ class FastMultiVectorStore(BaseVectorStore):
                 # For text content, store as-is without base64 encoding
                 # Convert content to base64 for storage interface compatibility
                 content_bytes = content.encode("utf-8")
-                content_b64 = base64.b64encode(content_bytes).decode("utf-8")
+                content_b64 = encode_base64(content_bytes)
                 await self.chunk_storage.upload_from_base64(
                     content=content_b64, key=storage_key, content_type="text/plain", bucket=self.chunk_bucket or ""
                 )
@@ -737,7 +737,7 @@ class FastMultiVectorStore(BaseVectorStore):
 
     async def _save_chunk_to_storage(self, chunk: DocumentChunk, app_id: Optional[str] = None):
         return await self._store_content_externally(
-            chunk.content, chunk.document_id, chunk.chunk_number, str(chunk.metadata), app_id
+            chunk.content, chunk.document_id, chunk.chunk_number, json.dumps(chunk.metadata or {}), app_id
         )
 
     def _is_storage_key(self, content: str) -> bool:
@@ -746,12 +746,6 @@ class FastMultiVectorStore(BaseVectorStore):
         return (
             len(content) < 500 and "/" in content and not content.startswith("data:") and not content.startswith("http")
         )
-
-    @staticmethod
-    def _normalize_storage_key(key: str) -> str:
-        if key.startswith(f"{MULTIVECTOR_CHUNKS_BUCKET}/"):
-            return key[len(MULTIVECTOR_CHUNKS_BUCKET) + 1 :]
-        return key
 
     async def _download_chunk_bytes(self, bucket: str, storage_key: str) -> Optional[bytes]:
         """Attempt to fetch chunk payload bytes from storage, considering legacy/variant keys.
@@ -846,13 +840,12 @@ class FastMultiVectorStore(BaseVectorStore):
                     mime = "image/webp"
                 else:
                     mime = "image/png"
-            data_b64 = base64.b64encode(content_bytes).decode("utf-8")
-            return f"data:{mime};base64,{data_b64}"
+            return bytes_to_data_uri(content_bytes, mime)
 
         try:
             return content_bytes.decode("utf-8")
         except UnicodeDecodeError:
-            return base64.b64encode(content_bytes).decode("utf-8")
+            return encode_base64(content_bytes)
 
     @staticmethod
     def _row_get(row: Union[Dict[str, Any], object], field: str) -> Optional[Any]:
@@ -911,14 +904,14 @@ class FastMultiVectorStore(BaseVectorStore):
                 content = self._row_get(row, "content")
                 if isinstance(content, str) and self._is_storage_key(content):
                     bucket_name = self.chunk_bucket if self.chunk_bucket else ""
-                    targets["chunk"].add((bucket_name, self._normalize_storage_key(content)))
+                    targets["chunk"].add((bucket_name, normalize_storage_key(content)))
 
                 multivector = self._row_get(row, "multivector")
                 if isinstance(multivector, (list, tuple)) and len(multivector) == 2:
                     bucket, key = multivector
                     if isinstance(bucket, str) and isinstance(key, str):
                         normalized_bucket = bucket if bucket else ""
-                        targets["vector"].add((normalized_bucket, self._normalize_storage_key(key)))
+                        targets["vector"].add((normalized_bucket, normalize_storage_key(key)))
 
                 row_id = self._row_get(row, "id")
                 if isinstance(row_id, str):

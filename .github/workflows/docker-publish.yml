@@ -10,28 +10,36 @@ permissions:
   packages: write
 
 jobs:
-  docker-publish:
+  # Build AMD64 image
+  build-amd64:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Debug GitHub context
-        run: |
-          echo "Repository: ${{ github.repository }}"
-          echo "Repository Owner: ${{ github.repository_owner }}"
-          echo "Actor: ${{ github.actor }}"
-          echo "Ref: ${{ github.ref }}"
-
+      # Note: Aggressive cleanup is safe - Docker builds are self-contained and don't need host toolchains
       - name: Free up disk space
         run: |
+          echo "=== Before cleanup ==="
+          df -h
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force
-          sudo docker builder prune -a --force
+          sudo rm -rf /opt/hostedtoolcache/go
+          sudo rm -rf /opt/hostedtoolcache/node
+          sudo rm -rf /opt/hostedtoolcache/Python
+          sudo rm -rf /opt/hostedtoolcache/Ruby
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/julia*
+          sudo rm -rf /usr/share/miniconda
+          sudo rm -rf /usr/local/graalvm
+          sudo rm -rf /usr/local/share/chromium
+          sudo apt-get clean
+          sudo docker system prune -af
+          echo "=== After cleanup ==="
           df -h
 
       - name: Set up Docker Buildx
@@ -44,24 +52,117 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/morphik-core
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+      - name: Build and push AMD64 image
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64/v8
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=min
+          platforms: linux/amd64
+          tags: ghcr.io/${{ github.repository_owner }}/morphik-core:${{ github.sha }}-amd64
+          cache-from: type=gha,scope=amd64
+          cache-to: type=gha,mode=min,scope=amd64
+          provenance: false
+          sbom: false
+
+  # Build ARM64 image
+  build-arm64:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Note: Aggressive cleanup is safe - Docker builds are self-contained and don't need host toolchains
+      - name: Free up disk space
+        run: |
+          echo "=== Before cleanup ==="
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /opt/hostedtoolcache/go
+          sudo rm -rf /opt/hostedtoolcache/node
+          sudo rm -rf /opt/hostedtoolcache/Python
+          sudo rm -rf /opt/hostedtoolcache/Ruby
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/julia*
+          sudo rm -rf /usr/share/miniconda
+          sudo rm -rf /usr/local/graalvm
+          sudo rm -rf /usr/local/share/chromium
+          sudo apt-get clean
+          sudo docker system prune -af
+          echo "=== After cleanup ==="
+          df -h
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ARM64 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./dockerfile
+          push: true
+          platforms: linux/arm64/v8
+          tags: ghcr.io/${{ github.repository_owner }}/morphik-core:${{ github.sha }}-arm64
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,mode=min,scope=arm64
+          provenance: false
+          sbom: false
+
+  # Create and push multi-arch manifest
+  create-manifest:
+    runs-on: ubuntu-latest
+    needs: [build-amd64, build-arm64]
+
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create and push multi-arch manifest
+        run: |
+          IMAGE_BASE="ghcr.io/${{ github.repository_owner }}/morphik-core"
+          AMD64_IMAGE="${IMAGE_BASE}:${{ github.sha }}-amd64"
+          ARM64_IMAGE="${IMAGE_BASE}:${{ github.sha }}-arm64"
+
+          # Use buildx imagetools to create multi-arch manifests (handles manifest lists properly)
+          # Create manifest for 'latest' tag
+          docker buildx imagetools create -t ${IMAGE_BASE}:latest \
+            ${AMD64_IMAGE} \
+            ${ARM64_IMAGE}
+
+          # Create manifest for 'main' tag
+          docker buildx imagetools create -t ${IMAGE_BASE}:main \
+            ${AMD64_IMAGE} \
+            ${ARM64_IMAGE}
+
+          # Create manifest for SHA tag
+          docker buildx imagetools create -t ${IMAGE_BASE}:main-${{ github.sha }} \
+            ${AMD64_IMAGE} \
+            ${ARM64_IMAGE}
+
+          echo "✅ Multi-arch manifests created and pushed successfully"
+          echo "Tags created:"
+          echo "  - ${IMAGE_BASE}:latest"
+          echo "  - ${IMAGE_BASE}:main"
+          echo "  - ${IMAGE_BASE}:main-${{ github.sha }}"

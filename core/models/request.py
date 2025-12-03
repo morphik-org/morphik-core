@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -5,6 +6,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from core.models.completion import ChunkSource
 from core.models.documents import Document
 from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
+
+
+class OutputFormat(str, Enum):
+    """Output format for image chunks in retrieval results."""
+
+    BASE64 = "base64"
+    URL = "url"
+    TEXT = "text"
 
 
 class ListDocumentsRequest(BaseModel):
@@ -141,9 +150,9 @@ class RetrieveRequest(BaseModel):
         default=None,
         description="When provided, uses Morphik's finetuned ColPali style embeddings (recommended to be True for high quality retrieval).",
     )
-    output_format: Optional[Literal["base64", "url"]] = Field(
-        default="base64",
-        description="How to return image chunks: base64 data URI (default) or a presigned URL",
+    output_format: Optional[OutputFormat] = Field(
+        default=OutputFormat.BASE64,
+        description="How to return image chunks: base64 (default), url, or text (markdown format)",
     )
     padding: int = Field(
         default=0,
@@ -175,6 +184,8 @@ class RetrieveRequest(BaseModel):
 class CompletionQueryRequest(RetrieveRequest):
     """Request model for completion generation"""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     max_tokens: Optional[int] = Field(
         default=None,
         description="Maximum number of tokens allowed in the generated completion.",
@@ -187,8 +198,9 @@ class CompletionQueryRequest(RetrieveRequest):
         None,
         description="Optional customizations for entity extraction, resolution, and query prompts",
     )
-    schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = Field(
-        None,
+    response_schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = Field(
+        default=None,
+        alias="schema",
         description="Schema for structured output, can be a Pydantic model or JSON schema dict",
     )
     chat_id: Optional[str] = Field(
@@ -420,6 +432,7 @@ class BatchChunksRequest(BaseModel):
     )
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
     use_colpali: Optional[bool] = Field(None, description="Whether to use ColPali embeddings for retrieval")
-    output_format: Optional[Literal["base64", "url"]] = Field(
-        None, description="How to return image chunks: base64 data URI (default) or a presigned URL"
+    output_format: Optional[OutputFormat] = Field(
+        None,
+        description="How to return image chunks: base64 (default), url, or text (markdown format)",
     )

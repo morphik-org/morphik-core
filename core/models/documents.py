@@ -1,7 +1,6 @@
 import logging
 import uuid
 from datetime import UTC, datetime
-from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
 from PIL import Image
@@ -10,11 +9,6 @@ from pydantic import BaseModel, Field, field_validator
 from core.models.video import TimeSeriesData
 
 logger = logging.getLogger(__name__)
-
-
-class QueryReturnType(str, Enum):
-    CHUNKS = "chunks"
-    DOCUMENTS = "documents"
 
 
 class StorageFileInfo(BaseModel):

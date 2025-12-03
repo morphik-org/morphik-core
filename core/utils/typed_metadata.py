@@ -120,6 +120,33 @@ def _canonicalize_type_name(type_name: str, field: str) -> str:
     return canonicalize_type_name(type_name, field=field)
 
 
+def _looks_like_iso_datetime(value: str) -> bool:
+    """Check if a string looks like an ISO 8601 datetime.
+
+    Matches patterns like:
+    - 2024-01-15T10:30:00
+    - 2024-01-15T10:30:00Z
+    - 2024-01-15T10:30:00+00:00
+    - 2024-01-15T10:30:00.123456
+    """
+    if not isinstance(value, str) or len(value) < 19:
+        return False
+    # Must have date separator and time separator in right positions
+    if len(value) >= 10 and value[4] == "-" and value[7] == "-":
+        # Check for T separator or space between date and time
+        if len(value) >= 19 and (value[10] == "T" or value[10] == " "):
+            # Validate it can actually be parsed
+            try:
+                text = value.strip()
+                if text.endswith("Z"):
+                    text = text[:-1] + "+00:00"
+                datetime.fromisoformat(text)
+                return True
+            except ValueError:
+                return False
+    return False
+
+
 def _infer_type(value: Any) -> str:
     if value is None:
         return "null"
@@ -134,6 +161,9 @@ def _infer_type(value: Any) -> str:
     if isinstance(value, date):
         return "date"
     if isinstance(value, str):
+        # Check if string looks like ISO 8601 datetime
+        if _looks_like_iso_datetime(value):
+            return "datetime"
         return "string"
     if isinstance(value, list):
         return "array"

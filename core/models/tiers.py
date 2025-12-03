@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 class AccountTier(str, Enum):
@@ -78,7 +78,7 @@ TIER_LIMITS = {
 }
 
 
-def get_tier_limits(tier: AccountTier, custom_limits: Dict[str, Any] = None) -> Dict[str, Any]:
+def get_tier_limits(tier: AccountTier, custom_limits: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Get limits for a specific account tier.
 

@@ -126,7 +126,7 @@ class UserLimitsDatabase:
                 "updated_at": user_limits.updated_at,
             }
 
-    async def create_user_limits(self, limit_id: str, tier: str = "free", user_id: str = None) -> bool:
+    async def create_user_limits(self, limit_id: str, tier: str = "free", user_id: Optional[str] = None) -> bool:
         """
         Create user limits record.
 

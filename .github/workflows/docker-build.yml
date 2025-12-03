@@ -14,14 +14,33 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Note: Aggressive cleanup is safe - Docker builds are self-contained and don't need host toolchains
       - name: Free up disk space
         run: |
+          echo "=== Before cleanup ==="
+          df -h
+          # Remove large unnecessary directories
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /opt/hostedtoolcache/go
+          sudo rm -rf /opt/hostedtoolcache/node
+          sudo rm -rf /opt/hostedtoolcache/Python
+          sudo rm -rf /opt/hostedtoolcache/Ruby
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/julia*
+          sudo rm -rf /usr/share/miniconda
+          sudo rm -rf /usr/local/graalvm
+          sudo rm -rf /usr/local/share/chromium
+          # Clean apt cache
+          sudo apt-get clean
+          # Docker cleanup
           sudo docker image prune --all --force
           sudo docker builder prune -a --force
+          sudo docker system prune -a --force --volumes
+          echo "=== After cleanup ==="
           df -h
 
       - name: Set up Docker Buildx
@@ -116,7 +135,6 @@ jobs:
           [parser]
           chunk_size = 6000
           chunk_overlap = 300
-          use_unstructured_api = false
           use_contextual_chunking = false
           contextual_chunking_model = "openai_gpt4-1-mini"
 
@@ -180,7 +198,7 @@ jobs:
 
           [telemetry]
           service_name = "databridge-core"
-          project_name = ""
+          project_name = "oss_docker"
           upload_interval_hours = 4.0
           max_local_bytes = 1073741824
           EOF
