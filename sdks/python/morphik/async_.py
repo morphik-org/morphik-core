@@ -483,7 +483,7 @@ class AsyncFolder:
             sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
             additional_folders: Optional list of additional folder names to further scope operations
             use_colpali: Whether to use ColPali-style embedding model
-            output_format: Controls how image chunks are returned (e.g., "base64" or "url")
+            output_format: Controls how image chunks are returned ("base64", "url", or "text")
 
         Returns:
             List[FinalChunkResult]: List of chunk results
@@ -808,7 +808,7 @@ class AsyncUserScope:
             use_colpali: Whether to use ColPali-style embedding model
             additional_folders: Optional list of additional folder names to further scope operations
             padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
-            output_format: Controls how image chunks are returned (e.g., "base64" or "url")
+            output_format: Controls how image chunks are returned ("base64", "url", or "text")
             query_image: Base64-encoded image for visual search (mutually exclusive with query, requires use_colpali=True)
 
         Returns:
@@ -1015,7 +1015,7 @@ class AsyncUserScope:
             sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
             folder_name: Optional folder name (or list of names) to scope the request
             use_colpali: Whether to use ColPali-style embedding model
-            output_format: Controls how image chunks are returned (e.g., "base64" or "url")
+            output_format: Controls how image chunks are returned ("base64", "url", or "text")
 
         Returns:
             List[FinalChunkResult]: List of chunk results
@@ -2105,7 +2105,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
             sources: List of ChunkSource objects or dictionaries with document_id and chunk_number
             folder_name: Optional folder name (or list of names) to scope the request
             use_colpali: Whether to use ColPali-style embedding model
-            output_format: Controls how image chunks are returned (e.g., "base64" or "url")
+            output_format: Controls how image chunks are returned ("base64", "url", or "text")
 
         Returns:
             List[FinalChunkResult]: List of chunk results
@@ -2229,7 +2229,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
             folder_name: Optional folder scope (single name or list of names)
             end_user_id: Optional end-user scope
             padding: Number of additional chunks to retrieve around matches (default: 0)
-            output_format: Controls how image chunks are returned (e.g., "base64" or "url")
+            output_format: Controls how image chunks are returned ("base64", "url", or "text")
             graph_name: Optional knowledge graph to enhance retrieval
             hop_depth: Number of hops for graph traversal (default: 1)
             include_paths: Whether to include entity paths in results (default: False)

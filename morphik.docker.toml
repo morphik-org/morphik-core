@@ -85,7 +85,6 @@ similarity_metric = "cosine"
 [parser]
 chunk_size = 6000
 chunk_overlap = 300
-use_unstructured_api = false
 use_contextual_chunking = false
 contextual_chunking_model = "openai_gpt4-1-mini"  # Reference to a key in registered_models
 
@@ -159,6 +158,6 @@ enable_entity_resolution = true
 
 [telemetry]
 service_name = "databridge-core"
-project_name = ""
+project_name = "oss_docker"
 upload_interval_hours = 4.0
 max_local_bytes = 1073741824

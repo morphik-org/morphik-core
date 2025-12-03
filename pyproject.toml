@@ -58,7 +58,8 @@ dependencies = [
     "tqdm>=4.67.1",
     "twine>=6.1.0",
     "ty>=0.0.1a6",
-    "unstructured[pdf,docx,pptx,xlsx]>=0.17.2",
+    "docling>=2.15.0",
+    "pdf2image>=1.16.0",
     "uvicorn>=0.34.2",
     # --- profiling & analysis ---
     "yappi>=1.6.0",

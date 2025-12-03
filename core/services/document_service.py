@@ -1269,6 +1269,49 @@ class DocumentService:
                 return "image/webp"
             return None
 
+        def _convert_image_to_text(content_str: str) -> str:
+            """Convert an image chunk (base64 or data URI) to markdown text using Docling OCR.
+
+            Returns the extracted markdown text, or empty string on failure.
+            """
+            try:
+                # Decode the image to bytes
+                if content_str.startswith("data:"):
+                    # Data URI format: data:image/png;base64,<data>
+                    raw_b64 = content_str.split(",", 1)[1]
+                else:
+                    raw_b64 = content_str
+                image_bytes = base64.b64decode(raw_b64)
+
+                # Save to temp file and process with Docling
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                    tmp.write(image_bytes)
+                    tmp_path = tmp.name
+
+                try:
+                    from docling.datamodel.base_models import InputFormat
+                    from docling.datamodel.pipeline_options import PdfPipelineOptions
+                    from docling.document_converter import DocumentConverter, ImageFormatOption
+
+                    # Create converter with OCR enabled for images
+                    pipeline_options = PdfPipelineOptions()
+                    pipeline_options.do_ocr = True
+                    converter = DocumentConverter(
+                        format_options={
+                            InputFormat.IMAGE: ImageFormatOption(pipeline_options=pipeline_options),
+                        }
+                    )
+                    result = converter.convert(tmp_path)
+                    return result.document.export_to_markdown()
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+            except Exception as e:
+                logger.warning(f"Failed to convert image to text: {e}")
+                return ""
+
         # Create chunk results using the lookup dictionaries
         for chunk in chunks:
             doc = doc_map.get(chunk.document_id)
@@ -1286,18 +1329,28 @@ class DocumentService:
             content_value = chunk.content
             download_url: Optional[str] = None
 
-            # If requested, convert image chunks to presigned URLs
+            # If requested, convert image chunks to presigned URLs or text
             is_img = bool(metadata.get("is_image"))
             mime = chunk.metadata.get("mime_type") if isinstance(chunk.metadata, dict) else None
             # Try to infer from content if metadata was not properly populated
-            if not is_img and (output_format or "base64") == "url":
+            if not is_img and (output_format or "base64") in ("url", "text"):
                 inferred_mime = _infer_image_mime_from_content(chunk.content)
                 if inferred_mime:
                     is_img = True
                     if not mime:
                         mime = inferred_mime
 
-            if (output_format or "base64") == "url" and is_img:
+            # Handle "text" output format: convert image to markdown text via Docling OCR
+            if (output_format or "base64") == "text" and is_img:
+                extracted_text = _convert_image_to_text(chunk.content)
+                if extracted_text:
+                    content_value = extracted_text
+                    metadata["is_image"] = False  # Content is now text
+                else:
+                    # Fallback: keep original base64 if OCR fails
+                    logger.warning(f"OCR failed for chunk {chunk.document_id}-{chunk.chunk_number}, keeping base64")
+
+            elif (output_format or "base64") == "url" and is_img:
                 try:
                     app_part = doc.app_id or auth.app_id or "default"
                     ext = mime_to_ext.get(mime)

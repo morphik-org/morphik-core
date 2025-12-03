@@ -79,12 +79,12 @@ FROM python:3.11.12-slim
 WORKDIR /app
 
 # Install runtime dependencies
+# Note: tesseract-ocr removed - docling uses rapidocr (pure Python) instead
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsm6 \
     libxext6 \
     libmagic1 \
-    tesseract-ocr \
     postgresql-client \
     poppler-utils \
     gcc \
@@ -181,7 +181,7 @@ COPY start_server.py ./
 # Labels for the image
 LABEL org.opencontainers.image.title="Morphik Core"
 LABEL org.opencontainers.image.description="Morphik Core - A powerful document processing and retrieval system"
-LABEL org.opencontainers.image.source="https://github.com/yourusername/morphik"
+LABEL org.opencontainers.image.source="https://github.com/morphik-org/morphik-core"
 LABEL org.opencontainers.image.version="1.0.0"
 LABEL org.opencontainers.image.licenses="MIT"
 
