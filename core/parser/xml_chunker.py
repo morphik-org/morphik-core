@@ -3,6 +3,8 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from typing import Any, Dict, List, Optional
 
+from core.utils.fast_ops import count_tokens_whitespace
+
 try:
     import tiktoken
 
@@ -58,8 +60,11 @@ class XMLChunker:
         return len(self.tokenizer.encode(text))
 
     def _whitespace_count_tokens(self, text: str) -> int:
-        """Fallback token counter using whitespace splitting."""
-        return len(text.split())
+        """Fallback token counter using whitespace splitting.
+
+        Uses Rust-optimized implementation when available.
+        """
+        return count_tokens_whitespace(text)
 
     def _profile_tree(self, root: ET.Element) -> Dict[str, int]:
         """Profile the XML tree to count occurrences of each tag."""

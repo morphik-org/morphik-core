@@ -2,6 +2,7 @@ import asyncio
 import base64
 import logging
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import BinaryIO, Optional, Tuple, Union
 
@@ -13,6 +14,20 @@ from .base_storage import BaseStorage
 from .utils_file_extensions import detect_file_type
 
 logger = logging.getLogger(__name__)
+
+# Lazy-initialized thread pool for S3 I/O operations.
+# Default executor is limited to ~(cpu_count + 4) threads, which bottlenecks
+# when downloading 50-75 multivector files in parallel during ColPali reranking.
+# 64 threads matches max_pool_connections for optimal throughput.
+_s3_executor: ThreadPoolExecutor | None = None
+
+
+def _get_s3_executor() -> ThreadPoolExecutor:
+    """Get or create the S3 thread pool executor (lazy initialization)."""
+    global _s3_executor
+    if _s3_executor is None:
+        _s3_executor = ThreadPoolExecutor(max_workers=64, thread_name_prefix="s3-io")
+    return _s3_executor
 
 
 class S3Storage(BaseStorage):
@@ -180,7 +195,11 @@ class S3Storage(BaseStorage):
             raise
 
     async def download_file(self, bucket: str, key: str, version: str | None = None, **kwargs) -> bytes:
-        """Download file from S3 asynchronously using a thread pool to avoid blocking the event loop."""
+        """Download file from S3 asynchronously using a dedicated thread pool.
+
+        Uses a 64-thread executor to support parallel downloads of 50-75 multivector
+        files during ColPali reranking without blocking on the default executor limit.
+        """
         loop = asyncio.get_running_loop()
 
         def _sync_download() -> bytes:  # Runs in a separate thread
@@ -192,7 +211,7 @@ class S3Storage(BaseStorage):
             return response["Body"].read()
 
         try:
-            return await loop.run_in_executor(None, _sync_download)
+            return await loop.run_in_executor(_get_s3_executor(), _sync_download)
         except ClientError as e:
             logger.error(f"Error downloading from S3: {e}")
             raise

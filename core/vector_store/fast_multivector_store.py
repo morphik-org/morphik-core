@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import json
 import logging
 import os
@@ -24,6 +23,7 @@ from core.storage.base_storage import BaseStorage
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.storage.utils_file_extensions import detect_file_type
+from core.utils.fast_ops import bytes_to_data_uri, encode_base64
 
 from .base_vector_store import BaseVectorStore
 from .utils import MULTIVECTOR_CHUNKS_BUCKET, normalize_storage_key
@@ -718,7 +718,7 @@ class FastMultiVectorStore(BaseVectorStore):
                 # For text content, store as-is without base64 encoding
                 # Convert content to base64 for storage interface compatibility
                 content_bytes = content.encode("utf-8")
-                content_b64 = base64.b64encode(content_bytes).decode("utf-8")
+                content_b64 = encode_base64(content_bytes)
                 await self.chunk_storage.upload_from_base64(
                     content=content_b64, key=storage_key, content_type="text/plain", bucket=self.chunk_bucket or ""
                 )
@@ -736,8 +736,6 @@ class FastMultiVectorStore(BaseVectorStore):
             return None
 
     async def _save_chunk_to_storage(self, chunk: DocumentChunk, app_id: Optional[str] = None):
-        import json
-
         return await self._store_content_externally(
             chunk.content, chunk.document_id, chunk.chunk_number, json.dumps(chunk.metadata or {}), app_id
         )
@@ -842,13 +840,12 @@ class FastMultiVectorStore(BaseVectorStore):
                     mime = "image/webp"
                 else:
                     mime = "image/png"
-            data_b64 = base64.b64encode(content_bytes).decode("utf-8")
-            return f"data:{mime};base64,{data_b64}"
+            return bytes_to_data_uri(content_bytes, mime)
 
         try:
             return content_bytes.decode("utf-8")
         except UnicodeDecodeError:
-            return base64.b64encode(content_bytes).decode("utf-8")
+            return encode_base64(content_bytes)
 
     @staticmethod
     def _row_get(row: Union[Dict[str, Any], object], field: str) -> Optional[Any]:

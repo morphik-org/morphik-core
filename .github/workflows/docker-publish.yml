@@ -53,7 +53,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push AMD64 image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./dockerfile
@@ -62,6 +62,8 @@ jobs:
           tags: ghcr.io/${{ github.repository_owner }}/morphik-core:${{ github.sha }}-amd64
           cache-from: type=gha,scope=amd64
           cache-to: type=gha,mode=min,scope=amd64
+          provenance: false
+          sbom: false
 
   # Build ARM64 image
   build-arm64:
@@ -109,7 +111,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push ARM64 image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./dockerfile
@@ -118,6 +120,8 @@ jobs:
           tags: ghcr.io/${{ github.repository_owner }}/morphik-core:${{ github.sha }}-arm64
           cache-from: type=gha,scope=arm64
           cache-to: type=gha,mode=min,scope=arm64
+          provenance: false
+          sbom: false
 
   # Create and push multi-arch manifest
   create-manifest:
@@ -132,29 +136,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Create and push multi-arch manifest
         run: |
           IMAGE_BASE="ghcr.io/${{ github.repository_owner }}/morphik-core"
           AMD64_IMAGE="${IMAGE_BASE}:${{ github.sha }}-amd64"
           ARM64_IMAGE="${IMAGE_BASE}:${{ github.sha }}-arm64"
 
-          # Create manifest for 'latest' tag (--amend allows updating existing)
-          docker manifest create --amend ${IMAGE_BASE}:latest \
+          # Use buildx imagetools to create multi-arch manifests (handles manifest lists properly)
+          # Create manifest for 'latest' tag
+          docker buildx imagetools create -t ${IMAGE_BASE}:latest \
             ${AMD64_IMAGE} \
             ${ARM64_IMAGE}
-          docker manifest push ${IMAGE_BASE}:latest
 
           # Create manifest for 'main' tag
-          docker manifest create --amend ${IMAGE_BASE}:main \
+          docker buildx imagetools create -t ${IMAGE_BASE}:main \
             ${AMD64_IMAGE} \
             ${ARM64_IMAGE}
-          docker manifest push ${IMAGE_BASE}:main
 
           # Create manifest for SHA tag
-          docker manifest create --amend ${IMAGE_BASE}:main-${{ github.sha }} \
+          docker buildx imagetools create -t ${IMAGE_BASE}:main-${{ github.sha }} \
             ${AMD64_IMAGE} \
             ${ARM64_IMAGE}
-          docker manifest push ${IMAGE_BASE}:main-${{ github.sha }}
 
           echo "✅ Multi-arch manifests created and pushed successfully"
           echo "Tags created:"

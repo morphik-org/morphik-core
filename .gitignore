@@ -54,3 +54,7 @@ multi_vector_embeddings_*.csv
 multi_vector_embeddings_*.db
 multi_vector_embeddings_*.sql
 multi_vector_embeddings_*.json
+
+# Rust build artifacts
+morphik_rust/target/
+morphik_rust/Cargo.lock
