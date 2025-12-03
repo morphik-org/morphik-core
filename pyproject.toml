@@ -1,7 +1,7 @@
 [project]
 name = "morphik-core"
 version = "0.1.0"
-description = "Add your description here"
+description = "The complete suite of tools for building retrieval and document understanding for AI native applications"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -58,7 +58,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "twine>=6.1.0",
     "ty>=0.0.1a6",
-    "unstructured[pdf]>=0.17.2",
+    "unstructured[pdf,docx,pptx,xlsx]>=0.17.2",
     "uvicorn>=0.34.2",
     # --- profiling & analysis ---
     "yappi>=1.6.0",
@@ -69,7 +69,7 @@ dependencies = [
     "sentry-sdk[fastapi]>=2.33.0",
     "turbopuffer>=0.5.8",
     "colpali-engine @ git+https://github.com/illuin-tech/colpali@v0.3.13",
-    "fast-plaid",
+    "fast-plaid; sys_platform != 'linux' or platform_machine != 'aarch64'",
     "fastkmeans",
 ]
 

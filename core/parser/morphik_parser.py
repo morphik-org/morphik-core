@@ -238,6 +238,12 @@ class MorphikParser(BaseParser):
             return True
         return False
 
+    def _is_plain_text_file(self, filename: str) -> bool:
+        """Check if the file is a plain text file that should be read directly without partitioning."""
+        plain_text_extensions = {".txt", ".md", ".markdown", ".json", ".csv", ".tsv", ".log", ".rst", ".yaml", ".yml"}
+        lower_filename = filename.lower()
+        return any(lower_filename.endswith(ext) for ext in plain_text_extensions)
+
     async def _parse_video(self, file: bytes) -> Tuple[Dict[str, Any], str]:
         """Parse video file to extract transcript and frame descriptions"""
         if not self._assemblyai_api_key:
@@ -307,25 +313,27 @@ class MorphikParser(BaseParser):
         return chunks, len(file)
 
     async def _parse_document(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
-        """Parse document using unstructured"""
+        """Parse document using unstructured, or read directly for plain text files."""
+        # For plain text files, read directly without partitioning to preserve formatting
+        if self._is_plain_text_file(filename):
+            try:
+                text = file.decode("utf-8")
+            except UnicodeDecodeError:
+                # Fallback to latin-1 if utf-8 fails
+                text = file.decode("latin-1")
+            return {}, text
+
+        # For complex formats, use unstructured's partition function
         # Choose a lighter parsing strategy for text-based files. Using
         # `hi_res` on plain PDFs/Word docs invokes OCR which can be 20-30×
-        # slower.  A simple extension check covers the majority of cases.
+        # slower. A simple extension check covers the majority of cases.
         strategy = "hi_res"
-        file_content_type: Optional[str] = None  # Default to None for auto-detection
         if filename.lower().endswith((".pdf", ".doc", ".docx")):
             # Try fast strategy first for PDFs
             strategy = "fast"
-        elif filename.lower().endswith(".txt"):
-            strategy = "fast"
-            file_content_type = "text/plain"  # Explicitly set for .txt files
-        elif filename.lower().endswith(".json"):
-            strategy = "fast"  # or can be omitted if it doesn't apply to json
-            file_content_type = "application/json"  # Explicitly set for .json files
 
         elements = partition(
             file=io.BytesIO(file),
-            content_type=file_content_type,  # Use the determined content_type
             metadata_filename=filename,
             strategy=strategy,
             api_key=self._unstructured_api_key if self.use_unstructured_api else None,
@@ -338,7 +346,6 @@ class MorphikParser(BaseParser):
             self.logger.warning(f"Fast strategy returned no text for PDF {filename}, trying hi_res strategy with OCR")
             elements = partition(
                 file=io.BytesIO(file),
-                content_type=file_content_type,
                 metadata_filename=filename,
                 strategy="hi_res",
                 api_key=self._unstructured_api_key if self.use_unstructured_api else None,
