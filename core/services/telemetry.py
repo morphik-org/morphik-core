@@ -138,6 +138,10 @@ class JSONLSpanExporter(SpanExporter):
             if key.startswith("metadata."):
                 metadata[key.split("metadata.", 1)[1]] = value
 
+        # Guard against None times (span not properly ended)
+        if span.start_time is None or span.end_time is None:
+            return None
+
         timestamp = datetime.fromtimestamp(span.start_time / 1_000_000_000, tz=timezone.utc)
         duration_ms = max((span.end_time - span.start_time) / 1_000_000, 0.0)
         status = attrs.get("operation.status") or (
@@ -223,7 +227,7 @@ class MetadataField:
 class MetadataExtractor:
     """Base class for metadata extractors with common functionality."""
 
-    def __init__(self, fields: List[MetadataField] = None):
+    def __init__(self, fields: Optional[List[MetadataField]] = None):
         """Initialize with a list of field definitions."""
         self.fields = fields or []
 

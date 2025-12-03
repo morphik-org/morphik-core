@@ -26,8 +26,8 @@ async def retrieve_chunks(
     use_colpali: bool = True,
     folder_name: Optional[str] = None,
     end_user_id: Optional[str] = None,
-    document_service: DocumentService = None,
-    auth: AuthContext = None,
+    document_service: Optional[DocumentService] = None,
+    auth: Optional[AuthContext] = None,
 ) -> List[Dict[str, Any]]:
     """
     Retrieve the most relevant text and image chunks from the knowledge base.
@@ -132,8 +132,8 @@ async def retrieve_chunks(
 async def retrieve_document(
     document_id: str,
     format: Optional[Literal["text", "metadata"]] = "text",
-    document_service: DocumentService = None,
-    auth: AuthContext = None,
+    document_service: Optional[DocumentService] = None,
+    auth: Optional[AuthContext] = None,
     end_user_id: Optional[str] = None,
 ) -> str:
     """
@@ -187,8 +187,8 @@ async def save_to_memory(
     content: str,
     memory_type: Literal["session", "long_term", "research_thread"],
     tags: Optional[List[str]] = None,
-    ingestion_service: IngestionService = None,
-    auth: AuthContext = None,
+    ingestion_service: Optional[IngestionService] = None,
+    auth: Optional[AuthContext] = None,
     end_user_id: Optional[str] = None,
 ) -> str:
     """
@@ -236,8 +236,8 @@ async def list_documents(
     limit: int = 100,
     folder_name: Optional[str] = None,
     end_user_id: Optional[str] = None,
-    document_service: DocumentService = None,
-    auth: AuthContext = None,
+    document_service: Optional[DocumentService] = None,
+    auth: Optional[AuthContext] = None,
 ) -> str:
     """
     List accessible documents, showing their IDs and filenames.

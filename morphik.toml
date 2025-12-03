@@ -84,7 +84,6 @@ similarity_metric = "cosine"
 [parser]
 chunk_size = 6000
 chunk_overlap = 300
-use_unstructured_api = false
 use_contextual_chunking = false
 contextual_chunking_model = "openai_gpt4-1-mini"  # Reference to a key in registered_models
 

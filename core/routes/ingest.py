@@ -712,7 +712,7 @@ async def requeue_ingest_jobs(
 async def query_document(
     file: UploadFile = File(...),
     prompt: str = Form(...),
-    schema: Optional[str] = Form(None),
+    response_schema: Optional[str] = Form(None, alias="schema"),
     ingestion_options: str = Form("{}"),
     auth: AuthContext = Depends(verify_token),
     redis: arq.ArqRedis = Depends(get_redis_pool),
@@ -780,9 +780,9 @@ async def query_document(
         )
 
     schema_obj: Optional[Dict[str, Any]] = None
-    if schema:
+    if response_schema:
         try:
-            parsed_schema = json.loads(schema)
+            parsed_schema = json.loads(response_schema)
         except json.JSONDecodeError as exc:
             raise HTTPException(status_code=400, detail=f"schema must be valid JSON: {exc}") from exc
 

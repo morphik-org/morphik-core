@@ -428,11 +428,14 @@ async def process_ingestion_job(
                 additional_metadata, text = await ingestion_service.parser.parse_file_to_text(
                     file_content, parse_filename
                 )
-                # Clean the extracted text to remove problematic escape characters
+                # Clean the extracted text to remove NULL and other problematic control characters
+                # Keep: tabs, newlines, carriage returns, and all printable characters (including Unicode)
                 import re
 
-                text = re.sub(r"[\x00\u0000]", "", text)
-                text = re.sub(r"[^\x09\x0A\x0D\x20-\x7E]", "", text)
+                # Remove NULL characters
+                text = re.sub(r"\x00", "", text)
+                # Remove control characters (0x00-0x08, 0x0B-0x0C, 0x0E-0x1F) but keep tab, newline, carriage return
+                text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
 
             logger.debug(
                 f"Parsed file into {'XML chunks' if xml_processing else f'text of length {len(text)}'} (filename used: {parse_filename})"
@@ -897,6 +900,18 @@ async def process_ingestion_job(
         # fail because the row doesn't exist there.
         # ------------------------------------------------------------------
 
+        # Reconstruct auth from auth_dict in case exception occurred before auth was defined
+        try:
+            auth
+        except NameError:
+            auth = AuthContext(
+                entity_type=EntityType(auth_dict.get("entity_type", "unknown")),
+                entity_id=auth_dict.get("entity_id", ""),
+                app_id=auth_dict.get("app_id"),
+                permissions=set(auth_dict.get("permissions", ["read"])),
+                user_id=auth_dict.get("user_id", auth_dict.get("entity_id", "")),
+            )
+
         try:
             database: Optional[PostgresDatabase] = None
 
@@ -1000,7 +1015,6 @@ async def startup(ctx):
     parser = MorphikParser(
         chunk_size=settings.CHUNK_SIZE,
         chunk_overlap=settings.CHUNK_OVERLAP,
-        use_unstructured_api=settings.USE_UNSTRUCTURED_API,
         assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
         anthropic_api_key=settings.ANTHROPIC_API_KEY,
         use_contextual_chunking=settings.USE_CONTEXTUAL_CHUNKING,

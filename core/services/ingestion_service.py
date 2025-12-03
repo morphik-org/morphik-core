@@ -15,7 +15,6 @@ The service can operate in different modes based on configuration:
 """
 
 import asyncio
-import base64
 import json
 import logging
 import os
@@ -45,6 +44,7 @@ from core.models.folders import Folder
 from core.parser.base_parser import BaseParser
 from core.storage.base_storage import BaseStorage
 from core.storage.utils_file_extensions import detect_file_type
+from core.utils.fast_ops import bytes_to_data_uri, encode_base64
 from core.utils.typed_metadata import merge_metadata, normalize_metadata
 from core.vector_store.base_vector_store import BaseVectorStore
 
@@ -220,7 +220,7 @@ class IngestionService:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         metadata_types: Optional[Dict[str, str]] = None,
-        auth: AuthContext = None,
+        auth: Optional[AuthContext] = None,
         use_colpali: Optional[bool] = None,
         folder_name: Optional[str] = None,
         end_user_id: Optional[str] = None,
@@ -724,7 +724,7 @@ class IngestionService:
             doc.additional_metadata.update(additional_file_metadata)
 
         # Store file in storage if needed
-        file_content_base64 = base64.b64encode(file_content).decode()
+        file_content_base64 = encode_base64(file_content)
 
         # Store file in storage and update storage info
         await self._update_storage_info(doc, file, file_content_base64)
@@ -798,7 +798,7 @@ class IngestionService:
                 return content.decode("utf-8")
             except UnicodeDecodeError:
                 logger.warning("Failed to decode bytes document content using UTF-8; returning base64 encoded fallback")
-                return base64.b64encode(content).decode("utf-8")
+                return encode_base64(content)
         if isinstance(content, (dict, list)):
             try:
                 return json.dumps(content, ensure_ascii=False)
@@ -928,7 +928,7 @@ class IngestionService:
             if hasattr(file, "seek") and callable(file.seek) and not file_content:
                 await file.seek(0)
                 file_content = await file.read()
-                file_content_base64 = base64.b64encode(file_content).decode()
+                file_content_base64 = encode_base64(file_content)
 
             chunks_multivector = self._create_chunks_multivector(file_type, file_content_base64, file_content, chunks)
             logger.info(f"Created {len(chunks_multivector)} chunks for multivector embedding")
@@ -959,7 +959,7 @@ class IngestionService:
                 if key == "_image_bytes":
                     continue
                 if isinstance(value, (bytes, bytearray, memoryview)):
-                    sanitized_metadata[key] = base64.b64encode(bytes(value)).decode()
+                    sanitized_metadata[key] = encode_base64(bytes(value))
                 else:
                     sanitized_metadata[key] = value
             sanitized_chunk = Chunk(content=chunk.content, metadata=sanitized_metadata)
@@ -1107,7 +1107,7 @@ class IngestionService:
         """Build a Chunk that preserves raw image bytes alongside the data URI."""
         content = base64_override
         if content is None:
-            content = f"data:{mime_type};base64," + base64.b64encode(image_bytes).decode()
+            content = bytes_to_data_uri(image_bytes, mime_type)
         return Chunk(
             content=content,
             metadata={"is_image": True, "_image_bytes": image_bytes, "mime_type": mime_type},
@@ -1125,7 +1125,7 @@ class IngestionService:
         buffered.seek(0)
         img_bytes = buffered.getvalue()
         mime = mime_type or f"image/{format.lower()}"
-        img_str = f"data:{mime};base64," + base64.b64encode(img_bytes).decode()
+        img_str = bytes_to_data_uri(img_bytes, mime)
         return img_str, img_bytes
 
     def img_to_base64_str(self, img: PILImage.Image) -> str:
@@ -1144,7 +1144,7 @@ class IngestionService:
                 mat = fitz.Matrix(dpi / 72, dpi / 72)
                 pix = page.get_pixmap(matrix=mat)
                 png_bytes = pix.tobytes("png")
-                b64 = "data:image/png;base64," + base64.b64encode(png_bytes).decode("utf-8")
+                b64 = bytes_to_data_uri(png_bytes, "image/png")
                 if include_bytes:
                     images.append((b64, png_bytes))
                 else:
@@ -1185,7 +1185,7 @@ class IngestionService:
                 PILImage.open(BytesIO(file_content)).verify()
                 logger.info("Heuristic image detection succeeded (Pillow). Treating as image.")
                 if file_content_base64 is None:
-                    file_content_base64 = base64.b64encode(file_content).decode()
+                    file_content_base64 = encode_base64(file_content)
                 return [
                     self._image_bytes_to_chunk(
                         file_content,
@@ -1212,7 +1212,7 @@ class IngestionService:
                 buffered = BytesIO()
                 img.convert("RGB").save(buffered, format="JPEG", quality=70, optimize=True)
                 jpeg_bytes = buffered.getvalue()
-                img_b64 = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode()
+                img_b64 = bytes_to_data_uri(jpeg_bytes, "image/jpeg")
                 return [
                     self._image_bytes_to_chunk(
                         jpeg_bytes,
@@ -1223,7 +1223,7 @@ class IngestionService:
             except Exception as e:
                 logger.error(f"Error resizing image for base64 encoding: {e}. Falling back to original size.")
                 if file_content_base64 is None:
-                    file_content_base64 = base64.b64encode(file_content).decode()
+                    file_content_base64 = encode_base64(file_content)
                 return [
                     self._image_bytes_to_chunk(
                         file_content,
@@ -1235,7 +1235,7 @@ class IngestionService:
         match mime_type:
             case file_type if file_type in IMAGE:
                 if file_content_base64 is None:
-                    file_content_base64 = base64.b64encode(file_content).decode()
+                    file_content_base64 = encode_base64(file_content)
                 detected_mime = mime_type if isinstance(mime_type, str) else "image/unknown"
                 return [
                     self._image_bytes_to_chunk(

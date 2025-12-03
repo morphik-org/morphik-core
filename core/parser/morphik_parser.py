@@ -1,4 +1,3 @@
-import io
 import logging
 import os
 import tempfile
@@ -6,7 +5,9 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple
 
 import filetype
-from unstructured.partition.auto import partition
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.document_converter import DocumentConverter, PdfFormatOption
 
 from core.models.chunk import Chunk
 from core.parser.base_parser import BaseParser
@@ -188,12 +189,13 @@ class ContextualChunker(BaseChunker):
 class MorphikParser(BaseParser):
     """Unified parser that handles different file types and chunking strategies"""
 
+    # Docling converter is expensive to initialize, so we cache it at class level
+    _docling_converter: Optional[DocumentConverter] = None
+
     def __init__(
         self,
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
-        use_unstructured_api: bool = False,
-        unstructured_api_key: Optional[str] = None,
         assemblyai_api_key: Optional[str] = None,
         anthropic_api_key: Optional[str] = None,
         frame_sample_rate: int = 1,
@@ -201,8 +203,6 @@ class MorphikParser(BaseParser):
         settings: Optional[Any] = None,
     ):
         # Initialize basic configuration
-        self.use_unstructured_api = use_unstructured_api
-        self._unstructured_api_key = unstructured_api_key
         self._assemblyai_api_key = assemblyai_api_key
         self._anthropic_api_key = anthropic_api_key
         self.frame_sample_rate = frame_sample_rate
@@ -216,6 +216,23 @@ class MorphikParser(BaseParser):
 
         # Initialize logger
         self.logger = logging.getLogger(__name__)
+
+    @classmethod
+    def _get_docling_converter(cls) -> DocumentConverter:
+        """Get or create the cached Docling converter."""
+        if cls._docling_converter is None:
+            # Configure pipeline options for better performance
+            pipeline_options = PdfPipelineOptions()
+            # Use fast OCR settings by default
+            pipeline_options.do_ocr = True
+            pipeline_options.do_table_structure = True
+
+            cls._docling_converter = DocumentConverter(
+                format_options={
+                    InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
+                }
+            )
+        return cls._docling_converter
 
     def _is_video_file(self, file: bytes, filename: str) -> bool:
         """Check if the file is a video file."""
@@ -237,6 +254,12 @@ class MorphikParser(BaseParser):
         if content_type and content_type in ["application/xml", "text/xml"]:
             return True
         return False
+
+    def _is_plain_text_file(self, filename: str) -> bool:
+        """Check if the file is a plain text file that should be read directly without partitioning."""
+        plain_text_extensions = {".txt", ".md", ".markdown", ".json", ".csv", ".tsv", ".log", ".rst", ".yaml", ".yml"}
+        lower_filename = filename.lower()
+        return any(lower_filename.endswith(ext) for ext in plain_text_extensions)
 
     async def _parse_video(self, file: bytes) -> Tuple[Dict[str, Any], str]:
         """Parse video file to extract transcript and frame descriptions"""
@@ -307,45 +330,45 @@ class MorphikParser(BaseParser):
         return chunks, len(file)
 
     async def _parse_document(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
-        """Parse document using unstructured"""
-        # Choose a lighter parsing strategy for text-based files. Using
-        # `hi_res` on plain PDFs/Word docs invokes OCR which can be 20-30×
-        # slower.  A simple extension check covers the majority of cases.
-        strategy = "hi_res"
-        file_content_type: Optional[str] = None  # Default to None for auto-detection
-        if filename.lower().endswith((".pdf", ".doc", ".docx")):
-            # Try fast strategy first for PDFs
-            strategy = "fast"
-        elif filename.lower().endswith(".txt"):
-            strategy = "fast"
-            file_content_type = "text/plain"  # Explicitly set for .txt files
-        elif filename.lower().endswith(".json"):
-            strategy = "fast"  # or can be omitted if it doesn't apply to json
-            file_content_type = "application/json"  # Explicitly set for .json files
+        """Parse document using Docling, or read directly for plain text files."""
+        # For plain text files, read directly without parsing to preserve formatting
+        if self._is_plain_text_file(filename):
+            try:
+                text = file.decode("utf-8")
+            except UnicodeDecodeError:
+                # Fallback to latin-1 if utf-8 fails
+                text = file.decode("latin-1")
+            return {}, text
 
-        elements = partition(
-            file=io.BytesIO(file),
-            content_type=file_content_type,  # Use the determined content_type
-            metadata_filename=filename,
-            strategy=strategy,
-            api_key=self._unstructured_api_key if self.use_unstructured_api else None,
-        )
+        # For complex formats (PDF, DOCX, PPTX, etc.), use Docling
+        # Save to temp file since Docling works with file paths
+        suffix = os.path.splitext(filename)[1] or ".pdf"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_file.write(file)
+            temp_path = temp_file.name
 
-        text = "\n\n".join(str(element) for element in elements if str(element).strip())
+        try:
+            converter = self._get_docling_converter()
+            result = converter.convert(temp_path)
 
-        # If fast strategy returns no text for PDFs, try hi_res strategy with OCR
-        if not text.strip() and filename.lower().endswith(".pdf") and strategy == "fast":
-            self.logger.warning(f"Fast strategy returned no text for PDF {filename}, trying hi_res strategy with OCR")
-            elements = partition(
-                file=io.BytesIO(file),
-                content_type=file_content_type,
-                metadata_filename=filename,
-                strategy="hi_res",
-                api_key=self._unstructured_api_key if self.use_unstructured_api else None,
-            )
-            text = "\n\n".join(str(element) for element in elements if str(element).strip())
+            # Export to markdown format (preserves structure better than plain text)
+            text = result.document.export_to_markdown()
 
-        return {}, text
+            # If no text extracted, log warning
+            if not text.strip():
+                self.logger.warning(f"Docling returned no text for {filename}")
+
+            return {}, text
+        except Exception as e:
+            self.logger.error(f"Docling parsing failed for {filename}: {e}")
+            # Return empty text on failure - let caller handle it
+            return {}, ""
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
 
     async def parse_file_to_text(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
         """Parse file content into text based on file type"""
