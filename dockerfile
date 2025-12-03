@@ -69,9 +69,6 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" > /etc/apt/s
     update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100 && \
     update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
 
-# Download NLTK data
-RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt averaged_perceptron_tagger
-
 # Production stage
 FROM python:3.11.12-slim
 
@@ -99,9 +96,6 @@ COPY --from=builder /app/.venv /app/.venv
 # Copy uv binaries from the builder stage
 COPY --from=builder /bin/uv /bin/uv
 COPY --from=builder /bin/uvx /bin/uvx
-
-# Copy NLTK data from builder
-COPY --from=builder /usr/local/share/nltk_data /usr/local/share/nltk_data
 
 ## copy fde package to avoid error at server startup
 COPY --from=builder /app/fde ./fde
