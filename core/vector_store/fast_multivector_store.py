@@ -736,8 +736,10 @@ class FastMultiVectorStore(BaseVectorStore):
             return None
 
     async def _save_chunk_to_storage(self, chunk: DocumentChunk, app_id: Optional[str] = None):
+        import json
+
         return await self._store_content_externally(
-            chunk.content, chunk.document_id, chunk.chunk_number, str(chunk.metadata), app_id
+            chunk.content, chunk.document_id, chunk.chunk_number, json.dumps(chunk.metadata or {}), app_id
         )
 
     def _is_storage_key(self, content: str) -> bool:

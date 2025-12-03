@@ -600,7 +600,7 @@ class MultiVectorStore(BaseVectorStore):
             if self.enable_external_storage and self.storage:
                 # Try to store content externally
                 storage_key = await self._store_content_externally(
-                    chunk.content, chunk.document_id, chunk.chunk_number, str(chunk.metadata), app_id
+                    chunk.content, chunk.document_id, chunk.chunk_number, json.dumps(chunk.metadata or {}), app_id
                 )
 
                 if storage_key:

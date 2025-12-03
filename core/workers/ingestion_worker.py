@@ -1015,7 +1015,6 @@ async def startup(ctx):
     parser = MorphikParser(
         chunk_size=settings.CHUNK_SIZE,
         chunk_overlap=settings.CHUNK_OVERLAP,
-        use_unstructured_api=settings.USE_UNSTRUCTURED_API,
         assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
         anthropic_api_key=settings.ANTHROPIC_API_KEY,
         use_contextual_chunking=settings.USE_CONTEXTUAL_CHUNKING,
