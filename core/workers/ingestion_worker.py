@@ -428,11 +428,14 @@ async def process_ingestion_job(
                 additional_metadata, text = await ingestion_service.parser.parse_file_to_text(
                     file_content, parse_filename
                 )
-                # Clean the extracted text to remove problematic escape characters
+                # Clean the extracted text to remove NULL and other problematic control characters
+                # Keep: tabs, newlines, carriage returns, and all printable characters (including Unicode)
                 import re
 
-                text = re.sub(r"[\x00\u0000]", "", text)
-                text = re.sub(r"[^\x09\x0A\x0D\x20-\x7E]", "", text)
+                # Remove NULL characters
+                text = re.sub(r"\x00", "", text)
+                # Remove control characters (0x00-0x08, 0x0B-0x0C, 0x0E-0x1F) but keep tab, newline, carriage return
+                text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
 
             logger.debug(
                 f"Parsed file into {'XML chunks' if xml_processing else f'text of length {len(text)}'} (filename used: {parse_filename})"
