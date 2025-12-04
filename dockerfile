@@ -72,7 +72,8 @@ WORKDIR /app
 
 # Install runtime dependencies
 # Note: tesseract-ocr removed - docling uses rapidocr (pure Python) instead
-RUN apt-get update && apt-get install -y \
+# LibreOffice needed for ColPali processing of Office docs (docx/xlsx/pptx -> PDF -> images)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsm6 \
     libxext6 \
@@ -84,6 +85,9 @@ RUN apt-get update && apt-get install -y \
     cmake \
     python3-dev \
     git \
+    libreoffice-writer \
+    libreoffice-calc \
+    libreoffice-impress \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the virtual environment from the builder stage
