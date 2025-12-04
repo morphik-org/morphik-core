@@ -57,11 +57,6 @@ COPY ee/ui-component /app/ee/ui-component
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv sync --verbose --locked --no-editable
 
-# Install additional packages as requested
-# Cache buster: 1 - verbose flag added
-RUN --mount=type=cache,target=${UV_CACHE_DIR} \
-    uv pip install --verbose 'colpali-engine@git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3'
-
 # Enable backports and install GCC 11+ for Debian Bookworm
 RUN echo "deb http://deb.debian.org/debian bookworm-backports main" > /etc/apt/sources.list.d/backports.list && \
     apt-get update && \
@@ -77,7 +72,8 @@ WORKDIR /app
 
 # Install runtime dependencies
 # Note: tesseract-ocr removed - docling uses rapidocr (pure Python) instead
-RUN apt-get update && apt-get install -y \
+# LibreOffice needed for ColPali processing of Office docs (docx/xlsx/pptx -> PDF -> images)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsm6 \
     libxext6 \
@@ -89,6 +85,9 @@ RUN apt-get update && apt-get install -y \
     cmake \
     python3-dev \
     git \
+    libreoffice-writer \
+    libreoffice-calc \
+    libreoffice-impress \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the virtual environment from the builder stage
@@ -99,6 +98,9 @@ COPY --from=builder /bin/uvx /bin/uvx
 
 ## copy fde package to avoid error at server startup
 COPY --from=builder /app/fde ./fde
+
+## copy morphik_rust package (path dependency in pyproject.toml)
+COPY --from=builder /app/morphik_rust ./morphik_rust
 
 # Create necessary directories
 RUN mkdir -p storage logs
