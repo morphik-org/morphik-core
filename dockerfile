@@ -57,11 +57,6 @@ COPY ee/ui-component /app/ee/ui-component
 RUN --mount=type=cache,target=${UV_CACHE_DIR} \
     uv sync --verbose --locked --no-editable
 
-# Install additional packages as requested
-# Cache buster: 1 - verbose flag added
-RUN --mount=type=cache,target=${UV_CACHE_DIR} \
-    uv pip install --verbose 'colpali-engine@git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3'
-
 # Enable backports and install GCC 11+ for Debian Bookworm
 RUN echo "deb http://deb.debian.org/debian bookworm-backports main" > /etc/apt/sources.list.d/backports.list && \
     apt-get update && \
@@ -99,6 +94,9 @@ COPY --from=builder /bin/uvx /bin/uvx
 
 ## copy fde package to avoid error at server startup
 COPY --from=builder /app/fde ./fde
+
+## copy morphik_rust package (path dependency in pyproject.toml)
+COPY --from=builder /app/morphik_rust ./morphik_rust
 
 # Create necessary directories
 RUN mkdir -p storage logs
