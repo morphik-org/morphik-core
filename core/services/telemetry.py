@@ -28,7 +28,7 @@ SERVICE_NAME = settings.SERVICE_NAME
 EVENT_SCHEMA_VERSION = 1
 METADATA_MAX_LENGTH = 256
 SENSITIVE_METADATA_KEYS = {"metadata", "request_dump", "request_body"}
-REDACTED_METADATA_KEYS = {"query", "folder_name"}
+REDACTED_METADATA_KEYS = {"query", "folder_name", "folder_path", "full_path"}
 
 # Enable debug logging for OpenTelemetry
 os.environ["OTEL_PYTHON_LOGGING_LEVEL"] = "INFO"  # Changed from DEBUG to reduce verbosity
@@ -75,8 +75,11 @@ def sanitize_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(value, (dict, list)):
             # Avoid serializing nested payloads that may contain customer data
             continue
-        if key in REDACTED_METADATA_KEYS and isinstance(value, str):
-            sanitized[key] = f"redacted:{key}"
+        if key in REDACTED_METADATA_KEYS:
+            if isinstance(value, str):
+                sanitized[key] = f"redacted:{key}"
+            else:
+                sanitized[key] = "redacted"
             continue
         if isinstance(value, str):
             sanitized[key] = _truncate_metadata_value(value)

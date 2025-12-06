@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useHeader } from "../../contexts/header-context";
 import { Button } from "@/components/ui/button";
-import { Trash2, Upload, RefreshCw, PlusCircle, ChevronsDown, ChevronsUp } from "lucide-react";
+import { Trash2, Upload, RefreshCw, PlusCircle } from "lucide-react";
 import DocumentsSection from "./DocumentsSection";
 
 interface DocumentsWithHeaderProps {
@@ -24,7 +24,6 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(props.initialFolder || null);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
-  const [allFoldersExpanded, setAllFoldersExpanded] = useState(false);
 
   // Create a ref to access DocumentsSection methods
   const documentsSectionRef = useRef<{
@@ -63,6 +62,10 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
     const rightContent = selectedFolder ? (
       // Folder view controls
       <>
+        <Button variant="outline" size="sm" onClick={() => setShowNewFolderDialog(true)}>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          New Folder
+        </Button>
         {documentsSectionRef.current && documentsSectionRef.current.selectedDocuments.length > 0 && (
           <Button
             variant="outline"
@@ -94,16 +97,6 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
           <PlusCircle className="mr-2 h-4 w-4" />
           New Folder
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setAllFoldersExpanded(prev => !prev)}
-          className="flex items-center gap-1.5"
-          title="Expand or collapse all folders"
-        >
-          {allFoldersExpanded ? <ChevronsUp className="h-4 w-4" /> : <ChevronsDown className="h-4 w-4" />}
-          <span>{allFoldersExpanded ? "Collapse All" : "Expand All"}</span>
-        </Button>
         <Button variant="outline" size="sm" onClick={handleRefresh} title="Refresh documents">
           <RefreshCw className="h-4 w-4" />
           <span className="ml-1">Refresh</span>
@@ -122,7 +115,7 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
       // Breadcrumbs are handled centrally by MorphikUI
       setRightContent(null);
     };
-  }, [selectedFolder, allFoldersExpanded, handleRefresh, handleDeleteMultiple, setRightContent]);
+  }, [selectedFolder, handleRefresh, handleDeleteMultiple, setRightContent]);
 
   return (
     <DocumentsSection
@@ -133,7 +126,6 @@ export default function DocumentsWithHeader(props: DocumentsWithHeaderProps) {
       setShowUploadDialog={setShowUploadDialog}
       showNewFolderDialog={showNewFolderDialog}
       setShowNewFolderDialog={setShowNewFolderDialog}
-      allFoldersExpanded={allFoldersExpanded}
     />
   );
 }

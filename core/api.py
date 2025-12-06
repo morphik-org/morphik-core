@@ -47,7 +47,7 @@ from core.routes.models import router as models_router
 from core.routes.pdf_viewer import router as pdf_viewer_router
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, ingestion_service
-from core.utils.folder_utils import normalize_folder_name
+from core.utils.folder_utils import normalize_folder_selector
 
 # Set up logging configuration for Docker environment
 setup_logging()
@@ -394,6 +394,7 @@ async def retrieve_chunks(request: RetrieveRequest, auth: AuthContext = Depends(
             request.use_reranking,
             request.use_colpali,
             request.folder_name,
+            request.folder_depth,
             request.end_user_id,
             perf,  # Pass performance tracker
             request.padding,  # Pass padding parameter
@@ -443,6 +444,7 @@ async def retrieve_chunks_grouped(request: RetrieveRequest, auth: AuthContext = 
             request.use_reranking,
             request.use_colpali,
             request.folder_name,
+            request.folder_depth,
             request.end_user_id,
             perf,  # Pass performance tracker
             request.padding,  # Pass padding parameter
@@ -501,6 +503,7 @@ async def retrieve_documents(request: RetrieveRequest, auth: AuthContext = Depen
             request.use_reranking,
             request.use_colpali,
             request.folder_name,
+            request.folder_depth,
             request.end_user_id,
         )
 
@@ -529,15 +532,13 @@ async def search_documents_by_name(
     `datetime`, `date`).
     """
     try:
-        # Normalize folder_name if needed
-        normalized_folder_name = normalize_folder_name(request.folder_name) if request.folder_name else None
-
         results = await document_service.search_documents_by_name(
             query=request.query,
             auth=auth,
             limit=request.limit,
             filters=request.filters,
-            folder_name=normalized_folder_name,
+            folder_name=request.folder_name,
+            folder_depth=request.folder_depth,
             end_user_id=request.end_user_id,
         )
 
@@ -568,20 +569,21 @@ async def batch_get_documents(request: BatchDocumentsRequest, auth: AuthContext 
             perf.log_summary("No document IDs provided")
             return []
 
-        # Create system filters for folder and user scoping
-        perf.start_phase("filter_creation")
-        system_filters = {}
+        normalized_folder = None
         if request.folder_name is not None:
-            normalized_folder_name = normalize_folder_name(request.folder_name)
-            system_filters["folder_name"] = normalized_folder_name
-        if request.end_user_id:
-            system_filters["end_user_id"] = request.end_user_id
-        # Note: Don't add auth.app_id here - it's already handled in document retrieval
+            try:
+                normalized_folder = normalize_folder_selector(request.folder_name)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
 
         # Main batch retrieval operation
         perf.start_phase("batch_retrieve_documents")
         results = await document_service.batch_retrieve_documents(
-            request.document_ids, auth, request.folder_name, request.end_user_id
+            document_ids=request.document_ids,
+            auth=auth,
+            folder_name=normalized_folder,
+            folder_depth=None,
+            end_user_id=request.end_user_id,
         )
 
         # Log consolidated performance summary
@@ -607,18 +609,27 @@ async def batch_get_chunks(request: BatchChunksRequest, auth: AuthContext = Depe
             perf.log_summary("No sources provided")
             return []
 
-        normalized_folder_name = normalize_folder_name(request.folder_name) if request.folder_name is not None else None
+        normalized_folder_name = None
+        if request.folder_name is not None:
+            try:
+                normalized_folder_name = normalize_folder_selector(request.folder_name)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
 
         # Main batch retrieval operation
         perf.start_phase("batch_retrieve_chunks")
-        results = await document_service.batch_retrieve_chunks(
-            request.sources,
-            auth,
-            normalized_folder_name,
-            request.end_user_id,
-            request.use_colpali,
-            request.output_format or "base64",
-        )
+        try:
+            results = await document_service.batch_retrieve_chunks(
+                chunk_ids=request.sources,
+                auth=auth,
+                folder_name=normalized_folder_name,
+                folder_depth=None,
+                end_user_id=request.end_user_id,
+                use_colpali=request.use_colpali,
+                output_format=request.output_format or "base64",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
         # Log consolidated performance summary
         perf.log_summary(f"Retrieved {len(results)}/{len(request.sources)} chunks")
@@ -704,30 +715,34 @@ async def query_completion(
         # Debug log for inline citations
         logger.debug(f"Query request - inline_citations: {request.inline_citations}")
 
-        result = await document_service.query(
-            request.query,
-            auth,
-            request.filters,
-            request.k,
-            request.min_score,
-            request.max_tokens,
-            request.temperature,
-            request.use_reranking,
-            request.use_colpali,
-            request.graph_name,
-            request.hop_depth,
-            request.include_paths,
-            request.prompt_overrides,
-            request.folder_name,
-            request.end_user_id,
-            request.response_schema,
-            history,
-            perf,
-            request.stream_response,
-            request.llm_config,
-            request.padding,
-            request.inline_citations,
-        )
+        try:
+            result = await document_service.query(
+                request.query,
+                auth,
+                request.filters,
+                request.k,
+                request.min_score,
+                request.max_tokens,
+                request.temperature,
+                request.use_reranking,
+                request.use_colpali,
+                request.graph_name,
+                request.hop_depth,
+                request.include_paths,
+                request.prompt_overrides,
+                request.folder_name,
+                request.folder_depth,
+                request.end_user_id,
+                request.response_schema,
+                history,
+                perf,
+                request.stream_response,
+                request.llm_config,
+                request.padding,
+                request.inline_citations,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
         # Handle streaming vs non-streaming responses
         if request.stream_response:

@@ -21,6 +21,7 @@ from core.models.responses import (
 from core.routes.utils import project_document_fields
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
+from core.utils.folder_utils import normalize_folder_path
 
 # ---------------------------------------------------------------------------
 # Router initialization & shared singletons
@@ -35,6 +36,16 @@ async def _resolve_folder(identifier: str, auth: AuthContext) -> Folder:
     """
     Resolve a folder identifier that might be either an ID or a name.
     """
+    try:
+        canonical = normalize_folder_path(identifier)
+    except Exception:
+        canonical = None
+
+    if canonical:
+        folder = await document_service.db.get_folder_by_full_path(canonical, auth)
+        if folder:
+            return folder
+
     folder = await document_service.db.get_folder(identifier, auth)
     if folder:
         return folder
@@ -61,33 +72,56 @@ async def create_folder(
     Create a new folder.
     """
     try:
-        # Validate folder name - no slashes allowed (nested folders not supported)
-        if "/" in folder_create.name:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Invalid folder name '{folder_create.name}'. Folder names cannot contain '/'. "
-                    f"Nested folders are not supported. Use '_' instead to denote subfolders "
-                    f"(e.g., 'folder_subfolder_subsubfolder')."
-                ),
+        try:
+            canonical_path = normalize_folder_path(folder_create.full_path or folder_create.name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        segments = canonical_path.strip("/").split("/") if canonical_path and canonical_path != "/" else []
+
+        # Ensure ancestor chain exists; reuse existing folders when present.
+        parent_id: Optional[str] = None
+        current_path_parts: List[str] = []
+        created_folder: Optional[Folder] = None
+
+        for idx, segment in enumerate(segments):
+            current_path_parts.append(segment)
+            current_path = "/" + "/".join(current_path_parts)
+            existing = await document_service.db.get_folder_by_full_path(current_path, auth)
+            if existing:
+                parent_id = existing.id
+                if idx == len(segments) - 1:
+                    created_folder = existing
+                continue
+
+            folder_id = str(uuid.uuid4())
+            folder_depth = idx + 1
+            folder = Folder(
+                id=folder_id,
+                name=segment,
+                full_path=current_path,
+                parent_id=parent_id,
+                depth=folder_depth,
+                description=folder_create.description if idx == len(segments) - 1 else None,
+                app_id=auth.app_id,
             )
 
-        # Create a folder object with explicit ID
-        folder_id = str(uuid.uuid4())
-        logger.info(f"Creating folder with ID: {folder_id}, auth.user_id: {auth.user_id}")
+            success = await document_service.db.create_folder(folder, auth)
+            if not success:
+                raise HTTPException(status_code=500, detail=f"Failed to create folder {current_path}")
 
-        # Set up access control with user_id
-        folder = Folder(
-            id=folder_id, name=folder_create.name, description=folder_create.description, app_id=auth.app_id
-        )
+            parent_id = folder.id
+            if idx == len(segments) - 1:
+                created_folder = folder
 
-        # Store in database
-        success = await document_service.db.create_folder(folder, auth)
-
-        if not success:
+        # Handle root or empty path case
+        if created_folder is None and canonical_path == "/":
+            raise HTTPException(status_code=400, detail="Root folder cannot be created")
+        if created_folder is None:
+            # Should not happen, but guard for safety
             raise HTTPException(status_code=500, detail="Failed to create folder")
 
-        return folder
+        return created_folder
     except HTTPException:
         raise
     except Exception as e:
@@ -148,12 +182,17 @@ async def folder_details(
                         "next_skip": None,
                     }
                 else:
+                    try:
+                        path_filter = folder.full_path or normalize_folder_path(folder.name)
+                    except ValueError as exc:
+                        raise HTTPException(status_code=400, detail=str(exc))
+
                     doc_result = await document_service.db.list_documents_flexible(
                         auth=auth,
                         skip=request.document_skip if request.include_documents else 0,
                         limit=request.document_limit if request.include_documents else 0,
                         filters=request.document_filters,
-                        system_filters={"folder_name": folder.name},
+                        system_filters={"folder_path": path_filter},
                         include_total_count=request.include_document_count,
                         include_status_counts=request.include_status_counts,
                         include_folder_counts=False,
@@ -224,88 +263,7 @@ async def list_folder_summaries(auth: AuthContext = Depends(verify_token)) -> Li
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.get("/{folder_id_or_name}", response_model=Folder)
-@telemetry.track(operation_type="get_folder", metadata_resolver=telemetry.get_folder_metadata)
-async def get_folder(
-    folder_id_or_name: str,
-    auth: AuthContext = Depends(verify_token),
-) -> Folder:
-    """
-    Get a folder by ID or name.
-    """
-    try:
-        return await _resolve_folder(folder_id_or_name, auth)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting folder: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.delete("/{folder_id_or_name}", response_model=FolderDeleteResponse)
-@telemetry.track(operation_type="delete_folder", metadata_resolver=telemetry.delete_folder_metadata)
-async def delete_folder(
-    folder_id_or_name: str,
-    auth: AuthContext = Depends(verify_token),
-):
-    """
-    Delete a folder and all associated documents.
-    """
-    try:
-        folder = await _resolve_folder(folder_id_or_name, auth)
-        folder_id = folder.id
-        if not folder_id:
-            raise HTTPException(status_code=500, detail="Folder is missing an ID")
-
-        document_ids = folder.document_ids or []
-        removal_results = await asyncio.gather(
-            *[
-                document_service.db.remove_document_from_folder(folder_id, document_id, auth)
-                for document_id in document_ids
-            ]
-        )
-        if not all(removal_results):
-            failed = [doc for doc, stat in zip(document_ids, removal_results) if not stat]
-            msg = "Failed to remove the following documents from folder: " + ", ".join(failed)
-            logger.error(msg)
-            raise HTTPException(status_code=500, detail=msg)
-
-        # folder is empty now
-        delete_tasks = [document_service.delete_document(document_id, auth) for document_id in document_ids]
-        stati = await asyncio.gather(*delete_tasks, return_exceptions=True)
-
-        failed_docs = []
-        for doc_id, result in zip(document_ids, stati):
-            if isinstance(result, Exception):
-                logger.error("Error deleting document %s while deleting folder %s: %s", doc_id, folder_id, result)
-                failed_docs.append(doc_id)
-            elif not result:
-                failed_docs.append(doc_id)
-
-        if failed_docs:
-            msg = "Failed to delete the following documents: " + ", ".join(failed_docs)
-            logger.error(msg)
-            raise HTTPException(status_code=500, detail=msg)
-
-        # just remove the folder too now.
-        status = await document_service.db.delete_folder(folder_id, auth)
-        if not status:
-            logger.error(f"Failed to delete folder {folder_id}")
-            raise HTTPException(status_code=500, detail=f"Failed to delete folder {folder_id}")
-        return {"status": "success", "message": f"Folder {folder.name} ({folder_id}) deleted successfully"}
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        logger.error(f"Error deleting folder: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ---------------------------------------------------------------------------
-# Folder-Document association endpoints
-# ---------------------------------------------------------------------------
-
-
-@router.post("/{folder_id_or_name}/documents/{document_id}", response_model=DocumentAddToFolderResponse)
+@router.post("/{folder_id_or_name:path}/documents/{document_id}", response_model=DocumentAddToFolderResponse)
 @telemetry.track(operation_type="add_document_to_folder", metadata_resolver=telemetry.add_document_to_folder_metadata)
 async def add_document_to_folder(
     folder_id_or_name: str,
@@ -331,7 +289,7 @@ async def add_document_to_folder(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/{folder_id_or_name}/documents/{document_id}", response_model=DocumentDeleteResponse)
+@router.delete("/{folder_id_or_name:path}/documents/{document_id}", response_model=DocumentDeleteResponse)
 @telemetry.track(
     operation_type="remove_document_from_folder", metadata_resolver=telemetry.remove_document_from_folder_metadata
 )
@@ -356,4 +314,100 @@ async def remove_document_from_folder(
         }
     except Exception as e:
         logger.error(f"Error removing document from folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{folder_id_or_name:path}", response_model=Folder)
+@telemetry.track(operation_type="get_folder", metadata_resolver=telemetry.get_folder_metadata)
+async def get_folder(
+    folder_id_or_name: str,
+    auth: AuthContext = Depends(verify_token),
+) -> Folder:
+    """
+    Get a folder by ID or name.
+    """
+    try:
+        return await _resolve_folder(folder_id_or_name, auth)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{folder_id_or_name:path}", response_model=FolderDeleteResponse)
+@telemetry.track(operation_type="delete_folder", metadata_resolver=telemetry.delete_folder_metadata)
+async def delete_folder(
+    folder_id_or_name: str,
+    recursive: bool = False,
+    auth: AuthContext = Depends(verify_token),
+):
+    """
+    Delete a folder and all associated documents.
+    """
+    try:
+        folder = await _resolve_folder(folder_id_or_name, auth)
+        folder_id = folder.id
+        if not folder_id:
+            raise HTTPException(status_code=500, detail="Folder is missing an ID")
+
+        target_path = folder.full_path or normalize_folder_path(folder.name)
+        all_folders = await document_service.db.list_folders(auth)
+        descendants = [
+            f
+            for f in all_folders
+            if f.full_path and target_path and f.full_path.startswith(target_path.rstrip("/") + "/")
+        ]
+
+        if descendants and not recursive:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Folder {folder.name} has {len(descendants)} descendant folders; "
+                    "set recursive=true to delete the entire subtree."
+                ),
+            )
+
+        targets = descendants + [folder]
+        targets.sort(key=lambda f: (f.depth or 0, len(f.full_path or f.name or "")), reverse=True)
+
+        async def _delete_single_folder(target: Folder) -> None:
+            tid = target.id
+            if not tid:
+                raise HTTPException(status_code=500, detail="Folder is missing an ID")
+            doc_ids = target.document_ids or []
+            removal_results = await asyncio.gather(
+                *[document_service.db.remove_document_from_folder(tid, doc_id, auth) for doc_id in doc_ids]
+            )
+            if not all(removal_results):
+                failed = [doc for doc, stat in zip(doc_ids, removal_results) if not stat]
+                raise HTTPException(
+                    status_code=500, detail="Failed to remove documents from folder: " + ", ".join(failed)
+                )
+
+            delete_tasks = [document_service.delete_document(doc_id, auth) for doc_id in doc_ids]
+            stati = await asyncio.gather(*delete_tasks, return_exceptions=True)
+            failed_docs = []
+            for doc_id, result in zip(doc_ids, stati):
+                if isinstance(result, Exception) or result is False:
+                    failed_docs.append(doc_id)
+            if failed_docs:
+                raise HTTPException(status_code=500, detail="Failed to delete documents: " + ", ".join(failed_docs))
+
+            status = await document_service.db.delete_folder(tid, auth)
+            if not status:
+                raise HTTPException(status_code=500, detail=f"Failed to delete folder {tid}")
+
+        for target in targets:
+            await _delete_single_folder(target)
+
+        return {
+            "status": "success",
+            "message": f"Folder {folder.name} ({folder_id}) deleted successfully"
+            + (" with descendants" if descendants else ""),
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error deleting folder: {e}")
         raise HTTPException(status_code=500, detail=str(e))

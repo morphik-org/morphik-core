@@ -16,6 +16,7 @@ from core.models.auth import AuthContext
 
 # Import IngestionService type for dependency injection hint
 from core.services.ingestion_service import IngestionService
+from core.utils.folder_utils import normalize_folder_path
 from ee.services.connector_service import ConnectorService
 from ee.services.connectors.base_connector import ConnectorAuthStatus, ConnectorFile  # Importing specific models
 
@@ -471,11 +472,18 @@ async def ingest_file(
 ):
     """Ingest a single file from a connector."""
     try:
+        folder_path = None
+        if ingest_request.folder_name:
+            try:
+                folder_path = normalize_folder_path(ingest_request.folder_name)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+
         connector_service_instance = ConnectorService(auth_context=auth)
         result = await connector_service_instance.ingest_file_from_connector(
             connector_type=connector_type,
             file_id=ingest_request.file_id,
-            folder_name=ingest_request.folder_name,
+            folder_name=folder_path or ingest_request.folder_name,
             ingestion_service=ingestion_service,
             auth=auth,
             redis=redis,
@@ -510,12 +518,19 @@ async def ingest_repository(
         raise HTTPException(status_code=401, detail="Not authenticated with connector")
 
     try:
+        folder_path = None
+        if ingest_request.folder_name:
+            try:
+                folder_path = normalize_folder_path(ingest_request.folder_name)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+
         documents = await connector.ingest_repository(
             repo_path=ingest_request.repo_path,
             ingestion_service=ingestion_service,
             auth_context=auth,
             redis=redis,
-            folder_name=ingest_request.folder_name,
+            folder_name=folder_path or ingest_request.folder_name,
             metadata=ingest_request.metadata,
             include_patterns=ingest_request.include_patterns,
             ignore_patterns=ingest_request.ignore_patterns,

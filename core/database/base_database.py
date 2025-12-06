@@ -268,6 +268,11 @@ class BaseDatabase(ABC):
         pass
 
     @abstractmethod
+    async def get_folder_by_full_path(self, full_path: str, auth: AuthContext) -> Optional[Folder]:
+        """Get a folder by canonical full_path."""
+        pass
+
+    @abstractmethod
     async def list_folders(self, auth: AuthContext) -> List[Folder]:
         """List all folders the user has access to.
 
