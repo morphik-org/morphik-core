@@ -45,6 +45,7 @@ from core.parser.base_parser import BaseParser
 from core.storage.base_storage import BaseStorage
 from core.storage.utils_file_extensions import detect_file_type
 from core.utils.fast_ops import bytes_to_data_uri, encode_base64
+from core.utils.folder_utils import normalize_folder_path
 from core.utils.typed_metadata import merge_metadata, normalize_metadata
 from core.vector_store.base_vector_store import BaseVectorStore
 
@@ -169,42 +170,57 @@ class IngestionService:
                     last_folder = await self._ensure_folder_exists(fname, document_id, auth)
                 return last_folder
 
-            # Validate folder name - no slashes allowed (nested folders not supported)
-            if "/" in folder_name:
-                error_msg = (
-                    f"Invalid folder name '{folder_name}'. Folder names cannot contain '/'. "
-                    f"Nested folders are not supported. Use '_' instead to denote subfolders "
-                    f"(e.g., 'folder_subfolder_subsubfolder')."
+            canonical_path = normalize_folder_path(folder_name)
+            segments = canonical_path.strip("/").split("/") if canonical_path and canonical_path != "/" else []
+
+            if canonical_path == "/":
+                logger.error("Cannot ingest into root folder '/'")
+                raise ValueError("Cannot ingest into root folder '/'")
+
+            parent_id: Optional[str] = None
+            current_path_parts: List[str] = []
+            target_folder: Optional[Folder] = None
+
+            for idx, segment in enumerate(segments):
+                current_path_parts.append(segment)
+                current_path = "/" + "/".join(current_path_parts)
+                existing = await self.db.get_folder_by_full_path(current_path, auth)
+                if existing:
+                    parent_id = existing.id
+                    if idx == len(segments) - 1:
+                        target_folder = existing
+                    continue
+
+                folder_depth = idx + 1
+                folder = Folder(
+                    name=segment,
+                    full_path=current_path,
+                    parent_id=parent_id,
+                    depth=folder_depth,
+                    document_ids=[document_id] if idx == len(segments) - 1 else [],
+                    app_id=auth.app_id,
                 )
-                logger.error(error_msg)
-                raise ValueError(error_msg)
+                await self.db.create_folder(folder, auth)
+                parent_id = folder.id
+                if idx == len(segments) - 1:
+                    target_folder = folder
 
-            # First check if the folder already exists
-            folder = await self.db.get_folder_by_name(folder_name, auth)
-            if folder:
-                # Add document to existing folder
-                if document_id not in folder.document_ids:
-                    success = await self.db.add_document_to_folder(folder.id, document_id, auth)
-                    if not success:
-                        logger.warning(
-                            f"Failed to add document {document_id} to existing folder {folder.name}. "
-                            "This may be due to a race condition during ingestion."
-                        )
-                    else:
-                        logger.info(f"Successfully added document {document_id} to existing folder {folder.name}")
+            if target_folder is None:
+                logger.error("Failed to ensure target folder for path %s", canonical_path)
+                return None
+
+            # Add document to target folder if not already
+            if document_id not in (target_folder.document_ids or []):
+                success = await self.db.add_document_to_folder(target_folder.id, document_id, auth)
+                if not success:
+                    logger.warning(
+                        f"Failed to add document {document_id} to folder {target_folder.name}. "
+                        "This may be due to a race condition during ingestion."
+                    )
                 else:
-                    logger.info(f"Document {document_id} is already in folder {folder.name}")
-                return folder
+                    logger.info(f"Successfully added document {document_id} to folder {target_folder.name}")
 
-            # Create a new folder
-            folder = Folder(
-                name=folder_name,
-                document_ids=[document_id],
-                app_id=auth.app_id,
-            )
-
-            await self.db.create_folder(folder, auth)
-            return folder
+            return target_folder
 
         except Exception as e:
             logger.error(f"Error ensuring folder exists: {e}")
@@ -233,11 +249,21 @@ class IngestionService:
         # Prevent callers from overriding reserved fields
         self._enforce_no_user_mutable_fields(metadata, folder_name, context="ingest")
 
+        folder_path = None
+        folder_leaf = None
+        if folder_name is not None:
+            folder_path = normalize_folder_path(folder_name)
+            if folder_path == "/":
+                raise ValueError("Cannot ingest into root folder '/'")
+            parts = [p for p in folder_path.strip("/").split("/") if p]
+            folder_leaf = parts[-1] if parts else None
+
         doc = Document(
             content_type="text/plain",
             filename=filename,
             metadata=metadata or {},
-            folder_name=folder_name,
+            folder_name=folder_leaf,
+            folder_path=folder_path,
             end_user_id=end_user_id,
             app_id=auth.app_id,
         )
@@ -246,8 +272,8 @@ class IngestionService:
 
         combined_metadata = dict(metadata or {})
         combined_metadata.setdefault("external_id", doc.external_id)
-        if folder_name is not None:
-            combined_metadata["folder_name"] = folder_name
+        if folder_leaf is not None:
+            combined_metadata["folder_name"] = folder_leaf
         normalized_metadata, normalized_types = normalize_metadata(combined_metadata, metadata_types)
         doc.metadata = normalized_metadata
         doc.metadata_types = normalized_types
@@ -382,6 +408,15 @@ class IngestionService:
             logger.error(f"User {auth.entity_id} does not have write permission for ingest_file_content")
             raise PermissionError("User does not have write permission for ingest_file_content")
 
+        folder_path = None
+        folder_leaf = None
+        if folder_name is not None:
+            folder_path = normalize_folder_path(folder_name)
+            if folder_path == "/":
+                raise ValueError("Cannot ingest into root folder '/'")
+            parts = [p for p in folder_path.strip("/").split("/") if p]
+            folder_leaf = parts[-1] if parts else None
+
         doc = Document(
             filename=filename,
             content_type=content_type,
@@ -390,7 +425,8 @@ class IngestionService:
             content_info={"type": "file", "mime_type": content_type},
             app_id=auth.app_id,
             end_user_id=end_user_id,
-            folder_name=folder_name,
+            folder_name=folder_leaf,
+            folder_path=folder_path,
         )
 
         # Verify quotas before incurring heavy compute or storage
@@ -420,6 +456,8 @@ class IngestionService:
 
         metadata_payload = dict(metadata or {})
         metadata_payload.setdefault("external_id", doc.external_id)
+        if folder_leaf is not None:
+            metadata_payload["folder_name"] = folder_leaf
         normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types)
         doc.metadata = normalized_metadata
         doc.metadata_types = normalized_types

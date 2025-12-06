@@ -9,10 +9,13 @@ import { cn } from "@/lib/utils";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { buildFolderTree, flattenFolderTree, normalizeFolderPathValue } from "@/lib/folderTree";
+import { FolderSummary } from "../types";
 
 interface DocumentSelectorDocument {
   id: string;
   filename: string;
+  folder_path?: string;
   folder_name?: string;
   content_type?: string;
   metadata?: Record<string, unknown>;
@@ -21,11 +24,17 @@ interface DocumentSelectorDocument {
 
 interface DocumentSelectorProps {
   documents: DocumentSelectorDocument[];
-  folders: Array<{ name: string; doc_count: number }>;
+  folders: Array<{
+    name: string;
+    full_path?: string | null;
+    parent_id?: string | null;
+    depth?: number | null;
+    doc_count?: number;
+  }>;
   selectedDocuments: string[];
   selectedFolders: string[];
   onDocumentSelectionChange: (documentIds: string[]) => void;
-  onFolderSelectionChange: (folderNames: string[]) => void;
+  onFolderSelectionChange: (folderPaths: string[]) => void;
   loading?: boolean;
   placeholder?: string;
   className?: string;
@@ -45,46 +54,77 @@ export function DocumentSelector({
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
+  const flattenedFolders = useMemo(() => flattenFolderTree(buildFolderTree(folders as FolderSummary[])), [folders]);
+
+  const resolveDocFolderPath = useCallback((doc: DocumentSelectorDocument) => {
+    const fromField = typeof doc.folder_path === "string" ? doc.folder_path : undefined;
+    if (fromField) {
+      return normalizeFolderPathValue(fromField);
+    }
+    const fromName = typeof doc.folder_name === "string" ? doc.folder_name : undefined;
+    if (fromName) {
+      return normalizeFolderPathValue(fromName);
+    }
+    const sys = (doc.system_metadata ?? {}) as Record<string, unknown>;
+    const fromSysPath = typeof sys.folder_path === "string" ? (sys.folder_path as string) : undefined;
+    if (fromSysPath) {
+      return normalizeFolderPathValue(fromSysPath);
+    }
+    const fromSysName = typeof sys.folder_name === "string" ? (sys.folder_name as string) : undefined;
+    if (fromSysName) {
+      return normalizeFolderPathValue(fromSysName);
+    }
+    return "";
+  }, []);
+
   // Group documents by folder
   const groupedDocuments = useMemo(() => {
     const grouped: Record<string, DocumentSelectorDocument[]> = {};
 
     documents.forEach(doc => {
-      const folderName = doc.folder_name || "Unorganized";
-      if (!grouped[folderName]) {
-        grouped[folderName] = [];
+      const folderPath = resolveDocFolderPath(doc);
+      const key = folderPath || "Unorganized";
+      if (!grouped[key]) {
+        grouped[key] = [];
       }
-      grouped[folderName].push(doc);
+      grouped[key].push(doc);
     });
 
     return grouped;
-  }, [documents]);
+  }, [documents, resolveDocFolderPath]);
 
   // Filter documents and folders based on search query
   const filteredItems = useMemo(() => {
     if (!searchQuery.trim()) {
-      return { folders, documents, groupedDocuments };
+      return { folders: flattenedFolders, documents, groupedDocuments };
     }
 
     const query = searchQuery.toLowerCase();
 
     // Filter folders
-    const filteredFolders = folders.filter(folder => folder.name.toLowerCase().includes(query));
+    const filteredFolders = flattenedFolders.filter(folder => {
+      const path = normalizeFolderPathValue(folder.full_path ?? folder.name);
+      const label = folder.name || path;
+      return label.toLowerCase().includes(query) || path.toLowerCase().includes(query);
+    });
 
     // Filter documents
     const filteredDocuments = documents.filter(
       doc =>
-        doc.filename.toLowerCase().includes(query) || (doc.folder_name && doc.folder_name.toLowerCase().includes(query))
+        doc.filename.toLowerCase().includes(query) ||
+        resolveDocFolderPath(doc).toLowerCase().includes(query) ||
+        (doc.folder_name && doc.folder_name.toLowerCase().includes(query))
     );
 
     // Regroup filtered documents
     const filteredGroupedDocuments: Record<string, DocumentSelectorDocument[]> = {};
     filteredDocuments.forEach(doc => {
-      const folderName = doc.folder_name || "Unorganized";
-      if (!filteredGroupedDocuments[folderName]) {
-        filteredGroupedDocuments[folderName] = [];
+      const folderPath = resolveDocFolderPath(doc);
+      const key = folderPath || "Unorganized";
+      if (!filteredGroupedDocuments[key]) {
+        filteredGroupedDocuments[key] = [];
       }
-      filteredGroupedDocuments[folderName].push(doc);
+      filteredGroupedDocuments[key].push(doc);
     });
 
     return {
@@ -92,22 +132,22 @@ export function DocumentSelector({
       documents: filteredDocuments,
       groupedDocuments: filteredGroupedDocuments,
     };
-  }, [folders, documents, groupedDocuments, searchQuery]);
+  }, [flattenedFolders, documents, groupedDocuments, searchQuery, resolveDocFolderPath]);
 
   // Handle folder selection
   const handleFolderToggle = useCallback(
-    (folderName: string) => {
-      const newSelectedFolders = selectedFolders.includes(folderName)
-        ? selectedFolders.filter(name => name !== folderName)
-        : [...selectedFolders, folderName];
+    (folderPath: string) => {
+      const newSelectedFolders = selectedFolders.includes(folderPath)
+        ? selectedFolders.filter(name => name !== folderPath)
+        : [...selectedFolders, folderPath];
 
       onFolderSelectionChange(newSelectedFolders);
 
       // When a folder is selected, also select/deselect all its documents
-      const folderDocuments = groupedDocuments[folderName] || [];
+      const folderDocuments = groupedDocuments[folderPath] || [];
       const folderDocumentIds = folderDocuments.map(doc => doc.id);
 
-      if (selectedFolders.includes(folderName)) {
+      if (selectedFolders.includes(folderPath)) {
         // Deselecting folder - remove all its documents from selection
         const newSelectedDocuments = selectedDocuments.filter(id => !folderDocumentIds.includes(id));
         onDocumentSelectionChange(newSelectedDocuments);
@@ -138,7 +178,7 @@ export function DocumentSelector({
   // Handle "Select All" toggle
   const handleSelectAllToggle = useCallback(() => {
     const allDocumentIds = documents.map(doc => doc.id);
-    const allFolderNames = folders.map(folder => folder.name);
+    const allFolderPaths = flattenedFolders.map(folder => normalizeFolderPathValue(folder.full_path ?? folder.name));
 
     const isAllSelected = selectedDocuments.length === allDocumentIds.length;
 
@@ -147,9 +187,9 @@ export function DocumentSelector({
       onFolderSelectionChange([]);
     } else {
       onDocumentSelectionChange(allDocumentIds);
-      onFolderSelectionChange(allFolderNames);
+      onFolderSelectionChange(allFolderPaths);
     }
-  }, [documents, folders, selectedDocuments, onDocumentSelectionChange, onFolderSelectionChange]);
+  }, [documents, flattenedFolders, selectedDocuments, onDocumentSelectionChange, onFolderSelectionChange]);
 
   // Get display text for the trigger button
   const getDisplayText = useCallback(() => {
@@ -172,8 +212,8 @@ export function DocumentSelector({
 
   // Check if all items are selected
   const isAllSelected = useMemo(() => {
-    return selectedDocuments.length === documents.length && selectedFolders.length === folders.length;
-  }, [selectedDocuments, selectedFolders, documents, folders]);
+    return selectedDocuments.length === documents.length && selectedFolders.length === flattenedFolders.length;
+  }, [selectedDocuments, selectedFolders, documents, flattenedFolders]);
 
   // Check if some items are selected (for indeterminate state)
   const isSomeSelected = useMemo(() => {
@@ -211,10 +251,10 @@ export function DocumentSelector({
               <span className="truncate text-left">{getDisplayText()}</span>
               {isSomeSelected && (
                 <div className="ml-2 flex items-center gap-1">
-                  {selectedFolders.map(folder => (
-                    <Badge key={folder} variant="secondary" className="text-xs">
+                  {selectedFolders.map(folderPath => (
+                    <Badge key={folderPath} variant="secondary" className="text-xs">
                       <Folder className="mr-1 h-3 w-3" />
-                      {folder}
+                      {folderPath}
                     </Badge>
                   ))}
                   {selectedDocuments.length > 0 && (
@@ -262,23 +302,34 @@ export function DocumentSelector({
                   <div className="space-y-2">
                     {/* Folders */}
                     {filteredItems.folders.map(folder => {
-                      const isSelected = selectedFolders.includes(folder.name);
-                      const folderDocuments = filteredItems.groupedDocuments[folder.name] || [];
+                      const path = normalizeFolderPathValue(folder.full_path ?? folder.name);
+                      const isSelected = selectedFolders.includes(path);
+                      const folderDocuments = filteredItems.groupedDocuments[path] || [];
+                      const depthLevel =
+                        typeof (folder as { depthLevel?: number }).depthLevel === "number"
+                          ? (folder as { depthLevel?: number }).depthLevel
+                          : undefined;
+                      const indent = Math.max(depthLevel ?? Math.max((folder.depth ?? 1) - 1, 0), 0);
 
                       return (
-                        <div key={folder.name} className="space-y-1">
+                        <div key={path} className="space-y-1">
                           <div
                             className={cn(
                               "flex cursor-pointer items-center gap-2 rounded-md p-2 hover:bg-muted/50",
                               isSelected && "bg-muted"
                             )}
-                            onClick={() => handleFolderToggle(folder.name)}
+                            onClick={() => handleFolderToggle(path)}
                           >
-                            <Checkbox checked={isSelected} onChange={() => handleFolderToggle(folder.name)} />
+                            <Checkbox checked={isSelected} onChange={() => handleFolderToggle(path)} />
                             <Folder className="h-4 w-4 text-blue-500" />
                             <div className="min-w-0 flex-1">
-                              <div className="truncate font-medium">{folder.name}</div>
-                              <div className="text-xs text-muted-foreground">{folder.doc_count} documents</div>
+                              <div className="truncate font-medium" style={{ paddingLeft: indent * 12 }}>
+                                {folder.name || path.split("/").filter(Boolean).pop() || path}
+                              </div>
+                              <div className="truncate text-xs text-muted-foreground">{path}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {folder.doc_count ?? folderDocuments.length} documents
+                              </div>
                             </div>
                           </div>
 

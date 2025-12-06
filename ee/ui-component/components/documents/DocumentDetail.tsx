@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import Image from "next/image";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 
 import { Document, FolderSummary, ProcessingProgress } from "../types";
+import { buildFolderTree, flattenFolderTree, normalizeFolderPathValue } from "../../lib/folderTree";
 
 interface DocumentDetailProps {
   selectedDocument: Document | null;
@@ -64,6 +65,41 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
   const [isSavingMetadata, setIsSavingMetadata] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
+  const currentFolderPath = useMemo(() => {
+    if (!selectedDocument) {
+      return null;
+    }
+    const systemMetadata = selectedDocument.system_metadata as Record<string, unknown> | undefined;
+    const candidates = [
+      selectedDocument.folder_path,
+      selectedDocument.folder_name,
+      systemMetadata?.folder_path as string | undefined,
+      systemMetadata?.folder_name as string | undefined,
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim()) {
+        return normalizeFolderPathValue(candidate);
+      }
+    }
+
+    return null;
+  }, [selectedDocument]);
+
+  const folderOptions = useMemo(
+    () =>
+      flattenFolderTree(buildFolderTree(folders)).map(folder => {
+        const path = normalizeFolderPathValue(folder.full_path ?? folder.name);
+        const depthLevel =
+          typeof (folder as { depthLevel?: number }).depthLevel === "number"
+            ? (folder as { depthLevel?: number }).depthLevel
+            : Math.max((folder.depth ?? 1) - 1, 0);
+        const label = folder.name || path.split("/").filter(Boolean).pop() || path;
+        return { path, label, depth: depthLevel ?? 0 };
+      }),
+    [folders]
+  );
+
   if (!selectedDocument) {
     return (
       <div className="flex h-[calc(100vh-200px)] items-center justify-center rounded-lg border border-dashed p-8">
@@ -75,7 +111,6 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
     );
   }
 
-  const currentFolder = selectedDocument.folder_name;
   const status = selectedDocument.system_metadata?.status as string | undefined;
   const error = selectedDocument.system_metadata?.error as string | undefined;
   const createdAt = selectedDocument.system_metadata?.created_at as string | undefined;
@@ -341,21 +376,21 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
     }
   };
 
-  const handleMoveToFolder = async (folderName: string | null) => {
+  const handleMoveToFolder = async (folderPath: string | null) => {
     if (isMovingToFolder || !selectedDocument) return;
 
     const documentId = selectedDocument.external_id;
     setIsMovingToFolder(true);
 
-    try {
-      // First, get the folder ID from the name if a name is provided
-      if (folderName) {
-        // Find the target folder by name
-        const targetFolder = folders.find(folder => folder.name === folderName);
-        if (targetFolder && targetFolder.id) {
-          console.log(`Found folder with ID: ${targetFolder.id} for name: ${folderName}`);
+    const targetPath = folderPath ? normalizeFolderPathValue(folderPath) : null;
+    const currentPath = currentFolderPath ? normalizeFolderPathValue(currentFolderPath) : null;
 
-          // Add to folder using folder ID
+    try {
+      if (targetPath && targetPath !== currentPath) {
+        const targetFolder = folders.find(
+          folder => normalizeFolderPathValue(folder.full_path || folder.name) === targetPath
+        );
+        if (targetFolder?.id) {
           await fetch(`${apiBaseUrl}/folders/${targetFolder.id}/documents/${documentId}`, {
             method: "POST",
             headers: {
@@ -364,16 +399,15 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
             },
           });
         } else {
-          console.error(`Could not find folder with name: ${folderName}`);
+          console.error(`Could not find folder with path: ${targetPath}`);
         }
       }
 
-      // If there's a current folder and we're either moving to a new folder or removing from folder
-      if (currentFolder) {
-        // Find the current folder ID
-        const currentFolderObj = folders.find(folder => folder.name === currentFolder);
-        if (currentFolderObj && currentFolderObj.id) {
-          // Remove from current folder using folder ID
+      if (currentPath && currentPath !== targetPath) {
+        const currentFolderObj = folders.find(
+          folder => normalizeFolderPathValue(folder.full_path || folder.name) === currentPath
+        );
+        if (currentFolderObj?.id) {
           await fetch(`${apiBaseUrl}/folders/${currentFolderObj.id}/documents/${documentId}`, {
             method: "DELETE",
             headers: {
@@ -384,10 +418,8 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
         }
       }
 
-      // Refresh folders first to get updated document_ids
-      refreshFolders();
-      // Then refresh documents with the updated folder information
-      refreshDocuments();
+      await refreshFolders();
+      await refreshDocuments();
     } catch (error) {
       console.error("Error updating folder:", error);
     } finally {
@@ -583,7 +615,7 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
             <div className="flex items-center gap-2">
               <Image src="/icons/folder-icon.png" alt="Folder" width={16} height={16} />
               <Select
-                value={currentFolder || "_none"}
+                value={currentFolderPath || "_none"}
                 onValueChange={value => handleMoveToFolder(value === "_none" ? null : value)}
                 disabled={isMovingToFolder}
               >
@@ -592,9 +624,16 @@ const DocumentDetail: React.FC<DocumentDetailProps> = ({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="_none">Not in a folder</SelectItem>
-                  {folders.map(folder => (
-                    <SelectItem key={folder.name} value={folder.name}>
-                      {folder.name}
+                  {folderOptions.map(option => (
+                    <SelectItem
+                      key={option.path}
+                      value={option.path}
+                      style={{ paddingLeft: `${8 + (option.depth ?? 0) * 12}px` }}
+                    >
+                      <div className="flex flex-col">
+                        <span className="truncate">{option.label}</span>
+                        <span className="text-[11px] text-muted-foreground">{option.path}</span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>

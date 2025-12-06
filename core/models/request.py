@@ -111,6 +111,10 @@ class SearchDocumentsRequest(BaseModel):
         None,
         description="Optional folder scope for the search. Accepts a single folder name or a list of folder names.",
     )
+    folder_depth: Optional[int] = Field(
+        default=None,
+        description="Folder scope depth: 0/None exact, -1 all descendants, n>0 include descendants up to n levels.",
+    )
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the search")
 
 
@@ -167,6 +171,13 @@ class RetrieveRequest(BaseModel):
     folder_name: Optional[Union[str, List[str]]] = Field(
         None,
         description="Optional folder scope for the operation. Accepts a single folder name or a list of folder names.",
+    )
+    folder_depth: Optional[int] = Field(
+        default=None,
+        description=(
+            "Folder scope depth. 0 or None = exact folder only, -1 = include all descendants, "
+            "n > 0 = include descendants up to n levels deeper."
+        ),
     )
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
 

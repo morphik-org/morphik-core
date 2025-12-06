@@ -148,6 +148,7 @@ export function useMorphikChat({
     temperature: initialQueryOptions.temperature ?? 0.3,
     graph_name: initialQueryOptions.graph_name,
     folder_name: initialQueryOptions.folder_name,
+    folder_depth: initialQueryOptions.folder_depth,
     inline_citations: initialQueryOptions.inline_citations ?? true,
   });
 
