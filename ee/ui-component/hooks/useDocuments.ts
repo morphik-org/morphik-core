@@ -143,6 +143,7 @@ export function useDocuments({
 
     if (selectedFolder !== null && selectedFolder !== "all") {
       queryParams.append("folder_name", selectedFolder);
+      queryParams.append("folder_depth", "-1");
     }
 
     const queryString = queryParams.toString();
@@ -157,6 +158,16 @@ export function useDocuments({
       additional_metadata: doc.additional_metadata ?? {},
       system_metadata: systemMetadata,
     };
+
+    if (!normalized.folder_path) {
+      const pathFromMetadata =
+        typeof systemMetadata.folder_path === "string" ? (systemMetadata.folder_path as string).trim() : "";
+      if (pathFromMetadata) {
+        normalized.folder_path = pathFromMetadata;
+      } else if (typeof normalized.folder_name === "string") {
+        normalized.folder_path = normalized.folder_name;
+      }
+    }
 
     if (!normalized.system_metadata.status && typeof normalized.folder_name === "string") {
       normalized.system_metadata.status = "processing";
@@ -446,7 +457,9 @@ export function useDocuments({
 
     // Also clear folder details cache if needed
     if (selectedFolder && selectedFolder !== "all") {
-      const targetFolder = folders.find(folder => folder.name === selectedFolder);
+      const targetFolder = folders.find(
+        folder => folder.full_path === selectedFolder || folder.name === selectedFolder
+      );
       if (targetFolder) {
         folderDetailsCache.delete(targetFolder.id);
       }
@@ -621,12 +634,28 @@ export function useDocuments({
 
   // Merge regular documents with optimistic documents
   const getDocumentFolder = useCallback((doc: Document) => {
+    const fromPath =
+      typeof doc.folder_path === "string"
+        ? doc.folder_path.trim()
+        : typeof (doc.system_metadata as Record<string, unknown> | undefined)?.folder_path === "string"
+          ? String((doc.system_metadata as Record<string, unknown>).folder_path).trim()
+          : "";
+    if (fromPath) {
+      return fromPath;
+    }
+
     const fromDoc = typeof doc.folder_name === "string" ? doc.folder_name.trim() : "";
     if (fromDoc) {
       return fromDoc;
     }
 
     const systemMetadata = (doc.system_metadata ?? {}) as Record<string, unknown>;
+    const fromMetadataPath =
+      typeof systemMetadata.folder_path === "string" ? (systemMetadata.folder_path as string).trim() : "";
+    if (fromMetadataPath) {
+      return fromMetadataPath;
+    }
+
     const fromMetadata =
       typeof systemMetadata.folder_name === "string" ? (systemMetadata.folder_name as string).trim() : "";
     return fromMetadata;

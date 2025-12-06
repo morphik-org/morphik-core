@@ -115,6 +115,10 @@ export function useFolders({
           const summary: FolderSummary & { document_ids?: string[] } = {
             id: folder.id,
             name: folder.name,
+            full_path: folder.full_path ?? undefined,
+            parent_id: folder.parent_id ?? null,
+            depth: folder.depth ?? null,
+            child_count: folder.child_count ?? null,
             description: folder.description ?? undefined,
             doc_count:
               documentInfo?.document_count ??

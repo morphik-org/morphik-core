@@ -27,7 +27,6 @@ from core.models.responses import (
 from core.routes.utils import project_document_fields, warn_if_legacy_rules
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, ingestion_service
-from core.utils.folder_utils import normalize_folder_name
 from core.utils.typed_metadata import TypedMetadataError
 
 # ---------------------------------------------------------------------------
@@ -50,6 +49,10 @@ async def list_documents(
     request: ListDocumentsRequest,
     auth: AuthContext = Depends(verify_token),
     folder_name: Optional[Union[str, List[str]]] = Query(None),
+    folder_depth: Optional[int] = Query(
+        None,
+        description="Folder scope depth: 0/None = exact, -1 = all descendants, n > 0 = include descendants up to n levels.",
+    ),
     end_user_id: Optional[str] = Query(None),
 ):
     """
@@ -73,10 +76,11 @@ async def list_documents(
     # Create system filters for folder and user scoping
     system_filters = {}
 
-    # Normalize folder_name parameter (convert string "null" to None)
     if folder_name is not None:
-        normalized_folder_name = normalize_folder_name(folder_name)
-        system_filters["folder_name"] = normalized_folder_name
+        try:
+            system_filters.update(document_service._build_folder_scope_filters(folder_name, folder_depth))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
     if end_user_id:
         system_filters["end_user_id"] = end_user_id
     # Note: auth.app_id is already handled in _build_access_filter_optimized
@@ -94,6 +98,10 @@ async def list_docs(
     request: ListDocsRequest,
     auth: AuthContext = Depends(verify_token),
     folder_name: Optional[Union[str, List[str]]] = Query(None),
+    folder_depth: Optional[int] = Query(
+        None,
+        description="Folder scope depth: 0/None = exact, -1 = all descendants, n > 0 = include descendants up to n levels.",
+    ),
     end_user_id: Optional[str] = Query(None),
 ) -> ListDocsResponse:
     """
@@ -117,7 +125,10 @@ async def list_docs(
     try:
         system_filters: Dict[str, Any] = {}
         if folder_name is not None:
-            system_filters["folder_name"] = normalize_folder_name(folder_name)
+            try:
+                system_filters.update(document_service._build_folder_scope_filters(folder_name, folder_depth))
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
 
@@ -260,6 +271,10 @@ async def get_document_by_filename(
     filename: str,
     auth: AuthContext = Depends(verify_token),
     folder_name: Optional[Union[str, List[str]]] = Query(None),
+    folder_depth: Optional[int] = Query(
+        None,
+        description="Folder scope depth: 0/None = exact, -1 = all descendants, n > 0 = include descendants up to n levels.",
+    ),
     end_user_id: Optional[str] = None,
 ):
     """
@@ -269,8 +284,10 @@ async def get_document_by_filename(
         # Create system filters for folder and user scoping
         system_filters = {}
         if folder_name is not None:
-            normalized_folder_name = normalize_folder_name(folder_name)
-            system_filters["folder_name"] = normalized_folder_name
+            try:
+                system_filters.update(document_service._build_folder_scope_filters(folder_name, folder_depth))
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
 

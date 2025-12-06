@@ -8,7 +8,7 @@ import { useMorphik } from "@/contexts/morphik-context";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useHeader } from "@/contexts/header-context";
 import { Button } from "@/components/ui/button";
-import { Trash2, Upload, RefreshCw, PlusCircle, ChevronsDown, ChevronsUp } from "lucide-react";
+import { Trash2, Upload, RefreshCw, PlusCircle } from "lucide-react";
 
 function DocumentsContent() {
   const { apiBaseUrl, authToken } = useMorphik();
@@ -19,7 +19,6 @@ function DocumentsContent() {
   const folderParam = searchParams?.get("folder") || null;
   const [currentFolder, setCurrentFolder] = useState<string | null>(folderParam);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
-  const [allFoldersExpanded, setAllFoldersExpanded] = useState(false);
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
 
@@ -55,6 +54,17 @@ function DocumentsContent() {
     const rightContent = currentFolder ? (
       // Folder view controls
       <>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            const event = new CustomEvent("openNewFolderDialog");
+            window.dispatchEvent(event);
+          }}
+        >
+          <PlusCircle className="mr-2 h-4 w-4" />
+          New Folder
+        </Button>
         {selectedDocuments.length > 0 && (
           <Button
             variant="outline"
@@ -113,19 +123,6 @@ function DocumentsContent() {
           variant="outline"
           size="sm"
           onClick={() => {
-            const event = new CustomEvent("toggleExpandAllFolders");
-            window.dispatchEvent(event);
-          }}
-          className="flex items-center gap-1.5"
-          title="Expand or collapse all folders"
-        >
-          {allFoldersExpanded ? <ChevronsUp className="h-4 w-4" /> : <ChevronsDown className="h-4 w-4" />}
-          <span>{allFoldersExpanded ? "Collapse All" : "Expand All"}</span>
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
             // Trigger refresh event
             window.location.reload();
           }}
@@ -154,7 +151,7 @@ function DocumentsContent() {
       setCustomBreadcrumbs(null);
       setRightContent(null);
     };
-  }, [currentFolder, router, selectedDocuments, allFoldersExpanded, setCustomBreadcrumbs, setRightContent]);
+  }, [currentFolder, router, selectedDocuments, setCustomBreadcrumbs, setRightContent]);
 
   // Listen for events from DocumentsSection
   useEffect(() => {
@@ -166,23 +163,17 @@ function DocumentsContent() {
       setShowNewFolderDialog(true);
     };
 
-    const handleToggleExpandAllFolders = () => {
-      setAllFoldersExpanded(prev => !prev);
-    };
-
     const handleOpenUploadDialog = () => {
       setShowUploadDialog(true);
     };
 
     window.addEventListener("documentsSelectionChanged", handleSelectionChange as EventListener);
     window.addEventListener("openNewFolderDialog", handleOpenNewFolderDialog);
-    window.addEventListener("toggleExpandAllFolders", handleToggleExpandAllFolders);
     window.addEventListener("openUploadDialog", handleOpenUploadDialog);
 
     return () => {
       window.removeEventListener("documentsSelectionChanged", handleSelectionChange as EventListener);
       window.removeEventListener("openNewFolderDialog", handleOpenNewFolderDialog);
-      window.removeEventListener("toggleExpandAllFolders", handleToggleExpandAllFolders);
       window.removeEventListener("openUploadDialog", handleOpenUploadDialog);
     };
   }, []);
@@ -211,7 +202,6 @@ function DocumentsContent() {
       onViewInPDFViewer={(documentId: string) => {
         router.push(`/pdf?document=${documentId}`);
       }}
-      allFoldersExpanded={allFoldersExpanded}
       showNewFolderDialog={showNewFolderDialog}
       setShowNewFolderDialog={setShowNewFolderDialog}
       showUploadDialog={showUploadDialog}

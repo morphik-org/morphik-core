@@ -31,6 +31,7 @@ from core.vector_store.base_vector_store import BaseVectorStore
 
 from ..models.auth import AuthContext
 from ..models.graph import Graph
+from ..utils.folder_utils import normalize_folder_selector
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,66 @@ class DocumentService:
         # MultiVectorStore initialization is now handled in the FastAPI startup event
         # so we don't need to initialize it here again
 
+    @staticmethod
+    def _normalize_folder_filter(folder_name: Optional[Union[str, List[str]]]) -> Optional[Union[str, List[str]]]:
+        """Normalize folder selector to canonical paths."""
+        if not folder_name:
+            return None
+        return normalize_folder_selector(folder_name)
+
+    @staticmethod
+    def _build_folder_scope_filters(
+        folder_name: Optional[Union[str, List[str]]], folder_depth: Optional[int]
+    ) -> Dict[str, Any]:
+        """
+        Build system_filters entries for folder scoping with optional nesting depth.
+
+        folder_depth semantics:
+        - None or 0: exact match only.
+        - -1: include all descendants.
+        - n > 0: include descendants up to n levels deeper than the base path.
+        """
+        if folder_name is None:
+            return {}
+
+        def _depth(path: str) -> int:
+            if path == "/":
+                return 0
+            return len([p for p in path.strip("/").split("/") if p])
+
+        normalized = normalize_folder_selector(folder_name)
+        paths = normalized if isinstance(normalized, list) else [normalized]
+
+        exact_paths: List[Optional[str]] = []
+        prefix_paths: List[str] = []
+        prefix_depth: List[Dict[str, Any]] = []
+
+        for path in paths:
+            if path is None:
+                exact_paths.append(None)
+                continue
+
+            if folder_depth is None or folder_depth == 0:
+                exact_paths.append(path)
+                continue
+
+            base_depth = _depth(path)
+            if folder_depth < 0:
+                prefix_paths.append(path)
+                continue
+
+            max_depth = base_depth + folder_depth
+            prefix_depth.append({"prefix": path, "max_depth": max_depth})
+
+        filters: Dict[str, Any] = {}
+        if prefix_depth:
+            filters["folder_path_prefix_depth"] = prefix_depth
+        if prefix_paths:
+            filters["folder_path_prefix"] = prefix_paths if len(prefix_paths) > 1 else prefix_paths[0]
+        if exact_paths:
+            filters["folder_path"] = exact_paths if len(exact_paths) > 1 else exact_paths[0]
+        return filters
+
     async def retrieve_chunks(
         self,
         query: Optional[str],
@@ -107,6 +168,7 @@ class DocumentService:
         use_reranking: Optional[bool] = None,
         use_colpali: Optional[bool] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         end_user_id: Optional[str] = None,
         perf_tracker: Optional[Any] = None,  # Performance tracker from API layer
         padding: int = 0,  # Number of additional chunks to retrieve before and after matched chunks
@@ -169,10 +231,7 @@ class DocumentService:
             )
 
         # Build system filters for folder_name and end_user_id
-        system_filters = {}
-        if folder_name:
-            # Allow folder_name to be a single string or list[str]
-            system_filters["folder_name"] = folder_name
+        system_filters = self._build_folder_scope_filters(folder_name, folder_depth)
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
         # Note: Don't add auth.app_id here - it's already handled in _build_access_filter_optimized
@@ -710,6 +769,7 @@ class DocumentService:
         use_reranking: Optional[bool] = None,
         use_colpali: Optional[bool] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         end_user_id: Optional[str] = None,
         perf_tracker: Optional[Any] = None,
         padding: int = 0,
@@ -731,6 +791,7 @@ class DocumentService:
             use_reranking,
             use_colpali,
             folder_name,
+            folder_depth,
             end_user_id,
             perf_tracker,
             padding=0,  # No padding for original
@@ -749,6 +810,7 @@ class DocumentService:
                 use_reranking,
                 use_colpali,
                 folder_name,
+                folder_depth,
                 end_user_id,
                 perf_tracker,
                 padding,
@@ -773,12 +835,13 @@ class DocumentService:
         use_reranking: Optional[bool] = None,
         use_colpali: Optional[bool] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         end_user_id: Optional[str] = None,
     ) -> List[DocumentResult]:
         """Retrieve relevant documents."""
         # Get chunks first
         chunks = await self.retrieve_chunks(
-            query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, end_user_id
+            query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, folder_depth, end_user_id
         )
         # Convert to document results
         results = await self._create_document_results(auth, chunks)
@@ -791,6 +854,7 @@ class DocumentService:
         document_ids: List[str],
         auth: AuthContext,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         end_user_id: Optional[str] = None,
     ) -> List[Document]:
         """
@@ -807,9 +871,7 @@ class DocumentService:
             return []
 
         # Build system filters for folder_name and end_user_id
-        system_filters = {}
-        if folder_name:
-            system_filters["folder_name"] = folder_name
+        system_filters = self._build_folder_scope_filters(folder_name, folder_depth)
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
         # Note: Don't add auth.app_id here - it's already handled in _build_access_filter_optimized
@@ -824,6 +886,7 @@ class DocumentService:
         chunk_ids: List[ChunkSource],
         auth: AuthContext,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         end_user_id: Optional[str] = None,
         use_colpali: Optional[bool] = None,
         output_format: str = "base64",
@@ -849,7 +912,7 @@ class DocumentService:
         doc_ids = list({source.document_id for source in chunk_ids})
 
         # Find authorized documents in a single query
-        authorized_docs = await self.batch_retrieve_documents(doc_ids, auth, folder_name, end_user_id)
+        authorized_docs = await self.batch_retrieve_documents(doc_ids, auth, folder_name, folder_depth, end_user_id)
         authorized_doc_map = {doc.external_id: doc for doc in authorized_docs}
         authorized_doc_ids = set(authorized_doc_map.keys())
 
@@ -959,6 +1022,7 @@ class DocumentService:
         include_paths: bool = False,
         prompt_overrides: Optional["QueryPromptOverrides"] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         end_user_id: Optional[str] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
         chat_history: Optional[List[ChatMessage]] = None,
@@ -1023,6 +1087,7 @@ class DocumentService:
                 include_paths=include_paths,
                 prompt_overrides=prompt_overrides,
                 folder_name=folder_name,
+                folder_depth=folder_depth,
                 end_user_id=end_user_id,
                 stream_response=stream_response,
             )
@@ -1045,6 +1110,7 @@ class DocumentService:
             use_reranking,
             use_colpali,
             folder_name,
+            folder_depth,
             end_user_id,
             perf_tracker,
             padding,
@@ -1930,6 +1996,7 @@ class DocumentService:
         name: str,
         auth: AuthContext,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         end_user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get graph visualization data.
@@ -1945,8 +2012,7 @@ class DocumentService:
         """
         # Create system filters for folder and user scoping
         system_filters = {}
-        if folder_name:
-            system_filters["folder_name"] = folder_name
+        system_filters.update(self._build_folder_scope_filters(folder_name, folder_depth))
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
 
@@ -1964,6 +2030,7 @@ class DocumentService:
         limit: int = 10,
         filters: Optional[Dict[str, Any]] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         end_user_id: Optional[str] = None,
     ) -> List[Document]:
         """Search documents by filename using full-text search.
@@ -1980,9 +2047,7 @@ class DocumentService:
             List of documents matching the search query, ordered by relevance
         """
         # Build system filters
-        system_filters = {}
-        if folder_name:
-            system_filters["folder_name"] = folder_name
+        system_filters = self._build_folder_scope_filters(folder_name, folder_depth)
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
 
