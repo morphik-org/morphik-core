@@ -8,11 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.auth_utils import verify_token
 from core.database.postgres_database import InvalidMetadataFilterError
 from core.models.auth import AuthContext
-from core.models.folders import Folder, FolderCreate, FolderSummary
+from core.models.folders import Folder, FolderCreate
 from core.models.request import FolderDetailsRequest
 from core.models.responses import (
-    DocumentAddToFolderResponse,
-    DocumentDeleteResponse,
     FolderDeleteResponse,
     FolderDetails,
     FolderDetailsResponse,
@@ -92,22 +90,6 @@ async def create_folder(
         raise
     except Exception as e:
         logger.error(f"Error creating folder: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("", response_model=List[Folder])
-@telemetry.track(operation_type="list_folders", metadata_resolver=telemetry.list_folders_metadata)
-async def list_folders(
-    auth: AuthContext = Depends(verify_token),
-) -> List[Folder]:
-    """
-    List all folders the user has access to.
-    """
-    try:
-        folders = await document_service.db.list_folders(auth)
-        return folders
-    except Exception as e:
-        logger.error(f"Error listing folders: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -211,37 +193,6 @@ async def folder_details(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.get("/summary", response_model=List[FolderSummary])
-@telemetry.track(operation_type="list_folders_summary")
-async def list_folder_summaries(auth: AuthContext = Depends(verify_token)) -> List[FolderSummary]:
-    """Return compact folder list (id, name, doc_count, updated_at)."""
-
-    try:
-        summaries = await document_service.db.list_folders_summary(auth)
-        return summaries  # type: ignore[return-value]
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Error listing folder summaries: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@router.get("/{folder_id_or_name}", response_model=Folder)
-@telemetry.track(operation_type="get_folder", metadata_resolver=telemetry.get_folder_metadata)
-async def get_folder(
-    folder_id_or_name: str,
-    auth: AuthContext = Depends(verify_token),
-) -> Folder:
-    """
-    Get a folder by ID or name.
-    """
-    try:
-        return await _resolve_folder(folder_id_or_name, auth)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting folder: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.delete("/{folder_id_or_name}", response_model=FolderDeleteResponse)
 @telemetry.track(operation_type="delete_folder", metadata_resolver=telemetry.delete_folder_metadata)
 async def delete_folder(
@@ -297,63 +248,4 @@ async def delete_folder(
         raise e
     except Exception as e:
         logger.error(f"Error deleting folder: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ---------------------------------------------------------------------------
-# Folder-Document association endpoints
-# ---------------------------------------------------------------------------
-
-
-@router.post("/{folder_id_or_name}/documents/{document_id}", response_model=DocumentAddToFolderResponse)
-@telemetry.track(operation_type="add_document_to_folder", metadata_resolver=telemetry.add_document_to_folder_metadata)
-async def add_document_to_folder(
-    folder_id_or_name: str,
-    document_id: str,
-    auth: AuthContext = Depends(verify_token),
-):
-    """
-    Add a document to a folder.
-    """
-    try:
-        folder = await _resolve_folder(folder_id_or_name, auth)
-        success = await document_service.db.add_document_to_folder(folder.id, document_id, auth)
-
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to add document to folder")
-
-        return {
-            "status": "success",
-            "message": f"Document {document_id} added to folder {folder.name} ({folder.id})",
-        }
-    except Exception as e:
-        logger.error(f"Error adding document to folder: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.delete("/{folder_id_or_name}/documents/{document_id}", response_model=DocumentDeleteResponse)
-@telemetry.track(
-    operation_type="remove_document_from_folder", metadata_resolver=telemetry.remove_document_from_folder_metadata
-)
-async def remove_document_from_folder(
-    folder_id_or_name: str,
-    document_id: str,
-    auth: AuthContext = Depends(verify_token),
-):
-    """
-    Remove a document from a folder.
-    """
-    try:
-        folder = await _resolve_folder(folder_id_or_name, auth)
-        success = await document_service.db.remove_document_from_folder(folder.id, document_id, auth)
-
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to remove document from folder")
-
-        return {
-            "status": "success",
-            "message": f"Document {document_id} removed from folder {folder.name} ({folder.id})",
-        }
-    except Exception as e:
-        logger.error(f"Error removing document from folder: {e}")
         raise HTTPException(status_code=500, detail=str(e))

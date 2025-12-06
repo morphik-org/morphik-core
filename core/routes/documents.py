@@ -1,22 +1,15 @@
-import json
 import logging
 import os
 from typing import Any, Dict, List, Optional, Union
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.auth_utils import verify_token
 from core.config import get_settings
 from core.database.postgres_database import InvalidMetadataFilterError
 from core.models.auth import AuthContext
 from core.models.documents import Document
-from core.models.request import (
-    DocumentPagesRequest,
-    IngestTextRequest,
-    ListDocsRequest,
-    ListDocumentsRequest,
-    MetadataUpdateRequest,
-)
+from core.models.request import DocumentPagesRequest, ListDocsRequest
 from core.models.responses import (
     DocumentDeleteResponse,
     DocumentDownloadUrlResponse,
@@ -24,9 +17,9 @@ from core.models.responses import (
     FolderCount,
     ListDocsResponse,
 )
-from core.routes.utils import project_document_fields, warn_if_legacy_rules
+from core.routes.utils import project_document_fields
 from core.services.telemetry import TelemetryService
-from core.services_init import document_service, ingestion_service
+from core.services_init import document_service
 from core.utils.folder_utils import normalize_folder_name
 from core.utils.typed_metadata import TypedMetadataError
 
@@ -43,50 +36,6 @@ telemetry = TelemetryService()
 # ---------------------------------------------------------------------------
 # Document CRUD endpoints
 # ---------------------------------------------------------------------------
-
-
-@router.post("", response_model=List[Document])
-async def list_documents(
-    request: ListDocumentsRequest,
-    auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[Union[str, List[str]]] = Query(None),
-    end_user_id: Optional[str] = Query(None),
-):
-    """
-    List accessible documents with metadata filtering.
-
-    **Supported operators**: `$and`, `$or`, `$nor`, `$not`, `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`,
-    `$in`, `$nin`, `$exists`, `$type`, `$regex`, `$contains`.
-
-    **Implicit equality** (backwards compatible):
-    ```json
-    {"status": "active"}
-    ```
-    Uses JSONB containment, matches scalars inside arrays, JSON-serializable types only.
-
-    **Explicit operators** (typed comparisons):
-    ```json
-    {"priority": {"$eq": 42}, "created_date": {"$gte": "2024-01-01T00:00:00Z"}}
-    ```
-    Supports typed metadata (number, decimal, datetime, date) with safe casting.
-    """
-    # Create system filters for folder and user scoping
-    system_filters = {}
-
-    # Normalize folder_name parameter (convert string "null" to None)
-    if folder_name is not None:
-        normalized_folder_name = normalize_folder_name(folder_name)
-        system_filters["folder_name"] = normalized_folder_name
-    if end_user_id:
-        system_filters["end_user_id"] = end_user_id
-    # Note: auth.app_id is already handled in _build_access_filter_optimized
-
-    try:
-        return await document_service.db.get_documents(
-            auth, request.skip, request.limit, filters=request.document_filters, system_filters=system_filters
-        )
-    except InvalidMetadataFilterError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/list_docs", response_model=ListDocsResponse)
@@ -195,44 +144,6 @@ async def get_document(document_id: str, auth: AuthContext = Depends(verify_toke
         raise e
 
 
-@router.get("/{document_id}/status", response_model=Dict[str, Any])
-async def get_document_status(document_id: str, auth: AuthContext = Depends(verify_token)):
-    """
-    Get the processing status of a document.
-
-    """
-    try:
-        doc = await document_service.db.get_document(document_id, auth)
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found")
-
-        # Extract status information
-        status = doc.system_metadata.get("status", "unknown")
-
-        response = {
-            "document_id": doc.external_id,
-            "status": status,
-            "filename": doc.filename,
-            "created_at": doc.system_metadata.get("created_at"),
-            "updated_at": doc.system_metadata.get("updated_at"),
-        }
-
-        # Add progress information if processing
-        if status == "processing" and "progress" in doc.system_metadata:
-            response["progress"] = doc.system_metadata["progress"]
-
-        # Add error information if failed
-        if status == "failed":
-            response["error"] = doc.system_metadata.get("error", "Unknown error")
-
-        return response
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting document status: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error getting document status: {str(e)}")
-
-
 @router.delete("/{document_id}", response_model=DocumentDeleteResponse)
 @telemetry.track(operation_type="delete_document", metadata_resolver=telemetry.document_delete_metadata)
 async def delete_document(document_id: str, auth: AuthContext = Depends(verify_token)):
@@ -253,35 +164,6 @@ async def delete_document(document_id: str, auth: AuthContext = Depends(verify_t
         raise HTTPException(status_code=403, detail=str(e))
     except TypedMetadataError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-
-
-@router.get("/filename/{filename}", response_model=Document)
-async def get_document_by_filename(
-    filename: str,
-    auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[Union[str, List[str]]] = Query(None),
-    end_user_id: Optional[str] = None,
-):
-    """
-    Get document by filename.
-    """
-    try:
-        # Create system filters for folder and user scoping
-        system_filters = {}
-        if folder_name is not None:
-            normalized_folder_name = normalize_folder_name(folder_name)
-            system_filters["folder_name"] = normalized_folder_name
-        if end_user_id:
-            system_filters["end_user_id"] = end_user_id
-
-        doc = await document_service.db.get_document_by_filename(filename, auth, system_filters)
-        logger.debug(f"Found document by filename: {doc}")
-        if not doc:
-            raise HTTPException(status_code=404, detail=f"Document with filename '{filename}' not found")
-        return doc
-    except HTTPException as e:
-        logger.error(f"Error getting document by filename: {e}")
-        raise e
 
 
 @router.get("/{document_id}/download_url", response_model=DocumentDownloadUrlResponse)
@@ -379,137 +261,6 @@ async def download_document_file(document_id: str, auth: AuthContext = Depends(v
     except Exception as e:
         logger.error(f"Error downloading document file {document_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error downloading file: {str(e)}")
-
-
-# ---------------------------------------------------------------------------
-# Document update endpoints
-# ---------------------------------------------------------------------------
-
-
-@router.post("/{document_id}/update_text", response_model=Document)
-@telemetry.track(operation_type="update_document_text", metadata_resolver=telemetry.document_update_text_metadata)
-async def update_document_text(
-    document_id: str,
-    request: IngestTextRequest,
-    update_strategy: str = "add",
-    auth: AuthContext = Depends(verify_token),
-):
-    """
-    Update a document with new text content using the specified strategy.
-    """
-    try:
-        if getattr(request, "rules", None):
-            logger.warning("Legacy 'rules' field supplied to /documents/{document_id}/update_text; ignoring.")
-
-        extra_fields = getattr(request, "model_extra", {}) if hasattr(request, "model_extra") else {}
-        ingestion_service._enforce_no_user_mutable_fields(
-            request.metadata, request.folder_name, extra_fields, context="update"
-        )
-
-        doc = await ingestion_service.update_document(
-            document_id=document_id,
-            auth=auth,
-            content=request.content,
-            file=None,
-            filename=request.filename,
-            metadata=request.metadata,
-            metadata_types=request.metadata_types,
-            update_strategy=update_strategy,
-            use_colpali=request.use_colpali,
-        )
-
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found or update failed")
-
-        return doc
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@router.post("/{document_id}/update_file", response_model=Document)
-@telemetry.track(operation_type="update_document_file", metadata_resolver=telemetry.document_update_file_metadata)
-async def update_document_file(
-    request: Request,
-    document_id: str,
-    file: UploadFile,
-    metadata: str = Form("{}"),
-    metadata_types: str = Form("{}"),
-    update_strategy: str = Form("add"),
-    use_colpali: Optional[bool] = Form(None),
-    auth: AuthContext = Depends(verify_token),
-):
-    """
-    Update a document with content from a file using the specified strategy.
-    """
-    try:
-        metadata_dict = json.loads(metadata)
-        metadata_types_dict = json.loads(metadata_types or "{}") if metadata_types else {}
-        if metadata_types_dict is None:
-            metadata_types_dict = {}
-        if not isinstance(metadata_types_dict, dict):
-            raise HTTPException(status_code=400, detail="metadata_types must be a JSON object")
-        await warn_if_legacy_rules(request, f"/documents/{document_id}/update_file", logger)
-
-        doc = await ingestion_service.update_document(
-            document_id=document_id,
-            auth=auth,
-            content=None,
-            file=file,
-            filename=file.filename,
-            metadata=metadata_dict,
-            metadata_types=metadata_types_dict,
-            update_strategy=update_strategy,
-            use_colpali=use_colpali,
-        )
-
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found or update failed")
-
-        return doc
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except TypedMetadataError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@router.post("/{document_id}/update_metadata", response_model=Document)
-@telemetry.track(
-    operation_type="update_document_metadata",
-    metadata_resolver=telemetry.document_update_metadata_resolver,
-)
-async def update_document_metadata(
-    document_id: str, metadata_updates: MetadataUpdateRequest, auth: AuthContext = Depends(verify_token)
-):
-    """
-    Update only a document's metadata.
-    """
-    try:
-        doc = await ingestion_service.update_document(
-            document_id=document_id,
-            auth=auth,
-            content=None,
-            file=None,
-            filename=None,
-            metadata=metadata_updates.metadata,
-            metadata_types=metadata_updates.metadata_types,
-            update_strategy="add",
-            use_colpali=None,
-        )
-
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found or update failed")
-
-        return doc
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # TODO: add @telemetry.track(operation_type="extract_document_pages", metadata_resolver=telemetry.document_pages_metadata)

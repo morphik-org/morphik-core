@@ -16,27 +16,6 @@ __all__: List[str] = []
 
 
 def init_app(app: FastAPI) -> None:
-    """Mount all enterprise routers onto the given *app* instance."""
+    """Enterprise routers disabled for simplified surface."""
     logger = logging.getLogger(__name__)
-    logger.info("EE.ROUTERS.INIT_APP: Initializing enterprise routers...")
-
-    # Discover routers lazily – import sub-modules that register a global
-    # ``router`` attribute.  Keep the list here explicit to avoid accidental
-    # exposure of unfinished modules.
-    for module_path in [
-        "ee.routers.connectors_router",
-    ]:
-        try:
-            mod = import_module(module_path)
-
-            if hasattr(mod, "router"):
-                app.include_router(mod.router)
-            else:
-                logger.warning(f"EE.ROUTERS.INIT_APP: Module {module_path} does not have a 'router' attribute.")
-        except ImportError as e:
-            logger.error(f"EE.ROUTERS.INIT_APP: Failed to import {module_path}: {e}", exc_info=True)
-        except Exception as e:
-            logger.error(f"EE.ROUTERS.INIT_APP: Unexpected error processing {module_path}: {e}", exc_info=True)
-            # Potentially re-raise or handle if a critical router fails, or decide to continue
-            # For now, just log and continue to see if other routers load.
-    logger.info("EE.ROUTERS.INIT_APP: Finished initializing enterprise routers.")
+    logger.info("EE.ROUTERS.INIT_APP: Skipped (EE endpoints disabled)")

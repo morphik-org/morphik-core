@@ -9,16 +9,10 @@ from sqlalchemy import text
 
 from core.config import get_settings
 from core.dependencies import get_document_service, get_redis_pool
-from core.models.responses import DetailedHealthCheckResponse, HealthCheckResponse, ServiceStatus
+from core.models.responses import DetailedHealthCheckResponse, ServiceStatus
 
 router = APIRouter(prefix="", tags=["health"])
 settings = get_settings()
-
-
-@router.get("/ping", response_model=HealthCheckResponse)
-async def ping_health():
-    """Simple health check endpoint that returns 200 OK."""
-    return {"status": "ok", "message": "Server is running"}
 
 
 @router.get("/health", response_model=DetailedHealthCheckResponse)
