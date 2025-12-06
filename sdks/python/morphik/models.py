@@ -76,6 +76,7 @@ class Document(BaseModel):
     chunk_ids: List[str] = Field(default_factory=list, description="IDs of document chunks")
     page_count: Optional[int] = Field(None, description="Number of pages derived during ingestion")
     folder_name: Optional[str] = Field(None, description="Folder scope for the document")
+    folder_path: Optional[str] = Field(None, description="Canonical folder path for the document")
     end_user_id: Optional[str] = Field(None, description="End-user scope for the document")
     app_id: Optional[str] = Field(None, description="App identifier for the document")
 
@@ -429,6 +430,10 @@ class Graph(BaseModel):
     filters: Optional[Dict[str, Any]] = Field(None, description="Document filters used to create the graph")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
+    folder_name: Optional[str] = Field(None, description="Folder scope for the graph")
+    folder_path: Optional[str] = Field(None, description="Canonical folder path for the graph")
+    end_user_id: Optional[str] = Field(None, description="End user scope for the graph")
+    app_id: Optional[str] = Field(None, description="Application ID associated with the graph")
 
     _client: Any | None = PrivateAttr(default=None)
 
@@ -637,6 +642,10 @@ class FolderInfo(BaseModel):
 
     id: str = Field(..., description="Unique folder identifier")
     name: str = Field(..., description="Folder name")
+    full_path: Optional[str] = Field(None, description="Canonical folder path from the root")
+    parent_id: Optional[str] = Field(None, description="Parent folder identifier")
+    depth: Optional[int] = Field(None, description="Depth of the folder in the hierarchy (root = 1)")
+    child_count: Optional[int] = Field(None, description="Number of direct child folders")
     description: Optional[str] = Field(None, description="Folder description")
     document_ids: Optional[List[str]] = Field(default_factory=list, description="IDs of documents in the folder")
     system_metadata: Dict[str, Any] = Field(default_factory=dict, description="System-managed metadata")
@@ -677,6 +686,9 @@ class FolderSummary(BaseModel):
 
     id: str = Field(..., description="Unique folder identifier")
     name: str = Field(..., description="Folder name")
+    full_path: Optional[str] = Field(None, description="Canonical folder path from the root")
+    parent_id: Optional[str] = Field(None, description="Parent folder identifier")
+    depth: Optional[int] = Field(None, description="Depth of the folder in the hierarchy (root = 1)")
     description: Optional[str] = Field(None, description="Folder description")
     doc_count: int = Field(default=0, description="Number of documents in folder")
     updated_at: Optional[str] = Field(None, description="Last update timestamp")
