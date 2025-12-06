@@ -16,6 +16,8 @@ def _make_sync_client():
                 "params": params,
             }
         )
+        if isinstance(endpoint, str) and endpoint.startswith("retrieve/chunks"):
+            return []
         # Return mock ListDocsResponse format
         return {
             "documents": [],
@@ -42,6 +44,8 @@ async def _make_async_client():
                 "params": params,
             }
         )
+        if isinstance(endpoint, str) and endpoint.startswith("retrieve/chunks"):
+            return []
         # Return mock ListDocsResponse format
         return {
             "documents": [],
@@ -120,5 +124,357 @@ async def test_async_list_documents_payloads_across_scopes():
         assert folder_user_call["params"]["folder_name"] == ["ops", "shared"]
         assert folder_user_call["params"]["end_user_id"] == "usr-7"
         assert folder_user_call["data"]["document_filters"] is None
+    finally:
+        await client.close()
+
+
+def test_folder_depth_passthrough_sync():
+    client, calls = _make_sync_client()
+    try:
+        client.list_documents(folder_name="/a/b", folder_depth=-1)
+        call = calls.pop()
+        assert call["params"]["folder_depth"] == -1
+
+        folder = Folder(client, "/team/alpha")
+        folder.retrieve_chunks(query="q", folder_depth=2)
+        retrieve_call = calls.pop()
+        assert retrieve_call["data"]["folder_depth"] == 2
+    finally:
+        client.close()
+
+
+# =============================================================================
+# Folder Nesting Tests - Sync
+# =============================================================================
+
+
+def test_folder_full_path_property():
+    """Test that Folder.full_path returns the canonical path."""
+    client, _ = _make_sync_client()
+    try:
+        # When full_path is provided, it should be used
+        folder = Folder(client, "leaf", full_path="/projects/alpha/leaf")
+        assert folder.full_path == "/projects/alpha/leaf"
+        assert folder.name == "leaf"
+
+        # When full_path is not provided, name is used
+        folder2 = Folder(client, "/simple/path")
+        assert folder2.full_path == "/simple/path"
+
+        # Backward compatibility - simple name only
+        folder3 = Folder(client, "legacy_folder")
+        assert folder3.full_path == "legacy_folder"
+    finally:
+        client.close()
+
+
+def test_folder_hierarchy_properties():
+    """Test folder depth, parent_id, child_count properties."""
+    client, _ = _make_sync_client()
+    try:
+        folder = Folder(
+            client,
+            "leaf",
+            folder_id="folder-123",
+            full_path="/projects/alpha/leaf",
+            parent_id="parent-456",
+            depth=3,
+            child_count=5,
+            description="Test folder",
+        )
+
+        assert folder.id == "folder-123"
+        assert folder.full_path == "/projects/alpha/leaf"
+        assert folder.parent_id == "parent-456"
+        assert folder.depth == 3
+        assert folder.child_count == 5
+        assert folder.description == "Test folder"
+    finally:
+        client.close()
+
+
+def test_folder_uses_full_path_for_operations():
+    """Test that Folder operations use full_path instead of name."""
+    client, calls = _make_sync_client()
+    try:
+        folder = Folder(client, "specs", full_path="/projects/alpha/specs")
+
+        # Test list_documents uses full_path
+        folder.list_documents()
+        call = calls.pop()
+        assert call["params"]["folder_name"] == "/projects/alpha/specs"
+
+        # Test retrieve_chunks uses full_path
+        folder.retrieve_chunks(query="test")
+        call = calls.pop()
+        assert call["data"]["folder_name"] == "/projects/alpha/specs"
+    finally:
+        client.close()
+
+
+def test_folder_depth_on_retrieve_docs_sync():
+    """Test folder_depth parameter on retrieve_docs."""
+    client, calls = _make_sync_client()
+    try:
+        # Add mock for retrieve/docs
+        original_request = client._request
+
+        def mock_request(method, endpoint, data=None, files=None, params=None):
+            calls.append({"method": method, "endpoint": endpoint, "data": data, "params": params})
+            if "retrieve/docs" in endpoint:
+                return []
+            return original_request(method, endpoint, data, files, params)
+
+        client._request = mock_request
+
+        folder = Folder(client, "test", full_path="/nested/folder")
+        folder.retrieve_docs(query="search", folder_depth=-1)
+
+        retrieve_call = calls.pop()
+        assert retrieve_call["data"]["folder_name"] == "/nested/folder"
+        assert retrieve_call["data"]["folder_depth"] == -1
+    finally:
+        client.close()
+
+
+def test_folder_depth_on_query_sync():
+    """Test folder_depth parameter on query."""
+    client, calls = _make_sync_client()
+    try:
+        # Add mock for query
+        original_request = client._request
+
+        def mock_request(method, endpoint, data=None, files=None, params=None):
+            calls.append({"method": method, "endpoint": endpoint, "data": data, "params": params})
+            if endpoint == "query":
+                return {
+                    "completion": "test",
+                    "sources": [],
+                    "usage": {"input_tokens": 10, "output_tokens": 5},
+                }
+            return original_request(method, endpoint, data, files, params)
+
+        client._request = mock_request
+
+        folder = Folder(client, "docs", full_path="/team/docs")
+        folder.query(query="What is X?", folder_depth=2)
+
+        query_call = calls.pop()
+        assert query_call["data"]["folder_name"] == "/team/docs"
+        assert query_call["data"]["folder_depth"] == 2
+    finally:
+        client.close()
+
+
+def test_folder_additional_folders_combines_with_full_path():
+    """Test that additional_folders combines correctly with folder's full_path."""
+    client, calls = _make_sync_client()
+    try:
+        folder = Folder(client, "main", full_path="/projects/main")
+
+        folder.list_documents(additional_folders=["/shared", "/archive"])
+        call = calls.pop()
+
+        # Should prepend the folder's full_path to the additional folders
+        assert call["params"]["folder_name"] == ["/projects/main", "/shared", "/archive"]
+    finally:
+        client.close()
+
+
+def test_folder_depth_values():
+    """Test various folder_depth values: 0, 1, -1, 2."""
+    client, calls = _make_sync_client()
+    try:
+        folder = Folder(client, "root", full_path="/root")
+
+        # folder_depth=0 (exact match)
+        folder.list_documents(folder_depth=0)
+        call = calls.pop()
+        assert call["params"]["folder_depth"] == 0
+
+        # folder_depth=1 (direct children)
+        folder.list_documents(folder_depth=1)
+        call = calls.pop()
+        assert call["params"]["folder_depth"] == 1
+
+        # folder_depth=-1 (all descendants)
+        folder.list_documents(folder_depth=-1)
+        call = calls.pop()
+        assert call["params"]["folder_depth"] == -1
+
+        # folder_depth=2 (up to grandchildren)
+        folder.list_documents(folder_depth=2)
+        call = calls.pop()
+        assert call["params"]["folder_depth"] == 2
+    finally:
+        client.close()
+
+
+def test_user_scope_folder_depth_sync():
+    """Test folder_depth on UserScope operations."""
+    client, calls = _make_sync_client()
+    try:
+        folder = Folder(client, "team", full_path="/team/alpha")
+        user_scope = folder.signin("user-123")
+
+        user_scope.list_documents(folder_depth=-1)
+        call = calls.pop()
+        assert call["params"]["folder_name"] == "/team/alpha"
+        assert call["params"]["folder_depth"] == -1
+        assert call["params"]["end_user_id"] == "user-123"
+
+        user_scope.retrieve_chunks(query="test", folder_depth=1)
+        call = calls.pop()
+        assert call["data"]["folder_name"] == "/team/alpha"
+        assert call["data"]["folder_depth"] == 1
+    finally:
+        client.close()
+
+
+# =============================================================================
+# Folder Nesting Tests - Async
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_async_folder_full_path_property():
+    """Test that AsyncFolder.full_path returns the canonical path."""
+    from morphik.async_ import AsyncFolder
+
+    client, _ = await _make_async_client()
+    try:
+        folder = AsyncFolder(client, "leaf", full_path="/projects/beta/leaf")
+        assert folder.full_path == "/projects/beta/leaf"
+        assert folder.name == "leaf"
+
+        folder2 = AsyncFolder(client, "/direct/path")
+        assert folder2.full_path == "/direct/path"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_folder_hierarchy_properties():
+    """Test async folder depth, parent_id, child_count properties."""
+    from morphik.async_ import AsyncFolder
+
+    client, _ = await _make_async_client()
+    try:
+        folder = AsyncFolder(
+            client,
+            "child",
+            folder_id="async-folder-789",
+            full_path="/org/team/child",
+            parent_id="parent-abc",
+            depth=3,
+            child_count=2,
+            description="Async test folder",
+        )
+
+        assert folder.id == "async-folder-789"
+        assert folder.full_path == "/org/team/child"
+        assert folder.parent_id == "parent-abc"
+        assert folder.depth == 3
+        assert folder.child_count == 2
+        assert folder.description == "Async test folder"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_folder_uses_full_path():
+    """Test that AsyncFolder operations use full_path."""
+    from morphik.async_ import AsyncFolder
+
+    client, calls = await _make_async_client()
+    try:
+        folder = AsyncFolder(client, "data", full_path="/analytics/data")
+
+        await folder.list_documents()
+        call = calls.pop()
+        assert call["params"]["folder_name"] == "/analytics/data"
+
+        await folder.retrieve_chunks(query="metrics")
+        call = calls.pop()
+        assert call["data"]["folder_name"] == "/analytics/data"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_folder_depth_on_operations():
+    """Test folder_depth parameter on async folder operations."""
+    from morphik.async_ import AsyncFolder
+
+    client, calls = await _make_async_client()
+    try:
+        folder = AsyncFolder(client, "reports", full_path="/finance/reports")
+
+        # Test folder_depth on list_documents
+        await folder.list_documents(folder_depth=-1)
+        call = calls.pop()
+        assert call["params"]["folder_depth"] == -1
+
+        # Test folder_depth on retrieve_chunks
+        await folder.retrieve_chunks(query="quarterly", folder_depth=2)
+        call = calls.pop()
+        assert call["data"]["folder_depth"] == 2
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_folder_additional_folders():
+    """Test additional_folders combines with full_path in async."""
+    from morphik.async_ import AsyncFolder
+
+    client, calls = await _make_async_client()
+    try:
+        folder = AsyncFolder(client, "primary", full_path="/workspace/primary")
+
+        await folder.list_documents(additional_folders=["/backup", "/archive"])
+        call = calls.pop()
+        assert call["params"]["folder_name"] == ["/workspace/primary", "/backup", "/archive"]
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_user_scope_folder_depth():
+    """Test folder_depth on AsyncUserScope operations."""
+    from morphik.async_ import AsyncFolder
+
+    client, calls = await _make_async_client()
+    try:
+        folder = AsyncFolder(client, "shared", full_path="/dept/shared")
+        user_scope = folder.signin("async-user-456")
+
+        await user_scope.list_documents(folder_depth=1)
+        call = calls.pop()
+        assert call["params"]["folder_name"] == "/dept/shared"
+        assert call["params"]["folder_depth"] == 1
+        assert call["params"]["end_user_id"] == "async-user-456"
+
+        await user_scope.retrieve_chunks(query="data", folder_depth=-1)
+        call = calls.pop()
+        assert call["data"]["folder_name"] == "/dept/shared"
+        assert call["data"]["folder_depth"] == -1
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_folder_depth_all_values():
+    """Test all folder_depth values on async folder."""
+    from morphik.async_ import AsyncFolder
+
+    client, calls = await _make_async_client()
+    try:
+        folder = AsyncFolder(client, "base", full_path="/base")
+
+        for depth_val in [0, 1, 2, -1]:
+            await folder.list_documents(folder_depth=depth_val)
+            call = calls.pop()
+            assert call["params"]["folder_depth"] == depth_val
     finally:
         await client.close()

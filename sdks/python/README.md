@@ -77,6 +77,19 @@ response = db.query(
 print(response.completion)
 ```
 
+### Nested Folders & Folder Depth
+
+```python
+# Create a nested folder (parents are auto-created server-side)
+folder = db.create_folder(full_path="/projects/alpha/specs", description="Specs folder")
+
+# Scope queries to a path and include descendants with folder_depth=-1
+chunks = folder.retrieve_chunks(query="design notes", folder_depth=-1)
+docs = db.list_documents(folder_name="/projects/alpha", folder_depth=-1)
+```
+
+`Folder.full_path` is exposed on folder objects, and `Document.folder_path` / `Graph.folder_path` mirror server responses for tracing scope.
+
 ### Asynchronous Usage
 
 ```python

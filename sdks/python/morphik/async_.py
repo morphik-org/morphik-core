@@ -40,15 +40,55 @@ class AsyncFolder:
         folder_id: Optional folder ID (if already known)
     """
 
-    def __init__(self, client: "AsyncMorphik", name: str, folder_id: Optional[str] = None):
+    def __init__(
+        self,
+        client: "AsyncMorphik",
+        name: str,
+        folder_id: Optional[str] = None,
+        full_path: Optional[str] = None,
+        parent_id: Optional[str] = None,
+        depth: Optional[int] = None,
+        child_count: Optional[int] = None,
+        description: Optional[str] = None,
+    ):
         self._client = client
         self._name = name
         self._id = folder_id
+        self._full_path = full_path
+        self._parent_id = parent_id
+        self._depth = depth
+        self._child_count = child_count
+        self._description = description
 
     @property
     def name(self) -> str:
         """Returns the folder name."""
         return self._name
+
+    @property
+    def full_path(self) -> str:
+        """Canonical folder path (defaults to the name when not provided)."""
+        return self._full_path or self._name
+
+    @property
+    def parent_id(self) -> Optional[str]:
+        """Returns the parent folder ID if available."""
+        return self._parent_id
+
+    @property
+    def depth(self) -> Optional[int]:
+        """Returns the folder depth in the hierarchy (root = 1)."""
+        return self._depth
+
+    @property
+    def child_count(self) -> Optional[int]:
+        """Returns the number of direct child folders when provided."""
+        return self._child_count
+
+    @property
+    def description(self) -> Optional[str]:
+        """Returns the folder description if available."""
+        return self._description
 
     @property
     def id(self) -> Optional[str]:
@@ -66,13 +106,24 @@ class AsyncFolder:
             # If we don't have the ID, find the folder by name first
             folders = await self._client.list_folders()
             for folder in folders:
-                if folder.name == self._name:
+                if folder.full_path == self.full_path or folder.name == self._name:
                     self._id = folder.id
+                    self._full_path = folder.full_path
+                    self._parent_id = folder.parent_id
+                    self._depth = folder.depth
+                    self._child_count = folder.child_count
+                    self._description = folder.description
                     break
             if not self._id:
                 raise ValueError(f"Folder '{self._name}' not found")
 
-        return await self._client._request("GET", f"folders/{self._id}")
+        info = FolderInfo(**(await self._client._request("GET", f"folders/{self._id}")))
+        self._full_path = info.full_path or self._full_path
+        self._parent_id = info.parent_id or self._parent_id
+        self._depth = info.depth or self._depth
+        self._child_count = info.child_count or self._child_count
+        self._description = info.description or self._description
+        return info
 
     def signin(self, end_user_id: str) -> "AsyncUserScope":
         """
@@ -84,7 +135,7 @@ class AsyncFolder:
         Returns:
             AsyncUserScope: A user scope scoped to this folder and the end user
         """
-        return AsyncUserScope(client=self._client, end_user_id=end_user_id, folder_name=self._name)
+        return AsyncUserScope(client=self._client, end_user_id=end_user_id, folder_name=self.full_path)
 
     async def ingest_text(
         self,
@@ -113,7 +164,7 @@ class AsyncFolder:
             metadata=metadata,
             rules=rules,
             use_colpali=use_colpali,
-            folder_name=self._name,
+            folder_name=self.full_path,
             end_user_id=None,
         )
 
@@ -144,7 +195,7 @@ class AsyncFolder:
             metadata=metadata,
             rules=rules,
             use_colpali=use_colpali,
-            folder_name=self._name,
+            folder_name=self.full_path,
             end_user_id=None,
         )
 
@@ -175,7 +226,7 @@ class AsyncFolder:
             rules=rules,
             use_colpali=use_colpali,
             parallel=parallel,
-            folder_name=self._name,
+            folder_name=self.full_path,
             end_user_id=None,
         )
 
@@ -247,7 +298,7 @@ class AsyncFolder:
             DocumentQueryResponse: Structured response containing outputs and ingestion status.
         """
         options = dict(ingestion_options or {})
-        options.setdefault("folder_name", self._name)
+        options.setdefault("folder_name", self.full_path)
 
         return await self._client.query_document(
             file=file,
@@ -255,7 +306,7 @@ class AsyncFolder:
             schema=schema,
             ingestion_options=options,
             filename=filename,
-            folder_name=self._name,
+            folder_name=self.full_path,
         )
 
     async def retrieve_chunks(
@@ -266,6 +317,7 @@ class AsyncFolder:
         min_score: float = 0.0,
         use_colpali: bool = True,
         additional_folders: Optional[List[str]] = None,
+        folder_depth: Optional[int] = None,
         padding: int = 0,
         output_format: Optional[str] = None,
         query_image: Optional[str] = None,
@@ -280,7 +332,9 @@ class AsyncFolder:
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
             additional_folders: Optional list of additional folder names to further scope operations
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
+            output_format: Controls how image chunks are returned ("base64", "url", or "text")
             query_image: Base64-encoded image for visual search (mutually exclusive with query, requires use_colpali=True)
 
         Returns:
@@ -294,6 +348,7 @@ class AsyncFolder:
             min_score=min_score,
             use_colpali=use_colpali,
             folder_name=effective_folder,
+            folder_depth=folder_depth,
             end_user_id=None,
             padding=padding,
             output_format=output_format,
@@ -309,6 +364,7 @@ class AsyncFolder:
         use_colpali: bool = True,
         use_reranking: Optional[bool] = None,  # Add missing parameter
         additional_folders: Optional[List[str]] = None,
+        folder_depth: Optional[int] = None,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents within this folder.
@@ -321,6 +377,7 @@ class AsyncFolder:
             use_colpali: Whether to use ColPali-style embedding model
             use_reranking: Whether to use reranking
             additional_folders: Optional list of additional folder names to further scope operations
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
 
         Returns:
             List[DocumentResult]: List of relevant documents
@@ -333,6 +390,7 @@ class AsyncFolder:
             min_score=min_score,
             use_colpali=use_colpali,
             folder_name=effective_folder,
+            folder_depth=folder_depth,
             end_user_id=None,
             use_reranking=use_reranking,
         )
@@ -352,6 +410,7 @@ class AsyncFolder:
         include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
         additional_folders: Optional[List[str]] = None,
+        folder_depth: Optional[int] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
         chat_id: Optional[str] = None,
         llm_config: Optional[Dict[str, Any]] = None,
@@ -375,6 +434,7 @@ class AsyncFolder:
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
             schema: Optional schema for structured output
             additional_folders: Optional list of additional folder names to further scope operations
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
 
         Returns:
@@ -394,6 +454,7 @@ class AsyncFolder:
             include_paths=include_paths,
             prompt_overrides=prompt_overrides,
             folder_name=effective_folder,
+            folder_depth=folder_depth,
             end_user_id=None,
             use_reranking=use_reranking,
             chat_id=chat_id,
@@ -408,6 +469,7 @@ class AsyncFolder:
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
         additional_folders: Optional[List[str]] = None,
+        folder_depth: Optional[int] = None,
         include_total_count: bool = False,
         include_status_counts: bool = False,
         include_folder_counts: bool = False,
@@ -423,6 +485,7 @@ class AsyncFolder:
             limit: Maximum number of documents to return
             filters: Optional filters
             additional_folders: Optional list of additional folder names to further scope operations
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             include_total_count: Include total count of matching documents
             include_status_counts: Include counts grouped by status
             include_folder_counts: Include counts grouped by folder
@@ -439,6 +502,7 @@ class AsyncFolder:
             limit=limit,
             filters=filters,
             folder_name=effective_folder,
+            folder_depth=folder_depth,
             end_user_id=None,
             include_total_count=include_total_count,
             include_status_counts=include_status_counts,
@@ -505,6 +569,8 @@ class AsyncFolder:
         filters: Optional[Dict[str, Any]] = None,
         documents: Optional[List[str]] = None,
         prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        end_user_id: Optional[str] = None,
     ) -> Graph:
         """
         Create a graph from documents within this folder.
@@ -519,7 +585,7 @@ class AsyncFolder:
             Graph: The created graph object
         """
         request = self._client._logic._prepare_create_graph_request(
-            name, filters, documents, prompt_overrides, self._name, None
+            name, filters, documents, prompt_overrides, self.full_path, None
         )
         response = await self._client._request("POST", "graph/create", data=request)
         graph = self._logic._parse_graph_response(response)
@@ -532,6 +598,9 @@ class AsyncFolder:
         additional_filters: Optional[Dict[str, Any]] = None,
         additional_documents: Optional[List[str]] = None,
         prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
+        end_user_id: Optional[str] = None,
     ) -> Graph:
         """
         Update an existing graph with new documents from this folder.
@@ -546,7 +615,7 @@ class AsyncFolder:
             Graph: The updated graph
         """
         request = self._client._logic._prepare_update_graph_request(
-            name, additional_filters, additional_documents, prompt_overrides, self._name, None
+            name, additional_filters, additional_documents, prompt_overrides, self.full_path, None
         )
         response = await self._client._request("POST", f"graph/{name}/update", data=request)
         graph = self._logic._parse_graph_response(response)
@@ -565,7 +634,7 @@ class AsyncFolder:
         """
         # First get the document ID
         response = await self._client._request(
-            "GET", f"documents/filename/{filename}", params={"folder_name": self._name}
+            "GET", f"documents/filename/{filename}", params={"folder_name": self.full_path}
         )
         doc = self._client._logic._parse_document_response(response)
 
@@ -577,12 +646,12 @@ class AsyncFolder:
         """Return the effective folder scope for this folder instance.
 
         If *additional_folders* is provided it will be combined with the scoped
-        folder (*self._name*) and returned as a list.  Otherwise just
-        *self._name* is returned so the API keeps backward-compatibility with
+        folder (*self.full_path*) and returned as a list.  Otherwise just
+        *self.full_path* is returned so the API keeps backward-compatibility with
         accepting a single string."""
         if not additional_folders:
-            return self._name
-        return [self._name] + additional_folders
+            return self.full_path
+        return [self.full_path] + additional_folders
 
 
 class AsyncUserScope:
@@ -793,6 +862,7 @@ class AsyncUserScope:
         min_score: float = 0.0,
         use_colpali: bool = True,
         additional_folders: Optional[List[str]] = None,
+        folder_depth: Optional[int] = None,
         padding: int = 0,
         output_format: Optional[str] = None,
         query_image: Optional[str] = None,
@@ -807,6 +877,7 @@ class AsyncUserScope:
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model
             additional_folders: Optional list of additional folder names to further scope operations
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
             output_format: Controls how image chunks are returned ("base64", "url", or "text")
             query_image: Base64-encoded image for visual search (mutually exclusive with query, requires use_colpali=True)
@@ -822,6 +893,7 @@ class AsyncUserScope:
             min_score=min_score,
             use_colpali=use_colpali,
             folder_name=effective_folder,
+            folder_depth=folder_depth,
             end_user_id=self._end_user_id,
             padding=padding,
             output_format=output_format,
@@ -837,6 +909,7 @@ class AsyncUserScope:
         use_colpali: bool = True,
         use_reranking: Optional[bool] = None,  # Add missing parameter
         additional_folders: Optional[List[str]] = None,
+        folder_depth: Optional[int] = None,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents as this end user.
@@ -849,6 +922,7 @@ class AsyncUserScope:
             use_colpali: Whether to use ColPali-style embedding model
             use_reranking: Whether to use reranking
             additional_folders: Optional list of additional folder names to further scope operations
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
 
         Returns:
             List[DocumentResult]: List of relevant documents
@@ -861,6 +935,7 @@ class AsyncUserScope:
             min_score=min_score,
             use_colpali=use_colpali,
             folder_name=effective_folder,
+            folder_depth=folder_depth,
             end_user_id=self._end_user_id,
             use_reranking=use_reranking,
         )
@@ -880,6 +955,7 @@ class AsyncUserScope:
         include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
         additional_folders: Optional[List[str]] = None,
+        folder_depth: Optional[int] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
         chat_id: Optional[str] = None,
         llm_config: Optional[Dict[str, Any]] = None,
@@ -903,6 +979,7 @@ class AsyncUserScope:
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
             schema: Optional schema for structured output
             additional_folders: Optional list of additional folder names to further scope operations
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
 
         Returns:
@@ -922,6 +999,7 @@ class AsyncUserScope:
             include_paths=include_paths,
             prompt_overrides=prompt_overrides,
             folder_name=effective_folder,
+            folder_depth=folder_depth,
             end_user_id=self._end_user_id,
             use_reranking=use_reranking,
             chat_id=chat_id,
@@ -936,6 +1014,7 @@ class AsyncUserScope:
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
         additional_folders: Optional[List[str]] = None,
+        folder_depth: Optional[int] = None,
         include_total_count: bool = False,
         include_status_counts: bool = False,
         include_folder_counts: bool = False,
@@ -951,6 +1030,7 @@ class AsyncUserScope:
             limit: Maximum number of documents to return
             filters: Optional filters
             additional_folders: Optional list of extra folders to include in the scope
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             include_total_count: Include total count of matching documents
             include_status_counts: Include counts grouped by status
             include_folder_counts: Include counts grouped by folder
@@ -967,6 +1047,7 @@ class AsyncUserScope:
             limit=limit,
             filters=filters,
             folder_name=effective_folder,
+            folder_depth=folder_depth,
             end_user_id=self._end_user_id,
             include_total_count=include_total_count,
             include_status_counts=include_status_counts,
@@ -1198,26 +1279,50 @@ class AsyncMorphik(_ScopedOperationsMixin):
         """Convert a rule to a dictionary format"""
         return self._logic._convert_rule(rule)
 
-    async def create_folder(self, name: str, description: Optional[str] = None) -> AsyncFolder:
+    async def create_folder(
+        self,
+        name: str,
+        description: Optional[str] = None,
+        full_path: Optional[str] = None,
+        parent_id: Optional[str] = None,
+    ) -> AsyncFolder:
         """
         Create a folder to scope operations.
 
         Args:
-            name: The name of the folder
+            name: The name of the folder (leaf segment when using nested paths)
             description: Optional description for the folder
+            full_path: Optional full folder path (e.g., "/projects/alpha/specs"). If omitted, `name` is used.
+            parent_id: Optional parent folder ID (rarely needed; hierarchy is auto-created from full_path)
 
         Returns:
             AsyncFolder: A folder object ready for scoped operations
         """
-        payload = {"name": name}
+        canonical_path = full_path or name
+        leaf_name = canonical_path.strip("/").split("/")[-1] if canonical_path else name
+
+        payload = {"name": leaf_name}
         if description:
             payload["description"] = description
+        if full_path or "/" in name:
+            payload["full_path"] = canonical_path
+        if parent_id:
+            payload["parent_id"] = parent_id
 
         response = await self._request("POST", "folders", data=payload)
         folder_info = FolderInfo(**response)
 
         # Return a usable AsyncFolder object with the ID from the response
-        return AsyncFolder(self, name, folder_id=folder_info.id)
+        return AsyncFolder(
+            self,
+            folder_info.name,
+            folder_id=folder_info.id,
+            full_path=folder_info.full_path,
+            parent_id=folder_info.parent_id,
+            depth=folder_info.depth,
+            child_count=folder_info.child_count,
+            description=folder_info.description,
+        )
 
     async def delete_folder(self, folder_id_or_name: str) -> Dict[str, Any]:
         """
@@ -1237,12 +1342,12 @@ class AsyncMorphik(_ScopedOperationsMixin):
         Get a folder by name to scope operations.
 
         Args:
-            name: The name of the folder
+            name: The name or full path of the folder
 
         Returns:
             AsyncFolder: A folder object for scoped operations
         """
-        return AsyncFolder(self, name)
+        return AsyncFolder(self, name, full_path=name)
 
     async def get_folder(self, folder_id_or_name: str) -> AsyncFolder:
         """
@@ -1255,8 +1360,18 @@ class AsyncMorphik(_ScopedOperationsMixin):
             AsyncFolder: A folder object for scoped operations
         """
         response = await self._request("GET", f"folders/{folder_id_or_name}")
-        folder_id = response.get("id", folder_id_or_name)
-        return AsyncFolder(self, response["name"], folder_id)
+        info = FolderInfo(**response)
+        folder_id = info.id or folder_id_or_name
+        return AsyncFolder(
+            self,
+            info.name,
+            folder_id,
+            full_path=info.full_path,
+            parent_id=info.parent_id,
+            depth=info.depth,
+            child_count=info.child_count,
+            description=info.description,
+        )
 
     async def list_folders(self) -> List[AsyncFolder]:
         """
@@ -1266,7 +1381,20 @@ class AsyncMorphik(_ScopedOperationsMixin):
             List[AsyncFolder]: List of AsyncFolder objects ready for operations
         """
         response = await self._request("GET", "folders")
-        return [AsyncFolder(self, folder["name"], folder["id"]) for folder in response]
+        folder_infos = [FolderInfo(**folder) for folder in response]
+        return [
+            AsyncFolder(
+                self,
+                info.name,
+                info.id,
+                full_path=info.full_path,
+                parent_id=info.parent_id,
+                depth=info.depth,
+                child_count=info.child_count,
+                description=info.description,
+            )
+            for info in folder_infos
+        ]
 
     async def add_document_to_folder(self, folder_id_or_name: str, document_id: str) -> Dict[str, str]:
         """
@@ -1501,6 +1629,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
         min_score: float = 0.0,
         use_colpali: bool = True,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         padding: int = 0,
         output_format: Optional[str] = None,
         query_image: Optional[str] = None,
@@ -1515,7 +1644,9 @@ class AsyncMorphik(_ScopedOperationsMixin):
             min_score: Minimum similarity threshold (default: 0.0)
             use_colpali: Whether to use ColPali-style embedding model to retrieve chunks
                 (only works for documents ingested with `use_colpali=True`)
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
+            output_format: Controls how image chunks are returned ("base64", "url", or "text")
             query_image: Base64-encoded image for visual search (mutually exclusive with query, requires use_colpali=True)
         Returns:
             List[FinalChunkResult]
@@ -1529,6 +1660,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
             min_score=min_score,
             use_colpali=use_colpali,
             folder_name=effective_folder,
+            folder_depth=folder_depth,
             end_user_id=None,
             padding=padding,
             output_format=output_format,
@@ -1544,6 +1676,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
         use_colpali: bool = True,
         use_reranking: Optional[bool] = None,  # Add missing parameter
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
     ) -> List[DocumentResult]:
         """
         Retrieve relevant documents.
@@ -1557,6 +1690,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
                 (only works for documents ingested with `use_colpali=True`)
             use_reranking: Whether to use reranking
             folder_name: Optional folder name (or list of names) to scope the request
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
 
         Returns:
             List[DocumentResult]
@@ -1570,6 +1704,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
             min_score=min_score,
             use_colpali=use_colpali,
             folder_name=effective_folder,
+            folder_depth=folder_depth,
             end_user_id=None,
             use_reranking=use_reranking,
         )
@@ -1589,6 +1724,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
         include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         chat_id: Optional[str] = None,
         schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
         llm_config: Optional[Dict[str, Any]] = None,
@@ -1612,6 +1748,8 @@ class AsyncMorphik(_ScopedOperationsMixin):
             include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
                 Either a QueryPromptOverrides object or a dictionary with the same structure
+            folder_name: Optional folder name to further scope operations
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             schema: Optional schema for structured output, can be a Pydantic model or a JSON schema dict
             llm_config: Optional LiteLLM-compatible model configuration (e.g., model name, API key, base URL)
             padding: Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only, default: 0)
@@ -1633,6 +1771,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
             include_paths=include_paths,
             prompt_overrides=prompt_overrides,
             folder_name=effective_folder,
+            folder_depth=folder_depth,
             end_user_id=None,
             use_reranking=use_reranking,
             chat_id=chat_id,
@@ -1647,6 +1786,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
         limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         include_total_count: bool = False,
         include_status_counts: bool = False,
         include_folder_counts: bool = False,
@@ -1662,6 +1802,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
             limit: Maximum number of documents to return
             filters: Optional filters
             folder_name: Optional folder name (or list of names) to scope the request
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             include_total_count: Include total count of matching documents
             include_status_counts: Include counts grouped by status
             include_folder_counts: Include counts grouped by folder
@@ -1678,6 +1819,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
             limit=limit,
             filters=filters,
             folder_name=folder_name,
+            folder_depth=folder_depth,
             end_user_id=None,
             include_total_count=include_total_count,
             include_status_counts=include_status_counts,
@@ -2170,6 +2312,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
         limit: int = 10,
         filters: Optional[Dict[str, Any]] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         end_user_id: Optional[str] = None,
     ) -> List[Document]:
         """
@@ -2180,6 +2323,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
             limit: Maximum number of documents to return (default: 10)
             filters: Optional metadata filters
             folder_name: Optional folder scope (single name or list of names)
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             end_user_id: Optional end-user scope
 
         Returns:
@@ -2190,6 +2334,8 @@ class AsyncMorphik(_ScopedOperationsMixin):
             request["filters"] = filters
         if folder_name:
             request["folder_name"] = folder_name
+        if folder_depth is not None:
+            request["folder_depth"] = folder_depth
         if end_user_id:
             request["end_user_id"] = end_user_id
 
@@ -2208,6 +2354,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
         use_colpali: bool = True,
         use_reranking: Optional[bool] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         end_user_id: Optional[str] = None,
         padding: int = 0,
         output_format: Optional[str] = None,
@@ -2227,6 +2374,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
             use_colpali: Whether to use ColPali-style embedding model
             use_reranking: Whether to use reranking
             folder_name: Optional folder scope (single name or list of names)
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             end_user_id: Optional end-user scope
             padding: Number of additional chunks to retrieve around matches (default: 0)
             output_format: Controls how image chunks are returned ("base64", "url", or "text")
@@ -2263,6 +2411,8 @@ class AsyncMorphik(_ScopedOperationsMixin):
             request["filters"] = filters
         if folder_name:
             request["folder_name"] = folder_name
+        if folder_depth is not None:
+            request["folder_depth"] = folder_depth
         if end_user_id:
             request["end_user_id"] = end_user_id
         if output_format:
@@ -2343,6 +2493,8 @@ class AsyncMorphik(_ScopedOperationsMixin):
         filters: Optional[Dict[str, Any]] = None,
         documents: Optional[List[str]] = None,
         prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        end_user_id: Optional[str] = None,
     ) -> Graph:
         """
         Create a graph from documents.
@@ -2356,34 +2508,60 @@ class AsyncMorphik(_ScopedOperationsMixin):
             documents: Optional list of specific document IDs to include
             prompt_overrides: Optional customizations for entity extraction and resolution prompts
                 Either a GraphPromptOverrides object or a dictionary with the same structure
+            folder_name: Optional folder scope (single name or list of names)
+            end_user_id: Optional end-user scope
 
         Returns:
             Graph: The created graph object
 
         """
-        request = self._logic._prepare_create_graph_request(name, filters, documents, prompt_overrides, None, None)
+        request = self._logic._prepare_create_graph_request(
+            name, filters, documents, prompt_overrides, folder_name, end_user_id
+        )
         response = await self._request("POST", "graph/create", data=request)
         graph = self._logic._parse_graph_response(response)
         graph._client = self  # Attach AsyncMorphik client for polling helpers
         return graph
 
-    async def get_graph(self, name: str) -> Graph:
+    async def get_graph(
+        self,
+        name: str,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
+        end_user_id: Optional[str] = None,
+    ) -> Graph:
         """
         Get a graph by name.
 
         Args:
             name: Name of the graph to retrieve
+            folder_name: Optional folder scope (single name or list of names)
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
+            end_user_id: Optional end-user scope
 
         Returns:
             Graph: The requested graph object
 
         """
-        response = await self._request("GET", f"graph/{name}")
+        params: Dict[str, Any] = {}
+        if folder_name:
+            params["folder_name"] = folder_name
+        if folder_depth is not None:
+            params["folder_depth"] = folder_depth
+        if end_user_id:
+            params["end_user_id"] = end_user_id
+
+        response = await self._request("GET", f"graph/{name}", params=params)
         graph = self._logic._parse_graph_response(response)
         graph._client = self
         return graph
 
-    async def list_graphs(self) -> List[Graph]:
+    async def list_graphs(
+        self,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
+        end_user_id: Optional[str] = None,
+    ) -> List[Graph]:
         """
         List all graphs the user has access to.
 
@@ -2391,7 +2569,15 @@ class AsyncMorphik(_ScopedOperationsMixin):
             List[Graph]: List of graph objects
 
         """
-        response = await self._request("GET", "graph")
+        params: Dict[str, Any] = {}
+        if folder_name:
+            params["folder_name"] = folder_name
+        if folder_depth is not None:
+            params["folder_depth"] = folder_depth
+        if end_user_id:
+            params["end_user_id"] = end_user_id
+
+        response = await self._request("GET", "graph", params=params)
         graphs = self._logic._parse_graph_list_response(response)
         for g in graphs:
             g._client = self
@@ -2403,6 +2589,9 @@ class AsyncMorphik(_ScopedOperationsMixin):
         additional_filters: Optional[Dict[str, Any]] = None,
         additional_documents: Optional[List[str]] = None,
         prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
+        end_user_id: Optional[str] = None,
     ) -> Graph:
         """
         Update an existing graph with new documents.
@@ -2416,15 +2605,26 @@ class AsyncMorphik(_ScopedOperationsMixin):
             additional_documents: Optional list of additional document IDs to include
             prompt_overrides: Optional customizations for entity extraction and resolution prompts
                 Either a GraphPromptOverrides object or a dictionary with the same structure
+            folder_name: Optional folder scope (single name or list of names)
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
+            end_user_id: Optional end-user scope
 
         Returns:
             Graph: The updated graph
 
         """
         request = self._logic._prepare_update_graph_request(
-            name, additional_filters, additional_documents, prompt_overrides, None, None
+            name, additional_filters, additional_documents, prompt_overrides, folder_name, end_user_id
         )
-        response = await self._request("POST", f"graph/{name}/update", data=request)
+        params: Dict[str, Any] = {}
+        if folder_name:
+            params["folder_name"] = folder_name
+        if folder_depth is not None:
+            params["folder_depth"] = folder_depth
+        if end_user_id:
+            params["end_user_id"] = end_user_id
+
+        response = await self._request("POST", f"graph/{name}/update", data=request, params=params)
         graph = self._logic._parse_graph_response(response)
         graph._client = self
         return graph
@@ -2483,6 +2683,9 @@ class AsyncMorphik(_ScopedOperationsMixin):
         graph_name: str,
         timeout_seconds: int = 300,
         check_interval_seconds: int = 2,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
+        end_user_id: Optional[str] = None,
     ) -> Graph:
         """Block until the specified graph finishes processing (async).
 
@@ -2490,6 +2693,9 @@ class AsyncMorphik(_ScopedOperationsMixin):
             graph_name: Name of the graph to monitor.
             timeout_seconds: Maximum seconds to wait.
             check_interval_seconds: Seconds between status checks.
+            folder_name: Optional folder scope (single name or list of names)
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
+            end_user_id: Optional end-user scope
 
         Returns:
             Graph: The completed graph object.
@@ -2498,7 +2704,12 @@ class AsyncMorphik(_ScopedOperationsMixin):
 
         start = asyncio.get_event_loop().time()
         while (asyncio.get_event_loop().time() - start) < timeout_seconds:
-            graph = await self.get_graph(graph_name)
+            graph = await self.get_graph(
+                graph_name,
+                folder_name=folder_name,
+                folder_depth=folder_depth,
+                end_user_id=end_user_id,
+            )
             if graph.is_completed:
                 return graph
             if graph.is_failed:
@@ -2550,12 +2761,15 @@ class AsyncMorphik(_ScopedOperationsMixin):
         self,
         name: str,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         end_user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Fetch nodes & links for visualising *name* graph (async)."""
         params: Dict[str, Any] = {}
         if folder_name is not None:
             params["folder_name"] = folder_name
+        if folder_depth is not None:
+            params["folder_depth"] = folder_depth
         if end_user_id is not None:
             params["end_user_id"] = end_user_id
         return await self._request("GET", f"graph/{name}/visualization", params=params)
@@ -2567,7 +2781,11 @@ class AsyncMorphik(_ScopedOperationsMixin):
         return await self._request("GET", f"graph/workflow/{workflow_id}/status", params=params)
 
     async def get_graph_status(
-        self, graph_name: str, folder_name: Optional[str] = None, end_user_id: Optional[str] = None
+        self,
+        graph_name: str,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
+        end_user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get the current status of a graph with pipeline stage information.
 
@@ -2577,6 +2795,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
         Args:
             graph_name: Name of the graph to check
             folder_name: Optional folder name for scoping
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             end_user_id: Optional end user ID for scoping
 
         Returns:
@@ -2585,10 +2804,23 @@ class AsyncMorphik(_ScopedOperationsMixin):
         params = {}
         if folder_name:
             params["folder_name"] = folder_name
+        if folder_depth is not None:
+            params["folder_depth"] = folder_depth
         if end_user_id:
             params["end_user_id"] = end_user_id
 
         return await self._request("GET", f"graph/{graph_name}/status", params=params if params else None)
+
+    async def delete_graph(self, graph_name: str) -> Dict[str, Any]:
+        """Delete a graph by name.
+
+        Args:
+            graph_name: Name of the graph to delete
+
+        Returns:
+            Dict with status and message confirming deletion
+        """
+        return await self._request("DELETE", f"graph/{graph_name}")
 
     # ------------------------------------------------------------------
     # Document download helpers ----------------------------------------
