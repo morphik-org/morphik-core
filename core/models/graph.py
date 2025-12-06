@@ -66,3 +66,4 @@ class Graph(BaseModel):
     folder_name: Optional[str] = None
     end_user_id: Optional[str] = None
     app_id: Optional[str] = None
+    folder_path: Optional[str] = None

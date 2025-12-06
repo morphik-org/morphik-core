@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,6 +15,7 @@ import SearchResultCard from "./SearchResultCard";
 import SearchResultCardCarousel from "./SearchResultCardCarousel";
 
 import { SearchResult, SearchOptions, FolderSummary, GroupedSearchResponse } from "@/components/types";
+import { buildFolderTree, flattenFolderTree, normalizeFolderPathValue } from "@/lib/folderTree";
 
 interface SearchSectionProps {
   apiBaseUrl: string;
@@ -48,6 +49,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
   const [queryImage, setQueryImage] = useState<string | null>(null);
   const [queryImagePreview, setQueryImagePreview] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const folderOptions = useMemo(() => flattenFolderTree(buildFolderTree(folders)), [folders]);
 
   const updateSearchOption = <K extends keyof SearchOptions>(key: K, value: SearchOptions[K]) => {
     setSearchOptions(prev => ({ ...prev, [key]: value }));
@@ -84,6 +86,9 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
             return {
               id: folder.id as string,
               name: folder.name as string,
+              full_path: (folder.full_path as string | undefined) ?? undefined,
+              parent_id: (folder.parent_id as string | null | undefined) ?? null,
+              depth: (folder.depth as number | null | undefined) ?? null,
               description: (folder.description ?? undefined) as string | undefined,
               doc_count: (documentInfo?.document_count ??
                 (Array.isArray(folder.document_ids) ? folder.document_ids.length : undefined)) as number | undefined,
@@ -149,6 +154,12 @@ const SearchSection: React.FC<SearchSectionProps> = ({ apiBaseUrl, authToken, on
       const requestBody: Record<string, unknown> = {
         filters: filtersObject,
         folder_name: currentSearchOptions.folder_name,
+        folder_depth:
+          typeof currentSearchOptions.folder_depth === "number"
+            ? currentSearchOptions.folder_depth
+            : currentSearchOptions.folder_name
+              ? -1
+              : undefined,
         k: currentSearchOptions.k,
         min_score: currentSearchOptions.min_score,
         use_reranking: currentSearchOptions.use_reranking,
@@ -489,8 +500,10 @@ curl -X POST "${apiBaseUrl}${endpoint}" \\
   };
 
   const folderValue = Array.isArray(searchOptions.folder_name)
-    ? searchOptions.folder_name[0]
-    : searchOptions.folder_name;
+    ? normalizeFolderPathValue(searchOptions.folder_name[0])
+    : searchOptions.folder_name
+      ? normalizeFolderPathValue(searchOptions.folder_name)
+      : undefined;
 
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full">
@@ -601,18 +614,41 @@ curl -X POST "${apiBaseUrl}${endpoint}" \\
                   <Label className="mb-2 block text-sm">Scope to folder</Label>
                   <Select
                     value={folderValue || "__all__"}
-                    onValueChange={v => updateSearchOption("folder_name", v === "__all__" ? undefined : v)}
+                    onValueChange={v => {
+                      if (v === "__all__") {
+                        updateSearchOption("folder_name", undefined);
+                        updateSearchOption("folder_depth", undefined);
+                      } else {
+                        updateSearchOption("folder_name", v);
+                        updateSearchOption("folder_depth", -1);
+                      }
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="All folders" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__all__">All folders</SelectItem>
-                      {folders.map(folder => (
-                        <SelectItem key={folder.name} value={folder.name}>
-                          {folder.name} {folder.doc_count !== undefined && `(${folder.doc_count})`}
-                        </SelectItem>
-                      ))}
+                      {folderOptions.map(folder => {
+                        const path = normalizeFolderPathValue(folder.full_path ?? folder.name);
+                        const indent = Math.max(
+                          typeof folder.depthLevel === "number"
+                            ? folder.depthLevel
+                            : Math.max((folder.depth ?? 1) - 1, 0),
+                          0
+                        );
+                        const label = folder.name || path.split("/").filter(Boolean).pop() || path;
+                        return (
+                          <SelectItem key={path} value={path} style={{ paddingLeft: `${8 + indent * 12}px` }}>
+                            <div className="flex flex-col">
+                              <span className="truncate">{label}</span>
+                              <span className="text-[11px] text-muted-foreground">
+                                {path} {folder.doc_count !== undefined && `(${folder.doc_count})`}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                 </div>

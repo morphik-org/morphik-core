@@ -3,12 +3,14 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Column, DateTime, Index, String, desc, func, select, text
+from sqlalchemy import Column, DateTime, Index, Integer, String, desc, func, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from core.config import get_settings
+from core.database.folder_bootstrap import bootstrap_folder_hierarchy
+from core.utils.folder_utils import normalize_folder_path
 from core.utils.typed_metadata import TypedMetadataError, normalize_metadata
 
 from ..models.auth import AuthContext
@@ -46,6 +48,7 @@ class DocumentModel(Base):
     owner_id = Column(String)
     app_id = Column(String)
     folder_name = Column(String)
+    folder_path = Column(String)
     end_user_id = Column(String)
 
     # Create indexes
@@ -55,11 +58,13 @@ class DocumentModel(Base):
         # Flattened column indexes
         Index("idx_doc_app_id", "app_id"),
         Index("idx_doc_folder_name", "folder_name"),
+        Index("idx_doc_folder_path", "folder_path"),
         Index("idx_doc_end_user_id", "end_user_id"),
         Index("idx_doc_owner_id", "owner_id"),
         # Composite indexes for common query patterns
         Index("idx_documents_owner_app", "owner_id", "app_id"),
         Index("idx_documents_app_folder", "app_id", "folder_name"),
+        Index("idx_documents_app_folder_path", "app_id", "folder_path"),
         Index("idx_documents_app_end_user", "app_id", "end_user_id"),
     )
 
@@ -84,6 +89,7 @@ class GraphModel(Base):
     owner_id = Column(String)
     app_id = Column(String)
     folder_name = Column(String)
+    folder_path = Column(String)
     end_user_id = Column(String)
 
     # Create indexes
@@ -95,11 +101,13 @@ class GraphModel(Base):
         # Indexes on flattened columns
         Index("idx_graph_app_id", "app_id"),
         Index("idx_graph_folder_name", "folder_name"),
+        Index("idx_graph_folder_path", "folder_path"),
         Index("idx_graph_end_user_id", "end_user_id"),
         Index("idx_graph_owner_id", "owner_id"),
         # Composite indexes for common query patterns
         Index("idx_graphs_owner_app", "owner_id", "app_id"),
         Index("idx_graphs_app_folder", "app_id", "folder_name"),
+        Index("idx_graphs_app_folder_path", "app_id", "folder_path"),
         Index("idx_graphs_app_end_user", "app_id", "end_user_id"),
     )
 
@@ -111,6 +119,9 @@ class FolderModel(Base):
 
     id = Column(String, primary_key=True)
     name = Column(String)
+    full_path = Column(String)
+    parent_id = Column(String)
+    depth = Column(Integer)
     description = Column(String, nullable=True)
     document_ids = Column(JSONB, default=list)
     system_metadata = Column(JSONB, default=dict)
@@ -123,6 +134,9 @@ class FolderModel(Base):
     # Create indexes
     __table_args__ = (
         Index("idx_folder_name", "name"),
+        Index("idx_folder_full_path", "full_path"),
+        Index("idx_folder_parent_id", "parent_id"),
+        Index("idx_folder_depth", "depth"),
         # Indexes on flattened columns
         Index("idx_folder_app_id", "app_id"),
         Index("idx_folder_owner_id", "owner_id"),
@@ -130,6 +144,21 @@ class FolderModel(Base):
         # Composite indexes for common query patterns
         Index("idx_folders_owner_app", "owner_id", "app_id"),
         Index("idx_folders_app_end_user", "app_id", "end_user_id"),
+        # Scoped uniqueness for full_path per app/owner
+        Index(
+            "uq_folders_app_full_path",
+            "app_id",
+            "full_path",
+            unique=True,
+            postgresql_where=text("app_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_folders_owner_full_path",
+            "owner_id",
+            "full_path",
+            unique=True,
+            postgresql_where=text("app_id IS NULL"),
+        ),
     )
 
 
@@ -309,6 +338,9 @@ class PostgresDatabase(BaseDatabase):
                 await conn.run_sync(lambda conn: Base.metadata.create_all(conn, checkfirst=True))
                 logger.info("Created database tables and indexes successfully")
 
+            # Ensure new folder hierarchy columns/indexes exist on legacy deployments
+            await self._bootstrap_folder_hierarchy()
+
             logger.info("PostgreSQL initialization complete")
             self._initialized = True
             return True
@@ -316,6 +348,14 @@ class PostgresDatabase(BaseDatabase):
         except Exception as e:
             logger.error(f"Error initializing PostgreSQL: {str(e)}")
             return False
+
+    async def _bootstrap_folder_hierarchy(self) -> None:
+        """
+        Ensure nested-folder columns/indexes exist and legacy rows are backfilled.
+
+        Uses idempotent ALTER/CREATE operations so it is safe to call on every startup.
+        """
+        await bootstrap_folder_hierarchy(self.engine, logger)
 
     async def store_document(self, document: Document, auth: AuthContext) -> bool:
         """Store document metadata."""
@@ -330,6 +370,14 @@ class PostgresDatabase(BaseDatabase):
             doc_dict["metadata_types"] = normalized_types
             # Mirror folder_name into doc_metadata for convenience in downstream filters (allow clearing)
             doc_dict["doc_metadata"]["folder_name"] = doc_dict.get("folder_name")
+
+            # Keep folder_path in sync with folder_name for backward compatibility
+            folder_name_value = doc_dict.get("folder_name")
+            if doc_dict.get("folder_path") is None and folder_name_value:
+                try:
+                    doc_dict["folder_path"] = normalize_folder_path(folder_name_value)
+                except ValueError:
+                    doc_dict["folder_path"] = folder_name_value
 
             # Ensure system metadata
             if "system_metadata" not in doc_dict:
@@ -650,10 +698,10 @@ class PostgresDatabase(BaseDatabase):
                 if include_folder_counts:
                     folder_query = text(
                         f"""
-                        SELECT folder_name, COUNT(*) AS count
+                        SELECT COALESCE(folder_path, folder_name) AS folder_name, COUNT(*) AS count
                         FROM documents
                         WHERE {final_where_clause}
-                        GROUP BY folder_name
+                        GROUP BY COALESCE(folder_path, folder_name)
                         ORDER BY folder_name NULLS FIRST
                         """
                     )
@@ -754,6 +802,17 @@ class PostgresDatabase(BaseDatabase):
             # Always update the updated_at timestamp
             updates["system_metadata"]["updated_at"] = datetime.now(UTC)
 
+            # Keep folder_path aligned with folder_name when provided
+            folder_value_for_metadata = updates["folder_name"] if "folder_name" in updates else existing_doc.folder_name
+            if "folder_name" in updates and "folder_path" not in updates:
+                if folder_value_for_metadata:
+                    try:
+                        updates["folder_path"] = normalize_folder_path(folder_value_for_metadata)
+                    except ValueError:
+                        updates["folder_path"] = folder_value_for_metadata
+                else:
+                    updates["folder_path"] = None
+
             # Serialize datetime objects to ISO format strings
             updates = _serialize_datetime(updates)
 
@@ -779,7 +838,7 @@ class PostgresDatabase(BaseDatabase):
 
                     # Keep doc_metadata.folder_name in sync with the flattened column (support clearing)
                     if "doc_metadata" in updates:
-                        folder_value = updates["folder_name"] if "folder_name" in updates else doc_model.folder_name
+                        folder_value = folder_value_for_metadata if "folder_name" in updates else doc_model.folder_name
                         try:
                             if isinstance(updates["doc_metadata"], dict):
                                 updates["doc_metadata"]["folder_name"] = folder_value
@@ -982,9 +1041,59 @@ class PostgresDatabase(BaseDatabase):
         self._filter_param_counter = 0  # Reset counter for parameter naming
 
         # Map system metadata keys to flattened columns
-        column_map = {"app_id": "app_id", "folder_name": "folder_name", "end_user_id": "end_user_id"}
+        column_map = {
+            "app_id": "app_id",
+            "folder_name": "folder_name",
+            "folder_path": "folder_path",
+            "end_user_id": "end_user_id",
+        }
 
         for key, value in system_filters.items():
+            if key == "folder_path_prefix":
+                values = value if isinstance(value, list) else [value]
+                if not values and value is not None:
+                    continue
+
+                prefix_clauses: List[str] = []
+                for item in values:
+                    if item is None:
+                        prefix_clauses.append("(folder_path IS NULL OR folder_path = '')")
+                        continue
+
+                    param_eq = f"{key}_{self._filter_param_counter}"
+                    param_like = f"{param_eq}_like"
+                    self._filter_param_counter += 1
+                    prefix_clauses.append(f"(folder_path = :{param_eq} OR folder_path LIKE :{param_like})")
+                if prefix_clauses:
+                    key_clauses.append("(" + " OR ".join(prefix_clauses) + ")")
+                continue
+
+            if key == "folder_path_prefix_depth":
+                entries = value if isinstance(value, list) else [value]
+                if not entries and value is not None:
+                    continue
+
+                scoped_clauses: List[str] = []
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    prefix_val = entry.get("prefix")
+                    max_depth = entry.get("max_depth")
+                    if prefix_val is None:
+                        continue
+                    param_prefix = f"{key}_{self._filter_param_counter}"
+                    param_like = f"{param_prefix}_like"
+                    clause = f"(folder_path = :{param_prefix} OR folder_path LIKE :{param_like})"
+                    if max_depth is not None:
+                        depth_param = f"{param_prefix}_depth"
+                        clause = f"({clause} AND array_length(string_to_array(trim(BOTH '/' from folder_path), '/'), 1) <= :{depth_param})"
+                    scoped_clauses.append(clause)
+                    self._filter_param_counter += 1
+
+                if scoped_clauses:
+                    key_clauses.append("(" + " OR ".join(scoped_clauses) + ")")
+                continue
+
             if key not in column_map:
                 continue
 
@@ -996,9 +1105,9 @@ class PostgresDatabase(BaseDatabase):
             value_clauses = []
             for item in values:
                 if item is None:
-                    # Backward-compat: for folder_name/end_user_id, also match empty string values which
+                    # Backward-compat: for folder_name/folder_path/end_user_id, also match empty string values which
                     # historically represented "no folder/user" in some datasets.
-                    if column in ("folder_name", "end_user_id"):
+                    if column in ("folder_name", "folder_path", "end_user_id"):
                         value_clauses.append(f"({column} IS NULL OR {column} = '')")
                     else:
                         value_clauses.append(f"{column} IS NULL")
@@ -1033,9 +1142,46 @@ class PostgresDatabase(BaseDatabase):
         # Add system metadata filter parameters
         if system_filters:
             self._filter_param_counter = 0  # Reset counter
-            column_map = {"app_id": "app_id", "folder_name": "folder_name", "end_user_id": "end_user_id"}
+            column_map = {
+                "app_id": "app_id",
+                "folder_name": "folder_name",
+                "folder_path": "folder_path",
+                "end_user_id": "end_user_id",
+            }
 
             for key, value in system_filters.items():
+                if key == "folder_path_prefix":
+                    values = value if isinstance(value, list) else [value]
+                    if not values and value is not None:
+                        continue
+                    for item in values:
+                        if item is None:
+                            continue
+                        param_name = f"{key}_{self._filter_param_counter}"
+                        params[param_name] = str(item)
+                        params[f"{param_name}_like"] = f"{str(item).rstrip('/')}/%"
+                        self._filter_param_counter += 1
+                    continue
+
+                if key == "folder_path_prefix_depth":
+                    entries = value if isinstance(value, list) else [value]
+                    if not entries and value is not None:
+                        continue
+                    for entry in entries:
+                        if not isinstance(entry, dict):
+                            continue
+                        prefix_val = entry.get("prefix")
+                        max_depth = entry.get("max_depth")
+                        if prefix_val is None:
+                            continue
+                        param_name = f"{key}_{self._filter_param_counter}"
+                        params[param_name] = str(prefix_val)
+                        params[f"{param_name}_like"] = f"{str(prefix_val).rstrip('/')}/%"
+                        if max_depth is not None:
+                            params[f"{param_name}_depth"] = int(max_depth)
+                        self._filter_param_counter += 1
+                    continue
+
                 if key not in column_map:
                     continue
 
@@ -1073,6 +1219,7 @@ class PostgresDatabase(BaseDatabase):
             "updated_at": graph_model.updated_at,
             # Include flattened fields
             "folder_name": graph_model.folder_name,
+            "folder_path": graph_model.folder_path,
             "app_id": graph_model.app_id,
             "end_user_id": graph_model.end_user_id,
         }
@@ -1108,6 +1255,7 @@ class PostgresDatabase(BaseDatabase):
             "storage_files": storage_files,
             # Include flattened fields
             "folder_name": doc_model.folder_name,
+            "folder_path": doc_model.folder_path,
             "app_id": doc_model.app_id,
             "end_user_id": doc_model.end_user_id,
         }
@@ -1132,6 +1280,13 @@ class PostgresDatabase(BaseDatabase):
             # Change 'metadata' to 'graph_metadata' to match our model
             if "metadata" in graph_dict:
                 graph_dict["graph_metadata"] = graph_dict.pop("metadata")
+
+            # Keep folder_path aligned with folder_name for backward compatibility
+            if graph_dict.get("folder_path") is None and graph_dict.get("folder_name"):
+                try:
+                    graph_dict["folder_path"] = normalize_folder_path(graph_dict["folder_name"])
+                except ValueError:
+                    graph_dict["folder_path"] = graph_dict["folder_name"]
 
             # Serialize datetime objects to ISO format strings, but preserve actual datetime objects
             # for created_at and updated_at fields that SQLAlchemy expects as datetime instances
@@ -1330,6 +1485,12 @@ class PostgresDatabase(BaseDatabase):
             if "metadata" in graph_dict:
                 graph_dict["graph_metadata"] = graph_dict.pop("metadata")
 
+            if graph_dict.get("folder_path") is None and graph_dict.get("folder_name"):
+                try:
+                    graph_dict["folder_path"] = normalize_folder_path(graph_dict["folder_name"])
+                except ValueError:
+                    graph_dict["folder_path"] = graph_dict["folder_name"]
+
             # Serialize datetime objects to ISO format strings, but preserve actual datetime objects
             # for created_at and updated_at fields that SQLAlchemy expects as datetime instances
             created_at = graph_dict.get("created_at")
@@ -1434,6 +1595,24 @@ class PostgresDatabase(BaseDatabase):
             async with self.async_session() as session:
                 folder_dict = folder.model_dump()
 
+                # Derive canonical full_path and depth (single-level folders default to depth=1)
+                try:
+                    canonical_path = normalize_folder_path(folder_dict.get("full_path") or folder_dict.get("name"))
+                except ValueError as exc:
+                    logger.error("Invalid folder path '%s': %s", folder_dict.get("full_path"), exc)
+                    return False
+
+                folder_dict["full_path"] = canonical_path
+                folder.full_path = canonical_path
+
+                if folder_dict.get("depth") is None:
+                    segments = canonical_path.strip("/").split("/") if canonical_path and canonical_path != "/" else []
+                    folder_depth = len(segments) if canonical_path != "/" else 0
+                    if canonical_path != "/" and folder_depth == 0:
+                        folder_depth = 1
+                    folder_dict["depth"] = folder_depth
+                    folder.depth = folder_depth
+
                 # Convert datetime objects to strings for JSON serialization
                 folder_dict = _serialize_datetime(folder_dict)
 
@@ -1441,19 +1620,28 @@ class PostgresDatabase(BaseDatabase):
                 owner_id = auth.entity_id or "system"
                 app_id_val = auth.app_id or folder_dict.get("app_id")
 
-                # Check for existing folder with same name
-                params = {"name": folder.name, "owner_id": owner_id}
-                sql = """
-                    SELECT id FROM folders
-                    WHERE name = :name
-                    AND owner_id = :owner_id
-                    """
+                # Check for existing folder with same full_path (scoped by app or owner, matching uniqueness rules)
                 if app_id_val:
-                    sql += " AND app_id = :app_id"
-                    params["app_id"] = app_id_val
-                stmt = text(sql).bindparams(**params)
+                    params = {"full_path": canonical_path, "app_id": app_id_val}
+                    stmt = text(
+                        """
+                        SELECT id FROM folders
+                        WHERE full_path = :full_path
+                        AND app_id = :app_id
+                        """
+                    )
+                else:
+                    params = {"full_path": canonical_path, "owner_id": owner_id}
+                    stmt = text(
+                        """
+                        SELECT id FROM folders
+                        WHERE full_path = :full_path
+                        AND app_id IS NULL
+                        AND owner_id = :owner_id
+                        """
+                    )
 
-                result = await session.execute(stmt)
+                result = await session.execute(stmt.bindparams(**params))
                 existing_folder = result.scalar_one_or_none()
 
                 if existing_folder:
@@ -1469,6 +1657,9 @@ class PostgresDatabase(BaseDatabase):
                 folder_model = FolderModel(
                     id=folder.id,
                     name=folder.name,
+                    full_path=folder_dict.get("full_path"),
+                    parent_id=folder_dict.get("parent_id"),
+                    depth=folder_dict.get("depth"),
                     description=folder.description,
                     owner_id=owner_id,
                     document_ids=folder_dict.get("document_ids", []),
@@ -1504,6 +1695,9 @@ class PostgresDatabase(BaseDatabase):
                 folder_dict = {
                     "id": folder_model.id,
                     "name": folder_model.name,
+                    "full_path": folder_model.full_path,
+                    "parent_id": folder_model.parent_id,
+                    "depth": folder_model.depth,
                     "description": folder_model.description,
                     "document_ids": folder_model.document_ids,
                     "system_metadata": folder_model.system_metadata,
@@ -1526,27 +1720,55 @@ class PostgresDatabase(BaseDatabase):
         """Get a folder by name."""
         try:
             async with self.async_session() as session:
+                normalized_full_path = None
+                try:
+                    normalized_full_path = normalize_folder_path(name)
+                except Exception:
+                    normalized_full_path = None
+
                 # Build query based on auth context
-                params = {"name": name}
+                params = {"name": name, "full_path": normalized_full_path}
 
                 if auth.app_id:
                     # Filter by app_id in cloud mode
-                    stmt = text(
+                    if normalized_full_path:
+                        stmt = text(
+                            """
+                            SELECT * FROM folders
+                            WHERE full_path = :full_path
+                            AND app_id = :app_id
                         """
-                        SELECT * FROM folders
-                        WHERE name = :name AND app_id = :app_id
-                    """
-                    )
-                    params["app_id"] = auth.app_id
+                        )
+                        params["app_id"] = auth.app_id
+                    else:
+                        stmt = text(
+                            """
+                            SELECT * FROM folders
+                            WHERE name = :name
+                            AND app_id = :app_id
+                        """
+                        )
+                        params["app_id"] = auth.app_id
                 elif auth.entity_id:
                     # Filter by owner_id in dev/self-hosted mode
-                    stmt = text(
+                    if normalized_full_path:
+                        stmt = text(
+                            """
+                            SELECT * FROM folders
+                            WHERE full_path = :full_path
+                            AND owner_id = :owner_id
                         """
-                        SELECT * FROM folders
-                        WHERE name = :name AND owner_id = :owner_id
-                    """
-                    )
-                    params["owner_id"] = auth.entity_id
+                        )
+                        params["owner_id"] = auth.entity_id
+                    else:
+                        stmt = text(
+                            """
+                            SELECT * FROM folders
+                            WHERE name = :name
+                            AND owner_id = :owner_id
+                        """
+                        )
+                        params["owner_id"] = auth.entity_id
                 else:
                     # No access without auth
                     return None
@@ -1559,6 +1781,9 @@ class PostgresDatabase(BaseDatabase):
                     folder_dict = {
                         "id": folder_row.id,
                         "name": folder_row.name,
+                        "full_path": folder_row.full_path,
+                        "parent_id": folder_row.parent_id,
+                        "depth": folder_row.depth,
                         "description": folder_row.description,
                         "document_ids": folder_row.document_ids,
                         "system_metadata": folder_row.system_metadata,
@@ -1573,27 +1798,90 @@ class PostgresDatabase(BaseDatabase):
             logger.error(f"Error getting folder by name: {e}")
             return None
 
+    async def get_folder_by_full_path(self, full_path: str, auth: AuthContext) -> Optional[Folder]:
+        """Get a folder by canonical full_path."""
+        try:
+            normalized_full_path = normalize_folder_path(full_path)
+            async with self.async_session() as session:
+                params: Dict[str, Any] = {"full_path": normalized_full_path}
+                if auth.app_id:
+                    stmt = text(
+                        """
+                        SELECT * FROM folders
+                        WHERE full_path = :full_path
+                        AND app_id = :app_id
+                    """
+                    )
+                    params["app_id"] = auth.app_id
+                elif auth.entity_id:
+                    stmt = text(
+                        """
+                        SELECT * FROM folders
+                        WHERE full_path = :full_path
+                        AND owner_id = :owner_id
+                    """
+                    )
+                    params["owner_id"] = auth.entity_id
+                else:
+                    return None
+
+                result = await session.execute(stmt.bindparams(**params))
+                folder_row = result.fetchone()
+                if not folder_row:
+                    return None
+
+                folder_dict = {
+                    "id": folder_row.id,
+                    "name": folder_row.name,
+                    "full_path": folder_row.full_path,
+                    "parent_id": folder_row.parent_id,
+                    "depth": folder_row.depth,
+                    "description": folder_row.description,
+                    "document_ids": folder_row.document_ids,
+                    "system_metadata": folder_row.system_metadata,
+                    "app_id": folder_row.app_id,
+                    "end_user_id": folder_row.end_user_id,
+                }
+                return Folder(**folder_dict)
+        except Exception as e:
+            logger.error(f"Error getting folder by full_path: {e}")
+            return None
+
     async def list_folders(self, auth: AuthContext, system_filters: Optional[Dict[str, Any]] = None) -> List[Folder]:
         """List all folders the user has access to using flattened columns."""
         try:
-            current_params = {}
+            current_params: Dict[str, Any] = {}
 
             # Simplified access control - same as documents/graphs
             if auth.app_id:
                 # Filter by app_id when present (cloud mode)
-                where_clause = text("app_id = :app_id_val")
+                access_condition = "app_id = :app_id_val"
                 current_params["app_id_val"] = auth.app_id
             elif auth.entity_id:
                 # Filter by owner_id as fallback (dev/self-hosted mode)
-                where_clause = text("owner_id = :owner_id_val")
+                access_condition = "owner_id = :owner_id_val"
                 current_params["owner_id_val"] = auth.entity_id
             else:
                 # No access if no auth context
-                where_clause = text("1=0")
+                access_condition = "1=0"
 
             # Build and execute query
             async with self.async_session() as session:
-                query = select(FolderModel).where(where_clause)
+                # Prefetch child counts to populate Folder.child_count
+                child_counts_result = await session.execute(
+                    text(
+                        f"""
+                        SELECT parent_id, COUNT(*) AS cnt
+                        FROM folders
+                        WHERE parent_id IS NOT NULL AND ({access_condition})
+                        GROUP BY parent_id
+                        """
+                    ),
+                    current_params,
+                )
+                child_counts = {row.parent_id: row.cnt for row in child_counts_result.mappings()}
+
+                query = select(FolderModel).where(text(access_condition))
                 result = await session.execute(query, current_params)
                 folder_models = result.scalars().all()
 
@@ -1602,11 +1890,15 @@ class PostgresDatabase(BaseDatabase):
                     folder_dict = {
                         "id": folder_model.id,
                         "name": folder_model.name,
+                        "full_path": folder_model.full_path,
+                        "parent_id": folder_model.parent_id,
+                        "depth": folder_model.depth,
                         "description": folder_model.description,
                         "document_ids": folder_model.document_ids,
                         "system_metadata": folder_model.system_metadata,
                         "app_id": folder_model.app_id,
                         "end_user_id": folder_model.end_user_id,
+                        "child_count": child_counts.get(folder_model.id, 0),
                     }
                     folders.append(Folder(**folder_dict))
                 return folders
@@ -1682,14 +1974,22 @@ class PostgresDatabase(BaseDatabase):
 
                 folder_model.document_ids = new_document_ids
 
+                try:
+                    folder_path_value = folder.full_path or (
+                        normalize_folder_path(folder.name) if folder.name else None
+                    )
+                except ValueError:
+                    folder_path_value = folder.name
+
                 # Also update the document's folder_name flattened column
                 stmt = text(
                     """
                     UPDATE documents
-                    SET folder_name = :folder_name
+                    SET folder_name = :folder_name,
+                        folder_path = :folder_path
                     WHERE external_id = :document_id
                     """
-                ).bindparams(folder_name=folder.name, document_id=document_id)
+                ).bindparams(folder_name=folder.name, folder_path=folder_path_value, document_id=document_id)
 
                 await session.execute(stmt)
                 await session.commit()
@@ -1742,7 +2042,8 @@ class PostgresDatabase(BaseDatabase):
                 stmt = text(
                     """
                     UPDATE documents
-                    SET folder_name = NULL
+                    SET folder_name = NULL,
+                        folder_path = NULL
                     WHERE external_id = :document_id
                     """
                 ).bindparams(document_id=document_id)
@@ -1986,6 +2287,8 @@ class PostgresDatabase(BaseDatabase):
                     {
                         "id": f.id,
                         "name": f.name,
+                        "full_path": getattr(f, "full_path", None),
+                        "depth": getattr(f, "depth", None),
                         "description": getattr(f, "description", None),
                         "updated_at": (f.system_metadata or {}).get("updated_at"),
                         "doc_count": len(f.document_ids or []),

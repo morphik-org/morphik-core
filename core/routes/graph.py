@@ -14,7 +14,7 @@ from core.models.prompts import validate_prompt_overrides_with_http_exception
 from core.models.request import CreateGraphRequest, UpdateGraphRequest
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
-from core.utils.folder_utils import normalize_folder_name
+from core.utils.folder_utils import normalize_folder_selector
 
 # ---------------------------------------------------------------------------
 # Router initialization & shared singletons
@@ -58,8 +58,11 @@ async def create_graph(
         # --------------------
         system_filters: Dict[str, Any] = {}
         if request.folder_name is not None:
-            normalized_folder_name = normalize_folder_name(request.folder_name)
-            system_filters["folder_name"] = normalized_folder_name
+            try:
+                normalized_folder = normalize_folder_selector(request.folder_name)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            system_filters["folder_path"] = normalized_folder
         if request.end_user_id:
             system_filters["end_user_id"] = request.end_user_id
 
@@ -73,7 +76,8 @@ async def create_graph(
             id=str(uuid.uuid4()),
             name=request.name,
             filters=request.filters,
-            folder_name=system_filters.get("folder_name"),
+            folder_name=request.folder_name,
+            folder_path=system_filters.get("folder_path"),
             end_user_id=system_filters.get("end_user_id"),
             app_id=auth.app_id,
         )
@@ -131,6 +135,10 @@ async def get_graph(
     name: str,
     auth: AuthContext = Depends(verify_token),
     folder_name: Optional[Union[str, List[str]]] = Query(None),
+    folder_depth: Optional[int] = Query(
+        None,
+        description="Folder scope depth: 0/None exact, -1 all descendants, n>0 include descendants up to n levels.",
+    ),
     end_user_id: Optional[str] = None,
 ) -> Graph:
     """
@@ -142,8 +150,10 @@ async def get_graph(
         # Create system filters for folder and user scoping
         system_filters = {}
         if folder_name is not None:
-            normalized_folder_name = normalize_folder_name(folder_name)
-            system_filters["folder_name"] = normalized_folder_name
+            try:
+                system_filters.update(document_service._build_folder_scope_filters(folder_name, folder_depth))
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
 
@@ -165,6 +175,10 @@ async def get_graph(
 async def list_graphs(
     auth: AuthContext = Depends(verify_token),
     folder_name: Optional[Union[str, List[str]]] = Query(None),
+    folder_depth: Optional[int] = Query(
+        None,
+        description="Folder scope depth: 0/None exact, -1 all descendants, n>0 include descendants up to n levels.",
+    ),
     end_user_id: Optional[str] = None,
 ) -> List[Graph]:
     """
@@ -177,8 +191,10 @@ async def list_graphs(
         # Create system filters for folder and user scoping
         system_filters = {}
         if folder_name is not None:
-            normalized_folder_name = normalize_folder_name(folder_name)
-            system_filters["folder_name"] = normalized_folder_name
+            try:
+                system_filters.update(document_service._build_folder_scope_filters(folder_name, folder_depth))
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
 
@@ -198,6 +214,10 @@ async def get_graph_visualization(
     name: str,
     auth: AuthContext = Depends(verify_token),
     folder_name: Optional[Union[str, List[str]]] = Query(None),
+    folder_depth: Optional[int] = Query(
+        None,
+        description="Folder scope depth: 0/None exact, -1 all descendants, n>0 include descendants up to n levels.",
+    ),
     end_user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
@@ -211,6 +231,7 @@ async def get_graph_visualization(
             name=name,
             auth=auth,
             folder_name=folder_name,
+            folder_depth=folder_depth,
             end_user_id=end_user_id,
         )
     except PermissionError as e:
@@ -243,7 +264,10 @@ async def update_graph(
         # Create system filters for folder and user scoping
         system_filters = {}
         if request.folder_name:
-            system_filters["folder_name"] = request.folder_name
+            try:
+                system_filters["folder_path"] = normalize_folder_selector(request.folder_name)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
         if request.end_user_id:
             system_filters["end_user_id"] = request.end_user_id
 
@@ -320,6 +344,10 @@ async def get_graph_status(
     name: str,
     auth: AuthContext = Depends(verify_token),
     folder_name: Optional[Union[str, List[str]]] = Query(None),
+    folder_depth: Optional[int] = Query(
+        None,
+        description="Folder scope depth: 0/None exact, -1 all descendants, n>0 include descendants up to n levels.",
+    ),
     end_user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Lightweight endpoint to check graph status with automatic status synchronization.
@@ -332,8 +360,10 @@ async def get_graph_status(
         # Create system filters for folder and user scoping
         system_filters = {}
         if folder_name is not None:
-            normalized_folder_name = normalize_folder_name(folder_name)
-            system_filters["folder_name"] = normalized_folder_name
+            try:
+                system_filters.update(document_service._build_folder_scope_filters(folder_name, folder_depth))
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
 

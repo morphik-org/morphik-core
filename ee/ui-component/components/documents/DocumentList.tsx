@@ -18,13 +18,11 @@ import {
   ArrowDown,
   Folder as FolderIcon,
   FileText,
-  ChevronRight,
-  ChevronDown,
   Loader2,
 } from "lucide-react";
 import { showAlert } from "@/components/ui/alert-system";
 
-import { Document, Folder, FolderSummary, ProcessingProgress } from "../types";
+import { Document, FolderSummary, ProcessingProgress } from "../types";
 import { EmptyDocuments, NoMatchingDocuments, LoadingDocuments } from "./shared/EmptyStates";
 
 type ColumnType = "string" | "int" | "float" | "bool" | "Date" | "json";
@@ -50,8 +48,6 @@ interface DocumentListProps {
   handleCheckboxChange: (checked: boolean | "indeterminate", docId: string) => void;
   setSelectedDocuments: (docIds: string[]) => void;
   loading: boolean;
-  apiBaseUrl: string;
-  authToken: string | null;
   selectedFolder?: string | null;
   onViewInPDFViewer?: (documentId: string) => void; // Add PDF viewer navigation
   onDownloadDocument?: (documentId: string) => void; // Add download functionality
@@ -62,18 +58,18 @@ interface DocumentListProps {
   hideSearchBar?: boolean; // Control whether to hide the search bar
   externalSearchQuery?: string; // External search query when search bar is hidden
   onSearchChange?: (query: string) => void; // Callback for search changes when search bar is hidden
-  allFoldersExpanded?: boolean; // Control whether all folders should be expanded
   pagination?: DocumentListPaginationConfig;
 }
 
-interface FolderDocumentsState {
-  documents: Document[];
-  hasMore: boolean;
-  nextSkip: number | null;
-  loading: boolean;
-}
-
-const FOLDER_PAGE_SIZE = 50;
+type DocumentListItem = Document & {
+  itemType?: "document" | "folder" | "all" | "folder-load-more";
+  folderData?: (FolderSummary & { path?: string; depthLevel?: number }) | undefined;
+  isChildDocument?: boolean;
+  parentFolderName?: string;
+  parentFolderPath?: string;
+  indentLevel?: number;
+  displayPath?: string;
+};
 
 const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentList({
   documents,
@@ -83,8 +79,6 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
   handleCheckboxChange,
   setSelectedDocuments,
   loading,
-  apiBaseUrl,
-  authToken,
   onViewInPDFViewer,
   onDownloadDocument,
   onDeleteDocument,
@@ -93,7 +87,6 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
   hideSearchBar = false,
   externalSearchQuery = "",
   onSearchChange,
-  allFoldersExpanded = false,
   pagination,
 }) {
   const [mounted, setMounted] = useState(false);
@@ -108,10 +101,6 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
   const effectiveSearchQuery = hideSearchBar ? externalSearchQuery : searchQuery;
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-
-  // State for expanded folders and their documents
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-  const [folderDocuments, setFolderDocuments] = useState<Record<string, FolderDocumentsState>>({});
 
   const paginationConfig = pagination;
 
@@ -228,49 +217,14 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
     return Array.from(fields);
   }, [documents]);
 
-  // Apply search and sort logic with memoization, including expanded folder documents
+  // Apply search and sort logic with memoization (no inline folder expansion)
   const filteredDocuments = useMemo(() => {
-    let result: (Document & {
-      itemType?: "document" | "folder" | "all" | "folder-load-more";
-      folderData?: Folder;
-      isChildDocument?: boolean;
-      parentFolderName?: string;
-    })[] = [];
+    let result: DocumentListItem[] = [];
 
     // Add all main documents
-    documents.forEach(doc => {
+    documents.forEach(rawDoc => {
+      const doc = rawDoc as DocumentListItem;
       result.push(doc);
-
-      // If this is a folder and it's expanded, add its documents as children
-      if ((doc as Document & { itemType?: string }).itemType === "folder") {
-        const folderName = doc.filename || "";
-        if (expandedFolders.has(folderName) && folderDocuments[folderName]) {
-          const folderState = folderDocuments[folderName];
-          folderState.documents.forEach(childDoc => {
-            result.push({
-              ...childDoc,
-              isChildDocument: true,
-              parentFolderName: folderName,
-              itemType: "document",
-            });
-          });
-          if (folderState.hasMore) {
-            result.push({
-              external_id: `folder-load-more-${folderName}`,
-              filename: "Load more…",
-              content_type: "application/vnd.morphik.load-more",
-              metadata: {},
-              additional_metadata: {},
-              system_metadata: {},
-              parentFolderName: folderName,
-              itemType: "folder-load-more" as const,
-            });
-          }
-        }
-      }
-
-      // Note: "All Documents" expansion now works by expanding all folders,
-      // so we don't add separate children for it
     });
 
     // Apply search filter
@@ -282,6 +236,12 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
 
         // Search in document ID
         if (doc.external_id.toLowerCase().includes(query)) return true;
+
+        const folderPath =
+          (doc as DocumentListItem).displayPath ||
+          (doc as DocumentListItem).folderData?.full_path ||
+          (doc as DocumentListItem).folderData?.path;
+        if (typeof folderPath === "string" && folderPath.toLowerCase().includes(query)) return true;
 
         // Search in metadata values
         if (doc.metadata) {
@@ -338,7 +298,7 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
     }
 
     return result;
-  }, [documents, effectiveSearchQuery, sortColumn, sortDirection, expandedFolders, folderDocuments]);
+  }, [documents, effectiveSearchQuery, sortColumn, sortDirection]);
 
   const selectableItems = useMemo(
     () =>
@@ -389,188 +349,6 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
       showAlert("Failed to copy document ID", { type: "error", duration: 3000 });
     }
   };
-
-  const normalizeFolderDocument = useCallback((doc: Partial<Document>): Document => {
-    const systemMetadata = {
-      ...(doc.system_metadata as Record<string, unknown> | undefined),
-    };
-
-    if (!("status" in systemMetadata) || !systemMetadata?.status) {
-      (systemMetadata as Record<string, unknown>).status = "processing";
-    }
-
-    return {
-      external_id: doc.external_id ?? "",
-      filename: doc.filename,
-      content_type: doc.content_type ?? "application/octet-stream",
-      metadata: doc.metadata ? (doc.metadata as Record<string, unknown>) : {},
-      additional_metadata: doc.additional_metadata ? (doc.additional_metadata as Record<string, unknown>) : {},
-      system_metadata: systemMetadata,
-      folder_name: doc.folder_name,
-      app_id: doc.app_id,
-      end_user_id: doc.end_user_id,
-    };
-  }, []);
-
-  const fetchFolderDocuments = useCallback(
-    async (folderName: string, skip = 0, force = false) => {
-      if (!force && folderDocuments[folderName] && skip === 0) {
-        return;
-      }
-
-      setFolderDocuments(prev => {
-        const existing = prev[folderName];
-        return {
-          ...prev,
-          [folderName]: {
-            documents: skip > 0 && existing ? existing.documents : (existing?.documents ?? []),
-            hasMore: existing?.hasMore ?? false,
-            nextSkip: existing?.nextSkip ?? null,
-            loading: true,
-          },
-        };
-      });
-
-      try {
-        const requestBody = {
-          identifiers: [folderName],
-          include_document_count: false,
-          include_status_counts: false,
-          include_documents: true,
-          document_skip: skip,
-          document_limit: FOLDER_PAGE_SIZE,
-          document_fields: [
-            "external_id",
-            "filename",
-            "content_type",
-            "metadata",
-            "additional_metadata",
-            "system_metadata",
-            "folder_name",
-          ],
-          sort_by: "updated_at",
-          sort_direction: "desc",
-        };
-
-        const response = await fetch(`${apiBaseUrl}/folders/details`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-          },
-          body: JSON.stringify(requestBody),
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch folder documents: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        const entry = Array.isArray(data?.folders) ? data.folders[0] : null;
-        const documentInfo = entry?.document_info ?? {};
-        const docs = Array.isArray(documentInfo?.documents) ? documentInfo.documents : [];
-
-        const normalizedDocs = docs
-          .map((doc: unknown): Document | null => {
-            const partial = doc as Partial<Document> | null | undefined;
-            if (!partial) {
-              return null;
-            }
-            return normalizeFolderDocument(partial);
-          })
-          .filter((doc: Document | null): doc is Document => Boolean(doc?.external_id));
-
-        setFolderDocuments(prev => {
-          const existing = prev[folderName];
-          const baseDocs = skip > 0 && existing ? existing.documents : [];
-          const mergedDocs =
-            skip > 0
-              ? [
-                  ...baseDocs,
-                  ...normalizedDocs.filter((newDoc: Document) => {
-                    return !baseDocs.some(existingDoc => existingDoc.external_id === newDoc.external_id);
-                  }),
-                ]
-              : normalizedDocs;
-
-          const hasMore = Boolean(documentInfo?.has_more);
-          const nextSkip =
-            typeof documentInfo?.next_skip === "number"
-              ? documentInfo.next_skip
-              : hasMore
-                ? skip + normalizedDocs.length
-                : null;
-
-          return {
-            ...prev,
-            [folderName]: {
-              documents: mergedDocs,
-              hasMore,
-              nextSkip,
-              loading: false,
-            },
-          };
-        });
-      } catch (error) {
-        console.error(`Error fetching documents for folder "${folderName}":`, error);
-        setFolderDocuments(prev => ({
-          ...prev,
-          [folderName]: {
-            documents: prev[folderName]?.documents ?? [],
-            hasMore: prev[folderName]?.hasMore ?? false,
-            nextSkip: prev[folderName]?.nextSkip ?? null,
-            loading: false,
-          },
-        }));
-        showAlert(`Failed to load documents for folder "${folderName}"`, {
-          type: "error",
-          duration: 4000,
-        });
-      }
-    },
-    [apiBaseUrl, authToken, folderDocuments, normalizeFolderDocument]
-  );
-
-  // Effect to handle allFoldersExpanded prop changes
-  React.useEffect(() => {
-    if (allFoldersExpanded) {
-      // Expand all folders
-      const allFolderNames = documents
-        .filter((doc: Document & { itemType?: string }) => doc.itemType === "folder")
-        .map((doc: Document & { itemType?: string }) => doc.filename || "");
-      setExpandedFolders(new Set(allFolderNames));
-
-      // Fetch documents for all folders that aren't already fetched
-      allFolderNames.forEach(folderName => {
-        if (!folderDocuments[folderName] || folderDocuments[folderName].documents.length === 0) {
-          fetchFolderDocuments(folderName, 0, true);
-        }
-      });
-    } else {
-      // Collapse all folders
-      setExpandedFolders(new Set());
-    }
-  }, [allFoldersExpanded, documents, folderDocuments, fetchFolderDocuments]);
-
-  // Handle folder expansion toggle
-  const toggleFolderExpansion = useCallback(
-    (folderName: string, event: React.MouseEvent) => {
-      event.stopPropagation(); // Prevent folder navigation
-
-      setExpandedFolders(prev => {
-        const newSet = new Set(prev);
-        if (newSet.has(folderName)) {
-          newSet.delete(folderName);
-        } else {
-          newSet.add(folderName);
-          // Fetch documents when expanding
-          fetchFolderDocuments(folderName);
-        }
-        return newSet;
-      });
-    },
-    [fetchFolderDocuments]
-  );
 
   // Use existing metadata fields as columns
   const allColumns = useMemo(() => {
@@ -767,36 +545,16 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
           {/* Content rows */}
           {filteredDocuments.map(doc => {
             const itemType = (doc as Document & { itemType?: string }).itemType;
-
             if (itemType === "folder-load-more") {
-              const folderName = (doc as Document & { parentFolderName: string }).parentFolderName;
-              const folderState = folderDocuments[folderName];
-              const isLoading = folderState?.loading ?? false;
-              const nextSkip =
-                folderState?.nextSkip ??
-                (folderState && folderState.documents.length > 0 ? folderState.documents.length : FOLDER_PAGE_SIZE);
-
-              return (
-                <div
-                  key={doc.external_id}
-                  className="flex items-center justify-center border-b border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
-                >
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={e => {
-                      e.stopPropagation();
-                      fetchFolderDocuments(folderName, nextSkip ?? 0, true);
-                    }}
-                    disabled={isLoading}
-                    className="flex items-center gap-2"
-                  >
-                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronDown className="h-4 w-4" />}
-                    {isLoading ? "Loading…" : "Load more documents"}
-                  </Button>
-                </div>
-              );
+              return null;
             }
+            const typedDoc = doc as DocumentListItem;
+            const folderPathLabel =
+              itemType === "folder"
+                ? undefined
+                : typedDoc.displayPath || typedDoc.folderData?.full_path || typedDoc.folderData?.path;
+            const baseIndent = 0; // no inline nesting in list view
+            const paddingLeft = 12 + baseIndent * 14;
 
             return (
               <div
@@ -848,23 +606,10 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
                       <div className="h-4 w-4" /> // Empty space for alignment
                     )}
                   </div>
-                  <div
-                    className={`flex flex-1 items-center gap-2 px-3 py-2 ${
-                      (doc as Document & { isChildDocument?: boolean }).isChildDocument ? "pl-8" : ""
-                    }`}
-                  >
+                  <div className="flex flex-1 items-center gap-2 px-3 py-2" style={{ paddingLeft }}>
                     {/* Chevron for folders and "All Documents" or status dot for documents */}
                     {itemType === "folder" ? (
-                      <button
-                        onClick={e => toggleFolderExpansion(doc.filename || "", e)}
-                        className="group relative flex-shrink-0 rounded p-0.5 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-                      >
-                        {expandedFolders.has(doc.filename || "") ? (
-                          <ChevronDown className="h-3 w-3 text-gray-600" />
-                        ) : (
-                          <ChevronRight className="h-3 w-3 text-gray-600" />
-                        )}
-                      </button>
+                      <div className="h-3 w-3 flex-shrink-0" />
                     ) : itemType === "document" || !itemType ? (
                       <div className="group relative flex-shrink-0">
                         {doc.system_metadata?.status === "completed" ? (
@@ -902,6 +647,9 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
                     </div>
 
                     <span className="truncate font-medium">{doc.filename || "N/A"}</span>
+                    {itemType === "folder" && folderPathLabel && (
+                      <span className="truncate text-xs text-muted-foreground">{folderPathLabel}</span>
+                    )}
                     {/* Progress bar for processing documents */}
                     {doc.system_metadata?.status === "processing" &&
                       (doc.system_metadata?.progress as ProcessingProgress | undefined) && (
@@ -918,21 +666,30 @@ const DocumentList: React.FC<DocumentListProps> = React.memo(function DocumentLi
                       )}
                   </div>
                   <div className="px-3 py-2">
-                    <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        copyDocumentId(doc.external_id);
-                      }}
-                      className="group flex items-center gap-2 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
-                      title="Click to copy Document ID"
-                    >
-                      <span className="max-w-[120px] truncate">{doc.external_id}</span>
-                      {copiedDocumentId === doc.external_id ? (
-                        <Check className="h-3 w-3 text-green-500" />
-                      ) : (
-                        <Copy className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
-                      )}
-                    </button>
+                    {itemType === "folder" ? (
+                      <span
+                        className="text-xs font-medium text-muted-foreground"
+                        title={folderPathLabel || doc.external_id}
+                      >
+                        {folderPathLabel || doc.external_id}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          copyDocumentId(doc.external_id);
+                        }}
+                        className="group flex items-center gap-2 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
+                        title="Click to copy Document ID"
+                      >
+                        <span className="max-w-[120px] truncate">{doc.external_id}</span>
+                        {copiedDocumentId === doc.external_id ? (
+                          <Check className="h-3 w-3 text-green-500" />
+                        ) : (
+                          <Copy className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
+                        )}
+                      </button>
+                    )}
                   </div>
                   {/* Render metadata values for each column */}
                   {allColumns.map(column => (

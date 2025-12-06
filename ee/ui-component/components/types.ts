@@ -13,6 +13,10 @@ export interface SearchOptions {
    */
   folder_name?: string | string[];
   /**
+   * Optional nesting depth for folder scoping (-1 for all descendants).
+   */
+  folder_depth?: number;
+  /**
    * Base64-encoded image for visual search (requires use_colpali=true).
    */
   query_image?: string;
@@ -23,6 +27,7 @@ export interface QueryOptions extends SearchOptions {
   temperature?: number;
   graph_name?: string;
   folder_name?: string | string[]; // Support single folder or array of folders
+  folder_depth?: number;
   // external_id removed - should be in filters object as external_id: string[]
   llm_config?: Record<string, unknown>; // LiteLLM-compatible model configuration
   inline_citations?: boolean; // Whether to include inline citations with filename and page number
@@ -91,6 +96,7 @@ export interface Document {
   metadata: Record<string, unknown>;
   system_metadata: SystemMetadata;
   additional_metadata: Record<string, unknown>;
+  folder_path?: string;
   folder_name?: string;
   app_id?: string;
   end_user_id?: string;
@@ -108,6 +114,10 @@ export interface SystemMetadata {
 export interface FolderSummary {
   id: string;
   name: string;
+  full_path?: string;
+  parent_id?: string | null;
+  depth?: number | null;
+  child_count?: number | null;
   description?: string;
   doc_count?: number;
   updated_at?: string;

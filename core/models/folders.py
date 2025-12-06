@@ -10,6 +10,9 @@ class Folder(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
+    full_path: Optional[str] = None
+    parent_id: Optional[str] = None
+    depth: Optional[int] = None
     description: Optional[str] = None
     document_ids: List[str] | None = Field(default_factory=list)
     system_metadata: Dict[str, Any] = Field(
@@ -21,6 +24,8 @@ class Folder(BaseModel):
     # Flattened fields from system_metadata for performance
     app_id: Optional[str] = None
     end_user_id: Optional[str] = None
+    # Derived field for tree rendering (not persisted yet)
+    child_count: Optional[int] = None
 
     def __hash__(self):
         return hash(self.id)
@@ -35,6 +40,8 @@ class FolderCreate(BaseModel):
     """Request model for folder creation"""
 
     name: str
+    full_path: Optional[str] = None
+    parent_id: Optional[str] = None
     description: Optional[str] = None
 
 
@@ -48,6 +55,8 @@ class FolderCreate(BaseModel):
 class FolderSummary(BaseModel):
     id: str
     name: str
+    full_path: Optional[str] = None
+    depth: Optional[int] = None
     description: Optional[str] = None
     doc_count: int = 0
     updated_at: Optional[str] = None

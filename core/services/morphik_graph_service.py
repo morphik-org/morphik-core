@@ -304,7 +304,11 @@ class MorphikGraphService:
 
         # Batch retrieve documents for authorization check
         document_objects = await document_service.batch_retrieve_documents(
-            list(document_ids), auth, folder_name, end_user_id
+            list(document_ids),
+            auth,
+            folder_name=folder_name,
+            folder_depth=None,
+            end_user_id=end_user_id,
         )
 
         # Log for debugging
@@ -803,7 +807,16 @@ class MorphikGraphService:
 
         try:
             standard_chunks_results = await document_service.retrieve_chunks(
-                query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, end_user_id
+                query=query,
+                auth=auth,
+                filters=filters,
+                k=k,
+                min_score=min_score,
+                use_reranking=use_reranking,
+                use_colpali=use_colpali,
+                folder_name=folder_name,
+                folder_depth=None,
+                end_user_id=end_user_id,
             )
             logger.info(f"Document service retrieved {len(standard_chunks_results)} standard chunks.")
 

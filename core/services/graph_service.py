@@ -144,8 +144,9 @@ class GraphService:
         document_objects = await document_service.batch_retrieve_documents(
             all_ids_to_retrieve,
             auth,
-            system_filters.get("folder_name", None),
-            system_filters.get("end_user_id", None),
+            folder_name=system_filters.get("folder_name", None),
+            folder_depth=None,
+            end_user_id=system_filters.get("end_user_id", None),
         )
 
         # Process explicit documents if needed
@@ -168,8 +169,9 @@ class GraphService:
             filtered_docs = await document_service.batch_retrieve_documents(
                 [doc_id for doc_id in all_doc_ids if doc_id not in {d.external_id for d in document_objects}],
                 auth,
-                system_filters.get("folder_name", None),
-                system_filters.get("end_user_id", None),
+                folder_name=system_filters.get("folder_name", None),
+                folder_depth=None,
+                end_user_id=system_filters.get("end_user_id", None),
             )
             logger.info(f"Additional filtered documents to include: {len(filtered_docs)}")
             document_objects.extend(filtered_docs)
@@ -452,7 +454,11 @@ class GraphService:
 
         # Batch retrieve documents for authorization check
         document_objects = await document_service.batch_retrieve_documents(
-            list(document_ids), auth, folder_name, end_user_id
+            list(document_ids),
+            auth,
+            folder_name=folder_name,
+            folder_depth=None,
+            end_user_id=end_user_id,
         )
 
         # Log for debugging
@@ -901,6 +907,7 @@ class GraphService:
         include_paths: bool = False,
         prompt_overrides: Optional[QueryPromptOverrides] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         end_user_id: Optional[str] = None,
     ) -> CompletionResponse:
         """Generate completion using knowledge graph-enhanced retrieval.
@@ -936,9 +943,7 @@ class GraphService:
         # Validation is now handled by type annotations
 
         # Build system filters for scoping
-        system_filters = {}
-        if folder_name:
-            system_filters["folder_name"] = folder_name
+        system_filters = document_service._build_folder_scope_filters(folder_name, folder_depth)  # type: ignore[attr-defined]
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
 
@@ -959,13 +964,14 @@ class GraphService:
                 use_colpali=use_colpali,
                 graph_name=None,
                 folder_name=folder_name,
+                folder_depth=folder_depth,
                 end_user_id=end_user_id,
             )
 
         # Parallel approach
         # 1. Standard vector search
         vector_chunks = await document_service.retrieve_chunks(
-            query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, end_user_id
+            query, auth, filters, k, min_score, use_reranking, use_colpali, folder_name, folder_depth, end_user_id
         )
         logger.info(f"Vector search retrieved {len(vector_chunks)} chunks")
 
@@ -1033,7 +1039,7 @@ class GraphService:
 
         # Get specific chunks containing these entities
         graph_chunks = await self._retrieve_entity_chunks(
-            expanded_entities, auth, filters, document_service, folder_name, end_user_id
+            expanded_entities, auth, filters, document_service, folder_name, folder_depth, end_user_id
         )
         logger.info(f"Retrieved {len(graph_chunks)} chunks containing relevant entities")
 
@@ -1182,6 +1188,7 @@ class GraphService:
         filters: Optional[Dict[str, Any]],
         document_service,
         folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
         end_user_id: Optional[str] = None,
     ) -> List[ChunkResult]:
         """Retrieve chunks containing the specified entities."""
@@ -1203,7 +1210,13 @@ class GraphService:
         doc_ids = {doc_id for doc_id, _ in entity_chunk_sources}
 
         # Check document authorization with system filters
-        documents = await document_service.batch_retrieve_documents(list(doc_ids), auth, folder_name, end_user_id)
+        documents = await document_service.batch_retrieve_documents(
+            list(doc_ids),
+            auth,
+            folder_name=folder_name,
+            folder_depth=folder_depth,
+            end_user_id=end_user_id,
+        )
 
         # Apply filters if needed
         authorized_doc_ids = {
@@ -1222,7 +1235,7 @@ class GraphService:
         # Retrieve and return chunks if we have any valid sources
         return (
             await document_service.batch_retrieve_chunks(
-                chunk_sources, auth, folder_name=folder_name, end_user_id=end_user_id
+                chunk_sources, auth, folder_name=folder_name, folder_depth=folder_depth, end_user_id=end_user_id
             )
             if chunk_sources
             else []

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useMorphikChat } from "@/hooks/useMorphikChat";
 import { generateUUID } from "@/lib/utils";
 import type { QueryOptions } from "@/components/types";
@@ -25,6 +25,7 @@ import { useChatContext } from "@/components/chat/chat-context";
 import { useTheme } from "next-themes";
 import { showAlert } from "@/components/ui/alert-system";
 import { useChatModelSelector } from "./useChatModelSelector";
+import { buildFolderTree, flattenFolderTree, normalizeFolderPathValue } from "@/lib/folderTree";
 
 interface ChatSectionProps {
   apiBaseUrl: string;
@@ -151,12 +152,15 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     {
       id: string;
       filename: string;
+      folder_path?: string;
       folder_name?: string;
       content_type?: string;
       metadata?: Record<string, unknown>;
       system_metadata?: unknown;
     }[]
   >([]);
+
+  const folderOptions = useMemo(() => flattenFolderTree(buildFolderTree(folders)), [folders]);
 
   const { selectedModel, showModelSelector, setShowModelSelector, availableModels, handleModelChange } =
     useChatModelSelector({
@@ -205,25 +209,49 @@ const ChatSection: React.FC<ChatSectionProps> = ({
 
     setLoadingFolders(true);
     try {
-      console.log(`Fetching folders from: ${apiBaseUrl}/folders/summary`);
-      const response = await fetch(`${apiBaseUrl}/folders/summary`, {
+      console.log(`Fetching folders from: ${apiBaseUrl}/folders/details`);
+      const response = await fetch(`${apiBaseUrl}/folders/details`, {
+        method: "POST",
         headers: {
+          "Content-Type": "application/json",
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
+        body: JSON.stringify({
+          include_document_count: true,
+          include_status_counts: false,
+          include_documents: false,
+        }),
       });
 
       if (!response.ok) {
         throw new Error(`Failed to fetch folders: ${response.status} ${response.statusText}`);
       }
 
-      const foldersData = await response.json();
-      console.log("Folders data received:", foldersData);
+      const foldersResult = await response.json();
+      console.log("Folders data received:", foldersResult);
 
-      if (Array.isArray(foldersData)) {
-        setFolders(foldersData);
-      } else {
-        console.error("Expected array for folders data but received:", typeof foldersData);
-      }
+      const entries = Array.isArray(foldersResult?.folders) ? foldersResult.folders : [];
+      const mapped: FolderSummary[] = entries
+        .map((entry: Record<string, unknown>) => {
+          const folder = (entry?.folder ?? {}) as Record<string, unknown>;
+          const docInfo = (entry?.document_info ?? {}) as Record<string, unknown>;
+          const systemMetadata = (folder.system_metadata ?? {}) as Record<string, unknown>;
+          const updatedAt = systemMetadata?.updated_at ?? systemMetadata?.created_at ?? undefined;
+          return {
+            id: folder.id as string,
+            name: (folder.name as string) || "",
+            full_path: (folder.full_path as string | undefined) ?? undefined,
+            parent_id: (folder.parent_id as string | null | undefined) ?? null,
+            depth: (folder.depth as number | null | undefined) ?? null,
+            doc_count:
+              (docInfo?.document_count as number | undefined) ??
+              (Array.isArray(folder.document_ids) ? folder.document_ids.length : undefined),
+            updated_at: typeof updatedAt === "string" ? updatedAt : updatedAt ? String(updatedAt) : undefined,
+          };
+        })
+        .filter((folder: FolderSummary) => folder.name !== undefined || folder.full_path !== undefined);
+
+      setFolders(mapped);
     } catch (err) {
       console.error("Error fetching folders:", err);
     } finally {
@@ -237,14 +265,31 @@ const ChatSection: React.FC<ChatSectionProps> = ({
 
     setLoadingDocuments(true);
     try {
-      console.log(`Fetching documents from: ${apiBaseUrl}/documents`);
-      const response = await fetch(`${apiBaseUrl}/documents`, {
+      console.log(`Fetching documents from: ${apiBaseUrl}/documents/list_docs`);
+      const response = await fetch(`${apiBaseUrl}/documents/list_docs`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body: JSON.stringify({}), // Empty body to fetch all docs
+        body: JSON.stringify({
+          skip: 0,
+          limit: 500,
+          return_documents: true,
+          include_total_count: false,
+          include_status_counts: false,
+          include_folder_counts: false,
+          folder_depth: -1,
+          fields: [
+            "external_id",
+            "filename",
+            "folder_path",
+            "folder_name",
+            "content_type",
+            "metadata",
+            "system_metadata",
+          ],
+        }),
       });
 
       if (!response.ok) {
@@ -254,31 +299,41 @@ const ChatSection: React.FC<ChatSectionProps> = ({
       const documentsData = await response.json();
       console.log("Documents data received:", documentsData);
 
-      if (Array.isArray(documentsData)) {
+      if (Array.isArray(documentsData?.documents ?? documentsData)) {
+        type ChatDoc = {
+          id: string;
+          filename: string;
+          folder_path?: string;
+          folder_name?: string;
+          content_type?: string;
+          metadata?: Record<string, unknown>;
+          system_metadata?: unknown;
+        };
+
         // Transform documents to the format we need (id, filename, and folder info)
-        const transformedDocs = documentsData
-          .map((doc: unknown) => {
+        const docArray = Array.isArray(documentsData?.documents) ? documentsData.documents : documentsData;
+        const transformedDocs: ChatDoc[] = docArray
+          .map((doc: unknown): ChatDoc | null => {
             const docObj = doc as Record<string, unknown>;
             const id = (docObj.external_id as string) || (docObj.id as string);
             if (!id) return null; // Skip documents without valid IDs
+            const systemMetadata = (docObj.system_metadata ?? {}) as Record<string, unknown>;
 
             return {
               id,
               filename: (docObj.filename as string) || (docObj.name as string) || `Document ${id}`,
+              folder_path:
+                (docObj.folder_path as string | undefined) ||
+                (systemMetadata.folder_path as string | undefined) ||
+                (docObj.folder_name as string | undefined) ||
+                (systemMetadata.folder_name as string | undefined),
               folder_name: docObj.folder_name as string | undefined,
               content_type: docObj.content_type as string,
               metadata: docObj.metadata as Record<string, unknown>,
               system_metadata: docObj.system_metadata,
             };
           })
-          .filter(doc => doc !== null) as {
-          id: string;
-          filename: string;
-          folder_name?: string;
-          content_type?: string;
-          metadata?: Record<string, unknown>;
-          system_metadata?: unknown;
-        }[];
+          .filter((doc: ChatDoc | null): doc is ChatDoc => doc !== null);
 
         setDocuments(transformedDocs);
       } else {
@@ -357,7 +412,10 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     const folderName = safeQueryOptions.folder_name;
     if (!folderName) return [];
     const folders = Array.isArray(folderName) ? folderName : [folderName];
-    return folders.filter(f => f !== "__none__");
+    return folders
+      .filter(f => f !== "__none__" && typeof f === "string")
+      .map(path => normalizeFolderPathValue(path as string))
+      .filter(Boolean);
   };
 
   const getCurrentSelectedDocuments = (): string[] => {
@@ -592,20 +650,16 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                         <div className="flex-1">
                           <DocumentSelector
                             documents={documents}
-                            folders={folders.map(folder => ({
-                              name: folder.name,
-                              doc_count: folder.doc_count || 0,
-                            }))}
+                            folders={folderOptions}
                             selectedDocuments={getCurrentSelectedDocuments()}
                             selectedFolders={getCurrentSelectedFolders()}
                             onDocumentSelectionChange={(selectedDocumentIds: string[]) => {
                               updateDocumentFilter(selectedDocumentIds);
                             }}
-                            onFolderSelectionChange={(selectedFolderNames: string[]) => {
-                              safeUpdateOption(
-                                "folder_name",
-                                selectedFolderNames.length > 0 ? selectedFolderNames : undefined
-                              );
+                            onFolderSelectionChange={(selectedFolderPaths: string[]) => {
+                              const normalized = selectedFolderPaths.map(path => normalizeFolderPathValue(path));
+                              safeUpdateOption("folder_name", normalized.length > 0 ? normalized : undefined);
+                              safeUpdateOption("folder_depth", normalized.length > 0 ? -1 : undefined);
                             }}
                             loading={loadingDocuments || loadingFolders}
                             placeholder="Select documents and folders"
@@ -864,20 +918,16 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                         <div className="flex-1">
                           <DocumentSelector
                             documents={documents}
-                            folders={folders.map(folder => ({
-                              name: folder.name,
-                              doc_count: folder.doc_count || 0,
-                            }))}
+                            folders={folderOptions}
                             selectedDocuments={getCurrentSelectedDocuments()}
                             selectedFolders={getCurrentSelectedFolders()}
                             onDocumentSelectionChange={(selectedDocumentIds: string[]) => {
                               updateDocumentFilter(selectedDocumentIds);
                             }}
-                            onFolderSelectionChange={(selectedFolderNames: string[]) => {
-                              safeUpdateOption(
-                                "folder_name",
-                                selectedFolderNames.length > 0 ? selectedFolderNames : undefined
-                              );
+                            onFolderSelectionChange={(selectedFolderPaths: string[]) => {
+                              const normalized = selectedFolderPaths.map(path => normalizeFolderPathValue(path));
+                              safeUpdateOption("folder_name", normalized.length > 0 ? normalized : undefined);
+                              safeUpdateOption("folder_depth", normalized.length > 0 ? -1 : undefined);
                             }}
                             loading={loadingDocuments || loadingFolders}
                             placeholder="Select documents and folders"

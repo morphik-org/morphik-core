@@ -517,10 +517,19 @@ class FastMultiVectorStore(BaseVectorStore):
         return True
 
     async def save_multivector_to_storage(self, chunk: DocumentChunk) -> Tuple[str, str]:
-        as_np = np.array(chunk.embedding)
+        # Use float32 - ColPali model outputs bfloat16 which shares float32's exponent range.
+        # Preserves dynamic range while reducing file size 2x vs float64.
+        as_np = np.asarray(chunk.embedding, dtype=np.float32)
         save_path = f"multivector/{chunk.document_id}/{chunk.chunk_number}.npy"
-        with tempfile.NamedTemporaryFile(suffix=".npy") as temp_file:
-            np.save(temp_file, as_np)  # , allow_pickle=True)
+        # Save to BytesIO first so we can cache the bytes
+        buffer = BytesIO()
+        np.save(buffer, as_np)
+        npy_bytes = buffer.getvalue()
+
+        # Use delete=True so temp file is cleaned up even if write/flush/upload fails
+        with tempfile.NamedTemporaryFile(suffix=".npy", delete=True) as temp_file:
+            temp_file.write(npy_bytes)
+            temp_file.flush()
             if isinstance(self.vector_storage, S3Storage):
                 target_bucket = self.vector_bucket or self.vector_storage.default_bucket
                 self.vector_storage._ensure_bucket(target_bucket)  # type: ignore[attr-defined]
@@ -531,8 +540,9 @@ class FastMultiVectorStore(BaseVectorStore):
                 bucket, key = await self.vector_storage.upload_file(temp_file.name, save_path, bucket=bucket_arg)
                 if isinstance(self.vector_storage, LocalStorage):
                     bucket = ""
-            temp_file.close()
-        await self.cache.delete("vectors", bucket, key)
+
+        # Cache on ingest so retrieval hits cache immediately
+        await self.cache.put("vectors", bucket, key, npy_bytes)
         return bucket, key
 
     async def load_multivector_from_storage(self, bucket: str, key: str) -> torch.Tensor:
