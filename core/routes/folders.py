@@ -9,7 +9,7 @@ from core.auth_utils import verify_token
 from core.database.postgres_database import InvalidMetadataFilterError
 from core.models.auth import AuthContext
 from core.models.folders import Folder, FolderCreate, FolderSummary
-from core.models.request import FolderDetailsRequest
+from core.models.request import FolderDetailsRequest, FolderTreeRequest
 from core.models.responses import (
     DocumentAddToFolderResponse,
     DocumentDeleteResponse,
@@ -17,6 +17,7 @@ from core.models.responses import (
     FolderDetails,
     FolderDetailsResponse,
     FolderDocumentInfo,
+    FolderTreeNode,
 )
 from core.routes.utils import project_document_fields
 from core.services.telemetry import TelemetryService
@@ -260,6 +261,176 @@ async def list_folder_summaries(auth: AuthContext = Depends(verify_token)) -> Li
         return summaries  # type: ignore[return-value]
     except Exception as exc:  # noqa: BLE001
         logger.error("Error listing folder summaries: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/tree", response_model=FolderTreeNode)
+async def get_folder_tree(
+    request: FolderTreeRequest,
+    auth: AuthContext = Depends(verify_token),
+) -> FolderTreeNode:
+    """
+    Return a hierarchical folder tree (with documents) rooted at ``folder_path``.
+
+    When ``folder_path`` is null or ``/``, the entire accessible hierarchy is returned.
+    """
+
+    try:
+        folder_path = request.folder_path
+        document_fields = request.document_fields
+        normalized_path: Optional[str] = None
+        if folder_path is not None:
+            if isinstance(folder_path, str) and folder_path.lower() == "null":
+                folder_path = None
+            else:
+                try:
+                    normalized_path = normalize_folder_path(folder_path)
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc))
+                if normalized_path == "/":
+                    normalized_path = None
+
+        base_path = normalized_path or "/"
+
+        base_folder: Optional[Folder] = None
+        if normalized_path:
+            base_folder = await document_service.db.get_folder_by_full_path(normalized_path, auth)
+            if not base_folder:
+                raise HTTPException(status_code=404, detail=f"Folder {folder_path} not found")
+
+        def _canonical_folder_path(folder: Folder) -> Optional[str]:
+            if folder.full_path:
+                try:
+                    return normalize_folder_path(folder.full_path)
+                except ValueError:
+                    return None
+            if folder.name:
+                try:
+                    return normalize_folder_path(folder.name)
+                except ValueError:
+                    return None
+            return None
+
+        def _parent_path(path: str) -> Optional[str]:
+            if not path or path == "/":
+                return None
+            segments = [part for part in path.strip("/").split("/") if part]
+            if len(segments) <= 1:
+                return "/"
+            return "/" + "/".join(segments[:-1])
+
+        def _attach_child(parent: FolderTreeNode, child: FolderTreeNode) -> None:
+            if not any(existing.full_path == child.full_path for existing in parent.children):
+                parent.children.append(child)
+
+        def _make_node(path: str, folder: Optional[Folder]) -> FolderTreeNode:
+            name = folder.name if folder else ("/" if path == "/" else (path.strip("/").split("/")[-1] or "/"))
+            depth = folder.depth if folder else (0 if path == "/" else None)
+            return FolderTreeNode(
+                id=folder.id if folder else None,
+                name=name,
+                full_path=path,
+                description=folder.description if folder else None,
+                depth=depth,
+                documents=[],
+                children=[],
+            )
+
+        all_folders = await document_service.db.list_folders(auth)
+        folders_with_paths: List[tuple[str, Folder]] = []
+        for folder in all_folders:
+            path = _canonical_folder_path(folder)
+            if path:
+                folders_with_paths.append((path, folder))
+
+        if normalized_path:
+            scoped = []
+            prefix = normalized_path.rstrip("/") + "/"
+            for path, folder in folders_with_paths:
+                if path == normalized_path or path.startswith(prefix):
+                    scoped.append((path, folder))
+            folders_with_paths = scoped
+            if base_folder:
+                base_folder_path = _canonical_folder_path(base_folder)
+                if base_folder_path and all(path != base_folder_path for path, _ in folders_with_paths):
+                    folders_with_paths.append((base_folder_path, base_folder))
+
+        nodes_by_path: Dict[str, FolderTreeNode] = {
+            path: _make_node(path, folder) for path, folder in folders_with_paths
+        }
+
+        root_node = nodes_by_path.get(base_path)
+        if not root_node:
+            root_node = _make_node(base_path, base_folder)
+            nodes_by_path[base_path] = root_node
+
+        for path in sorted(nodes_by_path.keys(), key=lambda p: (p.count("/"), p)):
+            if path == base_path:
+                continue
+            node = nodes_by_path[path]
+            parent_path = _parent_path(path)
+            parent_node = nodes_by_path.get(parent_path)
+            if not parent_node:
+                parent_node = root_node
+            _attach_child(parent_node, node)
+
+        doc_system_filters = {"folder_path_prefix": base_path} if normalized_path else None
+        document_result = await document_service.db.list_documents_flexible(
+            auth=auth,
+            skip=0,
+            limit=None,
+            system_filters=doc_system_filters,
+            include_total_count=False,
+            include_status_counts=False,
+            include_folder_counts=False,
+            return_documents=True,
+            sort_by="filename",
+            sort_direction="asc",
+        )
+
+        documents = document_result.get("documents", []) or []
+        for document in documents:
+            if hasattr(document, "model_dump"):
+                doc_dict = document.model_dump(mode="json")
+            elif hasattr(document, "dict"):
+                doc_dict = document.dict()
+            else:
+                doc_dict = dict(document)
+
+            doc_path_raw = doc_dict.get("folder_path")
+            try:
+                doc_path = normalize_folder_path(doc_path_raw) if doc_path_raw is not None else None
+            except ValueError:
+                doc_path = doc_path_raw
+
+            target_path = doc_path or base_path
+            target_node = nodes_by_path.get(target_path)
+            if not target_node:
+                target_node = _make_node(target_path, None)
+                nodes_by_path[target_path] = target_node
+                parent_path = _parent_path(target_path or "/")
+                parent_node = nodes_by_path.get(parent_path) or root_node
+                _attach_child(parent_node, target_node)
+
+            projected_doc = project_document_fields(doc_dict, document_fields)
+            if doc_path_raw is not None and "folder_path" not in projected_doc:
+                projected_doc["folder_path"] = doc_path_raw
+
+            target_node.documents.append(projected_doc)
+
+        def _sort_tree(node: FolderTreeNode) -> None:
+            node.children.sort(key=lambda child: (child.name or "", child.full_path or ""))
+            for child in node.children:
+                _sort_tree(child)
+            node.documents.sort(key=lambda doc: str(doc.get("filename") or doc.get("external_id") or ""))
+
+        _sort_tree(root_node)
+        return root_node
+
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error building folder tree: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
 

@@ -11,10 +11,10 @@ import time
 import requests
 import tomli
 import uvicorn
-from dotenv import load_dotenv
 
 from core.config import get_settings
 from core.logging_config import setup_logging
+from utils.env_loader import load_local_env
 
 # Global variable to store the worker process
 worker_process = None
@@ -275,8 +275,8 @@ def main():
     if not args.skip_redis_check:
         check_and_start_redis()
 
-    # Load environment variables from .env file
-    load_dotenv(override=True)
+    # Load environment variables from .env file if secrets aren't injected
+    load_local_env(override=True)
 
     # Check if Ollama is required and running
     if not args.skip_ollama_check:
