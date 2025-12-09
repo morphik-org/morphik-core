@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional
 import jwt
 from sqlalchemy import or_, select
 
+from utils.env_loader import load_local_env
+
 from ..config import get_settings
 from ..database.user_limits_db import UserLimitsDatabase
 from ..models.tiers import AccountTier, get_tier_limits
@@ -206,9 +208,8 @@ class UserService:
                 import os
 
                 import stripe
-                from dotenv import load_dotenv
 
-                load_dotenv(override=True)
+                load_local_env(override=True)
 
                 # Get Stripe API key from environment variable
                 stripe_api_key = os.environ.get("STRIPE_API_KEY")
