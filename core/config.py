@@ -3,11 +3,14 @@ from functools import lru_cache
 from typing import Any, Dict, List, Literal, Optional
 
 import tomli
-from dotenv import load_dotenv
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 
-load_dotenv(override=True)
+from utils.env_loader import load_local_env
+
+# Default to loading from .env unless a secret manager (e.g., Infisical) is
+# injecting variables.
+load_local_env(override=True)
 
 
 class ParserXMLSettings(BaseModel):
@@ -130,7 +133,7 @@ class Settings(BaseSettings):
 
     # Mode configuration
     MODE: Literal["cloud", "self_hosted"] = "cloud"
-    USE_LOCAL_ENV: bool = True
+    SECRET_MANAGER: Literal["env", "infisical"] = "env"
 
     # API configuration
     API_DOMAIN: str = "api.morphik.ai"
@@ -177,7 +180,7 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     """Get cached settings instance."""
-    load_dotenv(override=True)
+    load_local_env(override=True)
 
     # Load config.toml
     with open("morphik.toml", "rb") as f:
@@ -363,13 +366,14 @@ def get_settings() -> Settings:
     # Load morphik config
     api_domain = config["morphik"].get("api_domain", "api.morphik.ai")
     embedding_api_domain = config["morphik"].get("morphik_embedding_api_domain") or api_domain
+    secret_manager = config["morphik"].get("secret_manager", "env")
 
     settings_dict.update(
         {
             "ENABLE_COLPALI": config["morphik"]["enable_colpali"],
             "COLPALI_MODE": config["morphik"].get("colpali_mode", "local"),
             "MODE": config["morphik"].get("mode", "cloud"),
-            "USE_LOCAL_ENV": config["morphik"].get("use_local_env", True),
+            "SECRET_MANAGER": secret_manager,
             "API_DOMAIN": api_domain,
             "MORPHIK_EMBEDDING_API_DOMAIN": embedding_api_domain,
         }

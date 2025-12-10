@@ -295,6 +295,7 @@ class _MorphikClientLogic:
         include_paths: bool,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]],
         folder_name: Optional[Union[str, List[str]]],
+        folder_depth: Optional[int],
         end_user_id: Optional[str],
         use_reranking: Optional[bool] = None,  # Add missing parameter
         chat_id: Optional[str] = None,
@@ -323,6 +324,8 @@ class _MorphikClientLogic:
         }
         if folder_name:
             payload["folder_name"] = folder_name
+        if folder_depth is not None:
+            payload["folder_depth"] = folder_depth
         if end_user_id:
             payload["end_user_id"] = end_user_id
         if chat_id:
@@ -356,6 +359,7 @@ class _MorphikClientLogic:
         min_score: float,
         use_colpali: bool,
         folder_name: Optional[Union[str, List[str]]],
+        folder_depth: Optional[int],
         end_user_id: Optional[str],
         padding: int = 0,
         output_format: Optional[str] = None,
@@ -387,6 +391,8 @@ class _MorphikClientLogic:
             request["query"] = query
         if folder_name:
             request["folder_name"] = folder_name
+        if folder_depth is not None:
+            request["folder_depth"] = folder_depth
         if end_user_id:
             request["end_user_id"] = end_user_id
         if padding > 0:
@@ -403,6 +409,7 @@ class _MorphikClientLogic:
         min_score: float,
         use_colpali: bool,
         folder_name: Optional[Union[str, List[str]]],
+        folder_depth: Optional[int],
         end_user_id: Optional[str],
         use_reranking: Optional[bool] = None,  # Add missing parameter
     ) -> Dict[str, Any]:
@@ -417,6 +424,8 @@ class _MorphikClientLogic:
         }
         if folder_name:
             request["folder_name"] = folder_name
+        if folder_depth is not None:
+            request["folder_depth"] = folder_depth
         if end_user_id:
             request["end_user_id"] = end_user_id
         return request
@@ -427,6 +436,7 @@ class _MorphikClientLogic:
         limit: int,
         filters: Optional[Dict[str, Any]],
         folder_name: Optional[Union[str, List[str]]],
+        folder_depth: Optional[int],
         end_user_id: Optional[str],
         include_total_count: bool,
         include_status_counts: bool,
@@ -439,6 +449,8 @@ class _MorphikClientLogic:
         params = {}
         if folder_name:
             params["folder_name"] = folder_name
+        if folder_depth is not None:
+            params["folder_depth"] = folder_depth
         if end_user_id:
             params["end_user_id"] = end_user_id
 

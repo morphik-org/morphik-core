@@ -101,6 +101,19 @@ class FolderDetailsRequest(BaseModel):
     )
 
 
+class FolderTreeRequest(BaseModel):
+    """Request model for retrieving a hierarchical folder tree with documents."""
+
+    folder_path: Optional[str] = Field(
+        default=None,
+        description="Base folder path to return. Use '/' or null for the full hierarchy.",
+    )
+    document_fields: Optional[List[str]] = Field(
+        default=None,
+        description="Optional list of fields to include for documents in each folder node (dot notation supported).",
+    )
+
+
 class SearchDocumentsRequest(BaseModel):
     """Request model for searching documents by name"""
 
