@@ -3,9 +3,10 @@ from functools import lru_cache
 from typing import List, Optional
 
 import tomli
-from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+from utils.env_loader import load_local_env
 
 # Determine the root directory of the EE features (assuming this file is in ee/config.py)
 EE_ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -50,7 +51,7 @@ def get_ee_settings() -> EESettings:
     2. ee.toml file.
     3. Default values defined in EESettings model.
     """
-    load_dotenv(override=True)
+    load_local_env(override=True)
 
     ee_toml_path = os.path.join(EE_ROOT_DIR, "ee.toml")
     config_from_toml = {}
