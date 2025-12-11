@@ -54,6 +54,7 @@ class Document(BaseModel):
     end_user_id: Optional[str] = None
     app_id: Optional[str] = None
     folder_path: Optional[str] = None
+    folder_id: Optional[str] = None
 
     # Ensure storage_info values are strings to maintain backward compatibility
     @field_validator("storage_info", mode="before")

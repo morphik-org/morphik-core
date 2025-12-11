@@ -131,21 +131,6 @@ class FolderDetailsResponse(BaseModel):
     folders: List[FolderDetails]
 
 
-class FolderTreeNode(BaseModel):
-    """Nested folder tree entry including contained documents."""
-
-    id: Optional[str] = None
-    name: Optional[str] = None
-    full_path: Optional[str] = None
-    description: Optional[str] = None
-    depth: Optional[int] = None
-    documents: List[Dict[str, Any]] = Field(default_factory=list)
-    children: List["FolderTreeNode"] = Field(default_factory=list)
-
-
-FolderTreeNode.model_rebuild()
-
-
 class RequeueIngestionResult(BaseModel):
     """Result information for an individual requeued ingestion job."""
 
