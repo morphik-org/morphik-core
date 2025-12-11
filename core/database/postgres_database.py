@@ -49,6 +49,7 @@ class DocumentModel(Base):
     app_id = Column(String)
     folder_name = Column(String)
     folder_path = Column(String)
+    folder_id = Column(String)
     end_user_id = Column(String)
 
     # Create indexes
@@ -59,12 +60,14 @@ class DocumentModel(Base):
         Index("idx_doc_app_id", "app_id"),
         Index("idx_doc_folder_name", "folder_name"),
         Index("idx_doc_folder_path", "folder_path"),
+        Index("idx_doc_folder_id", "folder_id"),
         Index("idx_doc_end_user_id", "end_user_id"),
         Index("idx_doc_owner_id", "owner_id"),
         # Composite indexes for common query patterns
         Index("idx_documents_owner_app", "owner_id", "app_id"),
         Index("idx_documents_app_folder", "app_id", "folder_name"),
         Index("idx_documents_app_folder_path", "app_id", "folder_path"),
+        Index("idx_documents_app_folder_id", "app_id", "folder_id"),
         Index("idx_documents_app_end_user", "app_id", "end_user_id"),
     )
 
@@ -368,8 +371,10 @@ class PostgresDatabase(BaseDatabase):
             normalized_metadata, normalized_types = normalize_metadata(metadata, metadata_type_hints)
             doc_dict["doc_metadata"] = normalized_metadata
             doc_dict["metadata_types"] = normalized_types
-            # Mirror folder_name into doc_metadata for convenience in downstream filters (allow clearing)
-            doc_dict["doc_metadata"]["folder_name"] = doc_dict.get("folder_name")
+            # Mirror folder path into doc_metadata for convenience in downstream filters (allow clearing)
+            path_for_metadata = doc_dict.get("folder_path") or doc_dict.get("folder_name")
+            doc_dict["doc_metadata"]["folder_name"] = path_for_metadata
+            doc_dict["folder_id"] = doc_dict.get("folder_id")
 
             # Keep folder_path in sync with folder_name for backward compatibility
             folder_name_value = doc_dict.get("folder_name")
@@ -838,7 +843,13 @@ class PostgresDatabase(BaseDatabase):
 
                     # Keep doc_metadata.folder_name in sync with the flattened column (support clearing)
                     if "doc_metadata" in updates:
-                        folder_value = folder_value_for_metadata if "folder_name" in updates else doc_model.folder_name
+                        folder_value = updates.get("folder_path")
+                        if folder_value is None:
+                            folder_value = (
+                                folder_value_for_metadata if "folder_name" in updates else doc_model.folder_path
+                            )
+                        if folder_value is None:
+                            folder_value = doc_model.folder_name
                         try:
                             if isinstance(updates["doc_metadata"], dict):
                                 updates["doc_metadata"]["folder_name"] = folder_value
@@ -1256,6 +1267,7 @@ class PostgresDatabase(BaseDatabase):
             # Include flattened fields
             "folder_name": doc_model.folder_name,
             "folder_path": doc_model.folder_path,
+            "folder_id": doc_model.folder_id,
             "app_id": doc_model.app_id,
             "end_user_id": doc_model.end_user_id,
         }
