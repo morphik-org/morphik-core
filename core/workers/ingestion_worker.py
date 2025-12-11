@@ -26,6 +26,7 @@ from core.services.ingestion_service import IngestionService, PdfConversionError
 from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
+from core.utils.folder_utils import normalize_folder_path
 from core.vector_store.dual_multivector_store import DualMultiVectorStore
 from core.vector_store.fast_multivector_store import FastMultiVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
@@ -190,6 +191,8 @@ async def process_ingestion_job(
     use_colpali: bool,
     metadata_types_json: Optional[str] = None,
     folder_name: Optional[str] = None,
+    folder_path: Optional[str] = None,
+    folder_leaf: Optional[str] = None,
     end_user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
@@ -213,12 +216,38 @@ async def process_ingestion_job(
     """
     telemetry = TelemetryService()
 
+    # Normalize folder inputs for consistent storage and folder linking.
+    normalized_folder_path = folder_path
+    normalized_folder_leaf = folder_leaf
+    if normalized_folder_path:
+        try:
+            normalized_folder_path = normalize_folder_path(normalized_folder_path)
+            if normalized_folder_path == "/":
+                normalized_folder_path = None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not normalize folder_path '%s': %s", normalized_folder_path, exc)
+            normalized_folder_path = None
+    if normalized_folder_path and not normalized_folder_leaf:
+        parts = [p for p in normalized_folder_path.strip("/").split("/") if p]
+        normalized_folder_leaf = parts[-1] if parts else None
+    if not normalized_folder_path and folder_name:
+        try:
+            normalized_folder_path = normalize_folder_path(folder_name)
+            if normalized_folder_path == "/":
+                normalized_folder_path = None
+            parts = [p for p in normalized_folder_path.strip("/").split("/") if p] if normalized_folder_path else []
+            normalized_folder_leaf = parts[-1] if parts else (normalized_folder_leaf or folder_name)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not normalize folder_name '%s': %s", folder_name, exc)
+            normalized_folder_leaf = normalized_folder_leaf or folder_name
+
     # Build metadata resolver inline to capture key fields
     def _meta_resolver(*_a, **_kw):  # noqa: D401
         return {
             "filename": original_filename,
             "content_type": content_type,
-            "folder_name": folder_name,
+            "folder_name": normalized_folder_leaf or folder_name,
+            "folder_path": normalized_folder_path,
             "end_user_id": end_user_id,
             "use_colpali": use_colpali,
         }
@@ -511,9 +540,13 @@ async def process_ingestion_job(
                 "system_metadata": {**sanitized_system_metadata, "content": document_content},
             }
 
-            # Add folder_name and end_user_id to updates if provided
-            if folder_name:
-                updates["folder_name"] = folder_name
+            # Add folder info and end_user_id to updates if provided
+            if normalized_folder_leaf:
+                updates["folder_name"] = normalized_folder_leaf
+            if normalized_folder_path:
+                updates["folder_path"] = normalized_folder_path
+            if doc.folder_id:
+                updates["folder_id"] = doc.folder_id
             if end_user_id:
                 updates["end_user_id"] = end_user_id
 
@@ -833,10 +866,19 @@ async def process_ingestion_job(
             logger.debug(f"Successfully completed processing for document {doc.external_id}")
 
             # 12. Add document to folder if requested
-            if folder_name:
+            if normalized_folder_path:
                 try:
-                    logger.info(f"Adding document {doc.external_id} to folder '{folder_name}'")
-                    await ingestion_service._ensure_folder_exists(folder_name, doc.external_id, auth)
+                    logger.info(f"Adding document {doc.external_id} to folder '{normalized_folder_path}'")
+                    folder_obj = await ingestion_service._ensure_folder_exists(
+                        normalized_folder_path, doc.external_id, auth
+                    )
+                    if folder_obj and folder_obj.id:
+                        doc.folder_id = folder_obj.id
+                        await ingestion_service.db.update_document(
+                            document_id=doc.external_id,
+                            updates={"folder_id": doc.folder_id},
+                            auth=auth,
+                        )
                 except Exception as folder_exc:
                     logger.error(f"Failed to add document to folder: {folder_exc}")
                     # Don't fail the entire ingestion if folder processing fails

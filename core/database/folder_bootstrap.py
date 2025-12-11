@@ -19,6 +19,7 @@ async def bootstrap_folder_hierarchy(engine: AsyncEngine, logger) -> None:
         ("folders", "parent_id"),
         ("folders", "depth"),
         ("documents", "folder_path"),
+        ("documents", "folder_id"),
         ("graphs", "folder_path"),
     }
     required_indexes = {
@@ -28,7 +29,9 @@ async def bootstrap_folder_hierarchy(engine: AsyncEngine, logger) -> None:
         "uq_folders_app_full_path",
         "uq_folders_owner_full_path",
         "idx_doc_folder_path",
+        "idx_doc_folder_id",
         "idx_documents_app_folder_path",
+        "idx_documents_app_folder_id",
         "idx_graph_folder_path",
         "idx_graphs_app_folder_path",
     }
@@ -41,7 +44,7 @@ async def bootstrap_folder_hierarchy(engine: AsyncEngine, logger) -> None:
                     SELECT table_name, column_name
                     FROM information_schema.columns
                     WHERE table_name IN ('folders', 'documents', 'graphs')
-                    AND column_name IN ('full_path', 'parent_id', 'depth', 'folder_path')
+                    AND column_name IN ('full_path', 'parent_id', 'depth', 'folder_path', 'folder_id')
                     """
                 )
             )
@@ -60,7 +63,9 @@ async def bootstrap_folder_hierarchy(engine: AsyncEngine, logger) -> None:
                         'uq_folders_app_full_path',
                         'uq_folders_owner_full_path',
                         'idx_doc_folder_path',
+                        'idx_doc_folder_id',
                         'idx_documents_app_folder_path',
+                        'idx_documents_app_folder_id',
                         'idx_graph_folder_path',
                         'idx_graphs_app_folder_path'
                     )
@@ -102,6 +107,7 @@ async def bootstrap_folder_hierarchy(engine: AsyncEngine, logger) -> None:
         "ALTER TABLE folders ADD COLUMN IF NOT EXISTS parent_id TEXT",
         "ALTER TABLE folders ADD COLUMN IF NOT EXISTS depth INTEGER",
         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS folder_path TEXT",
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS folder_id TEXT",
         "ALTER TABLE graphs ADD COLUMN IF NOT EXISTS folder_path TEXT",
     ]
 
@@ -118,7 +124,9 @@ async def bootstrap_folder_hierarchy(engine: AsyncEngine, logger) -> None:
             "ON folders (owner_id, full_path) WHERE app_id IS NULL"
         ),
         "CREATE INDEX IF NOT EXISTS idx_doc_folder_path ON documents (folder_path)",
+        "CREATE INDEX IF NOT EXISTS idx_doc_folder_id ON documents (folder_id)",
         "CREATE INDEX IF NOT EXISTS idx_documents_app_folder_path ON documents (app_id, folder_path)",
+        "CREATE INDEX IF NOT EXISTS idx_documents_app_folder_id ON documents (app_id, folder_id)",
         "CREATE INDEX IF NOT EXISTS idx_graph_folder_path ON graphs (folder_path)",
         "CREATE INDEX IF NOT EXISTS idx_graphs_app_folder_path ON graphs (app_id, folder_path)",
     ]

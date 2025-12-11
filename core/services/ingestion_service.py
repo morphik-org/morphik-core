@@ -272,8 +272,8 @@ class IngestionService:
 
         combined_metadata = dict(metadata or {})
         combined_metadata.setdefault("external_id", doc.external_id)
-        if folder_leaf is not None:
-            combined_metadata["folder_name"] = folder_leaf
+        if folder_path is not None:
+            combined_metadata["folder_name"] = folder_path
         normalized_metadata, normalized_types = normalize_metadata(combined_metadata, metadata_types)
         doc.metadata = normalized_metadata
         doc.metadata_types = normalized_types
@@ -331,7 +331,10 @@ class IngestionService:
         # Ensure folder membership now that the document is persisted
         if folder_name:
             try:
-                await self._ensure_folder_exists(folder_name, doc.external_id, auth)
+                folder_obj = await self._ensure_folder_exists(folder_name, doc.external_id, auth)
+                if folder_obj and folder_obj.id:
+                    doc.folder_id = folder_obj.id
+                    await self.db.update_document(doc.external_id, {"folder_id": doc.folder_id}, auth=auth)
             except Exception as folder_exc:
                 logger.warning(
                     "Failed to ensure folder %s contains text document %s: %s",
@@ -456,8 +459,8 @@ class IngestionService:
 
         metadata_payload = dict(metadata or {})
         metadata_payload.setdefault("external_id", doc.external_id)
-        if folder_leaf is not None:
-            metadata_payload["folder_name"] = folder_leaf
+        if folder_path is not None:
+            metadata_payload["folder_name"] = folder_path
         normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types)
         doc.metadata = normalized_metadata
         doc.metadata_types = normalized_types
@@ -534,7 +537,10 @@ class IngestionService:
         # 3. Ensure folder exists if folder_name is provided
         if folder_name:
             try:
-                await self._ensure_folder_exists(folder_name, doc.external_id, auth)
+                folder_obj = await self._ensure_folder_exists(folder_name, doc.external_id, auth)
+                if folder_obj and folder_obj.id:
+                    doc.folder_id = folder_obj.id
+                    await self.db.update_document(doc.external_id, {"folder_id": doc.folder_id}, auth=auth)
                 logger.debug(f"Ensured folder '{folder_name}' exists and contains document {doc.external_id}")
             except Exception as e:
                 logger.error(f"Error during _ensure_folder_exists for doc {doc.external_id}: {e}. Continuing.")

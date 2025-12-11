@@ -25,6 +25,7 @@ from core.services.morphik_on_the_fly_structured_output import (
 from core.services.telemetry import TelemetryService
 from core.services_init import ingestion_service, storage
 from core.storage.utils_file_extensions import detect_file_type
+from core.utils.folder_utils import normalize_folder_path
 from core.utils.typed_metadata import TypedMetadataError, normalize_metadata
 
 # ---------------------------------------------------------------------------
@@ -45,6 +46,21 @@ def _parse_bool(value: Optional[Union[str, bool]]) -> bool:
     if value is None:
         return False
     return str(value).strip().lower() in {"true", "1", "yes", "y", "on"}
+
+
+def _normalize_folder_inputs(folder_name: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    """Return canonical folder path with leading slash and the leaf name."""
+    if folder_name is None:
+        return None, None
+    try:
+        folder_path = normalize_folder_path(folder_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if folder_path == "/":
+        raise HTTPException(status_code=400, detail="Cannot ingest into root folder '/'")
+    parts = [p for p in folder_path.strip("/").split("/") if p]
+    leaf = parts[-1] if parts else None
+    return folder_path, leaf
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +156,8 @@ async def ingest_file(
         if "write" not in auth.permissions:
             raise PermissionError("User does not have write permission")
 
+        folder_path, folder_leaf = _normalize_folder_inputs(folder_name)
+
         logger.debug("Queueing file ingestion with use_colpali=%s", use_colpali_bool)
 
         ingestion_service._enforce_no_user_mutable_fields(metadata_dict, folder_name, context="ingest")
@@ -152,14 +170,15 @@ async def ingest_file(
             filename=file.filename,
             metadata=metadata_dict,
             system_metadata={"status": "processing"},
-            folder_name=folder_name,
+            folder_name=folder_leaf,
+            folder_path=folder_path,
             end_user_id=end_user_id,
             app_id=auth.app_id,
         )
         metadata_payload = dict(metadata_dict)
         metadata_payload.setdefault("external_id", doc.external_id)
-        if folder_name is not None:
-            metadata_payload["folder_name"] = folder_name
+        if folder_path is not None:
+            metadata_payload["folder_name"] = folder_path
         normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types_dict)
         doc.metadata = normalized_metadata
         doc.metadata_types = normalized_types
@@ -172,14 +191,19 @@ async def ingest_file(
 
         # Add the document to the requested folder immediately so folder views can show in-progress items.
         # The ingestion worker re-runs this to ensure the folder is still in sync on completion.
-        if folder_name:
+        if folder_path:
             try:
-                await ingestion_service._ensure_folder_exists(folder_name, doc.external_id, auth)
+                folder_obj = await ingestion_service._ensure_folder_exists(folder_path, doc.external_id, auth)
+                if folder_obj and folder_obj.id:
+                    doc.folder_id = folder_obj.id
+                    await app_db.update_document(
+                        document_id=doc.external_id, updates={"folder_id": doc.folder_id}, auth=auth
+                    )
             except Exception as folder_exc:  # noqa: BLE001
                 logger.warning(
                     "Failed to add document %s to folder %s immediately after ingest: %s",
                     doc.external_id,
-                    folder_name,
+                    folder_path,
                     folder_exc,
                 )
 
@@ -263,6 +287,8 @@ async def ingest_file(
             auth_dict=auth_dict,
             use_colpali=use_colpali_bool,
             folder_name=folder_name,
+            folder_path=folder_path,
+            folder_leaf=folder_leaf,
             end_user_id=end_user_id,
         )
 
@@ -358,6 +384,7 @@ async def batch_ingest_files(
     from core.models.documents import StorageFileInfo  # local import to avoid cycles
 
     try:
+        folder_path, folder_leaf = _normalize_folder_inputs(folder_name)
         for idx, file in enumerate(files):
             metadata_item = metadata_value[idx] if isinstance(metadata_value, list) else metadata_value
             metadata_types_item = (
@@ -376,15 +403,16 @@ async def batch_ingest_files(
                 content_type=file.content_type,
                 filename=file.filename,
                 metadata=metadata_item,
-                folder_name=folder_name,
+                folder_name=folder_leaf,
+                folder_path=folder_path,
                 end_user_id=end_user_id,
                 app_id=auth.app_id,
             )
             doc.system_metadata["status"] = "processing"
             metadata_payload = dict(metadata_item or {})
             metadata_payload.setdefault("external_id", doc.external_id)
-            if folder_name is not None:
-                metadata_payload["folder_name"] = folder_name
+            if folder_path is not None:
+                metadata_payload["folder_name"] = folder_path
             normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types_item)
             doc.metadata = normalized_metadata
             doc.metadata_types = normalized_types
@@ -395,14 +423,19 @@ async def batch_ingest_files(
                 raise Exception(f"Failed to store document metadata for {file.filename}")
 
             # Keep folder listings in sync immediately; worker re-runs this when processing finishes.
-            if folder_name:
+            if folder_path:
                 try:
-                    await ingestion_service._ensure_folder_exists(folder_name, doc.external_id, auth)
+                    folder_obj = await ingestion_service._ensure_folder_exists(folder_path, doc.external_id, auth)
+                    if folder_obj and folder_obj.id:
+                        doc.folder_id = folder_obj.id
+                        await app_db.update_document(
+                            document_id=doc.external_id, updates={"folder_id": doc.folder_id}, auth=auth
+                        )
                 except Exception as folder_exc:  # noqa: BLE001
                     logger.warning(
                         "Failed to add batch document %s to folder %s immediately after ingest: %s",
                         doc.external_id,
-                        folder_name,
+                        folder_path,
                         folder_exc,
                     )
 
@@ -466,6 +499,8 @@ async def batch_ingest_files(
                 auth_dict=auth_dict,
                 use_colpali=use_colpali_bool,
                 folder_name=folder_name,
+                folder_path=folder_path,
+                folder_leaf=folder_leaf,
                 end_user_id=end_user_id,
             )
 
