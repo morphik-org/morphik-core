@@ -91,7 +91,7 @@ async def ingest_text(
 
         extra_fields = getattr(request, "model_extra", {}) if hasattr(request, "model_extra") else {}
         ingestion_service._enforce_no_user_mutable_fields(
-            request.metadata, request.folder_name, extra_fields, context="ingest"
+            request.metadata, request.folder_name, extra_fields, request.metadata_types, context="ingest"
         )
 
         return await ingestion_service.ingest_text(
@@ -160,7 +160,9 @@ async def ingest_file(
 
         logger.debug("Queueing file ingestion with use_colpali=%s", use_colpali_bool)
 
-        ingestion_service._enforce_no_user_mutable_fields(metadata_dict, folder_name, context="ingest")
+        ingestion_service._enforce_no_user_mutable_fields(
+            metadata_dict, folder_name, metadata_types=metadata_types_dict, context="ingest"
+        )
 
         # ------------------------------------------------------------------
         # Create initial Document stub (status = processing)
@@ -397,7 +399,9 @@ async def batch_ingest_files(
             # ------------------------------------------------------------------
             # Create stub Document (processing)
             # ------------------------------------------------------------------
-            ingestion_service._enforce_no_user_mutable_fields(metadata_item, folder_name, context="ingest")
+            ingestion_service._enforce_no_user_mutable_fields(
+                metadata_item, folder_name, metadata_types=metadata_types_item, context="ingest"
+            )
 
             doc = Document(
                 content_type=file.content_type,

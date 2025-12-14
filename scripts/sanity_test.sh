@@ -72,7 +72,9 @@ create_test_files() {
     cat > "$TEST_DIR/test_image.b64" << 'EOF'
 iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/6WqN3sAAAAASUVORK5CYII=
 EOF
-    base64 -d "$TEST_DIR/test_image.b64" > "$TEST_DIR/test_image.png"
+    # Cross-platform base64 decode (Linux uses -d, macOS uses -D)
+    base64 -d < "$TEST_DIR/test_image.b64" > "$TEST_DIR/test_image.png" 2>/dev/null || \
+    base64 -D < "$TEST_DIR/test_image.b64" > "$TEST_DIR/test_image.png"
     QUERY_IMAGE_B64=$(cat "$TEST_DIR/test_image.b64")
 
     # TXT file - plain text with unicode and searchable content
@@ -298,6 +300,29 @@ run_ingestion_tests() {
             log_warn "File not found: $file_path"
         fi
     done
+}
+
+# Guardrails: ensure protected fields cannot be overridden
+test_protected_field_guards() {
+    log_section "Testing Protected Field Guardrails"
+
+    local payload
+    payload=$(cat << EOF
+{"content":"guardrail test","metadata":{"external_id":"evil-id","folder_id":"evil-folder","folder_name":"bad","folder_path":"/bad/path"},"folder_name":"/should/not/work"}
+EOF
+)
+
+    local body_file="$TEST_DIR/protected_guardrails_response.json"
+    local http_code
+    http_code=$(curl -s -o "$body_file" -w "%{http_code}" -X POST "$BASE_URL/ingest/text" \
+        -H "Content-Type: application/json" \
+        -d "$payload")
+
+    if [[ "$http_code" == "400" || "$http_code" == "403" ]]; then
+        log_success "Protected fields rejected (status $http_code)"
+    else
+        log_error "Protected fields were not rejected (status $http_code) response=$(cat "$body_file" 2>/dev/null)"
+    fi
 }
 
 # ============================================================================
@@ -1146,6 +1171,153 @@ test_folder_path_normalization() {
     else
         log_error "Path with '..' should return 400, got $http_code"
     fi
+}
+
+test_folder_move_integrity() {
+    log_section "Testing Folder Move Integrity"
+
+    local src_folder="sanity_move_src_${TEST_RUN_ID}"
+    local dst_folder="sanity_move_dst_${TEST_RUN_ID}"
+    local src_path="/$src_folder"
+    local dst_path="/$dst_folder"
+
+    # Create source and destination folders
+    curl -sf -X POST "$BASE_URL/folders" -H "Content-Type: application/json" \
+        -d "{\"name\": \"$src_folder\", \"full_path\": \"$src_path\"}" > /dev/null 2>&1 || {
+        log_error "Failed to create source folder $src_path"
+        return
+    }
+    curl -sf -X POST "$BASE_URL/folders" -H "Content-Type: application/json" \
+        -d "{\"name\": \"$dst_folder\", \"full_path\": \"$dst_path\"}" > /dev/null 2>&1 || {
+        log_error "Failed to create destination folder $dst_path"
+        return
+    }
+
+    # Resolve folder IDs
+    local src_id dst_id
+    src_id=$(curl -sf "$BASE_URL/folders$src_path" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
+    dst_id=$(curl -sf "$BASE_URL/folders$dst_path" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
+
+    if [[ -z "$src_id" || -z "$dst_id" ]]; then
+        log_error "Failed to resolve folder IDs (src=$src_id, dst=$dst_id)"
+        return
+    fi
+
+    # Ingest a text document into the source folder
+    local ingest_payload
+    ingest_payload=$(cat << EOF
+{"content":"Folder move integrity test for $TEST_RUN_ID","metadata":{"test_run_id":"$FOLDER_TEST_RUN_ID","move_test":true},"folder_name":"$src_path"}
+EOF
+)
+    local ingest_response doc_id
+    ingest_response=$(curl -sf -X POST "$BASE_URL/ingest/text" -H "Content-Type: application/json" -d "$ingest_payload" 2>&1) || {
+        log_error "Failed to ingest move test document"
+        return
+    }
+    doc_id=$(echo "$ingest_response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('external_id',''))" 2>/dev/null)
+    if [[ -z "$doc_id" ]]; then
+        log_error "No document ID returned for move test ingest"
+        return
+    fi
+    DOC_IDS+=("$doc_id")
+
+    # Helper: validate a document's folder state
+    validate_doc_state() {
+        local expected_id="$1"
+        local expected_path="$2"
+        local stage="$3"
+        local resp="$4"
+        local result
+        # Use environment variable for data since heredoc consumes stdin
+        result=$(DOC_DATA="$resp" python3 -c '
+import sys, json, os
+expected_id = sys.argv[1]
+expected_path = sys.argv[2]
+docs = json.loads(os.environ["DOC_DATA"])
+if not docs:
+    print("missing")
+    sys.exit(0)
+d = docs[0]
+meta = d.get("metadata", {}) or {}
+leaf = expected_path.strip("/").split("/")[-1] if expected_path else None
+ok = (
+    d.get("folder_id") == expected_id
+    and meta.get("folder_id") == expected_id
+    and d.get("folder_path") == expected_path
+    and meta.get("folder_name") == expected_path
+    and (leaf is None or d.get("folder_name") == leaf)
+)
+if ok:
+    print("ok")
+else:
+    fid = d.get("folder_id")
+    mfid = meta.get("folder_id")
+    fp = d.get("folder_path")
+    mfn = meta.get("folder_name")
+    print(f"bad|folder_id={fid}|meta_folder_id={mfid}|folder_path={fp}|meta_folder_name={mfn}")
+' "$expected_id" "$expected_path")
+        if [[ "$result" == "ok" ]]; then
+            log_success "Document state correct ($stage)"
+        else
+            log_error "Document state incorrect ($stage): $result"
+        fi
+    }
+
+    # Validate initial folder assignment
+    local doc_query_response
+    doc_query_response=$(curl -sf -X POST "$BASE_URL/documents" \
+        -H "Content-Type: application/json" \
+        -d "{\"document_filters\": {\"external_id\": \"$doc_id\"}}") || {
+        log_error "Failed to fetch document for initial folder validation"
+        return
+    }
+    validate_doc_state "$src_id" "$src_path" "after ingest" "$doc_query_response"
+
+    # Move the document to the destination folder using ID to avoid encoding issues
+    curl -sf -X POST "$BASE_URL/folders/$dst_id/documents/$doc_id" > /dev/null 2>&1 || {
+        log_error "Failed to move document to destination folder"
+        return
+    }
+
+    # Validate folder assignment after move
+    doc_query_response=$(curl -sf -X POST "$BASE_URL/documents" \
+        -H "Content-Type: application/json" \
+        -d "{\"document_filters\": {\"external_id\": \"$doc_id\"}}") || {
+        log_error "Failed to fetch document after move"
+        return
+    }
+    validate_doc_state "$dst_id" "$dst_path" "after move" "$doc_query_response"
+
+    # Verify folder summary counts reflect the move
+    local summary_response
+    summary_response=$(curl -sf "$BASE_URL/folders/summary" 2>/dev/null) || {
+        log_error "Failed to fetch folder summaries"
+        return
+    }
+    local counts
+    counts=$(SUMMARY_DATA="$summary_response" python3 -c '
+import sys, json, os
+src_id, dst_id = sys.argv[1], sys.argv[2]
+summaries = json.loads(os.environ["SUMMARY_DATA"])
+def count(fid):
+    for s in summaries:
+        if s.get("id") == fid:
+            return s.get("doc_count", 0)
+    return 0
+print(f"{count(src_id)},{count(dst_id)}")
+' "$src_id" "$dst_id") || counts="0,0"
+    local src_count dst_count
+    src_count=$(echo "$counts" | cut -d',' -f1)
+    dst_count=$(echo "$counts" | cut -d',' -f2)
+    if [[ "$src_count" == "0" && "$dst_count" == "1" ]]; then
+        log_success "Folder summary counts reflect move (src=$src_count, dst=$dst_count)"
+    else
+        log_error "Folder summary counts unexpected after move (src=$src_count, dst=$dst_count)"
+    fi
+
+    # Cleanup move test folders (ignore errors)
+    curl -sf -X DELETE "$BASE_URL/folders/$src_id?recursive=true" > /dev/null 2>&1 || true
+    curl -sf -X DELETE "$BASE_URL/folders/$dst_id?recursive=true" > /dev/null 2>&1 || true
 }
 
 cleanup_folder_test() {
@@ -2064,6 +2236,7 @@ main() {
 
     check_server
     create_test_files
+    test_protected_field_guards
     run_ingestion_tests
     wait_for_processing
     test_basic_retrieval
@@ -2087,6 +2260,7 @@ main() {
     test_folder_depth_filtering
     test_folder_retrieval_scoping
     test_folder_path_normalization
+    test_folder_move_integrity
     cleanup_folder_test
 
     cleanup_test_files "${1:-}"

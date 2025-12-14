@@ -73,8 +73,16 @@ class IngestionService:
     for the current operation mode (standard vs ColPali local vs ColPali API).
     """
 
-    _SYSTEM_METADATA_SCOPE_KEYS = {"folder_name", "end_user_id", "app_id"}
-    _USER_IMMUTABLE_FIELDS = {"folder_name", "external_id"}
+    _SYSTEM_METADATA_SCOPE_KEYS = {"folder_name", "folder_id", "end_user_id", "app_id"}
+    _USER_IMMUTABLE_FIELDS = {
+        "folder_name",
+        "folder_id",
+        "folder_path",
+        "external_id",
+        "app_id",
+        "owner_id",
+        "end_user_id",
+    }
 
     def __init__(
         self,
@@ -115,6 +123,7 @@ class IngestionService:
         metadata: Optional[Dict[str, Any]],
         folder_name: Optional[Union[str, List[str]]],
         extra_fields: Optional[Dict[str, Any]] = None,
+        metadata_types: Optional[Dict[str, Any]] = None,
         context: str = "ingest",
     ) -> None:
         """Prevent users from setting reserved system fields directly."""
@@ -125,6 +134,9 @@ class IngestionService:
 
         if isinstance(extra_fields, dict):
             invalid_fields.update({key for key in extra_fields.keys() if key in self._USER_IMMUTABLE_FIELDS})
+
+        if isinstance(metadata_types, dict):
+            invalid_fields.update({key for key in metadata_types.keys() if key in self._USER_IMMUTABLE_FIELDS})
 
         if invalid_fields:
             fields_str = ", ".join(sorted(invalid_fields))
@@ -247,7 +259,7 @@ class IngestionService:
             raise PermissionError("User does not have write permission")
 
         # Prevent callers from overriding reserved fields
-        self._enforce_no_user_mutable_fields(metadata, folder_name, context="ingest")
+        self._enforce_no_user_mutable_fields(metadata, folder_name, metadata_types=metadata_types, context="ingest")
 
         folder_path = None
         folder_leaf = None
@@ -410,6 +422,9 @@ class IngestionService:
         if "write" not in auth.permissions:
             logger.error(f"User {auth.entity_id} does not have write permission for ingest_file_content")
             raise PermissionError("User does not have write permission for ingest_file_content")
+
+        # Prevent callers from overriding reserved fields
+        self._enforce_no_user_mutable_fields(metadata, folder_name, metadata_types=metadata_types, context="ingest")
 
         folder_path = None
         folder_leaf = None
@@ -628,7 +643,9 @@ class IngestionService:
             Updated document if successful, None if failed
         """
         # Prevent callers from modifying reserved fields
-        self._enforce_no_user_mutable_fields(metadata, folder_name=None, context="update")
+        self._enforce_no_user_mutable_fields(
+            metadata, folder_name=None, metadata_types=metadata_types, context="update"
+        )
 
         # Validate permissions and get document
         doc = await self._validate_update_access(document_id, auth)
@@ -876,6 +893,11 @@ class IngestionService:
             "storage_info": doc.storage_info if hasattr(doc, "storage_info") else None,
         }
         updates = {k: v for k, v in updates.items() if v is not None}
+
+        if doc.folder_id:
+            updates["folder_id"] = doc.folder_id
+            updates["folder_name"] = doc.folder_name
+            updates["folder_path"] = doc.folder_path
 
         success = await self.db.update_document(doc.external_id, updates, auth)
         if not success:
