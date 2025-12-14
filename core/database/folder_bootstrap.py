@@ -168,6 +168,11 @@ async def bootstrap_folder_hierarchy(engine: AsyncEngine, logger) -> None:
             "AND folder_name IS NOT NULL AND folder_name <> ''"
         ),
         (
+            "UPDATE documents "
+            "SET doc_metadata = jsonb_set(COALESCE(doc_metadata, '{}'::jsonb), '{folder_id}', to_jsonb(folder_id)) "
+            "WHERE folder_id IS NOT NULL AND folder_id <> ''"
+        ),
+        (
             "UPDATE graphs "
             "SET folder_path = '/' || folder_name "
             "WHERE (folder_path IS NULL OR folder_path = '') "
