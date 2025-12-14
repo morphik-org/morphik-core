@@ -39,7 +39,7 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
 
         self.model = ColQwen2_5.from_pretrained(
             "tsystems/colqwen2.5-3b-multilingual-v1.0",
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,  # preferred kwarg per upstream deprecation notice
             device_map=device,  # Automatically detect and use available device
             attn_implementation=attn_implementation,
         ).eval()
