@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 Base = declarative_base()
 
 
-SYSTEM_METADATA_SCOPE_KEYS = {"folder_name", "end_user_id", "app_id"}
+SYSTEM_METADATA_SCOPE_KEYS = {"folder_name", "folder_id", "end_user_id", "app_id"}
 
 
 class DocumentModel(Base):
@@ -375,6 +375,8 @@ class PostgresDatabase(BaseDatabase):
             path_for_metadata = doc_dict.get("folder_path") or doc_dict.get("folder_name")
             doc_dict["doc_metadata"]["folder_name"] = path_for_metadata
             doc_dict["folder_id"] = doc_dict.get("folder_id")
+            if doc_dict.get("folder_id"):
+                doc_dict["doc_metadata"]["folder_id"] = doc_dict["folder_id"]
 
             # Keep folder_path in sync with folder_name for backward compatibility
             folder_name_value = doc_dict.get("folder_name")
@@ -841,8 +843,11 @@ class PostgresDatabase(BaseDatabase):
                     # The flattened fields (owner_id, app_id)
                     # should be in updates directly if they need to be updated
 
-                    # Keep doc_metadata.folder_name in sync with the flattened column (support clearing)
-                    if "doc_metadata" in updates:
+                    # Keep doc_metadata folder fields in sync with flattened columns (support clearing)
+                    doc_metadata_update = updates.get("doc_metadata") if "doc_metadata" in updates else None
+                    has_folder_change = any(key in updates for key in ("folder_name", "folder_path", "folder_id"))
+
+                    if doc_metadata_update is not None:
                         folder_value = updates.get("folder_path")
                         if folder_value is None:
                             folder_value = (
@@ -851,10 +856,27 @@ class PostgresDatabase(BaseDatabase):
                         if folder_value is None:
                             folder_value = doc_model.folder_name
                         try:
-                            if isinstance(updates["doc_metadata"], dict):
-                                updates["doc_metadata"]["folder_name"] = folder_value
+                            if isinstance(doc_metadata_update, dict):
+                                doc_metadata_update = dict(doc_metadata_update)
+                                doc_metadata_update["folder_name"] = folder_value
+                                if "folder_id" in updates:
+                                    doc_metadata_update["folder_id"] = updates["folder_id"]
+                                updates["doc_metadata"] = doc_metadata_update
                         except Exception as exc:  # noqa: BLE001
-                            logger.warning("Unable to set folder_name in doc_metadata for %s: %s", document_id, exc)
+                            logger.warning("Unable to set folder fields in doc_metadata for %s: %s", document_id, exc)
+                    elif has_folder_change:
+                        new_doc_metadata = dict(doc_model.doc_metadata or {})
+                        folder_value = updates.get("folder_path")
+                        if folder_value is None:
+                            folder_value = (
+                                folder_value_for_metadata if "folder_name" in updates else doc_model.folder_path
+                            )
+                        if folder_value is None:
+                            folder_value = doc_model.folder_name
+                        new_doc_metadata["folder_name"] = folder_value
+                        if "folder_id" in updates:
+                            new_doc_metadata["folder_id"] = updates["folder_id"]
+                        updates["doc_metadata"] = new_doc_metadata
 
                     # Set all attributes
                     for key, value in updates.items():
@@ -1969,22 +1991,31 @@ class PostgresDatabase(BaseDatabase):
                 logger.error(f"Document {document_id} not found or user does not have access after retries")
                 return False
 
+            previous_folder_id = document.folder_id
+
             # Check if the document is already in the folder
-            if document_id in folder.document_ids:
+            if document_id in folder.document_ids and document.folder_id == folder_id:
                 logger.info(f"Document {document_id} is already in folder {folder_id}")
                 return True
 
             # Add the document to the folder
             async with self.async_session() as session:
-                # Add document_id to document_ids array
-                new_document_ids = folder.document_ids + [document_id]
+                # Remove from previous folder (if any) to keep counts accurate
+                if previous_folder_id and previous_folder_id != folder_id:
+                    previous_folder_model = await session.get(FolderModel, previous_folder_id)
+                    if previous_folder_model:
+                        prev_ids = previous_folder_model.document_ids or []
+                        previous_folder_model.document_ids = [doc_id for doc_id in prev_ids if doc_id != document_id]
 
-                folder_model = await session.get(FolderModel, folder_id)
-                if not folder_model:
+                # Add document_id to target folder_ids array (deduped)
+                target_folder_model = await session.get(FolderModel, folder_id)
+                if not target_folder_model:
                     logger.error(f"Folder {folder_id} not found in database")
                     return False
 
-                folder_model.document_ids = new_document_ids
+                existing_ids = target_folder_model.document_ids or []
+                new_document_ids = list(dict.fromkeys(existing_ids + [document_id]))
+                target_folder_model.document_ids = new_document_ids
 
                 try:
                     folder_path_value = folder.full_path or (
@@ -1998,10 +2029,20 @@ class PostgresDatabase(BaseDatabase):
                     """
                     UPDATE documents
                     SET folder_name = :folder_name,
-                        folder_path = :folder_path
+                        folder_path = :folder_path,
+                        folder_id = :folder_id,
+                        doc_metadata = jsonb_set(
+                            jsonb_set(COALESCE(doc_metadata, '{}'::jsonb), '{folder_name}', to_jsonb(:folder_path)),
+                            '{folder_id}', to_jsonb(:folder_id)
+                        )
                     WHERE external_id = :document_id
                     """
-                ).bindparams(folder_name=folder.name, folder_path=folder_path_value, document_id=document_id)
+                ).bindparams(
+                    folder_name=folder.name,
+                    folder_path=folder_path_value,
+                    folder_id=folder_id,
+                    document_id=document_id,
+                )
 
                 await session.execute(stmt)
                 await session.commit()
@@ -2033,15 +2074,22 @@ class PostgresDatabase(BaseDatabase):
                 if not folder:
                     return False
 
-            # Check if the document is in the folder
-            if document_id not in folder.document_ids:
+            document = await self.get_document(document_id, auth)
+            if not document:
+                logger.error(f"Document {document_id} not found while removing from folder {folder_id}")
+                return False
+
+            should_clear_folder = document.folder_id == folder_id
+
+            # Check if the document is in the folder (or recorded as such)
+            if document_id not in folder.document_ids and document.folder_id != folder_id:
                 logger.warning(f"Tried to delete document {document_id} not in folder {folder_id}")
                 return True
 
             # Remove the document from the folder
             async with self.async_session() as session:
                 # Remove document_id from document_ids array
-                new_document_ids = [doc_id for doc_id in folder.document_ids if doc_id != document_id]
+                new_document_ids = [doc_id for doc_id in (folder.document_ids or []) if doc_id != document_id]
 
                 folder_model = await session.get(FolderModel, folder_id)
                 if not folder_model:
@@ -2050,17 +2098,23 @@ class PostgresDatabase(BaseDatabase):
 
                 folder_model.document_ids = new_document_ids
 
-                # Also update the document's folder_name to NULL
-                stmt = text(
-                    """
-                    UPDATE documents
-                    SET folder_name = NULL,
-                        folder_path = NULL
-                    WHERE external_id = :document_id
-                    """
-                ).bindparams(document_id=document_id)
+                # Clear folder references on the document if it was attached to this folder
+                if should_clear_folder:
+                    stmt = text(
+                        """
+                        UPDATE documents
+                        SET folder_name = NULL,
+                            folder_path = NULL,
+                            folder_id = NULL,
+                            doc_metadata = jsonb_set(
+                                jsonb_set(COALESCE(doc_metadata, '{}'::jsonb), '{folder_name}', 'null'::jsonb),
+                                '{folder_id}', 'null'::jsonb
+                            )
+                        WHERE external_id = :document_id
+                        """
+                    ).bindparams(document_id=document_id)
 
-                await session.execute(stmt)
+                    await session.execute(stmt)
                 await session.commit()
 
                 logger.info(f"Removed document {document_id} from folder {folder_id}")
@@ -2288,6 +2342,36 @@ class PostgresDatabase(BaseDatabase):
         """
 
         try:
+            params: Dict[str, Any] = {}
+            if auth.app_id:
+                doc_access_condition = "d.app_id = :app_id_val"
+                params["app_id_val"] = auth.app_id
+            elif auth.entity_id:
+                doc_access_condition = "d.owner_id = :owner_id_val"
+                params["owner_id_val"] = auth.entity_id
+            else:
+                doc_access_condition = "1=0"
+
+            async with self.async_session() as session:
+                doc_counts_result = await session.execute(
+                    text(
+                        f"""
+                        SELECT COALESCE(d.folder_id, f.id) AS fid, COUNT(*) AS cnt
+                        FROM documents d
+                        LEFT JOIN folders f
+                            ON d.folder_path IS NOT NULL
+                            AND d.folder_path <> ''
+                            AND f.full_path = d.folder_path
+                            AND (f.app_id IS NOT DISTINCT FROM d.app_id)
+                        WHERE (d.folder_id IS NOT NULL OR (d.folder_path IS NOT NULL AND d.folder_path <> ''))
+                        AND ({doc_access_condition})
+                        GROUP BY COALESCE(d.folder_id, f.id)
+                        """
+                    ),
+                    params,
+                )
+                doc_counts = {row.fid: row.cnt for row in doc_counts_result.mappings() if row.fid}
+
             # Re-use the complex access logic of *list_folders* but post-process
             # the results to strip the large field.  This avoids duplicating
             # query-builder logic while still improving network payload size.
@@ -2303,7 +2387,7 @@ class PostgresDatabase(BaseDatabase):
                         "depth": getattr(f, "depth", None),
                         "description": getattr(f, "description", None),
                         "updated_at": (f.system_metadata or {}).get("updated_at"),
-                        "doc_count": len(f.document_ids or []),
+                        "doc_count": doc_counts.get(f.id, len(f.document_ids or [])),
                     }
                 )
 
