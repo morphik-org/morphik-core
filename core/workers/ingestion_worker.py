@@ -20,7 +20,7 @@ from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
-from core.models.auth import AuthContext, EntityType
+from core.models.auth import AuthContext
 from core.parser.morphik_parser import MorphikParser
 from core.services.ingestion_service import IngestionService, PdfConversionError
 from core.services.telemetry import TelemetryService
@@ -269,14 +269,11 @@ async def process_ingestion_job(
             # Define total steps for progress tracking
             total_steps = 6
 
-            # 2. Deserialize auth
+            # 2. Deserialize auth (backward compatible with old queue messages)
             deserialize_start = time.time()
             auth = AuthContext(
-                entity_type=EntityType(auth_dict.get("entity_type", "unknown")),
-                entity_id=auth_dict.get("entity_id", ""),
+                user_id=auth_dict.get("user_id") or auth_dict.get("entity_id", ""),
                 app_id=auth_dict.get("app_id"),
-                permissions=set(auth_dict.get("permissions", ["read"])),
-                user_id=auth_dict.get("user_id", auth_dict.get("entity_id", "")),
             )
             phase_times["deserialize_auth"] = time.time() - deserialize_start
 
@@ -501,9 +498,7 @@ async def process_ingestion_job(
             # 6. Retrieve the existing document
             retrieve_start = time.time()
             logger.debug(f"Retrieving document with ID: {document_id}")
-            logger.debug(
-                f"Auth context: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}"
-            )
+            logger.debug(f"Auth context: user_id={auth.user_id}, app_id={auth.app_id}")
 
             # Use the retry helper function with initial delay to handle race conditions
             doc = await get_document_with_retry(ingestion_service, document_id, auth, max_retries=5, initial_delay=1.0)
@@ -516,9 +511,7 @@ async def process_ingestion_job(
                 logger.error(
                     f"Details - file: {original_filename}, content_type: {content_type}, bucket: {bucket}, key: {file_key}"
                 )
-                logger.error(
-                    f"Auth: entity_type={auth.entity_type}, entity_id={auth.entity_id}, permissions={auth.permissions}"
-                )
+                logger.error(f"Auth: user_id={auth.user_id}, app_id={auth.app_id}")
                 raise ValueError(f"Document {document_id} not found in database after multiple retries")
 
             # Prepare updates for the document
@@ -947,11 +940,8 @@ async def process_ingestion_job(
             auth
         except NameError:
             auth = AuthContext(
-                entity_type=EntityType(auth_dict.get("entity_type", "unknown")),
-                entity_id=auth_dict.get("entity_id", ""),
+                user_id=auth_dict.get("user_id") or auth_dict.get("entity_id", ""),
                 app_id=auth_dict.get("app_id"),
-                permissions=set(auth_dict.get("permissions", ["read"])),
-                user_id=auth_dict.get("user_id", auth_dict.get("entity_id", "")),
             )
 
         try:

@@ -111,7 +111,7 @@ async def get_logs(
     if hours <= LOCAL_RETENTION_HOURS:
         events = event_reader.recent_events(
             limit=limit,
-            user_id=auth.entity_id,
+            user_id=auth.user_id,
             app_id=auth.app_id,
             operation_type=op_type,
             status=status_filter,
@@ -129,7 +129,7 @@ async def get_logs(
     return [
         LogResponse(
             timestamp=event.timestamp,
-            user_id=event.user_id or auth.entity_id,
+            user_id=event.user_id or auth.user_id,
             operation_type=event.operation_type,
             status=event.status,
             tokens_used=event.tokens_used,

@@ -5,7 +5,7 @@ import jwt
 from fastapi import Header, HTTPException
 
 from core.config import get_settings
-from core.models.auth import AuthContext, EntityType
+from core.models.auth import AuthContext
 
 logger = getLogger(__name__)
 
@@ -28,10 +28,8 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:  # noq
     # ------------------------------------------------------------------
     if settings.bypass_auth_mode:
         return AuthContext(
-            entity_type=EntityType(settings.dev_entity_type),
-            entity_id=settings.dev_entity_id,
-            permissions=set(settings.dev_permissions),
-            user_id=settings.dev_entity_id,  # In dev mode, entity_id == user_id
+            user_id=settings.dev_user_id,
+            app_id=None,
         )
 
     # ------------------------------------------------------------------
@@ -59,17 +57,14 @@ async def verify_token(authorization: str = Header(None)) -> AuthContext:  # noq
     if datetime.fromtimestamp(payload["exp"], UTC) < datetime.now(UTC):
         raise HTTPException(status_code=401, detail="Token expired")
 
-    # Support both legacy "type" and new "entity_type" fields
-    entity_type_field = payload.get("type") or payload.get("entity_type")
-    if entity_type_field is None:
-        raise HTTPException(status_code=401, detail="Missing entity type in token")
+    # Extract user_id - support legacy "entity_id" for backward compatibility
+    user_id = payload.get("user_id") or payload.get("entity_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Missing user_id in token")
 
     ctx = AuthContext(
-        entity_type=EntityType(entity_type_field),
-        entity_id=payload["entity_id"],
+        user_id=user_id,
         app_id=payload.get("app_id"),
-        permissions=set(payload.get("permissions", ["read"])),
-        user_id=payload.get("user_id", payload["entity_id"]),
     )
 
     # ------------------------------------------------------------------

@@ -348,7 +348,7 @@ async def download_document_file(document_id: str, auth: AuthContext = Depends(v
     """
     try:
         logger.info(f"Attempting to download file for document ID: {document_id}")
-        logger.info(f"Auth context: entity_id={auth.entity_id}, app_id={auth.app_id}")
+        logger.info(f"Auth context: user_id={auth.user_id}, app_id={auth.app_id}")
 
         # Get the document
         doc = await document_service.db.get_document(document_id, auth)
@@ -408,11 +408,10 @@ async def download_document_file(document_id: str, auth: AuthContext = Depends(v
 async def update_document_text(
     document_id: str,
     request: IngestTextRequest,
-    update_strategy: str = "add",
     auth: AuthContext = Depends(verify_token),
 ):
     """
-    Update a document with new text content using the specified strategy.
+    Update a document by replacing its text content.
     """
     try:
         if getattr(request, "rules", None):
@@ -431,7 +430,6 @@ async def update_document_text(
             filename=request.filename,
             metadata=request.metadata,
             metadata_types=request.metadata_types,
-            update_strategy=update_strategy,
             use_colpali=request.use_colpali,
         )
 
@@ -453,12 +451,11 @@ async def update_document_file(
     file: UploadFile,
     metadata: str = Form("{}"),
     metadata_types: str = Form("{}"),
-    update_strategy: str = Form("add"),
     use_colpali: Optional[bool] = Form(None),
     auth: AuthContext = Depends(verify_token),
 ):
     """
-    Update a document with content from a file using the specified strategy.
+    Update a document by replacing its content with a new file.
     """
     try:
         metadata_dict = json.loads(metadata)
@@ -477,7 +474,6 @@ async def update_document_file(
             filename=file.filename,
             metadata=metadata_dict,
             metadata_types=metadata_types_dict,
-            update_strategy=update_strategy,
             use_colpali=use_colpali,
         )
 
@@ -515,7 +511,6 @@ async def update_document_metadata(
             filename=None,
             metadata=metadata_updates.metadata,
             metadata_types=metadata_updates.metadata_types,
-            update_strategy="add",
             use_colpali=None,
         )
 

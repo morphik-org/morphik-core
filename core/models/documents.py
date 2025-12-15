@@ -11,17 +11,6 @@ from core.models.video import TimeSeriesData
 logger = logging.getLogger(__name__)
 
 
-class StorageFileInfo(BaseModel):
-    """Information about a file stored in storage"""
-
-    bucket: str
-    key: str
-    version: int = 1
-    filename: Optional[str] = None
-    content_type: Optional[str] = None
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-
 class Document(BaseModel):
     """Represents a document stored in the database documents collection"""
 
@@ -34,13 +23,10 @@ class Document(BaseModel):
     """per-field metadata type hints used for filtering"""
     storage_info: Dict[str, Any] = Field(default_factory=dict)
     """Legacy field for backwards compatibility - for single file storage"""
-    storage_files: List[StorageFileInfo] = Field(default_factory=list)
-    """List of files associated with this document"""
     system_metadata: Dict[str, Any] = Field(
         default_factory=lambda: {
             "created_at": datetime.now(UTC),
             "updated_at": datetime.now(UTC),
-            "version": 1,
             "status": "processing",  # Status can be: processing, completed, failed
         }
     )
@@ -129,22 +115,6 @@ class ChunkResult(BaseModel):
                     for t in timestamps
                 ]
                 return "\n\n".join(augmented_contents)
-            # case m if m.get("is_image", False):
-            #     try:
-            #         # Handle data URI format "data:image/png;base64,..."
-            #         content = self.content
-            #         if content.startswith('data:'):
-            #             # Extract the base64 part after the comma
-            #             content = content.split(',', 1)[1]
-
-            #         # Now decode the base64 string
-            #         image_bytes = base64.b64decode(content)
-            #         content = Image.open(io.BytesIO(image_bytes))
-            #         return content
-            #     except Exception as e:
-            #         print(f"Error processing image: {str(e)}")
-            #         # Fall back to using the content as text
-            #         return self.content
             case _:
                 return self.content
 

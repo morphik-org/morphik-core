@@ -564,7 +564,6 @@ class _MorphikClientLogic:
         filename: Optional[str],
         metadata: Optional[Dict[str, Any]],
         rules: Optional[List],
-        update_strategy: str,
         use_colpali: Optional[bool],
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Prepare request for update_document_with_text endpoint"""
@@ -579,11 +578,7 @@ class _MorphikClientLogic:
             metadata_types=metadata_types_map,
         )
 
-        params = {}
-        if update_strategy != "add":
-            params["update_strategy"] = update_strategy
-
-        return params, request.model_dump()
+        return {}, request.model_dump()
 
     # ------------------------------------------------------------------
     # Metadata serialization helpers

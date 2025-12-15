@@ -34,12 +34,12 @@ from filetype.types import IMAGE
 from PIL import Image as PILImage
 
 from core.config import get_settings
-from core.database.base_database import BaseDatabase
+from core.database.postgres_database import PostgresDatabase
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
 from core.models.auth import AuthContext
 from core.models.chunk import Chunk, DocumentChunk
-from core.models.documents import Document, StorageFileInfo
+from core.models.documents import Document
 from core.models.folders import Folder
 from core.parser.base_parser import BaseParser
 from core.storage.base_storage import BaseStorage
@@ -86,7 +86,7 @@ class IngestionService:
 
     def __init__(
         self,
-        database: BaseDatabase,
+        database: PostgresDatabase,
         vector_store: BaseVectorStore,
         embedding_model: BaseEmbeddingModel,
         storage: BaseStorage,
@@ -254,10 +254,6 @@ class IngestionService:
         end_user_id: Optional[str] = None,
     ) -> Document:
         """Ingest a text document."""
-        if "write" not in auth.permissions:
-            logger.error(f"User {auth.entity_id} does not have write permission")
-            raise PermissionError("User does not have write permission")
-
         # Prevent callers from overriding reserved fields
         self._enforce_no_user_mutable_fields(metadata, folder_name, metadata_types=metadata_types, context="ingest")
 
@@ -414,14 +410,8 @@ class IngestionService:
         and then enqueues a background job for chunking and embedding.
         """
         logger.info(
-            f"Starting ingestion for filename: {filename}, content_type: {content_type}, "
-            f"user: {auth.user_id or auth.entity_id}"
+            f"Starting ingestion for filename: {filename}, content_type: {content_type}, " f"user: {auth.user_id}"
         )
-
-        # Ensure user has write permission
-        if "write" not in auth.permissions:
-            logger.error(f"User {auth.entity_id} does not have write permission for ingest_file_content")
-            raise PermissionError("User does not have write permission for ingest_file_content")
 
         # Prevent callers from overriding reserved fields
         self._enforce_no_user_mutable_fields(metadata, folder_name, metadata_types=metadata_types, context="ingest")
@@ -440,7 +430,6 @@ class IngestionService:
             content_type=content_type,
             metadata=metadata or {},
             system_metadata={"status": "processing"},
-            content_info={"type": "file", "mime_type": content_type},
             app_id=auth.app_id,
             end_user_id=end_user_id,
             folder_name=folder_leaf,
@@ -497,24 +486,18 @@ class IngestionService:
             bucket_name, full_storage_path = await self._upload_to_app_bucket(
                 auth=auth, content_bytes=file_content_bytes, key=storage_key, content_type=content_type
             )
-            sfi = StorageFileInfo(
-                bucket=bucket_name,
-                key=full_storage_path,
-                content_type=content_type,
-                size=len(file_content_bytes),
-                last_modified=datetime.now(UTC),
-                version=1,
-                filename=safe_filename,
-            )
-            doc.storage_info = {k: str(v) if v is not None else "" for k, v in sfi.model_dump().items()}
-            doc.storage_files = [sfi]
+            doc.storage_info = {
+                "bucket": bucket_name,
+                "key": full_storage_path,
+                "filename": safe_filename or "",
+                "content_type": content_type or "",
+            }
 
             doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
             await self.db.update_document(
                 document_id=doc.external_id,
                 updates={
                     "storage_info": doc.storage_info,
-                    "storage_files": [sf.model_dump() for sf in doc.storage_files],
                     "system_metadata": doc.system_metadata,
                 },
                 auth=auth,
@@ -562,11 +545,8 @@ class IngestionService:
 
         # 4. Enqueue background job for processing
         auth_dict = {
-            "entity_type": auth.entity_type.value,
-            "entity_id": auth.entity_id,
-            "app_id": auth.app_id,
-            "permissions": list(auth.permissions),
             "user_id": auth.user_id,
+            "app_id": auth.app_id,
         }
 
         metadata_json_str = json.dumps(doc.metadata or {})
@@ -623,20 +603,18 @@ class IngestionService:
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         metadata_types: Optional[Dict[str, str]] = None,
-        update_strategy: str = "add",
         use_colpali: Optional[bool] = None,
     ) -> Optional[Document]:
         """
-        Update a document with new content and/or metadata using the specified strategy.
+        Update a document by replacing its content and/or metadata.
 
         Args:
             document_id: ID of the document to update
             auth: Authentication context
-            content: The new text content to add
-            file: File to add
+            content: New text content (replaces existing)
+            file: New file (replaces existing)
             filename: Optional new filename for the document
-            metadata: Additional metadata to update
-            update_strategy: Strategy for updating the document ('add' to append content)
+            metadata: Additional metadata to merge
             use_colpali: Whether to use multi-vector embedding
 
         Returns:
@@ -652,30 +630,23 @@ class IngestionService:
         if not doc:
             return None
 
-        # Get current content and determine update type
-        raw_current_content = doc.system_metadata.get("content", "")
-        current_content = self._normalize_document_content(raw_current_content)
-        if current_content != raw_current_content:
-            logger.warning(
-                "Normalized non-textual stored content for document %s before applying update strategy",
-                doc.external_id,
-            )
-            doc.system_metadata["content"] = current_content
         metadata_only_update = content is None and file is None and metadata is not None
 
         # Process content based on update type
-        update_content = None
+        updated_content = None
         file_content = None
         file_type = None
         file_content_base64 = None
         if content is not None:
-            update_content = await self._process_text_update(content, doc, filename, metadata)
-            update_content = self._normalize_document_content(update_content)
+            updated_content = await self._process_text_update(content, doc, filename, metadata)
+            updated_content = self._normalize_document_content(updated_content)
+            logger.info(f"Replacing document content with new text of length {len(updated_content)}")
         elif file is not None:
-            update_content, file_content, file_type, file_content_base64 = await self._process_file_update(
+            updated_content, file_content, file_type, file_content_base64 = await self._process_file_update(
                 file, doc, metadata
             )
-            update_content = self._normalize_document_content(update_content)
+            updated_content = self._normalize_document_content(updated_content)
+            logger.info(f"Replacing document content with parsed file text of length {len(updated_content)}")
 
             # Record storage usage for the newly uploaded file (cloud mode)
             if settings.MODE == "cloud" and auth.user_id:
@@ -688,26 +659,17 @@ class IngestionService:
             logger.error("Neither content nor file provided for document update")
             return None
 
-        # Apply content update strategy if we have new content
-        if update_content:
-            if not current_content:
-                logger.info(f"No current content found, using only new content of length {len(update_content)}")
-                updated_content = update_content
-            else:
-                updated_content = self._apply_update_strategy(current_content, update_content, update_strategy)
-                logger.info(
-                    f"Applied update strategy '{update_strategy}': original length={len(current_content)}, "
-                    f"new length={len(updated_content)}"
-                )
-
+        # Replace content if we have new content
+        if updated_content:
             doc.system_metadata["content"] = updated_content
             logger.info(f"Updated system_metadata['content'] with content of length {len(updated_content)}")
         else:
-            updated_content = current_content
-            logger.info(f"No content update - keeping current content of length {len(current_content)}")
+            # Keep existing content for metadata-only updates
+            updated_content = doc.system_metadata.get("content", "")
+            logger.info(f"No content update - keeping current content of length {len(updated_content)}")
 
-        # Update metadata and version information
-        self._update_metadata_and_version(doc, metadata, metadata_types, update_strategy, file)
+        # Update metadata
+        self._update_metadata(doc, metadata, metadata_types, file)
 
         # For metadata-only updates, we don't need to re-process chunks
         if metadata_only_update:
@@ -744,7 +706,7 @@ class IngestionService:
             return None
 
         if not await self.db.check_access(document_id, auth, "write"):
-            logger.error(f"User {auth.entity_id} does not have write permission for document {document_id}")
+            logger.error(f"User {auth.user_id} does not have write permission for document {document_id}")
             raise PermissionError(f"User does not have write permission for document {document_id}")
 
         return doc
@@ -808,44 +770,34 @@ class IngestionService:
         return file_text, file_content, file_type, file_content_base64
 
     async def _update_storage_info(self, doc: Document, file: UploadFile, file_content_base64: str):
-        """Update document storage information for file content."""
-        if not hasattr(doc, "storage_files") or not doc.storage_files:
-            doc.storage_files = []
+        """Update document storage information for file content, deleting the old file if present."""
+        # Delete old file from storage if it exists
+        if doc.storage_info:
+            old_bucket = doc.storage_info.get("bucket")
+            old_key = doc.storage_info.get("key")
+            if old_bucket and old_key and hasattr(self.storage, "delete_file"):
+                try:
+                    await self.storage.delete_file(old_bucket, old_key)
+                    logger.info(f"Deleted old file from bucket `{old_bucket}` with key `{old_key}`")
+                except Exception as e:
+                    logger.warning(f"Failed to delete old file {old_bucket}/{old_key}: {e}")
 
-            if doc.storage_info and doc.storage_info.get("bucket") and doc.storage_info.get("key"):
-                legacy_file_info = StorageFileInfo(
-                    bucket=doc.storage_info.get("bucket", ""),
-                    key=doc.storage_info.get("key", ""),
-                    version=1,
-                    filename=doc.filename,
-                    content_type=doc.content_type,
-                    timestamp=doc.system_metadata.get("updated_at", datetime.now(UTC)),
-                )
-                doc.storage_files.append(legacy_file_info)
-                logger.info(f"Migrated legacy storage_info to storage_files: {doc.storage_files}")
-
-        version = len(doc.storage_files) + 1
+        # Upload new file
         file_extension = os.path.splitext(file.filename)[1] if file.filename else ""
-
-        storage_info_tuple = await self.storage.upload_from_base64(
+        bucket, key = await self.storage.upload_from_base64(
             file_content_base64,
-            f"{doc.external_id}_{version}{file_extension}",
+            f"{doc.external_id}{file_extension}",
             file.content_type,
             bucket="",
         )
 
-        new_sfi = StorageFileInfo(
-            bucket=storage_info_tuple[0],
-            key=storage_info_tuple[1],
-            version=version,
-            filename=file.filename,
-            content_type=file.content_type,
-            timestamp=datetime.now(UTC),
-        )
-        doc.storage_files.append(new_sfi)
-
-        doc.storage_info = {k: str(v) if v is not None else "" for k, v in new_sfi.model_dump().items()}
-        logger.info(f"Stored file in bucket `{storage_info_tuple[0]}` with key `{storage_info_tuple[1]}`")
+        doc.storage_info = {
+            "bucket": bucket,
+            "key": key,
+            "filename": file.filename or "",
+            "content_type": file.content_type or "",
+        }
+        logger.info(f"Stored new file in bucket `{bucket}` with key `{key}`")
 
     @staticmethod
     def _normalize_document_content(content: Any) -> str:
@@ -872,14 +824,6 @@ class IngestionService:
         logger.warning("Coercing unexpected content type %s to string", type(content).__name__)
         return str(content)
 
-    def _apply_update_strategy(self, current_content: str, update_content: str, update_strategy: str) -> str:
-        """Apply the update strategy to combine current and new content."""
-        if update_strategy == "add":
-            return current_content + "\n\n" + update_content
-        else:
-            logger.warning(f"Unknown update strategy '{update_strategy}', defaulting to 'add'")
-            return current_content + "\n\n" + update_content
-
     async def _update_document_metadata_only(self, doc: Document, auth: AuthContext) -> Optional[Document]:
         """Update document metadata without reprocessing chunks."""
         doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
@@ -889,7 +833,6 @@ class IngestionService:
             "metadata_types": doc.metadata_types,
             "system_metadata": doc.system_metadata,
             "filename": doc.filename,
-            "storage_files": doc.storage_files if hasattr(doc, "storage_files") else None,
             "storage_info": doc.storage_info if hasattr(doc, "storage_info") else None,
         }
         updates = {k: v for k, v in updates.items() if v is not None}
@@ -907,15 +850,14 @@ class IngestionService:
         logger.info(f"Successfully updated document metadata for {doc.external_id}")
         return doc
 
-    def _update_metadata_and_version(
+    def _update_metadata(
         self,
         doc: Document,
         metadata: Optional[Dict[str, Any]],
         metadata_types: Optional[Dict[str, str]],
-        update_strategy: str,
         file: Optional[UploadFile],
     ):
-        """Update document metadata and version tracking."""
+        """Update document metadata."""
         if metadata:
             payload = dict(metadata)
             doc.metadata, doc.metadata_types = merge_metadata(
@@ -929,22 +871,10 @@ class IngestionService:
             doc.metadata.setdefault("external_id", doc.external_id)
             doc.metadata_types.setdefault("external_id", "string")
 
-        current_version = doc.system_metadata.get("version", 1)
-        doc.system_metadata["version"] = current_version + 1
         doc.system_metadata["updated_at"] = datetime.now(UTC)
 
-        history = doc.system_metadata.setdefault("update_history", [])
-        entry = {
-            "timestamp": datetime.now(UTC).isoformat(),
-            "version": current_version + 1,
-            "strategy": update_strategy,
-        }
         if file:
-            entry["filename"] = file.filename
-        if metadata:
-            entry["metadata_updated"] = True
-
-        history.append(entry)
+            doc.filename = file.filename
 
     # -------------------------------------------------------------------------
     # Chunk processing and storage
@@ -1102,18 +1032,6 @@ class IngestionService:
                             "filename": doc.filename,
                             "content_type": doc.content_type,
                             "storage_info": doc.storage_info,
-                            "storage_files": (
-                                [
-                                    (
-                                        file.model_dump()
-                                        if hasattr(file, "model_dump")
-                                        else (file.dict() if hasattr(file, "dict") else file)
-                                    )
-                                    for file in doc.storage_files
-                                ]
-                                if doc.storage_files
-                                else []
-                            ),
                         }
                         success = await self.db.update_document(doc.external_id, updates, auth)
                         if not success:

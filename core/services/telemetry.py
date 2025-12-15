@@ -351,38 +351,38 @@ class TelemetryService:
             [
                 MetadataField("name", "request"),
                 MetadataField("description", "request"),
-                MetadataField("owner_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "entity_id", None)),
+                MetadataField("owner_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "user_id", None)),
             ]
         )
         self.list_folders_metadata = MetadataExtractor(
             [
-                MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "entity_id", None)),
+                MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "user_id", None)),
             ]
         )
         self.get_folder_metadata = MetadataExtractor(
             [
                 MetadataField("folder_id", "kwargs", attr_name="folder_id_or_name"),
-                MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "entity_id", None)),
+                MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "user_id", None)),
             ]
         )
         self.add_document_to_folder_metadata = MetadataExtractor(
             [
                 MetadataField("folder_id", "kwargs", attr_name="folder_id_or_name"),
                 MetadataField("document_id", "kwargs"),
-                MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "entity_id", None)),
+                MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "user_id", None)),
             ]
         )
         self.remove_document_from_folder_metadata = MetadataExtractor(
             [
                 MetadataField("folder_id", "kwargs", attr_name="folder_id_or_name"),
                 MetadataField("document_id", "kwargs"),
-                MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "entity_id", None)),
+                MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "user_id", None)),
             ]
         )
         self.delete_folder_metadata = MetadataExtractor(
             [
                 MetadataField("folder_id", "kwargs", attr_name="folder_id_or_name"),
-                MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "entity_id", None)),
+                MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "user_id", None)),
             ]
         )
         # Set up all the metadata extractors
@@ -541,7 +541,6 @@ class TelemetryService:
         self.document_update_text_metadata = MetadataExtractor(
             [
                 MetadataField("document_id", "kwargs"),
-                MetadataField("update_strategy", "kwargs", default="add"),
                 MetadataField("use_colpali", "request"),
                 MetadataField("has_filename", "request", "filename", transform=is_not_none),
             ]
@@ -550,7 +549,6 @@ class TelemetryService:
         self.document_update_file_metadata = MetadataExtractor(
             [
                 MetadataField("document_id", "kwargs"),
-                MetadataField("update_strategy", "kwargs", default="add"),
                 MetadataField("use_colpali", "kwargs"),
                 MetadataField("filename", "kwargs", transform=lambda file: file.filename if file else None),
                 MetadataField(
@@ -652,7 +650,7 @@ class TelemetryService:
                 if not auth:
                     # Try to find auth in positional arguments (unlikely, but possible)
                     for arg in args:
-                        if hasattr(arg, "entity_id") and hasattr(arg, "permissions"):
+                        if hasattr(arg, "user_id") and hasattr(arg, "app_id"):
                             auth = arg
                             break
 
@@ -680,7 +678,7 @@ class TelemetryService:
                 # Run the function within the telemetry context
                 async with self.track_operation(
                     operation_type=op_type,
-                    user_id=auth.entity_id,
+                    user_id=auth.user_id,
                     app_id=getattr(auth, "app_id", None),
                     tokens_used=tokens,
                     metadata=meta,

@@ -47,17 +47,6 @@ def _reconstruct_metadata_types(metadata: Dict[str, Any], metadata_types: Dict[s
     return result
 
 
-class StorageFileInfo(BaseModel):
-    """Information about a file stored in storage."""
-
-    bucket: str
-    key: str
-    version: int = Field(default=1, description="Incremented on each file replacement")
-    filename: Optional[str] = None
-    content_type: Optional[str] = None
-    timestamp: Optional[datetime] = None
-
-
 class Document(BaseModel):
     """Document metadata model"""
 
@@ -72,7 +61,6 @@ class Document(BaseModel):
         description="System-managed metadata (status, progress, timestamps)",
     )
     additional_metadata: Dict[str, Any] = Field(default_factory=dict, description="Ingestion-generated metadata")
-    storage_files: List[StorageFileInfo] = Field(default_factory=list, description="Files associated with the document")
     chunk_ids: List[str] = Field(default_factory=list, description="IDs of document chunks")
     page_count: Optional[int] = Field(None, description="Number of pages derived during ingestion")
     folder_name: Optional[str] = Field(None, description="Folder scope for the document")
@@ -155,18 +143,16 @@ class Document(BaseModel):
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
-        update_strategy: str = "add",
         use_colpali: Optional[bool] = None,
     ) -> "Document":
         """
-        Update this document with new text content using the specified strategy.
+        Update this document by replacing its text content.
 
         Args:
-            content: The new content to add
+            content: The new content (replaces existing)
             filename: Optional new filename for the document
-            metadata: Additional metadata to update (optional)
-            rules: Optional list of rules to apply to the content
-            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            metadata: Additional metadata to merge (optional)
+            rules: Deprecated, ignored
             use_colpali: Whether to use multi-vector embedding
 
         Returns:
@@ -183,7 +169,6 @@ class Document(BaseModel):
             filename=filename,
             metadata=metadata,
             rules=rules,
-            update_strategy=update_strategy,
             use_colpali=use_colpali,
         )
 
@@ -193,18 +178,16 @@ class Document(BaseModel):
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
-        update_strategy: str = "add",
         use_colpali: Optional[bool] = None,
     ) -> "Document":
         """
-        Update this document with content from a file using the specified strategy.
+        Update this document by replacing its content with a new file.
 
         Args:
-            file: File to add (path string, bytes, file object, or Path)
+            file: File to use (path string, bytes, file object, or Path)
             filename: Name of the file
-            metadata: Additional metadata to update (optional)
-            rules: Optional list of rules to apply to the content
-            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            metadata: Additional metadata to merge (optional)
+            rules: Deprecated, ignored
             use_colpali: Whether to use multi-vector embedding
 
         Returns:
@@ -221,7 +204,6 @@ class Document(BaseModel):
             filename=filename,
             metadata=metadata,
             rules=rules,
-            update_strategy=update_strategy,
             use_colpali=use_colpali,
         )
 
@@ -244,6 +226,27 @@ class Document(BaseModel):
             )
 
         return self._client.update_document_metadata(document_id=self.external_id, metadata=metadata)
+
+
+class IngestionOptions(BaseModel):
+    """Normalized options controlling post-analysis ingestion."""
+
+    ingest: bool = Field(default=False, description="Whether to enqueue ingestion after metadata extraction.")
+    use_colpali: bool = Field(
+        default=False,
+        description="Whether to use Morphik's ColPali-style embeddings during ingestion (recommended for quality).",
+    )
+    folder_name: Optional[str] = Field(
+        default=None,
+        description="Optional target folder path for the ingested document. Only a single folder is supported.",
+    )
+    end_user_id: Optional[str] = Field(default=None, description="Optional end-user scope for the operation.")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Metadata to merge into the ingested document when ingestion is triggered.",
+    )
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class DocumentQueryResponse(BaseModel):
@@ -277,8 +280,8 @@ class DocumentQueryResponse(BaseModel):
         default_factory=dict,
         description="Metadata that would be used if ingestion is performed (original metadata merged with extracted fields when available).",
     )
-    ingestion_options: Dict[str, Any] = Field(
-        default_factory=dict,
+    ingestion_options: IngestionOptions = Field(
+        default_factory=IngestionOptions,
         description="Normalized ingestion options applied to this request.",
     )
 
