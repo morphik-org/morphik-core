@@ -49,9 +49,7 @@ class Settings(BaseSettings):
     # Auth configuration
     JWT_ALGORITHM: str
     bypass_auth_mode: bool = False
-    dev_entity_type: str = "developer"
-    dev_entity_id: str = "dev_user"
-    dev_permissions: list = ["read", "write", "admin"]
+    dev_user_id: str = "dev_user"
     ADMIN_SERVICE_SECRET: Optional[str] = None
 
     # Registered models configuration
@@ -217,9 +215,7 @@ def get_settings() -> Settings:
             "JWT_SECRET_KEY": os.environ.get("JWT_SECRET_KEY", "dev-secret-key"),  # Default for bypass mode
             "SESSION_SECRET_KEY": os.environ.get("SESSION_SECRET_KEY", "super-secret-dev-session-key"),
             "bypass_auth_mode": config["auth"].get("bypass_auth_mode", config["auth"].get("dev_mode", False)),
-            "dev_entity_type": config["auth"].get("dev_entity_type", "developer"),
-            "dev_entity_id": config["auth"].get("dev_entity_id", "dev_user"),
-            "dev_permissions": config["auth"].get("dev_permissions", ["read", "write", "admin"]),
+            "dev_user_id": config["auth"].get("dev_user_id", config["auth"].get("dev_entity_id", "dev_user")),
         }
     )
 

@@ -14,7 +14,13 @@ from core.dependencies import get_redis_pool
 from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
 from core.models.auth import AuthContext
 from core.models.documents import Document
-from core.models.request import BatchIngestResponse, DocumentQueryResponse, IngestTextRequest, RequeueIngestionRequest
+from core.models.request import (
+    BatchIngestResponse,
+    DocumentQueryResponse,
+    IngestionOptions,
+    IngestTextRequest,
+    RequeueIngestionRequest,
+)
 from core.models.responses import RequeueIngestionResponse, RequeueIngestionResult
 from core.routes.utils import warn_if_legacy_rules
 from core.services.ingestion_service import IngestionService
@@ -153,9 +159,6 @@ async def ingest_file(
 
         use_colpali_bool = str2bool(use_colpali)
 
-        if "write" not in auth.permissions:
-            raise PermissionError("User does not have write permission")
-
         folder_path, folder_leaf = _normalize_folder_inputs(folder_name)
 
         logger.debug("Queueing file ingestion with use_colpali=%s", use_colpali_bool)
@@ -237,23 +240,9 @@ async def ingest_file(
 
         doc.storage_info = {"bucket": bucket, "key": stored_key}
 
-        # Keep storage history
-        from core.models.documents import StorageFileInfo  # local import to avoid cycles
-
-        doc.storage_files = [
-            StorageFileInfo(
-                bucket=bucket,
-                key=stored_key,
-                version=1,
-                filename=safe_filename,
-                content_type=file.content_type,
-                timestamp=datetime.now(UTC),
-            )
-        ]
-
         await app_db.update_document(
             document_id=doc.external_id,
-            updates={"storage_info": doc.storage_info, "storage_files": doc.storage_files},
+            updates={"storage_info": doc.storage_info},
             auth=auth,
         )
 
@@ -269,11 +258,8 @@ async def ingest_file(
         # Push job to ingestion worker queue
         # ------------------------------------------------------------------
         auth_dict = {
-            "entity_type": auth.entity_type.value,
-            "entity_id": auth.entity_id,
-            "app_id": auth.app_id,
-            "permissions": list(auth.permissions),
             "user_id": auth.user_id,
+            "app_id": auth.app_id,
         }
 
         job = await redis.enqueue_job(
@@ -350,13 +336,8 @@ async def batch_ingest_files(
             return v if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}
 
         use_colpali_bool = str2bool(use_colpali)
-
-        if "write" not in auth.permissions:
-            raise PermissionError("User does not have write permission")
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(exc)}")
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
 
     # Validate metadata length when list provided
     if isinstance(metadata_value, list) and len(metadata_value) != len(files):
@@ -374,16 +355,11 @@ async def batch_ingest_files(
         )
 
     auth_dict = {
-        "entity_type": auth.entity_type.value,
-        "entity_id": auth.entity_id,
-        "app_id": auth.app_id,
-        "permissions": list(auth.permissions),
         "user_id": auth.user_id,
+        "app_id": auth.app_id,
     }
 
     created_documents: List[Document] = []
-
-    from core.models.documents import StorageFileInfo  # local import to avoid cycles
 
     try:
         folder_path, folder_leaf = _normalize_folder_inputs(folder_name)
@@ -464,19 +440,9 @@ async def batch_ingest_files(
             )
 
             doc.storage_info = {"bucket": bucket, "key": stored_key}
-            doc.storage_files = [
-                StorageFileInfo(
-                    bucket=bucket,
-                    key=stored_key,
-                    version=1,
-                    filename=safe_filename,
-                    content_type=file.content_type,
-                    timestamp=datetime.now(UTC),
-                )
-            ]
             await app_db.update_document(
                 document_id=doc.external_id,
-                updates={"storage_info": doc.storage_info, "storage_files": doc.storage_files},
+                updates={"storage_info": doc.storage_info},
                 auth=auth,
             )
 
@@ -536,8 +502,6 @@ async def requeue_ingest_jobs(
     redis: arq.ArqRedis = Depends(get_redis_pool),
 ) -> RequeueIngestionResponse:
     """Requeue ingestion jobs for documents stuck in processing or marked as failed."""
-    if "write" not in auth.permissions:
-        raise HTTPException(status_code=403, detail="User does not have write permission")
     if not request.include_all and not request.jobs:
         raise HTTPException(status_code=400, detail="No jobs provided for requeue")
 
@@ -557,25 +521,12 @@ async def requeue_ingest_jobs(
 
         try:
             auth_for_doc = AuthContext(
-                entity_type=auth.entity_type,
-                entity_id=auth.entity_id,
-                app_id=doc.app_id or auth.app_id,
-                permissions=set(auth.permissions),
                 user_id=auth.user_id,
+                app_id=doc.app_id or auth.app_id,
             )
 
-            storage_record = None
-            if doc.storage_files:
-                storage_record = doc.storage_files[-1]
-            elif doc.storage_info:
-                storage_record = doc.storage_info
-
-            bucket = getattr(storage_record, "bucket", None) if storage_record else None
-            key = getattr(storage_record, "key", None) if storage_record else None
-
-            if isinstance(storage_record, dict):
-                bucket = storage_record.get("bucket")
-                key = storage_record.get("key")
+            bucket = doc.storage_info.get("bucket") if doc.storage_info else None
+            key = doc.storage_info.get("key") if doc.storage_info else None
 
             if not bucket or not key:
                 results.append(
@@ -620,11 +571,8 @@ async def requeue_ingest_jobs(
             )
 
             auth_dict = {
-                "entity_type": auth_for_doc.entity_type.value,
-                "entity_id": auth_for_doc.entity_id,
-                "app_id": auth_for_doc.app_id,
-                "permissions": list(auth_for_doc.permissions),
                 "user_id": auth_for_doc.user_id,
+                "app_id": auth_for_doc.app_id,
             }
 
             doc_metadata = doc.metadata or {}
@@ -786,11 +734,8 @@ async def query_document(
     folder_override = ingestion_options_dict.get("folder_name")
     if folder_override in ("", None):
         folder_override = None
-    elif isinstance(folder_override, list):
-        if not all(isinstance(item, str) for item in folder_override):
-            raise HTTPException(status_code=400, detail="folder_name list must contain only strings")
     elif not isinstance(folder_override, str):
-        raise HTTPException(status_code=400, detail="folder_name must be a string or list of strings")
+        raise HTTPException(status_code=400, detail="folder_name must be a string path")
 
     end_user_override = ingestion_options_dict.get("end_user_id")
     if end_user_override in ("", None):
@@ -798,15 +743,16 @@ async def query_document(
     elif not isinstance(end_user_override, str):
         raise HTTPException(status_code=400, detail="end_user_id must be a string")
 
-    normalized_ingestion_options: Dict[str, Any] = {
-        "ingest": ingest_after_bool,
-        "use_colpali": use_colpali_bool,
-    }
-    if folder_override is not None:
-        normalized_ingestion_options["folder_name"] = folder_override
-    if end_user_override is not None:
-        normalized_ingestion_options["end_user_id"] = end_user_override
-    normalized_ingestion_options["metadata"] = metadata_dict
+    try:
+        normalized_ingestion_options = IngestionOptions(
+            ingest=ingest_after_bool,
+            use_colpali=use_colpali_bool,
+            folder_name=folder_override,
+            end_user_id=end_user_override,
+            metadata=metadata_dict,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"Invalid ingestion_options: {exc}") from exc
 
     file_bytes = await file.read()
     if not file_bytes:
@@ -853,9 +799,6 @@ async def query_document(
 
     ingestion_document: Optional[Document] = None
     if ingest_after_bool:
-        if "write" not in auth.permissions:
-            raise HTTPException(status_code=403, detail="User does not have write permission to ingest documents")
-
         filename = file.filename or "uploaded_document"
 
         try:
