@@ -6,6 +6,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
+use rayon::prelude::*;
 
 /// Encode bytes to base64 string.
 ///
@@ -90,6 +91,54 @@ pub fn data_uri_to_bytes(py: Python<'_>, data_uri: &str) -> PyResult<Py<PyBytes>
             e
         ))),
     }
+}
+
+/// Decode multiple base64 strings to bytes in parallel.
+///
+/// Uses Rayon for parallel processing - significantly faster for batches.
+///
+/// Args:
+///     encoded_list: List of base64-encoded strings
+///
+/// Returns:
+///     List of decoded bytes
+///
+/// Raises:
+///     ValueError: If any input is not valid base64
+#[pyfunction]
+pub fn decode_base64_batch(py: Python<'_>, encoded_list: Vec<String>) -> PyResult<Vec<Py<PyBytes>>> {
+    // Decode in parallel using Rayon
+    let results: Vec<Result<Vec<u8>, base64::DecodeError>> = encoded_list
+        .par_iter()
+        .map(|s| STANDARD.decode(s))
+        .collect();
+
+    // Convert to PyBytes, propagating any errors
+    let mut py_results = Vec::with_capacity(results.len());
+    for (i, result) in results.into_iter().enumerate() {
+        match result {
+            Ok(decoded) => py_results.push(PyBytes::new_bound(py, &decoded).into()),
+            Err(e) => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Invalid base64 at index {}: {}",
+                    i, e
+                )))
+            }
+        }
+    }
+    Ok(py_results)
+}
+
+/// Encode multiple byte arrays to base64 strings in parallel.
+///
+/// Args:
+///     data_list: List of bytes to encode
+///
+/// Returns:
+///     List of base64-encoded strings
+#[pyfunction]
+pub fn encode_base64_batch(data_list: Vec<Vec<u8>>) -> Vec<String> {
+    data_list.par_iter().map(|data| STANDARD.encode(data)).collect()
 }
 
 #[cfg(test)]
