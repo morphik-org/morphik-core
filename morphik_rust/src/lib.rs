@@ -21,6 +21,8 @@ fn morphik_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(base64_ops::decode_base64, m)?)?;
     m.add_function(wrap_pyfunction!(base64_ops::bytes_to_data_uri, m)?)?;
     m.add_function(wrap_pyfunction!(base64_ops::data_uri_to_bytes, m)?)?;
+    m.add_function(wrap_pyfunction!(base64_ops::decode_base64_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(base64_ops::encode_base64_batch, m)?)?;
 
     // Chunking operations
     m.add_function(wrap_pyfunction!(chunking::split_text, m)?)?;

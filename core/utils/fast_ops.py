@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 try:
     import morphik_rust
 
+    # Verify the extension has actual functions (not just a namespace package)
+    if not hasattr(morphik_rust, "encode_base64"):
+        raise ImportError("morphik_rust is a namespace package, not the compiled extension")
+
     HAS_RUST = True
     logger.info("morphik_rust extension loaded - using optimized Rust operations")
 except ImportError:

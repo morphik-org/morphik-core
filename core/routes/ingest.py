@@ -201,8 +201,11 @@ async def ingest_file(
                 folder_obj = await ingestion_service._ensure_folder_exists(folder_path, doc.external_id, auth)
                 if folder_obj and folder_obj.id:
                     doc.folder_id = folder_obj.id
+                    folder_updates = ingestion_service.folder_update_fields(folder_obj)
                     await app_db.update_document(
-                        document_id=doc.external_id, updates={"folder_id": doc.folder_id}, auth=auth
+                        document_id=doc.external_id,
+                        updates=folder_updates,
+                        auth=auth,
                     )
             except Exception as folder_exc:  # noqa: BLE001
                 logger.warning(
@@ -408,8 +411,11 @@ async def batch_ingest_files(
                     folder_obj = await ingestion_service._ensure_folder_exists(folder_path, doc.external_id, auth)
                     if folder_obj and folder_obj.id:
                         doc.folder_id = folder_obj.id
+                        folder_updates = ingestion_service.folder_update_fields(folder_obj)
                         await app_db.update_document(
-                            document_id=doc.external_id, updates={"folder_id": doc.folder_id}, auth=auth
+                            document_id=doc.external_id,
+                            updates=folder_updates,
+                            auth=auth,
                         )
                 except Exception as folder_exc:  # noqa: BLE001
                     logger.warning(

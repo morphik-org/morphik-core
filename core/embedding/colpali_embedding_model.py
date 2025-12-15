@@ -27,6 +27,13 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Initializing ColpaliEmbeddingModel with device: {device}")
         start_time = time.time()
+
+        # Enable TF32 for faster matmuls on Ampere+ GPUs (A10, A100, etc.)
+        if device == "cuda":
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            logger.info("Enabled TF32 for CUDA matmul operations")
+
         attn_implementation = "eager"
         if device == "cuda":
             if importlib.util.find_spec("flash_attn") is not None:
@@ -49,6 +56,7 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         )
         self.settings = get_settings()
         self.mode = self.settings.MODE
+        self.device = device
         # Set batch size based on mode
         self.batch_size = 8 if self.mode == "cloud" else 1
         logger.info(f"Colpali running in mode: {self.mode} with batch size: {self.batch_size}")
@@ -234,8 +242,14 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
 
         model_start = time.time()
 
-        with torch.no_grad():
-            embeddings: torch.Tensor = self.model(**processed)
+        # inference_mode is faster than no_grad (disables version tracking)
+        # autocast ensures consistent bf16 inference on CUDA
+        with torch.inference_mode():
+            if self.device == "cuda":
+                with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    embeddings: torch.Tensor = self.model(**processed)
+            else:
+                embeddings = self.model(**processed)
 
         model_time = time.time() - model_start
 
@@ -261,8 +275,12 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         process_time = time.time() - process_start
 
         model_start = time.time()
-        with torch.no_grad():
-            image_embeddings = self.model(**processed_images)
+        with torch.inference_mode():
+            if self.device == "cuda":
+                with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    image_embeddings = self.model(**processed_images)
+            else:
+                image_embeddings = self.model(**processed_images)
         model_time = time.time() - model_start
 
         convert_start = time.time()
@@ -289,8 +307,12 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         process_time = time.time() - process_start
 
         model_start = time.time()
-        with torch.no_grad():
-            text_embeddings = self.model(**processed_texts)
+        with torch.inference_mode():
+            if self.device == "cuda":
+                with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    text_embeddings = self.model(**processed_texts)
+            else:
+                text_embeddings = self.model(**processed_texts)
         model_time = time.time() - model_start
 
         convert_start = time.time()
