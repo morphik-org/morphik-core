@@ -332,6 +332,27 @@ class BatchIngestResponse(BaseModel):
     errors: List[Dict[str, str]]
 
 
+class IngestionOptions(BaseModel):
+    """Normalized options controlling post-analysis ingestion."""
+
+    ingest: bool = Field(default=False, description="Whether to enqueue ingestion after metadata extraction.")
+    use_colpali: bool = Field(
+        default=False,
+        description="Whether to use Morphik's ColPali-style embeddings during ingestion (recommended for quality).",
+    )
+    folder_name: Optional[str] = Field(
+        default=None,
+        description="Optional target folder path for the ingested document. Only a single folder is supported.",
+    )
+    end_user_id: Optional[str] = Field(default=None, description="Optional end-user scope for the operation.")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Metadata to merge into the ingested document when ingestion is triggered.",
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class DocumentQueryResponse(BaseModel):
     """Response model for document query with optional ingestion follow-up."""
 
@@ -356,8 +377,8 @@ class DocumentQueryResponse(BaseModel):
     combined_metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Metadata that would be used if ingestion is performed"
     )
-    ingestion_options: Dict[str, Any] = Field(
-        default_factory=dict, description="Normalized ingestion options applied to this request"
+    ingestion_options: IngestionOptions = Field(
+        default_factory=IngestionOptions, description="Normalized ingestion options applied to this request"
     )
 
 

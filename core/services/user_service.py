@@ -309,15 +309,13 @@ class UserService:
             logger.info("Failed to register app %s for user %s", app_id, user_id)
             return None
 
-        # Create token payload
+        # Create token payload (keep entity_id for backward compatibility)
         payload = {
             "user_id": user_id,
+            "entity_id": user_id,  # backward compat
             "app_id": app_id,
             "name": name,
-            "permissions": ["read", "write"],
             "exp": int((datetime.now(UTC) + timedelta(days=expiry_days)).timestamp()),
-            "type": "developer",
-            "entity_id": user_id,
         }
 
         token = jwt.encode(payload, self.settings.JWT_SECRET_KEY, algorithm=self.settings.JWT_ALGORITHM)

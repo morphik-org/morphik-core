@@ -25,7 +25,7 @@ from core.dependencies import get_redis_pool
 from core.limits_utils import check_and_increment_limits
 from core.logging_config import setup_logging
 from core.middleware.profiling import ProfilingMiddleware
-from core.models.auth import AuthContext, EntityType
+from core.models.auth import AuthContext
 from core.models.chat import ChatMessage
 from core.models.completion import CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentResult, GroupedChunkResponse
@@ -804,7 +804,7 @@ async def query_completion(
             async def wrapped():
                 async with telemetry.track_operation(
                     operation_type="query",
-                    user_id=auth.entity_id,
+                    user_id=auth.user_id,
                     app_id=auth.app_id,
                     tokens_used=token_est,
                     metadata=meta,
@@ -817,7 +817,7 @@ async def query_completion(
             # For non-streaming responses, we record telemetry around result construction
             async with telemetry.track_operation(
                 operation_type="query",
-                user_id=auth.entity_id,
+                user_id=auth.user_id,
                 app_id=auth.app_id,
                 tokens_used=token_est,
                 metadata=meta,
@@ -982,12 +982,11 @@ async def generate_local_uri(
         # Clean name
         name = name.replace(" ", "_").lower()
 
-        # Create payload
+        # Create payload (keep entity_id for backward compatibility with old clients)
         payload = {
-            "type": "developer",
-            "entity_id": name,
+            "user_id": name,
+            "entity_id": name,  # backward compat
             "app_id": str(uuid.uuid4()),
-            "permissions": ["read", "write", "admin"],
             "exp": datetime.now(UTC) + timedelta(days=expiry_days),
         }
 
@@ -1199,7 +1198,7 @@ async def delete_cloud_app(
 ) -> Dict[str, Any]:
     """Delete all resources associated with a given cloud application."""
 
-    user_id = auth.user_id or auth.entity_id
+    user_id = auth.user_id
     logger.info(f"Deleting app {app_name} for user {user_id}")
 
     from sqlalchemy import delete as sa_delete
@@ -1226,16 +1225,10 @@ async def delete_cloud_app(
     # used to call this endpoint was scoped to a *different* app.
     # ------------------------------------------------------------------
 
-    if auth.entity_type == EntityType.DEVELOPER:
-        app_auth = AuthContext(
-            entity_type=auth.entity_type,
-            entity_id=auth.entity_id,
-            app_id=app_id,
-            permissions=auth.permissions or {"read", "write", "admin"},
-            user_id=auth.user_id,
-        )
-    else:
-        app_auth = auth
+    app_auth = AuthContext(
+        user_id=auth.user_id,
+        app_id=app_id,
+    )
 
     # 2) Delete all documents for this app ------------------------------
     # ------------------------------------------------------------------

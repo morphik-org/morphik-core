@@ -5,7 +5,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Set, Union
 import httpx
 
 from core.completion.base_completion import BaseCompletionModel
-from core.database.base_database import BaseDatabase
+from core.database.postgres_database import PostgresDatabase
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.models.auth import AuthContext
 from core.models.completion import ChunkSource, CompletionRequest, CompletionResponse
@@ -21,7 +21,7 @@ class MorphikGraphService:
 
     def __init__(
         self,
-        db: BaseDatabase,
+        db: PostgresDatabase,
         embedding_model: BaseEmbeddingModel,
         completion_model: BaseCompletionModel,
         base_url: str,
@@ -82,15 +82,12 @@ class MorphikGraphService:
                     updated_system_metadata = doc.system_metadata.copy() if doc.system_metadata else {}
                     updated_system_metadata["content"] = text
 
-                    # Create auth context for the update (using minimal permissions needed)
-                    from core.models.auth import AuthContext, EntityType
+                    # Create auth context for the update
+                    from core.models.auth import AuthContext
 
                     auth_context = AuthContext(
-                        entity_type=EntityType.DEVELOPER,
-                        entity_id="graph_service",
-                        app_id=doc.app_id,
-                        permissions={"write"},
                         user_id="graph_service",
+                        app_id=doc.app_id,
                     )
 
                     # Update the document in the database
@@ -172,9 +169,6 @@ class MorphikGraphService:
         # Initialize system_filters if None
         if system_filters is None:
             system_filters = {}
-
-        if "write" not in auth.permissions:
-            raise PermissionError("User does not have write permission")
 
         # Get the existing graph with system filters for proper user_id scoping
         existing_graph = await self.db.get_graph(graph_name, auth, system_filters=system_filters)
@@ -283,9 +277,6 @@ class MorphikGraphService:
         # Initialize system_filters if None
         if system_filters is None:
             system_filters = {}
-
-        if "write" not in auth.permissions:
-            raise PermissionError("User does not have write permission")
 
         # Find documents to process based on filters and/or specific document IDs
         document_ids = set(documents or [])
