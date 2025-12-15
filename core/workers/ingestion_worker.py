@@ -867,9 +867,10 @@ async def process_ingestion_job(
                     )
                     if folder_obj and folder_obj.id:
                         doc.folder_id = folder_obj.id
+                        folder_updates = ingestion_service.folder_update_fields(folder_obj)
                         await ingestion_service.db.update_document(
                             document_id=doc.external_id,
-                            updates={"folder_id": doc.folder_id},
+                            updates=folder_updates,
                             auth=auth,
                         )
                 except Exception as folder_exc:

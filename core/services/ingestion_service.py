@@ -156,6 +156,20 @@ class IngestionService:
             cleaned_metadata.pop(key, None)
         return cleaned_metadata
 
+    @staticmethod
+    def folder_update_fields(folder_obj: Folder) -> Dict[str, Any]:
+        """Build a consistent update payload for folder metadata columns."""
+        try:
+            path_value = folder_obj.full_path or (normalize_folder_path(folder_obj.name) if folder_obj.name else None)
+        except ValueError:
+            path_value = folder_obj.name
+
+        return {
+            "folder_id": folder_obj.id,
+            "folder_path": path_value,
+            "folder_name": folder_obj.name,
+        }
+
     # -------------------------------------------------------------------------
     # Folder management
     # -------------------------------------------------------------------------
@@ -342,7 +356,8 @@ class IngestionService:
                 folder_obj = await self._ensure_folder_exists(folder_name, doc.external_id, auth)
                 if folder_obj and folder_obj.id:
                     doc.folder_id = folder_obj.id
-                    await self.db.update_document(doc.external_id, {"folder_id": doc.folder_id}, auth=auth)
+                    folder_updates = self.folder_update_fields(folder_obj)
+                    await self.db.update_document(doc.external_id, folder_updates, auth=auth)
             except Exception as folder_exc:
                 logger.warning(
                     "Failed to ensure folder %s contains text document %s: %s",
@@ -538,7 +553,8 @@ class IngestionService:
                 folder_obj = await self._ensure_folder_exists(folder_name, doc.external_id, auth)
                 if folder_obj and folder_obj.id:
                     doc.folder_id = folder_obj.id
-                    await self.db.update_document(doc.external_id, {"folder_id": doc.folder_id}, auth=auth)
+                    folder_updates = self.folder_update_fields(folder_obj)
+                    await self.db.update_document(doc.external_id, folder_updates, auth=auth)
                 logger.debug(f"Ensured folder '{folder_name}' exists and contains document {doc.external_id}")
             except Exception as e:
                 logger.error(f"Error during _ensure_folder_exists for doc {doc.external_id}: {e}. Continuing.")
