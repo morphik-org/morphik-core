@@ -598,16 +598,52 @@ class PostgresDatabase:
             # Always update the updated_at timestamp
             updates["system_metadata"]["updated_at"] = datetime.now(UTC)
 
-            # Keep folder_path aligned with folder_name when provided
-            folder_value_for_metadata = updates["folder_name"] if "folder_name" in updates else existing_doc.folder_name
+            # Keep folder writes consistent: if folder_id is set, ensure folder_name/path are populated
+            if "folder_id" in updates:
+                folder_id_value = updates.get("folder_id")
+                if folder_id_value:
+                    needs_folder_name = updates.get("folder_name") in (None, "") if "folder_name" in updates else True
+                    needs_folder_path = updates.get("folder_path") in (None, "") if "folder_path" in updates else True
+                    if needs_folder_name or needs_folder_path:
+                        folder_for_update = await self.get_folder(folder_id_value, auth)
+                        if not folder_for_update:
+                            logger.error(
+                                "Folder %s not found or inaccessible while updating document %s",
+                                folder_id_value,
+                                document_id,
+                            )
+                            return False
+                        if needs_folder_name:
+                            updates["folder_name"] = folder_for_update.name
+                        if needs_folder_path:
+                            try:
+                                updates["folder_path"] = folder_for_update.full_path or normalize_folder_path(
+                                    folder_for_update.name
+                                )
+                            except ValueError:
+                                updates["folder_path"] = folder_for_update.name
+                else:
+                    updates.setdefault("folder_name", None)
+                    updates.setdefault("folder_path", None)
+
+            # Keep folder_path aligned with folder_name when provided and no path supplied
+            folder_name_for_alignment = updates["folder_name"] if "folder_name" in updates else existing_doc.folder_name
             if "folder_name" in updates and "folder_path" not in updates:
-                if folder_value_for_metadata:
+                if folder_name_for_alignment:
                     try:
-                        updates["folder_path"] = normalize_folder_path(folder_value_for_metadata)
+                        updates["folder_path"] = normalize_folder_path(folder_name_for_alignment)
                     except ValueError:
-                        updates["folder_path"] = folder_value_for_metadata
+                        updates["folder_path"] = folder_name_for_alignment
                 else:
                     updates["folder_path"] = None
+
+            # Decide which folder value to mirror into doc_metadata (prefer path)
+            if "folder_path" in updates:
+                folder_value_for_metadata = updates.get("folder_path")
+            elif "folder_name" in updates:
+                folder_value_for_metadata = updates.get("folder_name")
+            else:
+                folder_value_for_metadata = existing_doc.folder_path or existing_doc.folder_name
 
             # Serialize datetime objects to ISO format strings
             updates = _serialize_datetime(updates)
@@ -642,13 +678,9 @@ class PostgresDatabase:
                     has_folder_change = any(key in updates for key in ("folder_name", "folder_path", "folder_id"))
 
                     if doc_metadata_update is not None:
-                        folder_value = updates.get("folder_path")
+                        folder_value = updates.get("folder_path", folder_value_for_metadata)
                         if folder_value is None:
-                            folder_value = (
-                                folder_value_for_metadata if "folder_name" in updates else doc_model.folder_path
-                            )
-                        if folder_value is None:
-                            folder_value = doc_model.folder_name
+                            folder_value = doc_model.folder_path or doc_model.folder_name
                         try:
                             if isinstance(doc_metadata_update, dict):
                                 doc_metadata_update = dict(doc_metadata_update)
@@ -660,13 +692,9 @@ class PostgresDatabase:
                             logger.warning("Unable to set folder fields in doc_metadata for %s: %s", document_id, exc)
                     elif has_folder_change:
                         new_doc_metadata = dict(doc_model.doc_metadata or {})
-                        folder_value = updates.get("folder_path")
+                        folder_value = updates.get("folder_path", folder_value_for_metadata)
                         if folder_value is None:
-                            folder_value = (
-                                folder_value_for_metadata if "folder_name" in updates else doc_model.folder_path
-                            )
-                        if folder_value is None:
-                            folder_value = doc_model.folder_name
+                            folder_value = doc_model.folder_path or doc_model.folder_name
                         new_doc_metadata["folder_name"] = folder_value
                         if "folder_id" in updates:
                             new_doc_metadata["folder_id"] = updates["folder_id"]
@@ -1674,9 +1702,21 @@ class PostgresDatabase:
                             logger.error(f"User does not have access to document {document_id}")
                             return False
 
-                        # Early success if everything is already aligned
+                        # Compute folder_path_value early so we can check alignment
+                        try:
+                            folder_path_value = folder_model.full_path or (
+                                normalize_folder_path(folder_model.name) if folder_model.name else None
+                            )
+                        except ValueError:
+                            folder_path_value = folder_model.name
+
+                        # Early success if everything is already aligned (including folder_path)
                         current_folder_ids = folder_model.document_ids or []
-                        if doc_model.folder_id == folder_id and document_id in current_folder_ids:
+                        if (
+                            doc_model.folder_id == folder_id
+                            and document_id in current_folder_ids
+                            and doc_model.folder_path == folder_path_value
+                        ):
                             logger.info(f"Document {document_id} is already in folder {folder_id}")
                             return True
 
@@ -1697,14 +1737,8 @@ class PostgresDatabase:
                         existing_ids = folder_model.document_ids or []
                         folder_model.document_ids = list(dict.fromkeys(existing_ids + [document_id]))
 
-                        try:
-                            folder_path_value = folder_model.full_path or (
-                                normalize_folder_path(folder_model.name) if folder_model.name else None
-                            )
-                        except ValueError:
-                            folder_path_value = folder_model.name
-
                         # Update the document's folder references and keep metadata aligned
+                        # (folder_path_value was computed earlier for the alignment check)
                         doc_model.folder_id = folder_id
                         doc_model.folder_name = folder_model.name
                         doc_model.folder_path = folder_path_value
