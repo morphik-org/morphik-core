@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any, Dict, Optional
 from unittest.mock import MagicMock
 
-from core.models.auth import AuthContext, EntityType
+from core.models.auth import AuthContext
 from core.models.documents import Document
 from core.services.morphik_graph_service import MorphikGraphService
 
@@ -113,7 +113,6 @@ class TestMorphikGraphService(unittest.TestCase):
         system_metadata = {
             "created_at": datetime.now(UTC),
             "updated_at": datetime.now(UTC),
-            "version": 1,
             "status": "processing",
         }
         if content is not None:
@@ -208,7 +207,6 @@ class TestMorphikGraphService(unittest.TestCase):
                 "content": "",
                 "created_at": datetime.now(UTC),
                 "updated_at": datetime.now(UTC),
-                "version": 1,
                 "status": "processing",
             },
             storage_info={},  # Empty storage info
@@ -287,11 +285,8 @@ class TestMorphikGraphService(unittest.TestCase):
         update_call = self.mock_db.update_calls[0]
         auth_context = update_call["auth"]
 
-        assert auth_context.entity_type == EntityType.DEVELOPER
-        assert auth_context.entity_id == "graph_service"
-        assert auth_context.app_id == "test-app"
-        assert "write" in auth_context.permissions
         assert auth_context.user_id == "graph_service"
+        assert auth_context.app_id == "test-app"
 
 
 # Async test runner

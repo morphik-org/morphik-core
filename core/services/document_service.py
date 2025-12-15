@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from core.completion.base_completion import BaseCompletionModel
 from core.config import get_settings
-from core.database.base_database import BaseDatabase
+from core.database.postgres_database import PostgresDatabase
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 
 # from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
@@ -54,7 +54,7 @@ class DocumentService:
 
     def __init__(
         self,
-        database: BaseDatabase,
+        database: PostgresDatabase,
         vector_store: BaseVectorStore,
         storage: BaseStorage,
         parser: BaseParser,
@@ -1709,7 +1709,7 @@ class DocumentService:
         # Verify write access - the database layer also checks this, but we check here too
         # to avoid unnecessary operations if the user doesn't have permission
         if not await self.db.check_access(document_id, auth, "write"):
-            logger.error(f"User {auth.entity_id} doesn't have write access to document {document_id}")
+            logger.error(f"User {auth.user_id} doesn't have write access to document {document_id}")
             raise PermissionError(f"User doesn't have write access to document {document_id}")
 
         # Delete document from database
@@ -1739,20 +1739,12 @@ class DocumentService:
                     self.colpali_vector_store.delete_chunks_by_document_id(document_id, auth.app_id)
                 )
 
-        # Collect storage file deletion tasks
+        # Collect storage file deletion task
         if hasattr(document, "storage_info") and document.storage_info:
             bucket = document.storage_info.get("bucket")
             key = document.storage_info.get("key")
             if bucket and key and hasattr(self.storage, "delete_file"):
                 storage_deletion_tasks.append(self.storage.delete_file(bucket, key))
-
-        # Also handle the case of multiple file versions in storage_files
-        if hasattr(document, "storage_files") and document.storage_files:
-            for file_info in document.storage_files:
-                bucket = file_info.bucket
-                key = file_info.key
-                if bucket and key and hasattr(self.storage, "delete_file"):
-                    storage_deletion_tasks.append(self.storage.delete_file(bucket, key))
 
         # Execute deletion tasks in parallel
         if vector_deletion_tasks or storage_deletion_tasks:

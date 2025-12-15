@@ -26,7 +26,7 @@ def get_user_and_app_id(auth: AuthContext) -> tuple[str, str]:
     settings = get_settings()
 
     if settings.bypass_auth_mode:
-        user_id = auth.user_id or auth.entity_id or "dev_user"
+        user_id = auth.user_id or "dev_user"
         # Use a default app_id if None in bypass mode since the DB requires it
         app_id = auth.app_id if auth.app_id is not None else "dev"
     else:

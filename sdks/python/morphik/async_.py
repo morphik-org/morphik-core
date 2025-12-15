@@ -1939,26 +1939,22 @@ class AsyncMorphik(_ScopedOperationsMixin):
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
-        update_strategy: str = "add",
         use_colpali: Optional[bool] = None,
     ) -> Document:
         """
-        Update a document with new text content using the specified strategy.
+        Update a document by replacing its text content.
 
         Args:
             document_id: ID of the document to update
-            content: The new content to add
+            content: The new content (replaces existing)
             filename: Optional new filename for the document
-            metadata: Additional metadata to update (optional)
-            rules: Deprecated; retained for backwards compatibility and ignored
-            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            metadata: Additional metadata to merge (optional)
+            rules: Deprecated, ignored
             use_colpali: Whether to use multi-vector embedding
 
         Returns:
             Document: Updated document metadata
-
         """
-        # Use the dedicated text update endpoint
         self._logic._warn_legacy_rules(rules, "documents/update_text")
 
         serialized_metadata, metadata_types_map = self._logic._serialize_metadata_map(metadata)
@@ -1970,13 +1966,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
             use_colpali=use_colpali if use_colpali is not None else True,
         )
 
-        params = {}
-        if update_strategy != "add":
-            params["update_strategy"] = update_strategy
-
-        response = await self._request(
-            "POST", f"documents/{document_id}/update_text", data=request.model_dump(), params=params
-        )
+        response = await self._request("POST", f"documents/{document_id}/update_text", data=request.model_dump())
 
         doc = self._logic._parse_document_response(response)
         doc._client = self
@@ -1989,26 +1979,22 @@ class AsyncMorphik(_ScopedOperationsMixin):
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
-        update_strategy: str = "add",
         use_colpali: Optional[bool] = None,
     ) -> Document:
         """
-        Update a document with content from a file using the specified strategy.
+        Update a document by replacing its content with a new file.
 
         Args:
             document_id: ID of the document to update
-            file: File to add (path string, bytes, file object, or Path)
+            file: File to use (path string, bytes, file object, or Path)
             filename: Name of the file
-            metadata: Additional metadata to update (optional)
-            rules: Deprecated; retained for backwards compatibility and ignored
-            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            metadata: Additional metadata to merge (optional)
+            rules: Deprecated, ignored
             use_colpali: Whether to use multi-vector embedding
 
         Returns:
             Document: Updated document metadata
-
         """
-        # Handle different file input types
         if isinstance(file, (str, Path)):
             file_path = Path(file)
             if not file_path.exists():
@@ -2027,31 +2013,23 @@ class AsyncMorphik(_ScopedOperationsMixin):
             file_obj = file
 
         try:
-            # Prepare multipart form data
             files = {"file": (filename, file_obj)}
-
             self._logic._warn_legacy_rules(rules, "documents/update_file")
 
-            # Convert metadata to JSON strings
             serialized_metadata, metadata_types_map = self._logic._serialize_metadata_map(metadata)
-            form_data = {
-                "metadata": json.dumps(serialized_metadata),
-                "update_strategy": update_strategy,
-            }
+            form_data = {"metadata": json.dumps(serialized_metadata)}
 
             if use_colpali is not None:
                 form_data["use_colpali"] = str(use_colpali).lower()
             if metadata_types_map:
                 form_data["metadata_types"] = json.dumps(metadata_types_map)
 
-            # Use the dedicated file update endpoint
             response = await self._request("POST", f"documents/{document_id}/update_file", data=form_data, files=files)
 
             doc = self._logic._parse_document_response(response)
             doc._client = self
             return doc
         finally:
-            # Close file if we opened it
             if isinstance(file, (str, Path)):
                 file_obj.close()
 
@@ -2089,36 +2067,29 @@ class AsyncMorphik(_ScopedOperationsMixin):
         new_filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
-        update_strategy: str = "add",
         use_colpali: Optional[bool] = None,
     ) -> Document:
         """
-        Update a document identified by filename with new text content using the specified strategy.
+        Update a document identified by filename by replacing its text content.
 
         Args:
             filename: Filename of the document to update
-            content: The new content to add
+            content: The new content (replaces existing)
             new_filename: Optional new filename for the document
-            metadata: Additional metadata to update (optional)
-            rules: Deprecated; retained for backwards compatibility and ignored
-            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            metadata: Additional metadata to merge (optional)
+            rules: Deprecated, ignored
             use_colpali: Whether to use multi-vector embedding
 
         Returns:
             Document: Updated document metadata
-
         """
-        # First get the document by filename to obtain its ID
         doc = await self.get_document_by_filename(filename)
-
-        # Then use the regular update_document_with_text endpoint with the document ID
         return await self.update_document_with_text(
             document_id=doc.external_id,
             content=content,
             filename=new_filename,
             metadata=metadata,
             rules=rules,
-            update_strategy=update_strategy,
             use_colpali=use_colpali,
         )
 
@@ -2129,36 +2100,29 @@ class AsyncMorphik(_ScopedOperationsMixin):
         new_filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         rules: Optional[List] = None,
-        update_strategy: str = "add",
         use_colpali: Optional[bool] = None,
     ) -> Document:
         """
-        Update a document identified by filename with content from a file using the specified strategy.
+        Update a document identified by filename by replacing its content with a new file.
 
         Args:
             filename: Filename of the document to update
-            file: File to add (path string, bytes, file object, or Path)
-            new_filename: Optional new filename for the document (defaults to the filename of the file)
-            metadata: Additional metadata to update (optional)
-            rules: Deprecated; retained for backwards compatibility and ignored
-            update_strategy: Strategy for updating the document (currently only 'add' is supported)
+            file: File to use (path string, bytes, file object, or Path)
+            new_filename: Optional new filename for the document
+            metadata: Additional metadata to merge (optional)
+            rules: Deprecated, ignored
             use_colpali: Whether to use multi-vector embedding
 
         Returns:
             Document: Updated document metadata
-
         """
-        # First get the document by filename to obtain its ID
         doc = await self.get_document_by_filename(filename)
-
-        # Then use the regular update_document_with_file endpoint with the document ID
         return await self.update_document_with_file(
             document_id=doc.external_id,
             file=file,
             filename=new_filename,
             metadata=metadata,
             rules=rules,
-            update_strategy=update_strategy,
             use_colpali=use_colpali,
         )
 
