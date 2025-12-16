@@ -1,12 +1,14 @@
+import asyncio
 import base64
 import io
 import json
 import logging
+import time
 from collections import deque
-from typing import Any, Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
-from httpx import AsyncClient, HTTPStatusError, Timeout  # replacing httpx.AsyncClient for clarity
+from httpx import AsyncClient, HTTPStatusError, Timeout
 from PIL.Image import Image
 
 from core.config import get_settings
@@ -36,15 +38,21 @@ def partition_chunks(chunks: List[Chunk]) -> Tuple[List[Tuple[int, str]], List[T
 class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
     def __init__(self):
         self.settings = get_settings()
-        # Use Morphik Embedding API key from settings
         self.api_key = self.settings.MORPHIK_EMBEDDING_API_KEY
         if not self.api_key:
             raise ValueError("MORPHIK_EMBEDDING_API_KEY must be set in settings")
-        # Use the configured Morphik Embedding API domain
-        domain = self.settings.MORPHIK_EMBEDDING_API_DOMAIN
-        self.endpoint = f"{domain.rstrip('/')}/embeddings"
-        # Batching is handled at a higher layer (streaming embed+store).
-        # Here we issue at most one request per input type per batch.
+
+        # MORPHIK_EMBEDDING_API_DOMAIN is always a list of endpoints
+        if not self.settings.MORPHIK_EMBEDDING_API_DOMAIN:
+            raise ValueError("MORPHIK_EMBEDDING_API_DOMAIN must contain at least one endpoint")
+        self.endpoints = [f"{ep.rstrip('/')}/embeddings" for ep in self.settings.MORPHIK_EMBEDDING_API_DOMAIN]
+        if len(self.endpoints) > 1:
+            logger.info(f"ColPali API using {len(self.endpoints)} distributed endpoints")
+
+        # Track endpoint health for failover
+        self.healthy_endpoints: set[str] = set(self.endpoints)
+        self._endpoint_latencies: dict[str, float] = {}
+        self.endpoint = self.endpoints[0]
 
     async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> List[MultiVector]:
         # Normalize to list
@@ -57,23 +65,209 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         results: List[MultiVector] = [[] for _ in chunks]
         text_inputs, image_inputs = partition_chunks(chunks)
 
-        # Image embeddings
-        if image_inputs:
-            image_results = await self._embed_inputs_with_backoff(list(image_inputs), "image")
-            for idx, emb in image_results.items():
-                results[idx] = emb
+        # Use distributed embedding when multiple endpoints available
+        if len(self.endpoints) > 1:
+            # Image embeddings (distributed)
+            if image_inputs:
+                image_results = await self._embed_inputs_distributed(list(image_inputs), "image")
+                for idx, emb in image_results.items():
+                    results[idx] = emb
 
-        # Text embeddings
-        if text_inputs:
-            text_results = await self._embed_inputs_with_backoff(list(text_inputs), "text")
-            for idx, emb in text_results.items():
-                results[idx] = emb
+            # Text embeddings (distributed)
+            if text_inputs:
+                text_results = await self._embed_inputs_distributed(list(text_inputs), "text")
+                for idx, emb in text_results.items():
+                    results[idx] = emb
+        else:
+            # Single endpoint - use existing backoff logic
+            if image_inputs:
+                image_results = await self._embed_inputs_with_backoff(list(image_inputs), "image")
+                for idx, emb in image_results.items():
+                    results[idx] = emb
+
+            if text_inputs:
+                text_results = await self._embed_inputs_with_backoff(list(text_inputs), "text")
+                for idx, emb in text_results.items():
+                    results[idx] = emb
 
         return results
 
+    async def _embed_inputs_distributed(
+        self, indexed_inputs: List[Tuple[int, str]], input_type: str
+    ) -> Dict[int, MultiVector]:
+        """
+        Distribute inputs across multiple endpoints and embed concurrently.
+
+        Args:
+            indexed_inputs: List of (original_index, payload) pairs.
+            input_type: Either "text" or "image".
+
+        Returns:
+            Dictionary mapping original index to embedding result.
+        """
+        if not indexed_inputs:
+            return {}
+
+        # Use healthy endpoints, fall back to all if none healthy
+        endpoints = list(self.healthy_endpoints) if self.healthy_endpoints else self.endpoints
+        n_endpoints = len(endpoints)
+
+        if n_endpoints == 1:
+            # Single endpoint available - use backoff logic with actual healthy endpoint
+            return await self._embed_batch_to_endpoint(endpoints[0], indexed_inputs, input_type)
+
+        # Split inputs across endpoints (interleaved for balance)
+        batches: list[list[tuple[int, str]]] = [[] for _ in range(n_endpoints)]
+        for i, item in enumerate(indexed_inputs):
+            batches[i % n_endpoints].append(item)
+
+        # Filter to only non-empty endpoint-batch pairs
+        endpoint_batches = [(ep, batch) for ep, batch in zip(endpoints, batches) if batch]
+
+        logger.info(f"Distributing {len(indexed_inputs)} {input_type} inputs across {len(endpoint_batches)} endpoints")
+
+        # Call all endpoints concurrently
+        tasks = [self._embed_batch_to_endpoint(endpoint, batch, input_type) for endpoint, batch in endpoint_batches]
+
+        results_list = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Merge results, collect failures
+        merged: Dict[int, MultiVector] = {}
+        failed_inputs: list[tuple[int, str]] = []
+
+        for (endpoint, batch), result in zip(endpoint_batches, results_list):
+            if isinstance(result, ValueError):
+                # ValueError indicates a data issue (e.g., 413 payload too large), not endpoint failure
+                # Re-raise immediately - don't mark endpoint unhealthy
+                raise result
+            elif isinstance(result, Exception):
+                logger.warning(f"Endpoint {endpoint} failed: {result}")
+                self.healthy_endpoints.discard(endpoint)
+                failed_inputs.extend(batch)
+            else:
+                merged.update(result)
+
+        # Retry failed inputs on remaining healthy endpoints
+        if failed_inputs:
+            if self.healthy_endpoints:
+                logger.info(
+                    f"Retrying {len(failed_inputs)} failed inputs on {len(self.healthy_endpoints)} healthy endpoints"
+                )
+                retry_results = await self._embed_inputs_distributed(failed_inputs, input_type)
+                merged.update(retry_results)
+            else:
+                # All endpoints failed, reset health and raise
+                logger.error("All ColPali endpoints failed, resetting health status")
+                self.healthy_endpoints = set(self.endpoints)
+                raise RuntimeError(
+                    f"All {len(self.endpoints)} ColPali endpoints failed for {len(failed_inputs)} {input_type} inputs"
+                )
+
+        return merged
+
+    async def _embed_batch_to_endpoint(
+        self, endpoint: str, batch: List[Tuple[int, str]], input_type: str
+    ) -> Dict[int, MultiVector]:
+        """
+        Embed a batch using a specific endpoint with backoff for 413 errors.
+
+        Args:
+            endpoint: The API endpoint URL.
+            batch: List of (original_index, payload) pairs.
+            input_type: Either "text" or "image".
+
+        Returns:
+            Dictionary mapping original index to embedding result.
+        """
+        results: Dict[int, MultiVector] = {}
+        queue: deque[List[Tuple[int, str]]] = deque([batch])
+
+        while queue:
+            current_batch = queue.popleft()
+            if not current_batch:
+                continue
+
+            try:
+                start = time.monotonic()
+                payload_inputs = [content for _, content in current_batch]
+                data = await self._call_api_endpoint(endpoint, payload_inputs, input_type)
+                elapsed = time.monotonic() - start
+                self._endpoint_latencies[endpoint] = elapsed
+
+                for (idx, _), embedding in zip(current_batch, data):
+                    results[idx] = embedding
+
+            except HTTPStatusError as exc:
+                if exc.response.status_code == 413:
+                    if len(current_batch) == 1:
+                        size_bytes = self._estimate_payload_size(current_batch, input_type)
+                        logger.error(
+                            "ColPali API %s rejected single %s payload (size≈%s bytes)",
+                            endpoint,
+                            input_type,
+                            size_bytes,
+                        )
+                        raise ValueError(
+                            f"{input_type.title()} input exceeds ColPali API payload limit; "
+                            "consider downsampling or splitting the source document."
+                        ) from exc
+
+                    # Split batch and retry on same endpoint
+                    mid = max(1, len(current_batch) // 2)
+                    logger.warning(
+                        "ColPali API %s returned 413 for %s batch of %s inputs. Splitting.",
+                        endpoint,
+                        input_type,
+                        len(current_batch),
+                    )
+                    queue.appendleft(current_batch[mid:])
+                    queue.appendleft(current_batch[:mid])
+                    continue
+                raise
+
+        return results
+
+    async def _call_api_endpoint(self, endpoint: str, inputs: List[str], input_type: str) -> List[MultiVector]:
+        """
+        Call a specific ColPali API endpoint.
+
+        Args:
+            endpoint: The API endpoint URL.
+            inputs: List of input payloads (base64 images or text).
+            input_type: Either "text" or "image".
+
+        Returns:
+            List of MultiVector embeddings.
+        """
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        payload = {"input_type": input_type, "inputs": inputs}
+        timeout = Timeout(read=6000.0, connect=6000.0, write=6000.0, pool=6000.0)
+
+        async with AsyncClient(timeout=timeout) as client:
+            resp = await client.post(endpoint, json=payload, headers=headers)
+            resp.raise_for_status()
+
+            # Load .npz from response content
+            npz_data = np.load(io.BytesIO(resp.content))
+
+            # Extract metadata
+            count = int(npz_data["count"])
+            returned_input_type = str(npz_data["input_type"])
+
+            logger.debug(f"Endpoint {endpoint}: received {count} embeddings for input_type: {returned_input_type}")
+
+            # Extract embeddings in order
+            embeddings = []
+            for i in range(count):
+                embedding_array = npz_data[f"emb_{i}"]
+                embeddings.append(embedding_array.tolist())
+
+            return embeddings
+
     async def embed_for_query(self, text: str) -> MultiVector:
-        # Delegate to common API call helper for a single text input
-        data = await self.call_api([text], "text")
+        # Use first healthy endpoint for queries (single text, fast)
+        endpoint = next(iter(self.healthy_endpoints), self.endpoints[0])
+        data = await self._call_api_endpoint(endpoint, [text], "text")
         if not data:
             raise RuntimeError("No embeddings returned from Morphik Embedding API")
         return data[0]
@@ -87,54 +281,35 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         Returns:
             numpy array of embeddings.
         """
+        endpoint = next(iter(self.healthy_endpoints), self.endpoints[0])
+
         if isinstance(content, Image):
             # Convert PIL Image to base64
             buffer = io.BytesIO()
             content.save(buffer, format="PNG")
             image_b64 = base64.b64encode(buffer.getvalue()).decode()
-            data = await self.call_api([image_b64], "image")
+            data = await self._call_api_endpoint(endpoint, [image_b64], "image")
         else:
-            data = await self.call_api([content], "text")
+            data = await self._call_api_endpoint(endpoint, [content], "text")
 
         if not data:
             raise RuntimeError("No embeddings returned from Morphik Embedding API")
         return np.array(data[0])
 
-    async def call_api(self, inputs, input_type) -> List[MultiVector]:
-        headers = {"Authorization": f"Bearer {self.api_key}"}
-        payload = {"input_type": input_type, "inputs": inputs}
-        timeout = Timeout(read=6000.0, connect=6000.0, write=6000.0, pool=6000.0)
-        async with AsyncClient(timeout=timeout) as client:
-            resp = await client.post(self.endpoint, json=payload, headers=headers)
-            resp.raise_for_status()
+    async def call_api(self, inputs: List[str], input_type: str) -> List[MultiVector]:
+        """Backward-compatible API call using first endpoint."""
+        return await self._call_api_endpoint(self.endpoint, inputs, input_type)
 
-            # Load .npz from response content
-            npz_data = np.load(io.BytesIO(resp.content))
-
-            # Extract metadata
-            count = int(npz_data["count"])
-            returned_input_type = str(npz_data["input_type"])
-
-            logger.debug(f"Received {count} embeddings for input_type: {returned_input_type}")
-
-            # Extract embeddings in order
-            embeddings = []
-            for i in range(count):
-                embedding_array = npz_data[f"emb_{i}"]
-                # Convert numpy array to list of lists (MultiVector format)
-                embeddings.append(embedding_array.tolist())
-
-            return embeddings
-
-    def latest_ingest_metrics(self) -> Dict[str, Any]:
-        """API-backed implementation does not expose detailed metrics."""
-        return {}
+    def latest_ingest_metrics(self) -> Dict[str, float]:
+        """Return endpoint latency metrics from last ingestion."""
+        return dict(self._endpoint_latencies)
 
     async def _embed_inputs_with_backoff(
         self, indexed_inputs: List[Tuple[int, str]], input_type: str
     ) -> Dict[int, MultiVector]:
         """
         Embed inputs while dynamically shrinking the batch size to satisfy payload limits.
+        Used for single-endpoint mode.
 
         Args:
             indexed_inputs: List of (original_index, payload) pairs.
@@ -146,50 +321,7 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         if not indexed_inputs:
             return {}
 
-        results: Dict[int, MultiVector] = {}
-        queue: deque[List[Tuple[int, str]]] = deque([indexed_inputs])
-
-        while queue:
-            batch = queue.popleft()
-            if not batch:
-                continue
-
-            try:
-                payload_inputs = [content for _, content in batch]
-                data = await self.call_api(payload_inputs, input_type)
-            except HTTPStatusError as exc:
-                if exc.response.status_code == 413:
-                    if len(batch) == 1:
-                        size_bytes = self._estimate_payload_size(batch, input_type)
-                        logger.error(
-                            "ColPali API rejected single %s payload (size≈%s bytes) – cannot downsplit further.",
-                            input_type,
-                            size_bytes,
-                        )
-                        raise ValueError(
-                            f"{input_type.title()} input exceeds ColPali API payload limit; "
-                            "consider downsampling or splitting the source document."
-                        ) from exc
-
-                    mid = max(1, len(batch) // 2)
-                    logger.warning(
-                        "ColPali API returned 413 for %s batch of %s inputs (estimated %s bytes). "
-                        "Retrying with %s and %s inputs.",
-                        input_type,
-                        len(batch),
-                        self._estimate_payload_size(batch, input_type),
-                        mid,
-                        len(batch) - mid,
-                    )
-                    queue.appendleft(batch[mid:])
-                    queue.appendleft(batch[:mid])
-                    continue
-                raise
-
-            for (idx, _), embedding in zip(batch, data):
-                results[idx] = embedding
-
-        return results
+        return await self._embed_batch_to_endpoint(self.endpoint, indexed_inputs, input_type)
 
     def _estimate_payload_size(self, batch: List[Tuple[int, str]], input_type: str) -> int:
         """
