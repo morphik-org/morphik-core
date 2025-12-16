@@ -109,7 +109,7 @@ class SearchDocumentsRequest(BaseModel):
     filters: Optional[Dict[str, Any]] = Field(None, description="Optional metadata filters for documents")
     folder_name: Optional[Union[str, List[str]]] = Field(
         None,
-        description="Optional folder scope for the search. Accepts a single folder name or a list of folder names.",
+        description="Optional folder scope. Accepts a folder PATH (e.g., '/Company/Reports') or list of paths.",
     )
     folder_depth: Optional[int] = Field(
         default=None,
@@ -170,7 +170,7 @@ class RetrieveRequest(BaseModel):
     include_paths: Optional[bool] = Field(False, description="Whether to include relationship paths in the response")
     folder_name: Optional[Union[str, List[str]]] = Field(
         None,
-        description="Optional folder scope for the operation. Accepts a single folder name or a list of folder names.",
+        description="Optional folder scope. Accepts a folder PATH (e.g., '/Company/Reports') or list of paths.",
     )
     folder_depth: Optional[int] = Field(
         default=None,
@@ -300,7 +300,7 @@ class CreateGraphRequest(BaseModel):
     )
     folder_name: Optional[Union[str, List[str]]] = Field(
         None,
-        description="Optional folder scope for the operation. Accepts a single folder name or a list of folder names.",
+        description="Optional folder scope. Accepts a folder PATH (e.g., '/Company/Reports') or list of paths.",
     )
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
 
@@ -320,7 +320,7 @@ class UpdateGraphRequest(BaseModel):
     )
     folder_name: Optional[Union[str, List[str]]] = Field(
         None,
-        description="Optional folder scope for the operation. Accepts a single folder name or a list of folder names.",
+        description="Optional folder scope. Accepts a folder PATH (e.g., '/Company/Reports') or list of paths.",
     )
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
 
@@ -449,7 +449,7 @@ class BatchDocumentsRequest(BaseModel):
     document_ids: List[str] = Field(default_factory=list, description="List of document IDs to retrieve")
     folder_name: Optional[Union[str, List[str]]] = Field(
         None,
-        description="Optional folder scope for the operation. Accepts a single folder name or a list of folder names.",
+        description="Optional folder scope. Accepts a folder PATH (e.g., '/Company/Reports') or list of paths.",
     )
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
 
@@ -460,7 +460,7 @@ class BatchChunksRequest(BaseModel):
     sources: List[ChunkSource] = Field(default_factory=list, description="List of chunk sources to retrieve")
     folder_name: Optional[Union[str, List[str]]] = Field(
         None,
-        description="Optional folder scope for the operation. Accepts a single folder name or a list of folder names.",
+        description="Optional folder scope. Accepts a folder PATH (e.g., '/Company/Reports') or list of paths.",
     )
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
     use_colpali: Optional[bool] = Field(None, description="Whether to use ColPali embeddings for retrieval")

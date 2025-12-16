@@ -113,6 +113,10 @@ class DocumentService:
         """
         Build system_filters entries for folder scoping with optional nesting depth.
 
+        NOTE: Despite the parameter name "folder_name", this accepts FULL FOLDER PATHS
+        (e.g., "/Company/Department/Reports"). The naming is historical and matches the API
+        parameter convention. Filtering is done on the `folder_path` database column.
+
         folder_depth semantics:
         - None or 0: exact match only.
         - -1: include all descendants.
