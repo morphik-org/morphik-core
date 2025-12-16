@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: Optional[str] = None
     # Morphik Embedding API server configuration
     MORPHIK_EMBEDDING_API_KEY: Optional[str] = None
-    MORPHIK_EMBEDDING_API_DOMAIN: str
+    MORPHIK_EMBEDDING_API_DOMAIN: list[str]  # List of ColPali API endpoints
 
     # Auth configuration
     JWT_ALGORITHM: str
@@ -361,7 +361,8 @@ def get_settings() -> Settings:
 
     # Load morphik config
     api_domain = config["morphik"].get("api_domain", "api.morphik.ai")
-    embedding_api_domain = config["morphik"].get("morphik_embedding_api_domain") or api_domain
+    # morphik_embedding_api_domain is always a list of endpoints
+    embedding_api_endpoints = config["morphik"].get("morphik_embedding_api_domain", [f"https://{api_domain}"])
     secret_manager = config["morphik"].get("secret_manager", "env")
 
     settings_dict.update(
@@ -371,7 +372,7 @@ def get_settings() -> Settings:
             "MODE": config["morphik"].get("mode", "cloud"),
             "SECRET_MANAGER": secret_manager,
             "API_DOMAIN": api_domain,
-            "MORPHIK_EMBEDDING_API_DOMAIN": embedding_api_domain,
+            "MORPHIK_EMBEDDING_API_DOMAIN": embedding_api_endpoints,
         }
     )
 
