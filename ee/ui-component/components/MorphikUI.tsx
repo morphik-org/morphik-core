@@ -11,7 +11,6 @@ import { ConnectorList } from "@/components/connectors/ConnectorList";
 import { PDFViewer } from "@/components/pdf/PDFViewer";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { extractTokenFromUri, getApiBaseUrlFromUri } from "@/lib/utils";
-import { PDFAPIService } from "@/components/pdf/PDFAPIService";
 import { MorphikSidebarRemote } from "@/components/sidebar-stateful";
 import { useChatContext } from "@/components/chat/chat-context";
 import { DynamicSiteHeader } from "@/components/dynamic-site-header";
@@ -84,10 +83,6 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
 
   const authToken = connectionUri ? extractTokenFromUri(connectionUri) : null;
   const effectiveApiBaseUrl = getApiBaseUrlFromUri(connectionUri ?? undefined, apiBaseUrl);
-
-  // For PDF viewer session info
-  const sessionId = `ui-session-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-  const userId = authToken ? "authenticated" : "anonymous";
 
   // Local breadcrumbs managed here when section is not documents
   const [localBreadcrumbs, setLocalBreadcrumbs] = useState<Breadcrumb[] | undefined>();
@@ -282,7 +277,7 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
   };
 
   const contentInner = (
-    <PDFAPIService sessionId={sessionId} userId={userId}>
+    <>
       <div className="min-h-screen bg-sidebar">
         <MorphikProvider
           connectionUri={connectionUri}
@@ -326,7 +321,7 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
         </MorphikProvider>
       </div>
       <AlertSystem position="bottom-right" />
-    </PDFAPIService>
+    </>
   );
 
   return (

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Literal, Optional
 from core.models.auth import AuthContext
 from core.services.document_service import DocumentService
 from core.services.ingestion_service import IngestionService
+from core.utils.folder_utils import normalize_folder_selector
 
 logger = logging.getLogger(__name__)
 
@@ -259,9 +260,11 @@ async def list_documents(
 
     try:
         # Create system filters for folder and user scoping
+        # NOTE: folder_name param accepts a PATH (e.g., "/Company/Reports"), and filtering
+        # must use folder_path column, not folder_name column (which stores only the leaf).
         system_filters = {}
         if folder_name:
-            system_filters["folder_name"] = folder_name
+            system_filters["folder_path"] = normalize_folder_selector(folder_name)
         if end_user_id:
             system_filters["end_user_id"] = end_user_id
 

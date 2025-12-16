@@ -36,6 +36,15 @@ class Document(BaseModel):
     chunk_ids: List[str] = Field(default_factory=list)
 
     # Flattened fields from system_metadata for performance
+    #
+    # FOLDER FIELD SEMANTICS:
+    #   folder_name: The LEAF name of the folder (e.g., "Reports")
+    #   folder_path: The FULL hierarchical path (e.g., "/Company/Department/Reports")
+    #   folder_id:   UUID of the folder record
+    #
+    # NOTE: In API request parameters, "folder_name" confusingly accepts a FULL PATH
+    # for filtering purposes. The path is normalized and filters use folder_path column.
+    # Additionally, doc_metadata["folder_name"] stores the FULL PATH for search compatibility.
     folder_name: Optional[str] = None
     end_user_id: Optional[str] = None
     app_id: Optional[str] = None

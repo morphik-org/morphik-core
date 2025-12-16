@@ -55,7 +55,20 @@ def _parse_bool(value: Optional[Union[str, bool]]) -> bool:
 
 
 def _normalize_folder_inputs(folder_name: Optional[str]) -> tuple[Optional[str], Optional[str]]:
-    """Return canonical folder path with leading slash and the leaf name."""
+    """
+    Normalize folder input from API into (folder_path, folder_leaf).
+
+    The API parameter is called "folder_name" but actually accepts a FULL PATH
+    (e.g., "/Company/Department/Reports" or just "Reports").
+
+    Returns:
+        folder_path: The full normalized path (e.g., "/Company/Department/Reports")
+        folder_leaf: Just the leaf segment (e.g., "Reports")
+
+    These map to Document model fields:
+        - folder_path -> Document.folder_path (full path, used for filtering)
+        - folder_leaf -> Document.folder_name (leaf only, display name)
+    """
     if folder_name is None:
         return None, None
     try:
