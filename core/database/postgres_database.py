@@ -637,13 +637,27 @@ class PostgresDatabase:
                 else:
                     updates["folder_path"] = None
 
-            # Decide which folder value to mirror into doc_metadata (prefer path)
+            # -------------------------------------------------------------------------
+            # METADATA SYNC: doc_metadata["folder_name"] stores the FULL PATH for search
+            # compatibility. We need to keep it in sync with the flattened columns.
+            #
+            # Priority for folder_value_for_metadata (what goes into doc_metadata["folder_name"]):
+            #   1. updates["folder_path"] - explicit path update takes precedence
+            #   2. updates["folder_name"] - explicit name update (may be a path in some contexts)
+            #   3. existing_doc.folder_path or folder_name - fallback to current values
+            #
+            # CLEARING SUPPORT: If user explicitly passes folder_path=None or folder_name=None,
+            # we respect that and set folder_value_for_metadata to None (don't fall back).
+            # -------------------------------------------------------------------------
             if "folder_path" in updates:
                 folder_value_for_metadata = updates.get("folder_path")
             elif "folder_name" in updates:
                 folder_value_for_metadata = updates.get("folder_name")
             else:
                 folder_value_for_metadata = existing_doc.folder_path or existing_doc.folder_name
+            explicit_folder_change = any(key in updates for key in ("folder_name", "folder_path", "folder_id"))
+            explicit_path_in_updates = "folder_path" in updates
+            explicit_name_in_updates = "folder_name" in updates
 
             # Serialize datetime objects to ISO format strings
             updates = _serialize_datetime(updates)
@@ -673,13 +687,16 @@ class PostgresDatabase:
                     # The flattened fields (owner_id, app_id)
                     # should be in updates directly if they need to be updated
 
-                    # Keep doc_metadata folder fields in sync with flattened columns (support clearing)
+                    # Keep doc_metadata["folder_name"] in sync with flattened columns.
+                    # This field stores the FULL PATH for search/filter compatibility.
                     doc_metadata_update = updates.get("doc_metadata") if "doc_metadata" in updates else None
-                    has_folder_change = any(key in updates for key in ("folder_name", "folder_path", "folder_id"))
+                    has_folder_change = explicit_folder_change
 
                     if doc_metadata_update is not None:
-                        folder_value = updates.get("folder_path", folder_value_for_metadata)
-                        if folder_value is None:
+                        folder_value = folder_value_for_metadata
+                        # Only fall back to existing values if user didn't explicitly clear the folder.
+                        # This allows update_document(..., folder_path=None) to actually clear the value.
+                        if folder_value is None and not (explicit_path_in_updates or explicit_name_in_updates):
                             folder_value = doc_model.folder_path or doc_model.folder_name
                         try:
                             if isinstance(doc_metadata_update, dict):
@@ -691,9 +708,11 @@ class PostgresDatabase:
                         except Exception as exc:  # noqa: BLE001
                             logger.warning("Unable to set folder fields in doc_metadata for %s: %s", document_id, exc)
                     elif has_folder_change:
+                        # Folder columns changed but no doc_metadata in updates - sync metadata anyway
                         new_doc_metadata = dict(doc_model.doc_metadata or {})
-                        folder_value = updates.get("folder_path", folder_value_for_metadata)
-                        if folder_value is None:
+                        folder_value = folder_value_for_metadata
+                        # Same clearing logic: only fall back if not an explicit clear operation
+                        if folder_value is None and not (explicit_path_in_updates or explicit_name_in_updates):
                             folder_value = doc_model.folder_path or doc_model.folder_name
                         new_doc_metadata["folder_name"] = folder_value
                         if "folder_id" in updates:
