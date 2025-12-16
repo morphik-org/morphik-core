@@ -47,7 +47,6 @@ from core.routes.ingest import router as ingest_router
 from core.routes.logs import router as logs_router  # noqa: E402 – import after FastAPI app
 from core.routes.model_config import router as model_config_router
 from core.routes.models import router as models_router
-from core.routes.pdf_viewer import router as pdf_viewer_router
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, ingestion_service
 from core.utils.folder_utils import normalize_folder_selector
@@ -318,9 +317,6 @@ app.include_router(documents_router)
 
 # Register folders router
 app.include_router(folders_router)
-
-# Register PDF viewer router
-app.include_router(pdf_viewer_router)
 
 # Register model config router
 app.include_router(model_config_router)

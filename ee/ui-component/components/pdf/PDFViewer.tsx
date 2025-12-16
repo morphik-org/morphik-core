@@ -17,8 +17,6 @@ import {
   ChevronRight,
   FileText,
   Maximize2,
-  User,
-  Cpu,
   MessageSquare,
   X,
   GripVertical,
@@ -34,7 +32,6 @@ import ReactMarkdown from "react-markdown";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { usePDFChatSessions } from "@/hooks/useChatSessions";
-import { usePDFSession } from "@/components/pdf/PDFAPIService";
 import { useHeader } from "@/contexts/header-context"; // Still needed for setRightContent
 
 // Configure PDF.js worker - use CDN for reliability
@@ -59,16 +56,8 @@ interface PDFState {
   scale: number;
   rotation: number;
   pdfDataUrl: string | null;
-  controlMode: "manual" | "api"; // New mode toggle
   documentName?: string; // Add document name for selected documents
   documentId?: string; // Add document ID for selected documents
-}
-
-interface ZoomBounds {
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
 }
 
 interface ChatMessage {
@@ -134,12 +123,6 @@ interface PDFDocument {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatToggle, chatOpen }: PDFViewerProps) {
-  // Get session information from PDF API service context (optional)
-  const pdfSession = usePDFSession() || {
-    sessionId: `fallback-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    userId: "anonymous",
-  };
-
   const [pdfState, setPdfState] = useState<PDFState>({
     file: null,
     currentPage: 1,
@@ -147,12 +130,9 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
     scale: 1.0,
     rotation: 0,
     pdfDataUrl: null,
-    controlMode: "manual", // Default to manual control
   });
 
   const [, setIsLoading] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [zoomBounds, setZoomBounds] = useState<ZoomBounds>({});
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
   // Chat-related state
@@ -290,9 +270,6 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
   const handleChatSubmit = useCallback(async () => {
     if (!chatInput.trim() || isChatLoading || !currentChatId) return;
 
-    // Automatically switch to API mode when chat is submitted
-    setPdfState(prev => ({ ...prev, controlMode: "api" }));
-
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: "user",
@@ -320,7 +297,6 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
           body: JSON.stringify({
             message: userMessage.content,
             document_id: pdfState.documentId || pdfState.file?.name, // Use document ID for selected documents, filename for uploaded files
-            session_id: pdfSession?.sessionId, // Include session ID for PDF viewer scoping
           }),
         }
       );
@@ -550,16 +526,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
       setChatMessages(prev => [...prev, errorMessage]);
       setIsChatLoading(false);
     }
-  }, [
-    chatInput,
-    isChatLoading,
-    apiBaseUrl,
-    authToken,
-    pdfState.file,
-    pdfState.documentId,
-    currentChatId,
-    pdfSession?.sessionId,
-  ]);
+  }, [chatInput, isChatLoading, apiBaseUrl, authToken, pdfState.file, pdfState.documentId, currentChatId]);
 
   // Load chat messages for the current chat session
   const loadChatMessages = useCallback(
@@ -694,222 +661,6 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
   const resetZoom = useCallback(() => {
     setPdfState(prev => ({ ...prev, scale: 1.0 }));
   }, []);
-
-  // Mode toggle functions
-  const toggleControlMode = useCallback(() => {
-    setPdfState(prev => ({
-      ...prev,
-      controlMode: prev.controlMode === "manual" ? "api" : "manual",
-    }));
-  }, []);
-
-  // Zoom to specific bounds (0-1000 relative coordinates)
-  const zoomToY = useCallback((bounds: { top: number; bottom: number }) => {
-    const container = pdfContainerRef.current;
-    if (!container) return;
-
-    console.log("zoomToY called with bounds:", bounds);
-
-    // Convert 0-1000 bounds to relative (0-1) coordinates
-    const relativeTop = bounds.top / 1000;
-    const relativeBottom = bounds.bottom / 1000;
-    const relativeHeight = relativeBottom - relativeTop;
-    const relativeCenter = (relativeTop + relativeBottom) / 2;
-
-    console.log("Relative coords:", { relativeTop, relativeBottom, relativeHeight, relativeCenter });
-
-    // Base PDF width that we use for scaling
-    const basePdfWidth = 600;
-
-    // Calculate scale to fit the bounds height in the container
-    const containerHeight = container.clientHeight - 32; // Account for padding
-    const aspectRatio = 842 / 595; // Standard A4 aspect ratio
-    const basePdfHeight = basePdfWidth * aspectRatio;
-    const boundsHeightPixels = relativeHeight * basePdfHeight;
-    const newScale = Math.min(3.0, Math.max(0.5, (containerHeight / boundsHeightPixels) * 0.9)); // 0.9 for some padding
-
-    console.log("Scale calculation:", { containerHeight, basePdfHeight, boundsHeightPixels, newScale });
-
-    setPdfState(prev => ({ ...prev, scale: newScale }));
-
-    // Find the scroll container and scroll to the bounds
-    setTimeout(() => {
-      const scrollContainers = [
-        container.closest("[data-radix-scroll-area-viewport]"),
-        container.closest(".scroll-area-viewport"),
-        container.closest('[role="region"]'),
-        document.querySelector("[data-radix-scroll-area-viewport]"),
-      ].filter(Boolean);
-
-      console.log("Found scroll containers:", scrollContainers.length);
-
-      if (scrollContainers.length > 0) {
-        const scrollArea = scrollContainers[0] as HTMLElement;
-
-        // Calculate the position of the bounds within the scaled page
-        const scaledPageHeight = basePdfHeight * newScale;
-        const boundsTopPixels = relativeTop * scaledPageHeight;
-        const boundsCenterPixels = relativeCenter * scaledPageHeight;
-
-        // Account for padding
-        const containerPadding = 16; // p-4 = 16px
-
-        // Center the bounds in the viewport
-        const targetScrollTop =
-          boundsTopPixels + containerPadding - scrollArea.clientHeight / 2 + (boundsHeightPixels * newScale) / 2;
-
-        console.log("Scroll calculation:", {
-          scaledPageHeight,
-          boundsTopPixels,
-          boundsCenterPixels,
-          targetScrollTop,
-          scrollAreaHeight: scrollArea.clientHeight,
-        });
-
-        scrollArea.scrollTop = Math.max(0, targetScrollTop);
-        console.log("New scroll top:", scrollArea.scrollTop);
-      } else {
-        console.warn("No scroll container found");
-      }
-    }, 200); // Give time for the scale to be applied
-
-    setZoomBounds(prev => ({
-      ...prev,
-      y: relativeTop * basePdfHeight,
-      height: relativeHeight * basePdfHeight,
-    }));
-  }, []);
-
-  const zoomToX = useCallback((bounds: { left: number; right: number }) => {
-    const container = pdfContainerRef.current;
-    if (!container) return;
-
-    console.log("zoomToX called with bounds:", bounds);
-
-    // Convert 0-1000 bounds to relative (0-1) coordinates
-    const relativeLeft = bounds.left / 1000;
-    const relativeRight = bounds.right / 1000;
-    const relativeWidth = relativeRight - relativeLeft;
-    const relativeCenter = (relativeLeft + relativeRight) / 2;
-
-    console.log("Relative coords:", { relativeLeft, relativeRight, relativeWidth, relativeCenter });
-
-    // Base PDF width that we use for scaling
-    const basePdfWidth = 600;
-
-    // Calculate scale to fit the bounds width in the container
-    const containerWidth = container.clientWidth - 32; // Account for padding
-    const boundsWidthPixels = relativeWidth * basePdfWidth;
-    const newScale = Math.min(3.0, Math.max(0.5, (containerWidth / boundsWidthPixels) * 0.9)); // 0.9 for some padding
-
-    console.log("Scale calculation:", { containerWidth, basePdfWidth, boundsWidthPixels, newScale });
-
-    setPdfState(prev => ({ ...prev, scale: newScale }));
-
-    // Find the scroll container and scroll to the bounds
-    setTimeout(() => {
-      const scrollContainers = [
-        container.closest("[data-radix-scroll-area-viewport]"),
-        container.closest(".scroll-area-viewport"),
-        container.closest('[role="region"]'),
-        document.querySelector("[data-radix-scroll-area-viewport]"),
-      ].filter(Boolean);
-
-      console.log("Found scroll containers:", scrollContainers.length);
-
-      if (scrollContainers.length > 0) {
-        const scrollArea = scrollContainers[0] as HTMLElement;
-
-        // Wait for the PDF to be rendered at the new scale
-        setTimeout(() => {
-          // Get the PDF page element after scaling
-          const pdfPage = container.querySelector(".react-pdf__Page") as HTMLElement;
-          if (!pdfPage) {
-            console.warn("PDF page not found");
-            return;
-          }
-
-          // Get the actual position of the PDF page
-          const pageRect = pdfPage.getBoundingClientRect();
-          const scrollAreaRect = scrollArea.getBoundingClientRect();
-
-          // Calculate the horizontal offset of the PDF page relative to scroll area
-          const pageOffsetLeft = pageRect.left - scrollAreaRect.left + scrollArea.scrollLeft;
-
-          // Calculate the position of the bounds within the page
-          const scaledPageWidth = basePdfWidth * newScale;
-          const boundsLeftPixels = relativeLeft * scaledPageWidth;
-          const boundsCenterPixels = relativeCenter * scaledPageWidth;
-
-          // Calculate target scroll position to center the bounds
-          const targetScrollLeft = pageOffsetLeft + boundsCenterPixels - scrollArea.clientWidth / 2;
-
-          console.log("Scroll calculation:", {
-            scaledPageWidth,
-            boundsLeftPixels,
-            boundsCenterPixels,
-            pageOffsetLeft,
-            targetScrollLeft,
-            scrollAreaWidth: scrollArea.clientWidth,
-            pageRect,
-            scrollAreaRect,
-          });
-
-          scrollArea.scrollLeft = Math.max(0, targetScrollLeft);
-          console.log("New scroll left:", scrollArea.scrollLeft);
-        }, 100); // Additional delay to ensure PDF is rendered
-      } else {
-        console.warn("No scroll container found");
-      }
-    }, 200); // Give time for the scale to be applied
-
-    setZoomBounds(prev => ({
-      ...prev,
-      x: relativeLeft * basePdfWidth,
-      width: relativeWidth * basePdfWidth,
-    }));
-  }, []);
-
-  // API endpoint handlers (these will be called by external API requests)
-  useEffect(() => {
-    if (pdfState.file && pdfState.controlMode === "api") {
-      console.log("Registering PDF viewer controls in API mode...");
-      // Register global PDF viewer control functions
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any).pdfViewerControls = {
-        changePage: (page: number) => {
-          console.log("PDF viewer changePage called with:", page);
-          goToPage(page);
-        },
-        zoomToY: (bounds: { top: number; bottom: number }) => {
-          console.log("PDF viewer zoomToY called with:", bounds);
-          zoomToY(bounds);
-        },
-        zoomToX: (bounds: { left: number; right: number }) => {
-          console.log("PDF viewer zoomToX called with:", bounds);
-          zoomToX(bounds);
-        },
-        getCurrentState: () => {
-          console.log("PDF viewer getCurrentState called");
-          return pdfState;
-        },
-        getMode: () => pdfState.controlMode,
-      };
-      console.log("PDF viewer controls registered successfully");
-    } else if (pdfState.controlMode === "manual") {
-      console.log("Unregistering PDF viewer controls (manual mode)");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (window as any).pdfViewerControls;
-    }
-
-    return () => {
-      if (pdfState.controlMode === "api") {
-        console.log("Unregistering PDF viewer controls");
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        delete (window as any).pdfViewerControls;
-      }
-    };
-  }, [goToPage, zoomToY, zoomToX, pdfState.file, pdfState.controlMode, pdfState]);
 
   // Fetch available PDF documents
   const fetchAvailableDocuments = useCallback(async () => {
@@ -1569,28 +1320,9 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
           {/* Bottom Floating Control Bar - Fixed to viewport center */}
           <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center">
             <div className="pointer-events-auto flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-2 shadow-lg dark:border-slate-700 dark:bg-black">
-              {/* Control Mode Toggle */}
-              <div
-                onClick={toggleControlMode}
-                className={cn(
-                  "flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
-                  pdfState.controlMode === "manual"
-                    ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-                    : "bg-zinc-700 text-white dark:bg-zinc-800"
-                )}
-              >
-                {pdfState.controlMode === "manual" ? <User className="h-4 w-4" /> : <Cpu className="h-4 w-4" />}
-                {pdfState.controlMode === "manual" ? "Manual" : "API"}
-              </div>
-
               {/* Page Navigation */}
               <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={prevPage}
-                  disabled={pdfState.currentPage <= 1 || pdfState.controlMode === "api"}
-                >
+                <Button variant="outline" size="sm" onClick={prevPage} disabled={pdfState.currentPage <= 1}>
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
 
@@ -1602,7 +1334,6 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
                     className="w-16 text-center"
                     min={1}
                     max={pdfState.totalPages}
-                    disabled={pdfState.controlMode === "api"}
                   />
                   <span className="text-sm text-slate-500">of {pdfState.totalPages}</span>
                 </div>
@@ -1611,7 +1342,7 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
                   variant="outline"
                   size="sm"
                   onClick={nextPage}
-                  disabled={pdfState.currentPage >= pdfState.totalPages || pdfState.controlMode === "api"}
+                  disabled={pdfState.currentPage >= pdfState.totalPages}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
@@ -1619,32 +1350,26 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
 
               {/* Zoom Controls */}
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={zoomOut} disabled={pdfState.controlMode === "api"}>
+                <Button variant="outline" size="sm" onClick={zoomOut}>
                   <ZoomOut className="h-4 w-4" />
                 </Button>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={resetZoom}
-                  disabled={pdfState.controlMode === "api"}
-                  className="min-w-16"
-                >
+                <Button variant="outline" size="sm" onClick={resetZoom} className="min-w-16">
                   {Math.round(pdfState.scale * 100)}%
                 </Button>
 
-                <Button variant="outline" size="sm" onClick={zoomIn} disabled={pdfState.controlMode === "api"}>
+                <Button variant="outline" size="sm" onClick={zoomIn}>
                   <ZoomIn className="h-4 w-4" />
                 </Button>
               </div>
 
               {/* Additional Controls */}
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={rotate} disabled={pdfState.controlMode === "api"}>
+                <Button variant="outline" size="sm" onClick={rotate}>
                   <RotateCw className="h-4 w-4" />
                 </Button>
 
-                <Button variant="outline" size="sm" disabled={pdfState.controlMode === "api"}>
+                <Button variant="outline" size="sm">
                   <Maximize2 className="h-4 w-4" />
                 </Button>
               </div>
