@@ -249,6 +249,11 @@ class FastMultiVectorStore(BaseVectorStore):
             "tsystems/colqwen2.5-3b-multilingual-v1.0"
         )
         self.device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
+        # Reuse S3 upload concurrency cap for multivector uploads as well.
+        try:
+            self._multivector_upload_sem = asyncio.Semaphore(max(1, int(get_settings().S3_UPLOAD_CONCURRENCY)))
+        except Exception:
+            self._multivector_upload_sem = asyncio.Semaphore(16)
 
     async def close(self) -> None:
         """Release network and database resources held by the vector store."""
@@ -346,8 +351,12 @@ class FastMultiVectorStore(BaseVectorStore):
             doc_ids.append(chunk.document_id)
             chunk_numbers.append(chunk.chunk_number)
             metdatas.append(json.dumps(chunk.metadata))
-            bucket, key = await self.save_multivector_to_storage(chunk)
-            multivecs.append([bucket, key])
+
+        async def _save_mv(c: DocumentChunk) -> Tuple[str, str]:
+            async with self._multivector_upload_sem:
+                return await self.save_multivector_to_storage(c)
+
+        multivecs = await asyncio.gather(*[_save_mv(chunk) for chunk in chunks])
         result = await self.ns(app_id).write(
             upsert_columns={
                 "id": stored_ids,
