@@ -275,9 +275,9 @@ class FastMultiVectorStore(BaseVectorStore):
         provider = settings.STORAGE_PROVIDER
         storage_path = settings.STORAGE_PATH or "./storage"
         bucket = (settings.S3_BUCKET or MULTIVECTOR_CHUNKS_BUCKET) if provider == "aws-s3" else ""
-
+        endpoint_url = settings.S3_ENDPOINT_URL
         logger.info("Initializing %s storage for chunk payloads", provider)
-        storage = self._create_storage(provider, storage_path=storage_path, default_bucket=bucket)
+        storage = self._create_storage(provider, storage_path=storage_path, default_bucket=bucket, endpoint_url=endpoint_url)
 
         # Track meta for later reuse decisions
         self.chunk_storage_provider = provider
@@ -291,7 +291,7 @@ class FastMultiVectorStore(BaseVectorStore):
         provider = settings.STORAGE_PROVIDER
         storage_path = settings.STORAGE_PATH or "./storage"
         bucket = (settings.S3_BUCKET or MULTIVECTOR_CHUNKS_BUCKET) if provider == "aws-s3" else ""
-
+        endpoint_url = settings.S3_ENDPOINT_URL
         # Reuse chunk storage instance when configuration matches
         if provider == getattr(self, "chunk_storage_provider", None) and (
             (provider == "local" and storage_path == getattr(self, "chunk_storage_path", None))
@@ -303,12 +303,12 @@ class FastMultiVectorStore(BaseVectorStore):
             return self.chunk_storage, getattr(self, "chunk_bucket", None)
 
         logger.info("Initializing %s storage for vector tensors", provider)
-        storage = self._create_storage(provider, storage_path=storage_path, default_bucket=bucket)
+        storage = self._create_storage(provider, storage_path=storage_path, default_bucket=bucket, endpoint_url=endpoint_url)
         resolved_bucket = bucket if provider == "aws-s3" else ""
         return storage, resolved_bucket
 
     def _create_storage(
-        self, provider: str, *, storage_path: Optional[str], default_bucket: Optional[str]
+        self, provider: str, *, storage_path: Optional[str], default_bucket: Optional[str], endpoint_url: Optional[str]
     ) -> BaseStorage:
         """Factory helper to instantiate storage implementations."""
         settings = get_settings()
@@ -321,6 +321,7 @@ class FastMultiVectorStore(BaseVectorStore):
                     aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
                     region_name=settings.AWS_REGION,
                     default_bucket=default_bucket or MULTIVECTOR_CHUNKS_BUCKET,
+                    endpoint_url=endpoint_url,
                 )
             case "local":
                 path = storage_path or "./storage"

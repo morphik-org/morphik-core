@@ -1039,7 +1039,12 @@ async def startup(ctx):
             aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
             region_name=settings.AWS_REGION,
             default_bucket=settings.S3_BUCKET,
+            endpoint_url=settings.S3_ENDPOINT_URL,
         )
+        if settings.S3_ENDPOINT_URL:
+            logger.info("Initialized S3Storage with endpoint URL: %s", settings.S3_ENDPOINT_URL)
+        else:
+            logger.info("Initialized S3Storage with default endpoint URL")
     else:
         raise ValueError(f"Unsupported storage provider: {settings.STORAGE_PROVIDER}")
     ctx["storage"] = storage
