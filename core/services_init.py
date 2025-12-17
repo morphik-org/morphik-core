@@ -68,6 +68,7 @@ match settings.STORAGE_PROVIDER:
             aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
             region_name=settings.AWS_REGION,
             default_bucket=settings.S3_BUCKET,
+            upload_concurrency=settings.S3_UPLOAD_CONCURRENCY,
         )
     case _:
         raise ValueError(f"Unsupported storage provider: {settings.STORAGE_PROVIDER}")

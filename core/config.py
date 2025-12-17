@@ -110,6 +110,7 @@ class Settings(BaseSettings):
     STORAGE_PATH: Optional[str] = None
     AWS_REGION: Optional[str] = None
     S3_BUCKET: Optional[str] = None
+    S3_UPLOAD_CONCURRENCY: int = 16
     CACHE_ENABLED: bool = False
     CACHE_MAX_BYTES: int = 10 * 1024 * 1024 * 1024
     CACHE_CHUNK_MAX_BYTES: int = 10 * 1024 * 1024 * 1024
@@ -308,6 +309,11 @@ def get_settings() -> Settings:
             "STORAGE_PATH": config["storage"]["storage_path"],
         }
     )
+    upload_conc = config["storage"].get("s3_upload_concurrency", 16)
+    try:
+        settings_dict["S3_UPLOAD_CONCURRENCY"] = max(1, int(upload_conc))
+    except (TypeError, ValueError):
+        settings_dict["S3_UPLOAD_CONCURRENCY"] = 16
 
     match settings_dict["STORAGE_PROVIDER"]:
         case "local":
