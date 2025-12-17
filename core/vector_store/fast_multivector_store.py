@@ -321,6 +321,7 @@ class FastMultiVectorStore(BaseVectorStore):
                     aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
                     region_name=settings.AWS_REGION,
                     default_bucket=default_bucket or MULTIVECTOR_CHUNKS_BUCKET,
+                    upload_concurrency=settings.S3_UPLOAD_CONCURRENCY,
                 )
             case "local":
                 path = storage_path or "./storage"

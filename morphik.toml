@@ -112,6 +112,7 @@ device = "cuda" # "cpu" # use "cpu" if on docker and using a mac, "cuda" if cuda
 # cache_enabled = false
 # cache_max_size_gb = 10
 # cache_path = "./storage/cache"
+# s3_upload_concurrency = 16
 
 [storage]
 provider = "aws-s3"
@@ -121,6 +122,7 @@ storage_path = "morphik-storage"
 cache_enabled = false
 cache_max_size_gb = 10
 cache_path = "./storage/cache"
+s3_upload_concurrency = 16
 
 [vector_store]
 provider = "pgvector"

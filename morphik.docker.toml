@@ -110,11 +110,13 @@ device = "mps" # use "cpu" if on docker and using a mac, "cuda" if cuda enabled 
 [storage]
 provider = "local"
 storage_path = "./storage"
+s3_upload_concurrency = 16
 
 # [storage]
 # provider = "aws-s3"
 # region = "us-east-2"
 # bucket_name = "morphik-s3-storage"
+# s3_upload_concurrency = 16
 
 [vector_store]
 provider = "pgvector"
