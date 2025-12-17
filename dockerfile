@@ -170,6 +170,7 @@ COPY fde ./fde
 
 COPY core ./core
 COPY ee ./ee
+COPY utils ./utils
 COPY README.md LICENSE ./
 # Assuming start_server.py is at the root of your project
 COPY start_server.py ./
