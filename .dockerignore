@@ -38,3 +38,7 @@
 .venv/lib/python3.12/site-packages/debugpy/_vendored/pydevd/pydevd_attach_to_process/linux_and_mac/attach_linux_x86.o
 .venv/lib/python3.12/site-packages/debugpy/_vendored/pydevd/pydevd_attach_to_process/linux_and_mac/attach_linux_x86_64.o
 fly.toml
+
+node_modules
+**/node_modules
+morphik.toml
