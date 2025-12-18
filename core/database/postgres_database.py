@@ -1726,19 +1726,8 @@ class PostgresDatabase:
 
                 folders = []
                 for folder_model in folder_models:
-                    folder_dict = {
-                        "id": folder_model.id,
-                        "name": folder_model.name,
-                        "full_path": folder_model.full_path,
-                        "parent_id": folder_model.parent_id,
-                        "depth": folder_model.depth,
-                        "description": folder_model.description,
-                        "document_ids": folder_model.document_ids,
-                        "system_metadata": folder_model.system_metadata,
-                        "app_id": folder_model.app_id,
-                        "end_user_id": folder_model.end_user_id,
-                        "child_count": child_counts.get(folder_model.id, 0),
-                    }
+                    folder_dict = _folder_row_to_dict(folder_model)
+                    folder_dict["child_count"] = child_counts.get(folder_model.id, 0)
                     folders.append(Folder(**folder_dict))
                 return folders
 
