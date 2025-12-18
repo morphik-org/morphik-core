@@ -116,6 +116,7 @@ class MultiVectorStore(BaseVectorStore):
                     aws_secret_key=settings.AWS_SECRET_ACCESS_KEY,
                     region_name=settings.AWS_REGION,
                     default_bucket=MULTIVECTOR_CHUNKS_BUCKET,
+                    endpoint_url=settings.S3_ENDPOINT_URL,
                     upload_concurrency=settings.S3_UPLOAD_CONCURRENCY,
                 )
             else:
