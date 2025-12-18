@@ -28,6 +28,12 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 SYSTEM_METADATA_SCOPE_KEYS = {"folder_name", "folder_id", "end_user_id", "app_id"}
+SUMMARY_METADATA_KEYS = {
+    "summary_storage_key",
+    "summary_version",
+    "summary_bucket",
+    "summary_updated_at",
+}
 
 
 class PostgresDatabase:
@@ -41,6 +47,15 @@ class PostgresDatabase:
         "folder_path": "folder_path",
         "end_user_id": "end_user_id",
     }
+
+    @staticmethod
+    def _extract_summary_metadata(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Pull summary-related fields out of a payload into system_metadata."""
+        summary_meta: Dict[str, Any] = {}
+        for key in SUMMARY_METADATA_KEYS:
+            if key in payload:
+                summary_meta[key] = payload.pop(key)
+        return summary_meta
 
     async def delete_folder(self, folder_id: str, auth: AuthContext) -> bool:
         """Delete a folder row if user has admin access."""
@@ -158,6 +173,7 @@ class PostgresDatabase:
         """Store document metadata."""
         try:
             doc_dict = document.model_dump()
+            summary_metadata = self._extract_summary_metadata(doc_dict)
 
             metadata = doc_dict.pop("metadata", {}) or {}
             metadata.setdefault("external_id", doc_dict["external_id"])
@@ -185,6 +201,8 @@ class PostgresDatabase:
                 doc_dict["system_metadata"] = {}
             doc_dict["system_metadata"]["created_at"] = datetime.now(UTC)
             doc_dict["system_metadata"]["updated_at"] = datetime.now(UTC)
+            if summary_metadata:
+                doc_dict["system_metadata"].update(summary_metadata)
 
             # Remove storage_files - we only use storage_info now
             doc_dict.pop("storage_files", None)
@@ -566,16 +584,34 @@ class PostgresDatabase:
             f"{direction} NULLS LAST"
         )
 
-    async def update_document(self, document_id: str, updates: Dict[str, Any], auth: AuthContext) -> bool:
-        """Update document metadata if user has write access."""
+    async def update_document(
+        self,
+        document_id: str,
+        updates: Dict[str, Any],
+        auth: AuthContext,
+        expected_summary_version: Optional[int] = None,
+    ) -> bool:
+        """Update document metadata if user has write access.
+
+        Args:
+            document_id: The document ID to update
+            updates: Dictionary of fields to update
+            auth: Authentication context
+            expected_summary_version: If provided, only update if current summary_version matches.
+                                      Used for optimistic locking on summary updates.
+        """
         try:
             # Get existing document to preserve system_metadata
             existing_doc = await self.get_document(document_id, auth)
             if not existing_doc:
                 return False
 
+            summary_metadata = self._extract_summary_metadata(updates)
+
             # Update system metadata
             updates.setdefault("system_metadata", {})
+            if summary_metadata:
+                updates["system_metadata"].update(summary_metadata)
 
             # Merge with existing system_metadata instead of just preserving specific fields
             if existing_doc.system_metadata:
@@ -681,6 +717,24 @@ class PostgresDatabase:
                     if not self._has_document_access(doc_model, auth):
                         logger.error("User does not have write access to document %s", document_id)
                         return False
+
+                    # Optimistic locking: if expected_summary_version is provided, verify it matches
+                    if expected_summary_version is not None:
+                        current_sys_meta = doc_model.system_metadata or {}
+                        current_version_raw = current_sys_meta.get("summary_version")
+                        try:
+                            current_version = int(current_version_raw) if current_version_raw is not None else 0
+                        except (TypeError, ValueError):
+                            current_version = 0
+                        if current_version != expected_summary_version:
+                            logger.warning(
+                                "Summary version mismatch for document %s: expected %d, found %d",
+                                document_id,
+                                expected_summary_version,
+                                current_version,
+                            )
+                            return False
+
                     # Log what we're updating
                     logger.info(f"Document update: updating fields {list(updates.keys())}")
 
@@ -1413,6 +1467,7 @@ class PostgresDatabase:
         try:
             async with self.async_session() as session:
                 folder_dict = folder.model_dump()
+                summary_metadata = self._extract_summary_metadata(folder_dict)
 
                 # Derive canonical full_path and depth (single-level folders default to depth=1)
                 try:
@@ -1431,6 +1486,10 @@ class PostgresDatabase:
                         folder_depth = 1
                     folder_dict["depth"] = folder_depth
                     folder.depth = folder_depth
+
+                folder_dict.setdefault("system_metadata", {})
+                if summary_metadata:
+                    folder_dict["system_metadata"].update(summary_metadata)
 
                 # Convert datetime objects to strings for JSON serialization
                 folder_dict = _serialize_datetime(folder_dict)
@@ -1686,6 +1745,78 @@ class PostgresDatabase:
         except Exception as e:
             logger.error(f"Error listing folders: {e}")
             return []
+
+    async def update_folder(
+        self,
+        folder_id: str,
+        updates: Dict[str, Any],
+        auth: AuthContext,
+        expected_summary_version: Optional[int] = None,
+    ) -> bool:
+        """Update folder metadata (primarily system_metadata) if user has write access.
+
+        Args:
+            folder_id: The folder ID to update
+            updates: Dictionary of fields to update
+            auth: Authentication context
+            expected_summary_version: If provided, only update if current summary_version matches.
+                                      Used for optimistic locking on summary updates.
+        """
+        try:
+            summary_metadata = self._extract_summary_metadata(updates)
+            updates.setdefault("system_metadata", {})
+            if summary_metadata:
+                updates["system_metadata"].update(summary_metadata)
+
+            async with self.async_session() as session:
+                async with session.begin():
+                    folder_model = await self._fetch_folder_locked(session, folder_id)
+                    if not folder_model:
+                        logger.error("Folder %s not found while attempting update", folder_id)
+                        return False
+                    if not self._check_folder_model_access(folder_model, auth):
+                        logger.error("User does not have write access to folder %s", folder_id)
+                        return False
+
+                    # Optimistic locking: if expected_summary_version is provided, verify it matches
+                    if expected_summary_version is not None:
+                        current_sys_meta = folder_model.system_metadata or {}
+                        current_version_raw = current_sys_meta.get("summary_version")
+                        try:
+                            current_version = int(current_version_raw) if current_version_raw is not None else 0
+                        except (TypeError, ValueError):
+                            current_version = 0
+                        if current_version != expected_summary_version:
+                            logger.warning(
+                                "Summary version mismatch for folder %s: expected %d, found %d",
+                                folder_id,
+                                expected_summary_version,
+                                current_version,
+                            )
+                            return False
+
+                    merged_system_metadata = dict(folder_model.system_metadata or {})
+                    merged_system_metadata.update(updates.get("system_metadata") or {})
+                    merged_system_metadata = {
+                        key: value
+                        for key, value in merged_system_metadata.items()
+                        if key not in SYSTEM_METADATA_SCOPE_KEYS
+                    }
+                    merged_system_metadata["updated_at"] = datetime.now(UTC)
+
+                    folder_model.system_metadata = _serialize_datetime(merged_system_metadata)
+
+                    for attr in ("name", "description", "full_path", "parent_id", "depth"):
+                        if attr in updates:
+                            setattr(folder_model, attr, updates[attr])
+
+                    await session.commit()
+                    logger.info("Updated folder %s metadata", folder_id)
+                    return True
+
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Error updating folder %s: %s", folder_id, exc)
+            return False
 
     async def add_document_to_folder(self, folder_id: str, document_id: str, auth: AuthContext) -> bool:
         """Add a document to a folder."""
