@@ -4,8 +4,9 @@ import logging
 import os
 import tempfile
 import time
+from datetime import UTC, datetime
 from io import BytesIO
-from typing import Any, AsyncGenerator, Dict, List, Optional, Set, Tuple, Type, Union
+from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Set, Tuple, Type, Union
 
 import fitz  # PyMuPDF for PDF/presentation processing
 from fastapi import HTTPException
@@ -22,6 +23,7 @@ from core.models.chunk import DocumentChunk
 from core.models.completion import ChunkSource, CompletionRequest, CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentContent, DocumentResult
 from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
+from core.models.summary import SummaryResponse, SummaryUpsertRequest
 from core.parser.base_parser import BaseParser
 from core.reranker.base_reranker import BaseReranker
 from core.services.graph_service import GraphService
@@ -39,6 +41,9 @@ CHARS_PER_TOKEN = 4
 TOKENS_PER_PAGE = 630
 
 settings = get_settings()
+SUMMARY_MAX_BYTES = 32 * 1024
+SUMMARY_FILE_EXTENSION = ".md"
+SUMMARY_CONTENT_TYPE = "text/markdown"
 
 
 class PdfConversionError(Exception):
@@ -2057,4 +2062,154 @@ class DocumentService:
             limit=limit,
             filters=filters,
             system_filters=system_filters,
+        )
+
+    async def _load_entity_for_summary(
+        self, entity: Literal["document", "folder"], entity_id: str, auth: AuthContext
+    ) -> tuple[Dict[str, Any], Any]:
+        """Fetch the target entity and return its system metadata."""
+        if entity == "document":
+            obj = await self.db.get_document(entity_id, auth)
+            if not obj:
+                raise HTTPException(status_code=404, detail="Document not found")
+        else:
+            obj = await self.db.get_folder(entity_id, auth)
+            if not obj:
+                raise HTTPException(status_code=404, detail="Folder not found")
+
+        metadata = obj.system_metadata or {}
+        return metadata, obj
+
+    def _build_summary_storage_key(
+        self,
+        entity: Literal["document", "folder"],
+        entity_id: str,
+        app_id: Optional[str],
+        auth: AuthContext,
+        version: int,
+    ) -> str:
+        """Construct a deterministic storage key for summaries."""
+        app_segment = app_id or auth.app_id or (auth.user_id or "default")
+        base_prefix = f"summaries/app/{app_segment}"
+        entity_dir = "documents" if entity == "document" else "folders"
+        return f"{base_prefix}/{entity_dir}/{entity_id}/v{version}{SUMMARY_FILE_EXTENSION}"
+
+    async def get_summary(
+        self, entity: Literal["document", "folder"], entity_id: str, auth: AuthContext
+    ) -> SummaryResponse:
+        """Retrieve summary content for a document or folder."""
+        metadata, _ = await self._load_entity_for_summary(entity, entity_id, auth)
+        storage_key = metadata.get("summary_storage_key")
+        if not storage_key:
+            raise HTTPException(status_code=404, detail="Summary not found")
+
+        bucket = metadata.get("summary_bucket") or getattr(self.storage, "default_bucket", "") or ""
+        version_raw = metadata.get("summary_version")
+        try:
+            version = int(version_raw) if version_raw is not None else 1
+        except (TypeError, ValueError):
+            version = 1
+
+        try:
+            content_bytes = await self.storage.download_file(bucket, storage_key)
+        except FileNotFoundError:
+            logger.warning("Missing summary blob for %s %s at key %s", entity, entity_id, storage_key)
+            raise HTTPException(status_code=404, detail="Summary content not found")
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Error reading summary blob for %s %s: %s", entity, entity_id, exc)
+            raise HTTPException(status_code=500, detail="Unable to fetch summary content")
+
+        try:
+            content = content_bytes.decode("utf-8")
+        except Exception:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail="Stored summary is not valid UTF-8")
+
+        return SummaryResponse(
+            content=content,
+            storage_key=storage_key,
+            bucket=bucket,
+            version=version,
+            updated_at=metadata.get("summary_updated_at"),
+        )
+
+    async def upsert_summary(
+        self,
+        entity: Literal["document", "folder"],
+        entity_id: str,
+        request: SummaryUpsertRequest,
+        auth: AuthContext,
+    ) -> SummaryResponse:
+        """Write or update a summary for a document or folder."""
+        normalized_content = request.content
+        content_bytes = normalized_content.encode("utf-8")
+        if len(content_bytes) > SUMMARY_MAX_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Summary content exceeds limit of {SUMMARY_MAX_BYTES // 1024}KB",
+            )
+
+        metadata, obj = await self._load_entity_for_summary(entity, entity_id, auth)
+        existing_version_raw = metadata.get("summary_version")
+        try:
+            existing_version = int(existing_version_raw) if existing_version_raw is not None else 0
+        except (TypeError, ValueError):
+            existing_version = 0
+
+        if not request.versioning and existing_version and not request.overwrite_latest:
+            raise HTTPException(
+                status_code=409,
+                detail="Summary already exists; enable versioning or set overwrite_latest=true",
+            )
+
+        target_version = existing_version + 1 if request.versioning else (existing_version or 1)
+        app_identifier = getattr(obj, "app_id", None)
+        storage_key = self._build_summary_storage_key(entity, entity_id, app_identifier, auth, target_version)
+
+        try:
+            bucket, stored_key = await self.storage.upload_file(
+                content_bytes,
+                storage_key,
+                SUMMARY_CONTENT_TYPE,
+                bucket="",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to upload summary content for %s %s: %s", entity, entity_id, exc)
+            raise HTTPException(status_code=500, detail="Failed to persist summary content")
+
+        updated_at = datetime.now(UTC)
+        summary_metadata = {
+            "summary_storage_key": stored_key,
+            "summary_version": target_version,
+            "summary_bucket": bucket,
+            "summary_updated_at": updated_at,
+        }
+
+        update_payload = {"system_metadata": summary_metadata}
+
+        # Use conditional update with expected_summary_version for atomic optimistic locking.
+        # The DB layer will check the version under row lock and reject if it changed.
+        if entity == "document":
+            updated = await self.db.update_document(
+                entity_id, update_payload, auth, expected_summary_version=existing_version
+            )
+        else:
+            updated = await self.db.update_folder(
+                entity_id, update_payload, auth, expected_summary_version=existing_version
+            )
+
+        if not updated:
+            # Update failed - either access denied or concurrent version change
+            logger.warning("Failed to persist summary pointer for %s %s (likely concurrent update)", entity, entity_id)
+            try:
+                await self.storage.delete_file(bucket, stored_key)
+            except Exception as cleanup_exc:  # noqa: BLE001
+                logger.warning("Unable to clean up orphaned summary blob for %s %s: %s", entity, entity_id, cleanup_exc)
+            raise HTTPException(status_code=409, detail="Concurrent update detected; please retry")
+
+        return SummaryResponse(
+            content=normalized_content,
+            storage_key=stored_key,
+            bucket=bucket,
+            version=target_version,
+            updated_at=updated_at.isoformat(),
         )
