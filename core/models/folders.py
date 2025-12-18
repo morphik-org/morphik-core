@@ -21,6 +21,10 @@ class Folder(BaseModel):
             "updated_at": datetime.now(UTC),
         }
     )
+    summary_storage_key: Optional[str] = None
+    summary_version: Optional[int] = None
+    summary_bucket: Optional[str] = None
+    summary_updated_at: Optional[str] = None
     # Flattened fields from system_metadata for performance
     app_id: Optional[str] = None
     end_user_id: Optional[str] = None

@@ -18,6 +18,7 @@ from core.models.responses import (
     FolderDetailsResponse,
     FolderDocumentInfo,
 )
+from core.models.summary import SummaryResponse, SummaryUpsertRequest
 from core.routes.utils import project_document_fields
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service
@@ -261,6 +262,44 @@ async def list_folder_summaries(auth: AuthContext = Depends(verify_token)) -> Li
     except Exception as exc:  # noqa: BLE001
         logger.error("Error listing folder summaries: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/{folder_id_or_name:path}/summary", response_model=SummaryResponse)
+async def get_folder_summary(folder_id_or_name: str, auth: AuthContext = Depends(verify_token)) -> SummaryResponse:
+    """
+    Retrieve the latest summary for a folder.
+    """
+    folder = await _resolve_folder(folder_id_or_name, auth)
+    if not folder.id:
+        raise HTTPException(status_code=500, detail="Folder is missing an ID")
+
+    try:
+        return await document_service.get_summary("folder", folder.id, auth)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error fetching summary for folder %s: %s", folder.id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch folder summary")
+
+
+@router.put("/{folder_id_or_name:path}/summary", response_model=SummaryResponse)
+async def upsert_folder_summary(
+    folder_id_or_name: str, request: SummaryUpsertRequest, auth: AuthContext = Depends(verify_token)
+) -> SummaryResponse:
+    """
+    Create or update a folder summary with optional versioning.
+    """
+    folder = await _resolve_folder(folder_id_or_name, auth)
+    if not folder.id:
+        raise HTTPException(status_code=500, detail="Folder is missing an ID")
+
+    try:
+        return await document_service.upsert_summary("folder", folder.id, request, auth)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error writing summary for folder %s: %s", folder.id, exc)
+        raise HTTPException(status_code=500, detail="Failed to write folder summary")
 
 
 @router.post("/{folder_id_or_name:path}/documents/{document_id}", response_model=DocumentAddToFolderResponse)

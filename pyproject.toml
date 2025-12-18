@@ -68,17 +68,17 @@ dependencies = [
     "types-boto3[s3]>=1.39.1",
     "sentry-sdk[fastapi]>=2.33.0",
     "turbopuffer>=0.5.8",
-    "opencv-python-headless>=4.12.0.88",
     "colpali-engine @ git+https://github.com/illuin-tech/colpali@v0.3.13",
     "fast-plaid; sys_platform != 'linux' or platform_machine != 'aarch64'",
     "fastkmeans",
     "morphik-rust",
+    "opencv-python-headless>=4.12.0.88",
 ]
 
 [dependency-groups]
 dev-local = [
     "fixed-dimensional-encoding",
-    "turbopuffer>=0.5.8",
+    "turbopuffer[aiohttp]>=0.5.8",
 ]
 
 [tool.black]

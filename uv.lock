@@ -1499,6 +1499,19 @@ http2 = [
 ]
 
 [[package]]
+name = "httpx-aiohttp"
+version = "0.1.12"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "httpx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/63/2c/b894861cecf030fb45675ea24aa55b5722e97c602a163d872fca66c5a6d8/httpx_aiohttp-0.1.12.tar.gz", hash = "sha256:81feec51fd82c0ecfa0e9aaf1b1a6c2591260d5e2bcbeb7eb0277a78e610df2c", size = 275945 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/16/8d/85c9701e9af72ca132a1783e2a54364a90c6da832304416a30fc11196ab2/httpx_aiohttp-0.1.12-py3-none-any.whl", hash = "sha256:5b0eac39a7f360fa7867a60bcb46bb1024eada9c01cbfecdb54dc1edb3fb7141", size = 6367 },
+]
+
+[[package]]
 name = "huggingface-hub"
 version = "0.36.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2329,7 +2342,7 @@ dependencies = [
     { name = "torchaudio" },
     { name = "torchvision" },
     { name = "tqdm" },
-    { name = "turbopuffer" },
+    { name = "turbopuffer", extra = ["aiohttp"] },
     { name = "twine" },
     { name = "ty" },
     { name = "types-boto3", extra = ["s3"] },
@@ -2340,7 +2353,7 @@ dependencies = [
 [package.dev-dependencies]
 dev-local = [
     { name = "fixed-dimensional-encoding" },
-    { name = "turbopuffer" },
+    { name = "turbopuffer", extra = ["aiohttp"] },
 ]
 
 [package.metadata]
@@ -2406,7 +2419,7 @@ requires-dist = [
     { name = "torchaudio", specifier = "==2.8.0" },
     { name = "torchvision", specifier = "==0.23.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
-    { name = "turbopuffer", specifier = ">=0.5.8" },
+    { name = "turbopuffer", extras = ["aiohttp"], specifier = ">=0.5.8" },
     { name = "twine", specifier = ">=6.1.0" },
     { name = "ty", specifier = ">=0.0.1a6" },
     { name = "types-boto3", extras = ["s3"], specifier = ">=1.39.1" },
@@ -2417,7 +2430,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev-local = [
     { name = "fixed-dimensional-encoding", directory = "../fde" },
-    { name = "turbopuffer", specifier = ">=0.5.8" },
+    { name = "turbopuffer", extras = ["aiohttp"], specifier = ">=0.5.8" },
 ]
 
 [[package]]
@@ -5686,6 +5699,12 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/79/a2/59f6dbfcc43eb08c91bf77670ade5ca3ddc293c518db2b29703643799273/turbopuffer-0.5.13.tar.gz", hash = "sha256:e48ead6af4d493201ec6c9dfaaa6dca9bc96322f9a12f84d6866159a76eb6c27", size = 134367 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/35/fd/e27b0fc9b9bebf92dc24cb54ff3862aae2b6280d98704b8eff5e98e84ccd/turbopuffer-0.5.13-py3-none-any.whl", hash = "sha256:d48263aab236d697ab3321c00870ba1104cdddcd315d67f85d1bd150621e9ae8", size = 101727 },
+]
+
+[package.optional-dependencies]
+aiohttp = [
+    { name = "aiohttp" },
+    { name = "httpx-aiohttp" },
 ]
 
 [[package]]
