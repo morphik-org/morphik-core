@@ -50,10 +50,11 @@ if not any(
 # Constants for external storage
 DEFAULT_APP_ID = "default"  # Fallback for local usage when app_id is None
 
-settings = get_settings()
-if settings.MULTIVECTOR_STORE_PROVIDER == "morphik" or settings.ENABLE_DUAL_MULTIVECTOR_INGESTION:
+
+# TurboPuffer + FDE imports - required when using morphik provider or dual ingestion
+if get_settings().MULTIVECTOR_STORE_PROVIDER == "morphik" or get_settings().ENABLE_DUAL_MULTIVECTOR_INGESTION:
     import fixed_dimensional_encoding as fde
-    from turbopuffer import AsyncTurbopuffer, NotFoundError
+    from turbopuffer import AsyncTurbopuffer, DefaultAioHttpClient, NotFoundError
 else:
     NotFoundError = Exception  # type: ignore[assignment]
 
@@ -218,7 +219,14 @@ class FastMultiVectorStore(BaseVectorStore):
         self.uri = uri
         self.tpuf_api_key = tpuf_api_key
         self.namespace = namespace
-        self.tpuf = AsyncTurbopuffer(api_key=tpuf_api_key, region=region, default_namespace="default2")
+        # Use aiohttp for better concurrency, disable compression to reduce CPU overhead
+        self.tpuf = AsyncTurbopuffer(
+            api_key=tpuf_api_key,
+            region=region,
+            default_namespace="default2",
+            http_client=DefaultAioHttpClient(),
+            compression=False,
+        )
         # TODO: Cache namespaces, and send a warming request
         self.ns = lambda app_id: self.tpuf.namespace(app_id)
         self.chunk_storage, self.chunk_bucket = self._init_chunk_storage()

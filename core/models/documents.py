@@ -35,6 +35,11 @@ class Document(BaseModel):
     """metadata to help with querying eg. frame descriptions and time-stamped transcript for videos"""
     chunk_ids: List[str] = Field(default_factory=list)
 
+    summary_storage_key: Optional[str] = None
+    summary_version: Optional[int] = None
+    summary_bucket: Optional[str] = None
+    summary_updated_at: Optional[str] = None
+
     # Flattened fields from system_metadata for performance
     #
     # FOLDER FIELD SEMANTICS:

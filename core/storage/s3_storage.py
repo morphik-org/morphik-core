@@ -218,6 +218,9 @@ class S3Storage(BaseStorage):
         try:
             return await loop.run_in_executor(_get_s3_executor(), _sync_download)
         except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("NoSuchKey", "404"):
+                raise FileNotFoundError(f"File not found: {bucket}/{key}") from e
             logger.error(f"Error downloading from S3: {e}")
             raise
 
