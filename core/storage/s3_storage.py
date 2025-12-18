@@ -41,6 +41,7 @@ class S3Storage(BaseStorage):
         region_name: str = "us-east-2",
         default_bucket: str = "morphik-storage",
         endpoint_url: Optional[str] = None,
+        upload_concurrency: int = 16,
     ):
         self.default_bucket = default_bucket
         # Increase the underlying urllib3 connection-pool size to better support high concurrency
@@ -57,6 +58,9 @@ class S3Storage(BaseStorage):
             client_args["endpoint_url"] = endpoint_url
 
         self.s3_client = boto3.client(**client_args)
+        
+        # Cap concurrent uploads to avoid overwhelming the pool/S3 while still allowing parallelism.
+        self._upload_semaphore = asyncio.Semaphore(max(1, upload_concurrency))
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -96,15 +100,15 @@ class S3Storage(BaseStorage):
         content_type: Optional[str] = None,
         bucket: str = "",
     ) -> Tuple[str, str]:
-        """Upload a file to S3."""
-        try:
-            extra_args = {}
-            if content_type:
-                extra_args["ContentType"] = content_type
+        """Upload a file to S3 using a shared executor for true concurrency."""
+        extra_args = {}
+        if content_type:
+            extra_args["ContentType"] = content_type
 
-            target_bucket = bucket or self.default_bucket
+        target_bucket = bucket or self.default_bucket
+        loop = asyncio.get_running_loop()
 
-            # Ensure bucket exists (when dedicated buckets per app are enabled)
+        def _sync_upload() -> None:
             self._ensure_bucket(target_bucket)
 
             if isinstance(file, (str, bytes)):
@@ -119,13 +123,15 @@ class S3Storage(BaseStorage):
                 try:
                     self.s3_client.upload_file(temp_file_path, target_bucket, key, ExtraArgs=extra_args)
                 finally:
-                    Path(temp_file_path).unlink()
+                    Path(temp_file_path).unlink(missing_ok=True)
             else:
                 # File object
                 self.s3_client.upload_fileobj(file, target_bucket, key, ExtraArgs=extra_args)
 
+        try:
+            async with self._upload_semaphore:
+                await loop.run_in_executor(_get_s3_executor(), _sync_upload)
             return target_bucket, key
-
         except ClientError as e:
             logger.error(f"Error uploading to S3: {e}")
             raise
@@ -219,6 +225,9 @@ class S3Storage(BaseStorage):
         try:
             return await loop.run_in_executor(_get_s3_executor(), _sync_download)
         except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code in ("NoSuchKey", "404"):
+                raise FileNotFoundError(f"File not found: {bucket}/{key}") from e
             logger.error(f"Error downloading from S3: {e}")
             raise
 

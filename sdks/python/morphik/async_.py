@@ -25,6 +25,7 @@ from .models import (
     IngestTextRequest,
     ListDocsResponse,
     QueryPromptOverrides,
+    Summary,
 )
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,31 @@ class AsyncFolder:
         self._child_count = info.child_count or self._child_count
         self._description = info.description or self._description
         return info
+
+    async def get_summary(self) -> Summary:
+        """Retrieve the latest summary for this folder."""
+        identifier = self._id or self.full_path
+        if not identifier:
+            raise ValueError("Folder identifier is missing")
+        return await self._client.get_folder_summary(identifier)
+
+    async def upsert_summary(
+        self,
+        content: str,
+        *,
+        versioning: bool = True,
+        overwrite_latest: bool = False,
+    ) -> Summary:
+        """Write or update the summary for this folder."""
+        identifier = self._id or self.full_path
+        if not identifier:
+            raise ValueError("Folder identifier is missing")
+        return await self._client.upsert_folder_summary(
+            identifier,
+            content,
+            versioning=versioning,
+            overwrite_latest=overwrite_latest,
+        )
 
     def signin(self, end_user_id: str) -> "AsyncUserScope":
         """
@@ -1337,6 +1363,30 @@ class AsyncMorphik(_ScopedOperationsMixin):
         response = await self._request("DELETE", f"folders/{folder_id_or_name}")
         return response
 
+    async def get_folder_summary(self, folder_id_or_path: str) -> Summary:
+        """Get the persisted summary for a folder."""
+        folder_param = folder_id_or_path.lstrip("/") if folder_id_or_path else folder_id_or_path
+        response = await self._request("GET", f"folders/{folder_param}/summary")
+        return Summary(**response)
+
+    async def upsert_folder_summary(
+        self,
+        folder_id_or_path: str,
+        content: str,
+        *,
+        versioning: bool = True,
+        overwrite_latest: bool = False,
+    ) -> Summary:
+        """Create or update a folder summary."""
+        folder_param = folder_id_or_path.lstrip("/") if folder_id_or_path else folder_id_or_path
+        payload = {
+            "content": content,
+            "versioning": versioning,
+            "overwrite_latest": overwrite_latest,
+        }
+        response = await self._request("PUT", f"folders/{folder_param}/summary", data=payload)
+        return Summary(**response)
+
     def get_folder_by_name(self, name: str) -> AsyncFolder:
         """
         Get a folder by name to scope operations.
@@ -1844,6 +1894,28 @@ class AsyncMorphik(_ScopedOperationsMixin):
         doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
+
+    async def get_document_summary(self, document_id: str) -> Summary:
+        """Get the persisted summary for a document."""
+        response = await self._request("GET", f"documents/{document_id}/summary")
+        return Summary(**response)
+
+    async def upsert_document_summary(
+        self,
+        document_id: str,
+        content: str,
+        *,
+        versioning: bool = True,
+        overwrite_latest: bool = False,
+    ) -> Summary:
+        """Create or update a document summary."""
+        payload = {
+            "content": content,
+            "versioning": versioning,
+            "overwrite_latest": overwrite_latest,
+        }
+        response = await self._request("PUT", f"documents/{document_id}/summary", data=payload)
+        return Summary(**response)
 
     async def get_document_status(self, document_id: str) -> Dict[str, Any]:
         """

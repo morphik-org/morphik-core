@@ -30,7 +30,6 @@ dependencies = [
     "morphik==1.0.3",
     "ollama>=0.4.8",
     "openai>=1.75.0",
-    "opencv-python>=4.11.0.86",
     "opentelemetry-exporter-otlp>=1.33.0",
     "opentelemetry-instrumentation-fastapi>=0.54b0",
     "pgvector>=0.4.1",
@@ -68,17 +67,18 @@ dependencies = [
     "line_profiler>=4.1.2",
     "types-boto3[s3]>=1.39.1",
     "sentry-sdk[fastapi]>=2.33.0",
-    "turbopuffer>=0.5.8",
+    "turbopuffer[aiohttp]>=0.5.8",
     "colpali-engine @ git+https://github.com/illuin-tech/colpali@v0.3.13",
     "fast-plaid; sys_platform != 'linux' or platform_machine != 'aarch64'",
     "fastkmeans",
     "morphik-rust",
+    "opencv-python-headless>=4.12.0.88",
 ]
 
 [dependency-groups]
 dev-local = [
     "fixed-dimensional-encoding",
-    "turbopuffer>=0.5.8",
+    "turbopuffer[aiohttp]>=0.5.8",
 ]
 
 [tool.black]

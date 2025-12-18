@@ -49,6 +49,7 @@ def _graph_model_to_dict(graph_model: GraphModel) -> Dict[str, Any]:
 
 
 def _document_model_to_dict(doc_model: DocumentModel) -> Dict[str, Any]:
+    system_metadata = doc_model.system_metadata or {}
     return {
         "external_id": doc_model.external_id,
         "content_type": doc_model.content_type,
@@ -57,6 +58,10 @@ def _document_model_to_dict(doc_model: DocumentModel) -> Dict[str, Any]:
         "metadata_types": doc_model.metadata_types or {},
         "storage_info": doc_model.storage_info,
         "system_metadata": doc_model.system_metadata,
+        "summary_storage_key": system_metadata.get("summary_storage_key"),
+        "summary_version": system_metadata.get("summary_version"),
+        "summary_bucket": system_metadata.get("summary_bucket"),
+        "summary_updated_at": system_metadata.get("summary_updated_at"),
         "additional_metadata": doc_model.additional_metadata,
         "chunk_ids": doc_model.chunk_ids,
         "folder_name": doc_model.folder_name,
@@ -68,6 +73,7 @@ def _document_model_to_dict(doc_model: DocumentModel) -> Dict[str, Any]:
 
 
 def _folder_row_to_dict(folder_row) -> Dict[str, Any]:
+    system_metadata = getattr(folder_row, "system_metadata", None) or {}
     return {
         "id": getattr(folder_row, "id", None),
         "name": getattr(folder_row, "name", None),
@@ -77,6 +83,10 @@ def _folder_row_to_dict(folder_row) -> Dict[str, Any]:
         "description": getattr(folder_row, "description", None),
         "document_ids": getattr(folder_row, "document_ids", None),
         "system_metadata": getattr(folder_row, "system_metadata", None),
+        "summary_storage_key": system_metadata.get("summary_storage_key"),
+        "summary_version": system_metadata.get("summary_version"),
+        "summary_bucket": system_metadata.get("summary_bucket"),
+        "summary_updated_at": system_metadata.get("summary_updated_at"),
         "app_id": getattr(folder_row, "app_id", None),
         "end_user_id": getattr(folder_row, "end_user_id", None),
     }

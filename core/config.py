@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: Optional[str] = None
     # Morphik Embedding API server configuration
     MORPHIK_EMBEDDING_API_KEY: Optional[str] = None
-    MORPHIK_EMBEDDING_API_DOMAIN: str
+    MORPHIK_EMBEDDING_API_DOMAIN: list[str]  # List of ColPali API endpoints
 
     # Auth configuration
     JWT_ALGORITHM: str
@@ -111,6 +111,7 @@ class Settings(BaseSettings):
     AWS_REGION: Optional[str] = None
     S3_BUCKET: Optional[str] = None
     S3_ENDPOINT_URL: Optional[str] = None
+    S3_UPLOAD_CONCURRENCY: int = 16
     CACHE_ENABLED: bool = False
     CACHE_MAX_BYTES: int = 10 * 1024 * 1024 * 1024
     CACHE_CHUNK_MAX_BYTES: int = 10 * 1024 * 1024 * 1024
@@ -310,6 +311,11 @@ def get_settings() -> Settings:
             "S3_ENDPOINT_URL": config["storage"]["endpoint_url"],
         }
     )
+    upload_conc = config["storage"].get("s3_upload_concurrency", 16)
+    try:
+        settings_dict["S3_UPLOAD_CONCURRENCY"] = max(1, int(upload_conc))
+    except (TypeError, ValueError):
+        settings_dict["S3_UPLOAD_CONCURRENCY"] = 16
 
     match settings_dict["STORAGE_PROVIDER"]:
         case "local":
@@ -364,7 +370,8 @@ def get_settings() -> Settings:
 
     # Load morphik config
     api_domain = config["morphik"].get("api_domain", "api.morphik.ai")
-    embedding_api_domain = config["morphik"].get("morphik_embedding_api_domain") or api_domain
+    # morphik_embedding_api_domain is always a list of endpoints
+    embedding_api_endpoints = config["morphik"].get("morphik_embedding_api_domain", [f"https://{api_domain}"])
     secret_manager = config["morphik"].get("secret_manager", "env")
 
     settings_dict.update(
@@ -374,7 +381,7 @@ def get_settings() -> Settings:
             "MODE": config["morphik"].get("mode", "cloud"),
             "SECRET_MANAGER": secret_manager,
             "API_DOMAIN": api_domain,
-            "MORPHIK_EMBEDDING_API_DOMAIN": embedding_api_domain,
+            "MORPHIK_EMBEDDING_API_DOMAIN": embedding_api_endpoints,
         }
     )
 
