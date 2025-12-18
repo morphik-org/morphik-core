@@ -110,11 +110,13 @@ device = "mps" # use "cpu" if on docker and using a mac, "cuda" if cuda enabled 
 [storage]
 provider = "local"
 storage_path = "./storage"
+s3_upload_concurrency = 16
 
 # [storage]
 # provider = "aws-s3"
 # region = "us-east-2"
 # bucket_name = "morphik-s3-storage"
+# s3_upload_concurrency = 16
 
 [vector_store]
 provider = "pgvector"
@@ -139,8 +141,8 @@ enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"
 secret_manager = "env"  # "env" (default) or "infisical"
 api_domain = "api.morphik.ai"  # API domain for cloud URIs
-# Only call the embedding API if colpali_mode is "api"
-morphik_embedding_api_domain = "http://localhost:6000"  # endpoint for multivector embedding service
+# ColPali API endpoints (used when colpali_mode = "api")
+morphik_embedding_api_domain = ["http://localhost:6000"]
 colpali_mode = "local" # "off", "local", or "api"
 
 [pdf_viewer]

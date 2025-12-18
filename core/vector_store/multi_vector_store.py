@@ -66,6 +66,13 @@ class MultiVectorStore(BaseVectorStore):
 
         if enable_external_storage:
             self.storage = self._init_storage()
+            try:
+                conc = max(1, int(get_settings().S3_UPLOAD_CONCURRENCY))
+            except Exception:
+                conc = 16
+            self._content_upload_sem = asyncio.Semaphore(conc)
+        else:
+            self._content_upload_sem = None
 
         # Optionally initialize database objects (tables, functions, etc.)
         # This ensures that required items like the max_sim function exist and
@@ -110,6 +117,7 @@ class MultiVectorStore(BaseVectorStore):
                     region_name=settings.AWS_REGION,
                     default_bucket=MULTIVECTOR_CHUNKS_BUCKET,
                     endpoint_url=settings.S3_ENDPOINT_URL,
+                    upload_concurrency=settings.S3_UPLOAD_CONCURRENCY,
                 )
             else:
                 logger.info("Initializing local storage for multi-vector chunks")
@@ -592,29 +600,44 @@ class MultiVectorStore(BaseVectorStore):
         """Store document chunks with their multi-vector embeddings."""
         # Prepare a list of row tuples for executemany
         rows = []
+        # Filter out chunks without embeddings to avoid wasted storage work
+        valid_chunks: List[DocumentChunk] = []
         for chunk in chunks:
             if not hasattr(chunk, "embedding") or chunk.embedding is None:
                 logger.error(f"Missing embeddings for chunk {chunk.document_id}-{chunk.chunk_number}")
                 continue
+            valid_chunks.append(chunk)
 
-            binary_embeddings = self._binary_quantize(chunk.embedding)
+        if not valid_chunks:
+            return True, []
 
-            # Handle content storage (external vs database)
-            content_to_store = chunk.content
+        # Parallelize external content storage when enabled
+        storage_keys: List[Optional[str]] = [None] * len(valid_chunks)
+        if self.enable_external_storage and self.storage:
 
-            if self.enable_external_storage and self.storage:
-                # Try to store content externally
-                storage_key = await self._store_content_externally(
-                    chunk.content, chunk.document_id, chunk.chunk_number, json.dumps(chunk.metadata or {}), app_id
-                )
-
-                if storage_key:
-                    content_to_store = storage_key
-                    logger.debug(f"Stored chunk {chunk.document_id}-{chunk.chunk_number} externally")
+            async def _store_content(idx: int, c: DocumentChunk) -> None:
+                sem = getattr(self, "_content_upload_sem", None)
+                if sem:
+                    async with sem:
+                        storage_keys[idx] = await self._store_content_externally(
+                            c.content, c.document_id, c.chunk_number, json.dumps(c.metadata or {}), app_id
+                        )
                 else:
-                    logger.warning(
-                        f"Failed to store chunk {chunk.document_id}-{chunk.chunk_number} externally, using database"
+                    storage_keys[idx] = await self._store_content_externally(
+                        c.content, c.document_id, c.chunk_number, json.dumps(c.metadata or {}), app_id
                     )
+
+            await asyncio.gather(*[_store_content(idx, c) for idx, c in enumerate(valid_chunks)])
+
+        for idx, chunk in enumerate(valid_chunks):
+            binary_embeddings = self._binary_quantize(chunk.embedding)
+            content_to_store = storage_keys[idx] if storage_keys[idx] else chunk.content
+            if storage_keys[idx]:
+                logger.debug(f"Stored chunk {chunk.document_id}-{chunk.chunk_number} externally")
+            elif self.enable_external_storage and self.storage:
+                logger.warning(
+                    f"Failed to store chunk {chunk.document_id}-{chunk.chunk_number} externally, using database"
+                )
 
             rows.append(
                 (
@@ -625,9 +648,6 @@ class MultiVectorStore(BaseVectorStore):
                     binary_embeddings,
                 )
             )
-
-        if not rows:
-            return True, []
 
         # Off-load blocking DB I/O to a thread so we don't block the event loop
         await asyncio.to_thread(self._bulk_insert_rows, rows)
