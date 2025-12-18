@@ -67,7 +67,7 @@ dependencies = [
     "line_profiler>=4.1.2",
     "types-boto3[s3]>=1.39.1",
     "sentry-sdk[fastapi]>=2.33.0",
-    "turbopuffer[aiohttp]>=0.5.8",
+    "turbopuffer[aiohttp]>=1.10.0",
     "colpali-engine @ git+https://github.com/illuin-tech/colpali@v0.3.13",
     "fast-plaid; sys_platform != 'linux' or platform_machine != 'aarch64'",
     "fastkmeans",
@@ -78,7 +78,6 @@ dependencies = [
 [dependency-groups]
 dev-local = [
     "fixed-dimensional-encoding",
-    "turbopuffer[aiohttp]>=0.5.8",
 ]
 
 [tool.black]
