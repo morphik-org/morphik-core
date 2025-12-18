@@ -24,6 +24,7 @@ from core.models.responses import (
     FolderCount,
     ListDocsResponse,
 )
+from core.models.summary import SummaryResponse, SummaryUpsertRequest
 from core.routes.utils import project_document_fields, warn_if_legacy_rules
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, ingestion_service
@@ -242,6 +243,36 @@ async def get_document_status(document_id: str, auth: AuthContext = Depends(veri
     except Exception as e:
         logger.error(f"Error getting document status: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting document status: {str(e)}")
+
+
+@router.get("/{document_id}/summary", response_model=SummaryResponse)
+async def get_document_summary(document_id: str, auth: AuthContext = Depends(verify_token)) -> SummaryResponse:
+    """
+    Retrieve the latest summary for a document.
+    """
+    try:
+        return await document_service.get_summary("document", document_id, auth)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error fetching document summary: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch document summary")
+
+
+@router.put("/{document_id}/summary", response_model=SummaryResponse)
+async def upsert_document_summary(
+    document_id: str, request: SummaryUpsertRequest, auth: AuthContext = Depends(verify_token)
+) -> SummaryResponse:
+    """
+    Create or update a document summary with optional versioning.
+    """
+    try:
+        return await document_service.upsert_summary("document", document_id, request, auth)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error writing document summary: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to write document summary")
 
 
 @router.delete("/{document_id}", response_model=DocumentDeleteResponse)

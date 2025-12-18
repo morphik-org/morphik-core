@@ -62,6 +62,10 @@ class Document(BaseModel):
     )
     additional_metadata: Dict[str, Any] = Field(default_factory=dict, description="Ingestion-generated metadata")
     chunk_ids: List[str] = Field(default_factory=list, description="IDs of document chunks")
+    summary_storage_key: Optional[str] = Field(None, description="Pointer to the stored summary blob")
+    summary_version: Optional[int] = Field(None, description="Version number of the stored summary")
+    summary_bucket: Optional[str] = Field(None, description="Bucket or container that stores the summary")
+    summary_updated_at: Optional[str] = Field(None, description="Timestamp when the summary was last updated")
     page_count: Optional[int] = Field(None, description="Number of pages derived during ingestion")
     folder_name: Optional[str] = Field(None, description="Folder scope for the document")
     folder_path: Optional[str] = Field(None, description="Canonical folder path for the document")
@@ -226,6 +230,58 @@ class Document(BaseModel):
             )
 
         return self._client.update_document_metadata(document_id=self.external_id, metadata=metadata)
+
+    def get_summary(self) -> "Summary":
+        """
+        Retrieve the latest summary for this document.
+
+        Returns:
+            Summary: The document's summary content and metadata
+        """
+        if self._client is None:
+            raise ValueError(
+                "Document instance not connected to a client. Use a document returned from a Morphik client method."
+            )
+        return self._client.get_document_summary(document_id=self.external_id)
+
+    def upsert_summary(
+        self,
+        content: str,
+        *,
+        versioning: bool = True,
+        overwrite_latest: bool = False,
+    ) -> "Summary":
+        """
+        Create or update a summary for this document.
+
+        Args:
+            content: Summary content (markdown/text)
+            versioning: When True, increments version instead of overwriting
+            overwrite_latest: Allow overwriting when versioning is disabled
+
+        Returns:
+            Summary: The created/updated summary
+        """
+        if self._client is None:
+            raise ValueError(
+                "Document instance not connected to a client. Use a document returned from a Morphik client method."
+            )
+        return self._client.upsert_document_summary(
+            document_id=self.external_id,
+            content=content,
+            versioning=versioning,
+            overwrite_latest=overwrite_latest,
+        )
+
+
+class Summary(BaseModel):
+    """Summary payload for documents and folders."""
+
+    content: str = Field(..., description="Summary content (markdown/text)")
+    storage_key: str = Field(..., description="Pointer to the stored summary blob")
+    bucket: Optional[str] = Field(None, description="Bucket or container that stores the summary")
+    version: int = Field(..., description="Version number of the stored summary")
+    updated_at: Optional[str] = Field(None, description="Timestamp when the summary was last updated")
 
 
 class IngestionOptions(BaseModel):
@@ -655,6 +711,10 @@ class FolderInfo(BaseModel):
     rules: List[Dict[str, Any]] = Field(default_factory=list, description="Rules associated with the folder")
     app_id: Optional[str] = Field(None, description="Application ID associated with the folder")
     end_user_id: Optional[str] = Field(None, description="End user ID associated with the folder")
+    summary_storage_key: Optional[str] = Field(None, description="Pointer to the stored summary blob")
+    summary_version: Optional[int] = Field(None, description="Version number of the stored summary")
+    summary_bucket: Optional[str] = Field(None, description="Bucket or container for the stored summary")
+    summary_updated_at: Optional[str] = Field(None, description="Timestamp when the summary was last updated")
 
 
 class DocumentPagesResponse(BaseModel):
