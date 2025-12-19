@@ -1,7 +1,7 @@
 import json
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
 
@@ -281,6 +281,7 @@ async def ingest_file(
         job = await redis.enqueue_job(
             "process_ingestion_job",
             _job_id=f"ingest:{doc.external_id}",
+            _expires=timedelta(days=7),
             document_id=doc.external_id,
             file_key=stored_key,
             bucket=bucket,
@@ -478,6 +479,7 @@ async def batch_ingest_files(
             job = await redis.enqueue_job(
                 "process_ingestion_job",
                 _job_id=f"ingest:{doc.external_id}",
+                _expires=timedelta(days=7),
                 document_id=doc.external_id,
                 file_key=stored_key,
                 bucket=bucket,
@@ -602,6 +604,7 @@ async def requeue_ingest_jobs(
             job = await redis.enqueue_job(
                 "process_ingestion_job",
                 _job_id=f"ingest:{ext_id}",
+                _expires=timedelta(days=7),
                 document_id=ext_id,
                 file_key=key,
                 bucket=bucket,
