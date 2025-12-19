@@ -20,7 +20,7 @@ import logging
 import os
 import tempfile
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -572,6 +572,7 @@ class IngestionService:
             job = await redis.enqueue_job(
                 "process_ingestion_job",
                 _job_id=f"ingest:{doc.external_id}",
+                _expires=timedelta(days=7),
                 document_id=doc.external_id,
                 file_key=full_storage_path,
                 bucket=bucket_name,
