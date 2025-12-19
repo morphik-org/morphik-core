@@ -10,12 +10,14 @@ import torch
 from PIL.Image import Image
 from PIL.Image import open as open_image
 
-# --- V'S CHANGE: Import BOTH model architectures ---
+# --- V'S CHANGE: Import ALL 3 model architectures ---
 from colpali_engine.models import (
     ColQwen2_5, 
     ColQwen2_5_Processor,
     ColIdefics3, 
-    ColIdefics3Processor
+    ColIdefics3Processor,
+    ColPali,            # <--- New: For vidore/colpali-v1.2 (PaliGemma)
+    ColPaliProcessor    # <--- New
 )
 # ---------------------------------------------------
 
@@ -46,15 +48,16 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                 attn_implementation = "flash_attention_2"
         
         # 3. Model Selector Logic
-        # You can add a specific setting for this, or default to standard ColPali
-        # Example: self.settings.COLPALI_MODEL_NAME or a default string
+        # Get model name from ENV, default to the standard ColPali v1.2
         model_name = os.getenv("COLPALI_MODEL_NAME", "vidore/colpali-v1.2-merged")
         
         logger.info(f"Loading ColPali Model: {model_name}")
 
-        # --- V'S CHANGE: Dynamic Loading based on Model Name ---
+        # --- V'S CHANGE: Dynamic Loading for Smol, Qwen, AND PaliGemma ---
+        
+        # CASE 1: SMOLVLM (Idefics3 Architecture)
         if "smol" in model_name.lower() or "idefics" in model_name.lower():
-            # Use Idefics3 architecture for SmolVLM
+            logger.info("Detected SmolVLM/Idefics3 architecture.")
             self.model = ColIdefics3.from_pretrained(
                 model_name,
                 torch_dtype=torch.bfloat16,
@@ -62,11 +65,12 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                 attn_implementation=attn_implementation,
             ).eval()
             self.processor = ColIdefics3Processor.from_pretrained(model_name, use_fast=True)
-            # SmolVLM is tiny, so we can boost batch size
+            # Smol is tiny (256M/500M), boost batch size!
             self.batch_size = 32 if self.mode == "cloud" else 4
             
-        else:
-            # Default to Qwen2.5/Standard ColPali architecture
+        # CASE 2: QWEN (Qwen2/2.5-VL Architecture)
+        elif "qwen" in model_name.lower():
+            logger.info("Detected Qwen2/2.5-VL architecture.")
             self.model = ColQwen2_5.from_pretrained(
                 model_name,
                 torch_dtype=torch.bfloat16,
@@ -74,13 +78,28 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                 attn_implementation=attn_implementation,
             ).eval()
             self.processor = ColQwen2_5_Processor.from_pretrained(model_name, use_fast=True)
-            # Standard models are heavier, use conservative batch size
+            # Qwen is heavy (3B+), keep batch size conservative
             self.batch_size = 8 if self.mode == "cloud" else 1
+
+        # CASE 3: COLPALI (PaliGemma Architecture - The Default)
+        else:
+            logger.info("Detected Standard ColPali (PaliGemma) architecture.")
+            self.model = ColPali.from_pretrained(
+                model_name,
+                torch_dtype=torch.bfloat16,
+                device_map=device,
+                attn_implementation=attn_implementation,
+            ).eval()
+            self.processor = ColPaliProcessor.from_pretrained(model_name, use_fast=True)
+            # PaliGemma is ~3B, keep batch size conservative
+            self.batch_size = 8 if self.mode == "cloud" else 1
+            
         # -------------------------------------------------------
 
         self.device = device
         logger.info(f"Colpali initialized. Batch size: {self.batch_size}")
 
+    
     async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> List[np.ndarray]:
         # ... (Rest of the method remains exactly the same) ...
         job_start_time = time.time()
