@@ -140,7 +140,8 @@ arq_max_jobs = 1  # Maximum concurrent jobs for ARQ worker
 colpali_store_batch_size = 16  # Batch size for ColPali vector storage
 
 [pdf]
-colpali_pdf_dpi = 150  # DPI for PDF to image conversion in ColPali processing
+# colpali_pdf_dpi = 150  # DPI for PDF to image conversion in ColPali processing
+colpali_pdf_dpi = 300 # For clarity when using small colpali model
 
 [morphik]
 enable_colpali = true
