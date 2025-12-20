@@ -78,6 +78,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsm6 \
     libxext6 \
     libmagic1 \
+    libcairo2 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libpangoft2-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libffi8 \
+    libxml2 \
+    libxslt1.1 \
+    libjpeg62-turbo \
+    libopenjp2-7 \
+    fonts-dejavu-core \
     postgresql-client \
     poppler-utils \
     gcc \
