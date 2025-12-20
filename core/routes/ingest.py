@@ -615,6 +615,8 @@ async def requeue_ingest_jobs(
                 auth_dict=auth_dict,
                 use_colpali=use_colpali_flag,
                 folder_name=doc.folder_name,
+                folder_path=doc.folder_path,
+                folder_leaf=doc.folder_name,
                 end_user_id=doc.end_user_id,
             )
 
