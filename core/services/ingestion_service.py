@@ -583,6 +583,8 @@ class IngestionService:
                 auth_dict=auth_dict,
                 use_colpali=use_colpali,
                 folder_name=str(folder_name) if folder_name else None,
+                folder_path=folder_path,
+                folder_leaf=folder_leaf,
                 end_user_id=end_user_id,
             )
             if job is None:
