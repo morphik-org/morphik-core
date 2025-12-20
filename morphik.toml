@@ -152,6 +152,13 @@ api_domain = "api.morphik.ai"  # API domain for cloud URIs
 morphik_embedding_api_domain = ["http://localhost:6000"]
 colpali_mode = "local" # "off", "local", or "api"
 
+# NEW: ColPali model selection
+# Options:
+#   - "vidore/colpali-v1.2-merged" (default, PaliGemma architecture)
+#   - "tsystems/colqwen2.5-3b-multilingual-v1.0" (Qwen architecture)
+#   - Any SmolVLM/Idefics3 compatible model
+colpali_model_name = "vidore/colpali-v1.2-merged"
+
 [pdf_viewer]
 frontend_url = "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf" # "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf"
 
