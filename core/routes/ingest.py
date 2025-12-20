@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -92,19 +93,10 @@ def _normalize_folder_inputs(folder_name: Optional[str]) -> tuple[Optional[str],
 async def ingest_text(
     request: IngestTextRequest,
     auth: AuthContext = Depends(verify_token),
+    redis: arq.ArqRedis = Depends(get_redis_pool),
 ) -> Document:
-    """Ingest a **text** document."""
+    """Ingest a **text** document asynchronously (queued like /ingest/file)."""
     try:
-        # Free-tier usage limits (cloud mode only)
-        if settings.MODE == "cloud" and auth.user_id:
-            pages_est = estimate_pages_by_chars(len(request.content))
-            await check_and_increment_limits(
-                auth,
-                "ingest",
-                pages_est,
-                verify_only=True,
-            )
-
         if getattr(request, "rules", None):
             logger.warning("Legacy 'rules' field supplied to /ingest/text; ignoring payload.")
 
@@ -113,15 +105,36 @@ async def ingest_text(
             request.metadata, request.folder_name, extra_fields, request.metadata_types, context="ingest"
         )
 
-        return await ingestion_service.ingest_text(
-            content=request.content,
-            filename=request.filename,
+        # Treat /ingest/text as a thin wrapper around /ingest/file to avoid sync timeouts.
+        # Encode the content to bytes and enqueue the standard ingestion worker flow.
+        import mimetypes
+
+        filename = request.filename
+        if not filename:
+            content_head = request.content.lstrip().lower()
+            looks_like_html = content_head.startswith("<!doctype html") or "<html" in content_head
+            ext = ".html" if looks_like_html else ".txt"
+            filename = f"ingest_text_{uuid.uuid4().hex}{ext}"
+        elif not os.path.splitext(filename)[1]:
+            filename = f"{filename}.txt"
+
+        content_type, _ = mimetypes.guess_type(filename)
+        if not content_type:
+            content_type = "text/plain"
+
+        content_bytes = request.content.encode("utf-8")
+
+        return await ingestion_service.ingest_file_content(
+            file_content_bytes=content_bytes,
+            filename=filename,
+            content_type=content_type,
             metadata=request.metadata,
-            metadata_types=request.metadata_types,
-            use_colpali=request.use_colpali,
             auth=auth,
+            redis=redis,
+            metadata_types=request.metadata_types,
             folder_name=request.folder_name,
             end_user_id=request.end_user_id,
+            use_colpali=request.use_colpali,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))

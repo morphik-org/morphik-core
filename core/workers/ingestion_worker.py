@@ -364,6 +364,27 @@ async def process_ingestion_job(
             phase_times["download_file"] = download_time
             logger.info(f"File download took {download_time:.2f}s for {len(file_content)/1024/1024:.2f}MB")
 
+            # Optional: render HTML to PDF to mimic printed output and speed up parsing
+            html_conversion_start = time.time()
+            html_converted = False
+            if (
+                (original_filename and original_filename.lower().endswith((".html", ".htm")))
+                or content_type in {"text/html", "application/xhtml+xml"}
+            ):
+                try:
+                    from weasyprint import HTML  # type: ignore
+
+                    html_str = file_content.decode("utf-8", errors="replace")
+                    pdf_bytes = HTML(string=html_str).write_pdf()
+                    if pdf_bytes:
+                        file_content = pdf_bytes
+                        content_type = "application/pdf"
+                        html_converted = True
+                        logger.info("Converted HTML to PDF for ingestion (WeasyPrint)")
+                except Exception as html_exc:
+                    logger.warning("HTML->PDF conversion failed; falling back to raw HTML: %s", html_exc)
+            phase_times["html_to_pdf"] = time.time() - html_conversion_start
+
             # Check if we're using ColPali
             using_colpali = (
                 use_colpali and ingestion_service.colpali_embedding_model and ingestion_service.colpali_vector_store
@@ -429,6 +450,9 @@ async def process_ingestion_job(
             # provided original_filename (often .pdf) can mislead the parser when
             # the stored object is a pre-extracted text file (e.g. .pdf.txt).
             parse_filename = os.path.basename(file_key) if file_key else original_filename
+            if html_converted:
+                base_name = os.path.splitext(original_filename or parse_filename or "document")[0]
+                parse_filename = f"{base_name}.pdf"
 
             parse_start = time.time()
 
