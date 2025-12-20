@@ -4,13 +4,13 @@ import logging
 import time
 from contextvars import ContextVar
 from typing import Any, Dict, List, Tuple, Union
-import os
+
 import numpy as np
 import torch
 from PIL.Image import Image
 from PIL.Image import open as open_image
 
-# Import ALL 3 model architectures for multi-model support
+# Import ALL 3 model architectures
 from colpali_engine.models import (
     ColQwen2_5, 
     ColQwen2_5_Processor,
@@ -40,15 +40,12 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         logger.info(f"Initializing ColpaliEmbeddingModel with device: {device}")
         start_time = time.time()
         
-        # Enable TF32 for faster matmuls on Ampere+ GPUs (A10, A100, etc.)
+        # 2. Configure Attention (Flash Attn 2 Check)
+        attn_implementation = "eager"
         if device == "cuda":
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
             logger.info("Enabled TF32 for CUDA matmul operations")
-
-        # 2. Configure Attention (Flash Attn 2 Check)
-        attn_implementation = "eager"
-        if device == "cuda":
             if importlib.util.find_spec("flash_attn") is not None:
                 attn_implementation = "flash_attention_2"
             else:
@@ -58,19 +55,15 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                 )
         
         # 3. Model Selector Logic
-        # Get model name from morphik.toml via settings, with fallback to default
-        # The settings object should have COLPALI_MODEL_NAME from morphik.toml [morphik] section
-        model_name = getattr(self.settings, 'COLPALI_MODEL_NAME', None)
-        if model_name is None:
-            # Fallback to default ColPali v1.2 if not configured
-            model_name = "vidore/colpali-v1.2-merged"
-            logger.info(f"COLPALI_MODEL_NAME not found in settings, using default: {model_name}")
+        # Get model name from morphik.toml via settings, default to the standard ColPali v1.2
+        model_name = getattr(self.settings, 'COLPALI_MODEL_NAME', "vidore/colpali-v1.2-merged")
         
         logger.info(f"Loading ColPali Model: {model_name}")
 
-        # Dynamic Loading for Smol, Qwen, AND PaliGemma architectures
+        # Dynamic Loading for Smol, Qwen, AND PaliGemma
         
         # CASE 1: SMOLVLM (Idefics3 Architecture)
+        # See: https://huggingface.co/vidore/colSmol-256M
         if "smol" in model_name.lower() or "idefics" in model_name.lower():
             logger.info("Detected SmolVLM/Idefics3 architecture.")
             self.model = ColIdefics3.from_pretrained(
@@ -146,7 +139,7 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                     image_items.append((index, image))
                 except Exception as e:
                     logger.error(f"Error processing image chunk {index}: {str(e)}. Falling back to text.")
-                    text_items.append((index, chunk.content))  # Fallback: treat content as text
+                    text_items.append((index, chunk.content))
             else:
                 text_items.append((index, chunk.content))
 
@@ -178,7 +171,6 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                 image_model += batch_metrics["model"]
                 image_convert += batch_metrics["convert"]
                 image_total += batch_metrics["total"]
-                # Place embeddings in the correct position in results
                 for original_index, embedding in zip(batch_indices, batch_embeddings):
                     results[original_index] = embedding
                 batch_time = time.time() - batch_start
@@ -211,7 +203,6 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                 text_model += batch_metrics["model"]
                 text_convert += batch_metrics["convert"]
                 text_total += batch_metrics["total"]
-                # Place embeddings in the correct position in results
                 for original_index, embedding in zip(batch_indices, batch_embeddings):
                     results[original_index] = embedding
                 batch_time = time.time() - batch_start
@@ -225,20 +216,16 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
             text_process = text_model = text_convert = text_total = 0.0
             text_time = 0.0
 
-        # Ensure all chunks were processed (handle potential None entries if errors occurred,
-        # though unlikely with fallback)
+        # Ensure all chunks were processed
         final_results = [res for res in results if res is not None]
         if len(final_results) != len(chunks):
             logger.warning(
                 f"Number of embeddings ({len(final_results)}) does not match number of chunks "
                 f"({len(chunks)}). Some chunks might have failed."
             )
-            # Fill potential gaps if necessary, though the current logic should cover all chunks
-            # For safety, let's reconstruct based on successfully processed indices, though it shouldn't be needed
             processed_indices = {idx for idx, _ in image_items} | {idx for idx, _ in text_items}
             if len(processed_indices) != len(chunks):
                 logger.error("Mismatch in processed indices vs original chunks count. This indicates a logic error.")
-            # Assuming results contains embeddings at correct original indices, filter out Nones
             final_results = [results[i] for i in range(len(chunks)) if results[i] is not None]
 
         total_time = time.time() - job_start_time
@@ -268,7 +255,6 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         }
         _INGEST_METRICS.set(metrics)
         
-        # Cast is safe because we filter out Nones, though Nones shouldn't occur with the fallback logic
         return final_results  # type: ignore
 
     def latest_ingest_metrics(self) -> Dict[str, Any]:
@@ -296,8 +282,6 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
 
         model_start = time.time()
 
-        # inference_mode is faster than no_grad (disables version tracking)
-        # autocast ensures consistent bf16 inference on CUDA
         with torch.inference_mode():
             if self.device == "cuda":
                 with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
@@ -308,9 +292,7 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         model_time = time.time() - model_start
 
         convert_start = time.time()
-
         result = embeddings.to(torch.float32).numpy(force=True)[0]
-
         convert_time = time.time() - convert_start
 
         total_time = time.time() - start_time
@@ -319,8 +301,6 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
             f"convert={convert_time:.2f}s, total={total_time:.2f}s"
         )
         return result
-
-    # ---- Batch processing methods (only used in 'cloud' mode) ----
 
     async def generate_embeddings_batch_images(self, images: List[Image]) -> Tuple[List[np.ndarray], Dict[str, float]]:
         batch_start_time = time.time()
