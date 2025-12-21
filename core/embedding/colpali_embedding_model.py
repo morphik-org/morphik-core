@@ -222,6 +222,10 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
         metrics = _INGEST_METRICS.get()
         return dict(metrics) if metrics else {}
 
+    def latest_ingest_timing(self) -> Dict[str, Any]:
+        """Alias for latest_ingest_metrics to match API model timing accessor."""
+        return self.latest_ingest_metrics()
+
     async def embed_for_query(self, text: str) -> torch.Tensor:
         start_time = time.time()
         result = await self.generate_embeddings(text)

@@ -1,7 +1,9 @@
 import asyncio
 import contextlib
 import inspect
+import json
 import logging
+import math
 import os
 import time
 import traceback
@@ -36,6 +38,10 @@ from core.vector_store.pgvector_store import PGVectorStore
 from ee.db_router import get_database_for_app, get_vector_store_for_app
 
 logger = logging.getLogger(__name__)
+for noisy_logger in ("httpx", "httpcore", "aiohttp", "turbopuffer"):
+    logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+progress_logger = logging.getLogger("worker.progress")
+summary_logger = logging.getLogger("worker.ingestion_summary")
 
 # Initialize global settings once
 settings = get_settings()
@@ -43,17 +49,37 @@ settings = get_settings()
 # Create logs directory if it doesn't exist
 os.makedirs("logs", exist_ok=True)
 
-# Set up file handler for worker_ingestion.log with rotation
-file_handler = RotatingFileHandler(
-    "logs/worker_ingestion.log",
-    maxBytes=100 * 1024 * 1024,
-    backupCount=10,
-    encoding="utf-8",
-)
-file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-logger.addHandler(file_handler)
 # Set logger level based on settings (diff used INFO directly)
 logger.setLevel(logging.INFO)
+logger.propagate = True
+progress_logger.setLevel(logging.INFO)
+if not progress_logger.handlers:
+    progress_handler = logging.StreamHandler()
+    progress_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    progress_logger.addHandler(progress_handler)
+progress_logger.propagate = False
+summary_logger.setLevel(logging.INFO)
+if not summary_logger.handlers:
+    summary_handler = RotatingFileHandler(
+        "logs/ingestion_summary.jsonl",
+        maxBytes=100 * 1024 * 1024,
+        backupCount=10,
+        encoding="utf-8",
+    )
+    summary_handler.setFormatter(logging.Formatter("%(message)s"))
+    summary_logger.addHandler(summary_handler)
+summary_logger.propagate = False
+
+
+def _ensure_worker_logging() -> None:
+    """Ensure stdout logging is configured when the worker starts."""
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        root_handler = logging.StreamHandler()
+        root_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+        root_logger.addHandler(root_handler)
+    if root_logger.level > logging.INFO:
+        root_logger.setLevel(logging.INFO)
 
 
 async def update_document_progress(ingestion_service, document_id, auth, current_step, total_steps, step_name):
@@ -86,6 +112,64 @@ async def update_document_progress(ingestion_service, document_id, auth, current
     except Exception as e:
         logger.warning(f"Failed to update progress for document {document_id}: {e}")
         # Don't fail the ingestion if progress update fails
+
+
+_STORE_TIME_KEYS = ("chunk_payload_upload_s", "multivector_upload_s", "vector_store_write_s", "cache_write_s")
+_STORE_COUNT_KEYS = ("chunk_payload_objects", "multivector_objects", "vector_store_rows", "cache_write_objects")
+_STORE_BACKEND_KEYS = ("chunk_payload_backend", "multivector_backend", "vector_store_backend")
+
+
+def _merge_store_metrics(total: Dict[str, Any], latest: Dict[str, Any]) -> None:
+    for key in _STORE_TIME_KEYS:
+        total[key] = total.get(key, 0.0) + float(latest.get(key, 0.0) or 0.0)
+    for key in _STORE_COUNT_KEYS:
+        total[key] = total.get(key, 0) + int(latest.get(key, 0) or 0)
+    for key in _STORE_BACKEND_KEYS:
+        value = latest.get(key)
+        if not value:
+            continue
+        if key not in total:
+            total[key] = value
+            continue
+        if total[key] == value:
+            continue
+        if isinstance(total[key], list):
+            if value not in total[key]:
+                total[key].append(value)
+        else:
+            total[key] = [total[key], value]
+
+
+def _accumulate_store_metrics(total: Dict[str, Any], latest: Dict[str, Any]) -> None:
+    if not latest:
+        return
+    if "fast" in latest or "slow" in latest:
+        total.setdefault("mode", latest.get("mode", "dual"))
+        for store_key in ("fast", "slow"):
+            if store_key in latest and latest[store_key]:
+                total.setdefault(store_key, {})
+                _merge_store_metrics(total[store_key], latest[store_key])
+        return
+    _merge_store_metrics(total, latest)
+
+
+def _with_throughput(metrics: Dict[str, Any], total_chunks: int) -> Dict[str, Any]:
+    if not metrics:
+        return {}
+    result = dict(metrics)
+    write_time = float(result.get("vector_store_write_s") or 0.0)
+    result["throughput_chunks_s"] = round((total_chunks / write_time), 2) if write_time > 0 else 0.0
+    for key in _STORE_TIME_KEYS:
+        if key in result:
+            result[key] = round(float(result[key]), 2)
+    for key in _STORE_COUNT_KEYS:
+        if key in result:
+            result[key] = int(result[key])
+    return result
+
+
+def _strip_none(values: Dict[str, Any]) -> Dict[str, Any]:
+    return {key: value for key, value in values.items() if value is not None}
 
 
 async def get_document_with_retry(ingestion_service, document_id, auth, max_retries=3, initial_delay=0.3):
@@ -262,9 +346,24 @@ async def process_ingestion_job(
             # Start performance timer
             job_start_time = time.time()
             phase_times = {}
+            embedding_time = 0.0
+            embeddings_per_second = 0.0
+            embedding_chunk_count = 0
+            colpali_image_total_time = 0.0
+            colpali_text_total_time = 0.0
+            colpali_image_count = 0
+            colpali_text_count = 0
+            colpali_endpoints: Optional[int] = None
+            colpali_embedding_time = 0.0
+            store_metrics_total: Dict[str, Any] = {}
+            download_size_bytes = 0
+            folder_id_for_summary: Optional[str] = None
             # 1. Log the start of the job
             logger.info(f"Starting ingestion job for file: {original_filename}")
-            logger.info(f"ColPali parameter received: use_colpali={use_colpali} (type: {type(use_colpali)})")
+            logger.debug(f"ColPali parameter received: use_colpali={use_colpali} (type: {type(use_colpali)})")
+            progress_logger.info(
+                "ingest start doc_id=%s file=%s colpali=%s", document_id, original_filename, use_colpali
+            )
 
             # Define total steps for progress tracking
             total_steps = 6
@@ -353,7 +452,7 @@ async def process_ingestion_job(
 
             # 3. Download the file from storage
             await update_document_progress(ingestion_service, document_id, auth, 1, total_steps, "Downloading file")
-            logger.info(f"Downloading file from {bucket}/{file_key}")
+            logger.debug(f"Downloading file from {bucket}/{file_key}")
             download_start = time.time()
             file_content = await ingestion_service.storage.download_file(bucket, file_key)
 
@@ -362,15 +461,22 @@ async def process_ingestion_job(
                 file_content = file_content.read()
             download_time = time.time() - download_start
             phase_times["download_file"] = download_time
-            logger.info(f"File download took {download_time:.2f}s for {len(file_content)/1024/1024:.2f}MB")
+            download_size_bytes = len(file_content)
+            logger.debug(f"File download took {download_time:.2f}s for {download_size_bytes/1024/1024:.2f}MB")
+            progress_logger.info(
+                "ingest download doc_id=%s size_mb=%.2f time_s=%.2f",
+                document_id,
+                download_size_bytes / 1024 / 1024,
+                download_time,
+            )
 
             # Optional: render HTML to PDF to mimic printed output and speed up parsing
             html_conversion_start = time.time()
             html_converted = False
-            if (
-                (original_filename and original_filename.lower().endswith((".html", ".htm")))
-                or content_type in {"text/html", "application/xhtml+xml"}
-            ):
+            if (original_filename and original_filename.lower().endswith((".html", ".htm"))) or content_type in {
+                "text/html",
+                "application/xhtml+xml",
+            }:
                 try:
                     from weasyprint import HTML  # type: ignore
 
@@ -389,7 +495,7 @@ async def process_ingestion_job(
             using_colpali = (
                 use_colpali and ingestion_service.colpali_embedding_model and ingestion_service.colpali_vector_store
             )
-            logger.info(
+            logger.debug(
                 f"ColPali decision: use_colpali={use_colpali}, "
                 f"has_model={bool(ingestion_service.colpali_embedding_model)}, "
                 f"has_store={bool(ingestion_service.colpali_vector_store)}, "
@@ -437,7 +543,7 @@ async def process_ingestion_job(
             # ===== PROCESSING FLOW DECISION =====
             skip_text_parsing = using_colpali and is_colpali_native_format
 
-            logger.info(
+            logger.debug(
                 f"Processing decision for {mime_type or 'unknown'} file: "
                 f"skip_text_parsing={skip_text_parsing} "
                 f"(ColPali={using_colpali}, native_format={is_colpali_native_format})"
@@ -463,7 +569,7 @@ async def process_ingestion_job(
 
             if is_xml:
                 # XML files always need special parsing
-                logger.info(f"Detected XML file: {parse_filename}")
+                logger.debug(f"Detected XML file: {parse_filename}")
                 xml_chunks = await ingestion_service.parser.parse_and_chunk_xml(file_content, parse_filename)
                 additional_metadata = {}
                 text = ""
@@ -472,7 +578,7 @@ async def process_ingestion_job(
                 # Skip text parsing for ColPali-native formats when no text rules
                 additional_metadata = {}
                 text = ""
-                logger.info("Skipping text extraction - ColPali will handle this file directly")
+                logger.debug("Skipping text extraction - ColPali will handle this file directly")
             else:
                 # Normal text parsing required
                 additional_metadata, text = await ingestion_service.parser.parse_file_to_text(
@@ -528,7 +634,7 @@ async def process_ingestion_job(
             doc = await get_document_with_retry(ingestion_service, document_id, auth, max_retries=5, initial_delay=1.0)
             retrieve_time = time.time() - retrieve_start
             phase_times["retrieve_document"] = retrieve_time
-            logger.info(f"Document retrieval took {retrieve_time:.2f}s")
+            logger.debug(f"Document retrieval took {retrieve_time:.2f}s")
 
             if not doc:
                 logger.error(f"Document {document_id} not found in database after multiple retries")
@@ -572,7 +678,7 @@ async def process_ingestion_job(
             success = await ingestion_service.db.update_document(document_id=document_id, updates=updates, auth=auth)
             update_time = time.time() - update_start
             phase_times["update_document_parsed"] = update_time
-            logger.info(f"Initial document update took {update_time:.2f}s")
+            logger.debug(f"Initial document update took {update_time:.2f}s")
 
             if not success:
                 raise ValueError(f"Failed to update document {document_id}")
@@ -591,11 +697,11 @@ async def process_ingestion_job(
             if xml_processing:
                 # XML files already have chunks from parsing
                 parsed_chunks = xml_chunks
-                logger.info(f"Using pre-parsed XML chunks: {len(parsed_chunks)} chunks")
+                logger.debug(f"Using pre-parsed XML chunks: {len(parsed_chunks)} chunks")
             elif skip_text_parsing:
                 # ColPali-native formats without text rules - no text chunks needed
                 parsed_chunks = []
-                logger.info("No text chunking needed - ColPali will create image-based chunks")
+                logger.debug("No text chunking needed - ColPali will create image-based chunks")
             else:
                 # Normal text chunking required
                 parsed_chunks = await ingestion_service.parser.split_text(text)
@@ -607,7 +713,7 @@ async def process_ingestion_job(
 
             chunking_time = time.time() - chunking_start
             phase_times["split_into_chunks"] = chunking_time
-            logger.info(
+            logger.debug(
                 f"{'XML' if xml_processing else 'Text'} chunking took {chunking_time:.2f}s to create {len(parsed_chunks)} chunks"
             )
 
@@ -671,7 +777,7 @@ async def process_ingestion_job(
             if should_create_image_chunks:
                 phase_times["multivector_create_chunks"] = colpali_create_chunks_time
                 if using_colpali:
-                    logger.info(f"Multivector chunk creation took {colpali_create_chunks_time:.2f}s")
+                    logger.debug(f"Multivector chunk creation took {colpali_create_chunks_time:.2f}s")
             else:
                 phase_times["multivector_create_chunks"] = 0
 
@@ -684,8 +790,15 @@ async def process_ingestion_job(
             if using_colpali and chunks_multivector:
                 final_page_count = len(chunks_multivector)
             final_page_count = max(1, final_page_count)  # Ensure at least 1 page
-            logger.info(
+            logger.debug(
                 f"Determined final page count for usage recording: {final_page_count} pages (ColPali used: {using_colpali})"
+            )
+            progress_logger.info(
+                "ingest chunks doc_id=%s pages=%d text_chunks=%d image_chunks=%d",
+                document_id,
+                final_page_count,
+                len(parsed_chunks),
+                len(chunks_multivector),
             )
 
             colpali_count_for_limit_fn = len(chunks_multivector) if using_colpali else None
@@ -708,9 +821,16 @@ async def process_ingestion_job(
                 embedding_time = time.time() - embedding_start
                 phase_times["generate_embeddings"] = embedding_time
                 embeddings_per_second = len(embeddings) / embedding_time if embedding_time > 0 else 0
-                logger.info(
+                embedding_chunk_count = len(embeddings)
+                logger.debug(
                     f"Embedding generation took {embedding_time:.2f}s for {len(embeddings)} embeddings "
                     f"({embeddings_per_second:.2f} embeddings/s)"
+                )
+                progress_logger.info(
+                    "ingest embed doc_id=%s chunks=%d time_s=%.2f",
+                    document_id,
+                    len(embeddings),
+                    embedding_time,
                 )
 
                 # Create chunk objects
@@ -723,22 +843,32 @@ async def process_ingestion_job(
             else:
                 # Skip regular embeddings
                 if using_colpali:
-                    logger.info("Skipping regular embeddings - will store only in ColPali vector store")
+                    logger.debug("Skipping regular embeddings - will store only in ColPali vector store")
                 elif not processed_chunks:
-                    logger.info("No text chunks to embed")
+                    logger.debug("No text chunks to embed")
                 phase_times["generate_embeddings"] = 0
                 phase_times["create_chunk_objects"] = 0
 
             # 12. Handle ColPali embeddings
             chunk_objects_multivector = []
             colpali_chunk_ids: List[str] = []
+            store_batch_size: Optional[int] = None
+            colpali_batches: Optional[int] = None
             if using_colpali:
                 # Stream in batches to cap memory: embed -> store -> release
                 store_batch_size = settings.COLPALI_STORE_BATCH_SIZE
 
                 total = len(processed_chunks_multivector)
-                logger.info(
+                colpali_batches = math.ceil(total / store_batch_size) if store_batch_size else None
+                logger.debug(
                     f"Multivector streaming mode: processing {total} chunks with store batch size {store_batch_size}"
+                )
+                progress_logger.info(
+                    "ingest batching doc_id=%s total_chunks=%d batch_size=%d batches=%d",
+                    document_id,
+                    total,
+                    store_batch_size,
+                    colpali_batches or 0,
                 )
                 colpali_embedding_time = 0.0
                 colpali_chunk_object_time = 0.0
@@ -757,13 +887,15 @@ async def process_ingestion_job(
                 for start_idx in range(0, total, store_batch_size):
                     end_idx = min(start_idx + store_batch_size, total)
                     batch_chunks = processed_chunks_multivector[start_idx:end_idx]
+                    batch_index = (start_idx // store_batch_size) + 1
 
                     # Embed this batch
                     batch_embed_start = time.time()
                     batch_embeddings = await ingestion_service.colpali_embedding_model.embed_for_ingestion(batch_chunks)
-                    colpali_embedding_time += time.time() - batch_embed_start
-                    metrics_getter = getattr(ingestion_service.colpali_embedding_model, "latest_ingest_metrics", None)
-                    metrics = metrics_getter() if callable(metrics_getter) else {}
+                    batch_embed_time = time.time() - batch_embed_start
+                    colpali_embedding_time += batch_embed_time
+                    timing_getter = getattr(ingestion_service.colpali_embedding_model, "latest_ingest_timing", None)
+                    metrics = timing_getter() if callable(timing_getter) else {}
                     colpali_sort_time += metrics.get("sorting", 0.0)
                     colpali_preprocess_time += metrics.get("process", 0.0)
                     colpali_model_time += metrics.get("model", 0.0)
@@ -774,6 +906,14 @@ async def process_ingestion_job(
                     colpali_text_process_time += metrics.get("text_process", 0.0)
                     colpali_image_convert_time += metrics.get("image_convert", 0.0)
                     colpali_text_convert_time += metrics.get("text_convert", 0.0)
+                    colpali_image_total_time += metrics.get("image_total", 0.0)
+                    colpali_text_total_time += metrics.get("text_total", 0.0)
+                    colpali_image_count += int(metrics.get("image_count", 0) or 0)
+                    colpali_text_count += int(metrics.get("text_count", 0) or 0)
+                    if colpali_endpoints is None:
+                        endpoints = metrics.get("endpoints")
+                        if endpoints:
+                            colpali_endpoints = int(endpoints)
                     logger.debug(
                         f"Multivector batch embedded [{start_idx}:{end_idx}] -> {len(batch_embeddings)} embeddings"
                     )
@@ -790,10 +930,23 @@ async def process_ingestion_job(
                     success, stored_ids = await ingestion_service.colpali_vector_store.store_embeddings(
                         batch_chunk_objects, auth.app_id if auth else None
                     )
-                    colpali_store_time += time.time() - batch_store_start
+                    batch_store_time = time.time() - batch_store_start
+                    colpali_store_time += batch_store_time
                     if not success:
                         raise RuntimeError("Failed to store ColPali batch embeddings")
                     colpali_chunk_ids.extend(stored_ids)
+                    store_metrics_getter = getattr(ingestion_service.colpali_vector_store, "latest_store_metrics", None)
+                    if callable(store_metrics_getter):
+                        _accumulate_store_metrics(store_metrics_total, store_metrics_getter())
+                    progress_logger.info(
+                        "ingest batch doc_id=%s %d/%d size=%d embed_s=%.2f store_s=%.2f",
+                        document_id,
+                        batch_index,
+                        colpali_batches or 0,
+                        len(batch_chunks),
+                        batch_embed_time,
+                        batch_store_time,
+                    )
 
                 # For compatibility with later summary logging
                 chunk_objects_multivector = []
@@ -813,7 +966,7 @@ async def process_ingestion_job(
                 phase_times["multivector_store_embeddings"] = colpali_store_time
                 phase_times["multivector_pipeline_total"] = colpali_pipeline_time
                 eps = (len(colpali_chunk_ids) / colpali_pipeline_time) if colpali_pipeline_time > 0 else 0
-                logger.info(
+                logger.debug(
                     "Multivector embedding: total=%.2fs (sort=%.2fs, preprocess=%.2fs, model=%.2fs, convert=%.2fs | image model=%.2fs, text model=%.2fs) "
                     "storage: chunk objects=%.2fs, vector store=%.2fs for %d chunks (%.2f chunks/s)",
                     colpali_embedding_time,
@@ -864,6 +1017,9 @@ async def process_ingestion_job(
                 await ingestion_service._store_chunks_and_doc(
                     chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
                 )
+                store_metrics_getter = getattr(ingestion_service.vector_store, "latest_store_metrics", None)
+                if callable(store_metrics_getter):
+                    _accumulate_store_metrics(store_metrics_total, store_metrics_getter())
             store_time = time.time() - store_start
             phase_times["store_chunks_and_update_doc"] = store_time
 
@@ -875,7 +1031,7 @@ async def process_ingestion_job(
             if not using_colpali and chunk_objects:
                 storage_summary.append(f"Regular vector store: {len(chunk_objects)} chunks")
 
-            logger.info(
+            logger.debug(
                 f"Storage complete in {store_time:.2f}s - "
                 + ("; ".join(storage_summary) if storage_summary else "No chunks stored")
             )
@@ -891,6 +1047,7 @@ async def process_ingestion_job(
                     )
                     if folder_obj and folder_obj.id:
                         doc.folder_id = folder_obj.id
+                        folder_id_for_summary = str(folder_obj.id)
                         folder_updates = ingestion_service.folder_update_fields(folder_obj)
                         await ingestion_service.db.update_document(
                             document_id=doc.external_id,
@@ -919,14 +1076,157 @@ async def process_ingestion_job(
             logger.info(f"Successfully completed ingestion for {original_filename}, document ID: {doc.external_id}")
             # Performance summary
             total_time = time.time() - job_start_time
+            progress_logger.info("ingest done doc_id=%s status=completed total_s=%.2f", document_id, total_time)
 
-            # Log performance summary
-            logger.info("=== Ingestion Performance Summary ===")
-            logger.info(f"Total processing time: {total_time:.2f}s")
-            for phase, duration in sorted(phase_times.items(), key=lambda x: x[1], reverse=True):
-                percentage = (duration / total_time) * 100 if total_time > 0 else 0
-                logger.info(f"  - {phase}: {duration:.2f}s ({percentage:.1f}%)")
-            logger.info("=====================================")
+            if not folder_id_for_summary and doc.folder_id:
+                folder_id_for_summary = str(doc.folder_id)
+            folder_path_summary = (
+                normalized_folder_path or getattr(doc, "folder_path", None) or getattr(doc, "folder_name", None)
+            )
+
+            text_chunk_count = len(parsed_chunks)
+            image_chunk_count = len(chunks_multivector)
+            if using_colpali:
+                total_chunks = len(colpali_chunk_ids) if colpali_chunk_ids else image_chunk_count
+            else:
+                total_chunks = text_chunk_count
+
+            content_type_summary = mime_type or content_type
+            input_summary = _strip_none(
+                {
+                    "size_bytes": download_size_bytes,
+                    "size_mb": round(download_size_bytes / 1024 / 1024, 2) if download_size_bytes else 0.0,
+                    "content_type": content_type_summary,
+                    "skip_text_parsing": skip_text_parsing,
+                    "colpali": bool(using_colpali),
+                    "colpali_mode": settings.COLPALI_MODE if using_colpali else None,
+                }
+            )
+
+            counts_summary = _strip_none(
+                {
+                    "pages_estimated": num_pages_estimated,
+                    "pages_final": final_page_count,
+                    "text_chunks": text_chunk_count,
+                    "image_chunks": image_chunk_count,
+                    "total_chunks": total_chunks,
+                    "batch_size": store_batch_size if using_colpali else None,
+                    "batches": colpali_batches if using_colpali else None,
+                }
+            )
+
+            contextual_chunking_model = None
+            if settings.USE_CONTEXTUAL_CHUNKING:
+                contextual_chunking_model = getattr(
+                    getattr(ingestion_service.parser, "chunker", None), "model_key", None
+                )
+            config_summary = _strip_none(
+                {
+                    "mode": settings.MODE,
+                    "storage_provider": settings.STORAGE_PROVIDER,
+                    "storage_bucket": settings.S3_BUCKET if settings.STORAGE_PROVIDER == "aws-s3" else None,
+                    "storage_path": settings.STORAGE_PATH if settings.STORAGE_PROVIDER == "local" else None,
+                    "cache_enabled": settings.CACHE_ENABLED,
+                    "cache_max_bytes": settings.CACHE_MAX_BYTES,
+                    "cache_path": settings.CACHE_PATH if settings.CACHE_ENABLED else None,
+                    "s3_upload_concurrency": settings.S3_UPLOAD_CONCURRENCY,
+                    "multivector_store_provider": settings.MULTIVECTOR_STORE_PROVIDER,
+                    "dual_multivector_ingestion": settings.ENABLE_DUAL_MULTIVECTOR_INGESTION,
+                    "vector_store_provider": settings.VECTOR_STORE_PROVIDER,
+                    "embedding_model": settings.EMBEDDING_MODEL,
+                    "embedding_dimensions": settings.VECTOR_DIMENSIONS,
+                    "embedding_similarity_metric": settings.EMBEDDING_SIMILARITY_METRIC,
+                    "parser_chunk_size": settings.CHUNK_SIZE,
+                    "parser_chunk_overlap": settings.CHUNK_OVERLAP,
+                    "contextual_chunking": settings.USE_CONTEXTUAL_CHUNKING,
+                    "contextual_chunking_model": contextual_chunking_model,
+                    "enable_colpali": settings.ENABLE_COLPALI,
+                    "colpali_mode": settings.COLPALI_MODE,
+                    "colpali_api_endpoints": (
+                        len(settings.MORPHIK_EMBEDDING_API_DOMAIN) if settings.COLPALI_MODE == "api" else None
+                    ),
+                    "colpali_pdf_dpi": settings.COLPALI_PDF_DPI if using_colpali else None,
+                    "colpali_store_batch_size": settings.COLPALI_STORE_BATCH_SIZE,
+                    "arq_max_jobs": settings.ARQ_MAX_JOBS,
+                }
+            )
+
+            if xml_processing:
+                config_summary["parser_xml"] = {
+                    "max_tokens": settings.PARSER_XML.max_tokens,
+                    "preferred_unit_tags": settings.PARSER_XML.preferred_unit_tags,
+                    "ignore_tags": settings.PARSER_XML.ignore_tags,
+                }
+
+            flags_summary = _strip_none(
+                {
+                    "xml_processing": xml_processing,
+                    "html_to_pdf": html_converted,
+                }
+            )
+
+            embedding_summary: Dict[str, Any] = {}
+            if using_colpali:
+                is_api = isinstance(ingestion_service.colpali_embedding_model, ColpaliApiEmbeddingModel)
+                if colpali_endpoints is None and is_api:
+                    colpali_endpoints = len(getattr(ingestion_service.colpali_embedding_model, "endpoints", []))
+                embedding_summary = _strip_none(
+                    {
+                        "backend": "colpali_api" if is_api else "colpali_local",
+                        "endpoints": colpali_endpoints,
+                        "total_s": round(colpali_embedding_time, 2),
+                        "image_s": round(colpali_image_total_time, 2),
+                        "text_s": round(colpali_text_total_time, 2),
+                        "image_count": colpali_image_count,
+                        "text_count": colpali_text_count,
+                        "throughput_chunks_s": (
+                            round((total_chunks / colpali_embedding_time), 2) if colpali_embedding_time > 0 else 0.0
+                        ),
+                    }
+                )
+            elif embedding_chunk_count:
+                embedding_summary = _strip_none(
+                    {
+                        "backend": "lite_llm",
+                        "model_key": settings.EMBEDDING_MODEL,
+                        "total_s": round(embedding_time, 2),
+                        "throughput_chunks_s": round(embeddings_per_second, 2),
+                    }
+                )
+
+            storage_summary: Dict[str, Any] = {}
+            if store_metrics_total:
+                if "fast" in store_metrics_total or "slow" in store_metrics_total:
+                    storage_summary["mode"] = store_metrics_total.get("mode", "dual")
+                    if "fast" in store_metrics_total:
+                        storage_summary["fast"] = _with_throughput(store_metrics_total["fast"], total_chunks)
+                    if "slow" in store_metrics_total:
+                        storage_summary["slow"] = _with_throughput(store_metrics_total["slow"], total_chunks)
+                else:
+                    storage_summary = _with_throughput(store_metrics_total, total_chunks)
+
+            phases_summary = {
+                phase: round(duration, 2)
+                for phase, duration in sorted(phase_times.items(), key=lambda x: x[1], reverse=True)
+                if duration > 0
+            }
+
+            summary = {
+                "event": "ingestion_performance_summary",
+                "document_id": document_id,
+                "filename": original_filename,
+                "folder_path": folder_path_summary,
+                "folder_id": folder_id_for_summary,
+                "input": input_summary,
+                "counts": counts_summary,
+                "flags": flags_summary,
+                "config": config_summary,
+                "embedding": embedding_summary,
+                "storage": storage_summary,
+                "phases_s": phases_summary,
+                "total_s": round(total_time, 2),
+            }
+            summary_logger.info(json.dumps(summary, separators=(",", ":"), default=str))
 
             # Record ingest usage *after* successful completion using the final page count
             if settings.MODE == "cloud" and auth.user_id:
@@ -953,6 +1253,7 @@ async def process_ingestion_job(
     except Exception as e:
         logger.error(f"Error processing ingestion job for file {original_filename}: {str(e)}")
         logger.error(traceback.format_exc())
+        progress_logger.error("ingest failed doc_id=%s file=%s error=%s", document_id, original_filename, e)
 
         # ------------------------------------------------------------------
         # Ensure we update the *per-app* database where the document lives.
@@ -1030,6 +1331,7 @@ async def startup(ctx):
     This initialization is similar to what happens in core/api.py during app startup,
     but adapted for the worker context.
     """
+    _ensure_worker_logging()
     logger.info("Worker starting up. Initializing services...")
 
     # Initialize database

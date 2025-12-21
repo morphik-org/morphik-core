@@ -20,7 +20,13 @@ from core.storage.utils_file_extensions import detect_file_type
 from core.utils.fast_ops import binary_quantize, bytes_to_data_uri, encode_base64
 
 from .base_vector_store import BaseVectorStore
-from .utils import MULTIVECTOR_CHUNKS_BUCKET, normalize_storage_key
+from .utils import (
+    MULTIVECTOR_CHUNKS_BUCKET,
+    build_store_metrics,
+    normalize_storage_key,
+    reset_pooled_connection,
+    storage_provider_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +79,7 @@ class MultiVectorStore(BaseVectorStore):
             self._content_upload_sem = asyncio.Semaphore(conc)
         else:
             self._content_upload_sem = None
+        self._last_store_metrics: Dict[str, Any] = {}
 
         # Optionally initialize database objects (tables, functions, etc.)
         # This ensures that required items like the max_sim function exist and
@@ -126,6 +133,9 @@ class MultiVectorStore(BaseVectorStore):
             logger.error(f"Failed to initialize external storage: {e}")
             return None
 
+    def latest_store_metrics(self) -> Dict[str, Any]:
+        return dict(self._last_store_metrics) if self._last_store_metrics else {}
+
     @contextmanager
     def get_connection(self):
         """Get a PostgreSQL connection with retry logic.
@@ -152,7 +162,10 @@ class MultiVectorStore(BaseVectorStore):
                 finally:
                     # Release connection back to the pool
                     try:
-                        self.pool.putconn(conn)
+                        if reset_pooled_connection(conn, logger):
+                            self.pool.putconn(conn)
+                        else:
+                            conn.close()
                     except Exception:
                         try:
                             conn.close()
@@ -400,7 +413,8 @@ class MultiVectorStore(BaseVectorStore):
         try:
             # Use provided app_id or fall back to document lookup
             if app_id is None:
-                logger.warning(f"No app_id provided for document {document_id}, falling back to database lookup")
+                if document_id not in self._document_app_id_cache:
+                    logger.warning(f"No app_id provided for document {document_id}, falling back to database lookup")
                 app_id = await self._get_document_app_id(document_id)
             else:
                 logger.debug(f"Using provided app_id: {app_id} for document {document_id}")
@@ -608,25 +622,40 @@ class MultiVectorStore(BaseVectorStore):
             valid_chunks.append(chunk)
 
         if not valid_chunks:
+            self._last_store_metrics = build_store_metrics(
+                chunk_payload_backend=storage_provider_name(self.storage),
+                multivector_backend="none",
+                vector_store_backend="postgres",
+            )
             return True, []
+
+        resolved_app_id = app_id
+        if resolved_app_id is None:
+            doc_id = valid_chunks[0].document_id
+            if all(chunk.document_id == doc_id for chunk in valid_chunks):
+                resolved_app_id = await self._get_document_app_id(doc_id)
 
         # Parallelize external content storage when enabled
         storage_keys: List[Optional[str]] = [None] * len(valid_chunks)
         if self.enable_external_storage and self.storage:
+            payload_start = time.perf_counter()
 
             async def _store_content(idx: int, c: DocumentChunk) -> None:
                 sem = getattr(self, "_content_upload_sem", None)
                 if sem:
                     async with sem:
                         storage_keys[idx] = await self._store_content_externally(
-                            c.content, c.document_id, c.chunk_number, json.dumps(c.metadata or {}), app_id
+                            c.content, c.document_id, c.chunk_number, json.dumps(c.metadata or {}), resolved_app_id
                         )
                 else:
                     storage_keys[idx] = await self._store_content_externally(
-                        c.content, c.document_id, c.chunk_number, json.dumps(c.metadata or {}), app_id
+                        c.content, c.document_id, c.chunk_number, json.dumps(c.metadata or {}), resolved_app_id
                     )
 
             await asyncio.gather(*[_store_content(idx, c) for idx, c in enumerate(valid_chunks)])
+            payload_duration = time.perf_counter() - payload_start
+        else:
+            payload_duration = 0.0
 
         for idx, chunk in enumerate(valid_chunks):
             binary_embeddings = self._binary_quantize(chunk.embedding)
@@ -649,7 +678,19 @@ class MultiVectorStore(BaseVectorStore):
             )
 
         # Off-load blocking DB I/O to a thread so we don't block the event loop
+        write_start = time.perf_counter()
         await asyncio.to_thread(self._bulk_insert_rows, rows)
+        write_duration = time.perf_counter() - write_start
+
+        self._last_store_metrics = build_store_metrics(
+            chunk_payload_backend=storage_provider_name(self.storage),
+            multivector_backend="none",
+            vector_store_backend="postgres",
+            chunk_payload_upload_s=payload_duration,
+            chunk_payload_objects=sum(1 for key in storage_keys if key),
+            vector_store_write_s=write_duration,
+            vector_store_rows=len(rows),
+        )
 
         stored_ids = [f"{r[0]}-{r[1]}" for r in rows]
         logger.debug(f"{len(stored_ids)} multi-vector embeddings added in bulk")
