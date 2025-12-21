@@ -26,7 +26,13 @@ from core.storage.utils_file_extensions import detect_file_type
 from core.utils.fast_ops import bytes_to_data_uri, encode_base64
 
 from .base_vector_store import BaseVectorStore
-from .utils import MULTIVECTOR_CHUNKS_BUCKET, normalize_storage_key
+from .utils import (
+    MULTIVECTOR_CHUNKS_BUCKET,
+    build_store_metrics,
+    normalize_storage_key,
+    reset_pooled_connection,
+    storage_provider_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +268,7 @@ class FastMultiVectorStore(BaseVectorStore):
             self._multivector_upload_sem = asyncio.Semaphore(max(1, int(get_settings().S3_UPLOAD_CONCURRENCY)))
         except Exception:
             self._multivector_upload_sem = asyncio.Semaphore(16)
+        self._last_store_metrics: Dict[str, Any] = {}
 
     async def close(self) -> None:
         """Release network and database resources held by the vector store."""
@@ -345,14 +352,41 @@ class FastMultiVectorStore(BaseVectorStore):
     def initialize(self):
         return True
 
+    def latest_store_metrics(self) -> Dict[str, Any]:
+        return dict(self._last_store_metrics) if self._last_store_metrics else {}
+
     async def store_embeddings(
         self, chunks: List[DocumentChunk], app_id: Optional[str] = None
     ) -> Tuple[bool, List[str]]:
+        if not chunks:
+            self._last_store_metrics = build_store_metrics(
+                chunk_payload_backend=storage_provider_name(self.chunk_storage),
+                multivector_backend=storage_provider_name(self.vector_storage),
+                vector_store_backend="turbopuffer",
+            )
+            return True, []
+
+        resolved_app_id = app_id
+        if resolved_app_id is None:
+            doc_id = chunks[0].document_id
+            if all(chunk.document_id == doc_id for chunk in chunks):
+                resolved_app_id = await self._get_document_app_id(doc_id)
+
         #  group fde calls for better cache hit rate
         embeddings = [
             fde.generate_document_encoding(np.array(chunk.embedding), self.fde_config).tolist() for chunk in chunks
         ]
-        storage_keys = await asyncio.gather(*[self._save_chunk_to_storage(chunk, app_id) for chunk in chunks])
+        storage_metrics: Dict[str, Any] = build_store_metrics(
+            chunk_payload_backend=storage_provider_name(self.chunk_storage),
+            multivector_backend=storage_provider_name(self.vector_storage),
+            vector_store_backend="turbopuffer",
+            vector_store_rows=len(chunks),
+        )
+
+        payload_start = time.perf_counter()
+        storage_keys = await asyncio.gather(*[self._save_chunk_to_storage(chunk, resolved_app_id) for chunk in chunks])
+        storage_metrics["chunk_payload_upload_s"] = time.perf_counter() - payload_start
+        storage_metrics["chunk_payload_objects"] = sum(1 for key in storage_keys if key)
         stored_ids = [f"{chunk.document_id}-{chunk.chunk_number}" for chunk in chunks]
         doc_ids, chunk_numbers, metdatas, multivecs = [], [], [], []
         for chunk in chunks:
@@ -360,12 +394,20 @@ class FastMultiVectorStore(BaseVectorStore):
             chunk_numbers.append(chunk.chunk_number)
             metdatas.append(json.dumps(chunk.metadata))
 
-        async def _save_mv(c: DocumentChunk) -> Tuple[str, str]:
+        async def _save_mv(c: DocumentChunk) -> Tuple[str, str, float]:
             async with self._multivector_upload_sem:
-                return await self.save_multivector_to_storage(c)
+                return await self._save_multivector_to_storage_with_cache_time(c)
 
-        multivecs = await asyncio.gather(*[_save_mv(chunk) for chunk in chunks])
-        result = await self.ns(app_id).write(
+        multivector_start = time.perf_counter()
+        multivecs_with_cache = await asyncio.gather(*[_save_mv(chunk) for chunk in chunks])
+        storage_metrics["multivector_upload_s"] = time.perf_counter() - multivector_start
+        storage_metrics["multivector_objects"] = len(multivecs_with_cache)
+        storage_metrics["cache_write_s"] = sum(item[2] for item in multivecs_with_cache)
+        storage_metrics["cache_write_objects"] = len(multivecs_with_cache)
+        multivecs = [(bucket, key) for bucket, key, _ in multivecs_with_cache]
+
+        write_start = time.perf_counter()
+        result = await self.ns(resolved_app_id).write(
             upsert_columns={
                 "id": stored_ids,
                 "vector": embeddings,
@@ -377,7 +419,9 @@ class FastMultiVectorStore(BaseVectorStore):
             },
             distance_metric="cosine_distance",
         )
-        logger.info(f"Stored {len(chunks)} chunks, tpuf ns: {result.model_dump_json()}")
+        storage_metrics["vector_store_write_s"] = time.perf_counter() - write_start
+        self._last_store_metrics = storage_metrics
+        logger.debug(f"Stored {len(chunks)} chunks, tpuf ns: {result.model_dump_json()}")
         return True, stored_ids
 
     async def query_similar(
@@ -534,7 +578,7 @@ class FastMultiVectorStore(BaseVectorStore):
 
         return True
 
-    async def save_multivector_to_storage(self, chunk: DocumentChunk) -> Tuple[str, str]:
+    async def _save_multivector_to_storage_with_cache_time(self, chunk: DocumentChunk) -> Tuple[str, str, float]:
         # Use float32 - ColPali model outputs bfloat16 which shares float32's exponent range.
         # Preserves dynamic range while reducing file size 2x vs float64.
         as_np = np.asarray(chunk.embedding, dtype=np.float32)
@@ -560,7 +604,13 @@ class FastMultiVectorStore(BaseVectorStore):
                     bucket = ""
 
         # Cache on ingest so retrieval hits cache immediately
+        cache_start = time.perf_counter()
         await self.cache.put("vectors", bucket, key, npy_bytes)
+        cache_write_time = time.perf_counter() - cache_start
+        return bucket, key, cache_write_time
+
+    async def save_multivector_to_storage(self, chunk: DocumentChunk) -> Tuple[str, str]:
+        bucket, key, _ = await self._save_multivector_to_storage_with_cache_time(chunk)
         return bucket, key
 
     async def load_multivector_from_storage(self, bucket: str, key: str) -> torch.Tensor:
@@ -652,7 +702,10 @@ class FastMultiVectorStore(BaseVectorStore):
                 finally:
                     # Release connection back to the pool
                     try:
-                        self.pool.putconn(conn)
+                        if reset_pooled_connection(conn, logger):
+                            self.pool.putconn(conn)
+                        else:
+                            conn.close()
                     except Exception:
                         try:
                             conn.close()
@@ -730,10 +783,11 @@ class FastMultiVectorStore(BaseVectorStore):
         try:
             # Use provided app_id or fall back to document lookup
             if app_id is None:
-                logger.warning(f"No app_id provided for document {document_id}, falling back to database lookup")
+                if document_id not in self._document_app_id_cache:
+                    logger.warning(f"No app_id provided for document {document_id}, falling back to database lookup")
                 app_id = await self._get_document_app_id(document_id)
             else:
-                logger.info(f"Using provided app_id: {app_id} for document {document_id}")
+                logger.debug(f"Using provided app_id: {app_id} for document {document_id}")
 
             # Determine file extension
             extension = self._determine_file_extension(content, chunk_metadata)
@@ -756,7 +810,7 @@ class FastMultiVectorStore(BaseVectorStore):
                     content=content, key=storage_key, bucket=self.chunk_bucket or ""
                 )
 
-            logger.info(f"Stored chunk content externally with key: {storage_key}")
+            logger.debug(f"Stored chunk content externally with key: {storage_key}")
             return storage_key
 
         except Exception as e:

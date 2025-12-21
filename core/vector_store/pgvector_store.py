@@ -1,8 +1,9 @@
 import asyncio
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
-from typing import AsyncContextManager, List, Optional, Tuple
+from typing import Any, AsyncContextManager, Dict, List, Optional, Tuple
 
 from sqlalchemy import Column, Index, Integer, String, select, text, tuple_
 from sqlalchemy.exc import OperationalError
@@ -13,6 +14,7 @@ from sqlalchemy.types import UserDefinedType
 from core.models.chunk import DocumentChunk
 
 from .base_vector_store import BaseVectorStore
+from .utils import build_store_metrics
 
 logger = logging.getLogger(__name__)
 Base = declarative_base()
@@ -169,6 +171,7 @@ class PGVectorStore(BaseVectorStore):
         self.async_session = sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self._last_store_metrics: Dict[str, Any] = {}
 
     @asynccontextmanager
     async def get_session_with_retry(self) -> AsyncContextManager[AsyncSession]:
@@ -388,6 +391,11 @@ class PGVectorStore(BaseVectorStore):
         """
 
         if not chunks:
+            self._last_store_metrics = build_store_metrics(
+                chunk_payload_backend="none",
+                multivector_backend="none",
+                vector_store_backend="pgvector",
+            )
             return True, []
 
         # Flatten to plain dicts so SQLAlchemy can send one executemany call.
@@ -407,12 +415,25 @@ class PGVectorStore(BaseVectorStore):
             logger.warning("No embeddings to store – all chunks had empty vectors")
             return True, []
 
+        write_start = time.perf_counter()
         async with self.get_session_with_retry() as session:
             await session.execute(VectorEmbedding.__table__.insert().values(rows))
             await session.commit()
+        write_duration = time.perf_counter() - write_start
+
+        self._last_store_metrics = build_store_metrics(
+            chunk_payload_backend="none",
+            multivector_backend="none",
+            vector_store_backend="pgvector",
+            vector_store_write_s=write_duration,
+            vector_store_rows=len(rows),
+        )
 
         stored_ids = [f"{r['document_id']}-{r['chunk_number']}" for r in rows]
         return True, stored_ids
+
+    def latest_store_metrics(self) -> Dict[str, Any]:
+        return dict(self._last_store_metrics) if self._last_store_metrics else {}
 
     async def query_similar(
         self,
