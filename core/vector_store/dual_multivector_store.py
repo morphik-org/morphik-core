@@ -217,3 +217,17 @@ class DualMultiVectorStore(BaseVectorStore):
     def storage(self):
         """Return slow store storage for compatibility."""
         return self.slow_store.storage
+
+    def latest_store_metrics(self) -> dict:
+        metrics: dict = {}
+        fast_getter = getattr(self.fast_store, "latest_store_metrics", None)
+        slow_getter = getattr(self.slow_store, "latest_store_metrics", None)
+        fast_metrics = fast_getter() if callable(fast_getter) else {}
+        slow_metrics = slow_getter() if callable(slow_getter) else {}
+        if fast_metrics:
+            metrics["fast"] = fast_metrics
+        if slow_metrics:
+            metrics["slow"] = slow_metrics
+        if metrics:
+            metrics["mode"] = "dual"
+        return metrics

@@ -53,43 +53,66 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         self.healthy_endpoints: set[str] = set(self.endpoints)
         self._endpoint_latencies: dict[str, float] = {}
         self.endpoint = self.endpoints[0]
+        self._latest_ingest_metrics: Dict[str, float] = {}
 
     async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> List[MultiVector]:
+        ingest_start = time.monotonic()
         # Normalize to list
         if isinstance(chunks, Chunk):
             chunks = [chunks]
         if not chunks:
+            self._latest_ingest_metrics = {}
             return []
 
         # Initialize result list with empty multivectors
         results: List[MultiVector] = [[] for _ in chunks]
         text_inputs, image_inputs = partition_chunks(chunks)
 
+        image_total = 0.0
+        text_total = 0.0
+
         # Use distributed embedding when multiple endpoints available
         if len(self.endpoints) > 1:
             # Image embeddings (distributed)
             if image_inputs:
+                image_start = time.monotonic()
                 image_results = await self._embed_inputs_distributed(list(image_inputs), "image")
+                image_total = time.monotonic() - image_start
                 for idx, emb in image_results.items():
                     results[idx] = emb
 
             # Text embeddings (distributed)
             if text_inputs:
+                text_start = time.monotonic()
                 text_results = await self._embed_inputs_distributed(list(text_inputs), "text")
+                text_total = time.monotonic() - text_start
                 for idx, emb in text_results.items():
                     results[idx] = emb
         else:
             # Single endpoint - use existing backoff logic
             if image_inputs:
+                image_start = time.monotonic()
                 image_results = await self._embed_inputs_with_backoff(list(image_inputs), "image")
+                image_total = time.monotonic() - image_start
                 for idx, emb in image_results.items():
                     results[idx] = emb
 
             if text_inputs:
+                text_start = time.monotonic()
                 text_results = await self._embed_inputs_with_backoff(list(text_inputs), "text")
+                text_total = time.monotonic() - text_start
                 for idx, emb in text_results.items():
                     results[idx] = emb
 
+        total_time = time.monotonic() - ingest_start
+        self._latest_ingest_metrics = {
+            "image_total": image_total,
+            "text_total": text_total,
+            "total": total_time,
+            "image_count": float(len(image_inputs)),
+            "text_count": float(len(text_inputs)),
+            "endpoints": float(len(self.endpoints)),
+        }
         return results
 
     async def _embed_inputs_distributed(
@@ -124,7 +147,7 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         # Filter to only non-empty endpoint-batch pairs
         endpoint_batches = [(ep, batch) for ep, batch in zip(endpoints, batches) if batch]
 
-        logger.info(f"Distributing {len(indexed_inputs)} {input_type} inputs across {len(endpoint_batches)} endpoints")
+        logger.debug(f"Distributing {len(indexed_inputs)} {input_type} inputs across {len(endpoint_batches)} endpoints")
 
         # Call all endpoints concurrently
         tasks = [self._embed_batch_to_endpoint(endpoint, batch, input_type) for endpoint, batch in endpoint_batches]
@@ -301,8 +324,12 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         return await self._call_api_endpoint(self.endpoint, inputs, input_type)
 
     def latest_ingest_metrics(self) -> Dict[str, float]:
-        """Return endpoint latency metrics from last ingestion."""
+        """Return endpoint latency metrics from the most recent embed_for_ingestion call."""
         return dict(self._endpoint_latencies)
+
+    def latest_ingest_timing(self) -> Dict[str, float]:
+        """Return timing metrics from the most recent embed_for_ingestion call."""
+        return dict(self._latest_ingest_metrics) if self._latest_ingest_metrics else {}
 
     async def _embed_inputs_with_backoff(
         self, indexed_inputs: List[Tuple[int, str]], input_type: str
