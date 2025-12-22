@@ -441,8 +441,12 @@ class PGVectorStore(BaseVectorStore):
         k: int,
         doc_ids: Optional[List[str]] = None,
         app_id: Optional[str] = None,
+        skip_image_content: bool = False,
     ) -> List[DocumentChunk]:
-        """Find similar chunks using cosine similarity."""
+        """Find similar chunks using cosine similarity.
+
+        Note: skip_image_content is ignored because pgvector stores content inline.
+        """
         try:
             async with self.get_session_with_retry() as session:
                 # Build query with cosine distance calculation, which is normalized to [0, 2].
@@ -494,12 +498,14 @@ class PGVectorStore(BaseVectorStore):
         self,
         chunk_identifiers: List[Tuple[str, int]],
         app_id: Optional[str] = None,
+        skip_image_content: bool = False,
     ) -> List[DocumentChunk]:
         """
         Retrieve specific chunks by document ID and chunk number in a single database query.
 
         Args:
             chunk_identifiers: List of (document_id, chunk_number) tuples
+            skip_image_content: Ignored (content is stored inline for pgvector)
 
         Returns:
             List of DocumentChunk objects

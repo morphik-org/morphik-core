@@ -410,6 +410,10 @@ class DocumentPagesRequest(BaseModel):
     document_id: str = Field(..., description="ID of the document to extract pages from")
     start_page: int = Field(..., ge=1, description="Starting page number (1-indexed)")
     end_page: int = Field(..., ge=1, description="Ending page number (1-indexed)")
+    output_format: Optional[Literal["base64", "url"]] = Field(
+        default="base64",
+        description="How to return page images: base64 (default) or url",
+    )
 
 
 class RequeueIngestionJob(BaseModel):

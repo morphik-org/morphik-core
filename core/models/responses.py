@@ -49,7 +49,7 @@ class DocumentPagesResponse(BaseModel):
     """Response for document pages extraction endpoint"""
 
     document_id: str
-    pages: List[str]  # Base64-encoded images
+    pages: List[str]  # Base64-encoded images or download URLs
     start_page: int
     end_page: int
     total_pages: int

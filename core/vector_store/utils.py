@@ -18,6 +18,27 @@ def normalize_storage_key(key: str) -> str:
     return key
 
 
+def is_storage_key(value: Any, *, require_extension: bool = False) -> bool:
+    """Best-effort heuristic to detect storage keys in content fields."""
+    if (
+        not isinstance(value, str)
+        or len(value) >= 500
+        or "/" not in value
+        or value.startswith("data:")
+        or value.startswith("http")
+    ):
+        return False
+    if any(ch.isspace() for ch in value):
+        return False
+    if any(ch in value for ch in ("(", ")", ";", "=", "{", "}")):
+        return False
+    if require_extension:
+        _, tail = value.rsplit("/", 1)
+        if "." not in tail:
+            return False
+    return True
+
+
 def storage_provider_name(storage: Optional[BaseStorage]) -> str:
     if storage is None:
         return "none"

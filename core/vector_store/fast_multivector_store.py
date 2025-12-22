@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import os
-import tempfile
 import time
 from contextlib import contextmanager
 from io import BytesIO
@@ -29,6 +28,7 @@ from .base_vector_store import BaseVectorStore
 from .utils import (
     MULTIVECTOR_CHUNKS_BUCKET,
     build_store_metrics,
+    is_storage_key,
     normalize_storage_key,
     reset_pooled_connection,
     storage_provider_name,
@@ -73,6 +73,9 @@ class FileCacheManager:
         self.base_dir = base_dir
         self.max_bytes = max_bytes
         self._lock = asyncio.Lock()
+        self._index_initialized = False
+        self._cache_index: Dict[Path, Tuple[float, int]] = {}
+        self._cache_total_size = 0
         if self.enabled:
             self.base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -108,7 +111,9 @@ class FileCacheManager:
             return None
         try:
             data = await asyncio.to_thread(path.read_bytes)
-            await asyncio.to_thread(self._touch_file, path)
+            now = time.time()
+            await asyncio.to_thread(self._touch_file, path, now)
+            await self._record_access(path, now)
             return data
         except FileNotFoundError:
             return None
@@ -121,8 +126,10 @@ class FileCacheManager:
             return
         path = self._path_for(namespace, bucket, key)
         try:
-            await asyncio.to_thread(self._write_file, path, data)
-            await asyncio.to_thread(self._touch_file, path)
+            size = await asyncio.to_thread(self._write_file, path, data)
+            now = time.time()
+            await asyncio.to_thread(self._touch_file, path, now)
+            await self._record_write(path, size, now)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Failed to write cache entry %s: %s", path, exc)
             return
@@ -138,6 +145,7 @@ class FileCacheManager:
         path = self._path_for(namespace, bucket, key)
         try:
             await asyncio.to_thread(self._remove_file, path)
+            await self._record_delete(path)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Failed to delete cache entry %s: %s", path, exc)
 
@@ -148,7 +156,7 @@ class FileCacheManager:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    def _write_file(self, path: Path, data: bytes) -> None:
+    def _write_file(self, path: Path, data: bytes) -> int:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp_name = f".{path.name}.tmp-{uuid4().hex}"
         tmp_path = path.parent / tmp_name
@@ -164,6 +172,7 @@ class FileCacheManager:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(tmp_path, path)
+            return len(payload)
         finally:
             if tmp_path.exists():
                 try:
@@ -171,8 +180,8 @@ class FileCacheManager:
                 except FileNotFoundError:
                     pass
 
-    def _touch_file(self, path: Path) -> None:
-        now = time.time()
+    def _touch_file(self, path: Path, atime: Optional[float] = None) -> None:
+        now = atime or time.time()
         try:
             os.utime(path, (now, now))
         except FileNotFoundError:
@@ -187,12 +196,15 @@ class FileCacheManager:
     async def _enforce_budget(self) -> None:
         if not self.enabled:
             return
+        await self._ensure_index()
         async with self._lock:
-            await asyncio.to_thread(self._enforce_budget_sync)
+            if self._cache_total_size <= self.max_bytes:
+                return
+            await asyncio.to_thread(self._enforce_budget_sync_indexed)
 
-    def _enforce_budget_sync(self) -> None:
+    def _scan_cache_dir(self) -> Tuple[Dict[Path, Tuple[float, int]], int]:
         total_size = 0
-        files: List[Tuple[float, int, Path]] = []
+        index: Dict[Path, Tuple[float, int]] = {}
         for file_path in self.base_dir.rglob("*"):
             if not file_path.is_file():
                 continue
@@ -200,21 +212,82 @@ class FileCacheManager:
                 stat = file_path.stat()
             except FileNotFoundError:
                 continue
+            index[file_path] = (stat.st_atime, stat.st_size)
             total_size += stat.st_size
-            files.append((stat.st_atime, stat.st_size, file_path))
+        return index, total_size
 
-        if total_size <= self.max_bytes:
+    async def _ensure_index(self) -> None:
+        if self._index_initialized:
             return
+        async with self._lock:
+            if self._index_initialized:
+                return
+            index, total_size = await asyncio.to_thread(self._scan_cache_dir)
+            self._cache_index = index
+            self._cache_total_size = total_size
+            self._index_initialized = True
 
+    async def _record_write(self, path: Path, size: int, atime: float) -> None:
+        await self._ensure_index()
+        async with self._lock:
+            previous = self._cache_index.get(path)
+            if previous:
+                self._cache_total_size -= previous[1]
+            self._cache_index[path] = (atime, size)
+            self._cache_total_size += size
+
+    async def _record_access(self, path: Path, atime: float) -> None:
+        if not self._index_initialized:
+            return
+        async with self._lock:
+            previous = self._cache_index.get(path)
+            if not previous:
+                return
+            self._cache_index[path] = (atime, previous[1])
+
+    async def _record_delete(self, path: Path) -> None:
+        if not self._index_initialized:
+            return
+        async with self._lock:
+            previous = self._cache_index.pop(path, None)
+            if previous:
+                self._cache_total_size -= previous[1]
+
+    def _enforce_budget_sync_indexed(self) -> None:
+        if self._cache_total_size <= self.max_bytes:
+            return
+        files: List[Tuple[float, int, Path]] = [
+            (atime, size, file_path) for file_path, (atime, size) in self._cache_index.items()
+        ]
         files.sort(key=lambda item: item[0])  # Oldest access time first
-        for _, file_size, file_path in files:
-            if total_size <= self.max_bytes:
+        for _, _, file_path in files:
+            if self._cache_total_size <= self.max_bytes:
                 break
             try:
                 file_path.unlink()
-                total_size -= file_size
             except FileNotFoundError:
-                continue
+                pass
+            previous = self._cache_index.pop(file_path, None)
+            if previous:
+                self._cache_total_size -= previous[1]
+
+        if self._cache_total_size > self.max_bytes and not files:
+            index, total_size = self._scan_cache_dir()
+            self._cache_index = index
+            self._cache_total_size = total_size
+            if self._cache_total_size > self.max_bytes:
+                files = [(atime, size, file_path) for file_path, (atime, size) in self._cache_index.items()]
+                files.sort(key=lambda item: item[0])
+                for _, _, file_path in files:
+                    if self._cache_total_size <= self.max_bytes:
+                        break
+                    try:
+                        file_path.unlink()
+                    except FileNotFoundError:
+                        pass
+                    previous = self._cache_index.pop(file_path, None)
+                    if previous:
+                        self._cache_total_size -= previous[1]
 
 
 # external storage always enabled, no two ways about it
@@ -430,6 +503,7 @@ class FastMultiVectorStore(BaseVectorStore):
         k: int,
         doc_ids: Optional[List[str]] = None,
         app_id: Optional[str] = None,
+        skip_image_content: bool = False,
     ) -> List[DocumentChunk]:
         # --- Begin profiling ---
         t0 = time.perf_counter()
@@ -496,11 +570,16 @@ class FastMultiVectorStore(BaseVectorStore):
         logger.info(f"query_similar timing - rerank_scoring: {(t4 - t3)*1000:.2f} ms")
 
         # 5) Retrieve chunk contents
-        rows, storage_retrieval_tasks = [], []
+        rows, storage_retrieval_tasks, parsed_metadata = [], [], []
         for i in top_k_indices:
             row = result.rows[i]
             rows.append(row)
-            storage_retrieval_tasks.append(self._retrieve_content_from_storage(row["content"], row["metadata"]))
+            metadata = json.loads(row["metadata"])
+            parsed_metadata.append(metadata)
+            if skip_image_content and metadata.get("is_image") and self._is_storage_key(row["content"]):
+                storage_retrieval_tasks.append(asyncio.sleep(0, result=row["content"]))
+            else:
+                storage_retrieval_tasks.append(self._retrieve_content_from_storage(row["content"], row["metadata"]))
         contents = await asyncio.gather(*storage_retrieval_tasks)
         t5 = time.perf_counter()
         logger.info(f"query_similar timing - load_contents: {(t5 - t4)*1000:.2f} ms")
@@ -512,10 +591,10 @@ class FastMultiVectorStore(BaseVectorStore):
                 embedding=[],
                 chunk_number=row["chunk_number"],
                 content=content,
-                metadata=json.loads(row["metadata"]),
+                metadata=metadata,
                 score=score,
             )
-            for score, row, content in zip(scores, rows, contents)
+            for score, row, content, metadata in zip(scores, rows, contents, parsed_metadata)
         ]
         t6 = time.perf_counter()
         logger.info(f"query_similar timing - build_chunks: {(t6 - t5)*1000:.2f} ms")
@@ -524,16 +603,25 @@ class FastMultiVectorStore(BaseVectorStore):
         return ret
 
     async def get_chunks_by_id(
-        self, chunk_identifiers: List[Tuple[str, int]], app_id: Optional[str] = None
+        self,
+        chunk_identifiers: List[Tuple[str, int]],
+        app_id: Optional[str] = None,
+        skip_image_content: bool = False,
     ) -> List[DocumentChunk]:
         result = await self.ns(app_id).query(
             filters=("id", "In", [f"{doc_id}-{chunk_num}" for doc_id, chunk_num in chunk_identifiers]),
             include_attributes=["id", "document_id", "chunk_number", "content", "metadata"],
             top_k=len(chunk_identifiers),
         )
-        storage_retrieval_tasks = [
-            self._retrieve_content_from_storage(r["content"], r["metadata"]) for r in result.rows
-        ]
+        storage_retrieval_tasks = []
+        parsed_metadata = []
+        for row in result.rows:
+            metadata = json.loads(row["metadata"])
+            parsed_metadata.append(metadata)
+            if skip_image_content and metadata.get("is_image") and self._is_storage_key(row["content"]):
+                storage_retrieval_tasks.append(asyncio.sleep(0, result=row["content"]))
+            else:
+                storage_retrieval_tasks.append(self._retrieve_content_from_storage(row["content"], row["metadata"]))
         contents = await asyncio.gather(*storage_retrieval_tasks)
         return [
             DocumentChunk(
@@ -541,10 +629,10 @@ class FastMultiVectorStore(BaseVectorStore):
                 embedding=[],
                 chunk_number=row["chunk_number"],
                 content=content,
-                metadata=json.loads(row["metadata"]),
+                metadata=metadata,
                 score=0.0,
             )
-            for row, content in zip(result.rows, contents)
+            for row, content, metadata in zip(result.rows, contents, parsed_metadata)
         ]
 
     async def delete_chunks_by_document_id(self, document_id: str, app_id: Optional[str] = None) -> bool:
@@ -588,20 +676,19 @@ class FastMultiVectorStore(BaseVectorStore):
         np.save(buffer, as_np)
         npy_bytes = buffer.getvalue()
 
-        # Use delete=True so temp file is cleaned up even if write/flush/upload fails
-        with tempfile.NamedTemporaryFile(suffix=".npy", delete=True) as temp_file:
-            temp_file.write(npy_bytes)
-            temp_file.flush()
-            if isinstance(self.vector_storage, S3Storage):
-                target_bucket = self.vector_bucket or self.vector_storage.default_bucket
-                self.vector_storage._ensure_bucket(target_bucket)  # type: ignore[attr-defined]
-                self.vector_storage.s3_client.upload_file(temp_file.name, target_bucket, save_path)
-                bucket, key = target_bucket, save_path
-            else:
-                bucket_arg = "" if isinstance(self.vector_storage, LocalStorage) else (self.vector_bucket or "")
-                bucket, key = await self.vector_storage.upload_file(temp_file.name, save_path, bucket=bucket_arg)
-                if isinstance(self.vector_storage, LocalStorage):
-                    bucket = ""
+        if isinstance(self.vector_storage, S3Storage):
+            target_bucket = self.vector_bucket or self.vector_storage.default_bucket
+            bucket, key = await self.vector_storage.upload_file(
+                BytesIO(npy_bytes),
+                save_path,
+                content_type="application/octet-stream",
+                bucket=target_bucket,
+            )
+        else:
+            bucket_arg = "" if isinstance(self.vector_storage, LocalStorage) else (self.vector_bucket or "")
+            bucket, key = await self.vector_storage.upload_file(npy_bytes, save_path, bucket=bucket_arg)
+            if isinstance(self.vector_storage, LocalStorage):
+                bucket = ""
 
         # Cache on ingest so retrieval hits cache immediately
         cache_start = time.perf_counter()
@@ -825,9 +912,7 @@ class FastMultiVectorStore(BaseVectorStore):
     def _is_storage_key(self, content: str) -> bool:
         """Check if content field contains a storage key rather than actual content."""
         # Storage keys are short paths with slashes, not base64/long content
-        return (
-            len(content) < 500 and "/" in content and not content.startswith("data:") and not content.startswith("http")
-        )
+        return is_storage_key(content)
 
     async def _download_chunk_bytes(self, bucket: str, storage_key: str) -> Optional[bytes]:
         """Attempt to fetch chunk payload bytes from storage, considering legacy/variant keys.
