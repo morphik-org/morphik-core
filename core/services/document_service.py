@@ -31,6 +31,7 @@ from core.services.graph_service import GraphService
 from core.services.morphik_graph_service import MorphikGraphService
 from core.storage.base_storage import BaseStorage
 from core.vector_store.base_vector_store import BaseVectorStore
+from core.vector_store.utils import is_storage_key, normalize_storage_key
 
 from ..models.auth import AuthContext
 from ..models.graph import Graph
@@ -219,6 +220,8 @@ class DocumentService:
         multivector_available = bool(self.colpali_embedding_model and self.colpali_vector_store)
         requested_multivector = use_colpali if use_colpali is not None else False
         using_multivector = bool(requested_multivector and settings.ENABLE_COLPALI and multivector_available)
+        output_format_value = output_format or "base64"
+        skip_image_content = output_format_value == "url"
 
         # Image queries require Morphik multimodal retrieval (use_colpali=True)
         if query_image and not using_multivector:
@@ -386,6 +389,7 @@ class DocumentService:
                         k=oversample_k,
                         doc_ids=doc_ids,
                         app_id=auth.app_id,
+                        skip_image_content=skip_image_content,
                     ),
                     "vector_search_regular",
                     "retrieve_vector_search",
@@ -398,7 +402,11 @@ class DocumentService:
             search_tasks.append(
                 measure_phase(
                     self.colpali_vector_store.query_similar(
-                        query_embedding_multivector, k=k, doc_ids=doc_ids, app_id=auth.app_id
+                        query_embedding_multivector,
+                        k=k,
+                        doc_ids=doc_ids,
+                        app_id=auth.app_id,
+                        skip_image_content=skip_image_content,
                     ),
                     "multivector_vector_search",
                     "retrieve_vector_search",
@@ -478,7 +486,7 @@ class DocumentService:
                 perf_tracker.start_phase("retrieve_padding")
 
             padding_start = time.time()
-            chunks = await self._apply_padding_to_chunks(chunks, padding, auth)
+            chunks = await self._apply_padding_to_chunks(chunks, padding, auth, skip_image_content=skip_image_content)
             padding_duration = time.time() - padding_start
 
             if not perf_tracker:
@@ -495,7 +503,7 @@ class DocumentService:
         else:
             result_creation_start = time.time()
 
-        results = await self._create_chunk_results(auth, chunks, output_format=output_format)
+        results = await self._create_chunk_results(auth, chunks, output_format=output_format_value)
 
         if not perf_tracker:
             phase_times["result_creation"] = time.time() - result_creation_start
@@ -583,6 +591,7 @@ class DocumentService:
         chunks: List[DocumentChunk],
         padding: int,
         auth: AuthContext,
+        skip_image_content: bool = False,
     ) -> List[DocumentChunk]:
         """
         Apply padding to chunks by retrieving additional chunks before and after each matched chunk.
@@ -599,10 +608,22 @@ class DocumentService:
         """
         if not chunks or padding <= 0:
             return chunks
-        logger.info(f"chunks: {[chunk.content[:100] for chunk in chunks]}")
+        logger.debug("Processing %d chunks for padding", len(chunks))
+
+        def _is_image_chunk(chunk: DocumentChunk) -> bool:
+            is_image = chunk.metadata.get("is_image")
+            if isinstance(is_image, bool):
+                return is_image
+            if isinstance(chunk.content, str):
+                if chunk.content.startswith("data"):
+                    return True
+                if is_storage_key(chunk.content, require_extension=True):
+                    ext = chunk.content.rsplit(".", 1)[-1].lower()
+                    return ext in {"bmp", "gif", "jpeg", "jpg", "png", "tiff", "webp"}
+            return False
 
         # Filter to only image chunks when padding is enabled
-        image_chunks = [chunk for chunk in chunks if chunk.content.startswith("data")]
+        image_chunks = [chunk for chunk in chunks if _is_image_chunk(chunk)]
 
         if not image_chunks:
             # No image chunks to pad, return empty list since padding is only for images
@@ -649,7 +670,11 @@ class DocumentService:
         if self.colpali_vector_store and chunk_identifiers:
             try:
                 retrieval_start = time.time()
-                padded_chunks = await self.colpali_vector_store.get_chunks_by_id(chunk_identifiers, auth.app_id)
+                padded_chunks = await self.colpali_vector_store.get_chunks_by_id(
+                    chunk_identifiers,
+                    auth.app_id,
+                    skip_image_content=skip_image_content,
+                )
                 logger.debug(
                     "Multivector padding retrieval took %.2fs for %d chunks",
                     time.time() - retrieval_start,
@@ -669,7 +694,7 @@ class DocumentService:
             padding_chunks = []
 
         # Filter retrieved chunks to only image chunks (padding chunks should also be images)
-        padded_image_chunks = [chunk for chunk in padding_chunks if chunk.content.startswith("data")]
+        padded_image_chunks = [chunk for chunk in padding_chunks if _is_image_chunk(chunk)]
         logger.debug(f"Filtered to {len(padded_image_chunks)} image chunks from {len(padding_chunks)} retrieved chunks")
 
         # Preserve original scores for matched chunks; padding gets 0.0
@@ -932,6 +957,9 @@ class DocumentService:
         if not authorized_sources:
             return []
 
+        output_format_value = output_format or "base64"
+        skip_image_content = output_format_value == "url"
+
         # Create list of (document_id, chunk_number) tuples for vector store query
         chunk_identifiers: List[Tuple[str, int]] = []
         seen_identifiers: Set[Tuple[str, int]] = set()
@@ -943,13 +971,25 @@ class DocumentService:
             chunk_identifiers.append(identifier)
 
         # Set up vector store retrieval tasks
-        retrieval_tasks = [self.vector_store.get_chunks_by_id(chunk_identifiers, auth.app_id)]
+        retrieval_tasks = [
+            self.vector_store.get_chunks_by_id(
+                chunk_identifiers,
+                auth.app_id,
+                skip_image_content=skip_image_content,
+            )
+        ]
 
         # Add colpali vector store task if needed
         settings = get_settings()
         if use_colpali and settings.ENABLE_COLPALI and self.colpali_vector_store:
             logger.info("Preparing to retrieve chunks from both regular and colpali vector stores")
-            retrieval_tasks.append(self.colpali_vector_store.get_chunks_by_id(chunk_identifiers, auth.app_id))
+            retrieval_tasks.append(
+                self.colpali_vector_store.get_chunks_by_id(
+                    chunk_identifiers,
+                    auth.app_id,
+                    skip_image_content=skip_image_content,
+                )
+            )
 
         # Execute vector store retrievals in parallel
         try:
@@ -1011,7 +1051,7 @@ class DocumentService:
             auth,
             chunks,
             preloaded_docs=authorized_doc_map,
-            output_format=output_format,
+            output_format=output_format_value,
         )
         logger.info(f"Batch retrieved {len(results)} chunks out of {len(chunk_ids)} requested")
         return results
@@ -1428,18 +1468,9 @@ class DocumentService:
 
             elif (output_format or "base64") == "url" and is_img:
                 try:
-                    app_part = doc.app_id or auth.app_id or "default"
-                    ext = mime_to_ext.get(mime)
-                    if not ext and isinstance(chunk.content, str) and chunk.content.startswith("data:"):
-                        try:
-                            mime_from_data = chunk.content.split(",", 1)[0].split(":", 1)[1].split(";", 1)[0]
-                            ext = mime_to_ext.get(mime_from_data)
-                        except Exception:
-                            ext = None
-                    if not ext:
-                        ext = ".png"
-
-                    storage_key = f"{app_part}/{doc.external_id}/{chunk.chunk_number}{ext}"
+                    storage_key_override: Optional[str] = None
+                    if is_storage_key(chunk.content, require_extension=True):
+                        storage_key_override = normalize_storage_key(chunk.content)
 
                     # Choose storage and bucket
                     storage = None
@@ -1464,9 +1495,22 @@ class DocumentService:
                         except Exception:
                             pass
 
+                    storage_key = storage_key_override
+                    if storage_key is None:
+                        app_part = doc.app_id or auth.app_id or "default"
+                        ext = mime_to_ext.get(mime)
+                        if not ext and isinstance(chunk.content, str) and chunk.content.startswith("data:"):
+                            try:
+                                mime_from_data = chunk.content.split(",", 1)[0].split(":", 1)[1].split(";", 1)[0]
+                                ext = mime_to_ext.get(mime_from_data)
+                            except Exception:
+                                ext = None
+                        if not ext:
+                            ext = ".png"
+                        storage_key = f"{app_part}/{doc.external_id}/{chunk.chunk_number}{ext}"
+
                     # Hotswap: ensure object exists; if missing, convert from base64/data URI and upload
-                    if storage is not None:
-                        # try:
+                    if storage is not None and storage_key_override is None:
                         # Check existing object: if missing or not binary image, upload raw bytes
                         existing_bytes: Optional[bytes] = None
                         try:
@@ -1781,13 +1825,41 @@ class DocumentService:
     # Image conversion helpers (for page extraction)
     # -------------------------------------------------------------------------
 
-    def img_to_base64_str(self, img: PILImage.Image) -> str:
-        """Convert PIL Image to base64 string."""
+    def img_to_png_bytes(self, img: PILImage.Image) -> bytes:
+        """Convert PIL Image to PNG bytes."""
         buffered = BytesIO()
         img.save(buffered, format="PNG")
         buffered.seek(0)
-        img_bytes = buffered.getvalue()
+        return buffered.getvalue()
+
+    def img_to_base64_str(self, img: PILImage.Image) -> str:
+        """Convert PIL Image to base64 string."""
+        img_bytes = self.img_to_png_bytes(img)
         return "data:image/png;base64," + base64.b64encode(img_bytes).decode()
+
+    def _render_pdf_pages_sync(
+        self,
+        file_content: bytes,
+        start_page: int,
+        end_page: int,
+    ) -> Tuple[int, List[Tuple[int, bytes]]]:
+        pdf_document = fitz.open(stream=BytesIO(file_content), filetype="pdf")
+        try:
+            total_pages = len(pdf_document)
+            start_page = max(1, start_page)
+            end_page = min(end_page, total_pages)
+
+            rendered_pages: List[Tuple[int, bytes]] = []
+            for page_num in range(start_page - 1, end_page):  # Convert to 0-indexed
+                page = pdf_document[page_num]
+                matrix = fitz.Matrix(2.0, 2.0)  # 2x scaling for better quality
+                pix = page.get_pixmap(matrix=matrix)
+                img_data = pix.tobytes("jpeg", jpg_quality=85)
+                img = PILImage.open(BytesIO(img_data))
+                rendered_pages.append((page_num + 1, self.img_to_png_bytes(img)))
+            return total_pages, rendered_pages
+        finally:
+            pdf_document.close()
 
     # -------------------------------------------------------------------------
     # Page extraction (for document viewing)
@@ -1799,59 +1871,71 @@ class DocumentService:
         key: str,
         start_page: int,
         end_page: int,
+        output_format: str = "base64",
+        storage_prefix: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Extract specific pages from a PDF document as base64-encoded images.
+        Extract specific pages from a PDF document as base64-encoded images or URLs.
 
         Args:
             bucket: Storage bucket containing the PDF
             key: Storage key for the PDF file
             start_page: Starting page number (1-indexed)
             end_page: Ending page number (1-indexed)
+            output_format: "base64" (default) or "url"
+            storage_prefix: Optional key prefix for storing rendered page images when output_format="url"
 
         Returns:
             Dict containing:
-                - pages: List of base64-encoded images
+                - pages: List of base64-encoded images or URLs
                 - total_pages: Total number of pages in the PDF
         """
         try:
             # Download the PDF file from storage
             file_content = await self.storage.download_file(bucket, key)
+            total_pages, rendered_pages = await asyncio.to_thread(
+                self._render_pdf_pages_sync,
+                file_content,
+                start_page,
+                end_page,
+            )
 
-            # Open PDF directly from bytes using BytesIO
-            pdf_stream = BytesIO(file_content)
-            pdf_document = fitz.open(stream=pdf_stream, filetype="pdf")
+            def _png_bytes_to_data_uri(png_bytes: bytes) -> str:
+                return "data:image/png;base64," + base64.b64encode(png_bytes).decode("utf-8")
 
-            total_pages = len(pdf_document)
+            pages: List[str] = []
+            if output_format == "url":
+                prefix = (storage_prefix or f"document-pages/{key.replace('/', '_')}").strip("/")
+                upload_limit = max(1, int(settings.S3_UPLOAD_CONCURRENCY))
+                upload_sem = asyncio.Semaphore(upload_limit)
 
-            # Always clamp the page numbers to the total number of pages
-            start_page = max(1, start_page)
-            end_page = min(end_page, total_pages)
+                async def _upload_page(page_num: int, img_bytes: bytes) -> str:
+                    async with upload_sem:
+                        storage_key = f"{prefix}/page-{page_num}.png"
+                        await self.storage.upload_file(
+                            img_bytes,
+                            storage_key,
+                            content_type="image/png",
+                            bucket=bucket,
+                        )
+                        return await self.storage.get_download_url(bucket=bucket, key=storage_key)
 
-            # # Validate page numbers
-            # if start_page < 1 or end_page > total_pages:
-            #     raise ValueError(f"Page range {start_page}-{end_page} is invalid for PDF with {total_pages} pages")
+                upload_tasks = [_upload_page(page_num, img_bytes) for page_num, img_bytes in rendered_pages]
+                upload_results = await asyncio.gather(*upload_tasks, return_exceptions=True)
 
-            # Extract pages as images
-            pages_base64 = []
-            for page_num in range(start_page - 1, end_page):  # Convert to 0-indexed
-                page = pdf_document[page_num]
+                for (page_num, img_bytes), result in zip(rendered_pages, upload_results):
+                    if isinstance(result, Exception):
+                        logger.warning(f"Failed to create download URL for page {page_num}: {result}")
+                        pages.append(_png_bytes_to_data_uri(img_bytes))
+                        continue
+                    if result:
+                        pages.append(result)
+                        continue
+                    pages.append(_png_bytes_to_data_uri(img_bytes))
+            else:
+                pages = [_png_bytes_to_data_uri(img_bytes) for _, img_bytes in rendered_pages]
 
-                # Render page as image with high DPI for quality
-                matrix = fitz.Matrix(2.0, 2.0)  # 2x scaling for better quality
-                pix = page.get_pixmap(matrix=matrix)
-
-                # Convert to PIL Image and save as JPEG for smaller size
-                img_data = pix.tobytes("jpeg", jpg_quality=85)  # Use JPEG with good quality
-                img = PILImage.open(BytesIO(img_data))
-
-                # Convert to base64
-                base64_str = self.img_to_base64_str(img)
-                pages_base64.append(base64_str)
-
-            pdf_document.close()
-
-            return {"pages": pages_base64, "total_pages": total_pages}
+            return {"pages": pages, "total_pages": total_pages}
 
         except Exception as e:
             logger.error(f"Error extracting PDF pages from {bucket}/{key}: {e}")

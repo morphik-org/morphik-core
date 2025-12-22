@@ -721,7 +721,7 @@ class DocumentPagesResponse(BaseModel):
     """Response for document pages extraction endpoint"""
 
     document_id: str = Field(..., description="ID of the document")
-    pages: List[str] = Field(..., description="List of page contents as base64 encoded strings")
+    pages: List[str] = Field(..., description="List of page contents as base64 strings or URLs")
     start_page: int = Field(..., description="Start page number (1-indexed)")
     end_page: int = Field(..., description="End page number (1-indexed)")
     total_pages: int = Field(..., description="Total number of pages in the document")
