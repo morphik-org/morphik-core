@@ -19,8 +19,14 @@ class BaseVectorStore(ABC):
         k: int,
         doc_ids: Optional[List[str]] = None,
         app_id: Optional[str] = None,
+        skip_image_content: bool = False,
     ) -> List[DocumentChunk]:
-        """Find similar chunks"""
+        """Find similar chunks.
+
+        Args:
+            skip_image_content: When True, skip retrieving external image payloads
+                and return storage keys instead (where supported).
+        """
         pass
 
     @abstractmethod
@@ -28,6 +34,7 @@ class BaseVectorStore(ABC):
         self,
         chunk_identifiers: List[Tuple[str, int]],
         app_id: Optional[str] = None,
+        skip_image_content: bool = False,
     ) -> List[DocumentChunk]:
         """
         Retrieve specific chunks by document ID and chunk number.
@@ -35,6 +42,8 @@ class BaseVectorStore(ABC):
         Args:
             chunk_identifiers: List of (document_id, chunk_number) tuples
             app_id: Optional app ID for filtering chunks
+            skip_image_content: When True, skip retrieving external image payloads
+                and return storage keys instead (where supported).
 
         Returns:
             List of DocumentChunk objects

@@ -125,6 +125,7 @@ class DualMultiVectorStore(BaseVectorStore):
         k: int,
         doc_ids: Optional[List[str]] = None,
         app_id: Optional[str] = None,
+        skip_image_content: bool = False,
     ) -> List[DocumentChunk]:
         """
         Query similar chunks from the slow store only during migration.
@@ -132,16 +133,19 @@ class DualMultiVectorStore(BaseVectorStore):
         This ensures consistent search results during migration period.
         """
         logger.debug("Querying from slow store only during migration")
-        return await self.slow_store.query_similar(query_embedding, k, doc_ids, app_id)
+        return await self.slow_store.query_similar(query_embedding, k, doc_ids, app_id, skip_image_content)
 
     async def get_chunks_by_id(
-        self, chunk_identifiers: List[Tuple[str, int]], app_id: Optional[str] = None
+        self,
+        chunk_identifiers: List[Tuple[str, int]],
+        app_id: Optional[str] = None,
+        skip_image_content: bool = False,
     ) -> List[DocumentChunk]:
         """
         Get chunks by ID from the slow store only during migration.
         """
         logger.debug("Getting chunks from slow store only during migration")
-        return await self.slow_store.get_chunks_by_id(chunk_identifiers, app_id)
+        return await self.slow_store.get_chunks_by_id(chunk_identifiers, app_id, skip_image_content)
 
     async def delete_chunks_by_document_id(self, document_id: str, app_id: Optional[str] = None) -> bool:
         """
