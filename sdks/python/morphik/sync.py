@@ -2,7 +2,7 @@ import json
 import logging
 from io import BytesIO
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Dict, List, Optional, Type, Union
+from typing import Any, BinaryIO, Callable, Dict, List, Literal, Optional, Type, Union
 
 import httpx
 from pydantic import BaseModel
@@ -2371,6 +2371,7 @@ class Morphik(_ScopedOperationsMixin):
         document_id: str,
         start_page: int,
         end_page: int,
+        output_format: Optional[Literal["base64", "url"]] = None,
     ) -> DocumentPagesResponse:
         """
         Extract specific pages from a document.
@@ -2379,6 +2380,7 @@ class Morphik(_ScopedOperationsMixin):
             document_id: ID of the document
             start_page: Starting page number (1-indexed)
             end_page: Ending page number (1-indexed)
+            output_format: How to return page images ("base64" or "url")
 
         Returns:
             DocumentPagesResponse: Extracted pages with metadata
@@ -2388,6 +2390,8 @@ class Morphik(_ScopedOperationsMixin):
             "start_page": start_page,
             "end_page": end_page,
         }
+        if output_format:
+            request["output_format"] = output_format
         response = self._request("POST", "documents/pages", data=request)
         return DocumentPagesResponse(**response)
 

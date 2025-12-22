@@ -23,6 +23,7 @@ from .base_vector_store import BaseVectorStore
 from .utils import (
     MULTIVECTOR_CHUNKS_BUCKET,
     build_store_metrics,
+    is_storage_key,
     normalize_storage_key,
     reset_pooled_connection,
     storage_provider_name,
@@ -450,9 +451,7 @@ class MultiVectorStore(BaseVectorStore):
     def _is_storage_key(self, content: str) -> bool:
         """Check if content field contains a storage key rather than actual content."""
         # Storage keys are short paths with slashes, not base64/long content
-        return (
-            len(content) < 500 and "/" in content and not content.startswith("data:") and not content.startswith("http")
-        )
+        return is_storage_key(content)
 
     def _collect_storage_keys(self, document_id: str) -> Set[str]:
         """Gather storage keys for a document before deletion."""
@@ -702,6 +701,7 @@ class MultiVectorStore(BaseVectorStore):
         k: int,
         doc_ids: Optional[List[str]] = None,
         app_id: Optional[str] = None,
+        skip_image_content: bool = False,
     ) -> List[DocumentChunk]:
         """Find similar chunks using the max_sim function for multi-vectors."""
         # Convert query embeddings to binary format
@@ -741,23 +741,32 @@ class MultiVectorStore(BaseVectorStore):
 
         # Convert to DocumentChunks with external storage support
         content_tasks = []
+        parsed_metadata = []
         for row in result:
             content = row[3]
+            metadata = self._parse_metadata(row[4])
+            parsed_metadata.append(metadata)
             logger.debug(
                 f"Checking content for chunk {row[1]}-{row[2]}: is_storage_key={self._is_storage_key(content)}, enable_external_storage={self.enable_external_storage}"
             )
             if self.enable_external_storage and self._is_storage_key(content):
-                logger.info(f"Retrieving external content for chunk {row[1]}-{row[2]} from storage key: {content}")
-                content_tasks.append(self._retrieve_content_from_storage(content, row[4]))
+                if skip_image_content and metadata.get("is_image"):
+                    logger.debug(
+                        "Skipping external image payload for chunk %s-%s (returning storage key)",
+                        row[1],
+                        row[2],
+                    )
+                    content_tasks.append(asyncio.sleep(0, result=content))
+                else:
+                    logger.info(f"Retrieving external content for chunk {row[1]}-{row[2]} from storage key: {content}")
+                    content_tasks.append(self._retrieve_content_from_storage(content, row[4]))
             else:
                 content_tasks.append(asyncio.sleep(0, result=content))
 
         resolved_contents = await asyncio.gather(*content_tasks, return_exceptions=True)
 
         chunks = []
-        for row, resolved in zip(result, resolved_contents):
-            metadata = self._parse_metadata(row[4])
-
+        for row, resolved, metadata in zip(result, resolved_contents, parsed_metadata):
             content = row[3] if isinstance(resolved, Exception) else resolved
 
             if isinstance(resolved, Exception):
@@ -793,6 +802,7 @@ class MultiVectorStore(BaseVectorStore):
         self,
         chunk_identifiers: List[Tuple[str, int]],
         app_id: Optional[str] = None,
+        skip_image_content: bool = False,
     ) -> List[DocumentChunk]:
         """
         Retrieve specific chunks by document ID and chunk number in a single database query.
@@ -832,23 +842,32 @@ class MultiVectorStore(BaseVectorStore):
 
         # Convert to DocumentChunks with external storage support
         content_tasks = []
+        parsed_metadata = []
         for row in result:
             content = row[2]
+            metadata = self._parse_metadata(row[3])
+            parsed_metadata.append(metadata)
             logger.debug(
                 f"Checking content for chunk {row[0]}-{row[1]}: is_storage_key={self._is_storage_key(content)}, enable_external_storage={self.enable_external_storage}"
             )
             if self.enable_external_storage and self._is_storage_key(content):
-                logger.info(f"Retrieving external content for chunk {row[0]}-{row[1]} from storage key: {content}")
-                content_tasks.append(self._retrieve_content_from_storage(content, row[3]))
+                if skip_image_content and metadata.get("is_image"):
+                    logger.debug(
+                        "Skipping external image payload for chunk %s-%s (returning storage key)",
+                        row[0],
+                        row[1],
+                    )
+                    content_tasks.append(asyncio.sleep(0, result=content))
+                else:
+                    logger.info(f"Retrieving external content for chunk {row[0]}-{row[1]} from storage key: {content}")
+                    content_tasks.append(self._retrieve_content_from_storage(content, row[3]))
             else:
                 content_tasks.append(asyncio.sleep(0, result=content))
 
         resolved_contents = await asyncio.gather(*content_tasks, return_exceptions=True)
 
         chunks = []
-        for row, resolved in zip(result, resolved_contents):
-            metadata = self._parse_metadata(row[3])
-
+        for row, resolved, metadata in zip(result, resolved_contents, parsed_metadata):
             content = row[2] if isinstance(resolved, Exception) else resolved
 
             if isinstance(resolved, Exception):
