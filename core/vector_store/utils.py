@@ -39,6 +39,27 @@ def is_storage_key(value: Any, *, require_extension: bool = False) -> bool:
     return True
 
 
+def derive_repaired_image_key(storage_key: Any, *, is_image: bool, mime_type: Optional[str]) -> Optional[str]:
+    """Derive a corrected image key when a legacy .txt key contains image data."""
+    if not is_image or not isinstance(storage_key, str) or not storage_key.lower().endswith(".txt"):
+        return None
+    base = storage_key.rsplit(".", 1)[0]
+    lower_base = base.lower()
+    image_exts = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".tif"}
+    if any(lower_base.endswith(ext) for ext in image_exts):
+        return base
+    mime_to_ext = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+        "image/bmp": ".bmp",
+        "image/tiff": ".tiff",
+    }
+    return f"{base}{mime_to_ext.get(mime_type, '.png')}"
+
+
 def storage_provider_name(storage: Optional[BaseStorage]) -> str:
     if storage is None:
         return "none"
