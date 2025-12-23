@@ -1385,6 +1385,18 @@ class DocumentService:
                 return "image/webp"
             return None
 
+        def _resolve_image_extension(mime_type: Optional[str], content_str: Any) -> str:
+            ext = mime_to_ext.get(mime_type)
+            if not ext and isinstance(content_str, str) and content_str.startswith("data:"):
+                try:
+                    mime_from_data = content_str.split(",", 1)[0].split(":", 1)[1].split(";", 1)[0]
+                    ext = mime_to_ext.get(mime_from_data)
+                except Exception:
+                    ext = None
+            if not ext:
+                ext = ".png"
+            return ext
+
         def _convert_image_to_text(content_str: str) -> str:
             """Convert an image chunk (base64 or data URI) to markdown text using Docling OCR.
 
@@ -1496,21 +1508,20 @@ class DocumentService:
                             pass
 
                     storage_key = storage_key_override
+                    source_storage_key: Optional[str] = None
                     if storage_key is None:
                         app_part = doc.app_id or auth.app_id or "default"
-                        ext = mime_to_ext.get(mime)
-                        if not ext and isinstance(chunk.content, str) and chunk.content.startswith("data:"):
-                            try:
-                                mime_from_data = chunk.content.split(",", 1)[0].split(":", 1)[1].split(";", 1)[0]
-                                ext = mime_to_ext.get(mime_from_data)
-                            except Exception:
-                                ext = None
-                        if not ext:
-                            ext = ".png"
+                        ext = _resolve_image_extension(mime, chunk.content)
                         storage_key = f"{app_part}/{doc.external_id}/{chunk.chunk_number}{ext}"
+                    elif storage_key.lower().endswith(".txt"):
+                        source_storage_key = storage_key
+                        ext = _resolve_image_extension(mime, chunk.content)
+                        storage_key = f"{storage_key.rsplit('.', 1)[0]}{ext}"
+                    else:
+                        source_storage_key = storage_key
 
                     # Hotswap: ensure object exists; if missing, convert from base64/data URI and upload
-                    if storage is not None and storage_key_override is None:
+                    if storage is not None:
                         # Check existing object: if missing or not binary image, upload raw bytes
                         existing_bytes: Optional[bytes] = None
                         try:
@@ -1529,10 +1540,16 @@ class DocumentService:
                                 or (b.startswith(b"RIFF") and b"WEBP" in b[:16])
                             )
 
-                        needs_upload = existing_bytes is None
+                        has_valid_image = existing_bytes is not None and _is_binary_image(existing_bytes)
                         # If a file exists but is not a recognized image binary, we will attempt to convert
-                        if existing_bytes is not None and not _is_binary_image(existing_bytes):
-                            needs_upload = True
+                        needs_upload = not has_valid_image
+
+                        source_bytes: Optional[bytes] = None
+                        if needs_upload and source_storage_key and source_storage_key != storage_key:
+                            try:
+                                source_bytes = await storage.download_file(bucket=bucket_name, key=source_storage_key)
+                            except Exception:
+                                source_bytes = None
 
                         if needs_upload:
                             try:
@@ -1545,7 +1562,7 @@ class DocumentService:
                                         raw_bytes = base64.b64decode(base64_part)
                                     except Exception:
                                         raw_bytes = None
-                                if raw_bytes is None and isinstance(payload, str):
+                                if raw_bytes is None and isinstance(payload, str) and storage_key_override is None:
                                     try:
                                         raw = base64.b64decode(payload)
                                         # If decoding yields a data URI string, unwrap one more time
@@ -1557,6 +1574,15 @@ class DocumentService:
                                         except Exception:
                                             pass
                                         raw_bytes = raw
+                                    except Exception:
+                                        raw_bytes = None
+                                if raw_bytes is None and source_bytes is not None:
+                                    try:
+                                        s = source_bytes.decode("utf-8", errors="ignore")
+                                        if s.startswith("data:"):
+                                            raw_bytes = base64.b64decode(s.split(",", 1)[1])
+                                        else:
+                                            raw_bytes = base64.b64decode(s)
                                     except Exception:
                                         raw_bytes = None
                                 if raw_bytes is None and existing_bytes is not None:
@@ -1581,10 +1607,21 @@ class DocumentService:
                                     content_type=effective_mime,
                                     bucket=bucket_name,
                                 )
+                                has_valid_image = True
                             except Exception as up_e:
                                 logger.warning(
                                     f"Failed to hotswap-upload image for {chunk.document_id}-{chunk.chunk_number}: {up_e}"
                                 )
+                        if (
+                            has_valid_image
+                            and source_storage_key
+                            and source_storage_key != storage_key
+                            and source_storage_key.lower().endswith(".txt")
+                        ):
+                            try:
+                                await storage.delete_file(bucket=bucket_name, key=source_storage_key)
+                            except Exception as del_e:
+                                logger.warning(f"Failed to delete legacy txt image key {source_storage_key}: {del_e}")
 
                     if storage is not None and hasattr(storage, "get_download_url"):
                         download_url = await storage.get_download_url(bucket=bucket_name, key=storage_key)
