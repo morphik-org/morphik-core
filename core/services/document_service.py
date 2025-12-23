@@ -31,7 +31,7 @@ from core.services.graph_service import GraphService
 from core.services.morphik_graph_service import MorphikGraphService
 from core.storage.base_storage import BaseStorage
 from core.vector_store.base_vector_store import BaseVectorStore
-from core.vector_store.utils import is_storage_key, normalize_storage_key
+from core.vector_store.utils import derive_repaired_image_key, is_storage_key, normalize_storage_key
 
 from ..models.auth import AuthContext
 from ..models.graph import Graph
@@ -1397,6 +1397,76 @@ class DocumentService:
                 ext = ".png"
             return ext
 
+        async def _update_vector_store_content_key(
+            vector_store: Optional[BaseVectorStore],
+            document_id: str,
+            chunk_number: int,
+            new_storage_key: str,
+            app_id: Optional[str],
+        ) -> bool:
+            if vector_store is None:
+                return False
+            if hasattr(vector_store, "slow_store") and hasattr(vector_store, "fast_store"):
+                slow_ok = await _update_vector_store_content_key(
+                    getattr(vector_store, "slow_store"),
+                    document_id,
+                    chunk_number,
+                    new_storage_key,
+                    app_id,
+                )
+                fast_ok = await _update_vector_store_content_key(
+                    getattr(vector_store, "fast_store"),
+                    document_id,
+                    chunk_number,
+                    new_storage_key,
+                    app_id,
+                )
+                return slow_ok and fast_ok
+            if hasattr(vector_store, "get_connection"):
+
+                def _update_pg_key() -> bool:
+                    with vector_store.get_connection() as conn:
+                        conn.execute(
+                            """
+                            UPDATE multi_vector_embeddings
+                            SET content = %s
+                            WHERE document_id = %s AND chunk_number = %s
+                            """,
+                            (new_storage_key, document_id, chunk_number),
+                        )
+                        conn.commit()
+                    return True
+
+                try:
+                    return await asyncio.to_thread(_update_pg_key)
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to update multi-vector content key for %s-%s: %s",
+                        document_id,
+                        chunk_number,
+                        exc,
+                    )
+                    return False
+            if hasattr(vector_store, "ns"):
+                tpuf_app_id = app_id or getattr(vector_store, "namespace", None) or "default"
+                try:
+                    await vector_store.ns(tpuf_app_id).write(
+                        patch_by_filter={
+                            "filters": ("id", "Eq", f"{document_id}-{chunk_number}"),
+                            "patch": {"content": new_storage_key},
+                        },
+                    )
+                    return True
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to update turbopuffer content key for %s-%s: %s",
+                        document_id,
+                        chunk_number,
+                        exc,
+                    )
+                    return False
+            return False
+
         def _convert_image_to_text(content_str: str) -> str:
             """Convert an image chunk (base64 or data URI) to markdown text using Docling OCR.
 
@@ -1492,20 +1562,13 @@ class DocumentService:
                         if hasattr(self.colpali_vector_store, "storage"):
                             storage = self.colpali_vector_store.storage
                         # Some stores expose a chunk_bucket
-                        if hasattr(self.colpali_vector_store, "chunk_bucket") and getattr(
-                            self.colpali_vector_store, "chunk_bucket"
-                        ):
-                            bucket_name = getattr(self.colpali_vector_store, "chunk_bucket")
+                        if hasattr(self.colpali_vector_store, "chunk_bucket"):
+                            chunk_bucket = getattr(self.colpali_vector_store, "chunk_bucket")
+                            if chunk_bucket is not None:
+                                bucket_name = chunk_bucket
                     if storage is None:
                         storage = self.storage
-                    # If storage has a default_bucket and no explicit chunk_bucket was set, use it
-                    if hasattr(storage, "default_bucket") and bucket_name == MULTIVECTOR_CHUNKS_BUCKET:
-                        try:
-                            dbucket = getattr(storage, "default_bucket")
-                            if dbucket:
-                                bucket_name = dbucket
-                        except Exception:
-                            pass
+                    # Keep the chunk payload bucket aligned with the vector store (don't override with default_bucket).
 
                     storage_key = storage_key_override
                     source_storage_key: Optional[str] = None
@@ -1515,8 +1578,7 @@ class DocumentService:
                         storage_key = f"{app_part}/{doc.external_id}/{chunk.chunk_number}{ext}"
                     elif storage_key.lower().endswith(".txt"):
                         source_storage_key = storage_key
-                        ext = _resolve_image_extension(mime, chunk.content)
-                        storage_key = f"{storage_key.rsplit('.', 1)[0]}{ext}"
+                        storage_key = derive_repaired_image_key(storage_key, is_image=True, mime_type=mime)
                     else:
                         source_storage_key = storage_key
 
@@ -1619,7 +1681,15 @@ class DocumentService:
                             and source_storage_key.lower().endswith(".txt")
                         ):
                             try:
-                                await storage.delete_file(bucket=bucket_name, key=source_storage_key)
+                                update_ok = await _update_vector_store_content_key(
+                                    self.colpali_vector_store or self.vector_store,
+                                    chunk.document_id,
+                                    chunk.chunk_number,
+                                    storage_key,
+                                    doc.app_id or auth.app_id,
+                                )
+                                if update_ok:
+                                    await storage.delete_file(bucket=bucket_name, key=source_storage_key)
                             except Exception as del_e:
                                 logger.warning(f"Failed to delete legacy txt image key {source_storage_key}: {del_e}")
 
