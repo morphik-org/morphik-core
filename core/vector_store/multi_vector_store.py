@@ -23,6 +23,7 @@ from .base_vector_store import BaseVectorStore
 from .utils import (
     MULTIVECTOR_CHUNKS_BUCKET,
     build_store_metrics,
+    derive_repaired_image_key,
     is_storage_key,
     normalize_storage_key,
     reset_pooled_connection,
@@ -509,9 +510,17 @@ class MultiVectorStore(BaseVectorStore):
             return storage_key  # Return storage key as fallback
 
         try:
+            metadata = self._parse_metadata(chunk_metadata) if chunk_metadata else {}
+            is_image = metadata.get("is_image", False)
+            mime = metadata.get("mime_type") if is_image else None
+
             # Download content from storage (support legacy keys with bucket prefix)
             logger.debug(f"Downloading from bucket: {MULTIVECTOR_CHUNKS_BUCKET}, key candidates for: {storage_key}")
-            key_candidates = [storage_key]
+            key_candidates = []
+            repaired_key = derive_repaired_image_key(storage_key, is_image=is_image, mime_type=mime)
+            if repaired_key:
+                key_candidates.append(repaired_key)
+            key_candidates.append(storage_key)
             # Legacy form where bucket name was prefixed into the key
             key_candidates.append(f"{MULTIVECTOR_CHUNKS_BUCKET}/{storage_key}")
             # Also consider .txt suffix variants (legacy text chunks)
@@ -529,6 +538,7 @@ class MultiVectorStore(BaseVectorStore):
                 key_candidates.append(f"{MULTIVECTOR_CHUNKS_BUCKET}/{without_ext}.txt.txt")
             except Exception:
                 pass
+            key_candidates = list(dict.fromkeys(key_candidates))
 
             content_bytes = None
             last_err = None
@@ -555,8 +565,6 @@ class MultiVectorStore(BaseVectorStore):
 
             # Determine if this should be returned as base64 or text
             try:
-                metadata = self._parse_metadata(chunk_metadata) if chunk_metadata else {}
-                is_image = metadata.get("is_image", False)
                 logger.debug(f"Chunk metadata indicates is_image: {is_image}")
 
                 if is_image:
