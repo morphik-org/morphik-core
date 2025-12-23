@@ -28,6 +28,7 @@ from .base_vector_store import BaseVectorStore
 from .utils import (
     MULTIVECTOR_CHUNKS_BUCKET,
     build_store_metrics,
+    derive_repaired_image_key,
     is_storage_key,
     normalize_storage_key,
     reset_pooled_connection,
@@ -1137,6 +1138,15 @@ class FastMultiVectorStore(BaseVectorStore):
             return storage_key  # Return storage key as fallback
 
         try:
+            metadata: Dict[str, Any] = {}
+            if chunk_metadata:
+                try:
+                    metadata = json.loads(chunk_metadata)
+                except json.JSONDecodeError:
+                    metadata = {}
+            is_image = metadata.get("is_image", False)
+            mime = metadata.get("mime_type") if is_image else None
+
             bucket_options: List[str] = []
             preferred_bucket = self.chunk_bucket if self.chunk_bucket else ""
             # 1) Preferred chunk bucket (from settings)
@@ -1170,6 +1180,36 @@ class FastMultiVectorStore(BaseVectorStore):
                 bucket_options.append(MULTIVECTOR_CHUNKS_BUCKET)
 
             logger.info(f"Downloading from bucket candidates: {bucket_options}, key: {storage_key}")
+            repaired_key = derive_repaired_image_key(storage_key, is_image=is_image, mime_type=mime)
+            if repaired_key and repaired_key != storage_key:
+                for bucket_candidate in bucket_options:
+                    content_bytes = await self._download_chunk_bytes(bucket_candidate, repaired_key)
+                    if content_bytes is None:
+                        continue
+
+                    logger.info(
+                        "Successfully downloaded repaired content from bucket %s, key %s (len=%d)",
+                        bucket_candidate,
+                        repaired_key,
+                        len(content_bytes),
+                    )
+
+                    try:
+                        result = self._decode_chunk_bytes(content_bytes, repaired_key, chunk_metadata)
+                    except Exception as decode_exc:  # noqa: BLE001
+                        logger.error(
+                            "Downloaded chunk content for key %s could not be decoded: %s",
+                            repaired_key,
+                            decode_exc,
+                        )
+                        raise
+
+                    logger.info(
+                        "Returning repaired chunk content for key %s (length=%d)",
+                        repaired_key,
+                        len(result),
+                    )
+                    return result
             for bucket_candidate in bucket_options:
                 content_bytes = await self._download_chunk_bytes(bucket_candidate, storage_key)
                 if content_bytes is None:
