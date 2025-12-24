@@ -242,13 +242,17 @@ def get_ollama_usage_info():
 
 
 def main():
+    # Get default log level from environment variable if available
+    env_log_level = os.getenv("LOG_LEVEL", "").lower()
+    default_log_level = env_log_level if env_log_level in ["debug", "info", "warning", "error"] else "info"
+    
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Start the Morphik server")
     parser.add_argument(
         "--log",
         choices=["debug", "info", "warning", "error"],
-        default="info",
-        help="Set the logging level",
+        default=default_log_level,
+        help=f"Set the logging level (default: {default_log_level}, can be set via LOG_LEVEL env var)",
     )
     parser.add_argument(
         "--skip-ollama-check",

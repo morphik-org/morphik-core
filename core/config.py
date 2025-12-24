@@ -110,6 +110,7 @@ class Settings(BaseSettings):
     STORAGE_PATH: Optional[str] = None
     AWS_REGION: Optional[str] = None
     S3_BUCKET: Optional[str] = None
+    S3_ENDPOINT_URL: Optional[str] = None
     S3_UPLOAD_CONCURRENCY: int = 16
     CACHE_ENABLED: bool = False
     CACHE_MAX_BYTES: int = 10 * 1024 * 1024 * 1024
@@ -307,6 +308,7 @@ def get_settings() -> Settings:
         {
             "STORAGE_PROVIDER": config["storage"]["provider"],
             "STORAGE_PATH": config["storage"]["storage_path"],
+            "S3_ENDPOINT_URL": config["storage"]["endpoint_url"],
         }
     )
     upload_conc = config["storage"].get("s3_upload_concurrency", 16)
@@ -325,6 +327,7 @@ def get_settings() -> Settings:
                     "S3_BUCKET": config["storage"]["bucket_name"],
                     "AWS_ACCESS_KEY": os.environ["AWS_ACCESS_KEY"],
                     "AWS_SECRET_ACCESS_KEY": os.environ["AWS_SECRET_ACCESS_KEY"],
+                    "S3_ENDPOINT_URL": config["storage"]["endpoint_url"],
                 }
             )
         case "aws-s3":

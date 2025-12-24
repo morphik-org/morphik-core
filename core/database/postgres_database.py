@@ -2012,7 +2012,7 @@ class PostgresDatabase:
     ) -> bool:
         """Store or update chat history."""
         try:
-            now = datetime.now(UTC).isoformat()
+            now = datetime.now(UTC)
 
             # Auto-generate title from first user message if not provided
             if title is None and history:
@@ -2027,39 +2027,34 @@ class PostgresDatabase:
                         break
 
             async with self.async_session() as session:
-                # Check if conversation exists to determine if we need to preserve existing title
+                # Check if conversation exists
                 result = await session.execute(
-                    text("SELECT title FROM chat_conversations WHERE conversation_id = :cid"), {"cid": conversation_id}
+                    select(ChatConversationModel).where(ChatConversationModel.conversation_id == conversation_id)
                 )
-                existing = result.fetchone()
+                existing_convo = result.scalar_one_or_none()
 
-                # If conversation exists and has a title, preserve it unless a new title is provided
-                if existing and existing[0] and title is None:
-                    title = existing[0]
+                if existing_convo:
+                    # Update existing conversation
+                    existing_convo.user_id = user_id
+                    existing_convo.app_id = app_id
+                    existing_convo.history = history
+                    # Preserve existing title if no new title is provided
+                    if title is not None:
+                        existing_convo.title = title
+                    existing_convo.updated_at = now
+                else:
+                    # Create new conversation
+                    new_convo = ChatConversationModel(
+                        conversation_id=conversation_id,
+                        user_id=user_id,
+                        app_id=app_id,
+                        history=history,
+                        title=title,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    session.add(new_convo)
 
-                await session.execute(
-                    text(
-                        """
-                        INSERT INTO chat_conversations (conversation_id, user_id, app_id, history, title, created_at, updated_at)
-                        VALUES (:cid, :uid, :aid, :hist, :title, CAST(:now AS TEXT), CAST(:now AS TEXT))
-                        ON CONFLICT (conversation_id)
-                        DO UPDATE SET
-                            user_id = EXCLUDED.user_id,
-                            app_id = EXCLUDED.app_id,
-                            history = EXCLUDED.history,
-                            title = COALESCE(EXCLUDED.title, chat_conversations.title),
-                            updated_at = CAST(:now AS TEXT)
-                        """
-                    ),
-                    {
-                        "cid": conversation_id,
-                        "uid": user_id,
-                        "aid": app_id,
-                        "hist": json.dumps(history),
-                        "title": title,
-                        "now": now,
-                    },
-                )
                 await session.commit()
                 return True
         except Exception as e:

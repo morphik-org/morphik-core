@@ -40,18 +40,25 @@ class S3Storage(BaseStorage):
         aws_secret_key: str,
         region_name: str = "us-east-2",
         default_bucket: str = "morphik-storage",
+        endpoint_url: Optional[str] = None,
         upload_concurrency: int = 16,
     ):
         self.default_bucket = default_bucket
         # Increase the underlying urllib3 connection-pool size to better support high concurrency
         boto_cfg = Config(max_pool_connections=64, retries={"max_attempts": 3, "mode": "standard"})
-        self.s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=aws_access_key,
-            aws_secret_access_key=aws_secret_key,
-            region_name=region_name,
-            config=boto_cfg,
-        )
+
+        client_args = {
+            "service_name": "s3",
+            "aws_access_key_id": aws_access_key,
+            "aws_secret_access_key": aws_secret_key,
+            "region_name": region_name,
+            "config": boto_cfg,
+        }
+        if endpoint_url:
+            client_args["endpoint_url"] = endpoint_url
+
+        self.s3_client = boto3.client(**client_args)
+        
         # Cap concurrent uploads to avoid overwhelming the pool/S3 while still allowing parallelism.
         self._upload_semaphore = asyncio.Semaphore(max(1, upload_concurrency))
 
