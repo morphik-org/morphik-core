@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from core.config import get_settings
 from core.utils.folder_utils import normalize_folder_path
-from core.utils.typed_metadata import TypedMetadataError, normalize_metadata
+from core.utils.typed_metadata import MetadataBundle, TypedMetadataError, normalize_metadata
 
 from ..models.auth import AuthContext
 from ..models.documents import Document
@@ -169,18 +169,24 @@ class PostgresDatabase:
             logger.error(f"Error initializing PostgreSQL: {str(e)}")
             return False
 
-    async def store_document(self, document: Document, auth: AuthContext) -> bool:
+    async def store_document(
+        self, document: Document, auth: AuthContext, metadata_bundle: Optional[MetadataBundle] = None
+    ) -> bool:
         """Store document metadata."""
         try:
             doc_dict = document.model_dump()
             summary_metadata = self._extract_summary_metadata(doc_dict)
 
             metadata = doc_dict.pop("metadata", {}) or {}
-            metadata.setdefault("external_id", doc_dict["external_id"])
             metadata_type_hints = doc_dict.pop("metadata_types", {}) or {}
-            normalized_metadata, normalized_types = normalize_metadata(metadata, metadata_type_hints)
-            doc_dict["doc_metadata"] = normalized_metadata
-            doc_dict["metadata_types"] = normalized_types
+            bundle = metadata_bundle
+            if bundle is None:
+                bundle = normalize_metadata(metadata, metadata_type_hints)
+            elif not bundle.is_normalized:
+                bundle = normalize_metadata(bundle.values, bundle.types)
+            bundle = bundle.with_external_id(doc_dict["external_id"])
+            doc_dict["doc_metadata"] = bundle.values
+            doc_dict["metadata_types"] = bundle.types
             # Mirror folder path into doc_metadata for convenience in downstream filters (allow clearing)
             path_for_metadata = doc_dict.get("folder_path") or doc_dict.get("folder_name")
             doc_dict["doc_metadata"]["folder_name"] = path_for_metadata
@@ -590,6 +596,7 @@ class PostgresDatabase:
         updates: Dict[str, Any],
         auth: AuthContext,
         expected_summary_version: Optional[int] = None,
+        metadata_bundle: Optional[MetadataBundle] = None,
     ) -> bool:
         """Update document metadata if user has write access.
 
@@ -698,14 +705,22 @@ class PostgresDatabase:
             # Serialize datetime objects to ISO format strings
             updates = _serialize_datetime(updates)
 
-            if "metadata" in updates:
+            bundle = metadata_bundle
+            if bundle is None and "metadata" in updates:
                 logger.info("Converting 'metadata' to 'doc_metadata' for database update")
                 metadata_payload = updates.pop("metadata") or {}
-                metadata_payload.setdefault("external_id", document_id)
                 metadata_type_hints = updates.pop("metadata_types", {}) or {}
-                normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_type_hints)
-                updates["doc_metadata"] = normalized_metadata
-                updates["metadata_types"] = normalized_types
+                bundle = normalize_metadata(metadata_payload, metadata_type_hints)
+            elif bundle is not None:
+                updates.pop("metadata", None)
+                updates.pop("metadata_types", None)
+
+            if bundle is not None:
+                if not bundle.is_normalized:
+                    bundle = normalize_metadata(bundle.values, bundle.types)
+                bundle = bundle.with_external_id(document_id)
+                updates["doc_metadata"] = bundle.values
+                updates["metadata_types"] = bundle.types
 
             async with self.async_session() as session:
                 async with session.begin():

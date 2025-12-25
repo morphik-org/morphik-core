@@ -28,7 +28,10 @@ from core.services.ingestion_service import IngestionService, PdfConversionError
 from core.services.telemetry import TelemetryService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
-from core.utils.folder_utils import normalize_folder_path
+from core.storage.utils_file_extensions import detect_content_type, is_colpali_native_format
+from core.utils.folder_utils import normalize_ingest_folder_inputs
+from core.utils.typed_metadata import MetadataBundle
+from core.vector_store.base_vector_store import BaseVectorStore
 from core.vector_store.dual_multivector_store import DualMultiVectorStore
 from core.vector_store.fast_multivector_store import FastMultiVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
@@ -69,6 +72,74 @@ if not summary_logger.handlers:
     summary_handler.setFormatter(logging.Formatter("%(message)s"))
     summary_logger.addHandler(summary_handler)
 summary_logger.propagate = False
+
+_COLPALI_STORE_CACHE: Dict[tuple, BaseVectorStore] = {}
+_COLPALI_STORE_LOCK = asyncio.Lock()
+
+
+def _build_colpali_store_cache_key(uri: str) -> tuple:
+    return (
+        uri,
+        settings.ENABLE_DUAL_MULTIVECTOR_INGESTION,
+        settings.MULTIVECTOR_STORE_PROVIDER,
+        settings.COLPALI_MODE,
+    )
+
+
+def _resolve_database_uri(database: PostgresDatabase) -> str:
+    # Keep the password visible for psycopg and add sslmode=require in cloud mode when missing.
+    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+    uri_raw = database.engine.url.render_as_string(hide_password=False)
+    parsed = urlparse(uri_raw)
+    query = parse_qs(parsed.query)
+    if "sslmode" not in query and settings.MODE == "cloud":
+        query["sslmode"] = ["require"]
+        parsed = parsed._replace(query=urlencode(query, doseq=True))
+    return urlunparse(parsed)
+
+
+async def _get_worker_colpali_store(database: PostgresDatabase) -> Optional[BaseVectorStore]:
+    """Return a per-worker cached ColPali vector store instance."""
+    uri_final = _resolve_database_uri(database)
+    cache_key = _build_colpali_store_cache_key(uri_final)
+
+    cached = _COLPALI_STORE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    async with _COLPALI_STORE_LOCK:
+        cached = _COLPALI_STORE_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
+        if settings.ENABLE_DUAL_MULTIVECTOR_INGESTION:
+            if not settings.TURBOPUFFER_API_KEY:
+                raise ValueError("TURBOPUFFER_API_KEY is required when dual ingestion is enabled")
+
+            fast_store = FastMultiVectorStore(
+                uri=uri_final,
+                tpuf_api_key=settings.TURBOPUFFER_API_KEY,
+                namespace="public",
+            )
+            slow_store = MultiVectorStore(uri=uri_final)
+            store: BaseVectorStore = DualMultiVectorStore(
+                fast_store=fast_store, slow_store=slow_store, enable_dual_ingestion=True
+            )
+        elif settings.MULTIVECTOR_STORE_PROVIDER == "morphik":
+            if not settings.TURBOPUFFER_API_KEY:
+                raise ValueError("TURBOPUFFER_API_KEY is required when using morphik multivector store provider")
+            store = FastMultiVectorStore(
+                uri=uri_final,
+                tpuf_api_key=settings.TURBOPUFFER_API_KEY,
+                namespace="public",
+            )
+        else:
+            store = MultiVectorStore(uri=uri_final)
+
+        await asyncio.to_thread(store.initialize)
+        _COLPALI_STORE_CACHE[cache_key] = store
+        return store
 
 
 def _ensure_worker_logging() -> None:
@@ -270,10 +341,8 @@ async def process_ingestion_job(
     bucket: str,
     original_filename: str,
     content_type: str,
-    metadata_json: str,
     auth_dict: Dict[str, Any],
     use_colpali: bool,
-    metadata_types_json: Optional[str] = None,
     folder_name: Optional[str] = None,
     folder_path: Optional[str] = None,
     folder_leaf: Optional[str] = None,
@@ -288,10 +357,8 @@ async def process_ingestion_job(
         bucket: The storage bucket name
         original_filename: The original file name
         content_type: The file's content type/MIME type
-        metadata_json: JSON string of metadata
         auth_dict: Dict representation of AuthContext
         use_colpali: Whether to use ColPali embedding model
-        metadata_types_json: JSON string of metadata type hints
         folder_name: Optional folder to scope the document to
         end_user_id: Optional end-user ID to scope the document to
 
@@ -301,32 +368,38 @@ async def process_ingestion_job(
     telemetry = TelemetryService()
 
     # Normalize folder inputs for consistent storage and folder linking.
-    normalized_folder_path = folder_path
-    normalized_folder_leaf = folder_leaf
-    if normalized_folder_path:
-        try:
-            normalized_folder_path = normalize_folder_path(normalized_folder_path)
-            if normalized_folder_path == "/":
-                normalized_folder_path = None
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Could not normalize folder_path '%s': %s", normalized_folder_path, exc)
-            normalized_folder_path = None
-    if normalized_folder_path and not normalized_folder_leaf:
-        parts = [p for p in normalized_folder_path.strip("/").split("/") if p]
-        normalized_folder_leaf = parts[-1] if parts else None
-    if not normalized_folder_path and folder_name:
-        try:
-            normalized_folder_path = normalize_folder_path(folder_name)
-            if normalized_folder_path == "/":
-                normalized_folder_path = None
-            parts = [p for p in normalized_folder_path.strip("/").split("/") if p] if normalized_folder_path else []
-            normalized_folder_leaf = parts[-1] if parts else (normalized_folder_leaf or folder_name)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Could not normalize folder_name '%s': %s", folder_name, exc)
-            normalized_folder_leaf = normalized_folder_leaf or folder_name
+    try:
+        normalized_folder = normalize_ingest_folder_inputs(
+            folder_name=folder_name,
+            folder_path=folder_path,
+            folder_leaf=folder_leaf,
+            strict=False,
+        )
+    except ValueError as exc:
+        logger.warning("Could not normalize folder inputs (path=%s name=%s): %s", folder_path, folder_name, exc)
+        normalized_folder = normalize_ingest_folder_inputs(
+            folder_name=None,
+            folder_path=None,
+            folder_leaf=folder_leaf or folder_name,
+            strict=False,
+        )
+
+    normalized_folder_path = normalized_folder.path
+    normalized_folder_leaf = normalized_folder.leaf
+    if (
+        (folder_path or folder_name)
+        and normalized_folder_path is None
+        and normalized_folder_leaf
+        in (
+            None,
+            folder_leaf,
+            folder_name,
+        )
+    ):
+        logger.warning("Folder path could not be normalized (path=%s name=%s)", folder_path, folder_name)
 
     # Build metadata resolver inline to capture key fields
-    def _meta_resolver(*_a, **_kw):  # noqa: D401
+    def _meta_resolver():  # noqa: D401
         return {
             "filename": original_filename,
             "content_type": content_type,
@@ -391,49 +464,7 @@ async def process_ingestion_job(
             # Check both use_colpali parameter AND global enable_colpali setting
             if use_colpali and settings.ENABLE_COLPALI:
                 try:
-                    # Use render_as_string(hide_password=False) so the URI keeps the
-                    # password – str(engine.url) masks it with "***" which breaks
-                    # authentication for psycopg.  Also append sslmode=require when
-                    # missing to satisfy Neon.
-                    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
-
-                    uri_raw = database.engine.url.render_as_string(hide_password=False)
-
-                    parsed = urlparse(uri_raw)
-                    query = parse_qs(parsed.query)
-                    if "sslmode" not in query and settings.MODE == "cloud":
-                        query["sslmode"] = ["require"]
-                        parsed = parsed._replace(query=urlencode(query, doseq=True))
-
-                    uri_final = urlunparse(parsed)
-                    # Choose multivector store implementation based on provider
-                    if settings.ENABLE_DUAL_MULTIVECTOR_INGESTION:
-                        # Dual ingestion mode: create both stores and wrap them
-                        if not settings.TURBOPUFFER_API_KEY:
-                            raise ValueError("TURBOPUFFER_API_KEY is required when dual ingestion is enabled")
-
-                        fast_store = FastMultiVectorStore(
-                            uri=uri_final,
-                            tpuf_api_key=settings.TURBOPUFFER_API_KEY,
-                            namespace="public",
-                        )
-                        slow_store = MultiVectorStore(uri=uri_final)
-                        colpali_vector_store = DualMultiVectorStore(
-                            fast_store=fast_store, slow_store=slow_store, enable_dual_ingestion=True
-                        )
-                    elif settings.MULTIVECTOR_STORE_PROVIDER == "morphik":
-                        if not settings.TURBOPUFFER_API_KEY:
-                            raise ValueError(
-                                "TURBOPUFFER_API_KEY is required when using morphik multivector store provider"
-                            )
-                        colpali_vector_store = FastMultiVectorStore(
-                            uri=uri_final,
-                            tpuf_api_key=settings.TURBOPUFFER_API_KEY,
-                            namespace="public",
-                        )
-                    else:
-                        colpali_vector_store = MultiVectorStore(uri=uri_final)
-                    await asyncio.to_thread(colpali_vector_store.initialize)
+                    colpali_vector_store = await _get_worker_colpali_store(database)
                 except Exception as e:
                     logger.warning(f"Failed to initialise ColPali MultiVectorStore for app {auth.app_id}: {e}")
 
@@ -470,13 +501,17 @@ async def process_ingestion_job(
                 download_time,
             )
 
+            # Detect file type early for optimization decisions
+            mime_type = detect_content_type(
+                content=file_content,
+                filename=original_filename,
+                content_type_hint=content_type,
+            )
+
             # Optional: render HTML to PDF to mimic printed output and speed up parsing
             html_conversion_start = time.time()
             html_converted = False
-            if (original_filename and original_filename.lower().endswith((".html", ".htm"))) or content_type in {
-                "text/html",
-                "application/xhtml+xml",
-            }:
+            if mime_type in {"text/html", "application/xhtml+xml"}:
                 try:
                     from weasyprint import HTML  # type: ignore
 
@@ -485,6 +520,7 @@ async def process_ingestion_job(
                     if pdf_bytes:
                         file_content = pdf_bytes
                         content_type = "application/pdf"
+                        mime_type = "application/pdf"
                         html_converted = True
                         logger.info("Converted HTML to PDF for ingestion (WeasyPrint)")
                 except Exception as html_exc:
@@ -502,51 +538,15 @@ async def process_ingestion_job(
                 f"using_colpali={using_colpali}"
             )
 
-            # Detect file type early for optimization decisions
-            file_type = None
-            mime_type = None
-            is_colpali_native_format = False  # Images, PDFs, Word docs, PPTs, Excel that ColPali converts to images
-
-            try:
-                import filetype
-
-                file_type = filetype.guess(file_content)
-                if file_type:
-                    mime_type = file_type.mime
-                else:
-                    # If filetype couldn't detect, use content_type from upload
-                    mime_type = content_type
-
-                if mime_type:
-                    # These formats are handled natively by ColPali as images
-                    is_colpali_native_format = (
-                        mime_type.startswith("image/")
-                        or mime_type == "application/pdf"
-                        or mime_type
-                        in [
-                            # Word documents
-                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                            "application/msword",
-                            # PowerPoint presentations
-                            "application/vnd.ms-powerpoint",
-                            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                            "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
-                            # Excel spreadsheets
-                            "application/vnd.ms-excel",
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            "application/vnd.ms-excel.sheet.macroEnabled.12",
-                        ]
-                    )
-            except Exception as e:
-                logger.warning(f"Could not detect file type: {e}")
+            colpali_native_format = is_colpali_native_format(mime_type)
 
             # ===== PROCESSING FLOW DECISION =====
-            skip_text_parsing = using_colpali and is_colpali_native_format
+            skip_text_parsing = using_colpali and colpali_native_format
 
             logger.debug(
                 f"Processing decision for {mime_type or 'unknown'} file: "
                 f"skip_text_parsing={skip_text_parsing} "
-                f"(ColPali={using_colpali}, native_format={is_colpali_native_format})"
+                f"(ColPali={using_colpali}, native_format={colpali_native_format})"
             )
 
             # 4. Parse file to text
@@ -725,13 +725,10 @@ async def process_ingestion_job(
 
             chunks_multivector = []
             if should_create_image_chunks:
-                import filetype
-
-                file_type = filetype.guess(file_content)
                 try:
                     # Use the parsed chunks to create image-friendly slices when ColPali is enabled
                     chunks_multivector = ingestion_service._create_chunks_multivector(
-                        file_type, None, file_content, parsed_chunks
+                        mime_type, None, file_content, parsed_chunks
                     )
                 except PdfConversionError as conversion_error:
                     logger.error(
@@ -1014,8 +1011,21 @@ async def process_ingestion_job(
                     auth=auth,
                 )
             else:
+                metadata_bundle = None
+                if isinstance(doc.metadata, dict) and isinstance(doc.metadata_types, dict):
+                    metadata_bundle = MetadataBundle(
+                        values=dict(doc.metadata),
+                        types=dict(doc.metadata_types),
+                        is_normalized=True,
+                    )
                 await ingestion_service._store_chunks_and_doc(
-                    chunk_objects, doc, use_colpali, chunk_objects_multivector, is_update=True, auth=auth
+                    chunk_objects,
+                    doc,
+                    use_colpali,
+                    chunk_objects_multivector,
+                    is_update=True,
+                    auth=auth,
+                    metadata_bundle=metadata_bundle,
                 )
                 store_metrics_getter = getattr(ingestion_service.vector_store, "latest_store_metrics", None)
                 if callable(store_metrics_getter):

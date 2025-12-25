@@ -1396,6 +1396,52 @@ class DocumentService:
                 ext = ".png"
             return ext
 
+        def _build_bucket_candidates(storage_obj: BaseStorage, primary_bucket: Optional[str]) -> List[str]:
+            candidates: List[str] = []
+            if primary_bucket:
+                candidates.append(primary_bucket)
+            try:
+                default_bucket = getattr(storage_obj, "default_bucket", None)
+                if default_bucket and default_bucket not in candidates:
+                    candidates.append(default_bucket)
+            except Exception:
+                pass
+            try:
+                for b in list(candidates):
+                    if not b:
+                        continue
+                    alt_candidates = set()
+                    if "-s3-" in b:
+                        alt_candidates.add(b.replace("-s3-", "-"))
+                    if b.endswith("-s3"):
+                        alt_candidates.add(b[:-3])
+                    if b.startswith("s3-"):
+                        alt_candidates.add(b[3:])
+                    for alt in alt_candidates:
+                        if alt and alt not in candidates:
+                            candidates.append(alt)
+            except Exception:
+                pass
+            if MULTIVECTOR_CHUNKS_BUCKET not in candidates:
+                candidates.append(MULTIVECTOR_CHUNKS_BUCKET)
+            return list(dict.fromkeys(candidates))
+
+        async def _download_with_bucket_fallback(
+            storage_obj: BaseStorage,
+            key: str,
+            buckets: List[str],
+        ) -> Tuple[Optional[bytes], Optional[str]]:
+            for candidate_bucket in buckets:
+                if not candidate_bucket:
+                    continue
+                try:
+                    content_bytes = await storage_obj.download_file(bucket=candidate_bucket, key=key)
+                    if content_bytes:
+                        return content_bytes, candidate_bucket
+                except Exception:
+                    continue
+            return None, None
+
         async def _update_vector_store_content_key(
             vector_store: Optional[BaseVectorStore],
             document_id: str,
@@ -1583,6 +1629,7 @@ class DocumentService:
 
                     # Hotswap: ensure object exists; if missing, convert from base64/data URI and upload
                     if storage is not None:
+                        bucket_candidates = _build_bucket_candidates(storage, bucket_name)
                         # Check existing object: if missing or not binary image, upload raw bytes
                         existing_bytes: Optional[bytes] = None
                         try:
@@ -1606,11 +1653,21 @@ class DocumentService:
                         needs_upload = not has_valid_image
 
                         source_bytes: Optional[bytes] = None
+                        source_bucket_for_delete: Optional[str] = None
                         if needs_upload and source_storage_key and source_storage_key != storage_key:
-                            try:
-                                source_bytes = await storage.download_file(bucket=bucket_name, key=source_storage_key)
-                            except Exception:
-                                source_bytes = None
+                            source_bytes, source_bucket_for_delete = await _download_with_bucket_fallback(
+                                storage,
+                                source_storage_key,
+                                bucket_candidates,
+                            )
+                        if needs_upload and source_bytes is None:
+                            fallback_buckets = [b for b in bucket_candidates if b != bucket_name]
+                            if fallback_buckets:
+                                source_bytes, _ = await _download_with_bucket_fallback(
+                                    storage,
+                                    storage_key,
+                                    fallback_buckets,
+                                )
 
                         if needs_upload:
                             try:
@@ -1638,14 +1695,17 @@ class DocumentService:
                                     except Exception:
                                         raw_bytes = None
                                 if raw_bytes is None and source_bytes is not None:
-                                    try:
-                                        s = source_bytes.decode("utf-8", errors="ignore")
-                                        if s.startswith("data:"):
-                                            raw_bytes = base64.b64decode(s.split(",", 1)[1])
-                                        else:
-                                            raw_bytes = base64.b64decode(s)
-                                    except Exception:
-                                        raw_bytes = None
+                                    if _is_binary_image(source_bytes):
+                                        raw_bytes = source_bytes
+                                    else:
+                                        try:
+                                            s = source_bytes.decode("utf-8", errors="ignore")
+                                            if s.startswith("data:"):
+                                                raw_bytes = base64.b64decode(s.split(",", 1)[1])
+                                            else:
+                                                raw_bytes = base64.b64decode(s)
+                                        except Exception:
+                                            raw_bytes = None
                                 if raw_bytes is None and existing_bytes is not None:
                                     # Last resort: the existing file might be a data URI string
                                     try:
@@ -1688,7 +1748,8 @@ class DocumentService:
                                     doc.app_id or auth.app_id,
                                 )
                                 if update_ok:
-                                    await storage.delete_file(bucket=bucket_name, key=source_storage_key)
+                                    delete_bucket = source_bucket_for_delete or bucket_name
+                                    await storage.delete_file(bucket=delete_bucket, key=source_storage_key)
                             except Exception as del_e:
                                 logger.warning(f"Failed to delete legacy txt image key {source_storage_key}: {del_e}")
 
