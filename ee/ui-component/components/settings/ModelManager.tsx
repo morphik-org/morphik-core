@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,7 +17,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ModelConfigAPI } from "@/lib/modelConfigApi";
 import { CustomModel } from "@/components/types";
 import { useTheme } from "next-themes";
 import { useMorphik } from "@/contexts/morphik-context";
@@ -137,8 +136,6 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
   const { theme } = useTheme();
 
   const { apiBaseUrl } = useMorphik();
-  const api = useMemo(() => new ModelConfigAPI(authToken || null, apiBaseUrl), [authToken, apiBaseUrl]);
-
   const renderProviderIcon = (provider: string) => {
     const providerInfo = PROVIDER_INFO[provider as keyof typeof PROVIDER_INFO];
     if (!providerInfo) return <span className="text-xl">🔧</span>;
@@ -334,19 +331,6 @@ export function ModelManager({ apiKeys, authToken }: ModelManagerProps) {
   const handleUpdateModel = async (id: string, updates: Partial<CustomModel>) => {
     try {
       const updatedModels = models.map(m => (m.id === id ? { ...m, ...updates } : m));
-
-      if (authToken) {
-        // Update in backend
-        const model = updatedModels.find(m => m.id === id);
-        if (model) {
-          await api.updateCustomModel(id, {
-            name: model.name,
-            provider: model.provider,
-            model_name: model.model_name,
-            config: model.config,
-          });
-        }
-      }
 
       // Update local state and localStorage
       setModels(updatedModels);

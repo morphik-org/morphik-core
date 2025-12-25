@@ -175,24 +175,6 @@ export interface ChatMessage {
   sources?: Source[];
 }
 
-// Model Configuration Types
-export interface ModelConfigResponse {
-  id: string;
-  provider: string;
-  config_data: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ModelConfigCreate {
-  provider: string;
-  config_data: Record<string, unknown>;
-}
-
-export interface ModelConfigUpdate {
-  config_data: Record<string, unknown>;
-}
-
 export interface CustomModel {
   id: string;
   name: string;
