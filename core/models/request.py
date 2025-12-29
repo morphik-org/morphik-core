@@ -393,10 +393,16 @@ class BatchIngestJobResponse(BaseModel):
 class GenerateUriRequest(BaseModel):
     """Request model for generating a cloud URI"""
 
-    app_id: str = Field(..., description="ID of the application")
+    app_id: Optional[str] = Field(
+        None,
+        description="Optional client-generated app ID (UUID recommended). If omitted, the server generates one.",
+    )
     name: str = Field(..., description="Name of the application")
-    user_id: str = Field(..., description="ID of the user who owns the app")
-    expiry_days: int = Field(default=30, description="Number of days until the token expires")
+    user_id: Optional[str] = Field(
+        None,
+        description="Optional owner user ID. If omitted, derived from the bearer token.",
+    )
+    expiry_days: int = Field(default=3650, description="Number of days until the token expires")
     org_id: Optional[str] = Field(None, description="Optional organization identifier for multi-tenant control planes")
     created_by_user_id: Optional[str] = Field(
         None,

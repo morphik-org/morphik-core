@@ -1,8 +1,8 @@
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 
 
 def _derive_page_count(document_dict: Dict[str, Any]) -> Optional[int]:
@@ -70,6 +70,52 @@ def project_document_fields(document_dict: Dict[str, Any], fields: Optional[List
         projected["external_id"] = document_dict["external_id"]
 
     return projected
+
+
+def parse_bool(value: Optional[Union[str, bool]]) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"true", "1", "yes", "y", "on"}
+
+
+def parse_json_value(value: Optional[str], field_name: str, default: Any = None) -> Any:
+    if value in (None, ""):
+        return default
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"{field_name} must be valid JSON: {exc}") from exc
+
+
+def parse_json_dict(value: Optional[str], field_name: str, default: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    parsed = parse_json_value(value, field_name, default)
+    if parsed is None:
+        return {} if default is None else default
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a JSON object")
+    return parsed
+
+
+def enforce_no_user_mutable_fields(
+    ingestion_service,
+    metadata: Optional[Dict[str, Any]],
+    metadata_types: Optional[Dict[str, Any]],
+    context: str,
+    request_model: Optional[Any] = None,
+) -> None:
+    extra_fields = (
+        getattr(request_model, "model_extra", {}) if request_model and hasattr(request_model, "model_extra") else {}
+    )
+    ingestion_service._enforce_no_user_mutable_fields(
+        metadata,
+        extra_fields,
+        metadata_types,
+        context=context,
+    )
 
 
 async def warn_if_legacy_rules(request: Request, route: str, logger: logging.Logger) -> None:

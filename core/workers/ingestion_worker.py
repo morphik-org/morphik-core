@@ -412,7 +412,7 @@ async def process_ingestion_job(
     try:
         async with telemetry.track_operation(
             operation_type="ingest_worker",
-            user_id=auth_dict.get("entity_id", "unknown"),
+            user_id=auth_dict.get("user_id") or auth_dict.get("entity_id", "unknown"),
             app_id=auth_dict.get("app_id"),
             metadata=_meta_resolver(),
         ):

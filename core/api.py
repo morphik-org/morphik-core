@@ -817,10 +817,15 @@ async def query_completion(
             # Chat history storage for non-streaming responses
             perf.start_phase("chat_history_storage")
             if history_key:
+                # Handle structured completions (Pydantic models) for chat history storage
+                # Convert to JSON string since chat_history.content must be a string
+                completion_content = response.completion
+                if hasattr(completion_content, "model_dump"):
+                    completion_content = json.dumps(completion_content.model_dump())
                 history.append(
                     {
                         "role": "assistant",
-                        "content": response.completion,
+                        "content": completion_content,
                         "timestamp": datetime.now(UTC).isoformat(),
                     }
                 )
@@ -1030,14 +1035,6 @@ async def generate_cloud_uri(
         user_id = request.user_id
         expiry_days = request.expiry_days
 
-        logger.debug(
-            "Generating cloud URI for app_id=%s, name=%s, user_id=%s (admin_header=%s)",
-            app_id,
-            name,
-            user_id,
-            bool(admin_secret),
-        )
-
         is_admin_call = _validate_admin_secret(admin_secret)
 
         if not is_admin_call:
@@ -1061,15 +1058,31 @@ async def generate_cloud_uri(
 
                 # Only allow users to create apps for themselves (or admin)
                 token_user_id = payload.get("user_id")
-                logger.debug(f"Token user ID: {token_user_id}")
-                logger.debug(f"User ID: {user_id}")
-                if not (token_user_id == user_id or "admin" in payload.get("permissions", [])):
+                token_permissions = payload.get("permissions", [])
+                if not user_id:
+                    user_id = token_user_id
+                if not user_id:
+                    raise HTTPException(status_code=401, detail="Token is missing user_id")
+                if not (token_user_id == user_id or "admin" in token_permissions):
                     raise HTTPException(
                         status_code=403,
                         detail="You can only create apps for your own account unless you have admin permissions",
                     )
             except jwt.InvalidTokenError as e:
                 raise HTTPException(status_code=401, detail=str(e))
+        elif not user_id:
+            raise HTTPException(status_code=400, detail="user_id is required when using admin secret")
+
+        if not app_id:
+            app_id = str(uuid.uuid4())
+
+        logger.debug(
+            "Generating cloud URI for app_id=%s, name=%s, user_id=%s (admin_header=%s)",
+            app_id,
+            name,
+            user_id,
+            bool(admin_secret),
+        )
         # Import UserService here to avoid circular imports
         from core.services.user_service import UserService
 
@@ -1316,9 +1329,11 @@ async def update_chat_title(
             app_id=auth.app_id,
         )
         if success:
-            return {"success": True, "message": "Chat title updated successfully"}
+            return {"status": "success", "message": "Chat title updated successfully", "title": title}
         else:
             raise HTTPException(status_code=404, detail="Chat not found or access denied")
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.error("Error updating chat title: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to update chat title")

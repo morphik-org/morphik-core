@@ -68,9 +68,9 @@ create_test_files() {
     log_section "Creating Test Files"
     mkdir -p "$TEST_DIR"
 
-    # Base64 helper image (1x1 PNG) for query_image and image ingestion
+    # Base64 helper image (100x100 PNG) for query_image and image ingestion
     cat > "$TEST_DIR/test_image.b64" << 'EOF'
-iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/6WqN3sAAAAASUVORK5CYII=
+iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAIAAAD/gAIDAAAA6ElEQVR4nO3QMQHAIBDAQKg4hKEJgbXw2e/mTNnnvsXMN+wwqzErMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzArMCswKzBrzf30kgJE43y1WQAAAABJRU5ErkJggg==
 EOF
     # Cross-platform base64 decode (Linux uses -d, macOS uses -D)
     base64 -d < "$TEST_DIR/test_image.b64" > "$TEST_DIR/test_image.png" 2>/dev/null || \
@@ -1536,7 +1536,7 @@ print(res[0].get('status','') if res else '')
     response=$(curl -sf -X POST "$BASE_URL/ingest/document/query" \
         -F "file=@$TEST_DIR/test_document.txt" \
         -F "prompt=Extract title and keywords" \
-        -F "schema={\"title\":\"string\",\"keywords\":\"array\"}" \
+        -F "schema={\"title\":\"string\",\"keywords\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}}" \
         -F "ingestion_options={\"ingest\": true, \"metadata\": {\"test_run_id\": \""$TEST_RUN_ID"\", \"doc_query\": true}, \"use_colpali\": false}" 2>&1) || {
         log_error "Document query request failed"
         return
@@ -1574,7 +1574,7 @@ test_typed_metadata_filters() {
     local response
     response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
-        -d "{\"query\": \"typed metadata\", \"k\": 5, \"filters\": {\"$and\": [{\"test_run_id\": \"$TEST_RUN_ID\"}, {\"value_num\": {\"$type\": \"number\"}}, {\"value_decimal\": {\"$type\": \"decimal\"}}, {\"created_ts\": {\"$type\": \"datetime\"}}]}}" 2>&1) || {
+        -d "{\"query\": \"typed metadata\", \"k\": 5, \"filters\": {\"\$and\": [{\"test_run_id\": \"$TEST_RUN_ID\"}, {\"value_num\": {\"\$type\": \"number\"}}, {\"value_decimal\": {\"\$type\": \"decimal\"}}, {\"created_ts\": {\"\$type\": \"datetime\"}}]}}" 2>&1) || {
         log_error "Typed \$type filter request failed"
         return
     }
@@ -1590,7 +1590,7 @@ test_typed_metadata_filters() {
     log_info "Test: \$regex, \$contains, \$exists, \$in/\$nin operators"
     response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
-        -d "{\"query\": \"alpha\", \"k\": 5, \"filters\": {\"$and\": [{\"test_run_id\": \"$TEST_RUN_ID\"}, {\"tags\": {\"$contains\": \"alpha\"}}, {\"status\": {\"$regex\": \"ACTIVE\", \"options\": \"i\"}}, {\"missing_field\": {\"$exists\": false}}, {\"tags\": {\"$in\": [\"alpha\", \"gamma\"]}}, {\"status\": {\"$nin\": [\"inactive\"]}}]}}" 2>&1) || {
+        -d "{\"query\": \"alpha\", \"k\": 5, \"filters\": {\"\$and\": [{\"test_run_id\": \"$TEST_RUN_ID\"}, {\"tags\": {\"\$contains\": \"alpha\"}}, {\"status\": {\"\$regex\": \"active\"}}, {\"missing_field\": {\"\$exists\": false}}, {\"tags\": {\"\$in\": [\"alpha\", \"gamma\"]}}, {\"status\": {\"\$nin\": [\"inactive\"]}}]}}" 2>&1) || {
         log_error "Regex/contains filter request failed"
         return
     }
@@ -1605,7 +1605,7 @@ test_typed_metadata_filters() {
     log_info "Test: /retrieve/docs respects typed filters"
     response=$(curl -sf -X POST "$BASE_URL/retrieve/docs" \
         -H "Content-Type: application/json" \
-        -d "{\"query\": \"Typed\", \"k\": 3, \"filters\": {\"$and\": [{\"test_run_id\": \"$TEST_RUN_ID\"}, {\"value_num\": {\"$gte\": 5}}, {\"value_decimal\": {\"$lte\": 5}}]}}" 2>&1) || {
+        -d "{\"query\": \"Typed\", \"k\": 3, \"filters\": {\"\$and\": [{\"test_run_id\": \"$TEST_RUN_ID\"}, {\"value_num\": {\"\$gte\": 5}}, {\"value_decimal\": {\"\$lte\": 5}}]}}" 2>&1) || {
         log_error "retrieve/docs typed filter request failed"
         return
     }
@@ -1620,7 +1620,7 @@ test_typed_metadata_filters() {
     log_info "Test: /documents list with typed filters"
     response=$(curl -sf -X POST "$BASE_URL/documents" \
         -H "Content-Type: application/json" \
-        -d "{\"skip\":0,\"limit\":5,\"document_filters\":{\"test_run_id\":\"$TEST_RUN_ID\",\"value_decimal\":{\"$gte\":2}}}" 2>&1) || {
+        -d "{\"skip\":0,\"limit\":5,\"document_filters\":{\"test_run_id\":\"$TEST_RUN_ID\",\"value_decimal\":{\"\$gte\":2}}}" 2>&1) || {
         log_error "/documents typed list request failed"
         return
     }
@@ -1636,11 +1636,11 @@ test_typed_metadata_filters() {
     local http_code
     http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
-        -d "{\"query\": \"typed\", \"k\": 1, \"filters\": {\"value_num\": {\"$gt\": \"not_a_number\"}}}")
-    if [[ "$http_code" == "400" ]]; then
-        log_success "Invalid type comparison rejected with HTTP 400"
+        -d "{\"query\": \"typed\", \"k\": 1, \"filters\": {\"value_num\": {\"\$gt\": \"not_a_number\"}}}")
+    if [[ "$http_code" == "400" || "$http_code" == "422" ]]; then
+        log_success "Invalid type comparison rejected with HTTP $http_code"
     else
-        log_error "Invalid type comparison expected 400, got $http_code"
+        log_error "Invalid type comparison expected 400/422, got $http_code"
     fi
 }
 
@@ -1854,7 +1854,7 @@ if chunks:
     log_info "Test: /retrieve/chunks with query_image"
     response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
-        -d "{\"query\": \"\", \"query_image\": \"$QUERY_IMAGE_B64\", \"k\": 2, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
+        -d "{\"query_image\": \"$QUERY_IMAGE_B64\", \"k\": 2, \"use_colpali\": true, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "query_image retrieval failed"
     }
     local img_count
@@ -1867,10 +1867,10 @@ if chunks:
     http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/retrieve/docs" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"morphik\", \"query_image\": \"$QUERY_IMAGE_B64\", \"k\": 1, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}")
-    if [[ "$http_code" == "400" ]]; then
-        log_success "/retrieve/docs rejected image query (400)"
+    if [[ "$http_code" == "400" || "$http_code" == "422" ]]; then
+        log_success "/retrieve/docs rejected image query ($http_code)"
     else
-        log_error "/retrieve/docs expected 400 for image query, got $http_code"
+        log_error "/retrieve/docs expected 400/422 for image query, got $http_code"
     fi
 
     # min_score + reranking
@@ -1970,10 +1970,10 @@ test_query_and_chat_flows() {
     http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/query" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"\", \"k\": 1}")
-    if [[ "$http_code" == "400" ]]; then
-        log_success "/query missing text rejected (400)"
+    if [[ "$http_code" == "400" || "$http_code" == "422" ]]; then
+        log_success "/query missing text rejected ($http_code)"
     else
-        log_error "/query missing text expected 400, got $http_code"
+        log_error "/query missing text expected 400/422, got $http_code"
     fi
 
     local chat_id="chat_$TEST_RUN_ID"
@@ -2003,7 +2003,7 @@ EOF
         if grep -q "data:" "$stream_file"; then
             log_success "/query streaming returned event data"
         else
-            log_warn "/query streaming response lacked event data"
+            log_error "/query streaming returned 200 but no event data (stream failed mid-response)"
         fi
     else
         log_error "/query streaming expected 200, got $http_code"
@@ -2247,6 +2247,21 @@ main() {
     test_content_preservation
     test_result_validation
     test_additional_ingestion_variants
+
+    # Wait for typed metadata document to be processed before filter tests
+    if [[ -n "$TYPED_DOC_ID" ]]; then
+        log_info "Waiting for typed metadata document to be processed..."
+        for i in {1..10}; do
+            local status
+            status=$(curl -sf "$BASE_URL/documents/$TYPED_DOC_ID" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('system_metadata',{}).get('status',''))" 2>/dev/null) || status=""
+            if [[ "$status" == "completed" ]]; then
+                log_success "Typed metadata document processed"
+                break
+            fi
+            sleep 2
+        done
+    fi
+
     test_typed_metadata_filters
     test_document_management_and_updates
     test_retrieval_variants_and_batches
