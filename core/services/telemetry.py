@@ -385,14 +385,12 @@ class TelemetryService:
                 MetadataField("user_id", "kwargs", "auth", transform=lambda auth: getattr(auth, "user_id", None)),
             ]
         )
-        # Set up all the metadata extractors
         self.ingest_text_metadata = MetadataExtractor(
             common_request_fields
             + [
                 MetadataField("metadata", "request", default={}),
             ]
         )
-
         self.ingest_file_metadata = MetadataExtractor(
             [
                 MetadataField("filename", "kwargs", transform=lambda file: file.filename if file else None),

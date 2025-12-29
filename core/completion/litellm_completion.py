@@ -270,6 +270,18 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             f"config={self.model_config}, is_ollama_direct={self.is_ollama}"
         )
 
+    @staticmethod
+    def _should_apply_gemini3_minimal_reasoning_effort(model_config: Dict[str, Any]) -> bool:
+        model_name = model_config.get("model", model_config.get("model_name", ""))
+        if not isinstance(model_name, str) or not model_name:
+            return False
+        normalized = model_name.lower()
+        if "gemini-3" not in normalized:
+            return False
+        if "image" in normalized:
+            return False
+        return "reasoning_effort" not in model_config
+
     async def _handle_structured_ollama(
         self,
         dynamic_model: type,
@@ -618,13 +630,23 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         """
         # Use llm_config from request if provided, otherwise use instance config
         if request.llm_config:
-            # Create a temporary instance with the custom model config
-            model_config = request.llm_config
-            is_ollama = "ollama" in model_config.get("model", "").lower()
+            if "model" in request.llm_config:
+                # User is switching models entirely - use their config as-is
+                # to avoid inheriting provider-specific settings (e.g., api_base)
+                model_config = request.llm_config
+            else:
+                # User is just tweaking settings (e.g., temperature) - merge with defaults
+                # so the model name is preserved
+                model_config = {**self.model_config, **request.llm_config}
+            # Check both "model" and "model_name" keys for Ollama detection
+            model_id = model_config.get("model", model_config.get("model_name", ""))
+            is_ollama = "ollama" in model_id.lower()
         else:
             # Use the instance's pre-configured model
             model_config = self.model_config
             is_ollama = self.is_ollama
+            if self._should_apply_gemini3_minimal_reasoning_effort(model_config):
+                model_config = {**model_config, "reasoning_effort": "low"}
 
         # Process context chunks and handle images
         context_text, image_urls, ollama_image_data = process_context_chunks(request.context_chunks, is_ollama)

@@ -2,7 +2,6 @@
 Ingestion Service - Handles all document ingestion operations.
 
 This service is responsible for:
-- Text ingestion (ingest_text)
 - File ingestion (ingest_file_content)
 - Document updates (update_document)
 - ColPali multi-vector chunk creation
@@ -62,7 +61,7 @@ class IngestionService:
     Service for handling document ingestion operations.
 
     This service encapsulates all ingestion-related functionality, including:
-    - Text and file ingestion
+    - File ingestion
     - Document updates
     - ColPali multi-vector processing
     - Chunk creation and storage
@@ -250,150 +249,183 @@ class IngestionService:
             return None
 
     # -------------------------------------------------------------------------
-    # Text ingestion
+    # Ingestion helpers
     # -------------------------------------------------------------------------
 
-    async def ingest_text(
-        self,
-        content: str,
-        filename: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        metadata_types: Optional[Dict[str, str]] = None,
-        auth: Optional[AuthContext] = None,
-        use_colpali: Optional[bool] = None,
-        folder_name: Optional[str] = None,
-        end_user_id: Optional[str] = None,
-    ) -> Document:
-        """Ingest a text document."""
-        # Prevent callers from overriding reserved fields
-        self._enforce_no_user_mutable_fields(metadata, metadata_types=metadata_types, context="ingest")
+    @staticmethod
+    def _build_auth_dict(auth: AuthContext) -> Dict[str, Any]:
+        user_id = getattr(auth, "user_id", None)
+        return {
+            "user_id": user_id,
+            "entity_id": user_id,
+            "app_id": auth.app_id,
+        }
 
-        normalized_folder = normalize_ingest_folder_inputs(folder_name=folder_name)
-        folder_path, folder_leaf = normalized_folder.path, normalized_folder.leaf
+    @staticmethod
+    def _build_storage_info(
+        bucket: str,
+        key: str,
+        filename: Optional[str],
+        content_type: Optional[str],
+    ) -> Dict[str, str]:
+        return {
+            "bucket": bucket,
+            "key": key,
+            "filename": filename or "",
+            "content_type": content_type or "",
+        }
 
-        doc = Document(
-            content_type="text/plain",
+    @staticmethod
+    def _resolve_content_type(
+        content_bytes: bytes,
+        filename: Optional[str],
+        content_type_hint: Optional[str],
+    ) -> str:
+        return detect_content_type(
+            content=content_bytes,
             filename=filename,
-            metadata=metadata or {},
-            folder_name=folder_leaf,
-            folder_path=folder_path,
-            end_user_id=end_user_id,
-            app_id=auth.app_id,
+            content_type_hint=content_type_hint,
         )
 
-        logger.debug(f"Created text document record with ID {doc.external_id}")
+    @staticmethod
+    def _normalize_text_filename(filename: Optional[str], content: str) -> str:
+        def _needs_html_ext(text: str) -> bool:
+            head = text.lstrip().lower()
+            return head.startswith("<!doctype html") or "<html" in head
 
-        combined_metadata = dict(metadata or {})
-        combined_metadata.setdefault("external_id", doc.external_id)
-        if folder_path is not None:
-            combined_metadata["folder_name"] = folder_path
-        metadata_bundle = normalize_metadata(combined_metadata, metadata_types)
-        doc.metadata = metadata_bundle.values
-        doc.metadata_types = metadata_bundle.types
+        if not filename:
+            ext = ".html" if _needs_html_ext(content) else ".txt"
+            return f"document_text_{uuid.uuid4().hex}{ext}"
 
-        if settings.MODE == "cloud" and auth.user_id:
-            # Verify limits before heavy processing
-            num_pages = estimate_pages_by_chars(len(content))
-            await check_and_increment_limits(
-                auth,
-                "ingest",
-                num_pages,
+        base, ext = os.path.splitext(filename)
+        if ext:
+            return filename
+        suffix = ".html" if _needs_html_ext(content) else ".txt"
+        return f"{base or filename}{suffix}"
+
+    @staticmethod
+    def _build_storage_key(filename: Optional[str], content_bytes: bytes) -> Tuple[str, str]:
+        safe_filename = Path(filename or "").name or "uploaded_file"
+        storage_key = f"ingest_uploads/{uuid.uuid4()}/{safe_filename}"
+        if not Path(storage_key).suffix:
+            detected_ext = detect_file_type(content_bytes)
+            if detected_ext:
+                storage_key = f"{storage_key}{detected_ext}"
+                if not Path(safe_filename).suffix:
+                    safe_filename = f"{safe_filename}{detected_ext}"
+        return storage_key, safe_filename
+
+    @classmethod
+    def _reset_processing_metadata(cls, system_metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        cleaned_metadata = dict(system_metadata or {})
+        cleaned_metadata.pop("progress", None)
+        cleaned_metadata.pop("error", None)
+        cleaned_metadata["status"] = "processing"
+        cleaned_metadata["updated_at"] = datetime.now(UTC)
+        return cls._clean_system_metadata(cleaned_metadata)
+
+    async def _mark_document_failed(self, doc: Document, auth: AuthContext, error: str) -> None:
+        failure_metadata = dict(doc.system_metadata or {})
+        failure_metadata["status"] = "failed"
+        failure_metadata["error"] = error
+        failure_metadata["updated_at"] = datetime.now(UTC)
+        doc.system_metadata = failure_metadata
+        try:
+            await self.db.update_document(
                 doc.external_id,
-                verify_only=True,
+                {"system_metadata": self._clean_system_metadata(failure_metadata)},
+                auth=auth,
             )
+        except Exception as db_update_err:
+            logger.error("Additionally failed to mark doc %s as failed in DB: %s", doc.external_id, db_update_err)
 
-        doc.system_metadata["content"] = content
+    @classmethod
+    def _build_ingestion_job_payload(
+        cls,
+        *,
+        document_id: str,
+        file_key: str,
+        bucket: str,
+        original_filename: Optional[str],
+        content_type: Optional[str],
+        auth: AuthContext,
+        use_colpali: bool,
+        folder_name: Optional[str] = None,
+        folder_path: Optional[str] = None,
+        folder_leaf: Optional[str] = None,
+        end_user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return {
+            "_job_id": f"ingest:{document_id}",
+            "_expires": timedelta(days=7),
+            "document_id": document_id,
+            "file_key": file_key,
+            "bucket": bucket,
+            "original_filename": original_filename,
+            "content_type": content_type,
+            "auth_dict": cls._build_auth_dict(auth),
+            "use_colpali": bool(use_colpali),
+            "folder_name": folder_name,
+            "folder_path": folder_path,
+            "folder_leaf": folder_leaf,
+            "end_user_id": end_user_id,
+        }
 
-        # Split text into chunks
-        parsed_chunks = await self.parser.split_text(content)
-        if not parsed_chunks:
-            raise ValueError("No content chunks extracted from document text")
-        logger.debug(f"Split processed text into {len(parsed_chunks)} chunks")
-
-        processed_chunks = parsed_chunks
-
-        # Generate embeddings for processed chunks
-        embeddings = await self.embedding_model.embed_for_ingestion(processed_chunks)
-        logger.debug(f"Generated {len(embeddings)} embeddings")
-
-        # Create chunk objects with processed chunk content
-        chunk_objects = self._create_chunk_objects(doc.external_id, processed_chunks, embeddings)
-        logger.debug(f"Created {len(chunk_objects)} chunk objects")
-
-        chunk_objects_multivector = []
-
-        # Check both use_colpali parameter AND global enable_colpali setting
-        if use_colpali and settings.ENABLE_COLPALI and self.colpali_embedding_model:
-            embeddings_multivector = await self.colpali_embedding_model.embed_for_ingestion(processed_chunks)
-            logger.info(f"Generated {len(embeddings_multivector)} embeddings for multivector embedding")
-            chunk_objects_multivector = self._create_chunk_objects(
-                doc.external_id, processed_chunks, embeddings_multivector
-            )
-            logger.info(f"Created {len(chunk_objects_multivector)} chunk objects for multivector embedding")
-
-        # Store everything
-        await self._store_chunks_and_doc(
-            chunk_objects,
-            doc,
-            use_colpali and settings.ENABLE_COLPALI,
-            chunk_objects_multivector,
-            auth=auth,
-            metadata_bundle=metadata_bundle,
+    async def _upload_content_bytes(
+        self,
+        *,
+        content_bytes: bytes,
+        filename: Optional[str],
+        content_type: Optional[str],
+    ) -> Tuple[str, str, str]:
+        storage_key, safe_filename = self._build_storage_key(filename, content_bytes)
+        bucket_name, full_storage_path = await self._upload_to_app_bucket(
+            content_bytes=content_bytes,
+            key=storage_key,
+            content_type=content_type,
         )
-        logger.debug(f"Successfully stored text document {doc.external_id}")
+        return bucket_name, full_storage_path, safe_filename
 
-        # Ensure folder membership now that the document is persisted
-        if folder_name:
-            try:
-                folder_obj = await self._ensure_folder_exists(folder_name, doc.external_id, auth)
-                if folder_obj and folder_obj.id:
-                    doc.folder_id = folder_obj.id
-                    folder_updates = self.folder_update_fields(folder_obj)
-                    await self.db.update_document(doc.external_id, folder_updates, auth=auth)
-            except Exception as folder_exc:
-                logger.warning(
-                    "Failed to ensure folder %s contains text document %s: %s",
-                    folder_name,
-                    doc.external_id,
-                    folder_exc,
-                )
+    async def _verify_ingest_and_storage_limits(
+        self,
+        auth: AuthContext,
+        content_length: int,
+        document_id: str,
+    ) -> None:
+        if settings.MODE != "cloud" or not auth.user_id:
+            return
 
-        colpali_count_for_limit_fn = (
-            len(chunk_objects_multivector)
-            if use_colpali and settings.ENABLE_COLPALI and chunk_objects_multivector
-            else None
+        num_pages = estimate_pages_by_chars(content_length)
+        await check_and_increment_limits(
+            auth,
+            "ingest",
+            num_pages,
+            document_id,
+            verify_only=True,
         )
-        final_page_count = estimate_pages_by_chars(len(content))
-        if use_colpali and settings.ENABLE_COLPALI and colpali_count_for_limit_fn is not None:
-            final_page_count = colpali_count_for_limit_fn
-        final_page_count = max(1, final_page_count)
-        doc.system_metadata["page_count"] = final_page_count
-        logger.info(f"Determined final page count for ingest_text usage: {final_page_count}")
-
-        # Update the document status to completed after successful storage
-        doc.system_metadata["status"] = "completed"
-        doc.system_metadata["updated_at"] = datetime.now(UTC)
-        doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
-        await self.db.update_document(
-            document_id=doc.external_id, updates={"system_metadata": doc.system_metadata}, auth=auth
+        await check_and_increment_limits(auth, "storage_file", 1, verify_only=True)
+        await check_and_increment_limits(
+            auth,
+            "storage_size",
+            content_length,
+            verify_only=True,
         )
-        logger.debug(f"Updated document status to 'completed' for {doc.external_id}")
+        logger.info(
+            "Quota verification passed for user %s – pages=%s, file=%s bytes",
+            auth.user_id,
+            num_pages,
+            content_length,
+        )
 
-        # Record ingest usage after successful completion
-        if settings.MODE == "cloud" and auth.user_id:
-            try:
-                await check_and_increment_limits(
-                    auth,
-                    "ingest",
-                    final_page_count,
-                    doc.external_id,
-                    use_colpali=use_colpali and settings.ENABLE_COLPALI,
-                    colpali_chunks_count=colpali_count_for_limit_fn,
-                )
-            except Exception as rec_exc:
-                logger.error("Failed to record ingest usage in ingest_text: %s", rec_exc)
+    async def _record_storage_usage(self, auth: AuthContext, content_length: int, document_id: str) -> None:
+        if settings.MODE != "cloud" or not auth.user_id:
+            return
 
-        return doc
+        try:
+            await check_and_increment_limits(auth, "storage_file", 1)
+            await check_and_increment_limits(auth, "storage_size", content_length)
+        except Exception as rec_err:  # noqa: BLE001
+            logger.error("Failed recording storage usage for doc %s: %s", document_id, rec_err)
 
     # -------------------------------------------------------------------------
     # File ingestion
@@ -426,46 +458,30 @@ class IngestionService:
         normalized_folder = normalize_ingest_folder_inputs(folder_name=folder_name)
         folder_path, folder_leaf = normalized_folder.path, normalized_folder.leaf
 
+        resolved_content_type = self._resolve_content_type(
+            file_content_bytes,
+            filename,
+            content_type,
+        )
+
         doc = Document(
             filename=filename,
-            content_type=content_type,
+            content_type=resolved_content_type,
             metadata=metadata or {},
-            system_metadata={"status": "processing"},
             app_id=auth.app_id,
             end_user_id=end_user_id,
             folder_name=folder_leaf,
             folder_path=folder_path,
         )
+        doc.system_metadata = self._reset_processing_metadata(doc.system_metadata)
 
-        # Verify quotas before incurring heavy compute or storage
-        if settings.MODE == "cloud" and auth.user_id:
-            num_pages = estimate_pages_by_chars(len(file_content_bytes))
-
-            await check_and_increment_limits(
-                auth,
-                "ingest",
-                num_pages,
-                doc.external_id,
-                verify_only=True,
-            )
-            await check_and_increment_limits(auth, "storage_file", 1, verify_only=True)
-            await check_and_increment_limits(
-                auth,
-                "storage_size",
-                len(file_content_bytes),
-                verify_only=True,
-            )
-            logger.info(
-                "Quota verification passed for user %s – pages=%s, file=%s bytes",
-                auth.user_id,
-                num_pages,
-                len(file_content_bytes),
-            )
+        await self._verify_ingest_and_storage_limits(auth, len(file_content_bytes), doc.external_id)
 
         metadata_payload = dict(metadata or {})
         metadata_payload.setdefault("external_id", doc.external_id)
-        if folder_path is not None:
-            metadata_payload["folder_name"] = folder_path
+        folder_metadata_value = normalized_folder.metadata_value
+        if folder_metadata_value is not None:
+            metadata_payload["folder_name"] = folder_metadata_value
         metadata_bundle = normalize_metadata(metadata_payload, metadata_types)
         doc.metadata = metadata_bundle.values
         doc.metadata_types = metadata_bundle.types
@@ -474,27 +490,19 @@ class IngestionService:
         await self.db.store_document(doc, auth, metadata_bundle=metadata_bundle)
         logger.info(f"Initial document record created for {filename} (doc_id: {doc.external_id})")
 
-        # 2. Save raw file to Storage
-        file_key_suffix = str(uuid.uuid4())
-        safe_filename = Path(filename or "").name or "uploaded_file"
-        storage_key = f"ingest_uploads/{file_key_suffix}/{safe_filename}"
-        if not Path(storage_key).suffix:
-            detected_ext = detect_file_type(file_content_bytes)
-            if detected_ext:
-                storage_key = f"{storage_key}{detected_ext}"
-
         try:
-            bucket_name, full_storage_path = await self._upload_to_app_bucket(
+            # 2. Save raw file to Storage
+            bucket_name, full_storage_path, safe_filename = await self._upload_content_bytes(
                 content_bytes=file_content_bytes,
-                key=storage_key,
-                content_type=content_type,
+                filename=filename,
+                content_type=resolved_content_type,
             )
-            doc.storage_info = {
-                "bucket": bucket_name,
-                "key": full_storage_path,
-                "filename": safe_filename or "",
-                "content_type": content_type or "",
-            }
+            doc.storage_info = self._build_storage_info(
+                bucket_name,
+                full_storage_path,
+                safe_filename,
+                resolved_content_type,
+            )
 
             doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
             await self.db.update_document(
@@ -513,26 +521,11 @@ class IngestionService:
                 full_storage_path,
             )
 
-            # Record usage now that upload passed
-            if settings.MODE == "cloud" and auth.user_id:
-                try:
-                    await check_and_increment_limits(auth, "storage_file", 1)
-                    await check_and_increment_limits(auth, "storage_size", len(file_content_bytes))
-                except Exception as rec_err:
-                    logger.error("Failed recording usage for doc %s: %s", doc.external_id, rec_err)
+            await self._record_storage_usage(auth, len(file_content_bytes), doc.external_id)
 
         except Exception as e:
             logger.error(f"Failed to upload file {filename} (doc_id: {doc.external_id}) to storage or update DB: {e}")
-            doc.system_metadata["status"] = "failed"
-            doc.system_metadata["error"] = f"Storage upload/DB update failed: {str(e)}"
-            try:
-                await self.db.update_document(
-                    doc.external_id,
-                    {"system_metadata": self._clean_system_metadata(doc.system_metadata)},
-                    auth=auth,
-                )
-            except Exception as db_update_err:
-                logger.error(f"Additionally failed to mark doc {doc.external_id} as failed in DB: {db_update_err}")
+            await self._mark_document_failed(doc, auth, f"Storage upload/DB update failed: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to upload file to storage: {str(e)}")
 
         # 3. Ensure folder exists if folder_name is provided
@@ -547,29 +540,21 @@ class IngestionService:
             except Exception as e:
                 logger.error(f"Error during _ensure_folder_exists for doc {doc.external_id}: {e}. Continuing.")
 
-        # 4. Enqueue background job for processing
-        auth_dict = {
-            "user_id": auth.user_id,
-            "app_id": auth.app_id,
-        }
-
         try:
-            job = await redis.enqueue_job(
-                "process_ingestion_job",
-                _job_id=f"ingest:{doc.external_id}",
-                _expires=timedelta(days=7),
+            job_payload = self._build_ingestion_job_payload(
                 document_id=doc.external_id,
                 file_key=full_storage_path,
                 bucket=bucket_name,
                 original_filename=filename,
-                content_type=content_type,
-                auth_dict=auth_dict,
-                use_colpali=use_colpali,
-                folder_name=str(folder_name) if folder_name else None,
+                content_type=resolved_content_type,
+                auth=auth,
+                use_colpali=bool(use_colpali),
+                folder_name=folder_leaf,
                 folder_path=folder_path,
                 folder_leaf=folder_leaf,
                 end_user_id=end_user_id,
             )
+            job = await redis.enqueue_job("process_ingestion_job", **job_payload)
             if job is None:
                 logger.info("Connector file ingestion job already queued (doc_id=%s)", doc.external_id)
             else:
@@ -578,17 +563,145 @@ class IngestionService:
                 )
         except Exception as e:
             logger.error(f"Failed to enqueue ingestion job for doc {doc.external_id} ({filename}): {e}")
-            doc.system_metadata["status"] = "failed"
-            doc.system_metadata["error"] = f"Failed to enqueue processing job: {str(e)}"
-            try:
-                await self.db.update_document(
-                    doc.external_id,
-                    {"system_metadata": self._clean_system_metadata(doc.system_metadata)},
-                    auth=auth,
-                )
-            except Exception as db_update_err:
-                logger.error(f"Additionally failed to mark doc {doc.external_id} as failed in DB: {db_update_err}")
+            await self._mark_document_failed(doc, auth, f"Failed to enqueue processing job: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Failed to enqueue document processing job: {str(e)}")
+
+        return doc
+
+    # -------------------------------------------------------------------------
+    # Document update (queued)
+    # -------------------------------------------------------------------------
+
+    async def queue_document_update(
+        self,
+        document_id: str,
+        auth: AuthContext,
+        redis: arq.ArqRedis,
+        content: Optional[str] = None,
+        file: Optional[UploadFile] = None,
+        filename: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        metadata_types: Optional[Dict[str, str]] = None,
+        use_colpali: Optional[bool] = None,
+    ) -> Optional[Document]:
+        """
+        Update a document by replacing its content and re-queueing ingestion.
+        """
+        self._enforce_no_user_mutable_fields(metadata, metadata_types=metadata_types, context="update")
+
+        doc = await self._validate_update_access(document_id, auth)
+        if not doc:
+            return None
+
+        metadata_only_update = content is None and file is None and metadata is not None
+        if metadata_only_update:
+            metadata_bundle = self._update_metadata(doc, metadata, metadata_types, None)
+            return await self._update_document_metadata_only(doc, auth, metadata_bundle)
+
+        if content is None and file is None:
+            logger.error("Neither content nor file provided for document update")
+            raise ValueError("Either content or file must be provided for document update")
+
+        if content is not None:
+            candidate_filename = filename
+            if not candidate_filename:
+                existing_filename = doc.filename or ""
+                existing_ext = os.path.splitext(existing_filename)[1].lower()
+                if existing_ext in {".txt", ".html", ".htm"}:
+                    candidate_filename = existing_filename
+            updated_filename = self._normalize_text_filename(candidate_filename, content)
+            content_bytes = content.encode("utf-8")
+            detected_content_type = self._resolve_content_type(content_bytes, updated_filename, None)
+        else:
+            content_bytes = await file.read()
+            updated_filename = file.filename or doc.filename or "uploaded_file"
+            detected_content_type = self._resolve_content_type(content_bytes, updated_filename, file.content_type)
+
+        doc.filename = updated_filename
+        doc.content_type = detected_content_type
+        metadata_bundle = self._update_metadata(doc, metadata, metadata_types, None)
+
+        await self._verify_ingest_and_storage_limits(auth, len(content_bytes), doc.external_id)
+
+        old_storage_info = dict(doc.storage_info) if isinstance(doc.storage_info, dict) else None
+
+        try:
+            bucket_name, full_storage_path, safe_filename = await self._upload_content_bytes(
+                content_bytes=content_bytes,
+                filename=updated_filename,
+                content_type=detected_content_type,
+            )
+            new_storage_info = self._build_storage_info(
+                bucket_name,
+                full_storage_path,
+                safe_filename,
+                detected_content_type,
+            )
+            doc.storage_info = new_storage_info
+        except Exception as e:
+            logger.error("Failed to upload updated file for doc %s: %s", doc.external_id, e)
+            await self._mark_document_failed(doc, auth, f"Storage upload/DB update failed: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to upload updated file to storage: {str(e)}")
+
+        doc.system_metadata = self._reset_processing_metadata(doc.system_metadata)
+
+        updates = {
+            "metadata": doc.metadata,
+            "metadata_types": doc.metadata_types,
+            "storage_info": doc.storage_info,
+            "system_metadata": doc.system_metadata,
+            "filename": doc.filename,
+            "content_type": doc.content_type,
+        }
+
+        success = await self.db.update_document(
+            doc.external_id,
+            updates,
+            auth,
+            metadata_bundle=metadata_bundle,
+        )
+        if not success:
+            logger.error("Failed to update document %s prior to queueing update", doc.external_id)
+            await self._mark_document_failed(doc, auth, "Failed to persist document updates")
+            raise HTTPException(status_code=500, detail="Failed to update document before queueing ingestion")
+
+        if old_storage_info and hasattr(self.storage, "delete_file"):
+            old_bucket = old_storage_info.get("bucket")
+            old_key = old_storage_info.get("key")
+            new_bucket = doc.storage_info.get("bucket") if doc.storage_info else None
+            new_key = doc.storage_info.get("key") if doc.storage_info else None
+            if old_bucket and old_key and (old_bucket != new_bucket or old_key != new_key):
+                try:
+                    await self.storage.delete_file(old_bucket, old_key)
+                    logger.info("Deleted old file from bucket `%s` with key `%s`", old_bucket, old_key)
+                except Exception as e:
+                    logger.warning("Failed to delete old file %s/%s: %s", old_bucket, old_key, e)
+
+        await self._record_storage_usage(auth, len(content_bytes), doc.external_id)
+
+        try:
+            job_payload = self._build_ingestion_job_payload(
+                document_id=doc.external_id,
+                file_key=full_storage_path,
+                bucket=bucket_name,
+                original_filename=doc.filename,
+                content_type=doc.content_type,
+                auth=auth,
+                use_colpali=bool(use_colpali),
+                folder_name=doc.folder_name,
+                folder_path=doc.folder_path,
+                folder_leaf=doc.folder_name,
+                end_user_id=doc.end_user_id,
+            )
+            job = await redis.enqueue_job("process_ingestion_job", **job_payload)
+            if job is None:
+                logger.info("Update ingestion job already queued (doc_id=%s)", doc.external_id)
+            else:
+                logger.info("Update ingestion job queued (job_id=%s, doc=%s)", job.job_id, doc.external_id)
+        except Exception as e:
+            logger.error("Failed to enqueue update ingestion job for doc %s: %s", doc.external_id, e)
+            await self._mark_document_failed(doc, auth, f"Failed to enqueue processing job: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to enqueue document update job: {str(e)}")
 
         return doc
 
@@ -646,13 +759,7 @@ class IngestionService:
             updated_content = self._normalize_document_content(updated_content)
             logger.info(f"Replacing document content with parsed file text of length {len(updated_content)}")
 
-            # Record storage usage for the newly uploaded file (cloud mode)
-            if settings.MODE == "cloud" and auth.user_id:
-                try:
-                    await check_and_increment_limits(auth, "storage_file", 1)
-                    await check_and_increment_limits(auth, "storage_size", len(file_content))
-                except Exception as rec_err:
-                    logger.error("Failed to record storage usage in update_document: %s", rec_err)
+            await self._record_storage_usage(auth, len(file_content), doc.external_id)
         elif not metadata_only_update:
             logger.error("Neither content nor file provided for document update")
             return None
@@ -746,22 +853,25 @@ class IngestionService:
         # Store file in storage if needed
         file_content_base64 = encode_base64(file_content)
 
-        # Store file in storage and update storage info
-        await self._update_storage_info(doc, file, file_content_base64)
-
         # Store file type
-        content_type = detect_content_type(
-            content=file_content,
-            filename=file.filename,
-            content_type_hint=file.content_type,
-        )
+        content_type = self._resolve_content_type(file_content, file.filename, file.content_type)
+
+        # Store file in storage and update storage info
+        await self._update_storage_info(doc, file, file_content, content_type=content_type)
         doc.content_type = content_type
 
         doc.filename = file.filename
 
         return file_text, file_content, content_type, file_content_base64
 
-    async def _update_storage_info(self, doc: Document, file: UploadFile, file_content_base64: str):
+    async def _update_storage_info(
+        self,
+        doc: Document,
+        file: UploadFile,
+        file_content: bytes,
+        *,
+        content_type: Optional[str] = None,
+    ):
         """Update document storage information for file content, deleting the old file if present."""
         # Delete old file from storage if it exists
         if doc.storage_info:
@@ -774,21 +884,13 @@ class IngestionService:
                 except Exception as e:
                     logger.warning(f"Failed to delete old file {old_bucket}/{old_key}: {e}")
 
-        # Upload new file
-        file_extension = os.path.splitext(file.filename)[1] if file.filename else ""
-        bucket, key = await self.storage.upload_from_base64(
-            file_content_base64,
-            f"{doc.external_id}{file_extension}",
-            file.content_type,
-            bucket="",
+        bucket, key, safe_filename = await self._upload_content_bytes(
+            content_bytes=file_content,
+            filename=file.filename,
+            content_type=content_type or file.content_type,
         )
-
-        doc.storage_info = {
-            "bucket": bucket,
-            "key": key,
-            "filename": file.filename or "",
-            "content_type": file.content_type or "",
-        }
+        resolved_content_type = content_type or file.content_type
+        doc.storage_info = self._build_storage_info(bucket, key, safe_filename, resolved_content_type)
         logger.info(f"Stored new file in bucket `{bucket}` with key `{key}`")
 
     @staticmethod
