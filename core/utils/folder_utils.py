@@ -1,6 +1,20 @@
 """Utility functions for folder operations."""
 
+from dataclasses import dataclass
 from typing import List, Optional, Union
+
+
+@dataclass(frozen=True)
+class NormalizedFolder:
+    """Normalized folder inputs for ingestion and storage."""
+
+    path: Optional[str]
+    leaf: Optional[str]
+
+    @property
+    def metadata_value(self) -> Optional[str]:
+        """Preferred folder value for metadata (full path when available)."""
+        return self.path if self.path is not None else self.leaf
 
 
 def normalize_folder_name(folder_name: Optional[Union[str, List[str]]]) -> Optional[Union[str, List[str]]]:
@@ -54,6 +68,52 @@ def normalize_folder_path(path: Optional[str]) -> Optional[str]:
 
     canonical = "/" + "/".join(segments)
     return canonical
+
+
+def normalize_ingest_folder_inputs(
+    *,
+    folder_name: Optional[str] = None,
+    folder_path: Optional[str] = None,
+    folder_leaf: Optional[str] = None,
+    strict: bool = True,
+) -> NormalizedFolder:
+    """
+    Normalize folder inputs for ingestion.
+
+    Accepts a single folder path or name (no lists) and returns the normalized
+    folder path plus leaf segment. When strict=False, invalid inputs are
+    ignored and the leaf falls back to the raw folder name.
+    """
+    if isinstance(folder_name, list) or isinstance(folder_path, list) or isinstance(folder_leaf, list):
+        raise ValueError("Ingestion folder inputs must be a single path string")
+
+    selected = folder_path or folder_name
+    if not selected and not folder_leaf:
+        return NormalizedFolder(None, None)
+
+    normalized_path = None
+    leaf = folder_leaf
+
+    if selected:
+        try:
+            normalized_path = normalize_folder_path(selected)
+        except ValueError:
+            if strict:
+                raise
+            normalized_path = None
+
+        if normalized_path == "/":
+            if strict:
+                raise ValueError("Cannot ingest into root folder '/'")
+            normalized_path = None
+
+        if normalized_path:
+            parts = [p for p in normalized_path.strip("/").split("/") if p]
+            leaf = parts[-1] if parts else None
+        elif leaf is None:
+            leaf = folder_leaf or folder_name
+
+    return NormalizedFolder(normalized_path, leaf)
 
 
 def normalize_folder_selector(folder: Optional[Union[str, List[str]]]) -> Optional[Union[str, List[str]]]:

@@ -1,8 +1,87 @@
 import base64
 import binascii
-from typing import Union
+import mimetypes
+from typing import Optional, Union
 
 import filetype
+
+_COLPALI_NATIVE_MIME_TYPES = {
+    "application/pdf",
+    "application/dicom",
+    # Word documents
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    # PowerPoint presentations
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+    # Excel spreadsheets
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel.sheet.macroEnabled.12",
+}
+
+_GENERIC_CONTENT_TYPES = {
+    "application/octet-stream",
+    "binary/octet-stream",
+    "application/x-octet-stream",
+}
+
+
+def _looks_like_text(content: bytes, sample_size: int = 8192) -> bool:
+    if not content:
+        return True
+    sample = content[:sample_size]
+    try:
+        text_sample = sample.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    if not text_sample:
+        return True
+    printable_chars = sum(1 for ch in text_sample if ch.isprintable() or ch.isspace())
+    printable_ratio = printable_chars / len(text_sample)
+    return printable_ratio >= 0.9
+
+
+def detect_content_type(
+    content: Optional[bytes] = None,
+    filename: Optional[str] = None,
+    content_type_hint: Optional[str] = None,
+) -> str:
+    """
+    Detect the most likely MIME type using content bytes, filename, and an optional hint.
+    """
+    hint = None
+    if content_type_hint:
+        hint = content_type_hint.split(";", 1)[0].strip().lower()
+        if hint in _GENERIC_CONTENT_TYPES:
+            hint = None
+
+    if content:
+        kind = filetype.guess(content)
+        if kind and kind.mime:
+            return kind.mime
+
+    if hint:
+        return hint
+
+    if filename:
+        guessed, _ = mimetypes.guess_type(filename)
+        if guessed:
+            return guessed
+
+    if content and _looks_like_text(content):
+        return "text/plain"
+
+    return "application/octet-stream"
+
+
+def is_colpali_native_format(mime_type: Optional[str]) -> bool:
+    if not mime_type:
+        return False
+    if mime_type.startswith("image/"):
+        return True
+    return mime_type in _COLPALI_NATIVE_MIME_TYPES
 
 
 def detect_file_type(content: Union[str, bytes]) -> str:

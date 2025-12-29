@@ -4,7 +4,6 @@ import tempfile
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple
 
-import filetype
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
@@ -13,6 +12,7 @@ from core.models.chunk import Chunk
 from core.parser.base_parser import BaseParser
 from core.parser.video.parse_video import VideoParser, load_config
 from core.parser.xml_chunker import XMLChunker
+from core.storage.utils_file_extensions import detect_content_type
 
 # Custom RecursiveCharacterTextSplitter replaces langchain's version
 
@@ -237,14 +237,10 @@ class MorphikParser(BaseParser):
     def _is_video_file(self, file: bytes, filename: str) -> bool:
         """Check if the file is a video file."""
         try:
-            kind = filetype.guess(file)
-            if kind and hasattr(kind, "mime"):
-                return kind.mime.startswith("video/")
-            # Fallback to filename extension check
-            return filename.lower().endswith(".mp4")
+            mime_type = detect_content_type(content=file, filename=filename)
+            return mime_type.startswith("video/")
         except Exception as e:
             logging.error(f"Error detecting file type: {str(e)}")
-            # Fallback to filename extension check on error
             return filename.lower().endswith(".mp4")
 
     def _is_xml_file(self, filename: str, content_type: Optional[str] = None) -> bool:
