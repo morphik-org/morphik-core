@@ -1,18 +1,12 @@
 import json
 import logging
-import os
-import uuid
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set
 
 import arq
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
 from core.auth_utils import verify_token
-from core.config import get_settings
 from core.dependencies import get_redis_pool
-from core.limits_utils import check_and_increment_limits
 from core.models.auth import AuthContext
 from core.models.documents import Document
 from core.models.request import (
@@ -23,17 +17,21 @@ from core.models.request import (
     RequeueIngestionRequest,
 )
 from core.models.responses import RequeueIngestionResponse, RequeueIngestionResult
-from core.routes.utils import warn_if_legacy_rules
+from core.routes.utils import (
+    enforce_no_user_mutable_fields,
+    parse_bool,
+    parse_json_dict,
+    parse_json_value,
+    warn_if_legacy_rules,
+)
 from core.services.ingestion_service import IngestionService
 from core.services.morphik_on_the_fly_structured_output import (
     MorphikOnTheFlyContentError,
     generate_morphik_on_the_fly_content,
 )
 from core.services.telemetry import TelemetryService
-from core.services_init import ingestion_service, storage
-from core.storage.utils_file_extensions import detect_content_type, detect_file_type
-from core.utils.folder_utils import normalize_ingest_folder_inputs
-from core.utils.typed_metadata import TypedMetadataError, normalize_metadata
+from core.services_init import ingestion_service
+from core.utils.typed_metadata import TypedMetadataError
 
 # ---------------------------------------------------------------------------
 # Router initialisation & shared singletons
@@ -41,18 +39,9 @@ from core.utils.typed_metadata import TypedMetadataError, normalize_metadata
 
 router = APIRouter(prefix="/ingest", tags=["Ingestion"])
 logger = logging.getLogger(__name__)
-settings = get_settings()
 telemetry = TelemetryService()
 
 MORPHIK_ON_THE_FLY_MAX_DOCUMENT_BYTES = 20 * 1024 * 1024  # 20 MB limit for inline uploads to Morphik On-the-Fly
-
-
-def _parse_bool(value: Optional[Union[str, bool]]) -> bool:
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return False
-    return str(value).strip().lower() in {"true", "1", "yes", "y", "on"}
 
 
 # ---------------------------------------------------------------------------
@@ -72,29 +61,21 @@ async def ingest_text(
         if getattr(request, "rules", None):
             logger.warning("Legacy 'rules' field supplied to /ingest/text; ignoring payload.")
 
-        extra_fields = getattr(request, "model_extra", {}) if hasattr(request, "model_extra") else {}
-        ingestion_service._enforce_no_user_mutable_fields(
-            request.metadata, extra_fields, request.metadata_types, context="ingest"
+        enforce_no_user_mutable_fields(
+            ingestion_service,
+            request.metadata,
+            request.metadata_types,
+            context="ingest",
+            request_model=request,
         )
 
-        # Treat /ingest/text as a thin wrapper around /ingest/file to avoid sync timeouts.
-        # Encode the content to bytes and enqueue the standard ingestion worker flow.
-        filename = request.filename
-        if not filename:
-            content_head = request.content.lstrip().lower()
-            looks_like_html = content_head.startswith("<!doctype html") or "<html" in content_head
-            ext = ".html" if looks_like_html else ".txt"
-            filename = f"ingest_text_{uuid.uuid4().hex}{ext}"
-        elif not os.path.splitext(filename)[1]:
-            filename = f"{filename}.txt"
-
+        filename = ingestion_service._normalize_text_filename(request.filename, request.content)
         content_bytes = request.content.encode("utf-8")
-        content_type = detect_content_type(content=content_bytes, filename=filename)
 
         return await ingestion_service.ingest_file_content(
             file_content_bytes=content_bytes,
             filename=filename,
-            content_type=content_type,
+            content_type=None,
             metadata=request.metadata,
             auth=auth,
             redis=redis,
@@ -103,12 +84,17 @@ async def ingest_text(
             end_user_id=request.end_user_id,
             use_colpali=request.use_colpali,
         )
+    except HTTPException:
+        raise
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except TypedMetadataError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error during text ingestion: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Error during text ingestion: {str(exc)}")
 
 
 # ---------------------------------------------------------------------------
@@ -140,158 +126,34 @@ async def ingest_file(
         # Parse and validate inputs
         # ------------------------------------------------------------------
         await warn_if_legacy_rules(request, "/ingest/file", logger)
-        metadata_dict = json.loads(metadata)
-        metadata_types_dict = json.loads(metadata_types or "{}") if metadata_types else {}
-        if metadata_types_dict is None:
-            metadata_types_dict = {}
-        if not isinstance(metadata_types_dict, dict):
-            raise HTTPException(status_code=400, detail="metadata_types must be a JSON object")
-
-        def str2bool(v: Union[bool, str]) -> bool:
-            return v if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}
-
-        use_colpali_bool = str2bool(use_colpali)
-
-        try:
-            normalized_folder = normalize_ingest_folder_inputs(folder_name=folder_name)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-        folder_path, folder_leaf = normalized_folder.path, normalized_folder.leaf
-
+        metadata_dict = parse_json_dict(metadata, "metadata", default={})
+        metadata_types_dict = parse_json_dict(metadata_types, "metadata_types", default={})
+        use_colpali_bool = parse_bool(use_colpali)
         logger.debug("Queueing file ingestion with use_colpali=%s", use_colpali_bool)
 
-        ingestion_service._enforce_no_user_mutable_fields(
-            metadata_dict, metadata_types=metadata_types_dict, context="ingest"
-        )
-
-        # ------------------------------------------------------------------
-        # Create initial Document stub (status = processing)
-        # ------------------------------------------------------------------
-        doc = Document(
-            content_type=file.content_type,
-            filename=file.filename,
-            metadata=metadata_dict,
-            system_metadata={"status": "processing"},
-            folder_name=folder_leaf,
-            folder_path=folder_path,
-            end_user_id=end_user_id,
-            app_id=auth.app_id,
-        )
-        metadata_payload = dict(metadata_dict)
-        metadata_payload.setdefault("external_id", doc.external_id)
-        if folder_path is not None:
-            metadata_payload["folder_name"] = folder_path
-        metadata_bundle = normalize_metadata(metadata_payload, metadata_types_dict)
-        doc.metadata = metadata_bundle.values
-        doc.metadata_types = metadata_bundle.types
-
-        # Store stub in application database (not control-plane DB)
-        app_db = ingestion_service.db
-        success = await app_db.store_document(doc, auth, metadata_bundle=metadata_bundle)
-        if not success:
-            raise Exception("Failed to store document metadata")
-
-        # Add the document to the requested folder immediately so folder views can show in-progress items.
-        # The ingestion worker re-runs this to ensure the folder is still in sync on completion.
-        if folder_path:
-            try:
-                folder_obj = await ingestion_service._ensure_folder_exists(folder_path, doc.external_id, auth)
-                if folder_obj and folder_obj.id:
-                    doc.folder_id = folder_obj.id
-                    folder_updates = ingestion_service.folder_update_fields(folder_obj)
-                    await app_db.update_document(
-                        document_id=doc.external_id,
-                        updates=folder_updates,
-                        auth=auth,
-                    )
-            except Exception as folder_exc:  # noqa: BLE001
-                logger.warning(
-                    "Failed to add document %s to folder %s immediately after ingest: %s",
-                    doc.external_id,
-                    folder_path,
-                    folder_exc,
-                )
-
-        # ------------------------------------------------------------------
-        # Read file content & pre-check storage limits
-        # ------------------------------------------------------------------
         file_content = await file.read()
+        filename = file.filename or "uploaded_file"
 
-        if settings.MODE == "cloud" and auth.user_id:
-            await check_and_increment_limits(auth, "storage_file", 1, verify_only=True)
-            await check_and_increment_limits(auth, "storage_size", len(file_content), verify_only=True)
-
-        # ------------------------------------------------------------------
-        # Upload file to object storage without re-encoding
-        # ------------------------------------------------------------------
-        safe_filename = Path(file.filename or "").name or "uploaded_file"
-        file_key = f"ingest_uploads/{uuid.uuid4()}/{safe_filename}"
-        if not Path(file_key).suffix:
-            detected_ext = detect_file_type(file_content)
-            if detected_ext:
-                file_key = f"{file_key}{detected_ext}"
-
-        bucket, stored_key = await storage.upload_file(
-            file_content,
-            file_key,
-            file.content_type,
-            bucket="",
-        )
-
-        doc.storage_info = {"bucket": bucket, "key": stored_key}
-
-        await app_db.update_document(
-            document_id=doc.external_id,
-            updates={"storage_info": doc.storage_info},
-            auth=auth,
-        )
-
-        # Record storage usage now (cloud mode)
-        if settings.MODE == "cloud" and auth.user_id:
-            try:
-                await check_and_increment_limits(auth, "storage_file", 1)
-                await check_and_increment_limits(auth, "storage_size", len(file_content))
-            except Exception as rec_exc:  # noqa: BLE001
-                logger.error("Failed to record storage usage: %s", rec_exc)
-
-        # ------------------------------------------------------------------
-        # Push job to ingestion worker queue
-        # ------------------------------------------------------------------
-        auth_dict = {
-            "user_id": auth.user_id,
-            "app_id": auth.app_id,
-        }
-
-        job = await redis.enqueue_job(
-            "process_ingestion_job",
-            _job_id=f"ingest:{doc.external_id}",
-            _expires=timedelta(days=7),
-            document_id=doc.external_id,
-            file_key=stored_key,
-            bucket=bucket,
-            original_filename=file.filename,
+        return await ingestion_service.ingest_file_content(
+            file_content_bytes=file_content,
+            filename=filename,
             content_type=file.content_type,
-            auth_dict=auth_dict,
-            use_colpali=use_colpali_bool,
+            metadata=metadata_dict,
+            auth=auth,
+            redis=redis,
+            metadata_types=metadata_types_dict,
             folder_name=folder_name,
-            folder_path=folder_path,
-            folder_leaf=folder_leaf,
             end_user_id=end_user_id,
+            use_colpali=use_colpali_bool,
         )
-
-        if job is None:
-            logger.info("File ingestion job already queued (doc=%s)", doc.external_id)
-        else:
-            logger.info("File ingestion job queued (job_id=%s, doc=%s)", job.job_id, doc.external_id)
-        return doc
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(exc)}")
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except TypedMetadataError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.error("Error during file ingestion: %s", exc)
         raise HTTPException(status_code=500, detail=f"Error during file ingestion: {str(exc)}")
@@ -326,17 +188,19 @@ async def batch_ingest_files(
 
     try:
         await warn_if_legacy_rules(request, "/ingest/files", logger)
-        metadata_value = json.loads(metadata)
-        metadata_types_value = json.loads(metadata_types or "{}") if metadata_types else {}
+        metadata_value = parse_json_value(metadata, "metadata", default={})
+        metadata_types_value = parse_json_value(metadata_types, "metadata_types", default={})
         if metadata_types_value is None:
             metadata_types_value = {}
 
-        def str2bool(v: Union[bool, str]) -> bool:
-            return v if isinstance(v, bool) else str(v).lower() in {"true", "1", "yes"}
+        use_colpali_bool = parse_bool(use_colpali)
+    except HTTPException:
+        raise
 
-        use_colpali_bool = str2bool(use_colpali)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(exc)}")
+    if not isinstance(metadata_value, (dict, list)):
+        raise HTTPException(status_code=400, detail="metadata must be a JSON object or list of objects")
+    if not isinstance(metadata_types_value, (dict, list)):
+        raise HTTPException(status_code=400, detail="metadata_types must be a JSON object or list of objects")
 
     # Validate metadata length when list provided
     if isinstance(metadata_value, list) and len(metadata_value) != len(files):
@@ -353,21 +217,15 @@ async def batch_ingest_files(
             ),
         )
 
-    auth_dict = {
-        "user_id": auth.user_id,
-        "app_id": auth.app_id,
-    }
-
     created_documents: List[Document] = []
 
     try:
-        try:
-            normalized_folder = normalize_ingest_folder_inputs(folder_name=folder_name)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-        folder_path, folder_leaf = normalized_folder.path, normalized_folder.leaf
         for idx, file in enumerate(files):
             metadata_item = metadata_value[idx] if isinstance(metadata_value, list) else metadata_value
+            if metadata_item is None:
+                metadata_item = {}
+            if not isinstance(metadata_item, dict):
+                raise HTTPException(status_code=400, detail="metadata entries must be JSON objects")
             metadata_types_item = (
                 metadata_types_value[idx] if isinstance(metadata_types_value, list) else metadata_types_value
             )
@@ -375,111 +233,23 @@ async def batch_ingest_files(
                 metadata_types_item = {}
             if not isinstance(metadata_types_item, dict):
                 raise HTTPException(status_code=400, detail="metadata_types entries must be JSON objects")
-            # ------------------------------------------------------------------
-            # Create stub Document (processing)
-            # ------------------------------------------------------------------
-            ingestion_service._enforce_no_user_mutable_fields(
-                metadata_item, metadata_types=metadata_types_item, context="ingest"
-            )
-
-            doc = Document(
-                content_type=file.content_type,
-                filename=file.filename,
-                metadata=metadata_item,
-                folder_name=folder_leaf,
-                folder_path=folder_path,
-                end_user_id=end_user_id,
-                app_id=auth.app_id,
-            )
-            doc.system_metadata["status"] = "processing"
-            metadata_payload = dict(metadata_item or {})
-            metadata_payload.setdefault("external_id", doc.external_id)
-            if folder_path is not None:
-                metadata_payload["folder_name"] = folder_path
-            metadata_bundle = normalize_metadata(metadata_payload, metadata_types_item)
-            doc.metadata = metadata_bundle.values
-            doc.metadata_types = metadata_bundle.types
-
-            app_db = ingestion_service.db
-            success = await app_db.store_document(doc, auth, metadata_bundle=metadata_bundle)
-            if not success:
-                raise Exception(f"Failed to store document metadata for {file.filename}")
-
-            # Keep folder listings in sync immediately; worker re-runs this when processing finishes.
-            if folder_path:
-                try:
-                    folder_obj = await ingestion_service._ensure_folder_exists(folder_path, doc.external_id, auth)
-                    if folder_obj and folder_obj.id:
-                        doc.folder_id = folder_obj.id
-                        folder_updates = ingestion_service.folder_update_fields(folder_obj)
-                        await app_db.update_document(
-                            document_id=doc.external_id,
-                            updates=folder_updates,
-                            auth=auth,
-                        )
-                except Exception as folder_exc:  # noqa: BLE001
-                    logger.warning(
-                        "Failed to add batch document %s to folder %s immediately after ingest: %s",
-                        doc.external_id,
-                        folder_path,
-                        folder_exc,
-                    )
-
             file_content = await file.read()
+            filename = file.filename or "uploaded_file"
 
-            if settings.MODE == "cloud" and auth.user_id:
-                await check_and_increment_limits(auth, "storage_file", 1, verify_only=True)
-                await check_and_increment_limits(auth, "storage_size", len(file_content), verify_only=True)
-
-            safe_filename = Path(file.filename or "").name or "uploaded_file"
-            file_key = f"ingest_uploads/{uuid.uuid4()}/{safe_filename}"
-            if not Path(file_key).suffix:
-                detected_ext = detect_file_type(file_content)
-                if detected_ext:
-                    file_key = f"{file_key}{detected_ext}"
-
-            bucket, stored_key = await storage.upload_file(
-                file_content,
-                file_key,
-                file.content_type,
-                bucket="",
-            )
-
-            doc.storage_info = {"bucket": bucket, "key": stored_key}
-            await app_db.update_document(
-                document_id=doc.external_id,
-                updates={"storage_info": doc.storage_info},
-                auth=auth,
-            )
-
-            if settings.MODE == "cloud" and auth.user_id:
-                try:
-                    await check_and_increment_limits(auth, "storage_file", 1)
-                    await check_and_increment_limits(auth, "storage_size", len(file_content))
-                except Exception as rec_exc:  # noqa: BLE001
-                    logger.error("Failed to record storage usage: %s", rec_exc)
-
-            job = await redis.enqueue_job(
-                "process_ingestion_job",
-                _job_id=f"ingest:{doc.external_id}",
-                _expires=timedelta(days=7),
-                document_id=doc.external_id,
-                file_key=stored_key,
-                bucket=bucket,
-                original_filename=file.filename,
+            doc = await ingestion_service.ingest_file_content(
+                file_content_bytes=file_content,
+                filename=filename,
                 content_type=file.content_type,
-                auth_dict=auth_dict,
-                use_colpali=use_colpali_bool,
+                metadata=metadata_item,
+                auth=auth,
+                redis=redis,
+                metadata_types=metadata_types_item,
                 folder_name=folder_name,
-                folder_path=folder_path,
-                folder_leaf=folder_leaf,
                 end_user_id=end_user_id,
+                use_colpali=use_colpali_bool,
             )
 
-            if job is None:
-                logger.info("Batch ingestion already queued (doc=%s, idx=%s)", doc.external_id, idx)
-            else:
-                logger.info("Batch ingestion queued (job_id=%s, doc=%s, idx=%s)", job.job_id, doc.external_id, idx)
+            logger.info("Batch ingestion queued (doc=%s, idx=%s)", doc.external_id, idx)
             created_documents.append(doc)
 
         return BatchIngestResponse(documents=created_documents, errors=[])
@@ -487,6 +257,8 @@ async def batch_ingest_files(
         raise HTTPException(status_code=400, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.error("Error queueing batch ingestion: %s", exc)
         raise HTTPException(status_code=500, detail=f"Error queueing batch ingestion: {str(exc)}")
@@ -559,40 +331,26 @@ async def requeue_ingest_jobs(
             system_metadata = doc.system_metadata or {}
             if isinstance(system_metadata, str):
                 system_metadata = json.loads(system_metadata)
-            system_metadata = dict(system_metadata)
-            system_metadata.pop("progress", None)
-            system_metadata.pop("error", None)
-            system_metadata["status"] = "processing"
-            system_metadata["updated_at"] = datetime.now(UTC)
-
-            sanitized_system_metadata = IngestionService._clean_system_metadata(system_metadata)
+            sanitized_system_metadata = IngestionService._reset_processing_metadata(system_metadata)
             await ingestion_service.db.update_document(
                 document_id=ext_id,
                 updates={"system_metadata": sanitized_system_metadata},
                 auth=auth_for_doc,
             )
-
-            auth_dict = {
-                "user_id": auth_for_doc.user_id,
-                "app_id": auth_for_doc.app_id,
-            }
-
-            job = await redis.enqueue_job(
-                "process_ingestion_job",
-                _job_id=f"ingest:{ext_id}",
-                _expires=timedelta(days=7),
+            job_payload = IngestionService._build_ingestion_job_payload(
                 document_id=ext_id,
                 file_key=key,
                 bucket=bucket,
                 original_filename=doc.filename,
                 content_type=doc.content_type,
-                auth_dict=auth_dict,
+                auth=auth_for_doc,
                 use_colpali=use_colpali_flag,
                 folder_name=doc.folder_name,
                 folder_path=doc.folder_path,
                 folder_leaf=doc.folder_name,
                 end_user_id=doc.end_user_id,
             )
+            job = await redis.enqueue_job("process_ingestion_job", **job_payload)
 
             if job is None:
                 results.append(
@@ -710,15 +468,7 @@ async def query_document(
     `metadata`, `use_colpali`, `folder_name`, and `end_user_id`. Additional keys are ignored. A
     :class:`DocumentQueryResponse` describing the inline analysis and any queued ingestion is returned.
     """
-    try:
-        ingestion_options_dict = json.loads(ingestion_options or "{}")
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail=f"ingestion_options must be valid JSON: {exc}") from exc
-
-    if ingestion_options_dict is None:
-        ingestion_options_dict = {}
-    if not isinstance(ingestion_options_dict, dict):
-        raise HTTPException(status_code=400, detail="ingestion_options must be a JSON object")
+    ingestion_options_dict = parse_json_dict(ingestion_options, "ingestion_options", default={})
 
     metadata_dict = ingestion_options_dict.get("metadata", {})
     if metadata_dict is None:
@@ -726,8 +476,8 @@ async def query_document(
     if not isinstance(metadata_dict, dict):
         raise HTTPException(status_code=400, detail="ingestion_options.metadata must be a JSON object when provided")
 
-    ingest_after_bool = _parse_bool(ingestion_options_dict.get("ingest"))
-    use_colpali_bool = _parse_bool(ingestion_options_dict.get("use_colpali"))
+    ingest_after_bool = parse_bool(ingestion_options_dict.get("ingest"))
+    use_colpali_bool = parse_bool(ingestion_options_dict.get("use_colpali"))
 
     folder_override = ingestion_options_dict.get("folder_name")
     if folder_override in ("", None):
@@ -764,14 +514,7 @@ async def query_document(
 
     schema_obj: Optional[Dict[str, Any]] = None
     if response_schema:
-        try:
-            parsed_schema = json.loads(response_schema)
-        except json.JSONDecodeError as exc:
-            raise HTTPException(status_code=400, detail=f"schema must be valid JSON: {exc}") from exc
-
-        if not isinstance(parsed_schema, dict):
-            raise HTTPException(status_code=400, detail="schema must be a JSON object")
-        schema_obj = parsed_schema
+        schema_obj = parse_json_dict(response_schema, "schema")
 
     try:
         morphik_on_the_fly_result = await generate_morphik_on_the_fly_content(

@@ -1,13 +1,14 @@
-import json
 import logging
 import os
 from typing import Any, Dict, List, Optional, Union
 
+import arq
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile
 
 from core.auth_utils import verify_token
 from core.config import get_settings
 from core.database.postgres_database import InvalidMetadataFilterError
+from core.dependencies import get_redis_pool
 from core.models.auth import AuthContext
 from core.models.documents import Document
 from core.models.request import (
@@ -25,7 +26,13 @@ from core.models.responses import (
     ListDocsResponse,
 )
 from core.models.summary import SummaryResponse, SummaryUpsertRequest
-from core.routes.utils import project_document_fields, warn_if_legacy_rules
+from core.routes.utils import (
+    enforce_no_user_mutable_fields,
+    parse_bool,
+    parse_json_dict,
+    project_document_fields,
+    warn_if_legacy_rules,
+)
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, ingestion_service
 from core.utils.typed_metadata import TypedMetadataError
@@ -440,22 +447,27 @@ async def update_document_text(
     document_id: str,
     request: IngestTextRequest,
     auth: AuthContext = Depends(verify_token),
+    redis: arq.ArqRedis = Depends(get_redis_pool),
 ):
     """
-    Update a document by replacing its text content.
+    Update a document by replacing its text content and queueing re-ingestion.
     """
     try:
         if getattr(request, "rules", None):
             logger.warning("Legacy 'rules' field supplied to /documents/{document_id}/update_text; ignoring.")
 
-        extra_fields = getattr(request, "model_extra", {}) if hasattr(request, "model_extra") else {}
-        ingestion_service._enforce_no_user_mutable_fields(
-            request.metadata, extra_fields, request.metadata_types, context="update"
+        enforce_no_user_mutable_fields(
+            ingestion_service,
+            request.metadata,
+            request.metadata_types,
+            context="update",
+            request_model=request,
         )
 
-        doc = await ingestion_service.update_document(
+        doc = await ingestion_service.queue_document_update(
             document_id=document_id,
             auth=auth,
+            redis=redis,
             content=request.content,
             file=None,
             filename=request.filename,
@@ -484,36 +496,32 @@ async def update_document_file(
     metadata_types: str = Form("{}"),
     use_colpali: Optional[bool] = Form(None),
     auth: AuthContext = Depends(verify_token),
+    redis: arq.ArqRedis = Depends(get_redis_pool),
 ):
     """
-    Update a document by replacing its content with a new file.
+    Update a document by replacing its content with a new file and queueing re-ingestion.
     """
     try:
-        metadata_dict = json.loads(metadata)
-        metadata_types_dict = json.loads(metadata_types or "{}") if metadata_types else {}
-        if metadata_types_dict is None:
-            metadata_types_dict = {}
-        if not isinstance(metadata_types_dict, dict):
-            raise HTTPException(status_code=400, detail="metadata_types must be a JSON object")
+        metadata_dict = parse_json_dict(metadata, "metadata", default={})
+        metadata_types_dict = parse_json_dict(metadata_types, "metadata_types", default={})
         await warn_if_legacy_rules(request, f"/documents/{document_id}/update_file", logger)
 
-        doc = await ingestion_service.update_document(
+        doc = await ingestion_service.queue_document_update(
             document_id=document_id,
             auth=auth,
+            redis=redis,
             content=None,
             file=file,
             filename=file.filename,
             metadata=metadata_dict,
             metadata_types=metadata_types_dict,
-            use_colpali=use_colpali,
+            use_colpali=parse_bool(use_colpali),
         )
 
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found or update failed")
 
         return doc
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as exc:
