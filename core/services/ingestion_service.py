@@ -26,11 +26,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import arq
-import filetype
 import fitz  # PyMuPDF
 import pdf2image
 from fastapi import HTTPException, UploadFile
-from filetype.types import IMAGE
 from PIL import Image as PILImage
 
 from core.config import get_settings
@@ -43,10 +41,10 @@ from core.models.documents import Document
 from core.models.folders import Folder
 from core.parser.base_parser import BaseParser
 from core.storage.base_storage import BaseStorage
-from core.storage.utils_file_extensions import detect_file_type
+from core.storage.utils_file_extensions import detect_content_type, detect_file_type
 from core.utils.fast_ops import bytes_to_data_uri, encode_base64
-from core.utils.folder_utils import normalize_folder_path
-from core.utils.typed_metadata import merge_metadata, normalize_metadata
+from core.utils.folder_utils import normalize_folder_path, normalize_ingest_folder_inputs
+from core.utils.typed_metadata import MetadataBundle, merge_metadata, normalize_metadata
 from core.vector_store.base_vector_store import BaseVectorStore
 
 logger = logging.getLogger(__name__)
@@ -121,7 +119,6 @@ class IngestionService:
     def _enforce_no_user_mutable_fields(
         self,
         metadata: Optional[Dict[str, Any]],
-        folder_name: Optional[Union[str, List[str]]],
         extra_fields: Optional[Dict[str, Any]] = None,
         metadata_types: Optional[Dict[str, Any]] = None,
         context: str = "ingest",
@@ -269,16 +266,10 @@ class IngestionService:
     ) -> Document:
         """Ingest a text document."""
         # Prevent callers from overriding reserved fields
-        self._enforce_no_user_mutable_fields(metadata, folder_name, metadata_types=metadata_types, context="ingest")
+        self._enforce_no_user_mutable_fields(metadata, metadata_types=metadata_types, context="ingest")
 
-        folder_path = None
-        folder_leaf = None
-        if folder_name is not None:
-            folder_path = normalize_folder_path(folder_name)
-            if folder_path == "/":
-                raise ValueError("Cannot ingest into root folder '/'")
-            parts = [p for p in folder_path.strip("/").split("/") if p]
-            folder_leaf = parts[-1] if parts else None
+        normalized_folder = normalize_ingest_folder_inputs(folder_name=folder_name)
+        folder_path, folder_leaf = normalized_folder.path, normalized_folder.leaf
 
         doc = Document(
             content_type="text/plain",
@@ -296,9 +287,9 @@ class IngestionService:
         combined_metadata.setdefault("external_id", doc.external_id)
         if folder_path is not None:
             combined_metadata["folder_name"] = folder_path
-        normalized_metadata, normalized_types = normalize_metadata(combined_metadata, metadata_types)
-        doc.metadata = normalized_metadata
-        doc.metadata_types = normalized_types
+        metadata_bundle = normalize_metadata(combined_metadata, metadata_types)
+        doc.metadata = metadata_bundle.values
+        doc.metadata_types = metadata_bundle.types
 
         if settings.MODE == "cloud" and auth.user_id:
             # Verify limits before heavy processing
@@ -347,6 +338,7 @@ class IngestionService:
             use_colpali and settings.ENABLE_COLPALI,
             chunk_objects_multivector,
             auth=auth,
+            metadata_bundle=metadata_bundle,
         )
         logger.debug(f"Successfully stored text document {doc.external_id}")
 
@@ -429,16 +421,10 @@ class IngestionService:
         )
 
         # Prevent callers from overriding reserved fields
-        self._enforce_no_user_mutable_fields(metadata, folder_name, metadata_types=metadata_types, context="ingest")
+        self._enforce_no_user_mutable_fields(metadata, metadata_types=metadata_types, context="ingest")
 
-        folder_path = None
-        folder_leaf = None
-        if folder_name is not None:
-            folder_path = normalize_folder_path(folder_name)
-            if folder_path == "/":
-                raise ValueError("Cannot ingest into root folder '/'")
-            parts = [p for p in folder_path.strip("/").split("/") if p]
-            folder_leaf = parts[-1] if parts else None
+        normalized_folder = normalize_ingest_folder_inputs(folder_name=folder_name)
+        folder_path, folder_leaf = normalized_folder.path, normalized_folder.leaf
 
         doc = Document(
             filename=filename,
@@ -480,12 +466,12 @@ class IngestionService:
         metadata_payload.setdefault("external_id", doc.external_id)
         if folder_path is not None:
             metadata_payload["folder_name"] = folder_path
-        normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types)
-        doc.metadata = normalized_metadata
-        doc.metadata_types = normalized_types
+        metadata_bundle = normalize_metadata(metadata_payload, metadata_types)
+        doc.metadata = metadata_bundle.values
+        doc.metadata_types = metadata_bundle.types
 
         # 1. Create initial document record in DB
-        await self.db.store_document(doc, auth)
+        await self.db.store_document(doc, auth, metadata_bundle=metadata_bundle)
         logger.info(f"Initial document record created for {filename} (doc_id: {doc.external_id})")
 
         # 2. Save raw file to Storage
@@ -499,7 +485,9 @@ class IngestionService:
 
         try:
             bucket_name, full_storage_path = await self._upload_to_app_bucket(
-                auth=auth, content_bytes=file_content_bytes, key=storage_key, content_type=content_type
+                content_bytes=file_content_bytes,
+                key=storage_key,
+                content_type=content_type,
             )
             doc.storage_info = {
                 "bucket": bucket_name,
@@ -565,9 +553,6 @@ class IngestionService:
             "app_id": auth.app_id,
         }
 
-        metadata_json_str = json.dumps(doc.metadata or {})
-        metadata_types_json = json.dumps(doc.metadata_types or {})
-
         try:
             job = await redis.enqueue_job(
                 "process_ingestion_job",
@@ -578,8 +563,6 @@ class IngestionService:
                 bucket=bucket_name,
                 original_filename=filename,
                 content_type=content_type,
-                metadata_json=metadata_json_str,
-                metadata_types_json=metadata_types_json,
                 auth_dict=auth_dict,
                 use_colpali=use_colpali,
                 folder_name=str(folder_name) if folder_name else None,
@@ -640,9 +623,7 @@ class IngestionService:
             Updated document if successful, None if failed
         """
         # Prevent callers from modifying reserved fields
-        self._enforce_no_user_mutable_fields(
-            metadata, folder_name=None, metadata_types=metadata_types, context="update"
-        )
+        self._enforce_no_user_mutable_fields(metadata, metadata_types=metadata_types, context="update")
 
         # Validate permissions and get document
         doc = await self._validate_update_access(document_id, auth)
@@ -657,13 +638,11 @@ class IngestionService:
         file_type = None
         file_content_base64 = None
         if content is not None:
-            updated_content = await self._process_text_update(content, doc, filename, metadata)
+            updated_content = await self._process_text_update(content, doc, filename)
             updated_content = self._normalize_document_content(updated_content)
             logger.info(f"Replacing document content with new text of length {len(updated_content)}")
         elif file is not None:
-            updated_content, file_content, file_type, file_content_base64 = await self._process_file_update(
-                file, doc, metadata
-            )
+            updated_content, file_content, file_type, file_content_base64 = await self._process_file_update(file, doc)
             updated_content = self._normalize_document_content(updated_content)
             logger.info(f"Replacing document content with parsed file text of length {len(updated_content)}")
 
@@ -688,11 +667,11 @@ class IngestionService:
             logger.info(f"No content update - keeping current content of length {len(updated_content)}")
 
         # Update metadata
-        self._update_metadata(doc, metadata, metadata_types, file)
+        metadata_bundle = self._update_metadata(doc, metadata, metadata_types, file)
 
         # For metadata-only updates, we don't need to re-process chunks
         if metadata_only_update:
-            return await self._update_document_metadata_only(doc, auth)
+            return await self._update_document_metadata_only(doc, auth, metadata_bundle)
 
         # Process content into chunks and generate embeddings
         chunks, chunk_objects = await self._process_chunks_and_embeddings(doc.external_id, updated_content)
@@ -712,6 +691,7 @@ class IngestionService:
             chunk_objects_multivector,
             is_update=True,
             auth=auth,
+            metadata_bundle=metadata_bundle,
         )
         logger.info(f"Successfully updated document {doc.external_id}")
 
@@ -735,7 +715,6 @@ class IngestionService:
         content: str,
         doc: Document,
         filename: Optional[str],
-        metadata: Optional[Dict[str, Any]],
     ) -> str:
         """Process text content updates."""
         update_content = content
@@ -749,8 +728,7 @@ class IngestionService:
         self,
         file: UploadFile,
         doc: Document,
-        metadata: Optional[Dict[str, Any]],
-    ) -> Tuple[str, bytes, Any, str]:
+    ) -> Tuple[str, bytes, str, str]:
         """Process file content updates."""
         # Read file content
         file_content = await file.read()
@@ -772,21 +750,16 @@ class IngestionService:
         await self._update_storage_info(doc, file, file_content_base64)
 
         # Store file type
-        file_type = filetype.guess(file_content)
-        if file_type:
-            doc.content_type = file_type.mime
-        else:
-            import mimetypes
-
-            guessed_type = mimetypes.guess_type(file.filename)[0]
-            if guessed_type:
-                doc.content_type = guessed_type
-            else:
-                doc.content_type = "text/plain" if file.filename.endswith(".txt") else "application/octet-stream"
+        content_type = detect_content_type(
+            content=file_content,
+            filename=file.filename,
+            content_type_hint=file.content_type,
+        )
+        doc.content_type = content_type
 
         doc.filename = file.filename
 
-        return file_text, file_content, file_type, file_content_base64
+        return file_text, file_content, content_type, file_content_base64
 
     async def _update_storage_info(self, doc: Document, file: UploadFile, file_content_base64: str):
         """Update document storage information for file content, deleting the old file if present."""
@@ -843,7 +816,12 @@ class IngestionService:
         logger.warning("Coercing unexpected content type %s to string", type(content).__name__)
         return str(content)
 
-    async def _update_document_metadata_only(self, doc: Document, auth: AuthContext) -> Optional[Document]:
+    async def _update_document_metadata_only(
+        self,
+        doc: Document,
+        auth: AuthContext,
+        metadata_bundle: Optional[MetadataBundle],
+    ) -> Optional[Document]:
         """Update document metadata without reprocessing chunks."""
         doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
 
@@ -861,7 +839,12 @@ class IngestionService:
             updates["folder_name"] = doc.folder_name
             updates["folder_path"] = doc.folder_path
 
-        success = await self.db.update_document(doc.external_id, updates, auth)
+        success = await self.db.update_document(
+            doc.external_id,
+            updates,
+            auth,
+            metadata_bundle=metadata_bundle,
+        )
         if not success:
             logger.error(f"Failed to update document {doc.external_id} metadata")
             return None
@@ -875,25 +858,34 @@ class IngestionService:
         metadata: Optional[Dict[str, Any]],
         metadata_types: Optional[Dict[str, str]],
         file: Optional[UploadFile],
-    ):
+    ) -> MetadataBundle:
         """Update document metadata."""
         if metadata:
             payload = dict(metadata)
-            doc.metadata, doc.metadata_types = merge_metadata(
+            metadata_bundle = merge_metadata(
                 doc.metadata,
                 doc.metadata_types,
                 payload,
                 metadata_types,
                 external_id=doc.external_id,
             )
+            doc.metadata = metadata_bundle.values
+            doc.metadata_types = metadata_bundle.types
         else:
             doc.metadata.setdefault("external_id", doc.external_id)
             doc.metadata_types.setdefault("external_id", "string")
+            metadata_bundle = MetadataBundle(
+                values=dict(doc.metadata),
+                types=dict(doc.metadata_types),
+                is_normalized=True,
+            )
 
         doc.system_metadata["updated_at"] = datetime.now(UTC)
 
         if file:
             doc.filename = file.filename
+
+        return metadata_bundle
 
     # -------------------------------------------------------------------------
     # Chunk processing and storage
@@ -936,16 +928,18 @@ class IngestionService:
         if not (use_colpali and settings.ENABLE_COLPALI and self.colpali_embedding_model and self.colpali_vector_store):
             return chunk_objects_multivector
 
-        file_type_mime = (
-            file_type if isinstance(file_type, str) else (file_type.mime if file_type is not None else None)
-        )
-        if file and file_type_mime and (file_type_mime in IMAGE or file_type_mime == "application/pdf"):
+        mime_type = file_type if isinstance(file_type, str) else (file_type.mime if file_type is not None else None)
+        if (
+            file
+            and mime_type
+            and (mime_type.startswith("image/") or mime_type == "application/pdf" or mime_type == "application/dicom")
+        ):
             if hasattr(file, "seek") and callable(file.seek) and not file_content:
                 await file.seek(0)
                 file_content = await file.read()
                 file_content_base64 = encode_base64(file_content)
 
-            chunks_multivector = self._create_chunks_multivector(file_type, file_content_base64, file_content, chunks)
+            chunks_multivector = self._create_chunks_multivector(mime_type, file_content_base64, file_content, chunks)
             logger.info(f"Created {len(chunks_multivector)} chunks for multivector embedding")
             colpali_embeddings = await self.colpali_embedding_model.embed_for_ingestion(chunks_multivector)
             logger.info(f"Generated {len(colpali_embeddings)} embeddings for multivector embedding")
@@ -995,6 +989,7 @@ class IngestionService:
         chunk_objects_multivector: Optional[List[DocumentChunk]] = None,
         is_update: bool = False,
         auth: Optional[AuthContext] = None,
+        metadata_bundle: Optional[MetadataBundle] = None,
     ) -> List[str]:
         """Helper to store chunks and document."""
         max_retries = 3
@@ -1052,11 +1047,20 @@ class IngestionService:
                             "content_type": doc.content_type,
                             "storage_info": doc.storage_info,
                         }
-                        success = await self.db.update_document(doc.external_id, updates, auth)
+                        success = await self.db.update_document(
+                            doc.external_id,
+                            updates,
+                            auth,
+                            metadata_bundle=metadata_bundle,
+                        )
                         if not success:
                             raise Exception("Failed to update document metadata")
                     else:
-                        success = await self.db.store_document(doc, auth)
+                        success = await self.db.store_document(
+                            doc,
+                            auth,
+                            metadata_bundle=metadata_bundle,
+                        )
                         if not success:
                             raise Exception("Failed to store document metadata")
                     return success
@@ -1158,7 +1162,7 @@ class IngestionService:
 
     def _create_chunks_multivector(
         self,
-        file_type,
+        mime_type: Optional[str],
         file_content_base64: Optional[str],
         file_content: bytes,
         chunks: List[Chunk],
@@ -1173,17 +1177,13 @@ class IngestionService:
         - PowerPoint presentations (converts to PDF, then to images)
         - Excel spreadsheets (converts to PDF, then to images)
         """
-        # Derive a safe MIME type string regardless of input shape
-        if isinstance(file_type, str):
-            mime_type = file_type
-        elif file_type is not None and hasattr(file_type, "mime"):
-            mime_type = file_type.mime
-        else:
-            mime_type = "text/plain"
-        logger.info(f"Creating chunks for multivector embedding for file type {mime_type}")
+        normalized_mime = mime_type
+        if normalized_mime in {"application/octet-stream", "binary/octet-stream", "application/x-octet-stream"}:
+            normalized_mime = None
+        logger.info("Creating chunks for multivector embedding for file type %s", normalized_mime or "unknown")
 
-        # If file_type is None, attempt a light-weight heuristic to detect images
-        if file_type is None:
+        # If we don't have a reliable MIME, attempt a light-weight heuristic to detect images.
+        if not normalized_mime:
             try:
                 PILImage.open(BytesIO(file_content)).verify()
                 logger.info("Heuristic image detection succeeded (Pillow). Treating as image.")
@@ -1203,7 +1203,7 @@ class IngestionService:
                 ]
 
         # Treat any direct image MIME as an image
-        if mime_type.startswith("image/"):
+        if normalized_mime.startswith("image/"):
             try:
                 img = PILImage.open(BytesIO(file_content))
                 max_width = 256
@@ -1230,51 +1230,50 @@ class IngestionService:
                 return [
                     self._image_bytes_to_chunk(
                         file_content,
-                        mime_type=mime_type,
+                        mime_type=normalized_mime,
                         base64_override=file_content_base64,
                     )
                 ]
 
-        match mime_type:
-            case file_type if file_type in IMAGE:
+        match normalized_mime:
+            case "application/pdf":
+                return self._process_pdf_for_colpali(file_content)
+
+            case "application/dicom":
                 if file_content_base64 is None:
                     file_content_base64 = encode_base64(file_content)
-                detected_mime = mime_type if isinstance(mime_type, str) else "image/unknown"
                 return [
                     self._image_bytes_to_chunk(
                         file_content,
-                        mime_type=detected_mime,
+                        mime_type=normalized_mime,
                         base64_override=file_content_base64,
                     )
                 ]
 
-            case "application/pdf":
-                return self._process_pdf_for_colpali(file_content, chunks)
-
             case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/msword":
-                return self._process_word_for_colpali(file_content, mime_type, chunks)
+                return self._process_word_for_colpali(file_content, chunks)
 
             case (
                 "application/vnd.ms-powerpoint"
                 | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 | "application/vnd.openxmlformats-officedocument.presentationml.slideshow"
             ):
-                return self._process_powerpoint_for_colpali(file_content, mime_type, chunks)
+                return self._process_powerpoint_for_colpali(file_content, normalized_mime, chunks)
 
             case (
                 "application/vnd.ms-excel"
                 | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 | "application/vnd.ms-excel.sheet.macroEnabled.12"
             ):
-                return self._process_excel_for_colpali(file_content, mime_type, chunks)
+                return self._process_excel_for_colpali(file_content, normalized_mime, chunks)
 
             case _:
-                logger.warning(f"Colpali is not supported for file type {mime_type} - skipping")
+                logger.warning("Colpali is not supported for file type %s - skipping", normalized_mime)
                 return [
                     Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks
                 ]
 
-    def _process_pdf_for_colpali(self, file_content: bytes, chunks: List[Chunk]) -> List[Chunk]:
+    def _process_pdf_for_colpali(self, file_content: bytes) -> List[Chunk]:
         """Process PDF file for ColPali embedding."""
         logger.info("Working with PDF file - using PyMuPDF for faster processing!")
 
@@ -1306,7 +1305,7 @@ class IngestionService:
                 logger.error(f"pdf2image fallback failed: {fallback_error}")
                 raise PdfConversionError(f"Unable to convert PDF to images: {fallback_error}") from fallback_error
 
-    def _process_word_for_colpali(self, file_content: bytes, mime_type: str, chunks: List[Chunk]) -> List[Chunk]:
+    def _process_word_for_colpali(self, file_content: bytes, chunks: List[Chunk]) -> List[Chunk]:
         """Process Word document for ColPali embedding."""
         logger.info("Working with Word document!")
 
@@ -1479,7 +1478,6 @@ class IngestionService:
 
     async def _upload_to_app_bucket(
         self,
-        auth: AuthContext,
         content_bytes: bytes,
         key: str,
         content_type: Optional[str] = None,

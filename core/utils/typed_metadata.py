@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, Optional, Tuple
@@ -40,6 +41,22 @@ SCALAR_METADATA_TYPES = {"string", "number", "decimal", "boolean", "datetime", "
 ALL_METADATA_TYPES = set(_TYPE_ALIASES.values()).union({"array", "object"})
 
 
+@dataclass(frozen=True)
+class MetadataBundle:
+    """Normalized metadata values with type hints."""
+
+    values: Dict[str, Any]
+    types: Dict[str, str]
+    is_normalized: bool = True
+
+    def with_external_id(self, external_id: str) -> "MetadataBundle":
+        values = dict(self.values)
+        types = dict(self.types)
+        values.setdefault("external_id", external_id)
+        types.setdefault("external_id", "string")
+        return MetadataBundle(values=values, types=types, is_normalized=self.is_normalized)
+
+
 def canonicalize_type_name(type_name: str, field: Optional[str] = None) -> str:
     """Normalize user-provided type labels to canonical metadata type names."""
     canonical = _TYPE_ALIASES.get(type_name.lower())
@@ -52,7 +69,7 @@ def canonicalize_type_name(type_name: str, field: Optional[str] = None) -> str:
 def normalize_metadata(
     metadata: Dict[str, Any],
     type_hints: Optional[Dict[str, str]] = None,
-) -> Tuple[Dict[str, Any], Dict[str, str]]:
+) -> MetadataBundle:
     """Return JSON-serializable metadata plus a parallel type map.
 
     Args:
@@ -60,7 +77,7 @@ def normalize_metadata(
         type_hints: Optional explicit metadata types keyed by top-level field.
 
     Returns:
-        Tuple of (normalized_metadata, metadata_types).
+        MetadataBundle containing normalized values and type hints.
     """
 
     normalized: Dict[str, Any] = {}
@@ -74,7 +91,7 @@ def normalize_metadata(
         if field_type:
             metadata_types[key] = field_type
 
-    return normalized, metadata_types
+    return MetadataBundle(values=normalized, types=metadata_types, is_normalized=True)
 
 
 def merge_metadata(
@@ -84,10 +101,12 @@ def merge_metadata(
     update_type_hints: Optional[Dict[str, str]] = None,
     *,
     external_id: Optional[str] = None,
-) -> Tuple[Dict[str, Any], Dict[str, str]]:
+) -> MetadataBundle:
     """Merge normalized metadata/type maps, coercing updates before overlaying."""
 
-    normalized_updates, normalized_types = normalize_metadata(updates, update_type_hints)
+    updates_bundle = normalize_metadata(updates, update_type_hints)
+    normalized_updates = updates_bundle.values
+    normalized_types = updates_bundle.types
 
     merged_metadata = dict(existing or {})
     merged_metadata.update(normalized_updates)
@@ -95,11 +114,11 @@ def merge_metadata(
     merged_types = dict(existing_types or {})
     merged_types.update(normalized_types)
 
+    bundle = MetadataBundle(values=merged_metadata, types=merged_types, is_normalized=True)
     if external_id is not None:
-        merged_metadata["external_id"] = external_id
-        merged_types.setdefault("external_id", "string")
+        bundle = bundle.with_external_id(external_id)
 
-    return merged_metadata, merged_types
+    return bundle
 
 
 def _normalize_value(value: Any, declared_type: Optional[str], field: str) -> Tuple[Any, Optional[str]]:

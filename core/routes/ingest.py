@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from core.auth_utils import verify_token
 from core.config import get_settings
 from core.dependencies import get_redis_pool
-from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
+from core.limits_utils import check_and_increment_limits
 from core.models.auth import AuthContext
 from core.models.documents import Document
 from core.models.request import (
@@ -31,8 +31,8 @@ from core.services.morphik_on_the_fly_structured_output import (
 )
 from core.services.telemetry import TelemetryService
 from core.services_init import ingestion_service, storage
-from core.storage.utils_file_extensions import detect_file_type
-from core.utils.folder_utils import normalize_folder_path
+from core.storage.utils_file_extensions import detect_content_type, detect_file_type
+from core.utils.folder_utils import normalize_ingest_folder_inputs
 from core.utils.typed_metadata import TypedMetadataError, normalize_metadata
 
 # ---------------------------------------------------------------------------
@@ -55,34 +55,6 @@ def _parse_bool(value: Optional[Union[str, bool]]) -> bool:
     return str(value).strip().lower() in {"true", "1", "yes", "y", "on"}
 
 
-def _normalize_folder_inputs(folder_name: Optional[str]) -> tuple[Optional[str], Optional[str]]:
-    """
-    Normalize folder input from API into (folder_path, folder_leaf).
-
-    The API parameter is called "folder_name" but actually accepts a FULL PATH
-    (e.g., "/Company/Department/Reports" or just "Reports").
-
-    Returns:
-        folder_path: The full normalized path (e.g., "/Company/Department/Reports")
-        folder_leaf: Just the leaf segment (e.g., "Reports")
-
-    These map to Document model fields:
-        - folder_path -> Document.folder_path (full path, used for filtering)
-        - folder_leaf -> Document.folder_name (leaf only, display name)
-    """
-    if folder_name is None:
-        return None, None
-    try:
-        folder_path = normalize_folder_path(folder_name)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    if folder_path == "/":
-        raise HTTPException(status_code=400, detail="Cannot ingest into root folder '/'")
-    parts = [p for p in folder_path.strip("/").split("/") if p]
-    leaf = parts[-1] if parts else None
-    return folder_path, leaf
-
-
 # ---------------------------------------------------------------------------
 # /ingest/text
 # ---------------------------------------------------------------------------
@@ -102,13 +74,11 @@ async def ingest_text(
 
         extra_fields = getattr(request, "model_extra", {}) if hasattr(request, "model_extra") else {}
         ingestion_service._enforce_no_user_mutable_fields(
-            request.metadata, request.folder_name, extra_fields, request.metadata_types, context="ingest"
+            request.metadata, extra_fields, request.metadata_types, context="ingest"
         )
 
         # Treat /ingest/text as a thin wrapper around /ingest/file to avoid sync timeouts.
         # Encode the content to bytes and enqueue the standard ingestion worker flow.
-        import mimetypes
-
         filename = request.filename
         if not filename:
             content_head = request.content.lstrip().lower()
@@ -118,11 +88,8 @@ async def ingest_text(
         elif not os.path.splitext(filename)[1]:
             filename = f"{filename}.txt"
 
-        content_type, _ = mimetypes.guess_type(filename)
-        if not content_type:
-            content_type = "text/plain"
-
         content_bytes = request.content.encode("utf-8")
+        content_type = detect_content_type(content=content_bytes, filename=filename)
 
         return await ingestion_service.ingest_file_content(
             file_content_bytes=content_bytes,
@@ -185,12 +152,16 @@ async def ingest_file(
 
         use_colpali_bool = str2bool(use_colpali)
 
-        folder_path, folder_leaf = _normalize_folder_inputs(folder_name)
+        try:
+            normalized_folder = normalize_ingest_folder_inputs(folder_name=folder_name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        folder_path, folder_leaf = normalized_folder.path, normalized_folder.leaf
 
         logger.debug("Queueing file ingestion with use_colpali=%s", use_colpali_bool)
 
         ingestion_service._enforce_no_user_mutable_fields(
-            metadata_dict, folder_name, metadata_types=metadata_types_dict, context="ingest"
+            metadata_dict, metadata_types=metadata_types_dict, context="ingest"
         )
 
         # ------------------------------------------------------------------
@@ -210,13 +181,13 @@ async def ingest_file(
         metadata_payload.setdefault("external_id", doc.external_id)
         if folder_path is not None:
             metadata_payload["folder_name"] = folder_path
-        normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types_dict)
-        doc.metadata = normalized_metadata
-        doc.metadata_types = normalized_types
+        metadata_bundle = normalize_metadata(metadata_payload, metadata_types_dict)
+        doc.metadata = metadata_bundle.values
+        doc.metadata_types = metadata_bundle.types
 
         # Store stub in application database (not control-plane DB)
         app_db = ingestion_service.db
-        success = await app_db.store_document(doc, auth)
+        success = await app_db.store_document(doc, auth, metadata_bundle=metadata_bundle)
         if not success:
             raise Exception("Failed to store document metadata")
 
@@ -300,8 +271,6 @@ async def ingest_file(
             bucket=bucket,
             original_filename=file.filename,
             content_type=file.content_type,
-            metadata_json=metadata,
-            metadata_types_json=json.dumps(metadata_types_dict or {}),
             auth_dict=auth_dict,
             use_colpali=use_colpali_bool,
             folder_name=folder_name,
@@ -392,7 +361,11 @@ async def batch_ingest_files(
     created_documents: List[Document] = []
 
     try:
-        folder_path, folder_leaf = _normalize_folder_inputs(folder_name)
+        try:
+            normalized_folder = normalize_ingest_folder_inputs(folder_name=folder_name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        folder_path, folder_leaf = normalized_folder.path, normalized_folder.leaf
         for idx, file in enumerate(files):
             metadata_item = metadata_value[idx] if isinstance(metadata_value, list) else metadata_value
             metadata_types_item = (
@@ -406,7 +379,7 @@ async def batch_ingest_files(
             # Create stub Document (processing)
             # ------------------------------------------------------------------
             ingestion_service._enforce_no_user_mutable_fields(
-                metadata_item, folder_name, metadata_types=metadata_types_item, context="ingest"
+                metadata_item, metadata_types=metadata_types_item, context="ingest"
             )
 
             doc = Document(
@@ -423,12 +396,12 @@ async def batch_ingest_files(
             metadata_payload.setdefault("external_id", doc.external_id)
             if folder_path is not None:
                 metadata_payload["folder_name"] = folder_path
-            normalized_metadata, normalized_types = normalize_metadata(metadata_payload, metadata_types_item)
-            doc.metadata = normalized_metadata
-            doc.metadata_types = normalized_types
+            metadata_bundle = normalize_metadata(metadata_payload, metadata_types_item)
+            doc.metadata = metadata_bundle.values
+            doc.metadata_types = metadata_bundle.types
 
             app_db = ingestion_service.db
-            success = await app_db.store_document(doc, auth)
+            success = await app_db.store_document(doc, auth, metadata_bundle=metadata_bundle)
             if not success:
                 raise Exception(f"Failed to store document metadata for {file.filename}")
 
@@ -486,9 +459,6 @@ async def batch_ingest_files(
                 except Exception as rec_exc:  # noqa: BLE001
                     logger.error("Failed to record storage usage: %s", rec_exc)
 
-            metadata_json = json.dumps(metadata_item)
-            metadata_types_json = json.dumps(metadata_types_item or {})
-
             job = await redis.enqueue_job(
                 "process_ingestion_job",
                 _job_id=f"ingest:{doc.external_id}",
@@ -498,8 +468,6 @@ async def batch_ingest_files(
                 bucket=bucket,
                 original_filename=file.filename,
                 content_type=file.content_type,
-                metadata_json=metadata_json,
-                metadata_types_json=metadata_types_json,
                 auth_dict=auth_dict,
                 use_colpali=use_colpali_bool,
                 folder_name=folder_name,
@@ -609,11 +577,6 @@ async def requeue_ingest_jobs(
                 "app_id": auth_for_doc.app_id,
             }
 
-            doc_metadata = doc.metadata or {}
-            if isinstance(doc_metadata, str):
-                doc_metadata = json.loads(doc_metadata)
-            doc_metadata_types = doc.metadata_types or {}
-
             job = await redis.enqueue_job(
                 "process_ingestion_job",
                 _job_id=f"ingest:{ext_id}",
@@ -623,8 +586,6 @@ async def requeue_ingest_jobs(
                 bucket=bucket,
                 original_filename=doc.filename,
                 content_type=doc.content_type,
-                metadata_json=json.dumps(doc_metadata),
-                metadata_types_json=json.dumps(doc_metadata_types),
                 auth_dict=auth_dict,
                 use_colpali=use_colpali_flag,
                 folder_name=doc.folder_name,

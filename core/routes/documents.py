@@ -450,7 +450,7 @@ async def update_document_text(
 
         extra_fields = getattr(request, "model_extra", {}) if hasattr(request, "model_extra") else {}
         ingestion_service._enforce_no_user_mutable_fields(
-            request.metadata, request.folder_name, extra_fields, request.metadata_types, context="update"
+            request.metadata, extra_fields, request.metadata_types, context="update"
         )
 
         doc = await ingestion_service.update_document(

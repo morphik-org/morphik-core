@@ -7,7 +7,6 @@ import type { QueryOptions } from "@/components/types";
 import type { UIMessage } from "./ChatMessages";
 import { FolderSummary } from "@/components/types";
 import { useModels } from "@/hooks/useModels";
-// import { ModelConfigAPI } from "@/lib/modelConfigApi";
 
 import { Settings, Spin, ArrowUp } from "./icons";
 import { ChevronDown } from "lucide-react";

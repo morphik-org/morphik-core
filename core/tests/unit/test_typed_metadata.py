@@ -15,6 +15,18 @@ from core.utils.typed_metadata import (
 )
 
 
+def _normalize_values(*args, **kwargs):
+    bundle = normalize_metadata(*args, **kwargs)
+    assert bundle.is_normalized
+    return bundle.values, bundle.types
+
+
+def _merge_values(*args, **kwargs):
+    bundle = merge_metadata(*args, **kwargs)
+    assert bundle.is_normalized
+    return bundle.values, bundle.types
+
+
 class TestCanonicalizeTypeName:
     """Test type name canonicalization."""
 
@@ -66,7 +78,7 @@ class TestNormalizeMetadata:
 
     def test_empty_metadata(self):
         """Test normalization of empty metadata."""
-        normalized, types = normalize_metadata({})
+        normalized, types = _normalize_values({})
         assert normalized == {}
         assert types == {}
 
@@ -85,7 +97,7 @@ class TestNormalizeMetadata:
             "empty": None,
         }
 
-        normalized, types = normalize_metadata(metadata)
+        normalized, types = _normalize_values(metadata)
 
         assert types["name"] == "string"
         assert types["count"] == "number"
@@ -103,7 +115,7 @@ class TestNormalizeMetadata:
         metadata = {"value": "123"}
         type_hints = {"value": "number"}
 
-        normalized, types = normalize_metadata(metadata, type_hints)
+        normalized, types = _normalize_values(metadata, type_hints)
 
         assert normalized["value"] == 123
         assert types["value"] == "number"
@@ -113,7 +125,7 @@ class TestNormalizeMetadata:
         metadata = {"Filename": None}
         type_hints = {"Filename": "string"}
 
-        normalized, types = normalize_metadata(metadata, type_hints)
+        normalized, types = _normalize_values(metadata, type_hints)
 
         assert normalized["Filename"] is None
         assert types["Filename"] == "null"
@@ -123,7 +135,7 @@ class TestNormalizeMetadata:
         metadata = {"int_val": "42", "float_val": "3.14", "negative": "-99"}
         type_hints = {"int_val": "number", "float_val": "number", "negative": "number"}
 
-        normalized, types = normalize_metadata(metadata, type_hints)
+        normalized, types = _normalize_values(metadata, type_hints)
 
         assert normalized["int_val"] == 42
         assert normalized["float_val"] == 3.14
@@ -135,15 +147,15 @@ class TestNormalizeMetadata:
         type_hints = {"value": "number"}
 
         with pytest.raises(TypedMetadataError, match="cannot coerce boolean"):
-            normalize_metadata(metadata, type_hints)
+            _normalize_values(metadata, type_hints)
 
     def test_number_coercion_rejects_nan_and_infinity(self):
         """Test that NaN and infinity are rejected."""
         with pytest.raises(TypedMetadataError, match="cannot store NaN or infinite"):
-            normalize_metadata({"value": float("nan")}, {"value": "number"})
+            _normalize_values({"value": float("nan")}, {"value": "number"})
 
         with pytest.raises(TypedMetadataError, match="cannot store NaN or infinite"):
-            normalize_metadata({"value": float("inf")}, {"value": "number"})
+            _normalize_values({"value": float("inf")}, {"value": "number"})
 
     def test_decimal_coercion(self):
         """Test decimal coercion from various types."""
@@ -155,7 +167,7 @@ class TestNormalizeMetadata:
         }
         type_hints = {k: "decimal" for k in metadata.keys()}
 
-        normalized, types = normalize_metadata(metadata, type_hints)
+        normalized, types = _normalize_values(metadata, type_hints)
 
         assert normalized["from_string"] == "1234.56"
         assert normalized["from_int"] == "100"  # Fixed: now preserves whole numbers correctly
@@ -168,7 +180,7 @@ class TestNormalizeMetadata:
         metadata = {"value": "1234.5600"}
         type_hints = {"value": "decimal"}
 
-        normalized, _ = normalize_metadata(metadata, type_hints)
+        normalized, _ = _normalize_values(metadata, type_hints)
 
         assert normalized["value"] == "1234.56"
 
@@ -181,13 +193,13 @@ class TestNormalizeMetadata:
         }
         type_hints = {k: "datetime" for k in metadata.keys()}
 
-        normalized, types = normalize_metadata(metadata, type_hints)
+        normalized, types = _normalize_values(metadata, type_hints)
 
-        # All should be converted to ISO format with timezone
+        # All should be converted to ISO format; timezone presence is preserved
         assert "2024-01-15T12:30:00" in normalized["utc"]
         assert "2024-01-15T12:30:00+05:00" == normalized["with_tz"]
-        # Naive datetime should get UTC
-        assert "+00:00" in normalized["no_tz"] or "Z" in normalized["no_tz"]
+        # Naive datetime should remain naive (no automatic timezone injection)
+        assert normalized["no_tz"] == "2024-01-15T12:30:00"
 
     def test_datetime_coercion_from_datetime_object(self):
         """Test datetime coercion from datetime object."""
@@ -195,7 +207,7 @@ class TestNormalizeMetadata:
         metadata = {"value": dt}
         type_hints = {"value": "datetime"}
 
-        normalized, _ = normalize_metadata(metadata, type_hints)
+        normalized, _ = _normalize_values(metadata, type_hints)
 
         assert "2024-01-15T12:30:00" in normalized["value"]
 
@@ -205,7 +217,7 @@ class TestNormalizeMetadata:
         metadata = {"value": d}
         type_hints = {"value": "datetime"}
 
-        normalized, _ = normalize_metadata(metadata, type_hints)
+        normalized, _ = _normalize_values(metadata, type_hints)
 
         assert "2024-01-15" in normalized["value"]
 
@@ -214,7 +226,7 @@ class TestNormalizeMetadata:
         metadata = {"value": "2024-01-15"}
         type_hints = {"value": "date"}
 
-        normalized, _ = normalize_metadata(metadata, type_hints)
+        normalized, _ = _normalize_values(metadata, type_hints)
 
         assert normalized["value"] == "2024-01-15"
 
@@ -223,7 +235,7 @@ class TestNormalizeMetadata:
         metadata = {"value": "2024-01-15T12:30:00Z"}
         type_hints = {"value": "date"}
 
-        normalized, _ = normalize_metadata(metadata, type_hints)
+        normalized, _ = _normalize_values(metadata, type_hints)
 
         assert normalized["value"] == "2024-01-15"
 
@@ -233,7 +245,7 @@ class TestNormalizeMetadata:
         metadata = {"value": d}
         type_hints = {"value": "date"}
 
-        normalized, _ = normalize_metadata(metadata, type_hints)
+        normalized, _ = _normalize_values(metadata, type_hints)
 
         assert normalized["value"] == "2024-01-15"
 
@@ -243,16 +255,16 @@ class TestNormalizeMetadata:
         false_values = ["false", "FALSE", "0", "no", "NO", "n", "N", "off", "OFF"]
 
         for val in true_values:
-            normalized, _ = normalize_metadata({"value": val}, {"value": "boolean"})
+            normalized, _ = _normalize_values({"value": val}, {"value": "boolean"})
             assert normalized["value"] is True, f"Failed for: {val}"
 
         for val in false_values:
-            normalized, _ = normalize_metadata({"value": val}, {"value": "boolean"})
+            normalized, _ = _normalize_values({"value": val}, {"value": "boolean"})
             assert normalized["value"] is False, f"Failed for: {val}"
 
     def test_boolean_coercion_from_number(self):
         """Test boolean coercion from numbers."""
-        normalized, _ = normalize_metadata(
+        normalized, _ = _normalize_values(
             {"zero": 0, "one": 1, "neg": -1}, {k: "boolean" for k in ["zero", "one", "neg"]}
         )
 
@@ -263,7 +275,7 @@ class TestNormalizeMetadata:
     def test_boolean_invalid_string(self):
         """Test that invalid boolean strings raise error."""
         with pytest.raises(TypedMetadataError, match="expects 'true' or 'false'"):
-            normalize_metadata({"value": "maybe"}, {"value": "boolean"})
+            _normalize_values({"value": "maybe"}, {"value": "boolean"})
 
     def test_array_preservation(self):
         """Test that arrays are preserved and nested values are sanitized."""
@@ -273,7 +285,7 @@ class TestNormalizeMetadata:
             "nested": [{"key": "value"}],
         }
 
-        normalized, types = normalize_metadata(metadata)
+        normalized, types = _normalize_values(metadata)
 
         assert normalized["tags"] == ["a", "b", "c"]
         assert normalized["mixed"] == [1, "two", True, None]
@@ -286,7 +298,7 @@ class TestNormalizeMetadata:
             "config": {"host": "localhost", "port": 8080, "enabled": True},
         }
 
-        normalized, types = normalize_metadata(metadata)
+        normalized, types = _normalize_values(metadata)
 
         assert normalized["config"]["host"] == "localhost"
         assert normalized["config"]["port"] == 8080
@@ -298,7 +310,7 @@ class TestNormalizeMetadata:
         dt = datetime(2024, 1, 15, 12, 30, 0, tzinfo=UTC)
         metadata = {"config": {"created_at": dt}}
 
-        normalized, _ = normalize_metadata(metadata)
+        normalized, _ = _normalize_values(metadata)
 
         assert isinstance(normalized["config"]["created_at"], str)
         assert "2024-01-15T12:30:00" in normalized["config"]["created_at"]
@@ -307,7 +319,7 @@ class TestNormalizeMetadata:
         """Test that null values are preserved."""
         metadata = {"value": None}
 
-        normalized, types = normalize_metadata(metadata)
+        normalized, types = _normalize_values(metadata)
 
         assert normalized["value"] is None
         assert types["value"] == "null"
@@ -318,7 +330,7 @@ class TestMergeMetadata:
 
     def test_merge_empty(self):
         """Test merging with empty existing metadata."""
-        merged, types = merge_metadata(None, None, {"key": "value"})
+        merged, types = _merge_values(None, None, {"key": "value"})
 
         assert merged["key"] == "value"
         assert types["key"] == "string"
@@ -329,7 +341,7 @@ class TestMergeMetadata:
         existing_types = {"a": "string", "b": "string"}
         updates = {"a": "new"}
 
-        merged, types = merge_metadata(existing, existing_types, updates)
+        merged, types = _merge_values(existing, existing_types, updates)
 
         assert merged["a"] == "new"
         assert merged["b"] == "keep"
@@ -342,7 +354,7 @@ class TestMergeMetadata:
         existing_types = {"a": "string"}
         updates = {"b": "new"}
 
-        merged, types = merge_metadata(existing, existing_types, updates)
+        merged, types = _merge_values(existing, existing_types, updates)
 
         assert merged["a"] == "old"
         assert merged["b"] == "new"
@@ -355,7 +367,7 @@ class TestMergeMetadata:
         existing_types = {"external_id": "string"}
         updates = {"key": "value"}
 
-        merged, types = merge_metadata(existing, existing_types, updates, external_id="doc-123")
+        merged, types = _merge_values(existing, existing_types, updates, external_id="doc-123")
 
         assert merged["external_id"] == "doc-123"
 
@@ -365,7 +377,7 @@ class TestMergeMetadata:
         existing_types = {"key": "string"}
         updates = {}
 
-        merged, types = merge_metadata(existing, existing_types, updates, external_id="doc-456")
+        merged, types = _merge_values(existing, existing_types, updates, external_id="doc-456")
 
         assert merged["external_id"] == "doc-456"
         assert types["external_id"] == "string"
@@ -377,7 +389,7 @@ class TestMergeMetadata:
         updates = {"count": "99"}
         update_types = {"count": "number"}
 
-        merged, types = merge_metadata(existing, existing_types, updates, update_types)
+        merged, types = _merge_values(existing, existing_types, updates, update_types)
 
         assert merged["count"] == 99
         assert types["count"] == "number"
@@ -389,7 +401,7 @@ class TestMergeMetadata:
         updates = {"value": "123"}
         update_types = {"value": "number"}
 
-        merged, types = merge_metadata(existing, existing_types, updates, update_types)
+        merged, types = _merge_values(existing, existing_types, updates, update_types)
 
         assert merged["value"] == 123
         assert types["value"] == "number"
@@ -401,7 +413,7 @@ class TestMergeMetadata:
         updates = {"Filename": None}
         update_types = {"Filename": "string"}
 
-        merged, types = merge_metadata(existing, existing_types, updates, update_types)
+        merged, types = _merge_values(existing, existing_types, updates, update_types)
 
         assert merged["Filename"] is None
         assert types["Filename"] == "null"
@@ -413,49 +425,49 @@ class TestEdgeCases:
     def test_empty_string_number_coercion(self):
         """Test that empty string cannot be coerced to number."""
         with pytest.raises(TypedMetadataError, match="cannot coerce empty string to number"):
-            normalize_metadata({"value": ""}, {"value": "number"})
+            _normalize_values({"value": ""}, {"value": "number"})
 
     def test_empty_string_datetime_coercion(self):
         """Test that empty string cannot be coerced to datetime."""
         with pytest.raises(TypedMetadataError, match="expects a datetime value"):
-            normalize_metadata({"value": ""}, {"value": "datetime"})
+            _normalize_values({"value": ""}, {"value": "datetime"})
 
     def test_empty_string_date_coercion(self):
         """Test that empty string cannot be coerced to date."""
         with pytest.raises(TypedMetadataError, match="expects a date value"):
-            normalize_metadata({"value": ""}, {"value": "date"})
+            _normalize_values({"value": ""}, {"value": "date"})
 
     def test_invalid_decimal_string(self):
         """Test that invalid decimal strings raise error."""
         with pytest.raises(TypedMetadataError, match="expects a decimal-compatible value"):
-            normalize_metadata({"value": "not-a-number"}, {"value": "decimal"})
+            _normalize_values({"value": "not-a-number"}, {"value": "decimal"})
 
     def test_invalid_datetime_string(self):
         """Test that invalid datetime strings raise error."""
         with pytest.raises(TypedMetadataError, match="expects an ISO8601 datetime"):
-            normalize_metadata({"value": "not-a-datetime"}, {"value": "datetime"})
+            _normalize_values({"value": "not-a-datetime"}, {"value": "datetime"})
 
     def test_invalid_date_string(self):
         """Test that invalid date strings raise error."""
         with pytest.raises(TypedMetadataError, match="expects an ISO8601 date"):
-            normalize_metadata({"value": "not-a-date"}, {"value": "date"})
+            _normalize_values({"value": "not-a-date"}, {"value": "date"})
 
     def test_type_mismatch_array(self):
         """Test that non-array values cannot be coerced to array."""
         with pytest.raises(TypedMetadataError, match="expects an array"):
-            normalize_metadata({"value": "not-an-array"}, {"value": "array"})
+            _normalize_values({"value": "not-an-array"}, {"value": "array"})
 
     def test_type_mismatch_object(self):
         """Test that non-object values cannot be coerced to object."""
         with pytest.raises(TypedMetadataError, match="expects an object"):
-            normalize_metadata({"value": "not-an-object"}, {"value": "object"})
+            _normalize_values({"value": "not-an-object"}, {"value": "object"})
 
     def test_underscore_in_numbers(self):
         """Test that underscores in number strings are handled (Python-style)."""
         metadata = {"value": "1_000_000"}
         type_hints = {"value": "number"}
 
-        normalized, _ = normalize_metadata(metadata, type_hints)
+        normalized, _ = _normalize_values(metadata, type_hints)
 
         assert normalized["value"] == 1000000
 
@@ -464,7 +476,7 @@ class TestEdgeCases:
         metadata = {"value": "1.23e10"}
         type_hints = {"value": "number"}
 
-        normalized, _ = normalize_metadata(metadata, type_hints)
+        normalized, _ = _normalize_values(metadata, type_hints)
 
         assert normalized["value"] == 1.23e10
 
