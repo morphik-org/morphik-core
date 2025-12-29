@@ -2,16 +2,14 @@ import json
 import logging
 import secrets
 import time  # Add time import for profiling
-import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
 import arq
 import jwt
-import requests
 import sentry_sdk
 import tomli
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
@@ -957,68 +955,68 @@ async def get_available_models_for_selection(auth: AuthContext = Depends(verify_
     return {"models": models}
 
 
-@app.post("/local/generate_uri", include_in_schema=True)
-async def generate_local_uri(
-    name: str = Form("admin"),
-    expiry_days: int = Form(30),
-    password_token: str = Form(...),
-    server_mode: bool = Form(False),
-) -> Dict[str, str]:
-    """Generate a development URI for running Morphik locally."""
-    try:
-        # Authenticate with LOCAL_URI_PASSWORD
-        if not settings.LOCAL_URI_PASSWORD:
-            raise HTTPException(status_code=500, detail="LOCAL_URI_PASSWORD not configured")
+# @app.post("/local/generate_uri", include_in_schema=True)
+# async def generate_local_uri(
+#     name: str = Form("admin"),
+#     expiry_days: int = Form(30),
+#     password_token: str = Form(...),
+#     server_mode: bool = Form(False),
+# ) -> Dict[str, str]:
+#     """Generate a development URI for running Morphik locally."""
+#     try:
+#         # Authenticate with LOCAL_URI_PASSWORD
+#         if not settings.LOCAL_URI_PASSWORD:
+#             raise HTTPException(status_code=500, detail="LOCAL_URI_PASSWORD not configured")
 
-        if password_token != settings.LOCAL_URI_PASSWORD:
-            raise HTTPException(status_code=401, detail="Invalid authentication token")
+#         if password_token != settings.LOCAL_URI_PASSWORD:
+#             raise HTTPException(status_code=401, detail="Invalid authentication token")
 
-        # Clean name
-        name = name.replace(" ", "_").lower()
+#         # Clean name
+#         name = name.replace(" ", "_").lower()
 
-        # Create payload (keep entity_id for backward compatibility with old clients)
-        payload = {
-            "user_id": name,
-            "entity_id": name,  # backward compat
-            "app_id": str(uuid.uuid4()),
-            "exp": datetime.now(UTC) + timedelta(days=expiry_days),
-        }
+#         # Create payload (keep entity_id for backward compatibility with old clients)
+#         payload = {
+#             "user_id": name,
+#             "entity_id": name,  # backward compat
+#             "app_id": str(uuid.uuid4()),
+#             "exp": datetime.now(UTC) + timedelta(days=expiry_days),
+#         }
 
-        # Generate token
-        token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+#         # Generate token
+#         token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
-        # Read config for host/port
-        with open("morphik.toml", "rb") as f:
-            config = tomli.load(f)
+#         # Read config for host/port
+#         with open("morphik.toml", "rb") as f:
+#             config = tomli.load(f)
 
-        # Determine base URL based on server_mode
-        if server_mode:
-            # Get external IP address
-            try:
-                response = requests.get("http://checkip.amazonaws.com", timeout=10)
-                if response.status_code == 200:
-                    external_ip = response.text.strip()
-                    base_url = f"{external_ip}:{config['api']['port']}"
-                else:
-                    # Fallback to localhost if request fails
-                    logger.warning("Failed to get external IP, falling back to localhost")
-                    base_url = f"{config['api']['host']}:{config['api']['port']}".replace("localhost", "127.0.0.1")
-            except requests.RequestException as e:
-                logger.warning(f"Failed to get external IP: {e}, falling back to localhost")
-                base_url = f"{config['api']['host']}:{config['api']['port']}".replace("localhost", "127.0.0.1")
-        else:
-            # Use localhost as before
-            base_url = f"{config['api']['host']}:{config['api']['port']}".replace("localhost", "127.0.0.1")
+#         # Determine base URL based on server_mode
+#         if server_mode:
+#             # Get external IP address
+#             try:
+#                 response = requests.get("http://checkip.amazonaws.com", timeout=10)
+#                 if response.status_code == 200:
+#                     external_ip = response.text.strip()
+#                     base_url = f"{external_ip}:{config['api']['port']}"
+#                 else:
+#                     # Fallback to localhost if request fails
+#                     logger.warning("Failed to get external IP, falling back to localhost")
+#                     base_url = f"{config['api']['host']}:{config['api']['port']}".replace("localhost", "127.0.0.1")
+#             except requests.RequestException as e:
+#                 logger.warning(f"Failed to get external IP: {e}, falling back to localhost")
+#                 base_url = f"{config['api']['host']}:{config['api']['port']}".replace("localhost", "127.0.0.1")
+#         else:
+#             # Use localhost as before
+#             base_url = f"{config['api']['host']}:{config['api']['port']}".replace("localhost", "127.0.0.1")
 
-        # Generate URI
-        uri = f"morphik://{name}:{token}@{base_url}"
-        return {"uri": uri}
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        logger.error(f"Error generating local URI: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+#         # Generate URI
+#         uri = f"morphik://{name}:{token}@{base_url}"
+#         return {"uri": uri}
+#     except HTTPException:
+#         # Re-raise HTTP exceptions
+#         raise
+#     except Exception as e:
+#         logger.error(f"Error generating local URI: {e}")
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/cloud/generate_uri", include_in_schema=True)
