@@ -2,6 +2,7 @@ import json
 import logging
 import secrets
 import time  # Add time import for profiling
+import uuid
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
